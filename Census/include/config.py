@@ -27,7 +27,7 @@ class AcsConfig(BaseModel):
     # geo levels we ingest
     geo_levels: List[str] = ["us", "state", "county"]
     # Airflow connection ID to Postgres
-    postgres_conn_id: str = "public_datasets"
+    postgres_conn_id: str = "public_data"
 
     @property
     def has_api_key(self) -> bool:
