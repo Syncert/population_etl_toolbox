@@ -10,14 +10,40 @@ from typing import Iterable, List, Dict, Optional
 
 import httpx
 import polars as pl
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+import psycopg2
+from utilities.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .config import CONFIG
 
 
-def _get_postgres_hook() -> PostgresHook:
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+# Which database inside the Postgres instance do you want?
+_TARGET_DATABASE = "public_data"
+
+# Optional: if/when you run this inside Airflow, set this to your conn_id (e.g. "public_datasets").
+# For local dev, leaving it as None makes PostgresConnectionFactory.auto() fall back to env vars.
+_AIRFLOW_CONN_ID: Optional[str] = None
+
+
+def _get_pg_conn_details() -> "PostgresConnectionDetails":
+    """
+    Get PostgresConnectionDetails either from Airflow (if _AIRFLOW_CONN_ID is set
+    and Airflow is available) or from local environment variables.
+    """
+    return PostgresConnectionFactory.auto(
+        conn_id=_AIRFLOW_CONN_ID,     # None in local dev, "public_datasets" in Airflow
+        prefix="POSTGRES_",           # POSTGRES_HOST, POSTGRES_PORT, etc. on dev box
+        database=_TARGET_DATABASE,    # override database inside the Postgres instance
+    )
+
+
+def _get_pg_connection():
+    """
+    Open a psycopg2 connection using the factory’s connection details.
+    """
+    details = _get_pg_conn_details()
+    return psycopg2.connect(**details.psycopg_kwargs())
+
 
 
 def get_curated_variables(year: int, dataset: str) -> List[str]:
@@ -25,7 +51,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
     Return the list of variable names (including E/M suffixes) for the given
     year+dataset, restricted to curated tables.
     """
-    hook = _get_postgres_hook()
+    conn = _get_pg_connection()
     sql = """
         SELECT variable_name
         FROM raw_census.acs_variables
@@ -34,7 +60,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
           AND table_id = ANY(%s)
         ORDER BY variable_name;
     """
-    with hook.get_conn() as conn:
+    with _get_pg_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, (dataset, year, CONFIG.curated_tables))
             rows = cur.fetchall()
@@ -101,10 +127,6 @@ def rows_to_polars(
     state_fips: Optional[str],
     load_batch_id: uuid.UUID,
 ) -> pl.DataFrame:
-    """
-    Convert ACS API response (list-of-lists) to a long Polars DataFrame.
-    First row is header.
-    """
     if not raw:
         return pl.DataFrame()
 
@@ -132,7 +154,9 @@ def rows_to_polars(
         )
     elif geo_level == "county":
         df = df.with_columns(
-            geo_id=pl.concat_str([pl.lit("state:"), pl.col("state"), pl.lit("|county:"), pl.col("county")]),
+            geo_id=pl.concat_str(
+                [pl.lit("state:"), pl.col("state"), pl.lit("|county:"), pl.col("county")]
+            ),
             state_fips=pl.col("state"),
             county_fips=pl.col("county"),
         )
@@ -159,6 +183,14 @@ def rows_to_polars(
         pl.col("value_str").cast(pl.Float64, strict=False).alias("value")
     ).drop("value_str")
 
+    #derive table_id from variable_name (e.g. 'B01001_001E' -> 'B01001')
+    long_df = long_df.with_columns(
+        pl.col("variable_name")
+        .str.split("_")
+        .list.get(0)
+        .alias("table_id")
+    )
+
     long_df = long_df.with_columns(
         dataset=pl.lit(dataset),
         year=pl.lit(year),
@@ -176,6 +208,7 @@ def rows_to_polars(
             "geo_id",
             "state_fips",
             "county_fips",
+            "table_id",
             "variable_name",
             "value",
             "load_batch_id",
@@ -196,62 +229,69 @@ def load_df_to_acs_long(df: pl.DataFrame, dataset: str, year: int, geo_level: st
     if df.is_empty():
         return 0
 
-    hook = _get_postgres_hook()
-    conn = hook.get_conn()
-    conn.autocommit = False
-    cur = conn.cursor()
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
 
-    geo_ids = df.select("geo_id").unique().to_series().to_list()
+        geo_ids = df.select("geo_id").unique().to_series().to_list()
 
-    # delete existing rows for this slice
-    cur.execute(
-        """
-        DELETE FROM raw_census.acs_long
-        WHERE dataset = %s
-          AND year = %s
-          AND geo_level = %s
-          AND geo_id = ANY(%s);
-        """,
-        (dataset, year, geo_level, geo_ids),
-    )
-
-    # prepare CSV in-memory
-    output = io.StringIO()
-    df.select(
-        [
-            "dataset",
-            "year",
-            "geo_level",
-            "geo_id",
-            "state_fips",
-            "county_fips",
-            "variable_name",
-            "value",
-            "load_batch_id",
-            "ingested_at",
-        ]
-    ).write_csv(output, include_header=False)
-    output.seek(0)
-
-    cur.copy_expert(
-        """
-        COPY raw_census.acs_long (
-            dataset, year, geo_level, geo_id,
-            state_fips, county_fips, variable_name,
-            value, load_batch_id, ingested_at
+        # Delete existing rows for this slice
+        cur.execute(
+            """
+            DELETE FROM raw_census.acs_long
+            WHERE dataset = %s
+              AND year = %s
+              AND geo_level = %s
+              AND geo_id = ANY(%s);
+            """,
+            (dataset, year, geo_level, geo_ids),
         )
-        FROM STDIN WITH (FORMAT csv);
-        """,
-        output,
-    )
 
-    rowcount = cur.rowcount  # not perfect, but OK
+        # Prepare CSV in-memory
+        output = io.StringIO()
+        df.select(
+            [
+                "dataset",
+                "year",
+                "geo_level",
+                "geo_id",
+                "state_fips",
+                "county_fips",
+                "table_id",
+                "variable_name",
+                "value",
+                "load_batch_id",
+                "ingested_at",
+            ]
+        ).write_csv(output, include_header=False)
+        output.seek(0)
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        # Copy into Postgres
+        cur.copy_expert(
+            """
+            COPY raw_census.acs_long (
+                dataset, year, geo_level, geo_id,
+                state_fips, county_fips, table_id,
+                variable_name, value, load_batch_id, ingested_at
+            )
+            FROM STDIN WITH (FORMAT csv);
+            """,
+            output,
+        )
 
-    return rowcount
+        rowcount = cur.rowcount  # COPY's rowcount is a bit weird, but good enough
+
+        conn.commit()
+        return rowcount
+
+    finally:
+        # Make sure we actually close this stuff even on error
+        try:
+            cur.close()
+        except Exception:
+            pass
+        conn.close()
 
 
 def ingest_slice(

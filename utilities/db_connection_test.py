@@ -1,4 +1,4 @@
-from db_connection import PostgresConnectionFactory  # adjust import path as needed
+from db_connection import PostgresConnectionFactory
 from sqlalchemy import create_engine, text
 
 def main():
