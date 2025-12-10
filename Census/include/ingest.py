@@ -11,7 +11,7 @@ from typing import Iterable, List, Dict, Optional
 import httpx
 import polars as pl
 import psycopg2
-from utilities.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
+from utility.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .config import CONFIG

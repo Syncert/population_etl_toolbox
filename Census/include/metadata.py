@@ -10,7 +10,7 @@ import httpx
 import psycopg2
 
 # Adjust this import path to wherever db_connection.py lives in your project
-from utilities.db_connection import (
+from utility.db_connection import (
     PostgresConnectionFactory,
     PostgresConnectionDetails,
 )
