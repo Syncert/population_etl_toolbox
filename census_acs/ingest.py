@@ -171,7 +171,12 @@ def rows_to_polars(
         value_name="value_str",
     )
 
-    # Convert value to numeric (where possible)
+    # 1) Force value_str to Utf8 before any .str operations
+    long_df = long_df.with_columns(
+        pl.col("value_str").cast(pl.Utf8).alias("value_str")
+    )
+
+    # 2) Now safe to use string methods
     long_df = long_df.with_columns(
         pl.when(pl.col("value_str").str.strip_chars().eq(""))
         .then(None)
@@ -179,6 +184,7 @@ def rows_to_polars(
         .alias("value_str")
     )
 
+    # 3) Convert to float, allowing failures to become null
     long_df = long_df.with_columns(
         pl.col("value_str").cast(pl.Float64, strict=False).alias("value")
     ).drop("value_str")
