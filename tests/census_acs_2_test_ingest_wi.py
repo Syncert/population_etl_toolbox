@@ -1,6 +1,6 @@
 # G:\population_toolbox\test_ingest_wi.py
 
-from census_acs.include.ingest import ingest_slice
+from census_acs.ingest import ingest_slice
 
 def main():
     year = 2022
