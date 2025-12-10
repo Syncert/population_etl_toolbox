@@ -1,7 +1,7 @@
 # G:\population_toolbox\test_curated_and_metadata.py
 
-from Census.include.metadata import sync_variable_metadata_for_year
-from Census.include.config import CONFIG
+from ..include.metadata import sync_variable_metadata_for_year
+from ..include.config import CONFIG
 
 def main():
     print("Curated tables from CONFIG.curated_tables:")
