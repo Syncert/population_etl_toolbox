@@ -172,14 +172,18 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
         seen_tables: Dict[str, Dict] = {}
 
         for var_name, info in variables.items():
-            group = info.get("group", "")
-            if not group:
-                continue
-            # group looks like 'B01001', 'B19013', etc.
-            table_id = group
+            # Derive table_id from variable name instead of relying on info["group"].
+            # Example: 'B01001_001E' -> 'B01001'
+            if "_" not in var_name:
+                continue  # skip NAME and other non-table variables safely
+
+            table_id = var_name.split("_", 1)[0]
 
             if table_id not in curated:
                 continue
+
+            group = info.get("group", table_id)  # keep group_name populated if present
+
 
             label = info.get("label")
             concept = info.get("concept")

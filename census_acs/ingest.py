@@ -197,6 +197,11 @@ def rows_to_polars(
         .alias("table_id")
     )
 
+    # derive measure_type from variable_name (last char: E or M)
+    long_df = long_df.with_columns(
+        pl.col("variable_name").str.slice(-1, 1).alias("measure_type")
+    )
+
     long_df = long_df.with_columns(
         dataset=pl.lit(dataset),
         year=pl.lit(year),
@@ -216,6 +221,7 @@ def rows_to_polars(
             "county_fips",
             "table_id",
             "variable_name",
+            "measure_type",
             "value",
             "load_batch_id",
             "ingested_at",
@@ -266,6 +272,7 @@ def load_df_to_acs_long(df: pl.DataFrame, dataset: str, year: int, geo_level: st
                 "county_fips",
                 "table_id",
                 "variable_name",
+                "measure_type",
                 "value",
                 "load_batch_id",
                 "ingested_at",
@@ -279,7 +286,8 @@ def load_df_to_acs_long(df: pl.DataFrame, dataset: str, year: int, geo_level: st
             COPY raw_census.acs_long (
                 dataset, year, geo_level, geo_id,
                 state_fips, county_fips, table_id,
-                variable_name, value, load_batch_id, ingested_at
+                variable_name, measure_type,
+                value, load_batch_id, ingested_at
             )
             FROM STDIN WITH (FORMAT csv);
             """,
