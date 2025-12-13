@@ -10,10 +10,25 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_long (
     county_fips     TEXT,
     table_id        TEXT NOT NULL,                 -- e.g. 'B01001'
     variable_name   TEXT NOT NULL,                 -- e.g. 'B01001_001E' (includes E/M suffix)
+    measure_type    TEXT NOT NULL,                          -- 'E' (estimate) or 'M' (margin of error)
     value           NUMERIC,
     load_batch_id   UUID NOT NULL,
     ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+--enforce E or M in measure_type
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'acs_long_measure_type_chk'
+    ) THEN
+        ALTER TABLE raw_census.acs_long
+        ADD CONSTRAINT acs_long_measure_type_chk
+        CHECK (measure_type IN ('E','M'));
+    END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS acs_long_uniq
     ON raw_census.acs_long (dataset, year, geo_level, geo_id, variable_name);
