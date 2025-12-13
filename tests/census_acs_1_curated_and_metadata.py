@@ -3,16 +3,13 @@
 from census_acs.metadata import sync_variable_metadata_for_year
 from census_acs.config import CONFIG
 
-def main():
-    print("Curated tables from CONFIG.curated_tables:")
-    print(CONFIG.curated_tables)
-
+def update_metadata_all(dataset: str):
     year = 2022
-    dataset = "acs5"
 
-    print(f"\nSyncing variable metadata for {dataset} {year} ...")
+    print(f"\n=== Updating metadata for {dataset} {year} ===")
     sync_variable_metadata_for_year(year, dataset)
     print("Done.")
 
 if __name__ == "__main__":
-    main()
+    update_metadata_all("acs5")
+    update_metadata_all("acs1")
