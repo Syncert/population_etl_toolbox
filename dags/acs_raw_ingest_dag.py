@@ -27,7 +27,7 @@ def _get_postgres_hook() -> PostgresHook:
 @dag(
     dag_id="acs_raw_ingest",
     default_args=DEFAULT_ARGS,
-    schedule="0 6 * * *",  # daily at 06:00
+    schedule="0 6 1 * *",  # monthly on 1st at 06:00
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
@@ -56,11 +56,12 @@ def acs_raw_ingest():
         """
         hook = _get_postgres_hook()
         sql = """
-            SELECT dataset, year
+            SELECT dataset, MAX(year) AS year
             FROM raw_census.acs_datasets
             WHERE dataset = ANY(%s)
               AND is_available = TRUE
-            ORDER BY dataset, year;
+            GROUP BY dataset
+            ORDER BY dataset;
         """
         with hook.get_conn() as conn:
             with conn.cursor() as cur:
@@ -90,15 +91,10 @@ def acs_raw_ingest():
             )
 
             # 3) county-level tasks per state
-            for state_fips in state_fips_list:
-                plan.append(
-                    {
-                        "dataset": dataset,
-                        "year": year,
-                        "geo_level": "county",
-                        "state_fips": state_fips,
-                    }
-                )
+            # Only do counties for ACS5
+            if dataset == "acs5":
+                for state_fips in state_fips_list:
+                    plan.append({"dataset": dataset, "year": year, "geo_level": "county", "state_fips": state_fips})
 
         return plan
 
@@ -117,8 +113,6 @@ def acs_raw_ingest():
     sync = sync_datasets()
     plan = get_ingestion_plan().after(sync)
     ingest_results = ingest_work_unit.expand(work_unit=plan)  # dynamic task mapping
-
-    # Could add an aggregation/check task to validate counts after ingestion.
 
 
 acs_raw_ingest_dag = acs_raw_ingest()
