@@ -162,6 +162,7 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
     variables = meta.get("variables", {})
 
     conn = _get_pg_connection()
+
     try:
         conn.autocommit = False
         cur = conn.cursor()
@@ -172,30 +173,27 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
         seen_tables: Dict[str, Dict] = {}
 
         for var_name, info in variables.items():
-            # Derive table_id from variable name instead of relying on info["group"].
-            # Example: 'B01001_001E' -> 'B01001'
-            if "_" not in var_name:
-                continue  # skip NAME and other non-table variables safely
-
-            table_id = var_name.split("_", 1)[0]
-
-            if table_id not in curated:
+            # Keep only detailed-table estimate variables (E)
+            if "_" not in var_name or not var_name.endswith("E"):
                 continue
 
-            group = info.get("group", table_id)  # keep group_name populated if present
-
+            table_id = var_name.split("_", 1)[0]
+            if table_id not in curated:
+                continue
 
             label = info.get("label")
             concept = info.get("concept")
             predicate_type = info.get("predicateType")
-            # upsert variable row
+            group = info.get("group") or table_id
+
+            # Insert the estimate variable (E)
             cur.execute(
                 """
                 INSERT INTO raw_census.acs_variables (
                     dataset, year, variable_name, table_id,
                     label, concept, predicate_type, group_name
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (dataset, year, variable_name)
                 DO UPDATE SET
                     table_id = EXCLUDED.table_id,
@@ -204,17 +202,37 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                     predicate_type = EXCLUDED.predicate_type,
                     group_name = EXCLUDED.group_name;
                 """,
-                (
-                    dataset,
-                    year,
-                    var_name,
-                    table_id,
-                    label,
-                    concept,
-                    predicate_type,
-                    group,
-                ),
+                (dataset, year, var_name, table_id, label, concept, predicate_type, group),
             )
+
+            # Now pull MOE variables from attributes and insert them too
+            attrs = info.get("attributes") or ""
+            for a in [x.strip() for x in attrs.split(",") if x.strip()]:
+                if not a.endswith("M"):
+                    continue  # skip EA/MA annotation vars
+
+                moe_name = a
+
+                # MOE variables usually share concept/table; label can be derived
+                moe_label = (label.replace("Estimate", "Margin of Error") if isinstance(label, str) else None)
+
+                cur.execute(
+                    """
+                    INSERT INTO raw_census.acs_variables (
+                        dataset, year, variable_name, table_id,
+                        label, concept, predicate_type, group_name
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (dataset, year, variable_name)
+                    DO UPDATE SET
+                        table_id = EXCLUDED.table_id,
+                        label = EXCLUDED.label,
+                        concept = EXCLUDED.concept,
+                        predicate_type = EXCLUDED.predicate_type,
+                        group_name = EXCLUDED.group_name;
+                    """,
+                    (dataset, year, moe_name, table_id, moe_label, concept, predicate_type, group),
+                )
 
             # track table metadata
             if table_id not in seen_tables:
