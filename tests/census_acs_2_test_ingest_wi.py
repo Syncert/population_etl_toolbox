@@ -12,6 +12,7 @@ def run_for(dataset: str):
         year=year,
         dataset=dataset,
         geo_level="state",
+        state_fips="55"
     )
     print(f"Ingested {rows_wi_state} rows for {dataset} {year} state level")
 
