@@ -1,6 +1,6 @@
 # G:\population_toolbox\test_curated_and_metadata.py
 
-from census_acs.metadata import sync_variable_metadata_for_year
+from census_acs.metadata import sync_variable_metadata_for_year,sync_acs_dataset_table
 from census_acs.config import CONFIG
 
 def update_metadata_all(dataset: str):
@@ -11,5 +11,7 @@ def update_metadata_all(dataset: str):
     print("Done.")
 
 if __name__ == "__main__":
-    update_metadata_all("acs5")
-    update_metadata_all("acs1")
+    # update_metadata_all("acs5")
+    # update_metadata_all("acs1")
+    print(f"\n=== SYNCING VARIABLE METADATA TO raw_census.acs_datasets ===")
+    sync_acs_dataset_table()

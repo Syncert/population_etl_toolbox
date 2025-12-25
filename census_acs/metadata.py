@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 import httpx
 import psycopg2
+import re
 
 # Adjust this import path to wherever db_connection.py lives in your project
 from utility.db_connection import (
@@ -55,6 +56,7 @@ def _get_pg_connection():
 def fetch_acs_datasets_from_data_json() -> List[Dict]:
     """
     Fetch dataset metadata from data.json and filter to ACS 1- and 5- year datasets.
+    Uses regex to match flexible title patterns.
     """
     with httpx.Client(timeout=30.0) as client:
         resp = client.get(DATA_JSON_URL)
@@ -63,27 +65,42 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
 
     datasets = data.get("dataset", [])
     filtered: List[Dict] = []
+
+    # Regex pattern to match ACS 1-year or 5-year estimates
+    # Matches: "American Community Survey", "ACS", "Census", etc.
+    # And "1-year", "5-year", "1 year", "5 year", "1-Year", "5-Year", etc.
+    pattern = re.compile(
+        r"(?:american community survey|acs|census).*?(?:1[-\s]year|5[-\s]year|1[-\s]years|5[-\s]years)",
+        re.IGNORECASE
+    )
+
     for ds in datasets:
         title = ds.get("title", "")
         c = ds.get("c_vintage", None)
         ident = ds.get("identifier", "")
-        # We care about ACS 1-year and 5-year detailed estimates
-        if "American Community Survey" in title and (
-            "1-year estimates" in title or "5-year estimates" in title
-        ):
-            if c is None:
-                continue
-            try:
-                year = int(c)
-            except ValueError:
-                continue
-            filtered.append(
-                {
-                    "title": title,
-                    "year": year,
-                    "identifier": ident,
-                }
-            )
+
+        # Skip if title is empty
+        if not title:
+            continue
+
+        # Use regex to match ACS 1/5 year
+        if not pattern.search(title):
+            continue
+
+        # Ensure c_vintage is a valid year
+        if c is None:
+            continue
+        try:
+            year = int(c)
+        except ValueError:
+            continue
+
+        filtered.append({
+            "title": title,
+            "year": year,
+            "identifier": ident,
+        })
+
     return filtered
 
 
@@ -91,7 +108,7 @@ def sync_acs_dataset_table() -> None:
     """
     Upsert filtered ACS datasets into raw_census.acs_datasets.
 
-    This gives us (dataset, year) entries for acs1 and acs5.
+    Uses ID prefixes (e.g., ACSDT1Y, ACSDT5Y) to determine dataset type.
     """
     conn = _get_pg_connection()
     try:
@@ -100,37 +117,55 @@ def sync_acs_dataset_table() -> None:
 
         datasets = fetch_acs_datasets_from_data_json()
         now = datetime.now(timezone.utc)
+        print(f"Found {len(datasets)} datasets from data.json")
+
+        inserted_count = 0
+        skipped_count = 0
 
         for ds in datasets:
             title = ds["title"]
             year = ds["year"]
             identifier = ds["identifier"]
 
-            # Heuristic: map "acs/acs1" vs "acs/acs5" from identifier
-            if "acs/acs1" in identifier:
+            # Extract the ID from the URL
+            id_part = identifier.split("/")[-1]
+
+            # Classify by ID prefix
+            if id_part.startswith("ACSDT1Y") or id_part.startswith("ACSDP1Y") or id_part.startswith("ACSST1Y") or id_part.startswith("ACSSPP1Y") or id_part.startswith("ACSSE1Y"):
                 dataset = "acs1"
-            elif "acs/acs5" in identifier:
+            elif id_part.startswith("ACSDT5Y") or id_part.startswith("ACSDP5Y") or id_part.startswith("ACSST5Y") or id_part.startswith("ACSSPP5Y") or id_part.startswith("ACSSE5Y"):
                 dataset = "acs5"
             else:
-                # some ACS datasets we don't care about here (e.g. subject tables)
+                skipped_count += 1
                 continue
 
-            cur.execute(
-                """
-                INSERT INTO raw_census.acs_datasets (
-                    dataset, year, title, is_available, first_seen_at, last_checked_at
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO raw_census.acs_datasets (
+                        dataset, year, title, is_available, first_seen_at, last_checked_at
+                    )
+                    VALUES (%s, %s, %s, TRUE, %s, %s)
+                    ON CONFLICT (dataset, year)
+                    DO UPDATE SET
+                        title = EXCLUDED.title,
+                        is_available = TRUE,
+                        last_checked_at = EXCLUDED.last_checked_at;
+                    """,
+                    (dataset, year, title, now, now),
                 )
-                VALUES (%s, %s, %s, TRUE, %s, %s)
-                ON CONFLICT (dataset, year)
-                DO UPDATE SET
-                    title = EXCLUDED.title,
-                    is_available = TRUE,
-                    last_checked_at = EXCLUDED.last_checked_at;
-                """,
-                (dataset, year, title, now, now),
-            )
+                inserted_count += 1
+            except Exception as e:
+                print(f"Error inserting {dataset}, {year}: {e}")
+                continue
 
         conn.commit()
+        print(f"Sync complete. Inserted: {inserted_count}, Skipped: {skipped_count}")
+
+    except Exception as e:
+        print(f"Transaction failed: {e}")
+        conn.rollback()
+        raise
     finally:
         try:
             cur.close()
