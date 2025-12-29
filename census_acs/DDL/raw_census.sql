@@ -37,12 +37,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS acs_long_uniq
 CREATE TABLE IF NOT EXISTS raw_census.acs_datasets (
     dataset         TEXT NOT NULL,           -- 'acs1', 'acs5'
     year            INTEGER NOT NULL,
+    census_id       TEXT,
     title           TEXT,
     is_available    BOOLEAN NOT NULL DEFAULT TRUE,
     first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_ingested_at TIMESTAMPTZ,
-    PRIMARY KEY (dataset, year, title)
+    PRIMARY KEY (dataset, year)
 );
 
 -- ACS table-level metadata

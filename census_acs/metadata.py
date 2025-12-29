@@ -131,10 +131,12 @@ def sync_acs_dataset_table() -> None:
             id_part = identifier.split("/")[-1]
 
             # Classify by ID prefix
-            if id_part.startswith("ACSDT1Y") or id_part.startswith("ACSDP1Y") or id_part.startswith("ACSST1Y") or id_part.startswith("ACSSPP1Y") or id_part.startswith("ACSSE1Y"):
+            if id_part == ("ACSDT1Y" + str(year)) :
                 dataset = "acs1"
-            elif id_part.startswith("ACSDT5Y") or id_part.startswith("ACSDP5Y") or id_part.startswith("ACSST5Y") or id_part.startswith("ACSSPP5Y") or id_part.startswith("ACSSE5Y"):
+                census_id = ("ACSDT1Y" + str(year))
+            elif id_part== ("ACSDT5Y" + str(year)):
                 dataset = "acs5"
+                census_id = ("ACSDT5Y" + str(year))
             else:
                 skipped_count += 1
                 continue
@@ -143,15 +145,15 @@ def sync_acs_dataset_table() -> None:
                 cur.execute(
                     """
                     INSERT INTO raw_census.acs_datasets (
-                        dataset, year, title, is_available, first_seen_at, last_checked_at
+                        dataset, year, census_id, title, is_available, first_seen_at, last_checked_at
                     )
-                    VALUES (%s, %s, %s, TRUE, %s, %s)
-                    ON CONFLICT (dataset, year, title)
+                    VALUES (%s, %s, %s, %s, TRUE, %s, %s)
+                    ON CONFLICT (dataset, year)
                     DO UPDATE SET
                         is_available = TRUE,
                         last_checked_at = EXCLUDED.last_checked_at;
                     """,
-                    (dataset, year, title, now, now),
+                    (dataset, year, census_id, title, now, now),
                 )
                 inserted_count += 1
             except Exception as e:

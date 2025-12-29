@@ -89,12 +89,9 @@ def acs_raw_ingest():
             plan.append(
                 {"dataset": dataset, "year": year, "geo_level": "state", "state_fips": None}
             )
-
             # 3) county-level tasks per state
-            # Only do counties for ACS5
-            if dataset == "acs5":
-                for state_fips in state_fips_list:
-                    plan.append({"dataset": dataset, "year": year, "geo_level": "county", "state_fips": state_fips})
+            for state_fips in state_fips_list:
+                plan.append({"dataset": dataset, "year": year, "geo_level": "county", "state_fips": state_fips})
 
         return plan
 
