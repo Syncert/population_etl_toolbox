@@ -203,7 +203,7 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
 
         curated = set(CONFIG.curated_tables)
 
-        # We'll accumulate table metadata (concept/universe) from variables.
+        # We'll accumulate table metadata (concept) from variables.
         seen_tables: Dict[str, Dict] = {}
 
         for var_name, info in variables.items():
@@ -272,8 +272,6 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
             if table_id not in seen_tables:
                 seen_tables[table_id] = {
                     "concept": concept,
-                    # variables.json doesn't always expose universe; could be from another endpoint
-                    "universe": None,
                 }
 
         # upsert into acs_tables
@@ -281,16 +279,15 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
             cur.execute(
                 """
                 INSERT INTO raw_census.acs_tables (
-                    dataset, table_id, concept, universe, product
+                    dataset, table_id, concept, product
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (dataset, table_id)
                 DO UPDATE SET
                     concept = EXCLUDED.concept,
-                    universe = EXCLUDED.universe,
                     product = EXCLUDED.product;
                 """,
-                (dataset, table_id, info["concept"], info["universe"], dataset),
+                (dataset, table_id, info["concept"], dataset),
             )
 
         conn.commit()

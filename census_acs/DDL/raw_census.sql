@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_tables (
     dataset      TEXT NOT NULL,
     table_id     TEXT NOT NULL,
     concept      TEXT,
-    universe     TEXT,
     product      TEXT,           -- 'acs1' or 'acs5'
     PRIMARY KEY (dataset, table_id)
 );
