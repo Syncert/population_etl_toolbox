@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_datasets (
     first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_ingested_at TIMESTAMPTZ,
-    PRIMARY KEY (dataset, year)
+    PRIMARY KEY (dataset, year, title)
 );
 
 -- ACS table-level metadata

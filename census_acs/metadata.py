@@ -146,9 +146,8 @@ def sync_acs_dataset_table() -> None:
                         dataset, year, title, is_available, first_seen_at, last_checked_at
                     )
                     VALUES (%s, %s, %s, TRUE, %s, %s)
-                    ON CONFLICT (dataset, year)
+                    ON CONFLICT (dataset, year, title)
                     DO UPDATE SET
-                        title = EXCLUDED.title,
                         is_available = TRUE,
                         last_checked_at = EXCLUDED.last_checked_at;
                     """,
