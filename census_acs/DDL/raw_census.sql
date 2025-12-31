@@ -67,3 +67,41 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_variables (
     group_name     TEXT,
     PRIMARY KEY (dataset, year, variable_name)
 );
+
+-- Control table that tracks slice completion status for each dataset/year/geo_level combo
+CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
+  dataset      TEXT NOT NULL,            -- acs1/acs5
+  year         INTEGER NOT NULL,
+  geo_level    TEXT NOT NULL,            -- us/state/county
+  state_fips   TEXT NOT NULL DEFAULT '', -- for state
+  status       TEXT NOT NULL,            -- planned/running/success/empty/failed
+  rows_loaded  BIGINT NOT NULL DEFAULT 0,
+  started_at   TIMESTAMPTZ,
+  finished_at  TIMESTAMPTZ,
+  last_error   TEXT,
+  PRIMARY KEY (dataset, year, geo_level, state_fips)
+);
+
+-- Add CHECK constraints for valid values
+ALTER TABLE raw_census.acs_ingestion_slices 
+ADD CONSTRAINT chk_dataset CHECK (dataset IN ('acs1', 'acs5')),
+ADD CONSTRAINT chk_geo_level CHECK (geo_level IN ('us', 'state', 'county')),
+ADD CONSTRAINT chk_status CHECK (status IN ('planned', 'running', 'success', 'empty', 'failed')),
+ADD CONSTRAINT chk_year CHECK (year >= 2000 AND year <= EXTRACT(YEAR FROM CURRENT_DATE) + 1);
+
+-- Ensure state_fips is only set when geo_level is 'state' or 'county'
+ALTER TABLE raw_census.acs_ingestion_slices 
+ADD CONSTRAINT chk_state_fips_valid_for_geo_level 
+CHECK (
+  (geo_level = 'county' AND state_fips IS NOT NULL) OR
+  (geo_level IN ('us','state') AND state_fips IS NULL)
+);
+
+-- Ensure timestamps are logically consistent
+ALTER TABLE raw_census.acs_ingestion_slices 
+ADD CONSTRAINT chk_started_before_finished 
+CHECK (finished_at IS NULL OR started_at IS NOT NULL AND started_at <= finished_at);
+
+-- Ensure rows_loaded is non-negative
+ALTER TABLE raw_census.acs_ingestion_slices 
+ADD CONSTRAINT chk_rows_loaded_non_negative CHECK (rows_loaded >= 0);
