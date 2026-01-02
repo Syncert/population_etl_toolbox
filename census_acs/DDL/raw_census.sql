@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
   year         INTEGER NOT NULL,
   geo_level    TEXT NOT NULL,            -- us/state/county
   state_fips   TEXT NOT NULL DEFAULT '', -- for state
+  variables_hash TEXT,
+  variables_count INTEGER,
   status       TEXT NOT NULL,            -- planned/running/success/empty/failed
   rows_loaded  BIGINT NOT NULL DEFAULT 0,
   started_at   TIMESTAMPTZ,
