@@ -12,7 +12,7 @@
 # 5) Uses a Pool ("census_api") to limit concurrency and respect Census API limits
 # 6) Tracks status/rows/errors in raw_census.acs_ingestion_slices
 #
-# REQUIRED DB TABLES (you already created them):
+# REQUIRED DB TABLES:
 # - raw_census.acs_datasets          (filtered to base Detailed Tables only)
 # - raw_census.acs_ingestion_slices  (ledger)
 # - raw_census.acs_long              (fact table)
@@ -140,20 +140,24 @@ def acs_raw_ingest():
     @task
     def get_target_years() -> list[dict]:
         """
-        Current policy: ingest ONLY the latest available year per dataset.
+        Current policy: ingest all available years per dataset.
 
         Output example:
-            [{"dataset":"acs1","year":2024}, {"dataset":"acs5","year":2023}]
+        [
+            {"dataset": "acs1", "year": 2020},
+            {"dataset": "acs1", "year": 2021},
+            {"dataset": "acs5", "year": 2022},
+            {"dataset": "acs5", "year": 2023}
+        ]
         """
         hook = _get_postgres_hook()
 
         sql = """
-            SELECT dataset, MAX(year) AS year
+            SELECT dataset, year
             FROM raw_census.acs_datasets
             WHERE dataset = ANY(%s)
-              AND is_available = TRUE
-            GROUP BY dataset
-            ORDER BY dataset;
+            AND is_available = TRUE
+            ORDER BY dataset, year;
         """
 
         with hook.get_conn() as conn, conn.cursor() as cur:
