@@ -18,24 +18,19 @@ from .config import CONFIG
 
 
 # Which database inside the Postgres instance do you want?
+# If you want this configurable, put it in CONFIG (recommended).
 _TARGET_DATABASE = "public_data"
-
-# Optional: if/when you run this inside Airflow, set this to your conn_id (e.g. "public_datasets").
-# For local dev, leaving it as None makes PostgresConnectionFactory.auto() fall back to env vars.
-_AIRFLOW_CONN_ID: Optional[str] = None
-
 
 def _get_pg_conn_details() -> "PostgresConnectionDetails":
     """
-    Get PostgresConnectionDetails either from Airflow (if _AIRFLOW_CONN_ID is set
-    and Airflow is available) or from local environment variables.
+    Get PostgresConnectionDetails from Airflow when running in Airflow,
+    otherwise fall back to local env vars.
     """
     return PostgresConnectionFactory.auto(
-        conn_id=_AIRFLOW_CONN_ID,     # None in local dev, "public_datasets" in Airflow
-        prefix="POSTGRES_",           # POSTGRES_HOST, POSTGRES_PORT, etc. on dev box
-        database=_TARGET_DATABASE,    # override database inside the Postgres instance
+        conn_id=getattr(CONFIG, "postgres_conn_id", None),
+        prefix="POSTGRES_",
+        database=getattr(CONFIG, "target_database", _TARGET_DATABASE),
     )
-
 
 def _get_pg_connection():
     """
@@ -51,7 +46,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
     Return the list of variable names (including E/M suffixes) for the given
     year+dataset, restricted to curated tables.
     """
-    conn = _get_pg_connection()
+
     sql = """
         SELECT variable_name
         FROM raw_census.acs_variables
@@ -60,6 +55,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
           AND table_id = ANY(%s)
         ORDER BY variable_name;
     """
+    
     with _get_pg_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, (dataset, year, CONFIG.curated_tables))
