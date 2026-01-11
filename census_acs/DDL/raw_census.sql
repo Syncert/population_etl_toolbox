@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
   rows_loaded  BIGINT NOT NULL DEFAULT 0,
   started_at   TIMESTAMPTZ,
   finished_at  TIMESTAMPTZ,
+  variables_hash_seen_at, TIMESTAMPTZ,
   last_error   TEXT,
   PRIMARY KEY (dataset, year, geo_level, state_fips)
 );
