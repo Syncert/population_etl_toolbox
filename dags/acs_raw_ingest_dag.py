@@ -103,6 +103,115 @@ def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
     return digest, len(vars_sorted)
 
 
+def chunk_list(items: list, chunk_size: int) -> list[list]:
+    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+
+def _run_one_work_unit(work_unit: dict) -> int:
+    """
+    Plain Python function: does the DB ledger updates + calls ingest_slice().
+    Safe to call inside tasks (including inside a loop).
+    """
+    hook = _get_postgres_hook()
+
+    dataset: str = work_unit["dataset"]
+    year: int = int(work_unit["year"])
+    geo_level: str = work_unit["geo_level"]
+    state_fips: Optional[str] = work_unit.get("state_fips")
+
+    variables_hash: Optional[str] = work_unit.get("variables_hash")
+    variables_count: int = int(work_unit.get("variables_count", 0))
+
+    started = datetime.now(timezone.utc)
+
+    sql_running = """
+        INSERT INTO raw_census.acs_ingestion_slices (
+            dataset, year, geo_level, state_fips,
+            status, rows_loaded,
+            started_at, finished_at, last_error,
+            variables_hash, variables_count, variables_hash_seen_at
+        )
+        VALUES (%s, %s, %s, %s,
+                'running', 0,
+                %s, NULL, NULL,
+                %s, %s, %s)
+        ON CONFLICT (dataset, year, geo_level, state_fips)
+        DO UPDATE SET
+            status = 'running',
+            started_at = EXCLUDED.started_at,
+            finished_at = NULL,
+            last_error = NULL,
+            variables_hash = EXCLUDED.variables_hash,
+            variables_count = EXCLUDED.variables_count,
+            variables_hash_seen_at = EXCLUDED.variables_hash_seen_at;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql_running,
+            (dataset, year, geo_level, state_fips, started, variables_hash, variables_count, started),
+        )
+        conn.commit()
+
+    try:
+        rows_loaded = ingest_slice(year=year, dataset=dataset, geo_level=geo_level, state_fips=state_fips)
+
+        finished = datetime.now(timezone.utc)
+        final_status = "empty" if rows_loaded == 0 else "success"
+
+        sql_done = """
+            UPDATE raw_census.acs_ingestion_slices
+            SET status = %s,
+                rows_loaded = %s,
+                finished_at = %s,
+                last_error = NULL,
+                variables_hash = %s,
+                variables_count = %s
+            WHERE dataset = %s
+              AND year = %s
+              AND geo_level = %s
+              AND state_fips IS NOT DISTINCT FROM %s;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql_done,
+                (
+                    final_status,
+                    int(rows_loaded),
+                    finished,
+                    variables_hash,
+                    variables_count,
+                    dataset,
+                    year,
+                    geo_level,
+                    state_fips,
+                ),
+            )
+            conn.commit()
+
+        return int(rows_loaded)
+
+    except Exception as e:
+        finished = datetime.now(timezone.utc)
+        err_txt = str(e)[:4000]
+
+        sql_failed = """
+            UPDATE raw_census.acs_ingestion_slices
+            SET status = 'failed',
+                finished_at = %s,
+                last_error = %s
+            WHERE dataset = %s
+              AND year = %s
+              AND geo_level = %s
+              AND state_fips IS NOT DISTINCT FROM %s;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_failed, (finished, err_txt, dataset, year, geo_level, state_fips))
+            conn.commit()
+
+        raise
+
+
+
 @dag(
     dag_id="acs_raw_ingest",
     default_args=DEFAULT_ARGS,
@@ -177,7 +286,7 @@ def acs_raw_ingest():
     # Task 3: Build ingestion plan (variable-aware skip)
     # -----------------------------
     @task
-    def build_ingestion_plan(targets: list[dict]) -> list[dict]:
+    def build_ingestion_plan(targets: list[dict]) -> list[list[dict]]:
         """
         Build a list of work units to ingest and exclude any slice already done
         FOR THE CURRENT VARIABLE SET (variables_hash).
@@ -273,20 +382,22 @@ def acs_raw_ingest():
                     "variables_count": meta["variables_count"],
                 })
 
-        return plan
+        # Keep mapping sane: ~50–150 mapped tasks is a happy place.
+        batches = chunk_list(plan, chunk_size=25)  # 1836/25 ≈ 74 mapped tasks
+        
+        return batches
 
     # -----------------------------
     # Task 4: Mark slices planned (optional but recommended for observability)
     # -----------------------------
     @task
-    def mark_slices_planned(plan: list[dict]) -> None:
+    def mark_slices_planned(batches: list[list[dict]]) -> None:
         """
         Upsert slice ledger rows as 'planned'.
 
-        If a slice was previously success/empty with the SAME variables_hash, we leave it alone.
-        If the hash changed (meaning your variable list changed), we reset it to planned.
+        batches is a list of batches, each batch is a list of work_unit dicts.
         """
-        if not plan:
+        if not batches:
             return
 
         hook = _get_postgres_hook()
@@ -307,7 +418,7 @@ def acs_raw_ingest():
             DO UPDATE SET
                 status = CASE
                     WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                         AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
+                        AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
                     THEN raw_census.acs_ingestion_slices.status
                     ELSE 'planned'
                 END,
@@ -318,141 +429,39 @@ def acs_raw_ingest():
         """
 
         with hook.get_conn() as conn, conn.cursor() as cur:
-            for w in plan:
-                cur.execute(
-                    sql_upsert,
-                    (
-                        w["dataset"],
-                        int(w["year"]),
-                        w["geo_level"],
-                        w.get("state_fips"),
-                        w.get("variables_hash"),
-                        int(w.get("variables_count", 0)),
-                        now,
-                    ),
-                )
+            for batch in batches:
+                for w in batch:
+                    cur.execute(
+                        sql_upsert,
+                        (
+                            w["dataset"],
+                            int(w["year"]),
+                            w["geo_level"],
+                            w.get("state_fips"),
+                            w.get("variables_hash"),
+                            int(w.get("variables_count", 0)),
+                            now,
+                        ),
+                    )
             conn.commit()
 
     # -----------------------------
     # Task 5: Ingest one slice (mapped), with ledger updates
     # -----------------------------
+
     @task(pool=CENSUS_API_POOL)
-    def ingest_work_unit(work_unit: dict) -> int:
+    def ingest_batch(batch: list[dict]) -> int:
         """
-        Ingest one work unit and update raw_census.acs_ingestion_slices status.
+        Ingest a batch of work units sequentially inside one mapped task.
 
-        Status transitions:
-          planned -> running -> success|empty
-          planned -> running -> failed (if exception)
-
-        The Pool (census_api) limits how many of these run concurrently.
+        This keeps Airflow task-mapping under the 1024 cap AND avoids spawning
+        thousands of task instances.
         """
-        hook = _get_postgres_hook()
+        total = 0
+        for work_unit in batch:
+            total += _run_one_work_unit(work_unit)
+        return total
 
-        dataset: str = work_unit["dataset"]
-        year: int = int(work_unit["year"])
-        geo_level: str = work_unit["geo_level"]
-        state_fips: Optional[str] = work_unit.get("state_fips")
-
-        variables_hash: Optional[str] = work_unit.get("variables_hash")
-        variables_count: int = int(work_unit.get("variables_count", 0))
-
-        started = datetime.now(timezone.utc)
-
-        # 1) Mark running (and stamp variable hash info for traceability)
-        sql_running = """
-            INSERT INTO raw_census.acs_ingestion_slices (
-                dataset, year, geo_level, state_fips,
-                status, rows_loaded,
-                started_at, finished_at, last_error,
-                variables_hash, variables_count, variables_hash_seen_at
-            )
-            VALUES (%s, %s, %s, %s,
-                    'running', 0,
-                    %s, NULL, NULL,
-                    %s, %s, %s)
-            ON CONFLICT (dataset, year, geo_level, state_fips)
-            DO UPDATE SET
-                status = 'running',
-                started_at = EXCLUDED.started_at,
-                finished_at = NULL,
-                last_error = NULL,
-                variables_hash = EXCLUDED.variables_hash,
-                variables_count = EXCLUDED.variables_count,
-                variables_hash_seen_at = EXCLUDED.variables_hash_seen_at;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                sql_running,
-                (dataset, year, geo_level, state_fips, started, variables_hash, variables_count, started),
-            )
-            conn.commit()
-
-        # 2) Run ingestion, then mark success/empty
-        try:
-            rows_loaded = ingest_slice(
-                year=year,
-                dataset=dataset,
-                geo_level=geo_level,
-                state_fips=state_fips,
-            )
-
-            finished = datetime.now(timezone.utc)
-            final_status = "empty" if rows_loaded == 0 else "success"
-
-            sql_done = """
-                UPDATE raw_census.acs_ingestion_slices
-                SET status = %s,
-                    rows_loaded = %s,
-                    finished_at = %s,
-                    last_error = NULL,
-                    variables_hash = %s,
-                    variables_count = %s
-                WHERE dataset = %s
-                  AND year = %s
-                  AND geo_level = %s
-                  AND state_fips IS NOT DISTINCT FROM %s;
-            """
-            # "IS NOT DISTINCT FROM" treats NULLs as equal (so us/state slices match correctly).
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    sql_done,
-                    (
-                        final_status,
-                        int(rows_loaded),
-                        finished,
-                        variables_hash,
-                        variables_count,
-                        dataset,
-                        year,
-                        geo_level,
-                        state_fips,
-                    ),
-                )
-                conn.commit()
-
-            return int(rows_loaded)
-
-        except Exception as e:
-            # 3) If ingestion fails, record error and re-raise for Airflow retries
-            finished = datetime.now(timezone.utc)
-            err_txt = str(e)[:4000]  # keep it bounded
-
-            sql_failed = """
-                UPDATE raw_census.acs_ingestion_slices
-                SET status = 'failed',
-                    finished_at = %s,
-                    last_error = %s
-                WHERE dataset = %s
-                  AND year = %s
-                  AND geo_level = %s
-                  AND state_fips IS NOT DISTINCT FROM %s;
-            """
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql_failed, (finished, err_txt, dataset, year, geo_level, state_fips))
-                conn.commit()
-
-            raise
 
     # -----------------------------
     # DAG wiring
@@ -462,17 +471,17 @@ def acs_raw_ingest():
 
     # 2) Determine target year(s) and build a variable-aware plan
     targets = get_target_years()
-    plan = build_ingestion_plan(targets)
+    batches = build_ingestion_plan(targets)
 
     # Ensure ordering: dataset sync -> target selection -> plan build
-    sync >> targets >> plan
+    sync >> targets >> batches
 
     # 3) Mark slices planned for observability (optional but recommended)
-    planned = mark_slices_planned(plan)
-    plan >> planned
+    planned = mark_slices_planned(batches)
+    batches >> planned
 
-    # 4) Execute mapped ingestion tasks
-    _ = ingest_work_unit.expand(work_unit=plan)
+    # 4) Execute mapped ingestion batches
+    _ = ingest_batch.expand(batch=batches)
 
 
 # Instantiate DAG
