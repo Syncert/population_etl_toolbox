@@ -88,8 +88,8 @@ def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[s
 
 @retry(
     reraise=True,
-    stop=stop_after_attempt(8),  # give it more room under real throttling
-    wait=wait_exponential(multiplier=2, min=5, max=300),  # 5s..300s (tenacity fallback)
+    stop=stop_after_attempt(8),
+    wait=wait_exponential(multiplier=2, min=5, max=300),
 )
 def fetch_acs_api(
     year: int,
@@ -101,85 +101,61 @@ def fetch_acs_api(
     """
     Call the Census API and return the raw JSON (list-of-lists).
 
-    Operational behavior:
-    - Uses Postgres advisory locks to limit global concurrency across *all* Airflow tasks/workers.
-    - Adds jitter so retries don't synchronize across tasks.
-    - Explicitly handles HTTP 429 by honoring Retry-After when present.
+    IMPORTANT:
+    - Uses a Postgres advisory lock to globally serialize Census API requests across ALL workers/tasks.
+      This prevents 429s even if Airflow pool size is high.
+    - Also respects Retry-After if the API returns 429 anyway.
     """
-
     base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
 
-    params: Dict[str, str] = {"get": ",".join(variables)}
+    params: Dict[str, str] = {
+        "get": ",".join(variables),
+    }
     params.update(build_geo_params(geo_level, state_fips))
 
     if CONFIG.has_api_key:
         params["key"] = CONFIG.census_api_key
 
-    # -----------------------------
-    # Global throttling knobs
-    # -----------------------------
-    # Allow at most N concurrent API calls across all workers.
-    # Put these in CONFIG if you want, but safe defaults are below.
-    max_global_concurrency = getattr(CONFIG, "census_api_global_concurrency", 2)  # start low
-    min_spacing_seconds = getattr(CONFIG, "census_api_min_spacing_seconds", 0.25)  # tiny spacing
+    # Global throttle key: any constant 64-bit int is fine; keep it stable.
+    # (If you later want per-dataset throttles, you can hash dataset/year into the key.)
+    LOCK_KEY = 910202401  # arbitrary constant
 
-    # Use a "slot" lock id so you can allow N concurrent calls.
-    # (If N=1, this becomes a hard global mutex.)
-    slot = random.randint(0, max_global_concurrency - 1)
-    advisory_lock_id = 880000 + slot  # any stable int is fine
+    # Acquire a GLOBAL lock via Postgres so only one task hits Census API at a time.
+    # This makes behavior stable regardless of Airflow pool size.
+    with _get_pg_connection() as pg_conn:
+        with pg_conn.cursor() as pg_cur:
+            pg_cur.execute("SELECT pg_advisory_lock(%s);", (LOCK_KEY,))
+            pg_conn.commit()
 
-    # -----------------------------
-    # Acquire advisory lock (distributed concurrency gate)
-    # -----------------------------
-    lock_conn = _get_pg_connection()
-    try:
-        with lock_conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_lock(%s);", (advisory_lock_id,))
-            lock_conn.commit()
-
-        # Small jitter + optional spacing while holding the lock.
-        # This reduces burstiness even when concurrency > 1.
-        time.sleep(min_spacing_seconds + random.random() * min_spacing_seconds)
-
-        # -----------------------------
-        # Make request
-        # -----------------------------
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.get(base_url, params=params)
-
-        # -----------------------------
-        # Handle 429 explicitly (respect Retry-After)
-        # -----------------------------
-        if resp.status_code == 429:
-            retry_after = resp.headers.get("Retry-After")
-
-            # Prefer server-provided guidance
-            if retry_after:
-                try:
-                    sleep_s = int(retry_after)
-                except ValueError:
-                    sleep_s = 60
-            else:
-                # Fallback: exponential-ish cooldown with jitter
-                sleep_s = 30 + random.randint(0, 60)
-
-            # Sleep BEFORE raising, so tenacity retry doesn't instantly stampede again
-            time.sleep(sleep_s)
-
-            # Raise the same class tenacity is already retrying on
-            resp.raise_for_status()
-
-        # Any other 4xx/5xx -> let tenacity handle retries
-        resp.raise_for_status()
-        return resp.json()
-
-    finally:
-        # Releasing advisory lock: closing the connection releases it
         try:
-            lock_conn.close()
-        except Exception:
-            pass
+            # Small jitter even under lock to avoid rhythmic bursts on retries
+            time.sleep(0.2 + random.random() * 0.4)
 
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.get(base_url, params=params)
+
+                # If rate limited, respect Retry-After when present
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            delay = int(retry_after)
+                        except ValueError:
+                            delay = 60
+                    else:
+                        delay = 60
+
+                    # Add jitter so multiple retries don’t stampede at the same second
+                    time.sleep(delay + random.random() * 5)
+                    resp.raise_for_status()
+
+                resp.raise_for_status()
+                return resp.json()
+
+        finally:
+            with pg_conn.cursor() as pg_cur:
+                pg_cur.execute("SELECT pg_advisory_unlock(%s);", (LOCK_KEY,))
+                pg_conn.commit()
 
 
 def rows_to_polars(
