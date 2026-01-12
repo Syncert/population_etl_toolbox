@@ -69,52 +69,64 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_variables (
 );
 
 -- Control table that tracks slice completion status for each dataset/year/geo_level combo
-CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
-  dataset      TEXT NOT NULL,            -- acs1/acs5
+CREATE TABLE raw_census.acs_ingestion_slices (
+  -- Optional surrogate id (handy for debugging / joins / admin UI)
+  id BIGSERIAL PRIMARY KEY,
+
+  dataset      TEXT NOT NULL,            -- 'acs1' / 'acs5'
   year         INTEGER NOT NULL,
-  geo_level    TEXT NOT NULL,            -- us/state/county
-  state_fips   TEXT DEFAULT '', -- for state
+  geo_level    TEXT NOT NULL,            -- 'us' / 'state' / 'county'
+
+  -- NULL for geo_level in ('us','state'), required for 'county'
+  state_fips   TEXT NULL,
+
   variables_hash TEXT,
   variables_count INTEGER,
+
   status       TEXT NOT NULL,            -- planned/running/success/empty/failed
   rows_loaded  BIGINT NOT NULL DEFAULT 0,
+
   started_at   TIMESTAMPTZ,
   finished_at  TIMESTAMPTZ,
-  variables_hash_seen_at, TIMESTAMPTZ,
-  last_error   TEXT,
-  PRIMARY KEY (dataset, year, geo_level, state_fips)
+  variables_hash_seen_at TIMESTAMPTZ,
+
+  last_error   TEXT
 );
 
--- Add CHECK constraints for valid values
-ALTER TABLE raw_census.acs_ingestion_slices 
-ADD CONSTRAINT chk_dataset CHECK (dataset IN ('acs1', 'acs5')),
-ADD CONSTRAINT chk_geo_level CHECK (geo_level IN ('us', 'state', 'county')),
-ADD CONSTRAINT chk_status CHECK (status IN ('planned', 'running', 'success', 'empty', 'failed')),
-ADD CONSTRAINT chk_year CHECK (year >= 2000 AND year <= EXTRACT(YEAR FROM CURRENT_DATE) + 1);
+-- Domain checks
+ALTER TABLE raw_census.acs_ingestion_slices
+  ADD CONSTRAINT chk_dataset CHECK (dataset IN ('acs1','acs5')),
+  ADD CONSTRAINT chk_geo_level CHECK (geo_level IN ('us','state','county')),
+  ADD CONSTRAINT chk_status CHECK (status IN ('planned','running','success','empty','failed')),
+  ADD CONSTRAINT chk_year CHECK (year >= 2000 AND year <= EXTRACT(YEAR FROM CURRENT_DATE) + 1),
+  ADD CONSTRAINT chk_rows_loaded_non_negative CHECK (rows_loaded >= 0);
 
--- Ensure state_fips is only set when geo_level is 'state' or 'county'
-ALTER TABLE raw_census.acs_ingestion_slices 
-ADD CONSTRAINT chk_state_fips_valid_for_geo_level 
-CHECK (
-  (geo_level = 'county' AND state_fips IS NOT NULL) OR
-  (geo_level IN ('us','state') AND state_fips IS NULL)
-);
+-- Timestamps consistent (make precedence explicit)
+ALTER TABLE raw_census.acs_ingestion_slices
+  ADD CONSTRAINT chk_started_before_finished
+  CHECK (finished_at IS NULL OR (started_at IS NOT NULL AND started_at <= finished_at));
 
--- Ensure timestamps are logically consistent
-ALTER TABLE raw_census.acs_ingestion_slices 
-ADD CONSTRAINT chk_started_before_finished 
-CHECK (finished_at IS NULL OR started_at IS NOT NULL AND started_at <= finished_at);
+-- Geo-level ↔ state_fips rule + formatting for county FIPS
+ALTER TABLE raw_census.acs_ingestion_slices
+  ADD CONSTRAINT chk_state_fips_by_geo_level
+  CHECK (
+    (geo_level IN ('us','state') AND state_fips IS NULL)
+    OR
+    (geo_level = 'county' AND state_fips ~ '^[0-9]{2}$')
+  );
 
--- Ensure rows_loaded is non-negative
-ALTER TABLE raw_census.acs_ingestion_slices 
-ADD CONSTRAINT chk_rows_loaded_non_negative CHECK (rows_loaded >= 0);
-
--- 1) For US + STATE slices (no state_fips)
-CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_nostate
+-- Uniqueness (your intended design)
+CREATE UNIQUE INDEX acs_ingestion_slices_uniq_nostate
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level)
 WHERE state_fips IS NULL;
 
--- 2) For COUNTY slices (state_fips required)
-CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_state
+CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level, state_fips)
 WHERE state_fips IS NOT NULL;
+
+-- Optional: speed up lookups used by the DAG
+CREATE INDEX acs_ingestion_slices_status_idx
+ON raw_census.acs_ingestion_slices (status);
+
+CREATE INDEX acs_ingestion_slices_hash_idx
+ON raw_census.acs_ingestion_slices (variables_hash);
