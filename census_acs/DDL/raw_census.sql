@@ -33,6 +33,15 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS acs_long_uniq
     ON raw_census.acs_long (dataset, year, geo_level, geo_id, variable_name);
 
+CREATE INDEX IF NOT EXISTS acs_long_qc_slice
+ON raw_census.acs_long (dataset, year, geo_level);
+
+CREATE INDEX IF NOT EXISTS acs_long_qc_var
+ON raw_census.acs_long (dataset, year, variable_name);
+
+CREATE INDEX IF NOT EXISTS acs_long_qc_geo
+ON raw_census.acs_long (geo_level, geo_id);    
+
 -- Which ACS datasets exist and whether we’ve ingested them
 CREATE TABLE IF NOT EXISTS raw_census.acs_datasets (
     dataset         TEXT NOT NULL,           -- 'acs1', 'acs5'
