@@ -141,9 +141,9 @@ def fetch_acs_api(
                         try:
                             delay = int(retry_after)
                         except ValueError:
-                            delay = 60
+                            delay = 300
                     else:
-                        delay = 60
+                        delay = 300 #default of 5 minutes
 
                     # Add jitter so multiple retries don’t stampede at the same second
                     time.sleep(delay + random.random() * 5)
