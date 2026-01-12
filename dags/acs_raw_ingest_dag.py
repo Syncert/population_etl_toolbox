@@ -124,7 +124,23 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     started = datetime.now(timezone.utc)
 
-    sql_running = """
+    sql_running_update = """
+        UPDATE raw_census.acs_ingestion_slices
+        SET status = 'running',
+            rows_loaded = 0,
+            started_at = %s,
+            finished_at = NULL,
+            last_error = NULL,
+            variables_hash = %s,
+            variables_count = %s,
+            variables_hash_seen_at = %s
+        WHERE dataset = %s
+        AND year = %s
+        AND geo_level = %s
+        AND state_fips IS NOT DISTINCT FROM %s;
+    """
+
+    sql_running_insert = """
         INSERT INTO raw_census.acs_ingestion_slices (
             dataset, year, geo_level, state_fips,
             status, rows_loaded,
@@ -134,22 +150,39 @@ def _run_one_work_unit(work_unit: dict) -> int:
         VALUES (%s, %s, %s, %s,
                 'running', 0,
                 %s, NULL, NULL,
-                %s, %s, %s)
-        ON CONFLICT (dataset, year, geo_level, state_fips)
-        DO UPDATE SET
-            status = 'running',
-            started_at = EXCLUDED.started_at,
-            finished_at = NULL,
-            last_error = NULL,
-            variables_hash = EXCLUDED.variables_hash,
-            variables_count = EXCLUDED.variables_count,
-            variables_hash_seen_at = EXCLUDED.variables_hash_seen_at;
+                %s, %s, %s);
     """
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
-            sql_running,
-            (dataset, year, geo_level, state_fips, started, variables_hash, variables_count, started),
+            sql_running_update,
+            (
+                started,
+                variables_hash,
+                variables_count,
+                started,          # variables_hash_seen_at
+                dataset,
+                year,
+                geo_level,
+                state_fips,
+            ),
         )
+
+        if cur.rowcount == 0:
+            cur.execute(
+                sql_running_insert,
+                (
+                    dataset,
+                    year,
+                    geo_level,
+                    state_fips,
+                    started,
+                    variables_hash,
+                    variables_count,
+                    started,
+                ),
+            )
+
         conn.commit()
 
     try:
@@ -403,7 +436,31 @@ def acs_raw_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
 
-        sql_upsert = """
+        sql_planned_update = """
+            UPDATE raw_census.acs_ingestion_slices
+            SET status = CASE
+                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
+                        AND raw_census.acs_ingestion_slices.variables_hash = %s
+                    THEN raw_census.acs_ingestion_slices.status
+                    ELSE 'planned'
+                END,
+                rows_loaded = CASE
+                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
+                        AND raw_census.acs_ingestion_slices.variables_hash = %s
+                    THEN raw_census.acs_ingestion_slices.rows_loaded
+                    ELSE 0
+                END,
+                variables_hash = %s,
+                variables_count = %s,
+                variables_hash_seen_at = %s,
+                last_error = NULL
+            WHERE dataset = %s
+            AND year = %s
+            AND geo_level = %s
+            AND state_fips IS NOT DISTINCT FROM %s;
+        """
+
+        sql_planned_insert = """
             INSERT INTO raw_census.acs_ingestion_slices (
                 dataset, year, geo_level, state_fips,
                 status, rows_loaded,
@@ -413,37 +470,51 @@ def acs_raw_ingest():
             VALUES (%s, %s, %s, %s,
                     'planned', 0,
                     NULL, NULL, NULL,
-                    %s, %s, %s)
-            ON CONFLICT (dataset, year, geo_level, state_fips)
-            DO UPDATE SET
-                status = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
-                    THEN raw_census.acs_ingestion_slices.status
-                    ELSE 'planned'
-                END,
-                variables_hash = EXCLUDED.variables_hash,
-                variables_count = EXCLUDED.variables_count,
-                variables_hash_seen_at = EXCLUDED.variables_hash_seen_at,
-                last_error = NULL;
+                    %s, %s, %s);
         """
+
 
         with hook.get_conn() as conn, conn.cursor() as cur:
             for batch in batches:
                 for w in batch:
+                    dataset = w["dataset"]
+                    year = int(w["year"])
+                    geo_level = w["geo_level"]
+                    state_fips = w.get("state_fips")
+                    vhash = w.get("variables_hash")
+                    vcount = int(w.get("variables_count", 0))
+
                     cur.execute(
-                        sql_upsert,
+                        sql_planned_update,
                         (
-                            w["dataset"],
-                            int(w["year"]),
-                            w["geo_level"],
-                            w.get("state_fips"),
-                            w.get("variables_hash"),
-                            int(w.get("variables_count", 0)),
+                            vhash,  # hash compare #1
+                            vhash,  # hash compare #2
+                            vhash,  # set variables_hash
+                            vcount,
                             now,
+                            dataset,
+                            year,
+                            geo_level,
+                            state_fips,
                         ),
                     )
+
+                    if cur.rowcount == 0:
+                        cur.execute(
+                            sql_planned_insert,
+                            (
+                                dataset,
+                                year,
+                                geo_level,
+                                state_fips,
+                                vhash,
+                                vcount,
+                                now,
+                            ),
+                        )
+
             conn.commit()
+
 
     # -----------------------------
     # Task 5: Ingest one slice (mapped), with ledger updates
