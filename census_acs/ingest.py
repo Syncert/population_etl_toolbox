@@ -89,7 +89,7 @@ def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[s
 @retry(
     reraise=True,
     stop=stop_after_attempt(8),
-    wait=wait_exponential(multiplier=2, min=5, max=300),
+    wait=wait_exponential(multiplier=2, min=5, max=900), #up to 15 minutes
 )
 def fetch_acs_api(
     year: int,
