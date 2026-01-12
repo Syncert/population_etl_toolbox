@@ -64,7 +64,7 @@ DEFAULT_ARGS = {
     "owner": "data-eng",
     "depends_on_past": False,
     "retries": 3,
-    "retry_delay": timedelta(minutes=5),
+    "retry_delay": timedelta(minutes=20),
 }
 
 # Pool-based throttling: create this in Airflow UI (Admin -> Pools)

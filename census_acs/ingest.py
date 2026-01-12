@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import math
 import uuid
+import random
+import time
 from datetime import datetime, timezone
 from typing import Iterable, List, Dict, Optional
 
@@ -86,8 +88,8 @@ def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[s
 
 @retry(
     reraise=True,
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(8),  # give it more room under real throttling
+    wait=wait_exponential(multiplier=2, min=5, max=300),  # 5s..300s (tenacity fallback)
 )
 def fetch_acs_api(
     year: int,
@@ -98,21 +100,86 @@ def fetch_acs_api(
 ) -> List[List[str]]:
     """
     Call the Census API and return the raw JSON (list-of-lists).
+
+    Operational behavior:
+    - Uses Postgres advisory locks to limit global concurrency across *all* Airflow tasks/workers.
+    - Adds jitter so retries don't synchronize across tasks.
+    - Explicitly handles HTTP 429 by honoring Retry-After when present.
     """
+
     base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
 
-    params: Dict[str, str] = {
-        "get": ",".join(variables),
-    }
+    params: Dict[str, str] = {"get": ",".join(variables)}
     params.update(build_geo_params(geo_level, state_fips))
 
     if CONFIG.has_api_key:
         params["key"] = CONFIG.census_api_key
 
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.get(base_url, params=params)
+    # -----------------------------
+    # Global throttling knobs
+    # -----------------------------
+    # Allow at most N concurrent API calls across all workers.
+    # Put these in CONFIG if you want, but safe defaults are below.
+    max_global_concurrency = getattr(CONFIG, "census_api_global_concurrency", 2)  # start low
+    min_spacing_seconds = getattr(CONFIG, "census_api_min_spacing_seconds", 0.25)  # tiny spacing
+
+    # Use a "slot" lock id so you can allow N concurrent calls.
+    # (If N=1, this becomes a hard global mutex.)
+    slot = random.randint(0, max_global_concurrency - 1)
+    advisory_lock_id = 880000 + slot  # any stable int is fine
+
+    # -----------------------------
+    # Acquire advisory lock (distributed concurrency gate)
+    # -----------------------------
+    lock_conn = _get_pg_connection()
+    try:
+        with lock_conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s);", (advisory_lock_id,))
+            lock_conn.commit()
+
+        # Small jitter + optional spacing while holding the lock.
+        # This reduces burstiness even when concurrency > 1.
+        time.sleep(min_spacing_seconds + random.random() * min_spacing_seconds)
+
+        # -----------------------------
+        # Make request
+        # -----------------------------
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.get(base_url, params=params)
+
+        # -----------------------------
+        # Handle 429 explicitly (respect Retry-After)
+        # -----------------------------
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After")
+
+            # Prefer server-provided guidance
+            if retry_after:
+                try:
+                    sleep_s = int(retry_after)
+                except ValueError:
+                    sleep_s = 60
+            else:
+                # Fallback: exponential-ish cooldown with jitter
+                sleep_s = 30 + random.randint(0, 60)
+
+            # Sleep BEFORE raising, so tenacity retry doesn't instantly stampede again
+            time.sleep(sleep_s)
+
+            # Raise the same class tenacity is already retrying on
+            resp.raise_for_status()
+
+        # Any other 4xx/5xx -> let tenacity handle retries
         resp.raise_for_status()
         return resp.json()
+
+    finally:
+        # Releasing advisory lock: closing the connection releases it
+        try:
+            lock_conn.close()
+        except Exception:
+            pass
+
 
 
 def rows_to_polars(
@@ -336,6 +403,9 @@ def ingest_slice(
             geo_level=geo_level,
             state_fips=state_fips,
         )
+
+        time.sleep(0.2 + random.random() * 0.3)  # 0.2–0.5s
+
         df = rows_to_polars(
             raw=raw,
             dataset=dataset,

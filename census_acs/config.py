@@ -48,6 +48,10 @@ class AcsConfig(BaseModel):
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
+    #configuration for rate limiting
+    census_api_global_concurrency: int = 2
+    census_api_min_spacing_seconds: float = 0.25
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.census_api_key)
