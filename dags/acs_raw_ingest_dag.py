@@ -150,8 +150,10 @@ def _run_one_work_unit(work_unit: dict) -> int:
         VALUES (%s, %s, %s, %s,
                 'running', 0,
                 %s, NULL, NULL,
-                %s, %s, %s);
+                %s, %s, %s)
+        ON CONFLICT DO NOTHING;
     """
+
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
@@ -470,9 +472,9 @@ def acs_raw_ingest():
             VALUES (%s, %s, %s, %s,
                     'planned', 0,
                     NULL, NULL, NULL,
-                    %s, %s, %s);
+                    %s, %s, %s)
+            ON CONFLICT DO NOTHING;
         """
-
 
         with hook.get_conn() as conn, conn.cursor() as cur:
             for batch in batches:
