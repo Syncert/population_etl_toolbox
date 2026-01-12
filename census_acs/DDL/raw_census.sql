@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
   dataset      TEXT NOT NULL,            -- acs1/acs5
   year         INTEGER NOT NULL,
   geo_level    TEXT NOT NULL,            -- us/state/county
-  state_fips   TEXT NOT NULL DEFAULT '', -- for state
+  state_fips   TEXT DEFAULT '', -- for state
   variables_hash TEXT,
   variables_count INTEGER,
   status       TEXT NOT NULL,            -- planned/running/success/empty/failed
@@ -108,3 +108,13 @@ CHECK (finished_at IS NULL OR started_at IS NOT NULL AND started_at <= finished_
 -- Ensure rows_loaded is non-negative
 ALTER TABLE raw_census.acs_ingestion_slices 
 ADD CONSTRAINT chk_rows_loaded_non_negative CHECK (rows_loaded >= 0);
+
+-- 1) For US + STATE slices (no state_fips)
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_nostate
+ON raw_census.acs_ingestion_slices (dataset, year, geo_level)
+WHERE state_fips IS NULL;
+
+-- 2) For COUNTY slices (state_fips required)
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_state
+ON raw_census.acs_ingestion_slices (dataset, year, geo_level, state_fips)
+WHERE state_fips IS NOT NULL;
