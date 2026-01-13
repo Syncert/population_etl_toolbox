@@ -14,10 +14,24 @@ import httpx
 import polars as pl
 import psycopg2
 from utility.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import json
+import logging
 
 from .config import CONFIG
 
+
+#classes for HTTP responses
+class CensusNoContent(Exception):
+    """HTTP 204 from Census API: treat as empty slice, not a failure."""
+    pass
+
+class CensusRetryableHTTP(Exception):
+    """Retry-worthy HTTP cases (429 / 5xx)"""
+    pass
+
+#initialize logger
+logger = logging.getLogger(__name__)
 
 # Which database inside the Postgres instance do you want?
 # If you want this configurable, put it in CONFIG (recommended).
@@ -89,7 +103,8 @@ def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[s
 @retry(
     reraise=True,
     stop=stop_after_attempt(8),
-    wait=wait_exponential(multiplier=2, min=5, max=900), #up to 15 minutes
+    wait=wait_exponential(multiplier=2, min=5, max=900),  # up to 15 minutes
+    retry=retry_if_exception_type((CensusRetryableHTTP, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError)),
 )
 def fetch_acs_api(
     year: int,
@@ -101,10 +116,6 @@ def fetch_acs_api(
     """
     Call the Census API and return the raw JSON (list-of-lists).
 
-    IMPORTANT:
-    - Uses a Postgres advisory lock to globally serialize Census API requests across ALL workers/tasks.
-      This prevents 429s even if Airflow pool size is high.
-    - Also respects Retry-After if the API returns 429 anyway.
     """
     base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
 
@@ -116,46 +127,54 @@ def fetch_acs_api(
     if CONFIG.has_api_key:
         params["key"] = CONFIG.census_api_key
 
-    # Global throttle key: any constant 64-bit int is fine; keep it stable.
-    # (If you later want per-dataset throttles, you can hash dataset/year into the key.)
-    LOCK_KEY = 910202401  # arbitrary constant
+    # Small jitter even under lock to avoid rhythmic bursts on retries
+    time.sleep(0.2 + random.random() * 0.4)
 
-    # Acquire a GLOBAL lock via Postgres so only one task hits Census API at a time.
-    # This makes behavior stable regardless of Airflow pool size.
-    with _get_pg_connection() as pg_conn:
-        with pg_conn.cursor() as pg_cur:
-            pg_cur.execute("SELECT pg_advisory_lock(%s);", (LOCK_KEY,))
-            pg_conn.commit()
+    with httpx.Client(
+        timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+                      ) as client:
+        resp = client.get(base_url, params=params)
 
+        # 204 = No Content (not an error; means "nothing for this query")
+        if resp.status_code == 204:
+            logger.info(
+                "Census 204 No Content: year=%s dataset=%s geo_level=%s state_fips=%s vars_count=%s first_vars=%s url=%s",
+                year, dataset, geo_level, state_fips, len(variables), variables[:5], str(resp.url),
+            )
+            return []
+
+        # Sometimes APIs return 200 but still give an empty body (rare, but safe to handle)
+        if resp.status_code == 200 and not resp.content:
+            logger.info("Census 200 but empty body (treat empty): url=%s", str(resp.url))
+            return []
+
+        # 429 = rate limited -> retryable
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    delay = int(retry_after)
+                except ValueError:
+                    delay = 300
+            else:
+                delay = 300
+
+            time.sleep(delay + random.random() * 5)
+            raise CensusRetryableHTTP(f"429 rate limited for {base_url}")
+
+        # 5xx = server errors -> retryable
+        if 500 <= resp.status_code <= 599:
+            raise CensusRetryableHTTP(f"{resp.status_code} server error for {base_url}")
+
+        # Other 4xx are NOT retryable; raise normally (you asked for something invalid)
+        resp.raise_for_status()
+
+        # At this point we expect JSON. If parsing fails, treat it as retryable once in case of transient weirdness.
         try:
-            # Small jitter even under lock to avoid rhythmic bursts on retries
-            time.sleep(0.2 + random.random() * 0.4)
-
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.get(base_url, params=params)
-
-                # If rate limited, respect Retry-After when present
-                if resp.status_code == 429:
-                    retry_after = resp.headers.get("Retry-After")
-                    if retry_after:
-                        try:
-                            delay = int(retry_after)
-                        except ValueError:
-                            delay = 300
-                    else:
-                        delay = 300 #default of 5 minutes
-
-                    # Add jitter so multiple retries don’t stampede at the same second
-                    time.sleep(delay + random.random() * 5)
-                    resp.raise_for_status()
-
-                resp.raise_for_status()
-                return resp.json()
-
-        finally:
-            with pg_conn.cursor() as pg_cur:
-                pg_cur.execute("SELECT pg_advisory_unlock(%s);", (LOCK_KEY,))
-                pg_conn.commit()
+            return resp.json()
+        except json.JSONDecodeError as e:
+            # This is typically "empty body" or HTML error page. Make it retryable.
+            raise CensusRetryableHTTP(f"Bad JSON response from Census API: {e}") from e
 
 
 def rows_to_polars(
