@@ -42,6 +42,10 @@ ON raw_census.acs_long (dataset, year, variable_name);
 CREATE INDEX IF NOT EXISTS acs_long_qc_geo
 ON raw_census.acs_long (geo_level, geo_id);    
 
+CREATE INDEX IF NOT EXISTS acs_long_state_geo_idx
+ON raw_census.acs_long (dataset, year, geo_level, geo_id)
+WHERE geo_level = 'state';
+
 -- Which ACS datasets exist and whether we’ve ingested them
 CREATE TABLE IF NOT EXISTS raw_census.acs_datasets (
     dataset         TEXT NOT NULL,           -- 'acs1', 'acs5'
