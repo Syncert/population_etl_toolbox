@@ -32,7 +32,6 @@ class AcsConfig(BaseModel):
         "B25108",  # Aggregate Value (Dollars) by Year Structure Built
         "B27010",  # Health insurance by age
         "C24050",  # Industry by Occupation for the Civilian Employed Population 16 Years and Over
-        "C24010C", # Sex by Occupation for the Civilian Employed Population 16 Years and Over (American Indian and Alaska Native Alone)
         "K200104", # Population by Age
         "K200801", # Means of transportation to work
         "K201701", # Poverty Status in the Past 12 Months by Age
