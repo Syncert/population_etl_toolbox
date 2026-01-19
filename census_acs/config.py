@@ -18,6 +18,10 @@ class AcsConfig(BaseModel):
         "B01003",  # Total population
         "B02001",  # Race
         "B03002",  # Hispanic or Latino by race
+        "B07001",  # Geographical Mobility in the Past Year by Age for Current Residence in the United States
+        "B07003",  # Geographical Mobility in the Past Year by Sex for Current Residence in the United States
+        "B08301",  # Means of Transportation to Work
+        "B11001",  # Household Type (Including Living Alone)
         "B15003",  # Educational attainment
         "B19001",  # Household income dist
         "B19013",  # Median household income
@@ -27,20 +31,13 @@ class AcsConfig(BaseModel):
         "B24114",  # Detailed Occupation for the Civilian Employed Population 16 Years and Over
         "B24134",  # Detailed Industry for the Civilian Employed Population 16 Years and Over
         "B25003",  # Tenure (Housing Units, Owner or Renter occupied)
+        "B25010",  # Average Household Size of Occupied Housing Units by Tenure
         "B25075",  # House Value of owner-occupied housing units
         "B25104",  # Monthly Housing Costs
         "B25108",  # Aggregate Value (Dollars) by Year Structure Built
         "B27010",  # Health insurance by age
         "C24050",  # Industry by Occupation for the Civilian Employed Population 16 Years and Over
-        "K200104", # Population by Age
-        "K200801", # Means of transportation to work
-        "K201701", # Poverty Status in the Past 12 Months by Age
-        "K201801", # Disability Status by Age
-        "K201903", # Family Income in the Past 12 Months (in 2024 Inflation-Adjusted Dollars)
-        "K201501", # Educational Attainment of the Population 25 years and over
-        "K202201", # Receipt of Food Stamps/SNAP in the Past 12 Months by Presence of Children Under 18 Years for Households
-        "K202403", # Industry for the Civilian Employed Population 16 Years and Over
-        "K202507"  # Gross Rent
+        "S0801"  # Commuting characteristics (ACS Subject Table; used for derived % metrics like remote work—not a canonical raw table)
     ]
     # geo levels we ingest
     geo_levels: List[str] = ["us", "state", "county"]
