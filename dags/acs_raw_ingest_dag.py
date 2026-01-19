@@ -55,6 +55,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from census_acs.config import CONFIG
 from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
 from census_acs.ingest import ingest_slice, get_curated_variables
+from census_acs.geography import sync_geo_dim
 
 
 # -----------------------------
@@ -277,6 +278,12 @@ def acs_raw_ingest():
         Upsert the dataset/year entries for base Detailed Tables (acs1/acs5) into raw_census.acs_datasets.
         """
         sync_acs_dataset_table()
+
+    @task
+    def sync_geographies() -> None:
+        # Auto-pick latest available Gazetteer year
+        sync_geo_dim(source_year=None, min_year=2010)
+
 
     # -----------------------------
     # Task 2: Decide what year(s) to ingest
@@ -541,13 +548,14 @@ def acs_raw_ingest():
     # -----------------------------
     # 1) Refresh dataset availability
     sync = sync_datasets()
+    sync_geo = sync_geographies()
 
     # 2) Determine target year(s) and build a variable-aware plan
     targets = get_target_years()
     batches = build_ingestion_plan(targets)
 
     # Ensure ordering: dataset sync -> target selection -> plan build
-    sync >> targets >> batches
+    sync >> sync_geo >> targets >> batches
 
     # 3) Mark slices planned for observability (optional but recommended)
     planned = mark_slices_planned(batches)

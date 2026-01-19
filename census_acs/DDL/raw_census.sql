@@ -85,6 +85,25 @@ CREATE TABLE IF NOT EXISTS raw_census.acs_variables (
     PRIMARY KEY (dataset, year, variable_name)
 );
 
+-- Table for tracking geography level geo_ids and availability
+CREATE TABLE IF NOT EXISTS raw_census.geo_dim (
+    geo_level      TEXT NOT NULL,                  -- 'us'|'state'|'county'
+    geo_id         TEXT NOT NULL,                  -- 'us:1' | 'state:55' | 'state:55|county:025'
+    state_fips     TEXT,
+    county_fips    TEXT,
+    name           TEXT,                           -- display name
+    state_name     TEXT,
+    county_name    TEXT,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    source         TEXT NOT NULL DEFAULT 'census_gazetteer',
+    source_year    INTEGER,                        -- optional: year of gazetteer/tiger snapshot
+    ingested_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (geo_level, geo_id)
+);
+
+CREATE INDEX IF NOT EXISTS geo_dim_state_idx ON raw_census.geo_dim(state_fips);
+CREATE INDEX IF NOT EXISTS geo_dim_county_idx ON raw_census.geo_dim(state_fips, county_fips);
+
 -- Control table that tracks slice completion status for each dataset/year/geo_level combo
 CREATE TABLE raw_census.acs_ingestion_slices (
   -- Optional surrogate id (handy for debugging / joins / admin UI)
