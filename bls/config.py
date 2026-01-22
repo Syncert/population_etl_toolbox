@@ -27,57 +27,89 @@ class BlsConfig(BaseModel):
         default_factory=lambda: os.environ.get("BLS_API_KEY", "")
     )
 
+    # ------------------------------------------------------------------
     # Enabled BLS programs.
-    # Start with LAUS; expand later (ces, cpi, jolts, qcew).
+    #
+    # Each program has its own series-ID grammar and ingestion logic.
+    # DO NOT assume series IDs are interchangeable across programs.
+    # ------------------------------------------------------------------
     programs: List[str] = [
         "laus",
         "ces",
         "cpi",
-        "jolts"
+        "jolts",
     ]
 
     # ------------------------------------------------------------------
-    # IMPORTANT:
-    # For LAUS, you should NOT enumerate every county/state series ID.
-    # Instead, treat these as *measure codes* to be combined with
-    # area codes dynamically in ingest.py.
+    # Curated series definitions by BLS program.
+    #
+    # IMPORTANT DESIGN NOTES:
+    #
+    # 1) LAUS entries below are NOT full series IDs.
+    #    They are *measure codes* that must be dynamically expanded
+    #    in ingest.py using:
+    #
+    #        LA{seasonal}{area_code}{measure_code}
+    #
+    #    This avoids hardcoding thousands of county/state series.
+    #
+    # 2) CES, CPI, and JOLTS entries ARE full series IDs.
+    #    These programs do not use area-code expansion in the same way.
+    #
+    # 3) Treat each program as a separate "instrument":
+    #    - LAUS  -> people, residence-based labor conditions
+    #    - CES   -> jobs, establishment-based employment
+    #    - CPI   -> prices / inflation
+    #    - JOLTS -> labor market flows and tightness
     # ------------------------------------------------------------------
-    curated_series_ids: List[str] = [
-        # These represent LAUS MEASURE CODES, not full IDs.
-        # Your ingestion code should expand these using:
-        #   LA{seasonal}{area_code}{measure_code}
-
-        "03",  # Unemployment rate
-        "04",  # Unemployment level
-        "05",  # Employment level
-        "06",  # Labor force level
-        "08",  # Labor force participation rate
-
-        # Optional / advanced:
-        # "07",  # Employment-population ratio
-        # "09",  # Civilian noninstitutional population
-    ]
-
-    # Optional structured view by program.
-    # This becomes useful once CES/CPI/JOLTS are added.
     curated_by_program: Dict[str, List[str]] = {
+
+        # --------------------------------------------------------------
+        # LAUS — Local Area Unemployment Statistics
+        #
+        # Measure codes only.
+        # Valid for national, state, county, metro, and city geographies.
+        # Counties are typically NOT seasonally adjusted.
+        # --------------------------------------------------------------
         "laus": [
-            "03",
-            "04",
-            "05",
-            "06",
-            "08",
+            "03",  # Unemployment rate (% of labor force)
+            "04",  # Unemployment level (count)
+            "05",  # Employment level (count)
+            "06",  # Labor force level (count)
+            "08",  # Labor force participation rate (% of population)
+            "07",  # Employment-population ratio
+            "09",  # Civilian noninstitutional population
         ],
 
-        # Uncomment when needed:
+        # --------------------------------------------------------------
+        # CES — Current Employment Statistics (Payroll Survey)
+        #
+        # Full series IDs.
+        # Measures jobs by place of work, not people.
+        # Geography is limited (no counties).
+        # --------------------------------------------------------------
         "ces": [
-            "CES0000000001",  # Total nonfarm payrolls (national)
+            "CES0000000001",  # Total nonfarm payroll employment (national)
         ],
+
+        # --------------------------------------------------------------
+        # CPI — Consumer Price Index
+        #
+        # Full series IDs.
+        # Used for inflation, real-wage adjustments, and COLA analysis.
+        # --------------------------------------------------------------
         "cpi": [
-            "CUUR0000SA0",    # CPI-U, all items
+            "CUUR0000SA0",    # CPI-U, all items, U.S. city average
         ],
+
+        # --------------------------------------------------------------
+        # JOLTS — Job Openings and Labor Turnover Survey
+        #
+        # Full series IDs.
+        # Measures labor market churn: openings, hires, quits, separations.
+        # --------------------------------------------------------------
         "jolts": [
-            "JTS000000000000000JOL",  # Job openings, total nonfarm
+            "JTS000000000000000JOL",  # Job openings, total nonfarm (national)
         ],
     }
 
