@@ -34,10 +34,10 @@ class BlsConfig(BaseModel):
     # DO NOT assume series IDs are interchangeable across programs.
     # ------------------------------------------------------------------
     programs: List[str] = [
-        "laus",
-        "ces",
-        "cpi",
-        "jolts",
+        "la",
+        "ce",
+        "cu",
+        "jt",
     ]
 
     # ------------------------------------------------------------------
@@ -57,58 +57,58 @@ class BlsConfig(BaseModel):
     #    These programs do not use area-code expansion in the same way.
     #
     # 3) Treat each program as a separate "instrument":
-    #    - LAUS  -> people, residence-based labor conditions
-    #    - CES   -> jobs, establishment-based employment
-    #    - CPI   -> prices / inflation
-    #    - JOLTS -> labor market flows and tightness
+    #    - LAUS  -> people, residence-based labor conditions (la)
+    #    - CES   -> jobs, establishment-based employment     (ce)
+    #    - CPI   -> prices / inflation                       (cu)
+    #    - JOLTS -> labor market flows and tightness         (jt)
     # ------------------------------------------------------------------
     curated_by_program: Dict[str, List[str]] = {
 
         # --------------------------------------------------------------
-        # LAUS — Local Area Unemployment Statistics
+        # LAUS — Local Area Unemployment Statistics (la)
         #
         # Measure codes only.
         # Valid for national, state, county, metro, and city geographies.
         # Counties are typically NOT seasonally adjusted.
         # --------------------------------------------------------------
-        "laus": [
+        "la": [
             "03",  # Unemployment rate (% of labor force)
             "04",  # Unemployment level (count)
             "05",  # Employment level (count)
             "06",  # Labor force level (count)
-            "08",  # Labor force participation rate (% of population)
             "07",  # Employment-population ratio
+            "08",  # Labor force participation rate (% of population)
             "09",  # Civilian noninstitutional population
         ],
 
         # --------------------------------------------------------------
-        # CES — Current Employment Statistics (Payroll Survey)
+        # CES — Current Employment Statistics (Payroll Survey) (ce)
         #
         # Full series IDs.
         # Measures jobs by place of work, not people.
         # Geography is limited (no counties).
         # --------------------------------------------------------------
-        "ces": [
+        "ce": [
             "CES0000000001",  # Total nonfarm payroll employment (national)
         ],
 
         # --------------------------------------------------------------
-        # CPI — Consumer Price Index
+        # CPI — Consumer Price Index - All Urban Consumers (cu)
         #
         # Full series IDs.
         # Used for inflation, real-wage adjustments, and COLA analysis.
         # --------------------------------------------------------------
-        "cpi": [
+        "cu": [
             "CUUR0000SA0",    # CPI-U, all items, U.S. city average
         ],
 
         # --------------------------------------------------------------
-        # JOLTS — Job Openings and Labor Turnover Survey
+        # JOLTS — Job Openings and Labor Turnover Survey (jt)_
         #
         # Full series IDs.
         # Measures labor market churn: openings, hires, quits, separations.
         # --------------------------------------------------------------
-        "jolts": [
+        "jt": [
             "JTS000000000000000JOL",  # Job openings, total nonfarm (national)
         ],
     }
