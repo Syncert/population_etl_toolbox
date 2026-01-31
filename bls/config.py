@@ -35,6 +35,7 @@ class BlsConfig(BaseModel):
     # ------------------------------------------------------------------
     programs: List[str] = [
         "la",
+        "ln",
         "ce",
         "cu",
         "jt",
@@ -58,6 +59,7 @@ class BlsConfig(BaseModel):
     #
     # 3) Treat each program as a separate "instrument":
     #    - LAUS  -> people, residence-based labor conditions (la)
+    #    - CPS   -> national labor force survey (household)  (ln)
     #    - CES   -> jobs, establishment-based employment     (ce)
     #    - CPI   -> prices / inflation                       (cu)
     #    - JOLTS -> labor market flows and tightness         (jt)
@@ -79,6 +81,21 @@ class BlsConfig(BaseModel):
             "07",  # Employment-population ratio
             "08",  # Labor force participation rate (% of population)
             "09",  # Civilian noninstitutional population
+        ],
+
+        # --------------------------------------------------------------
+        # CPS/LN — Current Population Survey (Household Survey) (ln)
+        #
+        # Full series IDs.
+        # National-level labor force statistics from household survey.
+        # This is the authoritative source for national unemployment rate.
+        # --------------------------------------------------------------
+        "ln": [
+            "LNS14000000",  # Unemployment rate (national)
+            "LNS13000000",  # Unemployment level (national)
+            "LNS12000000",  # Employment level (national)
+            "LNS11000000",  # Civilian labor force level (national)
+            "LNS11300000",  # Labor force participation rate (national)
         ],
 
         # --------------------------------------------------------------
