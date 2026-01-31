@@ -55,7 +55,7 @@ def test_sync_fred_datasets_table():
         conn.close()
     
     assert db_count > 0, "No records found in fred_datasets"
-    print("✓ Test passed: fred_datasets populated")
+    print("[PASS] Test passed: fred_datasets populated")
 
 
 def test_sync_fred_series_metadata():
@@ -103,7 +103,7 @@ def test_sync_fred_series_metadata():
         conn.close()
     
     assert db_count == len(test_series), f"Expected {len(test_series)} series, found {db_count}"
-    print("✓ Test passed: fred_series metadata synced")
+    print("[PASS] Test passed: fred_series metadata synced")
 
 
 def test_sync_all_curated_series():
@@ -138,7 +138,7 @@ def test_sync_all_curated_series():
     
     assert db_count >= len(CONFIG.curated_series_ids), \
         f"Expected at least {len(CONFIG.curated_series_ids)} series, found {db_count}"
-    print("✓ Test passed: all curated series metadata synced")
+    print("[PASS] Test passed: all curated series metadata synced")
 
 
 def test_series_metadata_fields():
@@ -165,7 +165,7 @@ def test_series_metadata_fields():
                 print(f"  {row[0]}: {row[1][:50]} | Units: {row[2]} | Freq: {row[3]}")
             
             assert len(rows) > 0, "No series with complete metadata found"
-            print("✓ Test passed: series metadata fields are populated")
+            print("[PASS] Test passed: series metadata fields are populated")
     finally:
         conn.close()
 
@@ -177,7 +177,7 @@ def main():
     print("=" * 70)
     
     if not CONFIG.has_api_key:
-        print("\n✗ ERROR: FRED_API_KEY not set!")
+        print("\n[FAIL] ERROR: FRED_API_KEY not set!")
         print("Please set the FRED_API_KEY environment variable to run metadata tests.")
         return
     
@@ -195,14 +195,14 @@ def main():
         test_series_metadata_fields()
         
         print("\n" + "=" * 70)
-        print("ALL TESTS PASSED ✓")
+        print("ALL TESTS PASSED [PASS]")
         print("=" * 70)
     
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n[FAIL] TEST FAILED: {e}")
         raise
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise

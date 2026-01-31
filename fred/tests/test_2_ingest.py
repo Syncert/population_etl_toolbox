@@ -77,7 +77,7 @@ def test_single_series_ingestion():
     
     assert db_count > 0, "No UNRATE data found in database"
     assert db_count >= 24, f"Expected at least 24 monthly observations, found {db_count}"
-    print("✓ Test passed: single series ingestion successful")
+    print("[PASS] Test passed: single series ingestion successful")
 
 
 def test_labor_cycle_domain():
@@ -137,7 +137,7 @@ def test_labor_cycle_domain():
     
     assert count > 0, "No labor_cycle data found"
     assert series_count > 0, "No distinct series found"
-    print("✓ Test passed: labor_cycle domain ingestion successful")
+    print("[PASS] Test passed: labor_cycle domain ingestion successful")
 
 
 def test_housing_domain():
@@ -185,7 +185,7 @@ def test_housing_domain():
         conn.close()
     
     assert count > 0, "No housing data found"
-    print("✓ Test passed: housing domain ingestion successful")
+    print("[PASS] Test passed: housing domain ingestion successful")
 
 
 def test_macro_domain():
@@ -232,7 +232,7 @@ def test_macro_domain():
         conn.close()
     
     assert count > 0, "No macro data found"
-    print("✓ Test passed: macro domain ingestion successful")
+    print("[PASS] Test passed: macro domain ingestion successful")
 
 
 def test_missing_data_handling():
@@ -283,7 +283,7 @@ def test_missing_data_handling():
     finally:
         conn.close()
     
-    print("✓ Test passed: missing data handling is correct")
+    print("[PASS] Test passed: missing data handling is correct")
 
 
 def test_all_curated_series():
@@ -331,7 +331,7 @@ def test_all_curated_series():
         conn.close()
     
     assert series_count > 0, "No series data found"
-    print("✓ Test passed: all curated series ingestion successful")
+    print("[PASS] Test passed: all curated series ingestion successful")
 
 
 def main():
@@ -341,7 +341,7 @@ def main():
     print("=" * 70)
     
     if not CONFIG.has_api_key:
-        print("\n✗ ERROR: FRED_API_KEY not set!")
+        print("\n[FAIL] ERROR: FRED_API_KEY not set!")
         print("Please set the FRED_API_KEY environment variable to run ingestion tests.")
         return
     
@@ -359,14 +359,14 @@ def main():
         test_all_curated_series()
         
         print("\n" + "=" * 70)
-        print("ALL TESTS PASSED ✓")
+        print("ALL TESTS PASSED [PASS]")
         print("=" * 70)
     
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n[FAIL] TEST FAILED: {e}")
         raise
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise

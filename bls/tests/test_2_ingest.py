@@ -85,7 +85,7 @@ def test_laus_state_level():
         conn.close()
     
     assert db_count > 0, "No state-level LAUS data found in database"
-    print("✓ Test passed: LAUS state-level ingestion successful")
+    print("[PASS] Test passed: LAUS state-level ingestion successful")
 
 
 def test_laus_county_level():
@@ -141,7 +141,7 @@ def test_laus_county_level():
         conn.close()
     
     assert db_count > 0, "No county-level LAUS data found in database"
-    print("✓ Test passed: LAUS county-level ingestion successful")
+    print("[PASS] Test passed: LAUS county-level ingestion successful")
 
 
 def test_old_laus_us_level():
@@ -217,7 +217,7 @@ def test_laus_state_level_old():
         conn.close()
     
     assert wi_count > 0, "No Wisconsin state-level data found"
-    print("✓ Test passed: LAUS state-level ingestion successful")
+    print("[PASS] Test passed: LAUS state-level ingestion successful")
 
 
 def test_laus_county_level():
@@ -287,7 +287,7 @@ def test_laus_county_level():
     
     assert count > 0, "No Wisconsin county data found"
     assert county_count > 0, "No distinct counties found"
-    print("✓ Test passed: LAUS county-level ingestion successful")
+    print("[PASS] Test passed: LAUS county-level ingestion successful")
 
 
 def test_cps_ingestion():
@@ -338,7 +338,7 @@ def test_cps_ingestion():
         conn.close()
     
     assert count > 0, "No CPS/LN data found"
-    print("✓ Test passed: CPS/LN ingestion successful")
+    print("[PASS] Test passed: CPS/LN ingestion successful")
 
 
 def test_ces_ingestion():
@@ -388,7 +388,7 @@ def test_ces_ingestion():
         conn.close()
     
     assert count > 0, "No CES data found"
-    print("✓ Test passed: CES ingestion successful")
+    print("[PASS] Test passed: CES ingestion successful")
 
 
 def test_cpi_ingestion():
@@ -438,7 +438,7 @@ def test_cpi_ingestion():
         conn.close()
     
     assert count > 0, "No CPI data found"
-    print("✓ Test passed: CPI ingestion successful")
+    print("[PASS] Test passed: CPI ingestion successful")
 
 
 def test_jolts_ingestion():
@@ -488,7 +488,7 @@ def test_jolts_ingestion():
         conn.close()
     
     assert count > 0, "No JOLTS data found"
-    print("✓ Test passed: JOLTS ingestion successful")
+    print("[PASS] Test passed: JOLTS ingestion successful")
 
 
 def main():
@@ -498,7 +498,7 @@ def main():
     print("=" * 70)
     
     if not CONFIG.has_api_key:
-        print("\n✗ ERROR: BLS_API_KEY not set!")
+        print("\n[FAIL] ERROR: BLS_API_KEY not set!")
         print("Please set the BLS_API_KEY environment variable to run ingestion tests.")
         return
     
@@ -516,14 +516,14 @@ def main():
         test_jolts_ingestion()
         
         print("\n" + "=" * 70)
-        print("ALL TESTS PASSED ✓")
+        print("ALL TESTS PASSED [PASS]")
         print("=" * 70)
     
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n[FAIL] TEST FAILED: {e}")
         raise
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise

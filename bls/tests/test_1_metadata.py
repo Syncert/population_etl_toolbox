@@ -55,7 +55,7 @@ def test_sync_bls_datasets_table():
         conn.close()
     
     assert db_count > 0, "No records found in bls_datasets"
-    print("✓ Test passed: bls_datasets populated")
+    print("[PASS] Test passed: bls_datasets populated")
 
 
 def test_sync_bls_series_metadata():
@@ -96,10 +96,10 @@ def test_sync_bls_series_metadata():
                 conn.close()
             
             assert db_count > 0, f"No series found for program {program}"
-            print(f"✓ Test passed: {program} series metadata synced")
+            print(f"[PASS] Test passed: {program} series metadata synced")
         
         except Exception as e:
-            print(f"✗ Test failed for {program}: {e}")
+            print(f"[FAIL] Test failed for {program}: {e}")
             # Continue to next program rather than failing entirely
             continue
 
@@ -141,7 +141,7 @@ def test_laus_area_code_variety():
             assert county_count > 0, "No county-level LAUS series found"
             assert metro_count > 0, "No metro-level LAUS series found"
             
-            print("✓ Test passed: LAUS metadata includes multiple geographic levels")
+            print("[PASS] Test passed: LAUS metadata includes multiple geographic levels")
     finally:
         conn.close()
 
@@ -163,14 +163,14 @@ def main():
         test_laus_area_code_variety()
         
         print("\n" + "=" * 70)
-        print("ALL TESTS PASSED ✓")
+        print("ALL TESTS PASSED [PASS]")
         print("=" * 70)
     
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n[FAIL] TEST FAILED: {e}")
         raise
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
         raise
 
 
