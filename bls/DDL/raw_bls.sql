@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS raw_bls.bls_ingestion_slices (
     program        TEXT NOT NULL,                -- 'laus', etc.
     year_start     INTEGER NOT NULL,
     year_end       INTEGER NOT NULL,
+    
+    geo_level      TEXT,                         -- 'us'/'state'/'county' (for LAUS), NULL for other programs
+    state_fips     TEXT,                         -- state FIPS for county-level LAUS, NULL otherwise
 
     series_hash    TEXT,
     series_count   INTEGER,
@@ -135,13 +138,22 @@ ALTER TABLE raw_bls.bls_ingestion_slices
   ADD CONSTRAINT chk_bls_started_before_finished
   CHECK (finished_at IS NULL OR (started_at IS NOT NULL AND started_at <= finished_at));
 
--- Uniqueness per program + time window + hash (hash included so “new series list” triggers backfill)
+-- Uniqueness per program + time window + geo_level + state_fips
 -- NOTE: We do NOT include series_hash in uniqueness because you want one row per window; hash is used for skip logic.
+-- For LAUS (program='la'), we need separate rows for different geo_levels and state_fips.
+-- For other programs, geo_level and state_fips are NULL.
+-- Using COALESCE to handle NULLs in unique index.
 CREATE UNIQUE INDEX IF NOT EXISTS bls_ingestion_slices_uniq
-ON raw_bls.bls_ingestion_slices (program, year_start, year_end);
+ON raw_bls.bls_ingestion_slices (program, year_start, year_end, COALESCE(geo_level, ''), COALESCE(state_fips, ''));
 
 CREATE INDEX IF NOT EXISTS bls_ingestion_slices_status_idx
 ON raw_bls.bls_ingestion_slices (status);
 
 CREATE INDEX IF NOT EXISTS bls_ingestion_slices_hash_idx
 ON raw_bls.bls_ingestion_slices (series_hash);
+
+CREATE INDEX IF NOT EXISTS bls_ingestion_slices_geo_idx
+ON raw_bls.bls_ingestion_slices (geo_level);
+
+CREATE INDEX IF NOT EXISTS bls_ingestion_slices_state_idx
+ON raw_bls.bls_ingestion_slices (state_fips);

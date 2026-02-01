@@ -122,15 +122,15 @@ def _run_one_work_unit(work_unit: dict) -> int:
             series_count = %s,
             series_hash_seen_at = %s
         WHERE program = %s
-          AND start_year = %s
-          AND end_year = %s
+          AND year_start = %s
+          AND year_end = %s
           AND geo_level IS NOT DISTINCT FROM %s
           AND state_fips IS NOT DISTINCT FROM %s;
     """
     
     sql_running_insert = """
         INSERT INTO raw_bls.bls_ingestion_slices (
-            program, start_year, end_year, geo_level, state_fips,
+            program, year_start, year_end, geo_level, state_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
             series_hash, series_count, series_hash_seen_at
@@ -175,13 +175,14 @@ def _run_one_work_unit(work_unit: dict) -> int:
             UPDATE raw_bls.bls_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
+                started_at = COALESCE(started_at, %s),
                 finished_at = %s,
                 last_error = NULL,
                 series_hash = %s,
                 series_count = %s
             WHERE program = %s
-              AND start_year = %s
-              AND end_year = %s
+              AND year_start = %s
+              AND year_end = %s
               AND geo_level IS NOT DISTINCT FROM %s
               AND state_fips IS NOT DISTINCT FROM %s;
         """
@@ -189,7 +190,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_done,
-                (final_status, int(rows_loaded), finished, series_hash, series_count,
+                (final_status, int(rows_loaded), started, finished, series_hash, series_count,
                  program, start_year, end_year, geo_level, state_fips),
             )
             conn.commit()
@@ -203,11 +204,12 @@ def _run_one_work_unit(work_unit: dict) -> int:
         sql_failed = """
             UPDATE raw_bls.bls_ingestion_slices
             SET status = 'failed',
+                started_at = COALESCE(started_at, %s),
                 finished_at = %s,
                 last_error = %s
             WHERE program = %s
-              AND start_year = %s
-              AND end_year = %s
+              AND year_start = %s
+              AND year_end = %s
               AND geo_level IS NOT DISTINCT FROM %s
               AND state_fips IS NOT DISTINCT FROM %s;
         """
@@ -215,7 +217,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_failed,
-                (finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
             )
             conn.commit()
         
@@ -296,7 +298,7 @@ def bls_raw_ingest():
         # Load completed slices
         completed = set()
         sql_completed = """
-            SELECT program, start_year, end_year, geo_level, state_fips, series_hash
+            SELECT program, year_start, year_end, geo_level, state_fips, series_hash
             FROM raw_bls.bls_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
@@ -409,15 +411,15 @@ def bls_raw_ingest():
                 series_hash_seen_at = %s,
                 last_error = NULL
             WHERE program = %s
-              AND start_year = %s
-              AND end_year = %s
+              AND year_start = %s
+              AND year_end = %s
               AND geo_level IS NOT DISTINCT FROM %s
               AND state_fips IS NOT DISTINCT FROM %s;
         """
         
         sql_planned_insert = """
             INSERT INTO raw_bls.bls_ingestion_slices (
-                program, start_year, end_year, geo_level, state_fips,
+                program, year_start, year_end, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 series_hash, series_count, series_hash_seen_at
