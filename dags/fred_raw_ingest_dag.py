@@ -261,8 +261,8 @@ def fred_raw_ingest():
         hook = _get_postgres_hook()
         
         # Define date range
-        # Start from 2000-01-01 for comprehensive historical data
-        date_start = "2000-01-01"
+        # Start from 1970-01-01 for comprehensive historical data
+        date_start = "1970-01-01"
         # End at yesterday (avoid today to ensure data is complete)
         date_end = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
         

@@ -313,7 +313,7 @@ def bls_raw_ingest():
         
         # Define year range (can make this dynamic)
         current_year = datetime.now(timezone.utc).year
-        start_year = 2015  # Start from 2015
+        start_year = 1990  # Start from 1990
         end_year = current_year - 1  # Previous year (avoid incomplete data)
         
         # For LAUS county-level, we need state FIPS codes
