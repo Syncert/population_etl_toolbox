@@ -141,7 +141,7 @@ class BlsConfig(BaseModel):
     bls_api_series_chunk_size: int = 50
 
     # Year chunking to avoid API instability on long ranges
-    bls_api_year_chunk_size: int = 10
+    bls_api_year_chunk_size: int = 20
 
     @property
     def has_api_key(self) -> bool:
