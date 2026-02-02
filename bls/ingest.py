@@ -242,7 +242,11 @@ def parse_bls_response(
             period_name = dp.get("periodName", "")
             value_str = dp.get("value", "")
             footnotes = dp.get("footnotes", [])
-            latest = dp.get("latest", False)
+            latest_raw = dp.get("latest", False)
+            if isinstance(latest_raw, str):
+                latest = latest_raw.strip().lower() == "true"
+            else:
+                latest = bool(latest_raw)
             
             # Parse value (BLS uses "-" for missing)
             if value_str in ("", "-", "N/A"):
