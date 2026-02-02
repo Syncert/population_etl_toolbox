@@ -38,7 +38,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from bls.config import CONFIG
 from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-from bls.ingest import ingest_slice, get_curated_series_for_program
+from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP
 
 # -----------------------------
 # Airflow defaults & constants
@@ -201,27 +201,60 @@ def _run_one_work_unit(work_unit: dict) -> int:
         finished = datetime.now(timezone.utc)
         err_txt = str(e)[:4000]
         
-        sql_failed = """
-            UPDATE raw_bls.bls_ingestion_slices
-            SET status = 'failed',
-                started_at = COALESCE(started_at, %s),
-                finished_at = %s,
-                last_error = %s
-            WHERE program = %s
-              AND year_start = %s
-              AND year_end = %s
-              AND geo_level IS NOT DISTINCT FROM %s
-              AND state_fips IS NOT DISTINCT FROM %s;
-        """
+        # Special handling for rate limits and retryable BLS API errors
+        # These should be retried, not permanently failed
+        is_retryable = isinstance(e, BlsRetryableHTTP)
         
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                sql_failed,
-                (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
-            )
-            conn.commit()
+        if is_retryable:
+            # Mark as 'planned' so it retries on next manual trigger
+            # This covers rate limits (REQUEST_NOT_PROCESSED) and other transient API errors
+            sql_planned = """
+                UPDATE raw_bls.bls_ingestion_slices
+                SET status = 'planned',
+                    started_at = COALESCE(started_at, %s),
+                    finished_at = %s,
+                    last_error = %s
+                WHERE program = %s
+                  AND year_start = %s
+                  AND year_end = %s
+                  AND geo_level IS NOT DISTINCT FROM %s
+                  AND state_fips IS NOT DISTINCT FROM %s;
+            """
+            
+            with hook.get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    sql_planned,
+                    (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                )
+                conn.commit()
+            
+            # Don't raise; let task succeed so DAG completes
+            print(f"[Retryable Error] {program} {start_year}-{end_year} (geo={geo_level}, state={state_fips}): {err_txt}")
+            return 0
         
-        raise
+        else:
+            # Other errors: mark as 'failed' and propagate
+            sql_failed = """
+                UPDATE raw_bls.bls_ingestion_slices
+                SET status = 'failed',
+                    started_at = COALESCE(started_at, %s),
+                    finished_at = %s,
+                    last_error = %s
+                WHERE program = %s
+                  AND year_start = %s
+                  AND year_end = %s
+                  AND geo_level IS NOT DISTINCT FROM %s
+                  AND state_fips IS NOT DISTINCT FROM %s;
+            """
+            
+            with hook.get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    sql_failed,
+                    (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                )
+                conn.commit()
+            
+            raise
 
 
 @dag(
@@ -295,7 +328,7 @@ def bls_raw_ingest():
             shash, scount = _series_fingerprint(program)
             series_meta[program] = {"series_hash": shash, "series_count": scount}
         
-        # Load completed slices
+        # Load completed slices (skip these)
         completed = set()
         sql_completed = """
             SELECT program, year_start, year_end, geo_level, state_fips, series_hash
@@ -313,10 +346,31 @@ def bls_raw_ingest():
                     series_hash
                 ))
         
+        # Load planned slices (retry these)
+        planned_to_retry = set()
+        sql_planned = """
+            SELECT program, year_start, year_end, geo_level, state_fips
+            FROM raw_bls.bls_ingestion_slices
+            WHERE status = 'planned';
+        """
+        
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_planned)
+            for program, sy, ey, geo_level, state_fips in cur.fetchall():
+                planned_to_retry.add((
+                    str(program), int(sy), int(ey),
+                    geo_level if geo_level is not None else None,
+                    state_fips if state_fips is not None else None,
+                ))
+        
         def is_done(program: str, sy: int, ey: int, geo_level: Optional[str], state_fips: Optional[str]) -> bool:
             """Check if slice is already done for current series set."""
             current_hash = series_meta[program]["series_hash"]
             return (program, sy, ey, geo_level, state_fips, current_hash) in completed
+        
+        def needs_retry(program: str, sy: int, ey: int, geo_level: Optional[str], state_fips: Optional[str]) -> bool:
+            """Check if slice is marked as planned (from previous 404)."""
+            return (program, sy, ey, geo_level, state_fips) in planned_to_retry
         
         # Build plan
         plan: list[dict] = []
@@ -327,7 +381,7 @@ def bls_raw_ingest():
             if program == "la":
                 # LAUS: expand by geography
                 # US level
-                if not is_done(program, start_year, end_year, "us", None):
+                if not is_done(program, start_year, end_year, "us", None) or needs_retry(program, start_year, end_year, "us", None):
                     plan.append({
                         "program": program,
                         "start_year": start_year,
@@ -339,7 +393,7 @@ def bls_raw_ingest():
                     })
                 
                 # State level
-                if not is_done(program, start_year, end_year, "state", None):
+                if not is_done(program, start_year, end_year, "state", None) or needs_retry(program, start_year, end_year, "state", None):
                     plan.append({
                         "program": program,
                         "start_year": start_year,
@@ -352,7 +406,7 @@ def bls_raw_ingest():
                 
                 # County level (by state)
                 for sf in state_fips_list:
-                    if not is_done(program, start_year, end_year, "county", sf):
+                    if not is_done(program, start_year, end_year, "county", sf) or needs_retry(program, start_year, end_year, "county", sf):
                         plan.append({
                             "program": program,
                             "start_year": start_year,
@@ -365,7 +419,7 @@ def bls_raw_ingest():
             
             else:
                 # Other programs: national series only
-                if not is_done(program, start_year, end_year, None, None):
+                if not is_done(program, start_year, end_year, None, None) or needs_retry(program, start_year, end_year, None, None):
                     plan.append({
                         "program": program,
                         "start_year": start_year,
