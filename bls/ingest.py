@@ -141,8 +141,18 @@ def fetch_bls_api(
     # Add jitter to avoid rhythmic bursts
     time.sleep(CONFIG.bls_api_min_spacing_seconds + random.random() * 0.3)
     
+    # Verbose logging (sanitize API key)
+    safe_payload = {
+        "seriesid_count": len(series_ids),
+        "seriesid_sample": series_ids[:5],
+        "startyear": str(start_year),
+        "endyear": str(end_year),
+        "registrationkey": "***",
+    }
     logger.info(
-        f"BLS API request: {len(series_ids)} series, {start_year}-{end_year}"
+        "BLS API request: url=%s payload=%s",
+        url,
+        safe_payload,
     )
     
     with httpx.Client(timeout=httpx.Timeout(60.0)) as client:
