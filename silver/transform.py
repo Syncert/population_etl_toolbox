@@ -55,7 +55,7 @@ SELECT
     b.geo_id,
     b.state_fips,
     b.county_fips,
-    -- Normalise BLS year+period → DATE
+    -- Normalize BLS year+period to DATE
     CASE
         WHEN b.period LIKE 'M%%' THEN
             make_date(
