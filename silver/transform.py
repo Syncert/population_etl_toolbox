@@ -1,15 +1,19 @@
 # silver/transform.py
 #
-# Transforms bronze-layer data (raw_bls, raw_census, raw_fred) into the
-# unified silver.fact_observations table.
+# Transforms bronze-layer data (raw_bls, raw_census, raw_fred) into
+# per-source silver tables:
 #
-# Each source has its own function so they can be called independently
-# (e.g., from separate Airflow tasks) or together.
+#   silver_bls.bls_observations
+#   silver_census.census_observations
+#   silver_fred.fred_observations
+#
+# Each source keeps only its own columns — no NULLable columns forced
+# by other sources.  Geography is unified via silver_ref.dim_geo
+# (geo_level + geo_id) so tables can be joined when needed.
 
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timezone
 
 import psycopg2
@@ -32,25 +36,19 @@ def _get_pg_connection():
 
 
 # ------------------------------------------------------------------
-# BLS  →  silver.fact_observations
+# BLS  →  silver_bls.bls_observations
 # ------------------------------------------------------------------
 _BLS_UPSERT_SQL = """
-INSERT INTO silver.fact_observations (
-    source, program, domain,
-    series_id, variable_name, table_id, measure_type,
+INSERT INTO silver_bls.bls_observations (
+    program, series_id,
     geo_level, geo_id, state_fips, county_fips,
     obs_date, year, month, quarter,
     value, is_missing,
     load_batch_id, ingested_at
 )
 SELECT
-    'bls'                       AS source,
     b.program,
-    NULL                        AS domain,
     b.series_id,
-    NULL                        AS variable_name,
-    NULL                        AS table_id,
-    NULL                        AS measure_type,
     b.geo_level,
     b.geo_id,
     b.state_fips,
@@ -87,8 +85,7 @@ SELECT
 FROM raw_bls.bls_long b
 WHERE b.geo_level IS NOT NULL
   AND b.geo_id    IS NOT NULL
-ON CONFLICT (source, series_id, geo_level, geo_id, obs_date)
-    WHERE source = 'bls'
+ON CONFLICT (series_id, geo_level, geo_id, obs_date)
 DO UPDATE SET
     value        = EXCLUDED.value,
     is_missing   = EXCLUDED.is_missing,
@@ -100,7 +97,7 @@ DO UPDATE SET
 
 
 def transform_bls() -> int:
-    """Load BLS bronze data into silver.fact_observations (upsert)."""
+    """Load BLS bronze data into silver_bls.bls_observations (upsert)."""
     conn = _get_pg_connection()
     now = datetime.now(timezone.utc)
     try:
@@ -118,52 +115,44 @@ def transform_bls() -> int:
 
 
 # ------------------------------------------------------------------
-# Census ACS  →  silver.fact_observations
+# Census ACS  →  silver_census.census_observations
 # ------------------------------------------------------------------
 _CENSUS_UPSERT_SQL = """
-INSERT INTO silver.fact_observations (
-    source, program, domain,
-    series_id, variable_name, table_id, measure_type,
+INSERT INTO silver_census.census_observations (
+    dataset, table_id, variable_name, measure_type,
     geo_level, geo_id, state_fips, county_fips,
-    obs_date, year, month, quarter,
+    obs_date, year,
     value, is_missing,
     load_batch_id, ingested_at
 )
 SELECT
-    'census'                    AS source,
-    c.dataset                   AS program,
-    NULL                        AS domain,
-    NULL                        AS series_id,
-    c.variable_name,
+    c.dataset,
     c.table_id,
+    c.variable_name,
     c.measure_type,
     c.geo_level,
     c.geo_id,
     c.state_fips,
     c.county_fips,
-    -- Census ACS is annual; use Jan-1 of year as canonical date
     make_date(c.year, 1, 1)     AS obs_date,
     c.year,
-    NULL                        AS month,
-    NULL                        AS quarter,
     c.value,
     (c.value IS NULL)           AS is_missing,
     c.load_batch_id,
     %(now)s                     AS ingested_at
 FROM raw_census.acs_long c
-ON CONFLICT (source, variable_name, geo_level, geo_id, obs_date, measure_type)
-    WHERE source = 'census'
+ON CONFLICT (variable_name, geo_level, geo_id, obs_date, measure_type)
 DO UPDATE SET
     value        = EXCLUDED.value,
     is_missing   = EXCLUDED.is_missing,
     table_id     = EXCLUDED.table_id,
-    program      = EXCLUDED.program,
+    dataset      = EXCLUDED.dataset,
     ingested_at  = EXCLUDED.ingested_at;
 """
 
 
 def transform_census() -> int:
-    """Load Census ACS bronze data into silver.fact_observations (upsert)."""
+    """Load Census ACS bronze data into silver_census.census_observations (upsert)."""
     conn = _get_pg_connection()
     now = datetime.now(timezone.utc)
     try:
@@ -181,29 +170,21 @@ def transform_census() -> int:
 
 
 # ------------------------------------------------------------------
-# FRED  →  silver.fact_observations
+# FRED  →  silver_fred.fred_observations
 # ------------------------------------------------------------------
 _FRED_UPSERT_SQL = """
-INSERT INTO silver.fact_observations (
-    source, program, domain,
-    series_id, variable_name, table_id, measure_type,
-    geo_level, geo_id, state_fips, county_fips,
+INSERT INTO silver_fred.fred_observations (
+    domain, series_id,
+    geo_level, geo_id,
     obs_date, year, month, quarter,
     value, is_missing,
     load_batch_id, ingested_at
 )
 SELECT
-    'fred'                      AS source,
-    NULL                        AS program,
     f.domain,
     f.series_id,
-    NULL                        AS variable_name,
-    NULL                        AS table_id,
-    NULL                        AS measure_type,
     'us'                        AS geo_level,
     'us:1'                      AS geo_id,
-    NULL                        AS state_fips,
-    NULL                        AS county_fips,
     f.obs_date,
     EXTRACT(YEAR  FROM f.obs_date)::INTEGER AS year,
     EXTRACT(MONTH FROM f.obs_date)::INTEGER AS month,
@@ -213,8 +194,7 @@ SELECT
     f.load_batch_id,
     %(now)s                     AS ingested_at
 FROM raw_fred.fred_long f
-ON CONFLICT (source, series_id, obs_date)
-    WHERE source = 'fred'
+ON CONFLICT (series_id, obs_date)
 DO UPDATE SET
     value        = EXCLUDED.value,
     is_missing   = EXCLUDED.is_missing,
@@ -227,7 +207,7 @@ DO UPDATE SET
 
 
 def transform_fred() -> int:
-    """Load FRED bronze data into silver.fact_observations (upsert)."""
+    """Load FRED bronze data into silver_fred.fred_observations (upsert)."""
     conn = _get_pg_connection()
     now = datetime.now(timezone.utc)
     try:

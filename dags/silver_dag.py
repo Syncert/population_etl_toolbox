@@ -1,7 +1,10 @@
 # dags/silver_dag.py
 #
 # Silver layer DAG — transforms bronze data (raw_bls, raw_census, raw_fred)
-# into the unified silver.fact_observations table.
+# into per-source silver tables:
+#   silver_bls.bls_observations
+#   silver_census.census_observations
+#   silver_fred.fred_observations
 #
 # Depends on: bronze ingestion DAGs (bls, census, fred) and silver_ref DAG.
 
@@ -44,7 +47,8 @@ def _ddl_path() -> Path:
 )
 def silver_transform():
     @task
-    def ensure_schema() -> None:
+    def ensure_schemas() -> None:
+        """Create silver_bls, silver_census, silver_fred schemas and tables."""
         sql_path = _ddl_path()
         sql = sql_path.read_text(encoding="utf-8")
         hook = _get_postgres_hook()
@@ -64,7 +68,7 @@ def silver_transform():
     def load_fred() -> int:
         return transform_fred()
 
-    ddl = ensure_schema()
+    ddl = ensure_schemas()
     bls = load_bls()
     census = load_census()
     fred = load_fred()

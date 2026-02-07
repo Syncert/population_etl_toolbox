@@ -1,48 +1,39 @@
 -- silver/DDL/silver.sql
 --
--- Silver layer: analytics-ready tables consolidating BLS, FRED, and Census data.
--- Each row represents one observation for one geographic code at one time point.
--- Geography is unified via silver_ref.dim_geo (geo_level + geo_id).
-
-CREATE SCHEMA IF NOT EXISTS silver;
-
--- -----------------------------------------------------------------
--- 1. Consolidated fact table: one row per source/series/geo/time
--- -----------------------------------------------------------------
--- Merges BLS (bls_long), Census ACS (acs_long), and FRED (fred_long)
--- into a single long-format fact table with unified geography keys.
+-- Silver layer: per-source analytics-ready tables.
 --
--- Design:
---   - geo_level + geo_id foreign-key to silver_ref.dim_geo
---   - obs_date normalises BLS year+period and FRED obs_date to DATE
---   - FRED series (national-only) carry geo_level='us', geo_id='us:1'
---   - Census variables carry the E/M measure_type split
--- -----------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS silver.fact_observations (
+-- Architecture:
+--   raw_bls  / raw_census  / raw_fred   – bronze (untouched API data)
+--   silver_ref                           – shared dimensions (dim_geo, dim_time)
+--   silver_bls / silver_census / silver_fred – clean, analytics-ready facts
+--
+-- Each silver table keeps only the columns natural to its source.
+-- Geography is unified via silver_ref.dim_geo (geo_level + geo_id).
+-- No columns are forced to NULL because another source doesn't have them.
+
+-- =================================================================
+-- silver_bls — BLS analytics-ready observations
+-- =================================================================
+CREATE SCHEMA IF NOT EXISTS silver_bls;
+
+CREATE TABLE IF NOT EXISTS silver_bls.bls_observations (
     id              BIGSERIAL PRIMARY KEY,
 
-    -- Source provenance
-    source          TEXT NOT NULL,         -- 'bls', 'census', 'fred'
-    program         TEXT,                  -- BLS program or Census dataset (e.g. 'la', 'acs5')
-    domain          TEXT,                  -- FRED domain (e.g. 'housing', 'labor_cycle')
-
-    -- Series / variable identity
-    series_id       TEXT,                  -- BLS series_id or FRED series_id
-    variable_name   TEXT,                  -- Census variable name (e.g. 'B01003_001E')
-    table_id        TEXT,                  -- Census table_id (e.g. 'B01003')
-    measure_type    TEXT,                  -- Census 'E'/'M', NULL for BLS/FRED
+    -- BLS identity
+    program         TEXT NOT NULL,            -- 'la', 'ln', 'ce', 'cu', 'jt'
+    series_id       TEXT NOT NULL,
 
     -- Unified geography (matches silver_ref.dim_geo)
-    geo_level       TEXT NOT NULL,         -- 'us', 'state', 'county'
-    geo_id          TEXT NOT NULL,         -- 'us:1', 'state:06', 'state:06|county:037'
+    geo_level       TEXT NOT NULL,            -- 'us', 'state', 'county'
+    geo_id          TEXT NOT NULL,            -- 'us:1', 'state:06', 'state:06|county:037'
     state_fips      TEXT,
     county_fips     TEXT,
 
-    -- Unified time
-    obs_date        DATE NOT NULL,         -- Normalised observation date
+    -- Time (normalized from year + period)
+    obs_date        DATE NOT NULL,            -- first of month/quarter/year
     year            INTEGER NOT NULL,
-    month           INTEGER,               -- NULL when period is annual
-    quarter         INTEGER,               -- Derived quarter (1-4)
+    month           INTEGER,                  -- NULL for annual (M13) or quarterly
+    quarter         INTEGER,                  -- 1-4
 
     -- Observation
     value           NUMERIC,
@@ -53,59 +44,156 @@ CREATE TABLE IF NOT EXISTS silver.fact_observations (
     ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Uniqueness: one value per source/series-or-variable/geo/date
-CREATE UNIQUE INDEX IF NOT EXISTS fact_obs_bls_uniq
-    ON silver.fact_observations (source, series_id, geo_level, geo_id, obs_date)
-    WHERE source = 'bls';
+CREATE UNIQUE INDEX IF NOT EXISTS bls_obs_uniq
+    ON silver_bls.bls_observations (series_id, geo_level, geo_id, obs_date);
 
-CREATE UNIQUE INDEX IF NOT EXISTS fact_obs_census_uniq
-    ON silver.fact_observations (source, variable_name, geo_level, geo_id, obs_date, measure_type)
-    WHERE source = 'census';
+CREATE INDEX IF NOT EXISTS bls_obs_program_idx
+    ON silver_bls.bls_observations (program);
 
-CREATE UNIQUE INDEX IF NOT EXISTS fact_obs_fred_uniq
-    ON silver.fact_observations (source, series_id, obs_date)
-    WHERE source = 'fred';
+CREATE INDEX IF NOT EXISTS bls_obs_geo_idx
+    ON silver_bls.bls_observations (geo_level, geo_id);
 
--- Query-path indexes
-CREATE INDEX IF NOT EXISTS fact_obs_geo_idx
-    ON silver.fact_observations (geo_level, geo_id);
+CREATE INDEX IF NOT EXISTS bls_obs_date_idx
+    ON silver_bls.bls_observations (obs_date);
 
-CREATE INDEX IF NOT EXISTS fact_obs_date_idx
-    ON silver.fact_observations (obs_date);
+CREATE INDEX IF NOT EXISTS bls_obs_year_idx
+    ON silver_bls.bls_observations (year);
 
-CREATE INDEX IF NOT EXISTS fact_obs_source_idx
-    ON silver.fact_observations (source);
-
-CREATE INDEX IF NOT EXISTS fact_obs_series_idx
-    ON silver.fact_observations (series_id)
-    WHERE series_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS fact_obs_variable_idx
-    ON silver.fact_observations (variable_name)
-    WHERE variable_name IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS fact_obs_year_idx
-    ON silver.fact_observations (year);
-
--- Domain checks
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fact_obs_source_chk'
-    ) THEN
-        ALTER TABLE silver.fact_observations
-        ADD CONSTRAINT fact_obs_source_chk
-        CHECK (source IN ('bls', 'census', 'fred'));
-    END IF;
-END $$;
+CREATE INDEX IF NOT EXISTS bls_obs_series_idx
+    ON silver_bls.bls_observations (series_id);
 
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fact_obs_geo_level_chk'
+        SELECT 1 FROM pg_constraint WHERE conname = 'bls_obs_geo_level_chk'
     ) THEN
-        ALTER TABLE silver.fact_observations
-        ADD CONSTRAINT fact_obs_geo_level_chk
+        ALTER TABLE silver_bls.bls_observations
+        ADD CONSTRAINT bls_obs_geo_level_chk
         CHECK (geo_level IN ('us', 'state', 'county'));
     END IF;
 END $$;
+
+
+-- =================================================================
+-- silver_census — Census ACS analytics-ready observations
+-- =================================================================
+CREATE SCHEMA IF NOT EXISTS silver_census;
+
+CREATE TABLE IF NOT EXISTS silver_census.census_observations (
+    id              BIGSERIAL PRIMARY KEY,
+
+    -- Census identity
+    dataset         TEXT NOT NULL,            -- 'acs1', 'acs5'
+    table_id        TEXT NOT NULL,            -- e.g. 'B01003'
+    variable_name   TEXT NOT NULL,            -- e.g. 'B01003_001E'
+    measure_type    TEXT NOT NULL,            -- 'E' (estimate) or 'M' (margin of error)
+
+    -- Unified geography (matches silver_ref.dim_geo)
+    geo_level       TEXT NOT NULL,
+    geo_id          TEXT NOT NULL,
+    state_fips      TEXT,
+    county_fips     TEXT,
+
+    -- Time (annual)
+    obs_date        DATE NOT NULL,            -- Jan 1 of survey year
+    year            INTEGER NOT NULL,
+
+    -- Observation
+    value           NUMERIC,
+    is_missing      BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Lineage
+    load_batch_id   UUID NOT NULL,
+    ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS census_obs_uniq
+    ON silver_census.census_observations (variable_name, geo_level, geo_id, obs_date, measure_type);
+
+CREATE INDEX IF NOT EXISTS census_obs_dataset_idx
+    ON silver_census.census_observations (dataset);
+
+CREATE INDEX IF NOT EXISTS census_obs_geo_idx
+    ON silver_census.census_observations (geo_level, geo_id);
+
+CREATE INDEX IF NOT EXISTS census_obs_date_idx
+    ON silver_census.census_observations (obs_date);
+
+CREATE INDEX IF NOT EXISTS census_obs_year_idx
+    ON silver_census.census_observations (year);
+
+CREATE INDEX IF NOT EXISTS census_obs_variable_idx
+    ON silver_census.census_observations (variable_name);
+
+CREATE INDEX IF NOT EXISTS census_obs_table_idx
+    ON silver_census.census_observations (table_id);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'census_obs_geo_level_chk'
+    ) THEN
+        ALTER TABLE silver_census.census_observations
+        ADD CONSTRAINT census_obs_geo_level_chk
+        CHECK (geo_level IN ('us', 'state', 'county'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'census_obs_measure_type_chk'
+    ) THEN
+        ALTER TABLE silver_census.census_observations
+        ADD CONSTRAINT census_obs_measure_type_chk
+        CHECK (measure_type IN ('E', 'M'));
+    END IF;
+END $$;
+
+
+-- =================================================================
+-- silver_fred — FRED analytics-ready observations
+-- =================================================================
+CREATE SCHEMA IF NOT EXISTS silver_fred;
+
+CREATE TABLE IF NOT EXISTS silver_fred.fred_observations (
+    id              BIGSERIAL PRIMARY KEY,
+
+    -- FRED identity
+    domain          TEXT,                     -- logical grouping (e.g. 'housing', 'labor_cycle')
+    series_id       TEXT NOT NULL,
+
+    -- Geography (FRED is national-only; explicit for join compatibility)
+    geo_level       TEXT NOT NULL DEFAULT 'us',
+    geo_id          TEXT NOT NULL DEFAULT 'us:1',
+
+    -- Time
+    obs_date        DATE NOT NULL,
+    year            INTEGER NOT NULL,
+    month           INTEGER,
+    quarter         INTEGER,
+
+    -- Observation
+    value           NUMERIC,
+    is_missing      BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Lineage
+    load_batch_id   UUID NOT NULL,
+    ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS fred_obs_uniq
+    ON silver_fred.fred_observations (series_id, obs_date);
+
+CREATE INDEX IF NOT EXISTS fred_obs_domain_idx
+    ON silver_fred.fred_observations (domain)
+    WHERE domain IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS fred_obs_date_idx
+    ON silver_fred.fred_observations (obs_date);
+
+CREATE INDEX IF NOT EXISTS fred_obs_year_idx
+    ON silver_fred.fred_observations (year);
+
+CREATE INDEX IF NOT EXISTS fred_obs_series_idx
+    ON silver_fred.fred_observations (series_id);
