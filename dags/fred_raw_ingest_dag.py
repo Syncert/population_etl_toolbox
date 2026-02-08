@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from airflow.decorators import dag, task
@@ -37,6 +38,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from fred.config import CONFIG
 from fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
 from fred.ingest import ingest_slice, get_curated_series_for_domain
+from fred.silver_transform import transform_fred
 
 # -----------------------------
 # Airflow defaults & constants
@@ -421,7 +423,30 @@ def fred_raw_ingest():
     planned = mark_slices_planned(plan)
     plan >> planned
     
-    _ = ingest_batch.expand(batch=plan)
+    ingested = ingest_batch.expand(batch=plan)
+
+    # -----------------------------
+    # Silver layer: promote to analytics-ready table
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Create silver_fred schema and tables if not present."""
+        ddl_path = Path(__file__).resolve().parents[1] / "fred" / "DDL" / "fred_silver.sql"
+        sql = ddl_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def upsert_silver() -> int:
+        """Upsert raw_fred → silver_fred.fred_observations."""
+        return transform_fred()
+
+    silver_ddl = ensure_silver_schema()
+    silver_load = upsert_silver()
+
+    ingested >> silver_ddl >> silver_load
 
 
 # Instantiate DAG

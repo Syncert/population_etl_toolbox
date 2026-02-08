@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from airflow.decorators import dag, task
@@ -56,6 +57,7 @@ from census_acs.config import CONFIG
 from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
 from census_acs.ingest import ingest_slice, get_curated_variables
 from census_acs.geography import sync_geo_dim
+from census_acs.silver_transform import transform_census
 
 
 # -----------------------------
@@ -562,7 +564,30 @@ def acs_raw_ingest():
     batches >> planned
 
     # 4) Execute mapped ingestion batches
-    _ = ingest_batch.expand(batch=batches)
+    ingested = ingest_batch.expand(batch=batches)
+
+    # -----------------------------
+    # Silver layer: promote to analytics-ready table
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Create silver_census schema and tables if not present."""
+        ddl_path = Path(__file__).resolve().parents[1] / "census_acs" / "DDL" / "census_silver.sql"
+        sql = ddl_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def upsert_silver() -> int:
+        """Upsert raw_census → silver_census.census_observations."""
+        return transform_census()
+
+    silver_ddl = ensure_silver_schema()
+    silver_load = upsert_silver()
+
+    ingested >> silver_ddl >> silver_load
 
 
 # Instantiate DAG

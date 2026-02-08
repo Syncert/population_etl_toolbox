@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, List
 
 from airflow.decorators import dag, task
@@ -39,6 +40,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from bls.config import CONFIG
 from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
 from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP
+from bls.silver_transform import transform_bls
 
 # -----------------------------
 # Airflow defaults & constants
@@ -535,7 +537,30 @@ def bls_raw_ingest():
     planned = mark_slices_planned(plan)
     plan >> planned
     
-    _ = ingest_batch.expand(batch=plan)
+    ingested = ingest_batch.expand(batch=plan)
+
+    # -----------------------------
+    # Silver layer: promote to analytics-ready table
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Create silver_bls schema and tables if not present."""
+        ddl_path = Path(__file__).resolve().parents[1] / "bls" / "DDL" / "bls_silver.sql"
+        sql = ddl_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def upsert_silver() -> int:
+        """Upsert raw_bls → silver_bls.bls_observations."""
+        return transform_bls()
+
+    silver_ddl = ensure_silver_schema()
+    silver_load = upsert_silver()
+
+    ingested >> silver_ddl >> silver_load
 
 
 # Instantiate DAG
