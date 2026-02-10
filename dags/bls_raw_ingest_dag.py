@@ -531,7 +531,7 @@ def bls_raw_ingest():
     # -----------------------------
     # Task 5: Silver layer (full load)
     # -----------------------------
-    @task
+    @task(trigger_rule='none_failed')
     def ensure_silver_schema() -> None:
         """Ensure silver_bls schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -541,7 +541,7 @@ def bls_raw_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task
+    @task(trigger_rule='none_failed')
     def transform_to_silver_by_program(program: str) -> int:
         """Transform ALL raw BLS data to silver for one program (full load)."""
         return transform_bls_to_silver(program=program)

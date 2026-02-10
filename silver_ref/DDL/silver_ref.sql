@@ -3,6 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS silver_ref;
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
+    geo_sk SERIAL PRIMARY KEY,
     geo_level TEXT NOT NULL,
     geo_id TEXT NOT NULL,
     state_fips TEXT,
@@ -14,11 +15,12 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     source TEXT,
     source_year INT,
     ingested_at TIMESTAMPTZ,
-    CONSTRAINT dim_geo_pk PRIMARY KEY (geo_level, geo_id)
+    CONSTRAINT dim_geo_nk UNIQUE (geo_level, geo_id)
 );
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_time (
-    date_key DATE NOT NULL,
+    time_sk SERIAL PRIMARY KEY,
+    date_key DATE NOT NULL UNIQUE,
     year INT NOT NULL,
     quarter INT NOT NULL,
     month INT NOT NULL,
@@ -34,6 +36,5 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_time (
     is_quarter_end BOOLEAN NOT NULL,
     is_year_start BOOLEAN NOT NULL,
     is_year_end BOOLEAN NOT NULL,
-    ingested_at TIMESTAMPTZ NOT NULL,
-    CONSTRAINT dim_time_pk PRIMARY KEY (date_key)
+    ingested_at TIMESTAMPTZ NOT NULL
 );

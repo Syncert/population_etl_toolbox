@@ -45,21 +45,35 @@ def transform_fred_to_silver(domain: str) -> int:
     hook = _get_hook()
 
     sql = """
+        WITH latest_revisions AS (
+            SELECT
+                series_id,
+                obs_date,
+                value,
+                is_missing,
+                domain,
+                ROW_NUMBER() OVER (
+                    PARTITION BY series_id, obs_date
+                    ORDER BY realtime_start DESC, ingested_at DESC
+                ) as rn
+            FROM raw_fred.fred_long
+            WHERE domain = %s
+              AND is_missing = FALSE
+        )
         SELECT
-            fl.series_id,
-            fl.obs_date,
-            fl.value,
-            fl.is_missing,
-            fl.domain,
+            lr.series_id,
+            lr.obs_date,
+            lr.value,
+            lr.is_missing,
+            lr.domain,
             fs.title AS series_title,
             fs.units AS unit_of_measure,
             fs.frequency,
             fs.seasonal_adjustment
-        FROM raw_fred.fred_long fl
-        LEFT JOIN raw_fred.fred_series fs ON fl.series_id = fs.series_id
-        WHERE fl.domain = %s
-          AND fl.is_missing = FALSE
-        ORDER BY fl.series_id, fl.obs_date;
+        FROM latest_revisions lr
+        LEFT JOIN raw_fred.fred_series fs ON lr.series_id = fs.series_id
+        WHERE lr.rn = 1
+        ORDER BY lr.series_id, lr.obs_date;
     """
 
     with hook.get_conn() as conn, conn.cursor() as cur:
@@ -115,6 +129,18 @@ def transform_fred_to_silver(domain: str) -> int:
     df = df.filter(pl.col("time_sk").is_not_null())
     if df.is_empty():
         return 0
+
+    # Deduplicate by (series_id, observation_date) - keep last record
+    # This handles cases where raw data has duplicates
+    initial_rows = len(df)
+    df = df.unique(subset=["series_id", "observation_date"], keep="last")
+    deduped_rows = len(df)
+    if initial_rows > deduped_rows:
+        logger.warning(
+            "Deduplicated %s duplicate FRED rows for domain=%s",
+            initial_rows - deduped_rows,
+            domain,
+        )
 
     load_batch_id = uuid.uuid4()
     ingested_at = datetime.now(timezone.utc)

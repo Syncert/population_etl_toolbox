@@ -161,6 +161,18 @@ def transform_bls_to_silver(program: str) -> int:
     if df.is_empty():
         return 0
 
+    # Deduplicate by (series_id, period_date) - keep last record
+    # This handles cases where raw data has duplicates
+    initial_rows = len(df)
+    df = df.unique(subset=["series_id", "period_date"], keep="last")
+    deduped_rows = len(df)
+    if initial_rows > deduped_rows:
+        logger.warning(
+            "Deduplicated %s duplicate BLS rows for program=%s",
+            initial_rows - deduped_rows,
+            program,
+        )
+
     load_batch_id = uuid.uuid4()
     ingested_at = datetime.now(timezone.utc)
 

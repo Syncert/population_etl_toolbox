@@ -229,6 +229,20 @@ def transform_census_to_silver() -> int:
     if grouped.is_empty():
         return 0
 
+    # Deduplicate by unique constraint columns - keep last record
+    # This handles cases where raw data has duplicates
+    initial_rows = len(grouped)
+    grouped = grouped.unique(
+        subset=["dataset", "table_id", "variable_code", "geo_id", "estimate_year"],
+        keep="last"
+    )
+    deduped_rows = len(grouped)
+    if initial_rows > deduped_rows:
+        logger.warning(
+            "Deduplicated %s duplicate Census rows",
+            initial_rows - deduped_rows,
+        )
+
     load_batch_id = uuid.uuid4()
     ingested_at = datetime.now(timezone.utc)
 

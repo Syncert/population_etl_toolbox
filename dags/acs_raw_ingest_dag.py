@@ -551,7 +551,7 @@ def acs_raw_ingest():
     # -----------------------------
     # Task 6: Silver layer (full load)
     # -----------------------------
-    @task
+    @task(trigger_rule='none_failed')
     def ensure_silver_schema() -> None:
         """Ensure silver_census schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -561,7 +561,7 @@ def acs_raw_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task
+    @task(trigger_rule='none_failed')
     def transform_to_silver() -> int:
         """Transform ALL raw Census data to silver (full load)."""
         return transform_census_to_silver()
