@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS silver_bls.fact_labor_statistics (
     CONSTRAINT fact_labor_stats_uk UNIQUE (series_id, period_date)
 );
 
-CREATE INDEX idx_fact_labor_time_sk ON silver_bls.fact_labor_statistics(time_sk);
-CREATE INDEX idx_fact_labor_geo_sk ON silver_bls.fact_labor_statistics(geo_sk);
-CREATE INDEX idx_fact_labor_series_id ON silver_bls.fact_labor_statistics(series_id);
-CREATE INDEX idx_fact_labor_program ON silver_bls.fact_labor_statistics(program);
+CREATE INDEX IF NOT EXISTS idx_fact_labor_time_sk ON silver_bls.fact_labor_statistics(time_sk);
+CREATE INDEX IF NOT EXISTS idx_fact_labor_geo_sk ON silver_bls.fact_labor_statistics(geo_sk);
+CREATE INDEX IF NOT EXISTS idx_fact_labor_series_id ON silver_bls.fact_labor_statistics(series_id);
+CREATE INDEX IF NOT EXISTS idx_fact_labor_program ON silver_bls.fact_labor_statistics(program);

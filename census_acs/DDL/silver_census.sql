@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS silver_census.fact_demographics (
     CONSTRAINT fact_demographics_uk UNIQUE (dataset, table_id, variable_code, geo_id, estimate_year)
 );
 
-CREATE INDEX idx_fact_demo_time_sk ON silver_census.fact_demographics(time_sk);
-CREATE INDEX idx_fact_demo_geo_sk ON silver_census.fact_demographics(geo_sk);
-CREATE INDEX idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
-CREATE INDEX idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);
+CREATE INDEX IF NOT EXISTS idx_fact_demo_time_sk ON silver_census.fact_demographics(time_sk);
+CREATE INDEX IF NOT EXISTS idx_fact_demo_geo_sk ON silver_census.fact_demographics(geo_sk);
+CREATE INDEX IF NOT EXISTS idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
+CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);

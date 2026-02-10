@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS silver_fred.fact_economic_indicators (
     CONSTRAINT fact_economic_indicators_uk UNIQUE (series_id, observation_date)
 );
 
-CREATE INDEX idx_fact_econ_time_sk ON silver_fred.fact_economic_indicators(time_sk);
-CREATE INDEX idx_fact_econ_series_id ON silver_fred.fact_economic_indicators(series_id);
-CREATE INDEX idx_fact_econ_domain ON silver_fred.fact_economic_indicators(domain);
-CREATE INDEX idx_fact_econ_duration_start ON silver_fred.fact_economic_indicators(duration_start);
+CREATE INDEX IF NOT EXISTS idx_fact_econ_time_sk ON silver_fred.fact_economic_indicators(time_sk);
+CREATE INDEX IF NOT EXISTS idx_fact_econ_series_id ON silver_fred.fact_economic_indicators(series_id);
+CREATE INDEX IF NOT EXISTS idx_fact_econ_domain ON silver_fred.fact_economic_indicators(domain);
+CREATE INDEX IF NOT EXISTS idx_fact_econ_duration_start ON silver_fred.fact_economic_indicators(duration_start);
