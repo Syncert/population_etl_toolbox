@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
@@ -39,6 +40,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from bls.config import CONFIG
 from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
 from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP
+from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -57,6 +59,10 @@ BLS_API_POOL = "bls_api"
 def _get_postgres_hook() -> PostgresHook:
     """Centralized PostgresHook factory."""
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def _silver_ddl_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "bls" / "DDL" / "silver_bls.sql"
 
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
@@ -521,6 +527,24 @@ def bls_raw_ingest():
         for work_unit in batch:
             total += _run_one_work_unit(work_unit)
         return total
+
+    # -----------------------------
+    # Task 5: Silver layer (full load)
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Ensure silver_bls schema and tables exist."""
+        sql_path = _silver_ddl_path()
+        sql = sql_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def transform_to_silver_by_program(program: str) -> int:
+        """Transform ALL raw BLS data to silver for one program (full load)."""
+        return transform_bls_to_silver(program=program)
     
     # -----------------------------
     # DAG wiring
@@ -535,7 +559,14 @@ def bls_raw_ingest():
     planned = mark_slices_planned(plan)
     plan >> planned
     
-    _ = ingest_batch.expand(batch=plan)
+    raw_ingest = ingest_batch.expand(batch=plan)
+
+    silver_schema = ensure_silver_schema()
+    silver_transforms = transform_to_silver_by_program.expand(
+        program=["la", "ln", "ce", "cu", "jt"]
+    )
+
+    raw_ingest >> silver_schema >> silver_transforms
 
 
 # Instantiate DAG

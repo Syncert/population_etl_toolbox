@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -37,6 +38,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from fred.config import CONFIG
 from fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
 from fred.ingest import ingest_slice, get_curated_series_for_domain
+from fred.silver_fred.transform import transform_fred_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -55,6 +57,10 @@ FRED_API_POOL = "fred_api"
 def _get_postgres_hook() -> PostgresHook:
     """Centralized PostgresHook factory."""
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def _silver_ddl_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "fred" / "DDL" / "silver_fred.sql"
 
 
 def _series_fingerprint(domain: str) -> tuple[str, int]:
@@ -407,6 +413,24 @@ def fred_raw_ingest():
         for work_unit in batch:
             total += _run_one_work_unit(work_unit)
         return total
+
+    # -----------------------------
+    # Task 5: Silver layer (full load)
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Ensure silver_fred schema and tables exist."""
+        sql_path = _silver_ddl_path()
+        sql = sql_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def transform_to_silver_by_domain(domain: str) -> int:
+        """Transform ALL raw FRED data to silver for one domain (full load)."""
+        return transform_fred_to_silver(domain=domain)
     
     # -----------------------------
     # DAG wiring
@@ -421,7 +445,14 @@ def fred_raw_ingest():
     planned = mark_slices_planned(plan)
     plan >> planned
     
-    _ = ingest_batch.expand(batch=plan)
+    raw_ingest = ingest_batch.expand(batch=plan)
+
+    silver_schema = ensure_silver_schema()
+    silver_transforms = transform_to_silver_by_domain.expand(
+        domain=["labor_cycle", "housing", "prices", "rates", "macro"]
+    )
+
+    raw_ingest >> silver_schema >> silver_transforms
 
 
 # Instantiate DAG

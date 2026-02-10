@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -56,6 +57,7 @@ from census_acs.config import CONFIG
 from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
 from census_acs.ingest import ingest_slice, get_curated_variables
 from census_acs.geography import sync_geo_dim
+from census_acs.silver_census.transform import transform_census_to_silver
 
 
 # -----------------------------
@@ -80,6 +82,10 @@ def _get_postgres_hook() -> PostgresHook:
     Keeps the conn_id in one place, so changing it in CONFIG affects all tasks.
     """
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def _silver_ddl_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "census_acs" / "DDL" / "silver_census.sql"
 
 
 def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
@@ -542,6 +548,24 @@ def acs_raw_ingest():
             total += _run_one_work_unit(work_unit)
         return total
 
+    # -----------------------------
+    # Task 6: Silver layer (full load)
+    # -----------------------------
+    @task
+    def ensure_silver_schema() -> None:
+        """Ensure silver_census schema and tables exist."""
+        sql_path = _silver_ddl_path()
+        sql = sql_path.read_text(encoding="utf-8")
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+
+    @task
+    def transform_to_silver() -> int:
+        """Transform ALL raw Census data to silver (full load)."""
+        return transform_census_to_silver()
+
 
     # -----------------------------
     # DAG wiring
@@ -562,7 +586,12 @@ def acs_raw_ingest():
     batches >> planned
 
     # 4) Execute mapped ingestion batches
-    _ = ingest_batch.expand(batch=batches)
+    raw_ingest = ingest_batch.expand(batch=batches)
+
+    silver_schema = ensure_silver_schema()
+    silver_transform = transform_to_silver()
+
+    raw_ingest >> silver_schema >> silver_transform
 
 
 # Instantiate DAG
