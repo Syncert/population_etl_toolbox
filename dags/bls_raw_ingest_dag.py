@@ -436,7 +436,13 @@ def bls_raw_ingest():
                         "series_count": meta["series_count"],
                     })
         
-        # Batch for mapping
+        # Batch for mapping.
+        # IMPORTANT: return at least one batch so mapped-task retries remain stable.
+        # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
+        # TI already exists and a retry re-renders this task against an empty list.
+        if not plan:
+            return [[]]
+
         batches = chunk_list(plan, chunk_size=20)
         return batches
     

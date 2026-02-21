@@ -325,9 +325,12 @@ def fred_raw_ingest():
                 })
         
         # For FRED, we have relatively few slices, so no batching needed
-        # But we'll still return as list of lists for consistency
+        # But we'll still return as list of lists for consistency.
+        # IMPORTANT: return at least one batch so mapped task retries remain stable.
+        # Airflow can raise "cannot expand field mapped to length 0" when a mapped TI
+        # already exists (map_index=0) and a retry re-renders against an empty list.
         if not plan:
-            return []
+            return [[]]
         
         batches = chunk_list(plan, chunk_size=5)
         return batches

@@ -431,8 +431,13 @@ def acs_raw_ingest():
                 })
 
         # Keep mapping sane: ~50–150 mapped tasks is a happy place.
+        # IMPORTANT: return at least one batch so mapped-task retries remain stable.
+        # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
+        # TI already exists and a retry re-renders this task against an empty list.
+        if not plan:
+            return [[]]
+
         batches = chunk_list(plan, chunk_size=25)  # 1836/25 ≈ 74 mapped tasks
-        
         return batches
 
     # -----------------------------
