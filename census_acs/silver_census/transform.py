@@ -370,8 +370,52 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
     """
 
     merge_sql = """
-        INSERT INTO silver_census.fact_demographics
-        SELECT * FROM temp_census_upsert
+        INSERT INTO silver_census.fact_demographics (
+            time_sk,
+            geo_sk,
+            duration_start,
+            duration_end,
+            estimate_year,
+            dataset,
+            table_id,
+            variable_code,
+            geo_level,
+            geo_id,
+            state_fips,
+            county_fips,
+            estimate_value,
+            margin_of_error,
+            margin_of_error_pct,
+            variable_label,
+            variable_concept,
+            universe,
+            source_system,
+            load_batch_id,
+            ingested_at
+        )
+        SELECT 
+            time_sk,
+            geo_sk,
+            duration_start,
+            duration_end,
+            estimate_year,
+            dataset,
+            table_id,
+            variable_code,
+            geo_level,
+            geo_id,
+            state_fips,
+            county_fips,
+            estimate_value,
+            margin_of_error,
+            margin_of_error_pct,
+            variable_label,
+            variable_concept,
+            universe,
+            source_system,
+            load_batch_id,
+            ingested_at
+        FROM temp_census_upsert
         ON CONFLICT (dataset, table_id, variable_code, geo_id, estimate_year)
         DO UPDATE SET
             time_sk = EXCLUDED.time_sk,
