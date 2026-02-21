@@ -14,9 +14,17 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     is_active BOOLEAN,
     source TEXT,
     source_year INT,
+    first_seen_year INT,
+    last_seen_year INT,
     ingested_at TIMESTAMPTZ,
     CONSTRAINT dim_geo_nk UNIQUE (geo_level, geo_id)
 );
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS first_seen_year INT;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS last_seen_year INT;
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_time (
     time_sk SERIAL PRIMARY KEY,
