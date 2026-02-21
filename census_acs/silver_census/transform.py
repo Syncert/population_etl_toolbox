@@ -34,7 +34,7 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
         schema=["time_sk", "date_key"]
     )
 
@@ -48,7 +48,7 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
         cur.execute(sql)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
         schema=["geo_sk", "geo_level", "geo_id"]
     )
 
@@ -84,9 +84,22 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
         execute_values(cur, sql, geo_tuples, page_size=5000)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
         schema=["geo_sk", "geo_level", "geo_id"]
     )
+
+
+def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
+    sql = """
+        SELECT COUNT(*)
+        FROM silver_ref.dim_geo
+        WHERE geo_level = 'state'
+          AND geo_id ~ '^state:[0-9]$';
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        row = cur.fetchone()
+    return int(row[0]) if row else 0
 
 
 def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
@@ -100,6 +113,7 @@ def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
 
     return pl.DataFrame(
         rows,
+        orient="row",
         schema=[
             "dataset",
             "year",
@@ -279,12 +293,49 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
             max_date,
         )
 
-    missing_geo = grouped.filter(pl.col("geo_sk").is_null()).height
+    missing_geo_rows = grouped.filter(pl.col("geo_sk").is_null())
+    missing_geo = missing_geo_rows.height
     if missing_geo:
-        logger.warning(
-            "Dropped %s Census rows with missing geo_sk. Ensure silver_ref.dim_geo is synced.",
-            missing_geo,
+        missing_geo_ids = missing_geo_rows.select([
+            "geo_level",
+            "geo_id",
+            "state_fips",
+            "county_fips",
+        ]).unique()
+        by_geo_level_df = (
+            missing_geo_rows
+            .group_by("geo_level")
+            .len()
+            .sort("geo_level")
         )
+        by_geo_level = ", ".join(
+            f"{r['geo_level']}={r['len']}"
+            for r in by_geo_level_df.iter_rows(named=True)
+        )
+        missing_geo_examples_df = (
+            missing_geo_ids
+            .sort(["geo_level", "geo_id"])
+            .head(25)
+        )
+        missing_geo_examples = "; ".join(
+            f"{r['geo_level']}:{r['geo_id']}"
+            for r in missing_geo_examples_df.iter_rows(named=True)
+        )
+
+        logger.warning(
+            "Dropped %s Census rows with missing geo_sk (distinct_missing_geo_ids=%s; by_geo_level_rows={%s}). Ensure silver_ref.dim_geo is synced.",
+            missing_geo,
+            missing_geo_ids.height,
+            by_geo_level,
+        )
+        logger.warning("Missing geo_id examples (max 25): %s", missing_geo_examples)
+
+        unpadded_states = _count_unpadded_state_geo_ids(hook)
+        if unpadded_states:
+            logger.warning(
+                "silver_ref.dim_geo has %s unpadded state geo_id values (e.g., state:1). This can break joins against Census geo_id format state:01.",
+                unpadded_states,
+            )
 
     grouped = grouped.filter(pl.col("time_sk").is_not_null() & pl.col("geo_sk").is_not_null())
     if grouped.is_empty():

@@ -128,7 +128,7 @@ def sync_geo_dim(source_year: Optional[int] = None, min_year: int = 2010) -> int
 
     st_df = (
         st.select([
-            pl.col("GEOID").cast(pl.Utf8).alias("state_fips"),
+            pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
             pl.col("NAME").cast(pl.Utf8).alias("state_name"),
         ])
         .with_columns([
