@@ -115,24 +115,20 @@ def sync_geo_dim(
     
     for y in range(latest_year, min_year - 1, -1):
         years_checked.append(y)
-        states_ok = _url_exists(_states_url(y))
+        # Counties file is required; states file is optional (Census stopped publishing in 2023+)
         counties_ok = _url_exists(_counties_url(y))
-        if states_ok and counties_ok:
+        if counties_ok:
             years.append(y)
-            logger.info("Gazetteer year=%s: FOUND (both states + counties)", y)
+            logger.info("Gazetteer year=%s: FOUND (will load counties)", y)
         else:
-            logger.info(
-                "Gazetteer year=%s: SKIPPED (states=%s, counties=%s)",
-                y,
-                states_ok,
-                counties_ok,
-            )
+            logger.info("Gazetteer year=%s: SKIPPED (counties file missing)", y)
 
     if not years:
         raise RuntimeError("No Gazetteer years available for geo_dim sync.")
 
     logger.info(
-        "Loading Gazetteer years for dim_geo: %s..%s (%s total years available; checked %s)",
+        "Loading Gazetteer years for dim_geo: %s..%s (%s total years available; checked %s). "
+        "Note: Counties file required; states file optional (not available for 2023+).",
         min(years),
         max(years),
         len(years),
@@ -167,33 +163,41 @@ def sync_geo_dim(
             }
         ])
 
-        st = _fetch_zipped_tsv(states_url)
+        # States file is optional (Census stopped publishing it in 2023+)
+        st_df = None
+        if _url_exists(states_url):
+            try:
+                st = _fetch_zipped_tsv(states_url)
+                st_df = (
+                    st.select([
+                        pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
+                        pl.col("NAME").cast(pl.Utf8).alias("state_name"),
+                    ])
+                    .with_columns([
+                        pl.lit("state").alias("geo_level"),
+                        pl.concat_str([pl.lit("state:"), pl.col("state_fips")]).alias("geo_id"),
+                        pl.lit(None, dtype=pl.Utf8).alias("county_fips"),
+                        pl.col("state_name").alias("name"),
+                        pl.lit(None, dtype=pl.Utf8).alias("county_name"),
+                        pl.lit(True).alias("is_active"),
+                        pl.lit("census_gazetteer").alias("source"),
+                        pl.lit(y).alias("source_year"),
+                        pl.lit(now).alias("ingested_at"),
+                    ])
+                )
+                st_df = st_df.with_columns([
+                    pl.col("state_fips").cast(pl.Utf8),
+                    pl.col("county_fips").cast(pl.Utf8),
+                    pl.col("is_active").cast(pl.Boolean),
+                    pl.col("source_year").cast(pl.Int32),
+                ])
+                yearly_frames.append(st_df)
+            except Exception as e:
+                logger.warning("Failed to load states for year=%s: %s", y, e)
+        else:
+            logger.debug("States file not available for year=%s (expected for 2023+)", y)
 
-        st_df = (
-            st.select([
-                pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
-                pl.col("NAME").cast(pl.Utf8).alias("state_name"),
-            ])
-            .with_columns([
-                pl.lit("state").alias("geo_level"),
-                pl.concat_str([pl.lit("state:"), pl.col("state_fips")]).alias("geo_id"),
-                pl.lit(None, dtype=pl.Utf8).alias("county_fips"),
-                pl.col("state_name").alias("name"),
-                pl.lit(None, dtype=pl.Utf8).alias("county_name"),
-                pl.lit(True).alias("is_active"),
-                pl.lit("census_gazetteer").alias("source"),
-                pl.lit(y).alias("source_year"),
-                pl.lit(now).alias("ingested_at"),
-            ])
-        )
-
-        st_df = st_df.with_columns([
-            pl.col("state_fips").cast(pl.Utf8),
-            pl.col("county_fips").cast(pl.Utf8),
-            pl.col("is_active").cast(pl.Boolean),
-            pl.col("source_year").cast(pl.Int32),
-        ])
-
+        # Counties file is required
         co = _fetch_zipped_tsv(counties_url)
 
         co_df = (
@@ -228,11 +232,12 @@ def sync_geo_dim(
             pl.col("source_year").cast(pl.Int32),
         ])
 
-        df_states = st_df.select(["state_fips", "state_name"])
-        co_df = co_df.join(df_states, on="state_fips", how="left")
+        # Optionally attach state_name if state_df exists
+        if st_df is not None:
+            df_states = st_df.select(["state_fips", "state_name"])
+            co_df = co_df.join(df_states, on="state_fips", how="left")
 
         yearly_frames.append(us_df)
-        yearly_frames.append(st_df)
         yearly_frames.append(co_df)
 
     target_cols = [
@@ -311,9 +316,10 @@ def sync_geo_dim(
         conn.commit()
 
     logger.info(
-        "dim_geo sync complete: %s rows upserted (Gazetteer years %s..%s)",
+        "dim_geo sync complete: %s rows upserted (Gazetteer years %s..%s, includes counties%s)",
         len(rows),
         min(years),
         max(years),
+        " + optional states where available" if max(years) >= 2024 else "",
     )
     return len(rows)
