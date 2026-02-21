@@ -10,7 +10,7 @@ CREATE SCHEMA IF NOT EXISTS raw_bls;
 CREATE TABLE IF NOT EXISTS raw_bls.bls_long (
     id              BIGSERIAL PRIMARY KEY,
 
-    program         TEXT NOT NULL,               -- e.g. 'laus', 'ces', 'cpi' (expand later)
+    program         TEXT NOT NULL,               -- e.g. 'la', 'ln', 'ce', 'cu', 'jt' (expand later)
     series_id       TEXT NOT NULL,               -- BLS series ID
 
     year            INTEGER NOT NULL,
@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS raw_bls.bls_long (
 
 CREATE UNIQUE INDEX IF NOT EXISTS bls_long_uniq
     ON raw_bls.bls_long (program, series_id, year, period);
+
+-- Compact helper index: speeds up DISTINCT(program) and other quick program lookups.
+-- (GROUP BY program still needs to scan all rows for exact counts.)
+CREATE INDEX IF NOT EXISTS bls_long_program_idx
+    ON raw_bls.bls_long (program);
 
 CREATE INDEX IF NOT EXISTS bls_long_qc_slice
     ON raw_bls.bls_long (program, year);

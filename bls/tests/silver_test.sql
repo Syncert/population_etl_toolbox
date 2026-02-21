@@ -10,21 +10,21 @@ SELECT '=== BLS SILVER LAYER - BASIC STATISTICS ===' AS test_section;
 
 SELECT 
     'Total Records' AS metric,
-    COUNT(*) AS value
+    COUNT(*)::TEXT AS value
 FROM silver_bls.fact_labor_statistics
 
 UNION ALL
 
 SELECT 
     'Unique Series' AS metric,
-    COUNT(DISTINCT series_id) AS value
+    COUNT(DISTINCT series_id)::TEXT AS value
 FROM silver_bls.fact_labor_statistics
 
 UNION ALL
 
 SELECT 
     'Unique Programs' AS metric,
-    COUNT(DISTINCT program) AS value
+    COUNT(DISTINCT program)::TEXT AS value
 FROM silver_bls.fact_labor_statistics
 
 UNION ALL
@@ -45,7 +45,7 @@ UNION ALL
 
 SELECT 
     'Records with NULL values' AS metric,
-    COUNT(*) AS value
+    COUNT(*)::TEXT AS value
 FROM silver_bls.fact_labor_statistics
 WHERE value IS NULL
 
@@ -53,7 +53,7 @@ UNION ALL
 
 SELECT 
     'Unique Geographies' AS metric,
-    COUNT(DISTINCT (geo_level, geo_id)) AS value
+    COUNT(DISTINCT (geo_level, geo_id))::TEXT AS value
 FROM silver_bls.fact_labor_statistics;
 
 -- ============================================================================

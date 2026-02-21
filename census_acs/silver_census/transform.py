@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 CENSUS_DATA_DOC = "https://www.census.gov/data/developers/data-sets.html"
 
 
+LARGE_DATASET_ROW_THRESHOLD = 500_000
+
+
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
@@ -43,6 +46,42 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
+        rows = cur.fetchall()
+
+    return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
+        schema=["geo_sk", "geo_level", "geo_id"]
+    )
+
+
+def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Load only geographic records that exist in the provided dataframe.
+    This avoids loading entire dim_geo into memory when dealing with large datasets.
+    """
+    if geo_df.is_empty():
+        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+
+    unique_geos = geo_df.select(["geo_level", "geo_id"]).unique()
+
+    if unique_geos.is_empty():
+        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+
+    geo_tuples = list(unique_geos.iter_rows())
+
+    if not geo_tuples:
+        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+
+    sql = """
+        WITH needed(geo_level, geo_id) AS (VALUES %s)
+        SELECT g.geo_sk, g.geo_level, g.geo_id
+        FROM silver_ref.dim_geo g
+        JOIN needed n
+          ON g.geo_level = n.geo_level
+         AND g.geo_id = n.geo_id;
+    """
+
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        execute_values(cur, sql, geo_tuples, page_size=5000)
         rows = cur.fetchall()
 
     return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
@@ -81,13 +120,23 @@ def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     )
 
 
-def transform_census_to_silver() -> int:
-    """
-    Transform ALL Census ACS raw data to silver layer.
-    Processes entire raw_census.acs_long table.
-    """
-    hook = _get_hook()
+def _get_dataset_row_count(hook: PostgresHook) -> int:
+    sql = "SELECT COUNT(*) FROM raw_census.acs_long;"
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        row = cur.fetchone()
+    return int(row[0]) if row else 0
 
+
+def _get_dataset_years(hook: PostgresHook) -> list[int]:
+    sql = "SELECT DISTINCT year FROM raw_census.acs_long ORDER BY year;"
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+    return [int(r[0]) for r in rows]
+
+
+def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
     sql = """
         SELECT
             dataset,
@@ -100,19 +149,26 @@ def transform_census_to_silver() -> int:
             measure_type,
             value
         FROM raw_census.acs_long
-        ORDER BY geo_level, state_fips, county_fips, table_id, variable_name;
     """
+    params: list[object] = []
+    if year is not None:
+        sql += " WHERE year = %s"
+        params.append(int(year))
+    sql += " ORDER BY geo_level, state_fips, county_fips, table_id, variable_name;"
 
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        rows = cur.fetchall()
+        cur.execute(sql, tuple(params))
+        return cur.fetchall()
 
+
+def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.DataFrame:
+    """Transform raw ACS rows to silver fact DataFrame."""
     if not rows:
-        logger.info("No Census ACS rows found for silver transform")
-        return 0
+        return pl.DataFrame()
 
     df = pl.DataFrame(
         rows,
+        orient="row",
         schema=[
             "dataset",
             "estimate_year",
@@ -127,7 +183,7 @@ def transform_census_to_silver() -> int:
     )
 
     df = df.with_columns([
-        pl.col("variable_name").str.slice(0, -1).alias("variable_code"),
+        pl.col("variable_name").map_elements(lambda x: x[:-1], return_dtype=pl.Utf8).alias("variable_code"),
     ])
 
     grouped = df.group_by([
@@ -139,8 +195,8 @@ def transform_census_to_silver() -> int:
         "table_id",
         "variable_code",
     ]).agg([
-        pl.max(pl.when(pl.col("measure_type") == "E").then(pl.col("value"))).alias("estimate_value"),
-        pl.max(pl.when(pl.col("measure_type") == "M").then(pl.col("value"))).alias("margin_of_error"),
+        pl.when(pl.col("measure_type") == "E").then(pl.col("value")).max().alias("estimate_value"),
+        pl.when(pl.col("measure_type") == "M").then(pl.col("value")).max().alias("margin_of_error"),
     ])
 
     geo_ids = [
@@ -156,7 +212,7 @@ def transform_census_to_silver() -> int:
     if not meta_df.is_empty():
         meta_df = meta_df.filter(pl.col("variable_name").str.ends_with("E"))
         meta_df = meta_df.with_columns([
-            pl.col("variable_name").str.slice(0, -1).alias("variable_code"),
+            pl.col("variable_name").map_elements(lambda x: x[:-1], return_dtype=pl.Utf8).alias("variable_code"),
         ])
         meta_df = meta_df.select([
             "dataset",
@@ -191,20 +247,25 @@ def transform_census_to_silver() -> int:
     ])
 
     grouped = grouped.with_columns([
-        pl.when(
-            pl.col("estimate_value").is_not_null()
-            & (pl.col("estimate_value") != 0)
-            & pl.col("margin_of_error").is_not_null()
-        )
-        .then((pl.col("margin_of_error") / pl.col("estimate_value")) * 100)
-        .otherwise(None)
-        .alias("margin_of_error_pct")
+        (
+            pl.col("margin_of_error")
+            /
+            pl.when(
+                pl.col("estimate_value").is_null() | (pl.col("estimate_value") == 0)
+            )
+            .then(None)
+            .otherwise(pl.col("estimate_value"))
+            * 100
+        ).alias("margin_of_error_pct")
     ])
 
     min_date = min(duration_start)
     max_date = max(duration_start)
     time_df = _load_time_dim(hook, min_date, max_date)
-    geo_df = _load_geo_dim(hook)
+    
+    # Get unique geo combinations from data, then load only those geographies
+    unique_geos = grouped.select(["geo_level", "geo_id"]).unique()
+    geo_df = _load_geo_dim_for_list(hook, unique_geos)
 
     grouped = grouped.join(time_df, left_on="duration_start", right_on="date_key", how="left")
     grouped = grouped.join(geo_df, on=["geo_level", "geo_id"], how="left")
@@ -227,27 +288,30 @@ def transform_census_to_silver() -> int:
 
     grouped = grouped.filter(pl.col("time_sk").is_not_null() & pl.col("geo_sk").is_not_null())
     if grouped.is_empty():
-        return 0
+        return pl.DataFrame()
 
     # Deduplicate by unique constraint columns - keep last record
-    # This handles cases where raw data has duplicates
-    initial_rows = len(grouped)
+    initial_rows = grouped.height
     grouped = grouped.unique(
         subset=["dataset", "table_id", "variable_code", "geo_id", "estimate_year"],
         keep="last"
     )
-    deduped_rows = len(grouped)
-    if initial_rows > deduped_rows:
+    if initial_rows > grouped.height:
         logger.warning(
             "Deduplicated %s duplicate Census rows",
-            initial_rows - deduped_rows,
+            initial_rows - grouped.height,
         )
 
-    load_batch_id = uuid.uuid4()
-    ingested_at = datetime.now(timezone.utc)
+    return grouped
+
+
+def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uuid.UUID, ingested_at: datetime) -> int:
+    """Upsert Census silver rows to fact table."""
+    if df.is_empty():
+        return 0
 
     records = []
-    for r in grouped.iter_rows(named=True):
+    for r in df.iter_rows(named=True):
         records.append(
             (
                 r["time_sk"],
@@ -302,11 +366,54 @@ def transform_census_to_silver() -> int:
 
     try:
         with hook.get_conn() as conn, conn.cursor() as cur:
-            execute_values(cur, insert_sql, records, page_size=1000)
+            execute_values(cur, insert_sql, records, page_size=5000)
             conn.commit()
     except Exception:
         logger.exception("Failed to upsert Census silver rows")
         raise
 
-    logger.info("Upserted %s Census silver rows", len(records))
     return len(records)
+
+
+def transform_census_to_silver() -> int:
+    """
+    Transform ALL Census ACS raw data to silver layer.
+    Processes entire raw_census.acs_long table in memory-safe year chunks.
+    """
+    hook = _get_hook()
+
+    total_rows = _get_dataset_row_count(hook)
+    if total_rows == 0:
+        logger.info("No Census ACS rows found for silver transform")
+        return 0
+
+    load_batch_id = uuid.uuid4()
+    ingested_at = datetime.now(timezone.utc)
+
+    years: list[int] | None = None
+    if total_rows >= LARGE_DATASET_ROW_THRESHOLD:
+        years = _get_dataset_years(hook)
+        logger.info(
+            "Census ACS dataset has %s raw rows; processing in %s year chunks",
+            total_rows,
+            len(years),
+        )
+
+    upserted_total = 0
+
+    if years:
+        for y in years:
+            rows = _fetch_raw_rows(hook, year=y)
+            if not rows:
+                continue
+            df_silver = _transform_rows_to_silver_df(hook, rows)
+            upserted = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+            upserted_total += upserted
+            logger.info("Upserted %s Census silver rows for year=%s", upserted, y)
+    else:
+        rows = _fetch_raw_rows(hook)
+        df_silver = _transform_rows_to_silver_df(hook, rows)
+        upserted_total = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+
+    logger.info("Upserted %s Census silver rows total", upserted_total)
+    return upserted_total
