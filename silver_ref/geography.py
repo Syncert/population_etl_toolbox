@@ -32,6 +32,7 @@ def _get_hook() -> PostgresHook:
 
 
 def _url_exists(url: str, timeout_s: float = 10.0) -> bool:
+    """Check if a URL exists. Logs all outcomes for diagnostics."""
     try:
         with httpx.Client(timeout=timeout_s, follow_redirects=True) as client:
             r = client.head(url)
@@ -40,8 +41,10 @@ def _url_exists(url: str, timeout_s: float = 10.0) -> bool:
             if r.status_code in (403, 405):
                 r2 = client.get(url, headers={"Range": "bytes=0-50"})
                 return r2.status_code == 200
+            logger.debug("_url_exists: %s returned %s", url, r.status_code)
             return False
-    except Exception:
+    except Exception as e:
+        logger.debug("_url_exists: %s raised %s", url, type(e).__name__)
         return False
 
 
@@ -108,14 +111,39 @@ def sync_geo_dim(
 
     latest_year = source_year or resolve_latest_gazetteer_year(min_year=min_year)
     years = []
+    years_checked = []
+    
     for y in range(latest_year, min_year - 1, -1):
-        if _url_exists(_states_url(y)) and _url_exists(_counties_url(y)):
+        years_checked.append(y)
+        states_ok = _url_exists(_states_url(y))
+        counties_ok = _url_exists(_counties_url(y))
+        if states_ok and counties_ok:
             years.append(y)
+            logger.info("Gazetteer year=%s: FOUND (both states + counties)", y)
+        else:
+            logger.info(
+                "Gazetteer year=%s: SKIPPED (states=%s, counties=%s)",
+                y,
+                states_ok,
+                counties_ok,
+            )
 
     if not years:
         raise RuntimeError("No Gazetteer years available for geo_dim sync.")
 
-    logger.info("Loading Gazetteer years for dim_geo: %s..%s (%s total)", min(years), max(years), len(years))
+    logger.info(
+        "Loading Gazetteer years for dim_geo: %s..%s (%s total years available; checked %s)",
+        min(years),
+        max(years),
+        len(years),
+        len(years_checked),
+    )
+    if len(years) == 1:
+        logger.warning(
+            "Only one Gazetteer year available (%s). Historical coverage will be limited. "
+            "Check network access or URL availability for earlier years.",
+            years[0],
+        )
 
     yearly_frames: list[pl.DataFrame] = []
 
@@ -282,5 +310,10 @@ def sync_geo_dim(
             cur.execute(sql, r)
         conn.commit()
 
-    logger.info("dim_geo sync complete: %s rows upserted using Gazetteer year=%s", len(rows), y)
+    logger.info(
+        "dim_geo sync complete: %s rows upserted (Gazetteer years %s..%s)",
+        len(rows),
+        min(years),
+        max(years),
+    )
     return len(rows)
