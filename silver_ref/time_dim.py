@@ -23,7 +23,7 @@ def _resolve_end_date(end_date: Optional[date]) -> date:
 
 
 def sync_time_dim(
-    start_date: date = date(1990, 1, 1),
+    start_date: date = date(1970, 1, 1),
     end_date: Optional[date] = None,
 ) -> int:
     """

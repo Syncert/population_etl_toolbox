@@ -58,8 +58,8 @@ def silver_ref():
 
     @task
     def load_dim_time() -> int:
-        # Build from 1990 through end of current year
-        return sync_time_dim(start_date=date(1990, 1, 1), end_date=None)
+        # Build from 1970 through end of current year (matches FRED historical range)
+        return sync_time_dim(start_date=date(1970, 1, 1), end_date=None)
 
     ddl = ensure_schema()
     geo = load_dim_geo()
