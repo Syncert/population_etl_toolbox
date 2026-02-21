@@ -31,3 +31,10 @@ CREATE INDEX IF NOT EXISTS idx_fact_demo_geo_sk ON silver_census.fact_demographi
 CREATE INDEX IF NOT EXISTS idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_upsert_key ON silver_census.fact_demographics(dataset, table_id, variable_code, geo_id, estimate_year);
+
+-- Autovacuum for this high-update table
+ALTER TABLE silver_census.fact_demographics SET (
+    autovacuum_vacuum_scale_factor = 0.05,  -- Vacuum when 5% of table updated (default 20%)
+    autovacuum_analyze_scale_factor = 0.02, -- Analyze when 2% updated
+    autovacuum_vacuum_cost_limit = 2000     -- Allow more aggressive vacuuming
+);

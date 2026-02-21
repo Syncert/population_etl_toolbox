@@ -306,7 +306,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
 
 
 def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uuid.UUID, ingested_at: datetime) -> int:
-    """Upsert Census silver rows to fact table."""
+    """Upsert Census silver rows to fact table using efficient TEMP table strategy."""
     if df.is_empty():
         return 0
 
@@ -338,15 +338,40 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
             )
         )
 
-    insert_sql = """
-        INSERT INTO silver_census.fact_demographics (
-            time_sk, geo_sk, duration_start, duration_end,
-            estimate_year, dataset, table_id, variable_code,
-            geo_level, geo_id, state_fips, county_fips,
-            estimate_value, margin_of_error, margin_of_error_pct,
-            variable_label, variable_concept, universe,
-            source_system, load_batch_id, ingested_at
-        ) VALUES %s
+    # Use TEMP table strategy for better performance on large upserts
+    create_temp_sql = """
+        CREATE TEMP TABLE temp_census_upsert (
+            time_sk INTEGER,
+            geo_sk INTEGER,
+            duration_start DATE,
+            duration_end DATE,
+            estimate_year INTEGER,
+            dataset VARCHAR(50),
+            table_id VARCHAR(50),
+            variable_code VARCHAR(100),
+            geo_level VARCHAR(50),
+            geo_id VARCHAR(255),
+            state_fips VARCHAR(2),
+            county_fips VARCHAR(3),
+            estimate_value NUMERIC,
+            margin_of_error NUMERIC,
+            margin_of_error_pct NUMERIC,
+            variable_label TEXT,
+            variable_concept TEXT,
+            universe TEXT,
+            source_system VARCHAR(50),
+            load_batch_id UUID,
+            ingested_at TIMESTAMPTZ
+        ) ON COMMIT DROP;
+    """
+
+    insert_temp_sql = """
+        INSERT INTO temp_census_upsert VALUES %s;
+    """
+
+    merge_sql = """
+        INSERT INTO silver_census.fact_demographics
+        SELECT * FROM temp_census_upsert
         ON CONFLICT (dataset, table_id, variable_code, geo_id, estimate_year)
         DO UPDATE SET
             time_sk = EXCLUDED.time_sk,
@@ -366,7 +391,9 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
 
     try:
         with hook.get_conn() as conn, conn.cursor() as cur:
-            execute_values(cur, insert_sql, records, page_size=5000)
+            cur.execute(create_temp_sql)
+            execute_values(cur, insert_temp_sql, records, page_size=10000)
+            cur.execute(merge_sql)
             conn.commit()
     except Exception:
         logger.exception("Failed to upsert Census silver rows")
