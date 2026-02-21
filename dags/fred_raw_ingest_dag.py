@@ -176,6 +176,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
             SET status = %s,
                 rows_loaded = %s,
                 finished_at = %s,
+                started_at = COALESCE(started_at, %s),
                 last_error = NULL,
                 series_hash = %s,
                 series_count = %s
@@ -187,7 +188,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_done,
-                (final_status, int(rows_loaded), finished, series_hash, series_count,
+                (final_status, int(rows_loaded), finished, started, series_hash, series_count,
                  domain, date_start_obj, date_end_obj),
             )
             conn.commit()
@@ -202,6 +203,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
             UPDATE raw_fred.fred_ingestion_slices
             SET status = 'failed',
                 finished_at = %s,
+                started_at = COALESCE(started_at, %s),
                 last_error = %s
             WHERE domain = %s
               AND date_start = %s
@@ -211,7 +213,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_failed,
-                (finished, err_txt, domain, date_start_obj, date_end_obj),
+                (finished, started, err_txt, domain, date_start_obj, date_end_obj),
             )
             conn.commit()
         
