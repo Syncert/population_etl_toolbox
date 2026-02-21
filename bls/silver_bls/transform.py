@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone, date
+from dataclasses import dataclass, field
 
 import polars as pl
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -20,6 +21,137 @@ BLS_API_DOC = "https://www.bls.gov/developers/api_signature_v2.htm"
 LARGE_PROGRAM_ROW_THRESHOLD = 500_000
 
 
+@dataclass
+class TransformMetrics:
+    """Track and log BLS silver transform metrics."""
+    dataset_name: str
+    
+    # Pre-transform
+    raw_rows_by_program: dict[str, int] = field(default_factory=dict)
+    schema_issues: list[str] = field(default_factory=list)
+    
+    # Per-chunk
+    chunk_input_rows: int = 0
+    chunk_output_rows: int = 0
+    rows_missing_geo: int = 0
+    rows_missing_time: int = 0
+    rows_deduplicated: int = 0
+    time_dim_hits: int = 0
+    time_dim_misses: int = 0
+    geo_dim_hits: int = 0
+    geo_dim_misses: int = 0
+    null_counts: dict[str, int] = field(default_factory=dict)
+    
+    # Upsert
+    upsert_duration_sec: float = 0.0
+    upsert_inserted: int = 0
+    upsert_total: int = 0
+    
+    # Post-transform
+    total_processed: int = 0
+    total_inserted: int = 0
+    errors_encountered: list[str] = field(default_factory=list)
+    
+    def log_pre_transform(self) -> None:
+        """Log pre-transform diagnostics."""
+        if self.raw_rows_by_program:
+            programs_summary = "; ".join(
+                f"program={p}:{count:,} rows"
+                for p, count in sorted(self.raw_rows_by_program.items())
+            )
+            logger.info(
+                "[%s PRE-TRANSFORM] Raw row count by program: %s (total: %s)",
+                self.dataset_name,
+                programs_summary,
+                sum(self.raw_rows_by_program.values()),
+            )
+        
+        if self.schema_issues:
+            logger.warning(
+                "[%s PRE-TRANSFORM] Schema validation issues: %s",
+                self.dataset_name,
+                "; ".join(self.schema_issues),
+            )
+    
+    def log_chunk_start(self, program: str, input_rows: int) -> None:
+        """Log start of chunk processing."""
+        self.chunk_input_rows = input_rows
+        logger.info(
+            "[%s CHUNK] Processing program=%s with %s raw rows",
+            self.dataset_name,
+            program,
+            input_rows,
+        )
+    
+    def log_chunk_complete(self, program: str) -> None:
+        """Log chunk processing results."""
+        pct_output = (
+            (self.chunk_output_rows / self.chunk_input_rows * 100)
+            if self.chunk_input_rows > 0
+            else 0
+        )
+        logger.info(
+            "[%s CHUNK] Program=%s: %s input → %s output (%.1f%% retained)",
+            self.dataset_name,
+            program,
+            self.chunk_input_rows,
+            self.chunk_output_rows,
+            pct_output,
+        )
+        
+        if self.rows_missing_time or self.rows_missing_geo:
+            logger.warning(
+                "[%s CHUNK] Rows filtered: missing_time=%s, missing_geo=%s",
+                self.dataset_name,
+                self.rows_missing_time,
+                self.rows_missing_geo,
+            )
+        
+        if self.rows_deduplicated:
+            logger.info(
+                "[%s CHUNK] Deduplicated %s rows",
+                self.dataset_name,
+                self.rows_deduplicated,
+            )
+        
+        if self.null_counts:
+            null_summary = "; ".join(
+                f"{col}={count:,}"
+                for col, count in sorted(self.null_counts.items())
+            )
+            logger.info(
+                "[%s CHUNK] Null counts by column: %s",
+                self.dataset_name,
+                null_summary,
+            )
+    
+    def log_upsert_complete(self, upserted: int, duration_sec: float) -> None:
+        """Log upsert results."""
+        self.upsert_total += upserted
+        self.upsert_duration_sec += duration_sec
+        logger.info(
+            "[%s UPSERT] Completed in %.2f sec: %s rows upserted",
+            self.dataset_name,
+            duration_sec,
+            upserted,
+        )
+    
+    def log_transform_summary(self) -> None:
+        """Log final transform summary."""
+        logger.info(
+            "[%s SUMMARY] Transform complete: %s rows processed, %s upserted, errors=%s",
+            self.dataset_name,
+            self.total_processed,
+            self.total_inserted,
+            len(self.errors_encountered),
+        )
+        
+        if self.errors_encountered:
+            for err in self.errors_encountered:
+                logger.error("[%s SUMMARY] Error: %s", self.dataset_name, err)
+
+
+
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
@@ -34,7 +166,7 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
         schema=["time_sk", "date_key"]
     )
 
@@ -48,7 +180,7 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
         cur.execute(sql)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
         schema=["geo_sk", "geo_level", "geo_id"]
     )
 
@@ -82,7 +214,7 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
         execute_values(cur, sql, geo_tuples, page_size=5000)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
+    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
         schema=["geo_sk", "geo_level", "geo_id"]
     )
 
@@ -212,12 +344,13 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
     return len(records)
 
 
-def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.DataFrame:
+def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame()
 
     df = pl.DataFrame(
         rows,
+        orient="row",
         schema=[
             "series_id",
             "program",
@@ -278,6 +411,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
     df = df.join(time_df, left_on="duration_start", right_on="date_key", how="left")
     df = df.join(geo_df, on=["geo_level", "geo_id"], how="left")
 
+    df_before_filter = df.clone()
     missing_time = df.filter(pl.col("time_sk").is_null()).height
     if missing_time:
         logger.warning(
@@ -286,6 +420,10 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
             min_date,
             max_date,
         )
+        if metrics:
+            metrics.time_dim_misses = missing_time
+            metrics.time_dim_hits = df_before_filter.height - missing_time
+            metrics.rows_missing_time = missing_time
 
     missing_geo = df.filter(pl.col("geo_sk").is_null()).height
     if missing_geo:
@@ -293,6 +431,10 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
             "Dropped %s BLS rows with missing geo_sk. Ensure silver_ref.dim_geo is synced.",
             missing_geo,
         )
+        if metrics:
+            metrics.geo_dim_misses = missing_geo
+            metrics.geo_dim_hits = df_before_filter.height - missing_geo
+            metrics.rows_missing_geo = missing_geo
 
     df = df.filter(pl.col("time_sk").is_not_null() & pl.col("geo_sk").is_not_null())
     if df.is_empty():
@@ -301,10 +443,21 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple]) -> pl.Da
     initial_rows = df.height
     df = df.unique(subset=["series_id", "period_date"], keep="last")
     if initial_rows > df.height:
+        dedup_count = initial_rows - df.height
         logger.warning(
             "Deduplicated %s duplicate BLS rows",
-            initial_rows - df.height,
+            dedup_count,
         )
+        if metrics:
+            metrics.rows_deduplicated = dedup_count
+
+    # Collect null counts
+    if metrics:
+        for col in ["value", "series_id", "measure_code", "seasonal_adjustment"]:
+            if col in df.columns:
+                null_count = df.filter(pl.col(col).is_null()).height
+                if null_count > 0:
+                    metrics.null_counts[col] = null_count
 
     return df
 
@@ -315,6 +468,7 @@ def transform_bls_to_silver(program: str) -> int:
     Processes entire raw_bls.bls_long table for this program.
     """
     hook = _get_hook()
+    metrics = TransformMetrics(dataset_name=f"BLS_{program.upper()}")
 
     total_rows = _get_program_row_count(hook, program)
     if total_rows == 0:
@@ -333,6 +487,14 @@ def transform_bls_to_silver(program: str) -> int:
             total_rows,
             len(years),
         )
+        # Pre-transform diagnostics
+        for y in years:
+            sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s AND year = %s;"
+            with hook.get_conn() as conn, conn.cursor() as cur:
+                cur.execute(sql, (program, y))
+                row = cur.fetchone()
+                metrics.raw_rows_by_program[f"{program}_{y}"] = int(row[0]) if row else 0
+        metrics.log_pre_transform()
 
     upserted_total = 0
 
@@ -341,14 +503,39 @@ def transform_bls_to_silver(program: str) -> int:
             rows = _fetch_raw_rows(hook, program, year=y)
             if not rows:
                 continue
-            df_silver = _transform_rows_to_silver_df(hook, rows)
-            upserted = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-            upserted_total += upserted
-            logger.info("Upserted %s BLS silver rows for program=%s year=%s", upserted, program, y)
+            
+            metrics.log_chunk_start(f"{program}_year={y}", len(rows))
+            
+            df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
+            if not df_silver.is_empty():
+                metrics.chunk_output_rows = df_silver.height
+                metrics.log_chunk_complete(f"{program}_year={y}")
+                
+                upsert_start = datetime.now(timezone.utc)
+                upserted = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
+                
+                metrics.log_upsert_complete(upserted, upsert_duration)
+                upserted_total += upserted
+                metrics.total_processed += len(rows)
+                metrics.total_inserted += upserted
     else:
         rows = _fetch_raw_rows(hook, program)
-        df_silver = _transform_rows_to_silver_df(hook, rows)
-        upserted_total = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+        if rows:
+            metrics.log_chunk_start(program, len(rows))
+            df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
+            if not df_silver.is_empty():
+                metrics.chunk_output_rows = df_silver.height
+                metrics.log_chunk_complete(program)
+                
+                upsert_start = datetime.now(timezone.utc)
+                upserted_total = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
+                
+                metrics.log_upsert_complete(upserted_total, upsert_duration)
+                metrics.total_processed = len(rows)
+                metrics.total_inserted = upserted_total
 
+    metrics.log_transform_summary()
     logger.info("Upserted %s BLS silver rows for program=%s", upserted_total, program)
     return upserted_total
