@@ -346,17 +346,17 @@ def _transform_rows_to_silver_df(
     df = pl.DataFrame(
         rows,
         orient="row",
-        schema=[
-            "dataset",
-            "estimate_year",
-            "geo_level",
-            "state_fips",
-            "county_fips",
-            "table_id",
-            "variable_name",
-            "measure_type",
-            "value",
-        ],
+        schema={
+            "dataset": pl.Utf8,
+            "estimate_year": pl.Int64,
+            "geo_level": pl.Utf8,
+            "state_fips": pl.Utf8,
+            "county_fips": pl.Utf8,
+            "table_id": pl.Utf8,
+            "variable_name": pl.Utf8,
+            "measure_type": pl.Utf8,
+            "value": pl.Float64,
+        },
     )
 
     df = df.with_columns([
