@@ -681,7 +681,9 @@ def transform_census_to_silver() -> int:
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name="CENSUS_ACS")
 
+    logger.info("[CENSUS_ACS] Starting silver transform — counting raw rows...")
     total_rows = _get_dataset_row_count(hook)
+    logger.info("[CENSUS_ACS] Raw row count: %s", f"{total_rows:,}")
     if total_rows == 0:
         logger.info("No Census ACS rows found for silver transform")
         return 0
@@ -698,6 +700,7 @@ def transform_census_to_silver() -> int:
             len(years),
         )
         # Pre-transform diagnostics — single query instead of per-year
+        logger.info("[CENSUS_ACS] Gathering per-year row counts...")
         sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql)
@@ -708,15 +711,23 @@ def transform_census_to_silver() -> int:
     upserted_total = 0
 
     # Pre-load dimensions once to avoid repeated DB round-trips per year chunk
+    logger.info("[CENSUS_ACS] Pre-loading variable metadata...")
     meta_df = _load_variable_metadata(hook)
+    logger.info("[CENSUS_ACS] Loaded %s variable metadata rows", f"{meta_df.height:,}")
+
+    logger.info("[CENSUS_ACS] Pre-loading geo dimension...")
     geo_df = _load_geo_dim(hook)
+    logger.info("[CENSUS_ACS] Loaded %s geo dimension rows", f"{geo_df.height:,}")
+
     # Compute full time range across all possible ACS windows
     if years:
         earliest_year = min(years) - 4  # acs5 looks back 4 years
     else:
         earliest_year = 2000
     latest_year = max(years) if years else 2030
+    logger.info("[CENSUS_ACS] Pre-loading time dimension (%s..%s)...", earliest_year, latest_year)
     time_df = _load_time_dim(hook, date(earliest_year, 1, 1), date(latest_year, 12, 31))
+    logger.info("[CENSUS_ACS] Loaded %s time dimension rows", f"{time_df.height:,}")
 
     if years:
         for y in years:
