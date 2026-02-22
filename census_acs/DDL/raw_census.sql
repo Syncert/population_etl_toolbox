@@ -45,6 +45,9 @@ ON raw_census.acs_long (geo_level, geo_id);
 CREATE INDEX IF NOT EXISTS acs_long_geo_id_idx
 ON raw_census.acs_long (geo_id);
 
+CREATE INDEX IF NOT EXISTS acs_long_year_idx
+ON raw_census.acs_long (year);
+
 CREATE INDEX IF NOT EXISTS acs_long_state_geo_idx
 ON raw_census.acs_long (dataset, year, geo_level, geo_id)
 WHERE geo_level = 'state';

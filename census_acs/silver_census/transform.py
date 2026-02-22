@@ -280,20 +280,24 @@ def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     )
 
 
-def _get_dataset_row_count(hook: PostgresHook) -> int:
-    sql = "SELECT COUNT(*) FROM raw_census.acs_long;"
+def _get_approx_row_count(hook: PostgresHook) -> int:
+    """Fast approximate row count from Postgres catalog stats.
+
+    Uses pg_class.reltuples which is updated by ANALYZE / autovacuum.
+    Good enough for the "is this a large dataset?" threshold check
+    without a full sequential scan.
+    """
+    sql = """
+        SELECT COALESCE(c.reltuples, 0)::bigint
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'raw_census'
+          AND c.relname = 'acs_long';
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         row = cur.fetchone()
     return int(row[0]) if row else 0
-
-
-def _get_dataset_years(hook: PostgresHook) -> list[int]:
-    sql = "SELECT DISTINCT year FROM raw_census.acs_long ORDER BY year;"
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        rows = cur.fetchall()
-    return [int(r[0]) for r in rows]
 
 
 def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
@@ -681,31 +685,40 @@ def transform_census_to_silver() -> int:
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name="CENSUS_ACS")
 
-    logger.info("[CENSUS_ACS] Starting silver transform — counting raw rows...")
-    total_rows = _get_dataset_row_count(hook)
-    logger.info("[CENSUS_ACS] Raw row count: %s", f"{total_rows:,}")
-    if total_rows == 0:
+    logger.info("[CENSUS_ACS] Starting silver transform — checking dataset size...")
+    approx_rows = _get_approx_row_count(hook)
+    logger.info("[CENSUS_ACS] Approximate row count (from pg_class): %s", f"{approx_rows:,}")
+    if approx_rows == 0:
         logger.info("No Census ACS rows found for silver transform")
         return 0
 
     load_batch_id = uuid.uuid4()
     ingested_at = datetime.now(timezone.utc)
 
+    # Always get year-level counts — this is fast (GROUP BY on indexed year column)
+    # and gives us both the year list and exact total in one query.
+    logger.info("[CENSUS_ACS] Gathering per-year row counts...")
+    sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        for row in cur.fetchall():
+            metrics.raw_rows_by_year[int(row[0])] = int(row[1])
+
+    total_rows = sum(metrics.raw_rows_by_year.values())
+    logger.info("[CENSUS_ACS] Exact row count: %s across %s years", f"{total_rows:,}", len(metrics.raw_rows_by_year))
+
+    if total_rows == 0:
+        logger.info("No Census ACS rows found for silver transform")
+        return 0
+
     years: list[int] | None = None
     if total_rows >= LARGE_DATASET_ROW_THRESHOLD:
-        years = _get_dataset_years(hook)
+        years = sorted(metrics.raw_rows_by_year.keys())
         logger.info(
             "Census ACS dataset has %s raw rows; processing in %s year chunks",
             total_rows,
             len(years),
         )
-        # Pre-transform diagnostics — single query instead of per-year
-        logger.info("[CENSUS_ACS] Gathering per-year row counts...")
-        sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql)
-            for row in cur.fetchall():
-                metrics.raw_rows_by_year[int(row[0])] = int(row[1])
         metrics.log_pre_transform()
 
     upserted_total = 0
