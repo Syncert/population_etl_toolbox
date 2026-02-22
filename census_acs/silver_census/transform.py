@@ -10,8 +10,6 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
 from census_acs.config import CONFIG as RAW_CONFIG
-from .geography_mapper import map_census_geography
-from .time_utils import compute_acs_duration
 
 logger = logging.getLogger(__name__)
 
@@ -316,15 +314,28 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
     if year is not None:
         sql += " WHERE year = %s"
         params.append(int(year))
-    sql += " ORDER BY geo_level, state_fips, county_fips, table_id, variable_name;"
+    sql += ";"
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, tuple(params))
         return cur.fetchall()
 
 
-def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None) -> pl.DataFrame:
-    """Transform raw ACS rows to silver fact DataFrame."""
+def _transform_rows_to_silver_df(
+    hook: PostgresHook,
+    rows: list[tuple],
+    metrics: TransformMetrics | None = None,
+    meta_df: pl.DataFrame | None = None,
+    time_df: pl.DataFrame | None = None,
+    geo_df: pl.DataFrame | None = None,
+) -> pl.DataFrame:
+    """Transform raw ACS rows to silver fact DataFrame.
+
+    Parameters
+    ----------
+    meta_df, time_df, geo_df : optional pre-loaded dimension DataFrames.
+        When supplied the function skips per-chunk DB round-trips.
+    """
     if not rows:
         return pl.DataFrame()
 
@@ -345,7 +356,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
     )
 
     df = df.with_columns([
-        pl.col("variable_name").map_elements(lambda x: x[:-1], return_dtype=pl.Utf8).alias("variable_code"),
+        pl.col("variable_name").str.head(-1).alias("variable_code"),
     ])
 
     grouped = df.group_by([
@@ -361,22 +372,25 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
         pl.when(pl.col("measure_type") == "M").then(pl.col("value")).max().alias("margin_of_error"),
     ])
 
-    geo_ids = [
-        map_census_geography(r["geo_level"], r["state_fips"], r["county_fips"])
-        for r in grouped.iter_rows(named=True)
-    ]
-
     grouped = grouped.with_columns([
-        pl.Series("geo_id", geo_ids),
+        pl.when(pl.col("geo_level") == "us")
+        .then(pl.lit("us:1"))
+        .when(pl.col("geo_level") == "state")
+        .then(pl.lit("state:") + pl.col("state_fips"))
+        .when(pl.col("geo_level") == "county")
+        .then(pl.lit("state:") + pl.col("state_fips") + pl.lit("|county:") + pl.col("county_fips"))
+        .otherwise(pl.lit(None))
+        .alias("geo_id"),
     ])
 
-    meta_df = _load_variable_metadata(hook)
+    if meta_df is None:
+        meta_df = _load_variable_metadata(hook)
     if not meta_df.is_empty():
-        meta_df = meta_df.filter(pl.col("variable_name").str.ends_with("E"))
-        meta_df = meta_df.with_columns([
-            pl.col("variable_name").map_elements(lambda x: x[:-1], return_dtype=pl.Utf8).alias("variable_code"),
+        _meta = meta_df.filter(pl.col("variable_name").str.ends_with("E"))
+        _meta = _meta.with_columns([
+            pl.col("variable_name").str.head(-1).alias("variable_code"),
         ])
-        meta_df = meta_df.select([
+        _meta = _meta.select([
             "dataset",
             pl.col("year").alias("estimate_year"),
             "variable_code",
@@ -385,7 +399,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
             "universe",
         ])
         grouped = grouped.join(
-            meta_df,
+            _meta,
             on=["dataset", "estimate_year", "variable_code"],
             how="left",
         )
@@ -396,16 +410,26 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
             pl.lit(None, dtype=pl.Utf8).alias("universe"),
         ])
 
-    durations = [
-        compute_acs_duration(r["dataset"], int(r["estimate_year"]))
-        for r in grouped.iter_rows(named=True)
-    ]
-    duration_start = [d[0] for d in durations]
-    duration_end = [d[1] for d in durations]
-
     grouped = grouped.with_columns([
-        pl.Series("duration_start", duration_start),
-        pl.Series("duration_end", duration_end),
+        pl.when(pl.col("dataset").str.to_lowercase() == "acs5")
+        .then(
+            pl.concat_str([
+                (pl.col("estimate_year").cast(pl.Int32) - 4).cast(pl.Utf8),
+                pl.lit("-01-01"),
+            ]).str.to_date("%Y-%m-%d")
+        )
+        .otherwise(
+            pl.concat_str([
+                pl.col("estimate_year").cast(pl.Utf8),
+                pl.lit("-01-01"),
+            ]).str.to_date("%Y-%m-%d")
+        )
+        .alias("duration_start"),
+        pl.concat_str([
+            pl.col("estimate_year").cast(pl.Utf8),
+            pl.lit("-12-31"),
+        ]).str.to_date("%Y-%m-%d")
+        .alias("duration_end"),
     ])
 
     grouped = grouped.with_columns([
@@ -421,29 +445,31 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
         ).alias("margin_of_error_pct")
     ])
 
-    min_date = min(duration_start)
-    max_date = max(duration_start)
-    time_df = _load_time_dim(hook, min_date, max_date)
-    
-    # Get unique geo combinations from data, then load only those geographies
-    unique_geos = grouped.select(["geo_level", "geo_id"]).unique()
-    geo_df = _load_geo_dim_for_list(hook, unique_geos)
+    if time_df is None:
+        min_date = grouped["duration_start"].min()
+        max_date = grouped["duration_start"].max()
+        time_df = _load_time_dim(hook, min_date, max_date)
+    if geo_df is None:
+        unique_geos = grouped.select(["geo_level", "geo_id"]).unique()
+        geo_df = _load_geo_dim_for_list(hook, unique_geos)
 
-    grouped_before_join = grouped.clone()
+    pre_join_height = grouped.height
     grouped = grouped.join(time_df, left_on="duration_start", right_on="date_key", how="left")
     grouped = grouped.join(geo_df, on=["geo_level", "geo_id"], how="left")
 
     missing_time_rows = grouped.filter(pl.col("time_sk").is_null()).height
     if missing_time_rows:
+        _min_d = grouped["duration_start"].min()
+        _max_d = grouped["duration_start"].max()
         logger.warning(
             "Dropped %s Census rows with missing time_sk. Ensure silver_ref.dim_time covers %s..%s.",
             missing_time_rows,
-            min_date,
-            max_date,
+            _min_d,
+            _max_d,
         )
         if metrics:
             metrics.time_dim_misses = missing_time_rows
-            metrics.time_dim_hits = grouped_before_join.height - missing_time_rows
+            metrics.time_dim_hits = pre_join_height - missing_time_rows
 
     missing_geo_rows = grouped.filter(pl.col("geo_sk").is_null()).height
     if missing_geo_rows:
@@ -491,7 +517,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
         if metrics:
             metrics.geo_dim_misses = missing_geo_rows
             metrics.rows_missing_geo = missing_geo_rows
-            metrics.geo_dim_hits = grouped_before_join.height - missing_geo_rows
+            metrics.geo_dim_hits = pre_join_height - missing_geo_rows
 
     grouped = grouped.filter(pl.col("time_sk").is_not_null() & pl.col("geo_sk").is_not_null())
     if grouped.is_empty():
@@ -514,11 +540,12 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
 
     # Collect null counts
     if metrics:
-        for col in ["estimate_value", "margin_of_error", "variable_label", "variable_concept", "universe"]:
-            if col in grouped.columns:
-                null_count = grouped.filter(pl.col(col).is_null()).height
-                if null_count > 0:
-                    metrics.null_counts[col] = null_count
+        null_check_cols = [c for c in ["estimate_value", "margin_of_error", "variable_label", "variable_concept", "universe"] if c in grouped.columns]
+        if null_check_cols:
+            null_row = grouped.select([pl.col(c).null_count().alias(c) for c in null_check_cols]).row(0, named=True)
+            for col, count in null_row.items():
+                if count > 0:
+                    metrics.null_counts[col] = count
 
     return grouped
 
@@ -528,33 +555,15 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
     if df.is_empty():
         return 0
 
-    records = []
-    for r in df.iter_rows(named=True):
-        records.append(
-            (
-                r["time_sk"],
-                r["geo_sk"],
-                r["duration_start"],
-                r["duration_end"],
-                r["estimate_year"],
-                r["dataset"],
-                r["table_id"],
-                r["variable_code"],
-                r["geo_level"],
-                r["geo_id"],
-                r["state_fips"],
-                r["county_fips"],
-                r["estimate_value"],
-                r["margin_of_error"],
-                r["margin_of_error_pct"],
-                r["variable_label"],
-                r["variable_concept"],
-                r["universe"],
-                "CENSUS_ACS",
-                load_batch_id,
-                ingested_at,
-            )
-        )
+    upsert_cols = [
+        "time_sk", "geo_sk", "duration_start", "duration_end",
+        "estimate_year", "dataset", "table_id", "variable_code",
+        "geo_level", "geo_id", "state_fips", "county_fips",
+        "estimate_value", "margin_of_error", "margin_of_error_pct",
+        "variable_label", "variable_concept", "universe",
+    ]
+    suffix = ("CENSUS_ACS", load_batch_id, ingested_at)
+    records = [row + suffix for row in df.select(upsert_cols).rows()]
 
     # Use TEMP table strategy for better performance on large upserts
     create_temp_sql = """
@@ -688,16 +697,26 @@ def transform_census_to_silver() -> int:
             total_rows,
             len(years),
         )
-        # Pre-transform diagnostics
-        for y in years:
-            sql = "SELECT COUNT(*) FROM raw_census.acs_long WHERE year = %s;"
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql, (y,))
-                row = cur.fetchone()
-                metrics.raw_rows_by_year[y] = int(row[0]) if row else 0
+        # Pre-transform diagnostics — single query instead of per-year
+        sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            for row in cur.fetchall():
+                metrics.raw_rows_by_year[int(row[0])] = int(row[1])
         metrics.log_pre_transform()
 
     upserted_total = 0
+
+    # Pre-load dimensions once to avoid repeated DB round-trips per year chunk
+    meta_df = _load_variable_metadata(hook)
+    geo_df = _load_geo_dim(hook)
+    # Compute full time range across all possible ACS windows
+    if years:
+        earliest_year = min(years) - 4  # acs5 looks back 4 years
+    else:
+        earliest_year = 2000
+    latest_year = max(years) if years else 2030
+    time_df = _load_time_dim(hook, date(earliest_year, 1, 1), date(latest_year, 12, 31))
 
     if years:
         for y in years:
@@ -707,7 +726,7 @@ def transform_census_to_silver() -> int:
             
             metrics.log_chunk_start(y, len(rows))
             
-            df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
+            df_silver = _transform_rows_to_silver_df(hook, rows, metrics, meta_df=meta_df, time_df=time_df, geo_df=geo_df)
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(y)
@@ -724,7 +743,7 @@ def transform_census_to_silver() -> int:
         rows = _fetch_raw_rows(hook)
         if rows:
             metrics.log_chunk_start(None, len(rows))
-            df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
+            df_silver = _transform_rows_to_silver_df(hook, rows, metrics, meta_df=meta_df, time_df=time_df, geo_df=geo_df)
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(None)
