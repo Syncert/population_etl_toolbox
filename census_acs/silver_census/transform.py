@@ -677,29 +677,6 @@ def _direct_insert_silver_rows(
                         len(batch),
                     )
                 break  # success — move to next sub-batch
-            except psycopg2.errors.DataCorrupted as exc:
-                logger.error(
-                    "[CENSUS_ACS INSERT] DataCorrupted on sub-batch %s/%s "
-                    "(attempt %s/%s): %s\n"
-                    "  ➜ This indicates physical page corruption in PostgreSQL.\n"
-                    "  ➜ Remediation steps:\n"
-                    "      1. REINDEX TABLE silver_census.fact_demographics;\n"
-                    "      2. If REINDEX fails, consider VACUUM FULL or\n"
-                    "         SET zero_damaged_pages = on; then VACUUM;\n"
-                    "      3. Re-run the DAG — committed sub-batches will be\n"
-                    "         detected by the anti-join and skipped automatically.",
-                    batch_idx + 1,
-                    num_batches,
-                    attempt,
-                    _INSERT_MAX_RETRIES,
-                    exc,
-                )
-                if attempt < _INSERT_MAX_RETRIES:
-                    delay = _INSERT_RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                    logger.info("[CENSUS_ACS INSERT] Retrying in %s seconds...", delay)
-                    time.sleep(delay)
-                else:
-                    raise
             except (psycopg2.OperationalError, psycopg2.InternalError) as exc:
                 logger.warning(
                     "[CENSUS_ACS INSERT] Transient DB error on sub-batch %s/%s "
