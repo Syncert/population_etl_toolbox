@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone, date
 from dataclasses import dataclass, field
 
 import polars as pl
+import psycopg2
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
@@ -17,6 +19,15 @@ CENSUS_DATA_DOC = "https://www.census.gov/data/developers/data-sets.html"
 
 
 LARGE_DATASET_ROW_THRESHOLD = 500_000
+
+# Sub-batch size for silver inserts.  Each sub-batch is committed in its own
+# transaction so that partial progress survives crashes / corruption errors.
+_INSERT_SUB_BATCH_SIZE = 100_000
+
+# Retry budget per sub-batch for transient DB errors (connection resets,
+# corruption after REINDEX, etc.).
+_INSERT_MAX_RETRIES = 3
+_INSERT_RETRY_BASE_DELAY = 5  # seconds; grows exponentially
 
 
 @dataclass
@@ -613,6 +624,12 @@ def _direct_insert_silver_rows(
 
     Use only when the target rows are known not to exist (verified via
     anti-join against _get_existing_keys_for_year).
+
+    Rows are inserted in committed sub-batches of *_INSERT_SUB_BATCH_SIZE*
+    so that partial progress is preserved if a later sub-batch fails (e.g.
+    due to a corrupted page or transient connection error).  Each sub-batch
+    is retried up to *_INSERT_MAX_RETRIES* times with exponential back-off,
+    obtaining a fresh connection on every attempt.
     """
     if df.is_empty():
         return 0
@@ -638,15 +655,53 @@ def _direct_insert_silver_rows(
         ) VALUES %s;
     """
 
-    try:
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            execute_values(cur, insert_sql, records, page_size=10000)
-            conn.commit()
-    except Exception:
-        logger.exception("Failed to insert Census silver rows")
-        raise
+    total_inserted = 0
+    num_batches = (len(records) + _INSERT_SUB_BATCH_SIZE - 1) // _INSERT_SUB_BATCH_SIZE
 
-    return len(records)
+    for batch_idx in range(num_batches):
+        start = batch_idx * _INSERT_SUB_BATCH_SIZE
+        end = start + _INSERT_SUB_BATCH_SIZE
+        batch = records[start:end]
+
+        for attempt in range(1, _INSERT_MAX_RETRIES + 1):
+            try:
+                with hook.get_conn() as conn, conn.cursor() as cur:
+                    execute_values(cur, insert_sql, batch, page_size=10000)
+                    conn.commit()
+                total_inserted += len(batch)
+                if num_batches > 1:
+                    logger.info(
+                        "[CENSUS_ACS INSERT] Sub-batch %s/%s committed (%s rows)",
+                        batch_idx + 1,
+                        num_batches,
+                        len(batch),
+                    )
+                break  # success — move to next sub-batch
+            except (psycopg2.OperationalError, psycopg2.InternalError) as exc:
+                logger.warning(
+                    "[CENSUS_ACS INSERT] Transient DB error on sub-batch %s/%s "
+                    "(attempt %s/%s): %s",
+                    batch_idx + 1,
+                    num_batches,
+                    attempt,
+                    _INSERT_MAX_RETRIES,
+                    exc,
+                )
+                if attempt < _INSERT_MAX_RETRIES:
+                    delay = _INSERT_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.info("[CENSUS_ACS INSERT] Retrying in %s seconds...", delay)
+                    time.sleep(delay)
+                else:
+                    raise
+            except Exception:
+                logger.exception(
+                    "Failed to insert Census silver rows (sub-batch %s/%s)",
+                    batch_idx + 1,
+                    num_batches,
+                )
+                raise
+
+    return total_inserted
 
 
 def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uuid.UUID, ingested_at: datetime) -> int:
