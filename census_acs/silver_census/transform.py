@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+import csv
+import io
 from datetime import datetime, timezone, date
 from dataclasses import dataclass, field
 
@@ -625,11 +627,20 @@ def _direct_insert_silver_rows(
     Use only when the target rows are known not to exist (verified via
     anti-join against _get_existing_keys_for_year).
 
-    Rows are inserted in committed sub-batches of *_INSERT_SUB_BATCH_SIZE*
-    so that partial progress is preserved if a later sub-batch fails (e.g.
-    due to a corrupted page or transient connection error).  Each sub-batch
-    is retried up to *_INSERT_MAX_RETRIES* times with exponential back-off,
-    obtaining a fresh connection on every attempt.
+        Rows are inserted in committed sub-batches of *_INSERT_SUB_BATCH_SIZE*
+        so that partial progress is preserved if a later sub-batch fails (e.g.
+        due to a corrupted page or transient connection error).
+
+        Performance notes
+        -----------------
+        - Reuses one DB connection across all sub-batches (avoids repeated
+            connection setup and session overhead).
+        - Streams data with ``COPY`` into a temporary staging table, then does
+            a set-based insert into the target table.
+        - Uses ``ON CONFLICT ... DO NOTHING`` as a safety net for reruns /
+            partial-load races.
+        - Applies ``SET LOCAL synchronous_commit = OFF`` per sub-batch
+            transaction to reduce fsync latency for bulk loads.
     """
     if df.is_empty():
         return 0
@@ -644,6 +655,44 @@ def _direct_insert_silver_rows(
     suffix = ("CENSUS_ACS", load_batch_id, ingested_at)
     records = [row + suffix for row in df.select(insert_cols).rows()]
 
+    temp_table_sql = """
+        CREATE TEMP TABLE IF NOT EXISTS temp_census_insert (
+            time_sk INTEGER,
+            geo_sk INTEGER,
+            duration_start DATE,
+            duration_end DATE,
+            estimate_year INTEGER,
+            dataset VARCHAR(50),
+            table_id VARCHAR(50),
+            variable_code VARCHAR(100),
+            geo_level VARCHAR(50),
+            geo_id VARCHAR(255),
+            state_fips VARCHAR(2),
+            county_fips VARCHAR(3),
+            estimate_value NUMERIC,
+            margin_of_error NUMERIC,
+            margin_of_error_pct NUMERIC,
+            variable_label TEXT,
+            variable_concept TEXT,
+            universe TEXT,
+            source_system VARCHAR(50),
+            load_batch_id UUID,
+            ingested_at TIMESTAMPTZ
+        ) ON COMMIT PRESERVE ROWS;
+    """
+
+    copy_sql = """
+        COPY temp_census_insert (
+            time_sk, geo_sk, duration_start, duration_end,
+            estimate_year, dataset, table_id, variable_code,
+            geo_level, geo_id, state_fips, county_fips,
+            estimate_value, margin_of_error, margin_of_error_pct,
+            variable_label, variable_concept, universe,
+            source_system, load_batch_id, ingested_at
+        )
+        FROM STDIN WITH (FORMAT CSV, NULL '\\N');
+    """
+
     insert_sql = """
         INSERT INTO silver_census.fact_demographics (
             time_sk, geo_sk, duration_start, duration_end,
@@ -652,54 +701,123 @@ def _direct_insert_silver_rows(
             estimate_value, margin_of_error, margin_of_error_pct,
             variable_label, variable_concept, universe,
             source_system, load_batch_id, ingested_at
-        ) VALUES %s;
+        )
+        SELECT
+            time_sk, geo_sk, duration_start, duration_end,
+            estimate_year, dataset, table_id, variable_code,
+            geo_level, geo_id, state_fips, county_fips,
+            estimate_value, margin_of_error, margin_of_error_pct,
+            variable_label, variable_concept, universe,
+            source_system, load_batch_id, ingested_at
+        FROM temp_census_insert
+        ON CONFLICT (dataset, table_id, variable_code, geo_id, estimate_year)
+        DO NOTHING;
     """
 
     total_inserted = 0
     num_batches = (len(records) + _INSERT_SUB_BATCH_SIZE - 1) // _INSERT_SUB_BATCH_SIZE
 
-    for batch_idx in range(num_batches):
-        start = batch_idx * _INSERT_SUB_BATCH_SIZE
-        end = start + _INSERT_SUB_BATCH_SIZE
-        batch = records[start:end]
+    def _to_csv_buffer(batch_rows: list[tuple]) -> io.StringIO:
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        for row in batch_rows:
+            writer.writerow(["\\N" if value is None else value for value in row])
+        buf.seek(0)
+        return buf
 
-        for attempt in range(1, _INSERT_MAX_RETRIES + 1):
-            try:
-                with hook.get_conn() as conn, conn.cursor() as cur:
-                    execute_values(cur, insert_sql, batch, page_size=10000)
+    conn = hook.get_conn()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(temp_table_sql)
+        conn.commit()
+
+        for batch_idx in range(num_batches):
+            start = batch_idx * _INSERT_SUB_BATCH_SIZE
+            end = start + _INSERT_SUB_BATCH_SIZE
+            batch = records[start:end]
+
+            for attempt in range(1, _INSERT_MAX_RETRIES + 1):
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SET LOCAL synchronous_commit = OFF;")
+                        cur.execute("TRUNCATE temp_census_insert;")
+                        cur.copy_expert(copy_sql, _to_csv_buffer(batch))
+                        cur.execute(insert_sql)
+                        inserted_now = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else len(batch)
                     conn.commit()
-                total_inserted += len(batch)
-                if num_batches > 1:
-                    logger.info(
-                        "[CENSUS_ACS INSERT] Sub-batch %s/%s committed (%s rows)",
+                    total_inserted += inserted_now
+                    if num_batches > 1:
+                        logger.info(
+                            "[CENSUS_ACS INSERT] Sub-batch %s/%s committed (%s rows)",
+                            batch_idx + 1,
+                            num_batches,
+                            inserted_now,
+                        )
+                    break  # success — move to next sub-batch
+                except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    logger.warning(
+                        "[CENSUS_ACS INSERT] Connection dropped on sub-batch %s/%s "
+                        "(attempt %s/%s): %s. Reconnecting...",
                         batch_idx + 1,
                         num_batches,
-                        len(batch),
+                        attempt,
+                        _INSERT_MAX_RETRIES,
+                        exc,
                     )
-                break  # success — move to next sub-batch
-            except (psycopg2.OperationalError, psycopg2.InternalError) as exc:
-                logger.warning(
-                    "[CENSUS_ACS INSERT] Transient DB error on sub-batch %s/%s "
-                    "(attempt %s/%s): %s",
-                    batch_idx + 1,
-                    num_batches,
-                    attempt,
-                    _INSERT_MAX_RETRIES,
-                    exc,
-                )
-                if attempt < _INSERT_MAX_RETRIES:
-                    delay = _INSERT_RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                    logger.info("[CENSUS_ACS INSERT] Retrying in %s seconds...", delay)
-                    time.sleep(delay)
-                else:
+                    if attempt < _INSERT_MAX_RETRIES:
+                        delay = _INSERT_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                        time.sleep(delay)
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        conn = hook.get_conn()
+                        with conn.cursor() as cur:
+                            cur.execute(temp_table_sql)
+                        conn.commit()
+                    else:
+                        raise
+                except psycopg2.InternalError as exc:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    logger.warning(
+                        "[CENSUS_ACS INSERT] Transient DB internal error on sub-batch %s/%s "
+                        "(attempt %s/%s): %s",
+                        batch_idx + 1,
+                        num_batches,
+                        attempt,
+                        _INSERT_MAX_RETRIES,
+                        exc,
+                    )
+                    if attempt < _INSERT_MAX_RETRIES:
+                        delay = _INSERT_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                        logger.info("[CENSUS_ACS INSERT] Retrying in %s seconds...", delay)
+                        time.sleep(delay)
+                    else:
+                        raise
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    logger.exception(
+                        "Failed to insert Census silver rows (sub-batch %s/%s)",
+                        batch_idx + 1,
+                        num_batches,
+                    )
                     raise
-            except Exception:
-                logger.exception(
-                    "Failed to insert Census silver rows (sub-batch %s/%s)",
-                    batch_idx + 1,
-                    num_batches,
-                )
-                raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     return total_inserted
 
