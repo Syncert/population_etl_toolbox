@@ -24,7 +24,8 @@ LARGE_DATASET_ROW_THRESHOLD = 500_000
 
 # Sub-batch size for silver inserts.  Each sub-batch is committed in its own
 # transaction so that partial progress survives crashes / corruption errors.
-_INSERT_SUB_BATCH_SIZE = 100_000
+# Tuned upward to reduce commit overhead during large initial loads.
+_INSERT_SUB_BATCH_SIZE = 500_000
 
 # Retry budget per sub-batch for transient DB errors (connection resets,
 # corruption after REINDEX, etc.).
