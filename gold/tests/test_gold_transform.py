@@ -142,10 +142,11 @@ class TestMergeShardEmptyRows(unittest.TestCase):
     ):
         hook = MagicMock()
         merge_shard({"month_start": "2023-06-01"}, hook=hook)
-        # _upsert_gold_rows is called with empty list; it returns 0 without DB writes
+        # _upsert_gold_rows is called with empty rows list (all_rows is empty)
         mock_upsert.assert_called_once()
-        args = mock_upsert.call_args[0]
-        self.assertEqual(args[1], [])  # rows argument is empty list
+        positional_args = mock_upsert.call_args.args
+        rows_arg = positional_args[1]  # signature: (hook, rows, month_start)
+        self.assertEqual(rows_arg, [])
 
 
 class TestAcsPrecedenceSqlContents(unittest.TestCase):

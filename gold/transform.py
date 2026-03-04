@@ -40,6 +40,18 @@ logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold.sql"
 
+# Indices for the 8-field tuples returned by _fetch_*_for_month functions.
+# Each tuple: (geo_id, element_id, source_system, element_name, value,
+#              observation_date, unit_of_measure, seasonal_adjustment)
+_F_GEO_ID = 0
+_F_ELEMENT_ID = 1
+_F_SOURCE_SYSTEM = 2
+_F_ELEMENT_NAME = 3
+_F_VALUE = 4
+_F_OBSERVATION_DATE = 5
+_F_UNIT_OF_MEASURE = 6
+_F_SEASONAL_ADJUSTMENT = 7
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -186,11 +198,15 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
             updated_at          = NOW()
     """
-    # Each tuple: (geo_id, element_id, source_system, element_name, value,
-    #              observation_date, unit_of_measure, seasonal_adjustment)
-    # Reorder to match INSERT column list
+    # Reorder 8-field fetch tuples to match INSERT column list:
+    # INSERT: geo_id, month_start, source_system, element_id, element_name,
+    #         value, observation_date, unit_of_measure, seasonal_adjustment
     insert_rows = [
-        (r[0], month_start, r[2], r[1], r[3], r[4], r[5], r[6], r[7])
+        (
+            r[_F_GEO_ID], month_start, r[_F_SOURCE_SYSTEM], r[_F_ELEMENT_ID],
+            r[_F_ELEMENT_NAME], r[_F_VALUE], r[_F_OBSERVATION_DATE],
+            r[_F_UNIT_OF_MEASURE], r[_F_SEASONAL_ADJUSTMENT],
+        )
         for r in rows
     ]
 
@@ -346,7 +362,7 @@ def merge_shard(shard: dict, hook: PostgresHook | None = None) -> dict:
     # Collect a sample of observation dates (up to 5) for diagnostics
     sample_observation_dates: list[str] = []
     for r in all_rows[:5]:
-        obs = r[5]  # observation_date field
+        obs = r[_F_OBSERVATION_DATE]
         if obs is not None:
             sample_observation_dates.append(
                 obs.isoformat() if hasattr(obs, "isoformat") else str(obs)
