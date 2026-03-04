@@ -574,6 +574,55 @@ def bls_raw_ingest():
 
     raw_ingest >> silver_schema >> silver_transforms
 
+    # -----------------------------
+    # Gold update terminal tasks
+    # -----------------------------
+    @task(trigger_rule='none_failed')
+    def gold_ensure_schema() -> None:
+        """Ensure gold schema exists."""
+        from gold.transform import ensure_gold_schema
+        ensure_gold_schema()
+
+    @task(trigger_rule='none_failed')
+    def gold_refresh_elements() -> None:
+        """Refresh gold element dictionary from silver sources."""
+        from gold.transform import refresh_element_dictionary
+        refresh_element_dictionary()
+
+    @task(trigger_rule='none_failed')
+    def gold_compute_shards() -> list[str]:
+        """Compute gold update shard list for BLS window (~3 months back)."""
+        from datetime import date, timedelta
+        from gold.transform import build_shard_list
+        today = date.today()
+        window_start = date(today.year, today.month, 1) - timedelta(days=90)
+        window_end = today
+        window_start = date(window_start.year, window_start.month, 1)
+        return build_shard_list(window_start, window_end)
+
+    @task(trigger_rule='none_failed')
+    def gold_merge_shard(month_start: str) -> dict:
+        """Merge one gold month shard."""
+        from gold.transform import merge_shard as _merge_shard
+        return _merge_shard({"month_start": month_start})
+
+    @task(trigger_rule='none_failed')
+    def gold_quality_check(shard_results: list[dict]) -> None:
+        """Run quality checks on merged gold shards."""
+        from datetime import date
+        from gold.quality import run_quality_checks
+        for result in (shard_results or []):
+            if result and result.get("output_rows", 0) > 0:
+                run_quality_checks(date.fromisoformat(result["month_start"]))
+
+    gold_schema = gold_ensure_schema()
+    gold_elements = gold_refresh_elements()
+    gold_shards = gold_compute_shards()
+    gold_merged = gold_merge_shard.expand(month_start=gold_shards)
+    gold_qa = gold_quality_check(gold_merged)
+
+    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> gold_qa
+
 
 # Instantiate DAG
 bls_raw_ingest_dag = bls_raw_ingest()
