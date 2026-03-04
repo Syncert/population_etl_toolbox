@@ -57,10 +57,10 @@ _make_airflow_stub()
 _make_psycopg2_stub()
 
 # Now we can import the gold modules
-from gold.transform import (  # noqa: E402
+from gold.transform import build_shard_list  # noqa: E402
+from census_acs.gold_census.transform import (  # noqa: E402
     _fetch_acs_for_month,
-    build_shard_list,
-    merge_shard,
+    merge_acs_shard,
 )
 
 
@@ -116,33 +116,27 @@ class TestBuildShardList(unittest.TestCase):
 
 
 class TestMergeShardEmptyRows(unittest.TestCase):
-    """merge_shard should handle empty fetches gracefully."""
+    """merge_acs_shard should handle empty fetches gracefully."""
 
-    @patch("gold.transform._fetch_acs_for_month", return_value=[])
-    @patch("gold.transform._fetch_bls_for_month", return_value=[])
-    @patch("gold.transform._fetch_fred_for_month", return_value=[])
-    @patch("gold.transform._upsert_gold_rows", return_value=0)
-    def test_empty_rows_returns_zero_counts(self, mock_upsert, mock_fred, mock_bls, mock_acs):
+    @patch("census_acs.gold_census.transform._fetch_acs_for_month", return_value=[])
+    @patch("census_acs.gold_census.transform._upsert_gold_rows", return_value=0)
+    def test_empty_rows_returns_zero_counts(self, mock_upsert, mock_acs):
         hook = MagicMock()
-        result = merge_shard({"month_start": "2023-06-01"}, hook=hook)
+        result = merge_acs_shard({"month_start": "2023-06-01"}, hook=hook)
         self.assertEqual(result["month_start"], "2023-06-01")
         self.assertEqual(result["input_rows"], 0)
         self.assertEqual(result["output_rows"], 0)
-        self.assertEqual(result["counts_by_source"]["CENSUS_ACS"], 0)
-        self.assertEqual(result["counts_by_source"]["BLS"], 0)
-        self.assertEqual(result["counts_by_source"]["FRED"], 0)
+        self.assertEqual(result["source_system"], "CENSUS_ACS")
         self.assertEqual(result["sample_observation_dates"], [])
 
-    @patch("gold.transform._fetch_acs_for_month", return_value=[])
-    @patch("gold.transform._fetch_bls_for_month", return_value=[])
-    @patch("gold.transform._fetch_fred_for_month", return_value=[])
-    @patch("gold.transform._upsert_gold_rows", return_value=0)
+    @patch("census_acs.gold_census.transform._fetch_acs_for_month", return_value=[])
+    @patch("census_acs.gold_census.transform._upsert_gold_rows", return_value=0)
     def test_upsert_not_called_when_no_rows(
-        self, mock_upsert, mock_fred, mock_bls, mock_acs
+        self, mock_upsert, mock_acs
     ):
         hook = MagicMock()
-        merge_shard({"month_start": "2023-06-01"}, hook=hook)
-        # _upsert_gold_rows is called with empty rows list (all_rows is empty)
+        merge_acs_shard({"month_start": "2023-06-01"}, hook=hook)
+        # _upsert_gold_rows is called with empty rows list
         mock_upsert.assert_called_once()
         positional_args = mock_upsert.call_args.args
         rows_arg = positional_args[1]  # signature: (hook, rows, month_start)
@@ -154,14 +148,14 @@ class TestAcsPrecedenceSqlContents(unittest.TestCase):
 
     def test_sql_contains_acs5_rank_1(self):
         import inspect
-        import gold.transform as gt
+        import census_acs.gold_census.transform as gt
         source = inspect.getsource(gt._fetch_acs_for_month)
         self.assertIn("acs5", source)
         self.assertIn("dataset_rank", source)
 
     def test_sql_orders_by_dataset_rank_asc(self):
         import inspect
-        import gold.transform as gt
+        import census_acs.gold_census.transform as gt
         source = inspect.getsource(gt._fetch_acs_for_month)
         self.assertIn("ORDER BY", source)
         self.assertIn("ASC", source)
