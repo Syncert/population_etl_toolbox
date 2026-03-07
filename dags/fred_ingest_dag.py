@@ -263,40 +263,60 @@ def fred_ingest():
     def build_ingestion_plan(metadata_count: int) -> list[list[dict]]:
         """
         Build work units for each domain.
-        
-        Skip slices already completed for current series hash.
-        
-        We'll create one slice per domain covering the full historical period.
-        For incremental updates, you could modify this to create rolling windows.
+
+        Year-range strategy
+        -------------------
+        Slices are split into two date bands:
+
+        1. Historical band  (1970-01-01 → current_year-3-12-31)
+           Treated as immutable once status='success' for the current series hash.
+           Re-runs only when the curated series list changes.
+
+        2. Rolling window   (current_year-2-01-01 → yesterday)
+           Always re-ingested unconditionally, regardless of prior status.
+           FRED revises series values continuously (benchmark revisions,
+           seasonal adjustment updates, late-filed data).  Two years back
+           ensures all common revision windows are covered automatically
+           on every monthly DAG run.
+
+        Skip logic
+        ----------
+        Historical slices: skipped when (domain, date_start, date_end,
+            series_hash) is in the completed set.
+        Rolling slices:    never skipped — always included in the plan.
         """
         hook = _get_postgres_hook()
-        
-        # Define date range
-        # Start from 1970-01-01 for comprehensive historical data
-        date_start = "1970-01-01"
-        # End at yesterday (avoid today to ensure data is complete)
-        date_end = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-        
+
+        today = datetime.now(timezone.utc)
+        current_year = today.year
+
+        # Historical band: lock in once complete
+        hist_start = "1970-01-01"
+        hist_end   = f"{current_year - 3}-12-31"   # e.g. in 2026 → 2023-12-31
+
+        # Rolling window: always re-ingest for revisions / backfills
+        roll_start = f"{current_year - 2}-01-01"   # e.g. in 2026 → 2024-01-01
+        roll_end   = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # yesterday
+
         # Compute series fingerprints for each domain
         domain_meta = {}
         for domain in CONFIG.domains:
             shash, scount = _series_fingerprint(domain)
-            if scount > 0:  # Only include domains with series
+            if scount > 0:
                 domain_meta[domain] = {"series_hash": shash, "series_count": scount}
-        
+
         # Also add a slice for all series combined (domain=None)
         shash_all, scount_all = _series_fingerprint(None)
         if scount_all > 0:
             domain_meta["all"] = {"series_hash": shash_all, "series_count": scount_all}
-        
-        # Load completed slices
+
+        # Load completed slices so we can skip historical ones
         completed = set()
         sql_completed = """
             SELECT domain, date_start, date_end, series_hash
             FROM raw_fred.fred_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
-        
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_completed)
             for domain, ds, de, series_hash in cur.fetchall():
@@ -304,37 +324,47 @@ def fred_ingest():
                     str(domain),
                     ds.isoformat() if ds else None,
                     de.isoformat() if de else None,
-                    series_hash
+                    series_hash,
                 ))
-        
-        def is_done(domain: str, ds: str, de: str) -> bool:
-            """Check if slice is already done for current series set."""
+
+        def hist_is_done(domain: str, ds: str, de: str) -> bool:
+            """True if the historical slice is complete for the current series hash."""
             current_hash = domain_meta.get(domain, {}).get("series_hash")
             if not current_hash:
-                return True  # Skip if no series for this domain
+                return True
             return (domain, ds, de, current_hash) in completed
-        
-        # Build plan
-        plan: list[dict] = []
-        
-        for domain, meta in domain_meta.items():
-            if not is_done(domain, date_start, date_end):
+
+        def add_slice(
+            plan: list[dict],
+            domain: str,
+            ds: str,
+            de: str,
+            force: bool,
+        ) -> None:
+            """Append a work unit if it should run (forced or not yet done)."""
+            meta = domain_meta[domain]
+            if force or not hist_is_done(domain, ds, de):
                 plan.append({
                     "domain": domain,
-                    "date_start": date_start,
-                    "date_end": date_end,
+                    "date_start": ds,
+                    "date_end": de,
                     "series_hash": meta["series_hash"],
                     "series_count": meta["series_count"],
                 })
-        
-        # For FRED, we have relatively few slices, so no batching needed
-        # But we'll still return as list of lists for consistency.
+
+        # Build plan across both bands
+        plan: list[dict] = []
+
+        for domain in domain_meta:
+            # Historical band — skip if already done
+            add_slice(plan, domain, hist_start, hist_end, force=False)
+            # Rolling window — always re-ingest to catch revisions
+            add_slice(plan, domain, roll_start, roll_end, force=True)
+
         # IMPORTANT: return at least one batch so mapped task retries remain stable.
-        # Airflow can raise "cannot expand field mapped to length 0" when a mapped TI
-        # already exists (map_index=0) and a retry re-renders against an empty list.
         if not plan:
             return [[]]
-        
+
         batches = chunk_list(plan, chunk_size=5)
         return batches
     

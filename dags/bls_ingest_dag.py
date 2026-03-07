@@ -354,21 +354,20 @@ def bls_ingest():
             f"{i:02d}" for i in range(1, 57)
             if i not in (3, 7, 14, 43)  # Skip territories
         ]
-        
+
         # Compute series fingerprints for each program
         series_meta = {}
         for program in synced_programs:
             shash, scount = _series_fingerprint(program)
             series_meta[program] = {"series_hash": shash, "series_count": scount}
-        
-        # Load completed slices (skip these)
+
+        # Load completed historical slices so we can skip them
         completed = set()
         sql_completed = """
             SELECT program, year_start, year_end, geo_level, state_fips, series_hash
             FROM raw_bls.bls_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
-        
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_completed)
             for program, sy, ey, geo_level, state_fips, series_hash in cur.fetchall():
@@ -376,9 +375,9 @@ def bls_ingest():
                     str(program), int(sy), int(ey),
                     geo_level if geo_level is not None else None,
                     state_fips if state_fips is not None else None,
-                    series_hash
+                    series_hash,
                 ))
-        
+
         # Load planned slices (retry these)
         planned_to_retry = set()
         sql_planned = """
@@ -386,7 +385,6 @@ def bls_ingest():
             FROM raw_bls.bls_ingestion_slices
             WHERE status = 'planned';
         """
-        
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_planned)
             for program, sy, ey, geo_level, state_fips in cur.fetchall():
@@ -395,74 +393,70 @@ def bls_ingest():
                     geo_level if geo_level is not None else None,
                     state_fips if state_fips is not None else None,
                 ))
-        
-        def is_done(program: str, sy: int, ey: int, geo_level: Optional[str], state_fips: Optional[str]) -> bool:
-            """Check if slice is already done for current series set."""
+
+        def hist_is_done(
+            program: str, sy: int, ey: int,
+            geo_level: Optional[str], state_fips: Optional[str],
+        ) -> bool:
+            """True if the historical slice is complete for the current series hash."""
             current_hash = series_meta[program]["series_hash"]
             return (program, sy, ey, geo_level, state_fips, current_hash) in completed
-        
-        def needs_retry(program: str, sy: int, ey: int, geo_level: Optional[str], state_fips: Optional[str]) -> bool:
-            """Check if slice is marked as planned (from previous 404)."""
+
+        def needs_retry(
+            program: str, sy: int, ey: int,
+            geo_level: Optional[str], state_fips: Optional[str],
+        ) -> bool:
+            """True if a previously-planned slice needs a retry."""
             return (program, sy, ey, geo_level, state_fips) in planned_to_retry
-        
-        # Build plan
-        plan: list[dict] = []
-        
-        for program in synced_programs:
+
+        def add_slices(
+            plan: list[dict],
+            program: str,
+            sy: int,
+            ey: int,
+            geo_level: Optional[str],
+            state_fips: Optional[str],
+            force: bool,
+        ) -> None:
+            """Append a work unit if it should run (forced or not yet done)."""
             meta = series_meta[program]
-            
+            if force or not hist_is_done(program, sy, ey, geo_level, state_fips) \
+                    or needs_retry(program, sy, ey, geo_level, state_fips):
+                plan.append({
+                    "program": program,
+                    "start_year": sy,
+                    "end_year": ey,
+                    "geo_level": geo_level,
+                    "state_fips": state_fips,
+                    "series_hash": meta["series_hash"],
+                    "series_count": meta["series_count"],
+                })
+
+        # Build plan across both bands
+        plan: list[dict] = []
+
+        for program in synced_programs:
             if program == "la":
-                # LAUS: expand by geography
-                # US level
-                if not is_done(program, start_year, end_year, "us", None) or needs_retry(program, start_year, end_year, "us", None):
-                    plan.append({
-                        "program": program,
-                        "start_year": start_year,
-                        "end_year": end_year,
-                        "geo_level": "us",
-                        "state_fips": None,
-                        "series_hash": meta["series_hash"],
-                        "series_count": meta["series_count"],
-                    })
-                
-                # State level
-                if not is_done(program, start_year, end_year, "state", None) or needs_retry(program, start_year, end_year, "state", None):
-                    plan.append({
-                        "program": program,
-                        "start_year": start_year,
-                        "end_year": end_year,
-                        "geo_level": "state",
-                        "state_fips": None,
-                        "series_hash": meta["series_hash"],
-                        "series_count": meta["series_count"],
-                    })
-                
-                # County level (by state)
-                for sf in state_fips_list:
-                    if not is_done(program, start_year, end_year, "county", sf) or needs_retry(program, start_year, end_year, "county", sf):
-                        plan.append({
-                            "program": program,
-                            "start_year": start_year,
-                            "end_year": end_year,
-                            "geo_level": "county",
-                            "state_fips": sf,
-                            "series_hash": meta["series_hash"],
-                            "series_count": meta["series_count"],
-                        })
-            
+                geos: list[tuple[str, Optional[str]]] = (
+                    [("us", None), ("state", None)]
+                    + [("county", sf) for sf in state_fips_list]
+                )
+                for geo_level, state_fips in geos:
+                    # Historical band — skip if already done
+                    if hist_end >= hist_start:
+                        add_slices(plan, program, hist_start, hist_end,
+                                   geo_level, state_fips, force=False)
+                    # Rolling window — always re-ingest to catch revisions
+                    add_slices(plan, program, roll_start, roll_end,
+                               geo_level, state_fips, force=True)
             else:
-                # Other programs: national series only
-                if not is_done(program, start_year, end_year, None, None) or needs_retry(program, start_year, end_year, None, None):
-                    plan.append({
-                        "program": program,
-                        "start_year": start_year,
-                        "end_year": end_year,
-                        "geo_level": None,
-                        "state_fips": None,
-                        "series_hash": meta["series_hash"],
-                        "series_count": meta["series_count"],
-                    })
-        
+                # Non-LAUS: national series only
+                if hist_end >= hist_start:
+                    add_slices(plan, program, hist_start, hist_end,
+                               None, None, force=False)
+                add_slices(plan, program, roll_start, roll_end,
+                           None, None, force=True)
+
         # Batch for mapping.
         # IMPORTANT: return at least one batch so mapped-task retries remain stable.
         # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
