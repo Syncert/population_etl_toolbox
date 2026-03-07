@@ -65,6 +65,7 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 )                                       AS rn
             FROM silver_census.fact_demographics
             WHERE estimate_year = %s
+              AND estimate_value IS NOT NULL
         )
         SELECT
             geo_id, element_id, source_system, element_name,

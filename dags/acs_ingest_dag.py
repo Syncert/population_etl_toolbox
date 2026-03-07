@@ -701,6 +701,7 @@ def acs_ingest():
         sql_silver = """
             SELECT estimate_year, COUNT(*) AS silver_rows
             FROM silver_census.fact_demographics
+            WHERE estimate_value IS NOT NULL
             GROUP BY estimate_year
             ORDER BY estimate_year;
         """

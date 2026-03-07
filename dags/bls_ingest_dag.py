@@ -315,15 +315,39 @@ def bls_ingest():
     def build_ingestion_plan(synced_programs: list[str]) -> list[list[dict]]:
         """
         Build work units for each program.
-        
-        Skip slices already completed for current series hash.
+
+        Year-range strategy
+        -------------------
+        Slices are split into two bands:
+
+        1. Historical band  (1990 → current_year - 3)
+           Treated as immutable once status='success' for the current series hash.
+           Re-runs only when the curated series list changes.
+
+        2. Rolling window   (current_year - 2 → current_year - 1)
+           Always re-ingested unconditionally, regardless of prior status.
+           This ensures BLS revisions, late-filed data, and appropriations-lapse
+           backfills (footnote X/N/9) are picked up automatically on every
+           monthly DAG run.  Two years back is used because BLS frequently
+           revises LAUS county benchmarks ~18 months after initial release.
+
+        Skip logic
+        ----------
+        Historical slices: skipped when (program, year_start, year_end,
+            geo_level, state_fips, series_hash) is in the completed set.
+        Rolling slices:    never skipped — always included in the plan.
         """
         hook = _get_postgres_hook()
-        
-        # Define year range (can make this dynamic)
+
         current_year = datetime.now(timezone.utc).year
-        start_year = 1990  # Start from 1990
-        end_year = current_year - 1  # Previous year (avoid incomplete data)
+
+        # Historical band: lock in once complete
+        hist_start = 1990
+        hist_end   = current_year - 3   # e.g. in 2026 → 1990–2023
+
+        # Rolling window: always re-ingest for revisions / backfills
+        roll_start = current_year - 2   # e.g. in 2026 → 2024
+        roll_end   = current_year - 1   # e.g. in 2026 → 2025
         
         # For LAUS county-level, we need state FIPS codes
         state_fips_list = [
@@ -666,6 +690,7 @@ def bls_ingest():
             SELECT date_trunc('month', period_date)::date AS month_start,
                    COUNT(*) AS silver_rows
             FROM silver_bls.fact_labor_statistics
+            WHERE value IS NOT NULL
             GROUP BY date_trunc('month', period_date)::date
             ORDER BY month_start;
         """

@@ -53,6 +53,7 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 )                                       AS rn
             FROM silver_bls.fact_labor_statistics
             WHERE date_trunc('month', period_date)::date = %s
+              AND value IS NOT NULL
         )
         SELECT
             geo_id, element_id, source_system, element_name,
