@@ -30,12 +30,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+logger = logging.getLogger(__name__)
 
 from bls.config import CONFIG
 from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
@@ -591,14 +594,52 @@ def bls_ingest():
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute gold update shard list for BLS window (~3 months back)."""
-        from datetime import date, timedelta
-        from gold.transform import build_shard_list
-        today = date.today()
-        window_start = date(today.year, today.month, 1) - timedelta(days=90)
-        window_end = today
-        window_start = date(window_start.year, window_start.month, 1)
-        return build_shard_list(window_start, window_end)
+        """Compute gold shards driven by what actually exists in silver.
+
+        BLS is monthly so every distinct calendar month in silver_bls.fact_labor_statistics
+        is a valid shard.  Querying silver directly handles both the initial load
+        (all historical months) and incremental updates (new months appear
+        automatically on the next DAG run).
+
+        Cross-checked against silver_ref.dim_time to guard against dates
+        outside the time dimension.
+        """
+        hook = _get_postgres_hook()
+
+        sql_silver_months = """
+            SELECT DISTINCT date_trunc('month', period_date)::date AS month_start
+            FROM silver_bls.fact_labor_statistics
+            ORDER BY month_start;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_silver_months)
+            silver_months = [row[0].isoformat() for row in cur.fetchall()]
+
+        if not silver_months:
+            logger.warning("[BLS GOLD] No months found in silver_bls.fact_labor_statistics — no shards generated.")
+            return []
+
+        logger.info("[BLS GOLD] Silver contains %d distinct month(s), range %s to %s",
+                    len(silver_months), silver_months[0], silver_months[-1])
+
+        sql_dim_check = """
+            SELECT date_trunc('month', date_key)::date AS month_start
+            FROM silver_ref.dim_time
+            WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
+              AND is_month_start = TRUE
+            ORDER BY month_start;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_dim_check, (silver_months,))
+            confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
+
+        missing = set(silver_months) - set(confirmed_shards)
+        if missing:
+            logger.warning("[BLS GOLD] %d month(s) not in dim_time, skipping: %s",
+                           len(missing), sorted(missing))
+
+        logger.info("[BLS GOLD] Emitting %d shard(s)", len(confirmed_shards))
+        return confirmed_shards
 
     @task(trigger_rule='none_failed')
     def gold_merge_shard(month_start: str) -> dict:
@@ -607,8 +648,65 @@ def bls_ingest():
         return merge_bls_shard({"month_start": month_start})
 
     @task(trigger_rule='none_failed')
+    def gold_validate_coverage(shard_results: list[dict]) -> dict:
+        """Validate gold row counts match silver for every calendar month.
+
+        Compares:
+        - silver_bls.fact_labor_statistics row counts per calendar month
+        - gold.fact_metrics row counts per month_start for source_system='BLS'
+
+        Raises ValueError if any month present in silver has zero rows in gold,
+        indicating an incomplete or failed transposition.
+
+        Returns a summary dict for XCom inspection.
+        """
+        hook = _get_postgres_hook()
+
+        sql_silver = """
+            SELECT date_trunc('month', period_date)::date AS month_start,
+                   COUNT(*) AS silver_rows
+            FROM silver_bls.fact_labor_statistics
+            GROUP BY date_trunc('month', period_date)::date
+            ORDER BY month_start;
+        """
+        sql_gold = """
+            SELECT month_start, COUNT(*) AS gold_rows
+            FROM gold.fact_metrics
+            WHERE source_system = 'BLS'
+            GROUP BY month_start
+            ORDER BY month_start;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_silver)
+            silver_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
+            cur.execute(sql_gold)
+            gold_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
+
+        summary = {}
+        incomplete_months = []
+        for month, silver_rows in silver_counts.items():
+            gold_rows = gold_counts.get(month, 0)
+            summary[month] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
+            if gold_rows == 0:
+                incomplete_months.append(month)
+                logger.error("[BLS GOLD] Coverage gap: %s has %d silver rows but 0 gold rows.",
+                             month, silver_rows)
+            else:
+                logger.info("[BLS GOLD] Coverage OK: %s — silver=%d gold=%d",
+                            month, silver_rows, gold_rows)
+
+        if incomplete_months:
+            raise ValueError(
+                f"[BLS GOLD] Gold transposition incomplete for {len(incomplete_months)} month(s): "
+                f"{incomplete_months}. Silver data exists but gold has 0 rows."
+            )
+
+        logger.info("[BLS GOLD] Coverage validation passed for all %d month(s).", len(silver_counts))
+        return summary
+
+    @task(trigger_rule='none_failed')
     def gold_quality_check(shard_results: list[dict]) -> None:
-        """Run quality checks on merged gold shards."""
+        """Run row-level quality checks on merged gold shards."""
         from datetime import date
         from gold.quality import run_quality_checks
         for result in (shard_results or []):
@@ -619,9 +717,10 @@ def bls_ingest():
     gold_elements = gold_refresh_elements()
     gold_shards = gold_compute_shards()
     gold_merged = gold_merge_shard.expand(month_start=gold_shards)
+    gold_coverage = gold_validate_coverage(gold_merged)
     gold_qa = gold_quality_check(gold_merged)
 
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> gold_qa
+    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
 
 
 # Instantiate DAG
