@@ -75,10 +75,9 @@ silver_fred.fact_economic_indicators — FRED macro series
 | DAG | Schedule | Purpose |
 |-----|----------|---------|
 | `silver_ref` | Monthly (1st @ 05:00 UTC) | Sync geographic gazetteer (14 years) and time dimension |
-| `acs_raw_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
-| `bls_raw_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS series (100+ programs, national + state + county) |
-| `fred_raw_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
-| (Future) `silver_transform_dag` | Daily @ 04:00 UTC | Transform raw → silver with metrics logging |
+| `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
+| `bls_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS series (100+ programs, national + state + county) |
+| `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
 
 ### Key Design Decisions
 
@@ -181,10 +180,10 @@ Sizing guidance:
 export FRED_API_KEY="your_fred_api_key_here"
 
 # For Census API (optional; Census has high default limits)
-# export CENSUS_API_KEY="your_census_api_key_here"
+export CENSUS_API_KEY="your_census_api_key_here"
 
 # For BLS API (usually not required; BLS allows public access)
-# export BLS_API_KEY="your_bls_api_key_here"
+export BLS_API_KEY="your_bls_api_key_here"
 ```
 
 ### 3. Configuration Files
