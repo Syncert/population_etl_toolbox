@@ -255,5 +255,44 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
         self.assertEqual(insert_rows[0][7], 4)
 
 
+class TestGeoIdNormalization(unittest.TestCase):
+    """Geo ID normalization should align non-canonical IDs to canonical keys."""
+
+    def test_normalize_geo_id(self):
+        self.assertEqual(gold_transform._normalize_geo_id("state:1"), "state:01")
+        self.assertEqual(gold_transform._normalize_geo_id("STATE:1|COUNTY:7"), "state:01|county:007")
+        self.assertEqual(gold_transform._normalize_geo_id(" us:1 "), "us:1")
+        self.assertIsNone(gold_transform._normalize_geo_id(None))
+
+    @patch("gold.transform._lookup_geo_attributes")
+    def test_upsert_enriches_when_input_geo_id_not_canonical(self, mock_lookup):
+        mock_lookup.return_value = {
+            "state:01|county:007": ("01", "Alabama", "01007", "Bibb County"),
+        }
+
+        hook = MagicMock()
+        rows = [
+            (
+                " STATE:1|COUNTY:7 ",
+                "SERIES_A",
+                "BLS",
+                "Employment",
+                10.0,
+                date(2024, 1, 31),
+                None,
+                "SA",
+            ),
+        ]
+
+        gold_transform.psycopg2.extras.execute_values.reset_mock()
+        result = gold_transform._upsert_gold_rows(hook, rows, date(2024, 1, 1))
+
+        self.assertEqual(result, 1)
+        insert_rows = gold_transform.psycopg2.extras.execute_values.call_args.args[2]
+        self.assertEqual(insert_rows[0][0], "STATE:1|COUNTY:7")
+        self.assertEqual(insert_rows[0][1], "01")
+        self.assertEqual(insert_rows[0][3], "01007")
+
+
 if __name__ == "__main__":
     unittest.main()

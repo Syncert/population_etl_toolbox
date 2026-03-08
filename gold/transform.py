@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 from datetime import date
 from typing import Any
 
@@ -45,6 +46,35 @@ def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 
+_STATE_GEO_RE = re.compile(r"^state:(\d{1,2})$")
+_COUNTY_GEO_RE = re.compile(r"^state:(\d{1,2})\|county:(\d{1,3})$")
+
+
+def _normalize_geo_id(geo_id: str | None) -> str | None:
+    """Normalize geo_id to canonical lowercase + zero-padded FIPS format."""
+    if geo_id is None:
+        return None
+
+    gid = str(geo_id).strip().lower()
+    if not gid:
+        return None
+    if gid == "us:1":
+        return gid
+
+    m_state = _STATE_GEO_RE.match(gid)
+    if m_state:
+        return f"state:{m_state.group(1).zfill(2)}"
+
+    m_county = _COUNTY_GEO_RE.match(gid)
+    if m_county:
+        return (
+            f"state:{m_county.group(1).zfill(2)}"
+            f"|county:{m_county.group(2).zfill(3)}"
+        )
+
+    return gid
+
+
 def _lookup_geo_attributes(
     hook: PostgresHook,
     geo_ids: list[str],
@@ -53,14 +83,26 @@ def _lookup_geo_attributes(
     if not geo_ids:
         return {}
 
+    requested_geo_ids = sorted({
+        candidate
+        for gid in geo_ids
+        for candidate in {str(gid).strip(), _normalize_geo_id(gid)}
+        if candidate
+    })
+    if not requested_geo_ids:
+        return {}
+
     sql = """
         SELECT DISTINCT ON (geo_id)
             geo_id,
-            state_fips::TEXT AS state_id,
+            CASE
+                WHEN state_fips IS NOT NULL THEN LPAD(state_fips::TEXT, 2, '0')
+                ELSE NULL
+            END AS state_id,
             state_name,
             CASE
                 WHEN county_fips IS NOT NULL AND state_fips IS NOT NULL
-                    THEN CONCAT(state_fips, county_fips)
+                    THEN CONCAT(LPAD(state_fips::TEXT, 2, '0'), LPAD(county_fips::TEXT, 3, '0'))
                 ELSE NULL
             END AS county_id,
             county_name
@@ -69,13 +111,19 @@ def _lookup_geo_attributes(
         ORDER BY geo_id, source_year DESC NULLS LAST
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (geo_ids,))
+        cur.execute(sql, (requested_geo_ids,))
         rows: list[tuple[Any, ...]] = cur.fetchall()
 
-    return {
-        r[0]: (r[1], r[2], r[3], r[4])
-        for r in rows
-    }
+    lookup: dict[str, tuple[str | None, str | None, str | None, str | None]] = {}
+    for r in rows:
+        db_geo_id = str(r[0]).strip()
+        attrs = (r[1], r[2], r[3], r[4])
+        lookup[db_geo_id] = attrs
+        normalized = _normalize_geo_id(db_geo_id)
+        if normalized:
+            lookup[normalized] = attrs
+
+    return lookup
 
 
 def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) -> int:
@@ -85,7 +133,7 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
 
     geo_lookup = _lookup_geo_attributes(
         hook,
-        sorted({str(r[_F_GEO_ID]) for r in rows if r[_F_GEO_ID] is not None}),
+        sorted({str(r[_F_GEO_ID]).strip() for r in rows if r[_F_GEO_ID] is not None}),
     )
     year = month_start.year
     quarter = ((month_start.month - 1) // 3) + 1
@@ -115,25 +163,33 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
     # Reorder 8-field fetch tuples to match INSERT column list:
     # INSERT: geo_id, month_start, source_system, element_id, element_name,
     #         value, observation_date, unit_of_measure, seasonal_adjustment
-    insert_rows = [
-        (
-            r[_F_GEO_ID],
-            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[0],
-            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[1],
-            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[2],
-            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[3],
-            month_start,
-            year,
-            quarter,
-            r[_F_SOURCE_SYSTEM],
-            r[_F_ELEMENT_ID],
-            r[_F_ELEMENT_NAME],
-            r[_F_VALUE],
-            r[_F_OBSERVATION_DATE],
-            r[_F_UNIT_OF_MEASURE], r[_F_SEASONAL_ADJUSTMENT],
+    insert_rows: list[tuple[Any, ...]] = []
+    for r in rows:
+        geo_id = str(r[_F_GEO_ID]).strip()
+        attrs = (
+            geo_lookup.get(_normalize_geo_id(geo_id))
+            or geo_lookup.get(geo_id)
+            or (None, None, None, None)
         )
-        for r in rows
-    ]
+        insert_rows.append(
+            (
+                geo_id,
+                attrs[0],
+                attrs[1],
+                attrs[2],
+                attrs[3],
+                month_start,
+                year,
+                quarter,
+                r[_F_SOURCE_SYSTEM],
+                r[_F_ELEMENT_ID],
+                r[_F_ELEMENT_NAME],
+                r[_F_VALUE],
+                r[_F_OBSERVATION_DATE],
+                r[_F_UNIT_OF_MEASURE],
+                r[_F_SEASONAL_ADJUSTMENT],
+            )
+        )
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, insert_rows)
