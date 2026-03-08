@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import pathlib
 from datetime import date
+from typing import Any
 
 import psycopg2.extras
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -44,18 +45,66 @@ def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 
+def _lookup_geo_attributes(
+    hook: PostgresHook,
+    geo_ids: list[str],
+) -> dict[str, tuple[str | None, str | None, str | None, str | None]]:
+    """Return geo_id -> (state_id, state_name, county_id, county_name)."""
+    if not geo_ids:
+        return {}
+
+    sql = """
+        SELECT DISTINCT ON (geo_id)
+            geo_id,
+            state_fips::TEXT AS state_id,
+            state_name,
+            CASE
+                WHEN county_fips IS NOT NULL AND state_fips IS NOT NULL
+                    THEN CONCAT(state_fips, county_fips)
+                ELSE NULL
+            END AS county_id,
+            county_name
+        FROM silver_ref.dim_geo
+        WHERE geo_id = ANY(%s)
+        ORDER BY geo_id, source_year DESC NULLS LAST
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (geo_ids,))
+        rows: list[tuple[Any, ...]] = cur.fetchall()
+
+    return {
+        r[0]: (r[1], r[2], r[3], r[4])
+        for r in rows
+    }
+
+
 def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) -> int:
     """Upsert rows into gold.fact_metrics. Returns count of rows upserted."""
     if not rows:
         return 0
 
+    geo_lookup = _lookup_geo_attributes(
+        hook,
+        sorted({str(r[_F_GEO_ID]) for r in rows if r[_F_GEO_ID] is not None}),
+    )
+    year = month_start.year
+    quarter = ((month_start.month - 1) // 3) + 1
+
     sql = """
         INSERT INTO gold.fact_metrics
-            (geo_id, month_start, source_system, element_id, element_name,
+            (geo_id, state_id, state_name, county_id, county_name,
+             month_start, year, quarter,
+             source_system, element_id, element_name,
              value, observation_date, unit_of_measure, seasonal_adjustment)
         VALUES %s
         ON CONFLICT (geo_id, month_start, source_system, element_id)
         DO UPDATE SET
+            state_id            = EXCLUDED.state_id,
+            state_name          = EXCLUDED.state_name,
+            county_id           = EXCLUDED.county_id,
+            county_name         = EXCLUDED.county_name,
+            year                = EXCLUDED.year,
+            quarter             = EXCLUDED.quarter,
             element_name        = EXCLUDED.element_name,
             value               = EXCLUDED.value,
             observation_date    = EXCLUDED.observation_date,
@@ -68,8 +117,19 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
     #         value, observation_date, unit_of_measure, seasonal_adjustment
     insert_rows = [
         (
-            r[_F_GEO_ID], month_start, r[_F_SOURCE_SYSTEM], r[_F_ELEMENT_ID],
-            r[_F_ELEMENT_NAME], r[_F_VALUE], r[_F_OBSERVATION_DATE],
+            r[_F_GEO_ID],
+            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[0],
+            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[1],
+            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[2],
+            geo_lookup.get(r[_F_GEO_ID], (None, None, None, None))[3],
+            month_start,
+            year,
+            quarter,
+            r[_F_SOURCE_SYSTEM],
+            r[_F_ELEMENT_ID],
+            r[_F_ELEMENT_NAME],
+            r[_F_VALUE],
+            r[_F_OBSERVATION_DATE],
             r[_F_UNIT_OF_MEASURE], r[_F_SEASONAL_ADJUSTMENT],
         )
         for r in rows

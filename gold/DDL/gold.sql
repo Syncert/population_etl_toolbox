@@ -23,7 +23,13 @@ CREATE TABLE IF NOT EXISTS gold.dim_element (
 CREATE TABLE IF NOT EXISTS gold.fact_metrics (
     metric_sk           BIGSERIAL PRIMARY KEY,
     geo_id              TEXT        NOT NULL,
+    state_id            TEXT,
+    state_name          TEXT,
+    county_id           TEXT,
+    county_name         TEXT,
     month_start         DATE        NOT NULL,
+    year                INTEGER     NOT NULL,
+    quarter             INTEGER     NOT NULL CHECK (quarter BETWEEN 1 AND 4),
     source_system       TEXT        NOT NULL,
     element_id          TEXT        NOT NULL,
     element_name        TEXT        NOT NULL,
@@ -34,6 +40,24 @@ CREATE TABLE IF NOT EXISTS gold.fact_metrics (
     updated_at          TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (geo_id, month_start, source_system, element_id)
 );
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS state_id TEXT;
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS state_name TEXT;
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS county_id TEXT;
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS county_name TEXT;
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS year INTEGER;
+
+ALTER TABLE gold.fact_metrics
+    ADD COLUMN IF NOT EXISTS quarter INTEGER;
 
 CREATE INDEX IF NOT EXISTS ix_fact_metrics_geo_id
     ON gold.fact_metrics (geo_id);
@@ -49,3 +73,21 @@ CREATE INDEX IF NOT EXISTS ix_fact_metrics_element_id
 
 CREATE INDEX IF NOT EXISTS ix_fact_metrics_geo_month
     ON gold.fact_metrics (geo_id, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_id
+    ON gold.fact_metrics (state_id);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_id
+    ON gold.fact_metrics (county_id);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_year
+    ON gold.fact_metrics (year);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_quarter
+    ON gold.fact_metrics (quarter);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_period
+    ON gold.fact_metrics (state_id, year, quarter, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_period
+    ON gold.fact_metrics (county_id, year, quarter, month_start);
