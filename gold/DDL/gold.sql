@@ -91,3 +91,15 @@ CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_period
 
 CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_period
     ON gold.fact_metrics (county_id, year, quarter, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_name_period
+    ON gold.fact_metrics (state_name, year, quarter, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_name_period
+    ON gold.fact_metrics (county_name, year, quarter, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_name_ci_period
+    ON gold.fact_metrics ((LOWER(state_name)), year, quarter, month_start);
+
+CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_name_ci_period
+    ON gold.fact_metrics ((LOWER(county_name)), year, quarter, month_start);
