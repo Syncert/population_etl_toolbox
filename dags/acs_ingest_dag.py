@@ -726,7 +726,8 @@ def acs_ingest():
 
         for year, silver_rows in silver_counts.items():
             gold_rows = gold_counts.get(year, 0)
-            summary[year] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
+            # TaskFlow multiple_outputs requires dictionary keys to be strings.
+            summary[str(year)] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
             if gold_rows == 0:
                 incomplete_years.append(year)
                 logger.error(
