@@ -73,6 +73,55 @@ def check_non_null_elements(hook: PostgresHook, month_start: date) -> int:
     return violations
 
 
+def check_semantic_fields(hook: PostgresHook, month_start: date) -> int:
+    """Verify required semantic columns are populated for analyst-safe usage."""
+    sql = """
+        SELECT COUNT(*) AS violations
+        FROM gold.fact_metrics
+        WHERE month_start = %s
+          AND (
+            geo_level IS NULL
+            OR period_type IS NULL
+            OR observation_end IS NULL
+            OR (source_system = 'CENSUS_ACS' AND acs_dataset IS NULL)
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (month_start,))
+        violations = cur.fetchone()[0]
+
+    if violations > 0:
+        raise ValueError(
+            f"check_semantic_fields FAILED for {month_start}: {violations} rows"
+        )
+    logger.info("check_semantic_fields PASSED for %s", month_start)
+    return violations
+
+
+def check_acs_stats_fields(hook: PostgresHook, month_start: date) -> int:
+    """Verify ACS rows preserve dataset provenance and period semantics."""
+    sql = """
+        SELECT COUNT(*) AS violations
+        FROM gold.fact_metrics
+        WHERE month_start = %s
+          AND source_system = 'CENSUS_ACS'
+          AND (
+            acs_dataset NOT IN ('acs1', 'acs5')
+            OR period_type NOT IN ('ANNUAL', 'ACS5')
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (month_start,))
+        violations = cur.fetchone()[0]
+
+    if violations > 0:
+        raise ValueError(
+            f"check_acs_stats_fields FAILED for {month_start}: {violations} rows"
+        )
+    logger.info("check_acs_stats_fields PASSED for %s", month_start)
+    return violations
+
+
 def check_acs_precedence(hook: PostgresHook, month_start: date) -> int:
     """Verify no (geo_id, element_id) pair has more than one ACS row for this month.
 
@@ -112,4 +161,6 @@ def run_quality_checks(month_start: date, hook: PostgresHook | None = None) -> N
     check_uniqueness(hook, month_start)
     check_non_null_elements(hook, month_start)
     check_acs_precedence(hook, month_start)
+    check_semantic_fields(hook, month_start)
+    check_acs_stats_fields(hook, month_start)
     logger.info("All quality checks PASSED for %s", month_start)

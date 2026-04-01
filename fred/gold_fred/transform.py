@@ -45,9 +45,34 @@ def _fetch_fred_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 'FRED'                                  AS source_system,
                 COALESCE(series_title, series_id)       AS element_name,
                 value,
-                observation_date,
+                observation_date                         AS observation_date,
+                COALESCE(duration_end, observation_date) AS observation_end,
+                duration_start,
+                duration_end,
+                CASE
+                    WHEN UPPER(COALESCE(frequency, '')) LIKE 'Q%%' THEN 'QUARTERLY'
+                    WHEN UPPER(COALESCE(frequency, '')) LIKE 'A%%' THEN 'ANNUAL'
+                    ELSE 'MONTHLY'
+                END                                     AS period_type,
+                NULL::TEXT                              AS acs_dataset,
+                NULL::NUMERIC                           AS margin_of_error,
+                NULL::NUMERIC                           AS margin_of_error_pct,
+                NULL::TEXT                              AS survey_concept,
                 unit_of_measure,
+                COALESCE(unit_of_measure, frequency, domain)
+                                                        AS value_semantics,
                 seasonal_adjustment,
+                CASE
+                                        WHEN LOWER(COALESCE(seasonal_adjustment, '')) LIKE '%%not seasonally adjusted%%' THEN FALSE
+                    WHEN seasonal_adjustment IS NULL THEN NULL
+                    ELSE TRUE
+                END                                     AS is_seasonally_adjusted,
+                CASE
+                                        WHEN LOWER(COALESCE(unit_of_measure, '')) LIKE '%%saar%%'
+                                            OR LOWER(COALESCE(series_title, '')) LIKE '%%saar%%'
+                    THEN TRUE
+                    ELSE FALSE
+                END                                     AS is_saar,
                 ROW_NUMBER() OVER (
                     PARTITION BY series_id
                     ORDER BY observation_date DESC
@@ -58,7 +83,13 @@ def _fetch_fred_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
         )
         SELECT
             geo_id, element_id, source_system, element_name,
-            value, observation_date, unit_of_measure, seasonal_adjustment
+            value, observation_date, observation_end,
+            duration_start, duration_end,
+            period_type, acs_dataset,
+            margin_of_error, margin_of_error_pct,
+            survey_concept,
+            unit_of_measure, value_semantics,
+            seasonal_adjustment, is_seasonally_adjusted, is_saar
         FROM ranked
         WHERE rn = 1
     """
@@ -79,17 +110,48 @@ def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
             series_id                                           AS element_id,
             'FRED'                                              AS source_system,
             COALESCE(series_title, series_id)                   AS element_name,
-            unit_of_measure
+            unit_of_measure,
+            COALESCE(unit_of_measure, frequency, domain)        AS value_semantics,
+            domain                                              AS metric_family,
+            domain                                              AS source_product,
+            NULL::TEXT                                          AS survey_concept,
+            CASE
+                WHEN UPPER(COALESCE(frequency, '')) LIKE 'Q%%' THEN 'QUARTERLY'
+                WHEN UPPER(COALESCE(frequency, '')) LIKE 'A%%' THEN 'ANNUAL'
+                ELSE 'MONTHLY'
+            END                                                 AS default_period_type,
+            CASE
+                                WHEN LOWER(COALESCE(seasonal_adjustment, '')) LIKE '%%not seasonally adjusted%%' THEN FALSE
+                WHEN seasonal_adjustment IS NULL THEN NULL
+                ELSE TRUE
+            END                                                 AS is_seasonally_adjusted_default,
+            CASE
+                                WHEN LOWER(COALESCE(unit_of_measure, '')) LIKE '%%saar%%'
+                                    OR LOWER(COALESCE(series_title, '')) LIKE '%%saar%%'
+                THEN TRUE
+                ELSE FALSE
+            END                                                 AS is_saar_default
         FROM silver_fred.fact_economic_indicators
         ORDER BY series_id
     """
     upsert_sql = """
-        INSERT INTO gold.dim_element (element_id, source_system, element_name, unit_of_measure)
+        INSERT INTO gold.dim_element (
+            element_id, source_system, element_name, unit_of_measure,
+            value_semantics, metric_family, source_product, survey_concept,
+            default_period_type, is_seasonally_adjusted_default, is_saar_default
+        )
         VALUES %s
         ON CONFLICT (element_id, source_system)
         DO UPDATE SET
             element_name    = EXCLUDED.element_name,
             unit_of_measure = EXCLUDED.unit_of_measure,
+            value_semantics = EXCLUDED.value_semantics,
+            metric_family   = EXCLUDED.metric_family,
+            source_product  = EXCLUDED.source_product,
+            survey_concept  = EXCLUDED.survey_concept,
+            default_period_type = EXCLUDED.default_period_type,
+            is_seasonally_adjusted_default = EXCLUDED.is_seasonally_adjusted_default,
+            is_saar_default = EXCLUDED.is_saar_default,
             updated_at      = NOW()
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

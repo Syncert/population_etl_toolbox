@@ -34,15 +34,17 @@ import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+from zoneinfo import ZoneInfo
 
 from airflow.decorators import dag, task
+from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
 from bls.config import CONFIG
 from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP
+from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
 from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
@@ -90,6 +92,22 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
 def chunk_list(items: list, chunk_size: int) -> list[list]:
     """Split list into chunks."""
     return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+
+_EST = ZoneInfo("America/New_York")
+
+
+def _compute_delay_until_1am_est() -> timedelta:
+    """
+    Return the timedelta from now until 1:00am US/Eastern on the next calendar day.
+
+    Using the next calendar day (not +24h) means the retry always lands at 01:00
+    regardless of when within the current day the threshold was hit.
+    """
+    now_est = datetime.now(_EST)
+    next_day = (now_est + timedelta(days=1)).date()
+    target = datetime(next_day.year, next_day.month, next_day.day, 1, 0, 0, tzinfo=_EST)
+    return target - now_est
 
 
 def _run_one_work_unit(work_unit: dict) -> int:
@@ -206,17 +224,61 @@ def _run_one_work_unit(work_unit: dict) -> int:
         
         return int(rows_loaded)
     
+    except BlsDailyThresholdExceeded as e:
+        # BLS daily API quota exhausted.  Mark slice 'planned' so the Airflow
+        # retry picks it up, then re-raise so Airflow records the task as
+        # up_for_retry rather than success.
+        #
+        # Before re-raising, write the computed delay onto ti.task.retry_delay.
+        # Airflow reads this attribute when scheduling the retry; overriding it
+        # here targets 1:00am US/Eastern on the next calendar day regardless of
+        # when within the current day the threshold was hit.  The task runs in
+        # an isolated worker process, so mutating the task object is safe.
+        # ingest_batch has retries=10, covering up to 10 consecutive days of
+        # quota exhaustion — adequate for extensive backfills.
+        finished = datetime.now(timezone.utc)
+        err_txt = str(e)[:4000]
+        sql_planned = """
+            UPDATE raw_bls.bls_ingestion_slices
+            SET status = 'planned',
+                started_at = COALESCE(started_at, %s),
+                finished_at = %s,
+                last_error = %s
+            WHERE program = %s
+              AND year_start = %s
+              AND year_end = %s
+              AND geo_level IS NOT DISTINCT FROM %s
+              AND state_fips IS NOT DISTINCT FROM %s;
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql_planned,
+                (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+            )
+            conn.commit()
+
+        retry_delay = _compute_delay_until_1am_est()
+        retry_at_str = (datetime.now(_EST) + retry_delay).strftime("%Y-%m-%d %H:%M %Z")
+        try:
+            ctx = get_current_context()
+            ctx["ti"].task.retry_delay = retry_delay
+        except Exception:
+            pass  # Outside Airflow (unit tests): fall back to decorator default.
+
+        logger.warning(
+            "[BLS] Daily API threshold exceeded for %s %s-%s (geo=%s, state=%s) — "
+            "Airflow will retry at %s.",
+            program, start_year, end_year, geo_level, state_fips, retry_at_str,
+        )
+        raise
+
     except Exception as e:
         finished = datetime.now(timezone.utc)
         err_txt = str(e)[:4000]
-        
-        # Special handling for rate limits and retryable BLS API errors
-        # These should be retried, not permanently failed
-        is_retryable = isinstance(e, BlsRetryableHTTP)
-        
-        if is_retryable:
-            # Mark as 'planned' so it retries on next manual trigger
-            # This covers rate limits (REQUEST_NOT_PROCESSED) and other transient API errors
+
+        # Transient HTTP errors (429 / 5xx): mark 'planned', suppress so the
+        # rest of the batch continues.  These will be retried on the next run.
+        if isinstance(e, BlsRetryableHTTP):
             sql_planned = """
                 UPDATE raw_bls.bls_ingestion_slices
                 SET status = 'planned',
@@ -229,20 +291,20 @@ def _run_one_work_unit(work_unit: dict) -> int:
                   AND geo_level IS NOT DISTINCT FROM %s
                   AND state_fips IS NOT DISTINCT FROM %s;
             """
-            
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     sql_planned,
                     (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
                 )
                 conn.commit()
-            
-            # Don't raise; let task succeed so DAG completes
-            print(f"[Retryable Error] {program} {start_year}-{end_year} (geo={geo_level}, state={state_fips}): {err_txt}")
+            logger.warning(
+                "[Retryable Error] %s %s-%s (geo=%s, state=%s): %s",
+                program, start_year, end_year, geo_level, state_fips, err_txt,
+            )
             return 0
-        
+
         else:
-            # Other errors: mark as 'failed' and propagate
+            # Unexpected errors: mark as 'failed' and propagate.
             sql_failed = """
                 UPDATE raw_bls.bls_ingestion_slices
                 SET status = 'failed',
@@ -255,15 +317,50 @@ def _run_one_work_unit(work_unit: dict) -> int:
                   AND geo_level IS NOT DISTINCT FROM %s
                   AND state_fips IS NOT DISTINCT FROM %s;
             """
-            
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     sql_failed,
                     (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
                 )
                 conn.commit()
-            
             raise
+
+
+def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
+    """
+    Return True when a slice is already success/empty for this work unit's series hash.
+
+    This is used only during mapped-task retries to avoid re-calling the BLS API
+    for work units that completed successfully in an earlier attempt.
+    """
+    hook = _get_postgres_hook()
+
+    program = work_unit["program"]
+    start_year = int(work_unit["start_year"])
+    end_year = int(work_unit["end_year"])
+    geo_level = work_unit.get("geo_level")
+    state_fips = work_unit.get("state_fips")
+    series_hash = work_unit.get("series_hash")
+
+    sql = """
+        SELECT status, series_hash
+        FROM raw_bls.bls_ingestion_slices
+        WHERE program = %s
+          AND year_start = %s
+          AND year_end = %s
+          AND geo_level IS NOT DISTINCT FROM %s
+          AND state_fips IS NOT DISTINCT FROM %s;
+    """
+
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (program, start_year, end_year, geo_level, state_fips))
+        row = cur.fetchone()
+
+    if not row:
+        return False
+
+    status, existing_hash = row
+    return status in ("success", "empty") and existing_hash == series_hash
 
 
 @dag(
@@ -347,7 +444,7 @@ def bls_ingest():
 
         # Rolling window: always re-ingest for revisions / backfills
         roll_start = current_year - 2   # e.g. in 2026 → 2024
-        roll_end   = current_year - 1   # e.g. in 2026 → 2025
+        roll_end   = current_year   # e.g. in 2026 → 2026
         
         # For LAUS county-level, we need state FIPS codes
         state_fips_list = [
@@ -547,18 +644,43 @@ def bls_ingest():
     # -----------------------------
     # Task 4: Ingest batch (mapped)
     # -----------------------------
-    @task(pool=BLS_API_POOL)
+    @task(
+        pool=BLS_API_POOL,
+        # retries=10 covers up to 10 consecutive days of BLS daily-quota exhaustion
+        # (REQUEST_NOT_PROCESSED), adequate for extensive backfills.  retry_delay is
+        # a static fallback only — the except BlsDailyThresholdExceeded block overrides
+        # it dynamically to target 1:00am US/Eastern the next calendar day.
+        retries=10,
+        retry_delay=timedelta(hours=23),  # fallback; normally overridden dynamically
+    )
     def ingest_batch(batch: list[dict]) -> int:
         """Ingest a batch of work units sequentially."""
+        try:
+            ctx = get_current_context()
+            try_number = int(ctx["ti"].try_number)
+        except Exception:
+            try_number = 1
+
         total = 0
         for work_unit in batch:
+            if try_number > 1 and _is_work_unit_done_for_current_hash(work_unit):
+                logger.info(
+                    "[Retry Skip] Skipping already-successful slice on retry: "
+                    "program=%s years=%s-%s geo=%s state=%s",
+                    work_unit["program"],
+                    work_unit["start_year"],
+                    work_unit["end_year"],
+                    work_unit.get("geo_level"),
+                    work_unit.get("state_fips"),
+                )
+                continue
             total += _run_one_work_unit(work_unit)
         return total
 
     # -----------------------------
     # Task 5: Silver layer (full load)
     # -----------------------------
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def ensure_silver_schema() -> None:
         """Ensure silver_bls schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -568,7 +690,7 @@ def bls_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def transform_to_silver_by_program(program: str) -> int:
         """Transform ALL raw BLS data to silver for one program (full load)."""
         return transform_bls_to_silver(program=program)
@@ -598,19 +720,19 @@ def bls_ingest():
     # -----------------------------
     # Gold update terminal tasks
     # -----------------------------
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
         from gold.transform import ensure_gold_schema
         ensure_gold_schema()
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
         from bls.gold_bls.transform import refresh_bls_elements
         refresh_bls_elements()
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_compute_shards() -> list[str]:
         """Compute gold shards driven by what actually exists in silver.
 
@@ -659,13 +781,13 @@ def bls_ingest():
         logger.info("[BLS GOLD] Emitting %d shard(s)", len(confirmed_shards))
         return confirmed_shards
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_merge_shard(month_start: str) -> dict:
         """Merge one gold month shard."""
         from bls.gold_bls.transform import merge_bls_shard
         return merge_bls_shard({"month_start": month_start})
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_validate_coverage(shard_results: list[dict]) -> dict:
         """Validate gold row counts match silver for every calendar month.
 
@@ -723,7 +845,7 @@ def bls_ingest():
         logger.info("[BLS GOLD] Coverage validation passed for all %d month(s).", len(silver_counts))
         return summary
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='all_success')
     def gold_quality_check(shard_results: list[dict]) -> None:
         """Run row-level quality checks on merged gold shards."""
         from datetime import date

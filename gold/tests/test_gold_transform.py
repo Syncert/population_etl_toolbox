@@ -168,8 +168,8 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
     @patch("gold.transform._lookup_geo_attributes")
     def test_enriches_geography_and_derives_time_parts(self, mock_lookup):
         mock_lookup.return_value = {
-            "state:06|county:075": ("06", "California", "06075", "San Francisco County"),
-            "us:1": (None, None, None, None),
+            "state:06|county:075": ("06", "California", "06075", "San Francisco County", "county"),
+            "us:1": (None, None, None, None, "us"),
         }
 
         hook = MagicMock()
@@ -181,8 +181,19 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
                 "Employment",
                 12.34,
                 date(2024, 5, 31),
+                date(2024, 5, 31),
+                date(2024, 5, 1),
+                date(2024, 5, 31),
+                "MONTHLY",
                 None,
+                None,
+                None,
+                "LAUS_LOCAL_AREA",
+                None,
+                "Employment level",
                 "SA",
+                True,
+                False,
             ),
             (
                 "us:1",
@@ -191,8 +202,19 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
                 "Gross Domestic Product",
                 23456.7,
                 date(2024, 5, 15),
+                date(2024, 5, 15),
+                date(2024, 4, 1),
+                date(2024, 6, 30),
+                "QUARTERLY",
+                None,
+                None,
+                None,
+                None,
                 "Billions of Dollars",
+                "Real GDP",
                 "Not Seasonally Adjusted",
+                False,
+                False,
             ),
         ]
 
@@ -209,21 +231,23 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
 
         self.assertIn("ON CONFLICT (geo_id, month_start, source_system, element_id)", sql)
         self.assertEqual(insert_rows[0][0], "state:06|county:075")
-        self.assertEqual(insert_rows[0][1], "06")
-        self.assertEqual(insert_rows[0][2], "California")
-        self.assertEqual(insert_rows[0][3], "06075")
-        self.assertEqual(insert_rows[0][4], "San Francisco County")
-        self.assertEqual(insert_rows[0][5], date(2024, 5, 1))
-        self.assertEqual(insert_rows[0][6], 2024)
-        self.assertEqual(insert_rows[0][7], 2)
+        self.assertEqual(insert_rows[0][1], "COUNTY")
+        self.assertEqual(insert_rows[0][2], "06")
+        self.assertEqual(insert_rows[0][3], "California")
+        self.assertEqual(insert_rows[0][4], "06075")
+        self.assertEqual(insert_rows[0][5], "San Francisco County")
+        self.assertEqual(insert_rows[0][6], date(2024, 5, 1))
+        self.assertEqual(insert_rows[0][7], 2024)
+        self.assertEqual(insert_rows[0][8], 2)
 
         self.assertEqual(insert_rows[1][0], "us:1")
-        self.assertIsNone(insert_rows[1][1])
+        self.assertEqual(insert_rows[1][1], "NATIONAL")
         self.assertIsNone(insert_rows[1][2])
         self.assertIsNone(insert_rows[1][3])
         self.assertIsNone(insert_rows[1][4])
-        self.assertEqual(insert_rows[1][6], 2024)
-        self.assertEqual(insert_rows[1][7], 2)
+        self.assertIsNone(insert_rows[1][5])
+        self.assertEqual(insert_rows[1][7], 2024)
+        self.assertEqual(insert_rows[1][8], 2)
 
     @patch("gold.transform._lookup_geo_attributes", return_value={})
     def test_missing_geo_mapping_defaults_to_null_geo_attributes(self, _mock_lookup):
@@ -236,8 +260,19 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
                 "Unknown",
                 1.23,
                 date(2024, 12, 31),
+                date(2024, 12, 31),
+                date(2024, 12, 1),
+                date(2024, 12, 31),
+                "MONTHLY",
                 None,
                 None,
+                None,
+                "UNKNOWN",
+                None,
+                "Unknown",
+                None,
+                None,
+                False,
             )
         ]
 
@@ -247,12 +282,13 @@ class TestGoldUpsertEnrichment(unittest.TestCase):
         self.assertEqual(result, 1)
         insert_rows = gold_transform.psycopg2.extras.execute_values.call_args.args[2]
         self.assertEqual(insert_rows[0][0], "state:99|county:999")
-        self.assertIsNone(insert_rows[0][1])
+        self.assertEqual(insert_rows[0][1], "COUNTY")
         self.assertIsNone(insert_rows[0][2])
         self.assertIsNone(insert_rows[0][3])
         self.assertIsNone(insert_rows[0][4])
-        self.assertEqual(insert_rows[0][6], 2024)
-        self.assertEqual(insert_rows[0][7], 4)
+        self.assertIsNone(insert_rows[0][5])
+        self.assertEqual(insert_rows[0][7], 2024)
+        self.assertEqual(insert_rows[0][8], 4)
 
 
 class TestGeoIdNormalization(unittest.TestCase):
@@ -267,7 +303,7 @@ class TestGeoIdNormalization(unittest.TestCase):
     @patch("gold.transform._lookup_geo_attributes")
     def test_upsert_enriches_when_input_geo_id_not_canonical(self, mock_lookup):
         mock_lookup.return_value = {
-            "state:01|county:007": ("01", "Alabama", "01007", "Bibb County"),
+            "state:01|county:007": ("01", "Alabama", "01007", "Bibb County", "county"),
         }
 
         hook = MagicMock()
@@ -279,8 +315,19 @@ class TestGeoIdNormalization(unittest.TestCase):
                 "Employment",
                 10.0,
                 date(2024, 1, 31),
+                date(2024, 1, 31),
+                date(2024, 1, 1),
+                date(2024, 1, 31),
+                "MONTHLY",
                 None,
+                None,
+                None,
+                "LAUS_LOCAL_AREA",
+                None,
+                "Employment level",
                 "SA",
+                True,
+                False,
             ),
         ]
 
@@ -290,8 +337,9 @@ class TestGeoIdNormalization(unittest.TestCase):
         self.assertEqual(result, 1)
         insert_rows = gold_transform.psycopg2.extras.execute_values.call_args.args[2]
         self.assertEqual(insert_rows[0][0], "STATE:1|COUNTY:7")
-        self.assertEqual(insert_rows[0][1], "01")
-        self.assertEqual(insert_rows[0][3], "01007")
+        self.assertEqual(insert_rows[0][1], "COUNTY")
+        self.assertEqual(insert_rows[0][2], "01")
+        self.assertEqual(insert_rows[0][4], "01007")
 
 
 if __name__ == "__main__":

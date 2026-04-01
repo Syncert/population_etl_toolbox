@@ -45,8 +45,30 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 COALESCE(measure_name, series_id)       AS element_name,
                 value,
                 period_date                             AS observation_date,
+                COALESCE(duration_end, period_date)     AS observation_end,
+                duration_start,
+                duration_end,
+                'MONTHLY'                               AS period_type,
+                NULL::TEXT                              AS acs_dataset,
+                NULL::NUMERIC                           AS margin_of_error,
+                NULL::NUMERIC                           AS margin_of_error_pct,
+                CASE
+                    WHEN program = 'la' THEN 'LAUS_LOCAL_AREA'
+                    WHEN program = 'ln' THEN 'CPS_HOUSEHOLD'
+                    WHEN program = 'ce' THEN 'CES_ESTABLISHMENT'
+                    WHEN program = 'cu' THEN 'CPI_PRICE'
+                    WHEN program = 'jt' THEN 'JOLTS'
+                    ELSE UPPER(program)
+                END                                     AS survey_concept,
                 NULL::TEXT                              AS unit_of_measure,
+                COALESCE(measure_name, program)         AS value_semantics,
                 seasonal_adjustment,
+                CASE seasonal_adjustment
+                    WHEN 'S' THEN TRUE
+                    WHEN 'U' THEN FALSE
+                    ELSE NULL
+                END                                     AS is_seasonally_adjusted,
+                FALSE                                   AS is_saar,
                 ROW_NUMBER() OVER (
                     PARTITION BY geo_id, series_id
                     ORDER BY period_date DESC
@@ -57,7 +79,13 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
         )
         SELECT
             geo_id, element_id, source_system, element_name,
-            value, observation_date, unit_of_measure, seasonal_adjustment
+            value, observation_date, observation_end,
+            duration_start, duration_end,
+            period_type, acs_dataset,
+            margin_of_error, margin_of_error_pct,
+            survey_concept,
+            unit_of_measure, value_semantics,
+            seasonal_adjustment, is_seasonally_adjusted, is_saar
         FROM ranked
         WHERE rn = 1
     """
@@ -78,17 +106,42 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
             series_id                                           AS element_id,
             'BLS'                                               AS source_system,
             COALESCE(measure_name, series_id)                   AS element_name,
-            NULL::TEXT                                          AS unit_of_measure
+            NULL::TEXT                                          AS unit_of_measure,
+            COALESCE(measure_name, program)                     AS value_semantics,
+            program                                             AS metric_family,
+            program                                             AS source_product,
+            CASE
+                WHEN program = 'la' THEN 'LAUS_LOCAL_AREA'
+                WHEN program = 'ln' THEN 'CPS_HOUSEHOLD'
+                WHEN program = 'ce' THEN 'CES_ESTABLISHMENT'
+                WHEN program = 'cu' THEN 'CPI_PRICE'
+                WHEN program = 'jt' THEN 'JOLTS'
+                ELSE UPPER(program)
+            END                                                 AS survey_concept,
+            'MONTHLY'                                           AS default_period_type,
+            NULL::BOOLEAN                                       AS is_seasonally_adjusted_default,
+            FALSE                                               AS is_saar_default
         FROM silver_bls.fact_labor_statistics
         ORDER BY series_id
     """
     upsert_sql = """
-        INSERT INTO gold.dim_element (element_id, source_system, element_name, unit_of_measure)
+        INSERT INTO gold.dim_element (
+            element_id, source_system, element_name, unit_of_measure,
+            value_semantics, metric_family, source_product, survey_concept,
+            default_period_type, is_seasonally_adjusted_default, is_saar_default
+        )
         VALUES %s
         ON CONFLICT (element_id, source_system)
         DO UPDATE SET
             element_name    = EXCLUDED.element_name,
             unit_of_measure = EXCLUDED.unit_of_measure,
+            value_semantics = EXCLUDED.value_semantics,
+            metric_family   = EXCLUDED.metric_family,
+            source_product  = EXCLUDED.source_product,
+            survey_concept  = EXCLUDED.survey_concept,
+            default_period_type = EXCLUDED.default_period_type,
+            is_seasonally_adjusted_default = EXCLUDED.is_seasonally_adjusted_default,
+            is_saar_default = EXCLUDED.is_saar_default,
             updated_at      = NOW()
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

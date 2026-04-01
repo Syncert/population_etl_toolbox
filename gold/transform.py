@@ -5,8 +5,14 @@ Provides schema management, shard list computation, and the core upsert helper
 used by subject-specific gold transforms (census_acs/gold_census, bls/gold_bls,
 fred/gold_fred).
 
-Gold fact_metrics row: (geo_id, month_start, source_system, element_id, element_name, value,
-                        observation_date, unit_of_measure, seasonal_adjustment)
+Gold fetch tuple shape:
+(
+    geo_id, element_id, source_system, element_name, value,
+    observation_date, observation_end, duration_start, duration_end,
+    period_type, acs_dataset, margin_of_error, margin_of_error_pct,
+    survey_concept, unit_of_measure, value_semantics,
+    seasonal_adjustment, is_seasonally_adjusted, is_saar
+)
 """
 from __future__ import annotations
 
@@ -25,17 +31,26 @@ logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold.sql"
 
-# Indices for the 8-field tuples returned by _fetch_*_for_month functions.
-# Each tuple: (geo_id, element_id, source_system, element_name, value,
-#              observation_date, unit_of_measure, seasonal_adjustment)
+# Indices for tuples returned by _fetch_*_for_month functions.
 _F_GEO_ID = 0
 _F_ELEMENT_ID = 1
 _F_SOURCE_SYSTEM = 2
 _F_ELEMENT_NAME = 3
 _F_VALUE = 4
 _F_OBSERVATION_DATE = 5
-_F_UNIT_OF_MEASURE = 6
-_F_SEASONAL_ADJUSTMENT = 7
+_F_OBSERVATION_END = 6
+_F_DURATION_START = 7
+_F_DURATION_END = 8
+_F_PERIOD_TYPE = 9
+_F_ACS_DATASET = 10
+_F_MARGIN_OF_ERROR = 11
+_F_MARGIN_OF_ERROR_PCT = 12
+_F_SURVEY_CONCEPT = 13
+_F_UNIT_OF_MEASURE = 14
+_F_VALUE_SEMANTICS = 15
+_F_SEASONAL_ADJUSTMENT = 16
+_F_IS_SEASONALLY_ADJUSTED = 17
+_F_IS_SAAR = 18
 
 
 # ---------------------------------------------------------------------------
@@ -75,11 +90,32 @@ def _normalize_geo_id(geo_id: str | None) -> str | None:
     return gid
 
 
+def _derive_geo_level(geo_id: str, dim_geo_level: str | None) -> str:
+    """Resolve analyst-facing geography level with stable fallback logic."""
+    if dim_geo_level:
+        normalized = dim_geo_level.strip().lower()
+        if normalized == "us":
+            return "NATIONAL"
+        if normalized == "state":
+            return "STATE"
+        if normalized == "county":
+            return "COUNTY"
+
+    gid = _normalize_geo_id(geo_id)
+    if gid == "us:1":
+        return "NATIONAL"
+    if gid and "|county:" in gid:
+        return "COUNTY"
+    if gid and gid.startswith("state:"):
+        return "STATE"
+    return "NATIONAL"
+
+
 def _lookup_geo_attributes(
     hook: PostgresHook,
     geo_ids: list[str],
-) -> dict[str, tuple[str | None, str | None, str | None, str | None]]:
-    """Return geo_id -> (state_id, state_name, county_id, county_name)."""
+) -> dict[str, tuple[str | None, str | None, str | None, str | None, str | None]]:
+    """Return geo_id -> (state_id, state_name, county_id, county_name, dim_geo_level)."""
     if not geo_ids:
         return {}
 
@@ -105,7 +141,8 @@ def _lookup_geo_attributes(
                     THEN CONCAT(LPAD(state_fips::TEXT, 2, '0'), LPAD(county_fips::TEXT, 3, '0'))
                 ELSE NULL
             END AS county_id,
-            county_name
+            county_name,
+            geo_level
         FROM silver_ref.dim_geo
         WHERE geo_id = ANY(%s)
         ORDER BY geo_id, source_year DESC NULLS LAST
@@ -114,10 +151,10 @@ def _lookup_geo_attributes(
         cur.execute(sql, (requested_geo_ids,))
         rows: list[tuple[Any, ...]] = cur.fetchall()
 
-    lookup: dict[str, tuple[str | None, str | None, str | None, str | None]] = {}
+    lookup: dict[str, tuple[str | None, str | None, str | None, str | None, str | None]] = {}
     for r in rows:
         db_geo_id = str(r[0]).strip()
-        attrs = (r[1], r[2], r[3], r[4])
+        attrs = (r[1], r[2], r[3], r[4], r[5])
         lookup[db_geo_id] = attrs
         normalized = _normalize_geo_id(db_geo_id)
         if normalized:
@@ -140,40 +177,63 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
 
     sql = """
         INSERT INTO gold.fact_metrics
-            (geo_id, state_id, state_name, county_id, county_name,
+            (geo_id, geo_level, state_id, state_name, county_id, county_name,
              month_start, year, quarter,
+             period_type,
              source_system, element_id, element_name,
-             value, observation_date, unit_of_measure, seasonal_adjustment)
+             value, observation_date, observation_end,
+             duration_start, duration_end,
+             acs_dataset, margin_of_error, margin_of_error_pct,
+             survey_concept,
+             unit_of_measure, value_semantics,
+             seasonal_adjustment, is_seasonally_adjusted, is_saar,
+             as_of_date)
         VALUES %s
         ON CONFLICT (geo_id, month_start, source_system, element_id)
         DO UPDATE SET
+            geo_level           = EXCLUDED.geo_level,
             state_id            = EXCLUDED.state_id,
             state_name          = EXCLUDED.state_name,
             county_id           = EXCLUDED.county_id,
             county_name         = EXCLUDED.county_name,
             year                = EXCLUDED.year,
             quarter             = EXCLUDED.quarter,
+            period_type         = EXCLUDED.period_type,
             element_name        = EXCLUDED.element_name,
             value               = EXCLUDED.value,
             observation_date    = EXCLUDED.observation_date,
+            observation_end     = EXCLUDED.observation_end,
+            duration_start      = EXCLUDED.duration_start,
+            duration_end        = EXCLUDED.duration_end,
+            acs_dataset         = EXCLUDED.acs_dataset,
+            margin_of_error     = EXCLUDED.margin_of_error,
+            margin_of_error_pct = EXCLUDED.margin_of_error_pct,
+            survey_concept      = EXCLUDED.survey_concept,
             unit_of_measure     = EXCLUDED.unit_of_measure,
+            value_semantics     = EXCLUDED.value_semantics,
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
+            is_seasonally_adjusted = EXCLUDED.is_seasonally_adjusted,
+            is_saar             = EXCLUDED.is_saar,
+            as_of_date          = EXCLUDED.as_of_date,
             updated_at          = NOW()
     """
-    # Reorder 8-field fetch tuples to match INSERT column list:
-    # INSERT: geo_id, month_start, source_system, element_id, element_name,
-    #         value, observation_date, unit_of_measure, seasonal_adjustment
     insert_rows: list[tuple[Any, ...]] = []
     for r in rows:
         geo_id = str(r[_F_GEO_ID]).strip()
         attrs = (
             geo_lookup.get(_normalize_geo_id(geo_id))
             or geo_lookup.get(geo_id)
-            or (None, None, None, None)
+            or (None, None, None, None, None)
         )
+        geo_level = _derive_geo_level(geo_id, attrs[4] if len(attrs) > 4 else None)
+
+        observation_date = r[_F_OBSERVATION_DATE]
+        observation_end = r[_F_OBSERVATION_END] or observation_date
+
         insert_rows.append(
             (
                 geo_id,
+                geo_level,
                 attrs[0],
                 attrs[1],
                 attrs[2],
@@ -181,13 +241,25 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
                 month_start,
                 year,
                 quarter,
+                r[_F_PERIOD_TYPE],
                 r[_F_SOURCE_SYSTEM],
                 r[_F_ELEMENT_ID],
                 r[_F_ELEMENT_NAME],
                 r[_F_VALUE],
-                r[_F_OBSERVATION_DATE],
+                observation_date,
+                observation_end,
+                r[_F_DURATION_START],
+                r[_F_DURATION_END],
+                r[_F_ACS_DATASET],
+                r[_F_MARGIN_OF_ERROR],
+                r[_F_MARGIN_OF_ERROR_PCT],
+                r[_F_SURVEY_CONCEPT],
                 r[_F_UNIT_OF_MEASURE],
+                r[_F_VALUE_SEMANTICS],
                 r[_F_SEASONAL_ADJUSTMENT],
+                r[_F_IS_SEASONALLY_ADJUSTED],
+                r[_F_IS_SAAR],
+                date.today(),
             )
         )
 
