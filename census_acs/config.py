@@ -48,6 +48,10 @@ class AcsConfig(BaseModel):
     census_api_global_concurrency: int = 2
     census_api_min_spacing_seconds: float = 0.25
 
+    # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
+    # prevent Postgres connection exhaustion.
+    gold_merge_max_active_tis: int = 8
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.census_api_key)

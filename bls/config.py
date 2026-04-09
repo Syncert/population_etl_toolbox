@@ -143,6 +143,11 @@ class BlsConfig(BaseModel):
     # Year chunking to avoid API instability on long ranges
     bls_api_year_chunk_size: int = 20
 
+    # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
+    # prevent Postgres connection exhaustion.
+    silver_max_active_tis: int = 4
+    gold_merge_max_active_tis: int = 8
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.bls_api_key)
