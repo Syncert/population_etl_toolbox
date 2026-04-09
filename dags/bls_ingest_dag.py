@@ -421,7 +421,7 @@ def bls_ingest():
            Treated as immutable once status='success' for the current series hash.
            Re-runs only when the curated series list changes.
 
-        2. Rolling window   (current_year - 2 → current_year - 1)
+        2. Rolling window   (current_year - 2 → current_year)
            Always re-ingested unconditionally, regardless of prior status.
            This ensures BLS revisions, late-filed data, and appropriations-lapse
            backfills (footnote X/N/9) are picked up automatically on every
@@ -690,7 +690,7 @@ def bls_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='all_success')
+    @task(trigger_rule='all_success', max_active_tis_per_dag=4)
     def transform_to_silver_by_program(program: str) -> int:
         """Transform ALL raw BLS data to silver for one program (full load)."""
         return transform_bls_to_silver(program=program)
@@ -781,7 +781,7 @@ def bls_ingest():
         logger.info("[BLS GOLD] Emitting %d shard(s)", len(confirmed_shards))
         return confirmed_shards
 
-    @task(trigger_rule='all_success')
+    @task(trigger_rule='all_success', max_active_tis_per_dag=8)
     def gold_merge_shard(month_start: str) -> dict:
         """Merge one gold month shard."""
         from bls.gold_bls.transform import merge_bls_shard

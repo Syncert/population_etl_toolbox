@@ -680,7 +680,7 @@ def acs_ingest():
         logger.info("[ACS GOLD] Emitting %d shard(s): %s", len(confirmed_shards), confirmed_shards)
         return confirmed_shards
 
-    @task(pool=GOLD_MERGE_POOL, trigger_rule='none_failed')
+    @task(pool=GOLD_MERGE_POOL, trigger_rule='none_failed', max_active_tis_per_dag=8)
     def gold_merge_shard(month_start: str) -> dict:
         """Merge one gold month shard."""
         from census_acs.gold_census.transform import merge_acs_shard

@@ -148,3 +148,25 @@ class BlsConfig(BaseModel):
         return bool(self.bls_api_key)
 
 CONFIG = BlsConfig()
+
+# ---------------------------------------------------------------------------
+# Human-readable labels for BLS programs and LAUS measure codes.
+# Used by silver transforms (measure_name derivation) and gold dim_element.
+# ---------------------------------------------------------------------------
+BLS_PROGRAM_LABELS: Dict[str, str] = {
+    "la": "LAUS",
+    "ln": "CPS",
+    "ce": "CES",
+    "cu": "CPI",
+    "jt": "JOLTS",
+}
+
+LAUS_MEASURE_META: Dict[str, Dict[str, str]] = {
+    "03": {"name": "Unemployment Rate", "unit": "Percent", "semantics": "Percent of labor force that is unemployed"},
+    "04": {"name": "Unemployment Level", "unit": "Persons", "semantics": "Count of unemployed persons"},
+    "05": {"name": "Employment Level", "unit": "Persons", "semantics": "Count of employed persons"},
+    "06": {"name": "Labor Force Level", "unit": "Persons", "semantics": "Count of persons in labor force"},
+    "07": {"name": "Employment-Population Ratio", "unit": "Percent", "semantics": "Employed as percent of civilian noninstitutional population"},
+    "08": {"name": "Labor Force Participation Rate", "unit": "Percent", "semantics": "Labor force as percent of civilian noninstitutional population"},
+    "09": {"name": "Civilian Noninstitutional Population", "unit": "Persons", "semantics": "Count of civilian noninstitutional population"},
+}

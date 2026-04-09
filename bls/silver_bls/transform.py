@@ -9,7 +9,7 @@ import polars as pl
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
-from bls.config import CONFIG as RAW_CONFIG
+from bls.config import CONFIG as RAW_CONFIG, LAUS_MEASURE_META
 from .geography_parser import parse_bls_geography
 from .time_utils import parse_bls_period_to_date
 
@@ -251,7 +251,8 @@ def _fetch_raw_rows(hook: PostgresHook, program: str, year: int | None = None) -
             bl.period_name,
             bl.value,
             bs.measure AS measure_code,
-            bs.seasonal AS seasonal_adjustment
+            bs.seasonal AS seasonal_adjustment,
+            bs.title
         FROM raw_bls.bls_long bl
         LEFT JOIN raw_bls.bls_series bs
             ON bl.series_id = bs.series_id
@@ -293,7 +294,7 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
                 r["period"],
                 r["period_name"],
                 r["measure_code"],
-                None,
+                r.get("measure_name"),
                 r["seasonal_adjustment"] or "U",
                 "BLS",
                 load_batch_id,
@@ -360,6 +361,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
             "value",
             "measure_code",
             "seasonal_adjustment",
+            "title",
         ],
     )
 
@@ -388,6 +390,16 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
             for sid, fb in zip(series_ids, measure_fallback)
         ]
 
+    # Derive measure_name from LAUS measure-code lookup or bls_series title
+    if program.lower() == "la":
+        measure_name = [
+            LAUS_MEASURE_META.get(mc, {}).get("name") if mc else None
+            for mc in measure_code
+        ]
+    else:
+        titles = df.get_column("title").to_list()
+        measure_name = [t if t else None for t in titles]
+
     df = df.with_columns(
         [
             pl.Series("period_date", period_date),
@@ -398,6 +410,7 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
             pl.Series("state_fips", state_fips),
             pl.Series("county_fips", county_fips),
             pl.Series("measure_code", measure_code),
+            pl.Series("measure_name", measure_name),
         ]
     )
 
