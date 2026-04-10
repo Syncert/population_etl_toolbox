@@ -47,7 +47,7 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 geo_id,
                 variable_code                           AS element_id,
                 'CENSUS_ACS'                            AS source_system,
-                COALESCE(variable_label, variable_concept, variable_code)
+                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code)
                                                         AS element_name,
                 estimate_value                          AS value,
                 MAKE_DATE(estimate_year, 1, 1)          AS observation_date,
@@ -79,6 +79,8 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
             FROM silver_census.fact_demographics
             WHERE estimate_year = %s
               AND estimate_value IS NOT NULL
+              AND variable_code IS NOT NULL
+              AND variable_code != ''
         )
         SELECT
             geo_id, element_id, source_system, element_name,
@@ -108,7 +110,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         SELECT DISTINCT ON (variable_code)
             variable_code                                       AS element_id,
             'CENSUS_ACS'                                        AS source_system,
-            COALESCE(variable_label, variable_concept, variable_code)
+            COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code)
                                                                 AS element_name,
             NULL::TEXT                                          AS unit_of_measure,
             COALESCE(universe, variable_concept, table_id)      AS value_semantics,

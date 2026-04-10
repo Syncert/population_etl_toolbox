@@ -43,7 +43,7 @@ def _fetch_fred_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 'us:1'                                  AS geo_id,
                 series_id                               AS element_id,
                 'FRED'                                  AS source_system,
-                COALESCE(series_title, series_id)       AS element_name,
+                COALESCE(NULLIF(series_title, ''), series_id) AS element_name,
                 value,
                 observation_date                         AS observation_date,
                 COALESCE(duration_end, observation_date) AS observation_end,
@@ -80,6 +80,8 @@ def _fetch_fred_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
             FROM silver_fred.fact_economic_indicators
             WHERE date_trunc('month', observation_date)::date = %s
               AND is_missing = FALSE
+              AND series_id IS NOT NULL
+              AND series_id != ''
         )
         SELECT
             geo_id, element_id, source_system, element_name,
@@ -109,7 +111,7 @@ def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
         SELECT DISTINCT ON (series_id)
             series_id                                           AS element_id,
             'FRED'                                              AS source_system,
-            COALESCE(series_title, series_id)                   AS element_name,
+            COALESCE(NULLIF(series_title, ''), series_id)       AS element_name,
             unit_of_measure,
             COALESCE(unit_of_measure, frequency, domain)        AS value_semantics,
             domain                                              AS metric_family,

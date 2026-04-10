@@ -42,7 +42,7 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 f.geo_id,
                 f.series_id                               AS element_id,
                 'BLS'                                     AS source_system,
-                COALESCE(bs.title, f.measure_name, f.series_id)
+                COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.series_id)
                                                           AS element_name,
                 f.value,
                 f.period_date                             AS observation_date,
@@ -77,7 +77,7 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                         THEN 'Thousands of Persons'
                     ELSE NULL
                 END::TEXT                                  AS unit_of_measure,
-                COALESCE(bs.title, f.measure_name, f.program)
+                COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.program)
                                                           AS value_semantics,
                 f.seasonal_adjustment,
                 CASE f.seasonal_adjustment
@@ -96,6 +96,8 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                AND f.program = bs.program
             WHERE date_trunc('month', f.period_date)::date = %s
               AND f.value IS NOT NULL
+              AND f.series_id IS NOT NULL
+              AND f.series_id != ''
         )
         SELECT
             geo_id, element_id, source_system, element_name,
@@ -125,7 +127,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
         SELECT DISTINCT ON (f.series_id)
             f.series_id                                         AS element_id,
             'BLS'                                               AS source_system,
-            COALESCE(bs.title, f.measure_name, f.series_id)     AS element_name,
+            COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.series_id)     AS element_name,
             CASE
                 WHEN f.program = 'la' AND f.measure_code IN ('03','07','08')
                     THEN 'Percent'
@@ -142,7 +144,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                     THEN 'Thousands of Persons'
                 ELSE NULL
             END::TEXT                                           AS unit_of_measure,
-            COALESCE(bs.title, f.measure_name, f.program)       AS value_semantics,
+            COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.program)       AS value_semantics,
             CASE
                 WHEN f.program = 'la' THEN 'LAUS'
                 WHEN f.program = 'ln' THEN 'CPS'
