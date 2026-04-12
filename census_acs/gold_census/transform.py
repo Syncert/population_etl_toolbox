@@ -107,21 +107,60 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         hook = _get_hook()
 
     sql_fetch = """
-        SELECT DISTINCT ON (variable_code)
-            variable_code                                       AS element_id,
-            'CENSUS_ACS'                                        AS source_system,
-            COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code)
-                                                                AS element_name,
-            NULL::TEXT                                          AS unit_of_measure,
-            COALESCE(universe, variable_concept, table_id)      AS value_semantics,
-            table_id                                            AS metric_family,
-            'acs'                                               AS source_product,
-            NULL::TEXT                                          AS survey_concept,
-            NULL::TEXT                                          AS default_period_type,
-            NULL::BOOLEAN                                       AS is_seasonally_adjusted_default,
-            NULL::BOOLEAN                                       AS is_saar_default
-        FROM silver_census.fact_demographics
-        ORDER BY variable_code
+        WITH ranked AS (
+            SELECT
+                variable_code AS element_id,
+                'CENSUS_ACS' AS source_system,
+                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code) AS element_name,
+                CASE
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median%%income%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%earning%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%value%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%aggregate%%income%%'
+                        THEN 'Dollars'
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median age%%'
+                        THEN 'Years'
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%percent%%'
+                        THEN 'Percent'
+                    ELSE 'Persons'
+                END::TEXT AS unit_of_measure,
+                COALESCE(
+                    NULLIF(TRIM(variable_concept), ''),
+                    NULLIF(TRIM(universe), ''),
+                    table_id
+                ) AS value_semantics,
+                table_id AS metric_family,
+                'acs' AS source_product,
+                variable_concept AS survey_concept,
+                'ACS5' AS default_period_type,
+                FALSE AS is_seasonally_adjusted_default,
+                FALSE AS is_saar_default,
+                ROW_NUMBER() OVER (
+                    PARTITION BY variable_code
+                    ORDER BY
+                        CASE dataset WHEN 'acs5' THEN 1
+                                     WHEN 'acs1' THEN 2
+                                     ELSE 3 END,
+                        estimate_year DESC
+                ) AS rn
+            FROM silver_census.fact_demographics
+            WHERE variable_code IS NOT NULL
+              AND variable_code <> ''
+        )
+        SELECT
+            element_id,
+            source_system,
+            element_name,
+            unit_of_measure,
+            value_semantics,
+            metric_family,
+            source_product,
+            survey_concept,
+            default_period_type,
+            is_seasonally_adjusted_default,
+            is_saar_default
+        FROM ranked
+        WHERE rn = 1
     """
     upsert_sql = """
         INSERT INTO gold.dim_element (
