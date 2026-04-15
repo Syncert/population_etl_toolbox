@@ -692,7 +692,7 @@ def acs_ingest():
 
         Compares:
         - silver_census.fact_demographics row counts per estimate_year
-        - gold.fact_metrics row counts per year(month_start) for source_system='CENSUS_ACS'
+        - gold.fact_acs_observation row counts per estimate_year
 
         Raises ValueError if any year present in silver has zero rows in gold,
         indicating an incomplete or failed transposition.
@@ -709,11 +709,10 @@ def acs_ingest():
             ORDER BY estimate_year;
         """
         sql_gold = """
-            SELECT EXTRACT(YEAR FROM month_start)::int AS estimate_year,
+            SELECT EXTRACT(YEAR FROM observation_date)::int AS estimate_year,
                    COUNT(*) AS gold_rows
-            FROM gold.fact_metrics
-            WHERE source_system = 'CENSUS_ACS'
-            GROUP BY EXTRACT(YEAR FROM month_start)
+            FROM gold.fact_acs_observation
+            GROUP BY EXTRACT(YEAR FROM observation_date)
             ORDER BY estimate_year;
         """
 
@@ -759,7 +758,7 @@ def acs_ingest():
         from gold.quality import run_quality_checks
         for result in (shard_results or []):
             if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]))
+                run_quality_checks(date.fromisoformat(result["month_start"]), "CENSUS_ACS")
 
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()

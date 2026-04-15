@@ -1,177 +1,366 @@
 -- gold/DDL/gold.sql
 -- Gold analytics layer baseline schema (fresh install)
--- NOTE: Existing environments should use versioned scripts in gold/DDL/migrations.
 
 CREATE SCHEMA IF NOT EXISTS gold;
 
 -- ---------------------------------------------------------------------------
--- dim_element: canonical element dictionary across all silver sources
+-- Conformed dimensions (read-only views over silver_ref)
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS gold.dim_element (
-    element_sk      BIGSERIAL PRIMARY KEY,
-    element_id      TEXT        NOT NULL,
-    source_system   TEXT        NOT NULL,
-    element_name    TEXT        NOT NULL,
-    unit_of_measure TEXT,
-    value_semantics TEXT,
-    metric_family   TEXT,
-    source_product  TEXT,
-    survey_concept  TEXT,
-    default_period_type TEXT,
-    is_seasonally_adjusted_default BOOLEAN,
-    is_saar_default BOOLEAN,
-    notes           TEXT,
-    updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (element_id, source_system)
-);
-
--- ---------------------------------------------------------------------------
--- fact_metrics: unified monthly metric grain
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS gold.fact_metrics (
-    metric_sk           BIGSERIAL PRIMARY KEY,
-    geo_id              TEXT        NOT NULL,
-    geo_level           TEXT        NOT NULL,
-    state_id            TEXT,
-    state_name          TEXT,
-    county_id           TEXT,
-    county_name         TEXT,
-    month_start         DATE        NOT NULL,
-    period_type         TEXT        NOT NULL,
-    year                INTEGER     NOT NULL,
-    quarter             INTEGER     NOT NULL CHECK (quarter BETWEEN 1 AND 4),
-    source_system       TEXT        NOT NULL,
-    element_id          TEXT        NOT NULL,
-    element_name        TEXT        NOT NULL,
-    value               NUMERIC,
-    observation_date    DATE,
-    observation_end     DATE,
-    duration_start      DATE,
-    duration_end        DATE,
-    acs_dataset         TEXT,
-    margin_of_error     NUMERIC,
-    margin_of_error_pct NUMERIC,
-    survey_concept      TEXT,
-    unit_of_measure     TEXT,
-    value_semantics     TEXT,
-    is_seasonally_adjusted BOOLEAN,
-    is_saar             BOOLEAN,
-    seasonal_adjustment TEXT,
-    source_published_date DATE,
-    revision_date       DATE,
-    data_vintage_date   DATE,
-    as_of_date          DATE,
-    updated_at          TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT fact_metrics_geo_level_chk
-        CHECK (geo_level IN ('NATIONAL', 'STATE', 'COUNTY')),
-    CONSTRAINT fact_metrics_period_type_chk
-        CHECK (period_type IN ('MONTHLY', 'QUARTERLY', 'ANNUAL', 'ACS5')),
-    CONSTRAINT fact_metrics_acs_dataset_chk
-        CHECK (acs_dataset IN ('acs1', 'acs5') OR acs_dataset IS NULL),
-    UNIQUE (geo_id, month_start, source_system, element_id)
-);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_geo_id
-    ON gold.fact_metrics (geo_id);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_geo_level
-    ON gold.fact_metrics (geo_level);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_month_start
-    ON gold.fact_metrics (month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_source_system
-    ON gold.fact_metrics (source_system);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_period_type
-    ON gold.fact_metrics (period_type);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_element_id
-    ON gold.fact_metrics (element_id);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_observation_end
-    ON gold.fact_metrics (observation_end);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_geo_month
-    ON gold.fact_metrics (geo_id, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_acs_dataset
-    ON gold.fact_metrics (acs_dataset)
-    WHERE source_system = 'CENSUS_ACS';
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_survey_concept
-    ON gold.fact_metrics (survey_concept)
-    WHERE source_system = 'BLS';
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_is_saar
-    ON gold.fact_metrics (is_saar)
-    WHERE source_system = 'FRED';
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_element_period
-    ON gold.fact_metrics (source_system, element_id, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_id
-    ON gold.fact_metrics (state_id);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_id
-    ON gold.fact_metrics (county_id);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_year
-    ON gold.fact_metrics (year);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_quarter
-    ON gold.fact_metrics (quarter);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_period
-    ON gold.fact_metrics (state_id, year, quarter, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_period
-    ON gold.fact_metrics (county_id, year, quarter, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_name_period
-    ON gold.fact_metrics (state_name, year, quarter, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_name_period
-    ON gold.fact_metrics (county_name, year, quarter, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_state_name_ci_period
-    ON gold.fact_metrics ((LOWER(state_name)), year, quarter, month_start);
-
-CREATE INDEX IF NOT EXISTS ix_fact_metrics_county_name_ci_period
-    ON gold.fact_metrics ((LOWER(county_name)), year, quarter, month_start);
-
-CREATE OR REPLACE VIEW gold.v_metrics_analytics AS
+CREATE OR REPLACE VIEW gold.dim_geo AS
 SELECT
-    metric_sk,
-    geo_id,
+    geo_sk,
     geo_level,
-    state_id,
+    geo_id,
+    state_fips,
+    county_fips,
+    name,
     state_name,
-    county_id,
     county_name,
-    month_start,
+    is_active,
+    source,
+    source_year,
+    first_seen_year,
+    last_seen_year,
+    ingested_at
+FROM silver_ref.dim_geo;
+
+CREATE OR REPLACE VIEW gold.dim_time AS
+SELECT
+    time_sk,
+    date_key,
     year,
     quarter,
-    period_type,
-    source_system,
-    element_id,
-    element_name,
-    value,
-    observation_date,
-    observation_end,
-    duration_start,
-    duration_end,
-    acs_dataset,
-    margin_of_error,
-    margin_of_error_pct,
-    survey_concept,
-    unit_of_measure,
-    value_semantics,
-    is_seasonally_adjusted,
-    is_saar,
-    source_published_date,
-    revision_date,
-    data_vintage_date,
-    as_of_date,
-    updated_at
-FROM gold.fact_metrics;
+    month,
+    day,
+    day_of_week,
+    day_name,
+    month_name,
+    week_of_year,
+    is_weekend,
+    is_month_start,
+    is_month_end,
+    is_quarter_start,
+    is_quarter_end,
+    is_year_start,
+    is_year_end,
+    ingested_at
+FROM silver_ref.dim_time;
+
+CREATE TABLE IF NOT EXISTS gold.dim_source_system (
+    source_system_sk BIGSERIAL PRIMARY KEY,
+    source_code      TEXT NOT NULL UNIQUE,
+    source_name      TEXT NOT NULL,
+    source_type      TEXT NOT NULL CHECK (source_type IN ('PRIMARY', 'REPUBLISHER', 'CURATED')),
+    reference_url    TEXT,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO gold.dim_source_system (source_code, source_name, source_type, reference_url)
+VALUES
+    ('CENSUS_ACS', 'US Census ACS', 'PRIMARY', 'https://www.census.gov/programs-surveys/acs'),
+    ('BLS', 'Bureau of Labor Statistics', 'PRIMARY', 'https://www.bls.gov/'),
+    ('FRED', 'Federal Reserve Economic Data', 'REPUBLISHER', 'https://fred.stlouisfed.org/')
+ON CONFLICT (source_code) DO UPDATE
+SET source_name = EXCLUDED.source_name,
+    source_type = EXCLUDED.source_type,
+    reference_url = EXCLUDED.reference_url,
+    updated_at = NOW();
+
+-- ---------------------------------------------------------------------------
+-- Source-specific metadata dimensions
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gold.dim_acs_table (
+    acs_table_sk      BIGSERIAL PRIMARY KEY,
+    dataset_code      TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year      INTEGER NOT NULL,
+    table_id          TEXT NOT NULL,
+    table_title       TEXT,
+    concept           TEXT,
+    universe          TEXT,
+    survey_span_years INTEGER NOT NULL CHECK (survey_span_years IN (1, 5)),
+    reference_url     TEXT,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (dataset_code, vintage_year, table_id)
+);
+
+CREATE TABLE IF NOT EXISTS gold.dim_acs_variable (
+    acs_variable_sk      BIGSERIAL PRIMARY KEY,
+    acs_table_sk         BIGINT NOT NULL REFERENCES gold.dim_acs_table(acs_table_sk),
+    dataset_code         TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year         INTEGER NOT NULL,
+    variable_code        TEXT NOT NULL,
+    variable_label       TEXT,
+    concept              TEXT,
+    universe             TEXT,
+    value_role           TEXT NOT NULL CHECK (value_role IN ('ESTIMATE', 'MOE', 'ANNOTATION')),
+    denominator_hint     TEXT,
+    is_publishable_default BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (dataset_code, vintage_year, variable_code)
+);
+
+CREATE TABLE IF NOT EXISTS gold.dim_bls_survey (
+    bls_survey_sk      BIGSERIAL PRIMARY KEY,
+    program_code       TEXT NOT NULL UNIQUE,
+    survey_name        TEXT NOT NULL,
+    survey_universe    TEXT,
+    observation_basis  TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')),
+    primary_concept    TEXT,
+    id_construction_type TEXT,
+    comparison_warning TEXT,
+    reference_url      TEXT,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold.dim_bls_series (
+    bls_series_sk              BIGSERIAL PRIMARY KEY,
+    bls_survey_sk              BIGINT NOT NULL REFERENCES gold.dim_bls_survey(bls_survey_sk),
+    program_code               TEXT NOT NULL,
+    series_id                  TEXT NOT NULL UNIQUE,
+    series_title               TEXT,
+    measure_name               TEXT,
+    measure_category           TEXT NOT NULL CHECK (
+        measure_category IN (
+            'EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'POPULATION',
+            'EARNINGS', 'HOURS', 'PRICE_INDEX', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS',
+            'OTHER'
+        )
+    ),
+    unit_of_measure            TEXT,
+    value_type                 TEXT NOT NULL CHECK (value_type IN ('LEVEL', 'RATE', 'INDEX', 'PERCENT', 'CURRENCY', 'RATIO', 'OTHER')),
+    seasonal_adjustment_status TEXT,
+    geographic_level           TEXT,
+    gold_metric_name           TEXT,
+    analytic_role              TEXT,
+    semantic_notes             TEXT,
+    updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold.dim_fred_series (
+    fred_series_sk           BIGSERIAL PRIMARY KEY,
+    series_id                TEXT NOT NULL UNIQUE,
+    series_title             TEXT,
+    source_provider          TEXT,
+    original_source_name     TEXT,
+    is_primary_source_series BOOLEAN NOT NULL DEFAULT FALSE,
+    is_republished_series    BOOLEAN NOT NULL DEFAULT TRUE,
+    frequency                TEXT,
+    units                    TEXT,
+    seasonal_adjustment      TEXT,
+    transformation_method    TEXT,
+    realtime_available       BOOLEAN,
+    lineage_notes            TEXT,
+    reference_url            TEXT,
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ---------------------------------------------------------------------------
+-- Source-specific fact tables
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gold.fact_acs_observation (
+    acs_observation_sk BIGSERIAL PRIMARY KEY,
+    geo_id             TEXT NOT NULL,
+    geo_level          TEXT NOT NULL CHECK (geo_level IN ('NATIONAL', 'STATE', 'COUNTY')),
+    state_id           TEXT,
+    state_name         TEXT,
+    county_id          TEXT,
+    county_name        TEXT,
+    time_sk            INTEGER REFERENCES silver_ref.dim_time(time_sk),
+    observation_date   DATE NOT NULL,
+    duration_start     DATE,
+    duration_end       DATE,
+    acs_table_sk       BIGINT NOT NULL REFERENCES gold.dim_acs_table(acs_table_sk),
+    acs_variable_sk    BIGINT NOT NULL REFERENCES gold.dim_acs_variable(acs_variable_sk),
+    dataset_code       TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year       INTEGER NOT NULL,
+    estimate_value     NUMERIC,
+    margin_of_error    NUMERIC,
+    margin_of_error_pct NUMERIC,
+    estimate_annotation TEXT,
+    moe_annotation     TEXT,
+    as_of_date         DATE NOT NULL DEFAULT CURRENT_DATE,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (geo_id, observation_date, acs_variable_sk, dataset_code)
+);
+
+CREATE TABLE IF NOT EXISTS gold.fact_bls_observation (
+    bls_observation_sk        BIGSERIAL PRIMARY KEY,
+    geo_id                    TEXT NOT NULL,
+    geo_level                 TEXT NOT NULL CHECK (geo_level IN ('NATIONAL', 'STATE', 'COUNTY')),
+    state_id                  TEXT,
+    state_name                TEXT,
+    county_id                 TEXT,
+    county_name               TEXT,
+    time_sk                   INTEGER REFERENCES silver_ref.dim_time(time_sk),
+    period_date               DATE NOT NULL,
+    duration_start            DATE,
+    duration_end              DATE,
+    bls_survey_sk             BIGINT NOT NULL REFERENCES gold.dim_bls_survey(bls_survey_sk),
+    bls_series_sk             BIGINT NOT NULL REFERENCES gold.dim_bls_series(bls_series_sk),
+    program_code              TEXT NOT NULL,
+    value                     NUMERIC,
+    period_code               TEXT,
+    seasonal_adjustment_status TEXT,
+    observation_basis         TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')),
+    measure_category          TEXT NOT NULL CHECK (
+        measure_category IN (
+            'EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'POPULATION',
+            'EARNINGS', 'HOURS', 'PRICE_INDEX', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS',
+            'OTHER'
+        )
+    ),
+    value_type                TEXT NOT NULL CHECK (value_type IN ('LEVEL', 'RATE', 'INDEX', 'PERCENT', 'CURRENCY', 'RATIO', 'OTHER')),
+    as_of_date                DATE NOT NULL DEFAULT CURRENT_DATE,
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (geo_id, period_date, bls_series_sk)
+);
+
+CREATE TABLE IF NOT EXISTS gold.fact_fred_observation (
+    fred_observation_sk BIGSERIAL PRIMARY KEY,
+    geo_id              TEXT NOT NULL DEFAULT 'us:1',
+    geo_level           TEXT NOT NULL DEFAULT 'NATIONAL' CHECK (geo_level = 'NATIONAL'),
+    time_sk             INTEGER REFERENCES silver_ref.dim_time(time_sk),
+    observation_date    DATE NOT NULL,
+    duration_start      DATE,
+    duration_end        DATE,
+    fred_series_sk      BIGINT NOT NULL REFERENCES gold.dim_fred_series(fred_series_sk),
+    value               NUMERIC,
+    realtime_start      DATE,
+    realtime_end        DATE,
+    frequency           TEXT,
+    units               TEXT,
+    seasonal_adjustment TEXT,
+    transform_applied   TEXT,
+    source_provider     TEXT,
+    as_of_date          DATE NOT NULL DEFAULT CURRENT_DATE,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (observation_date, fred_series_sk, realtime_start, realtime_end)
+);
+
+-- ---------------------------------------------------------------------------
+-- Shared metric catalog + bridges
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gold.dim_metric_catalog (
+    metric_catalog_sk    BIGSERIAL PRIMARY KEY,
+    metric_code          TEXT NOT NULL UNIQUE,
+    metric_display_name  TEXT NOT NULL,
+    source_code          TEXT NOT NULL REFERENCES gold.dim_source_system(source_code),
+    source_object_type   TEXT NOT NULL CHECK (source_object_type IN ('ACS_VARIABLE', 'BLS_SERIES', 'FRED_SERIES', 'COMPOSITE_VIEW')),
+    business_definition  TEXT,
+    caveats              TEXT,
+    valid_geo_grains     TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    valid_time_grains    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    dashboard_suitability TEXT NOT NULL DEFAULT 'PUBLIC_SAFE'
+        CHECK (dashboard_suitability IN ('PUBLIC_SAFE', 'INTERNAL_ONLY', 'EXPERIMENTAL')),
+    comparability_group  TEXT,
+    do_not_compare_with  TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    recommended_aggregation TEXT,
+    owner_team           TEXT,
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold.bridge_metric_acs_variable (
+    metric_catalog_sk BIGINT NOT NULL REFERENCES gold.dim_metric_catalog(metric_catalog_sk),
+    acs_variable_sk   BIGINT NOT NULL REFERENCES gold.dim_acs_variable(acs_variable_sk),
+    PRIMARY KEY (metric_catalog_sk, acs_variable_sk)
+);
+
+CREATE TABLE IF NOT EXISTS gold.bridge_metric_bls_series (
+    metric_catalog_sk BIGINT NOT NULL REFERENCES gold.dim_metric_catalog(metric_catalog_sk),
+    bls_series_sk     BIGINT NOT NULL REFERENCES gold.dim_bls_series(bls_series_sk),
+    PRIMARY KEY (metric_catalog_sk, bls_series_sk)
+);
+
+CREATE TABLE IF NOT EXISTS gold.bridge_metric_fred_series (
+    metric_catalog_sk BIGINT NOT NULL REFERENCES gold.dim_metric_catalog(metric_catalog_sk),
+    fred_series_sk    BIGINT NOT NULL REFERENCES gold.dim_fred_series(fred_series_sk),
+    PRIMARY KEY (metric_catalog_sk, fred_series_sk)
+);
+
+-- ---------------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS ix_fact_acs_obs_date ON gold.fact_acs_observation (observation_date);
+CREATE INDEX IF NOT EXISTS ix_fact_acs_geo_date ON gold.fact_acs_observation (geo_id, observation_date);
+CREATE INDEX IF NOT EXISTS ix_fact_bls_period_date ON gold.fact_bls_observation (period_date);
+CREATE INDEX IF NOT EXISTS ix_fact_bls_geo_date ON gold.fact_bls_observation (geo_id, period_date);
+CREATE INDEX IF NOT EXISTS ix_fact_bls_program ON gold.fact_bls_observation (program_code, period_date);
+CREATE INDEX IF NOT EXISTS ix_fact_fred_obs_date ON gold.fact_fred_observation (observation_date);
+CREATE INDEX IF NOT EXISTS ix_fact_fred_series_date ON gold.fact_fred_observation (fred_series_sk, observation_date);
+CREATE INDEX IF NOT EXISTS ix_metric_catalog_source ON gold.dim_metric_catalog (source_code, is_active);
+CREATE INDEX IF NOT EXISTS ix_metric_catalog_group ON gold.dim_metric_catalog (comparability_group);
+CREATE INDEX IF NOT EXISTS ix_metric_catalog_geo_grains ON gold.dim_metric_catalog USING GIN (valid_geo_grains);
+CREATE INDEX IF NOT EXISTS ix_metric_catalog_time_grains ON gold.dim_metric_catalog USING GIN (valid_time_grains);
+
+-- ---------------------------------------------------------------------------
+-- User-facing views
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW gold.vw_metric_catalog AS
+SELECT
+    c.metric_catalog_sk,
+    c.metric_code,
+    c.metric_display_name,
+    c.source_code,
+    c.source_object_type,
+    c.business_definition,
+    c.caveats,
+    c.valid_geo_grains,
+    c.valid_time_grains,
+    c.dashboard_suitability,
+    c.comparability_group,
+    c.do_not_compare_with,
+    c.recommended_aggregation,
+    c.owner_team,
+    c.is_active,
+    c.updated_at
+FROM gold.dim_metric_catalog c
+WHERE c.is_active = TRUE;
+
+CREATE OR REPLACE VIEW gold.vw_headline_macro_metrics AS
+SELECT
+    c.metric_code,
+    c.metric_display_name,
+    c.source_code,
+    b.period_date AS observation_date,
+    b.geo_id,
+    b.value,
+    c.caveats,
+    c.comparability_group
+FROM gold.dim_metric_catalog c
+JOIN gold.bridge_metric_bls_series bm
+    ON bm.metric_catalog_sk = c.metric_catalog_sk
+JOIN gold.fact_bls_observation b
+    ON b.bls_series_sk = bm.bls_series_sk
+WHERE c.is_active = TRUE
+UNION ALL
+SELECT
+    c.metric_code,
+    c.metric_display_name,
+    c.source_code,
+    f.observation_date,
+    f.geo_id,
+    f.value,
+    c.caveats,
+    c.comparability_group
+FROM gold.dim_metric_catalog c
+JOIN gold.bridge_metric_fred_series fm
+    ON fm.metric_catalog_sk = c.metric_catalog_sk
+JOIN gold.fact_fred_observation f
+    ON f.fred_series_sk = fm.fred_series_sk
+WHERE c.is_active = TRUE;
+
+CREATE OR REPLACE VIEW gold.vw_labor_market_overview AS
+SELECT
+    b.period_date AS observation_date,
+    b.geo_id,
+    b.program_code,
+    s.survey_name,
+    b.measure_category,
+    b.value_type,
+    b.value,
+    s.comparison_warning
+FROM gold.fact_bls_observation b
+JOIN gold.dim_bls_survey s
+    ON s.bls_survey_sk = b.bls_survey_sk
+WHERE b.measure_category IN ('EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS');

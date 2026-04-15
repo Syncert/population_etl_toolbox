@@ -23,18 +23,18 @@ def _get_hook() -> PostgresHook:
 # Public checks
 # ---------------------------------------------------------------------------
 
-def check_uniqueness(hook: PostgresHook, month_start: date) -> int:
-    """Verify no duplicate (geo_id, month_start, source_system, element_id) rows.
+def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> int:
+    """Verify ACS shard uniqueness and semantic fields for the given month_start.
 
     Returns the violation count; raises ValueError if > 0.
     """
     sql = """
         SELECT COUNT(*) AS violations
         FROM (
-            SELECT geo_id, month_start, source_system, element_id, COUNT(*) AS cnt
-            FROM gold.fact_metrics
-            WHERE month_start = %s
-            GROUP BY geo_id, month_start, source_system, element_id
+            SELECT geo_id, observation_date, acs_variable_sk, dataset_code, COUNT(*) AS cnt
+            FROM gold.fact_acs_observation
+            WHERE date_trunc('month', observation_date)::date = %s
+            GROUP BY geo_id, observation_date, acs_variable_sk, dataset_code
             HAVING COUNT(*) > 1
         ) dups
     """
@@ -43,98 +43,43 @@ def check_uniqueness(hook: PostgresHook, month_start: date) -> int:
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(
-            f"check_uniqueness FAILED for {month_start}: {violations} duplicate groups"
-        )
-    logger.info("check_uniqueness PASSED for %s", month_start)
+        raise ValueError(f"check_acs_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+
+    semantic_sql = """
+        SELECT COUNT(*)
+        FROM gold.fact_acs_observation
+        WHERE date_trunc('month', observation_date)::date = %s
+          AND (
+              geo_level IS NULL
+              OR dataset_code NOT IN ('acs1', 'acs5')
+              OR vintage_year IS NULL
+              OR acs_table_sk IS NULL
+              OR acs_variable_sk IS NULL
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(semantic_sql, (month_start,))
+        semantic_violations = cur.fetchone()[0]
+
+    if semantic_violations > 0:
+        raise ValueError(f"check_acs_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+
+    logger.info("check_acs_observation_constraints PASSED for %s", month_start)
     return violations
 
 
-def check_non_null_elements(hook: PostgresHook, month_start: date) -> int:
-    """Verify no null element_id or empty element_name.
+def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> int:
+    """Verify BLS shard uniqueness and semantic fields for the given month_start.
 
     Returns the violation count; raises ValueError if > 0.
     """
     sql = """
-        SELECT COUNT(*) AS violations
-        FROM gold.fact_metrics
-        WHERE month_start = %s
-          AND (element_id IS NULL OR element_name IS NULL OR element_name = '')
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (month_start,))
-        violations = cur.fetchone()[0]
-
-    if violations > 0:
-        raise ValueError(
-            f"check_non_null_elements FAILED for {month_start}: {violations} rows"
-        )
-    logger.info("check_non_null_elements PASSED for %s", month_start)
-    return violations
-
-
-def check_semantic_fields(hook: PostgresHook, month_start: date) -> int:
-    """Verify required semantic columns are populated for analyst-safe usage."""
-    sql = """
-        SELECT COUNT(*) AS violations
-        FROM gold.fact_metrics
-        WHERE month_start = %s
-          AND (
-            geo_level IS NULL
-            OR period_type IS NULL
-            OR observation_end IS NULL
-            OR (source_system = 'CENSUS_ACS' AND acs_dataset IS NULL)
-          )
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (month_start,))
-        violations = cur.fetchone()[0]
-
-    if violations > 0:
-        raise ValueError(
-            f"check_semantic_fields FAILED for {month_start}: {violations} rows"
-        )
-    logger.info("check_semantic_fields PASSED for %s", month_start)
-    return violations
-
-
-def check_acs_stats_fields(hook: PostgresHook, month_start: date) -> int:
-    """Verify ACS rows preserve dataset provenance and period semantics."""
-    sql = """
-        SELECT COUNT(*) AS violations
-        FROM gold.fact_metrics
-        WHERE month_start = %s
-          AND source_system = 'CENSUS_ACS'
-          AND (
-            acs_dataset NOT IN ('acs1', 'acs5')
-            OR period_type NOT IN ('ANNUAL', 'ACS5')
-          )
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (month_start,))
-        violations = cur.fetchone()[0]
-
-    if violations > 0:
-        raise ValueError(
-            f"check_acs_stats_fields FAILED for {month_start}: {violations} rows"
-        )
-    logger.info("check_acs_stats_fields PASSED for %s", month_start)
-    return violations
-
-
-def check_acs_precedence(hook: PostgresHook, month_start: date) -> int:
-    """Verify no (geo_id, element_id) pair has more than one ACS row for this month.
-
-    Returns the violation count; raises ValueError if > 0.
-    """
-    sql = """
-        SELECT COUNT(*) AS violations
+        SELECT COUNT(*)
         FROM (
-            SELECT geo_id, element_id, COUNT(*) AS cnt
-            FROM gold.fact_metrics
-            WHERE month_start = %s
-              AND source_system = 'CENSUS_ACS'
-            GROUP BY geo_id, element_id
+            SELECT geo_id, period_date, bls_series_sk, COUNT(*) AS cnt
+            FROM gold.fact_bls_observation
+            WHERE date_trunc('month', period_date)::date = %s
+            GROUP BY geo_id, period_date, bls_series_sk
             HAVING COUNT(*) > 1
         ) dups
     """
@@ -143,24 +88,119 @@ def check_acs_precedence(hook: PostgresHook, month_start: date) -> int:
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(
-            f"check_acs_precedence FAILED for {month_start}: {violations} duplicate ACS groups"
-        )
-    logger.info("check_acs_precedence PASSED for %s", month_start)
+        raise ValueError(f"check_bls_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+
+    semantic_sql = """
+        SELECT COUNT(*)
+        FROM gold.fact_bls_observation
+        WHERE date_trunc('month', period_date)::date = %s
+          AND (
+              program_code IS NULL
+              OR bls_survey_sk IS NULL
+              OR bls_series_sk IS NULL
+              OR observation_basis NOT IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')
+              OR value_type NOT IN ('LEVEL', 'RATE', 'INDEX', 'PERCENT', 'CURRENCY', 'RATIO', 'OTHER')
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(semantic_sql, (month_start,))
+        semantic_violations = cur.fetchone()[0]
+
+    if semantic_violations > 0:
+        raise ValueError(f"check_bls_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+
+    logger.info("check_bls_observation_constraints PASSED for %s", month_start)
     return violations
 
 
-def run_quality_checks(month_start: date, hook: PostgresHook | None = None) -> None:
-    """Run all three data quality checks for a given month_start.
+def check_fred_observation_constraints(hook: PostgresHook, month_start: date) -> int:
+    """Verify FRED shard uniqueness and semantic fields for the given month_start."""
+    sql = """
+        SELECT COUNT(*)
+        FROM (
+            SELECT observation_date, fred_series_sk, realtime_start, realtime_end, COUNT(*) AS cnt
+            FROM gold.fact_fred_observation
+            WHERE date_trunc('month', observation_date)::date = %s
+            GROUP BY observation_date, fred_series_sk, realtime_start, realtime_end
+            HAVING COUNT(*) > 1
+        ) dups
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (month_start,))
+        violations = cur.fetchone()[0]
+
+    if violations > 0:
+        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+
+    semantic_sql = """
+        SELECT COUNT(*)
+        FROM gold.fact_fred_observation
+        WHERE date_trunc('month', observation_date)::date = %s
+          AND (
+              geo_id <> 'us:1'
+              OR geo_level <> 'NATIONAL'
+              OR fred_series_sk IS NULL
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(semantic_sql, (month_start,))
+        semantic_violations = cur.fetchone()[0]
+
+    if semantic_violations > 0:
+        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+
+    logger.info("check_fred_observation_constraints PASSED for %s", month_start)
+    return violations
+
+
+def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
+    """Verify active metric catalog rows are mapped to at least one source object."""
+    sql = """
+        SELECT COUNT(*)
+        FROM gold.dim_metric_catalog c
+        WHERE c.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM gold.bridge_metric_acs_variable a WHERE a.metric_catalog_sk = c.metric_catalog_sk
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM gold.bridge_metric_bls_series b WHERE b.metric_catalog_sk = c.metric_catalog_sk
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM gold.bridge_metric_fred_series f WHERE f.metric_catalog_sk = c.metric_catalog_sk
+          )
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        violations = cur.fetchone()[0]
+
+    if violations > 0:
+        raise ValueError(f"check_metric_catalog_fk_coverage FAILED: {violations} active metric(s) without source mapping")
+
+    logger.info("check_metric_catalog_fk_coverage PASSED")
+    return violations
+
+
+def run_quality_checks(
+    month_start: date,
+    source_system: str,
+    hook: PostgresHook | None = None,
+) -> None:
+    """Run source-specific quality checks for a given month_start.
 
     Logs pass for each check; raises on any failure.
     """
     if hook is None:
         hook = _get_hook()
 
-    check_uniqueness(hook, month_start)
-    check_non_null_elements(hook, month_start)
-    check_acs_precedence(hook, month_start)
-    check_semantic_fields(hook, month_start)
-    check_acs_stats_fields(hook, month_start)
-    logger.info("All quality checks PASSED for %s", month_start)
+    source = source_system.strip().upper()
+    if source == "CENSUS_ACS":
+        check_acs_observation_constraints(hook, month_start)
+    elif source == "BLS":
+        check_bls_observation_constraints(hook, month_start)
+    elif source == "FRED":
+        check_fred_observation_constraints(hook, month_start)
+    else:
+        raise ValueError(f"Unsupported source_system for QA: {source_system}")
+
+    check_metric_catalog_fk_coverage(hook)
+    logger.info("All quality checks PASSED for %s (source=%s)", month_start, source)

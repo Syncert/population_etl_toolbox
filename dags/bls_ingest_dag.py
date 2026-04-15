@@ -793,7 +793,7 @@ def bls_ingest():
 
         Compares:
         - silver_bls.fact_labor_statistics row counts per calendar month
-        - gold.fact_metrics row counts per month_start for source_system='BLS'
+        - gold.fact_bls_observation row counts per calendar month
 
         Raises ValueError if any month present in silver has zero rows in gold,
         indicating an incomplete or failed transposition.
@@ -811,10 +811,10 @@ def bls_ingest():
             ORDER BY month_start;
         """
         sql_gold = """
-            SELECT month_start, COUNT(*) AS gold_rows
-            FROM gold.fact_metrics
-            WHERE source_system = 'BLS'
-            GROUP BY month_start
+            SELECT date_trunc('month', period_date)::date AS month_start,
+                   COUNT(*) AS gold_rows
+            FROM gold.fact_bls_observation
+            GROUP BY date_trunc('month', period_date)::date
             ORDER BY month_start;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -852,7 +852,7 @@ def bls_ingest():
         from gold.quality import run_quality_checks
         for result in (shard_results or []):
             if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]))
+                run_quality_checks(date.fromisoformat(result["month_start"]), "BLS")
 
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()

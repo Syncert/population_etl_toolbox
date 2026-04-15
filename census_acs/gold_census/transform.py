@@ -10,7 +10,6 @@ ACS 5-year estimates (acs5) take precedence over 1-year (acs1).
 from __future__ import annotations
 
 import logging
-import psycopg2.extras
 from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -19,9 +18,6 @@ from gold.config import CONFIG
 from gold.transform import (
     ensure_gold_schema,
     build_shard_list,
-    _upsert_gold_rows,
-    _F_GEO_ID, _F_ELEMENT_ID, _F_SOURCE_SYSTEM, _F_ELEMENT_NAME,
-    _F_VALUE, _F_OBSERVATION_DATE, _F_UNIT_OF_MEASURE, _F_SEASONAL_ADJUSTMENT,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +28,7 @@ def _get_hook() -> PostgresHook:
 
 
 def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
-    """Return gold rows from ACS silver for the given month_start.
+    """Return ACS observation rows for the given month_start.
 
     ACS is annual; data only exists for January 1st months.
     acs5 takes precedence over acs1 for the same (geo_id, variable_code, year).
@@ -45,30 +41,19 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
         WITH ranked AS (
             SELECT
                 geo_id,
-                variable_code                           AS element_id,
-                'CENSUS_ACS'                            AS source_system,
-                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code)
-                                                        AS element_name,
-                estimate_value                          AS value,
-                MAKE_DATE(estimate_year, 1, 1)          AS observation_date,
-                duration_end                            AS observation_end,
-                duration_start,
-                duration_end,
-                CASE dataset WHEN 'acs5' THEN 'ACS5' ELSE 'ANNUAL' END
-                                                        AS period_type,
-                dataset                                 AS acs_dataset,
+                variable_code,
+                table_id,
+                dataset,
+                estimate_year,
+                estimate_value,
                 margin_of_error,
                 margin_of_error_pct,
-                NULL::TEXT                              AS survey_concept,
-                NULL::TEXT                              AS unit_of_measure,
-                COALESCE(universe, variable_concept, table_id)
-                                                        AS value_semantics,
-                NULL::TEXT                              AS seasonal_adjustment,
-                NULL::BOOLEAN                           AS is_seasonally_adjusted,
-                NULL::BOOLEAN                           AS is_saar,
-                CASE dataset WHEN 'acs5' THEN 1
-                             WHEN 'acs1' THEN 2
-                             ELSE 3 END                 AS dataset_rank,
+                MAKE_DATE(estimate_year, 1, 1)          AS observation_date,
+                duration_start,
+                duration_end,
+                variable_label,
+                variable_concept,
+                universe,
                 ROW_NUMBER() OVER (
                     PARTITION BY geo_id, variable_code
                     ORDER BY
@@ -83,14 +68,20 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
               AND variable_code != ''
         )
         SELECT
-            geo_id, element_id, source_system, element_name,
-            value, observation_date, observation_end,
-            duration_start, duration_end,
-            period_type, acs_dataset,
-            margin_of_error, margin_of_error_pct,
-            survey_concept,
-            unit_of_measure, value_semantics,
-            seasonal_adjustment, is_seasonally_adjusted, is_saar
+            geo_id,
+            variable_code,
+            table_id,
+            dataset,
+            estimate_year,
+            estimate_value,
+            margin_of_error,
+            margin_of_error_pct,
+            observation_date,
+            duration_start,
+            duration_end,
+            variable_label,
+            variable_concept,
+            universe
         FROM ranked
         WHERE rn = 1
     """
@@ -102,99 +93,188 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
 
 
 def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
-    """Sync ACS element labels into gold.dim_element. Returns count upserted."""
+    """Sync ACS source-specific metadata into gold.dim_acs_table and gold.dim_acs_variable."""
     if hook is None:
         hook = _get_hook()
 
-    sql_fetch = """
-        WITH ranked AS (
-            SELECT
-                variable_code AS element_id,
-                'CENSUS_ACS' AS source_system,
-                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code) AS element_name,
-                CASE
-                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median%%income%%'
-                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%earning%%'
-                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%value%%'
-                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%aggregate%%income%%'
-                        THEN 'Dollars'
-                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median age%%'
-                        THEN 'Years'
-                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%percent%%'
-                        THEN 'Percent'
-                    ELSE 'Persons'
-                END::TEXT AS unit_of_measure,
-                COALESCE(
-                    NULLIF(TRIM(variable_concept), ''),
-                    NULLIF(TRIM(universe), ''),
-                    table_id
-                ) AS value_semantics,
-                table_id AS metric_family,
-                'acs' AS source_product,
-                variable_concept AS survey_concept,
-                'ACS5' AS default_period_type,
-                FALSE AS is_seasonally_adjusted_default,
-                FALSE AS is_saar_default,
-                ROW_NUMBER() OVER (
-                    PARTITION BY variable_code
-                    ORDER BY
-                        CASE dataset WHEN 'acs5' THEN 1
-                                     WHEN 'acs1' THEN 2
-                                     ELSE 3 END,
-                        estimate_year DESC
-                ) AS rn
-            FROM silver_census.fact_demographics
-            WHERE variable_code IS NOT NULL
-              AND variable_code <> ''
-        )
-        SELECT
-            element_id,
-            source_system,
-            element_name,
-            unit_of_measure,
-            value_semantics,
-            metric_family,
-            source_product,
-            survey_concept,
-            default_period_type,
-            is_seasonally_adjusted_default,
-            is_saar_default
-        FROM ranked
-        WHERE rn = 1
-    """
-    upsert_sql = """
-        INSERT INTO gold.dim_element (
-            element_id, source_system, element_name, unit_of_measure,
-            value_semantics, metric_family, source_product, survey_concept,
-            default_period_type, is_seasonally_adjusted_default, is_saar_default
-        )
-        VALUES %s
-        ON CONFLICT (element_id, source_system)
-        DO UPDATE SET
-            element_name    = EXCLUDED.element_name,
-            unit_of_measure = EXCLUDED.unit_of_measure,
-            value_semantics = EXCLUDED.value_semantics,
-            metric_family   = EXCLUDED.metric_family,
-            source_product  = EXCLUDED.source_product,
-            survey_concept  = EXCLUDED.survey_concept,
-            default_period_type = EXCLUDED.default_period_type,
-            is_seasonally_adjusted_default = EXCLUDED.is_seasonally_adjusted_default,
-            is_saar_default = EXCLUDED.is_saar_default,
-            updated_at      = NOW()
-    """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql_fetch)
-        rows = cur.fetchall()
-        if rows:
-            psycopg2.extras.execute_values(cur, upsert_sql, rows)
+        cur.execute(
+            """
+            INSERT INTO gold.dim_acs_table (
+                dataset_code, vintage_year, table_id, table_title, concept, universe,
+                survey_span_years, reference_url
+            )
+            SELECT DISTINCT
+                f.dataset AS dataset_code,
+                f.estimate_year AS vintage_year,
+                f.table_id,
+                COALESCE(NULLIF(f.variable_concept, ''), f.table_id) AS table_title,
+                f.variable_concept AS concept,
+                f.universe,
+                CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
+                'https://api.census.gov/data/' || f.estimate_year::TEXT || '/acs/' || f.dataset || '/variables.json' AS reference_url
+            FROM silver_census.fact_demographics f
+            WHERE f.table_id IS NOT NULL
+              AND f.table_id <> ''
+              AND f.dataset IN ('acs1', 'acs5')
+            ON CONFLICT (dataset_code, vintage_year, table_id)
+            DO UPDATE SET
+                table_title = EXCLUDED.table_title,
+                concept = EXCLUDED.concept,
+                universe = EXCLUDED.universe,
+                survey_span_years = EXCLUDED.survey_span_years,
+                reference_url = EXCLUDED.reference_url,
+                updated_at = NOW();
+            """
+        )
+
+        cur.execute(
+            """
+            INSERT INTO gold.dim_acs_variable (
+                acs_table_sk, dataset_code, vintage_year, variable_code,
+                variable_label, concept, universe, value_role
+            )
+            SELECT
+                t.acs_table_sk,
+                f.dataset,
+                f.estimate_year,
+                f.variable_code,
+                COALESCE(NULLIF(f.variable_label, ''), NULLIF(f.variable_concept, ''), f.variable_code) AS variable_label,
+                f.variable_concept,
+                f.universe,
+                'ESTIMATE'::TEXT AS value_role
+            FROM (
+                SELECT DISTINCT dataset, estimate_year, table_id, variable_code, variable_label, variable_concept, universe
+                FROM silver_census.fact_demographics
+                WHERE variable_code IS NOT NULL
+                  AND variable_code <> ''
+                  AND dataset IN ('acs1', 'acs5')
+            ) f
+            JOIN gold.dim_acs_table t
+              ON t.dataset_code = f.dataset
+             AND t.vintage_year = f.estimate_year
+             AND t.table_id = f.table_id
+            ON CONFLICT (dataset_code, vintage_year, variable_code)
+            DO UPDATE SET
+                acs_table_sk = EXCLUDED.acs_table_sk,
+                variable_label = EXCLUDED.variable_label,
+                concept = EXCLUDED.concept,
+                universe = EXCLUDED.universe,
+                value_role = EXCLUDED.value_role,
+                updated_at = NOW();
+            """
+        )
+
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM gold.dim_acs_variable
+            """
+        )
+        row_count = cur.fetchone()[0]
         conn.commit()
 
-    logger.info("refresh_acs_elements: upserted %d elements", len(rows))
-    return len(rows)
+    logger.info("refresh_acs_elements: dim_acs_variable row_count=%d", row_count)
+    return row_count
+
+
+def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -> int:
+    """Upsert ACS observation rows into gold.fact_acs_observation."""
+    if not rows:
+        return 0
+
+    sql = """
+        INSERT INTO gold.fact_acs_observation (
+            geo_id, geo_level, state_id, state_name, county_id, county_name,
+            time_sk, observation_date, duration_start, duration_end,
+            acs_table_sk, acs_variable_sk, dataset_code, vintage_year,
+            estimate_value, margin_of_error, margin_of_error_pct,
+            estimate_annotation, moe_annotation, as_of_date
+        )
+        SELECT
+            r.geo_id,
+            CASE
+                WHEN d.geo_level = 'us' THEN 'NATIONAL'
+                WHEN d.geo_level = 'state' THEN 'STATE'
+                WHEN d.geo_level = 'county' THEN 'COUNTY'
+                WHEN r.geo_id = 'us:1' THEN 'NATIONAL'
+                WHEN r.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
+                WHEN r.geo_id LIKE 'state:%' THEN 'STATE'
+                ELSE 'NATIONAL'
+            END AS geo_level,
+            CASE WHEN d.state_fips IS NOT NULL THEN LPAD(d.state_fips::TEXT, 2, '0') ELSE NULL END AS state_id,
+            d.state_name,
+            CASE
+                WHEN d.state_fips IS NOT NULL AND d.county_fips IS NOT NULL
+                THEN CONCAT(LPAD(d.state_fips::TEXT, 2, '0'), LPAD(d.county_fips::TEXT, 3, '0'))
+                ELSE NULL
+            END AS county_id,
+            d.county_name,
+            t.time_sk,
+            r.observation_date,
+            r.duration_start,
+            r.duration_end,
+            at.acs_table_sk,
+            av.acs_variable_sk,
+            r.dataset,
+            r.estimate_year,
+            r.estimate_value,
+            r.margin_of_error,
+            r.margin_of_error_pct,
+            NULL::TEXT,
+            NULL::TEXT,
+            CURRENT_DATE
+        FROM (
+            VALUES %s
+        ) AS r(
+            geo_id, variable_code, table_id, dataset, estimate_year,
+            estimate_value, margin_of_error, margin_of_error_pct,
+            observation_date, duration_start, duration_end,
+            variable_label, variable_concept, universe
+        )
+        JOIN gold.dim_acs_table at
+          ON at.dataset_code = r.dataset
+         AND at.vintage_year = r.estimate_year
+         AND at.table_id = r.table_id
+        JOIN gold.dim_acs_variable av
+          ON av.dataset_code = r.dataset
+         AND av.vintage_year = r.estimate_year
+         AND av.variable_code = r.variable_code
+        LEFT JOIN silver_ref.dim_geo d
+          ON d.geo_id = r.geo_id
+        LEFT JOIN silver_ref.dim_time t
+          ON t.date_key = r.observation_date
+        ON CONFLICT (geo_id, observation_date, acs_variable_sk, dataset_code)
+        DO UPDATE SET
+            geo_level = EXCLUDED.geo_level,
+            state_id = EXCLUDED.state_id,
+            state_name = EXCLUDED.state_name,
+            county_id = EXCLUDED.county_id,
+            county_name = EXCLUDED.county_name,
+            time_sk = EXCLUDED.time_sk,
+            duration_start = EXCLUDED.duration_start,
+            duration_end = EXCLUDED.duration_end,
+            acs_table_sk = EXCLUDED.acs_table_sk,
+            vintage_year = EXCLUDED.vintage_year,
+            estimate_value = EXCLUDED.estimate_value,
+            margin_of_error = EXCLUDED.margin_of_error,
+            margin_of_error_pct = EXCLUDED.margin_of_error_pct,
+            as_of_date = EXCLUDED.as_of_date,
+            updated_at = NOW()
+    """
+
+    from psycopg2.extras import execute_values
+
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        execute_values(cur, sql, rows)
+        row_count = cur.rowcount
+        conn.commit()
+
+    return row_count
 
 
 def merge_acs_shard(shard: dict, hook: PostgresHook | None = None) -> dict:
-    """Process one month shard for ACS: fetch and upsert to gold.fact_metrics.
+    """Process one month shard for ACS: fetch and upsert to gold.fact_acs_observation.
 
     Args:
         shard: dict with key "month_start" (ISO date string).
@@ -211,11 +291,11 @@ def merge_acs_shard(shard: dict, hook: PostgresHook | None = None) -> dict:
     logger.info("[ACS GOLD] Processing shard %s", month_start)
 
     rows = _fetch_acs_for_month(hook, month_start)
-    output_rows = _upsert_gold_rows(hook, rows, month_start)
+    output_rows = _upsert_acs_rows(hook, month_start, rows)
 
     sample_observation_dates: list[str] = []
     for r in rows[:5]:
-        obs = r[_F_OBSERVATION_DATE]
+        obs = r[8]
         if obs is not None:
             sample_observation_dates.append(
                 obs.isoformat() if hasattr(obs, "isoformat") else str(obs)
