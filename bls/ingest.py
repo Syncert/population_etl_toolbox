@@ -36,6 +36,19 @@ class BlsRetryableHTTP(Exception):
     pass
 
 
+class BlsDailyThresholdExceeded(Exception):
+    """
+    Raised when the BLS daily API request quota is exhausted
+    (status=REQUEST_NOT_PROCESSED with a 'daily threshold' message).
+
+    Intentionally does NOT inherit from BlsRetryableHTTP so tenacity's
+    retry_if_exception_type guard passes it through immediately — no
+    same-day retries are attempted.  Instead, Airflow handles the
+    24-hour reschedule via the ingest_batch task's retries / retry_delay.
+    """
+    pass
+
+
 def _get_pg_conn_details() -> PostgresConnectionDetails:
     """
     Get PostgresConnectionDetails from Airflow when running in Airflow,
@@ -185,12 +198,16 @@ def fetch_bls_api(
         if status != "REQUEST_SUCCEEDED":
             message = data.get("message", ["Unknown error"])
             logger.warning(f"BLS API status: {status}, message: {message}")
-            
+
             # Empty results are OK (not an error)
             if "no data available" in str(message).lower():
                 raise BlsNoContent(f"No data available for series")
-            
-            # Otherwise it might be retryable
+
+            # Daily API quota exhausted — Airflow will retry in 24h; tenacity skips
+            if status == "REQUEST_NOT_PROCESSED" or "daily threshold" in str(message).lower():
+                raise BlsDailyThresholdExceeded(f"BLS daily quota exceeded: {status} - {message}")
+
+            # All other non-success statuses are transient (treat as retryable by tenacity)
             raise BlsRetryableHTTP(f"BLS API error: {status} - {message}")
         
         return data

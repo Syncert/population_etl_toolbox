@@ -17,9 +17,11 @@
 # - raw_census.acs_ingestion_slices  (ledger)
 # - raw_census.acs_long              (fact table)
 #
-# REQUIRED AIRFLOW POOL:
+# REQUIRED AIRFLOW POOLS:
 # - Create a pool named "census_api" in Airflow UI and set its size conservatively (start with 4).
 #   This is the macro-level rate limiter that prevents your executor from stampeding the Census API.
+# - Create a pool named "acs_gold_merge" in Airflow UI and set its size to 2–3.
+#   This paces concurrent writes to gold.fact_metrics to prevent checkpoint storms and lock contention.
 #
 # ASSUMPTIONS ABOUT YOUR CODEBASE:
 # - census_acs.config.CONFIG exists and has:
@@ -73,9 +75,10 @@ DEFAULT_ARGS = {
     "retry_delay": timedelta(minutes=20),
 }
 
-# Pool-based throttling: create this in Airflow UI (Admin -> Pools)
+# Pool-based throttling: create these in Airflow UI (Admin -> Pools)
 # Start conservative (e.g., 4). Increase slowly while watching for HTTP 429s.
 CENSUS_API_POOL = "census_api"
+GOLD_MERGE_POOL = "acs_gold_merge"
 
 
 def _get_postgres_hook() -> PostgresHook:
@@ -677,7 +680,7 @@ def acs_ingest():
         logger.info("[ACS GOLD] Emitting %d shard(s): %s", len(confirmed_shards), confirmed_shards)
         return confirmed_shards
 
-    @task(trigger_rule='none_failed')
+    @task(pool=GOLD_MERGE_POOL, trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
     def gold_merge_shard(month_start: str) -> dict:
         """Merge one gold month shard."""
         from census_acs.gold_census.transform import merge_acs_shard
@@ -726,7 +729,8 @@ def acs_ingest():
 
         for year, silver_rows in silver_counts.items():
             gold_rows = gold_counts.get(year, 0)
-            summary[year] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
+            # TaskFlow multiple_outputs requires dictionary keys to be strings.
+            summary[str(year)] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
             if gold_rows == 0:
                 incomplete_years.append(year)
                 logger.error(

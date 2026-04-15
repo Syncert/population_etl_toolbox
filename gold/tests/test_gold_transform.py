@@ -58,6 +58,7 @@ _make_psycopg2_stub()
 
 # Now we can import the gold modules
 from gold.transform import build_shard_list  # noqa: E402
+import gold.transform as gold_transform  # noqa: E402
 from census_acs.gold_census.transform import (  # noqa: E402
     _fetch_acs_for_month,
     merge_acs_shard,
@@ -159,6 +160,186 @@ class TestAcsPrecedenceSqlContents(unittest.TestCase):
         source = inspect.getsource(gt._fetch_acs_for_month)
         self.assertIn("ORDER BY", source)
         self.assertIn("ASC", source)
+
+
+class TestGoldUpsertEnrichment(unittest.TestCase):
+    """_upsert_gold_rows should enrich geo columns and derive year/quarter."""
+
+    @patch("gold.transform._lookup_geo_attributes")
+    def test_enriches_geography_and_derives_time_parts(self, mock_lookup):
+        mock_lookup.return_value = {
+            "state:06|county:075": ("06", "California", "06075", "San Francisco County", "county"),
+            "us:1": (None, None, None, None, "us"),
+        }
+
+        hook = MagicMock()
+        rows = [
+            (
+                "state:06|county:075",
+                "SERIES_A",
+                "BLS",
+                "Employment",
+                12.34,
+                date(2024, 5, 31),
+                date(2024, 5, 31),
+                date(2024, 5, 1),
+                date(2024, 5, 31),
+                "MONTHLY",
+                None,
+                None,
+                None,
+                "LAUS_LOCAL_AREA",
+                None,
+                "Employment level",
+                "SA",
+                True,
+                False,
+            ),
+            (
+                "us:1",
+                "GDP",
+                "FRED",
+                "Gross Domestic Product",
+                23456.7,
+                date(2024, 5, 15),
+                date(2024, 5, 15),
+                date(2024, 4, 1),
+                date(2024, 6, 30),
+                "QUARTERLY",
+                None,
+                None,
+                None,
+                None,
+                "Billions of Dollars",
+                "Real GDP",
+                "Not Seasonally Adjusted",
+                False,
+                False,
+            ),
+        ]
+
+        gold_transform.psycopg2.extras.execute_values.reset_mock()
+        result = gold_transform._upsert_gold_rows(hook, rows, date(2024, 5, 1))
+
+        self.assertEqual(result, 2)
+        mock_lookup.assert_called_once()
+
+        execute_values_call = gold_transform.psycopg2.extras.execute_values.call_args
+        self.assertIsNotNone(execute_values_call)
+        sql = execute_values_call.args[1]
+        insert_rows = execute_values_call.args[2]
+
+        self.assertIn("ON CONFLICT (geo_id, month_start, source_system, element_id)", sql)
+        self.assertEqual(insert_rows[0][0], "state:06|county:075")
+        self.assertEqual(insert_rows[0][1], "COUNTY")
+        self.assertEqual(insert_rows[0][2], "06")
+        self.assertEqual(insert_rows[0][3], "California")
+        self.assertEqual(insert_rows[0][4], "06075")
+        self.assertEqual(insert_rows[0][5], "San Francisco County")
+        self.assertEqual(insert_rows[0][6], date(2024, 5, 1))
+        self.assertEqual(insert_rows[0][7], 2024)
+        self.assertEqual(insert_rows[0][8], 2)
+
+        self.assertEqual(insert_rows[1][0], "us:1")
+        self.assertEqual(insert_rows[1][1], "NATIONAL")
+        self.assertIsNone(insert_rows[1][2])
+        self.assertIsNone(insert_rows[1][3])
+        self.assertIsNone(insert_rows[1][4])
+        self.assertIsNone(insert_rows[1][5])
+        self.assertEqual(insert_rows[1][7], 2024)
+        self.assertEqual(insert_rows[1][8], 2)
+
+    @patch("gold.transform._lookup_geo_attributes", return_value={})
+    def test_missing_geo_mapping_defaults_to_null_geo_attributes(self, _mock_lookup):
+        hook = MagicMock()
+        rows = [
+            (
+                "state:99|county:999",
+                "SERIES_X",
+                "BLS",
+                "Unknown",
+                1.23,
+                date(2024, 12, 31),
+                date(2024, 12, 31),
+                date(2024, 12, 1),
+                date(2024, 12, 31),
+                "MONTHLY",
+                None,
+                None,
+                None,
+                "UNKNOWN",
+                None,
+                "Unknown",
+                None,
+                None,
+                False,
+            )
+        ]
+
+        gold_transform.psycopg2.extras.execute_values.reset_mock()
+        result = gold_transform._upsert_gold_rows(hook, rows, date(2024, 12, 1))
+
+        self.assertEqual(result, 1)
+        insert_rows = gold_transform.psycopg2.extras.execute_values.call_args.args[2]
+        self.assertEqual(insert_rows[0][0], "state:99|county:999")
+        self.assertEqual(insert_rows[0][1], "COUNTY")
+        self.assertIsNone(insert_rows[0][2])
+        self.assertIsNone(insert_rows[0][3])
+        self.assertIsNone(insert_rows[0][4])
+        self.assertIsNone(insert_rows[0][5])
+        self.assertEqual(insert_rows[0][7], 2024)
+        self.assertEqual(insert_rows[0][8], 4)
+
+
+class TestGeoIdNormalization(unittest.TestCase):
+    """Geo ID normalization should align non-canonical IDs to canonical keys."""
+
+    def test_normalize_geo_id(self):
+        self.assertEqual(gold_transform._normalize_geo_id("state:1"), "state:01")
+        self.assertEqual(gold_transform._normalize_geo_id("STATE:1|COUNTY:7"), "state:01|county:007")
+        self.assertEqual(gold_transform._normalize_geo_id(" us:1 "), "us:1")
+        self.assertIsNone(gold_transform._normalize_geo_id(None))
+
+    @patch("gold.transform._lookup_geo_attributes")
+    def test_upsert_enriches_when_input_geo_id_not_canonical(self, mock_lookup):
+        mock_lookup.return_value = {
+            "state:01|county:007": ("01", "Alabama", "01007", "Bibb County", "county"),
+        }
+
+        hook = MagicMock()
+        rows = [
+            (
+                " STATE:1|COUNTY:7 ",
+                "SERIES_A",
+                "BLS",
+                "Employment",
+                10.0,
+                date(2024, 1, 31),
+                date(2024, 1, 31),
+                date(2024, 1, 1),
+                date(2024, 1, 31),
+                "MONTHLY",
+                None,
+                None,
+                None,
+                "LAUS_LOCAL_AREA",
+                None,
+                "Employment level",
+                "SA",
+                True,
+                False,
+            ),
+        ]
+
+        gold_transform.psycopg2.extras.execute_values.reset_mock()
+        result = gold_transform._upsert_gold_rows(hook, rows, date(2024, 1, 1))
+
+        self.assertEqual(result, 1)
+        insert_rows = gold_transform.psycopg2.extras.execute_values.call_args.args[2]
+        self.assertEqual(insert_rows[0][0], "STATE:1|COUNTY:7")
+        self.assertEqual(insert_rows[0][1], "COUNTY")
+        self.assertEqual(insert_rows[0][2], "01")
+        self.assertEqual(insert_rows[0][4], "01007")
 
 
 if __name__ == "__main__":

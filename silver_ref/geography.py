@@ -279,6 +279,30 @@ def sync_geo_dim(
         pl.col("ingested_at").max().alias("ingested_at"),
     ])
 
+    # Backfill county/state-equivalent state_name from canonical state rows.
+    # This avoids null state_name when some years have counties but no states file.
+    state_lookup = (
+        df.filter(
+            (pl.col("geo_level") == "state")
+            & pl.col("state_fips").is_not_null()
+            & pl.col("state_name").is_not_null()
+        )
+        .sort("source_year")
+        .group_by("state_fips")
+        .agg(pl.col("state_name").last().alias("state_name_lookup"))
+    )
+
+    df = (
+        df.join(state_lookup, on="state_fips", how="left")
+        .with_columns(
+            pl.when(pl.col("geo_level").is_in(["county", "state"]))
+            .then(pl.coalesce([pl.col("state_name"), pl.col("state_name_lookup")]))
+            .otherwise(pl.col("state_name"))
+            .alias("state_name")
+        )
+        .drop("state_name_lookup")
+    )
+
     sql = """
         INSERT INTO silver_ref.dim_geo (
             geo_level, geo_id, state_fips, county_fips,

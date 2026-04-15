@@ -465,7 +465,7 @@ def fred_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.silver_max_active_tis)
     def transform_to_silver_by_domain(domain: str) -> int:
         """Transform ALL raw FRED data to silver for one domain (full load)."""
         return transform_fred_to_silver(domain=domain)
@@ -557,7 +557,7 @@ def fred_ingest():
         logger.info("[FRED GOLD] Emitting %d shard(s)", len(confirmed_shards))
         return confirmed_shards
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
     def gold_merge_shard(month_start: str) -> dict:
         """Merge one gold month shard."""
         from fred.gold_fred.transform import merge_fred_shard

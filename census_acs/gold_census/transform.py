@@ -47,12 +47,25 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
                 geo_id,
                 variable_code                           AS element_id,
                 'CENSUS_ACS'                            AS source_system,
-                COALESCE(variable_label, variable_concept, variable_code)
+                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code)
                                                         AS element_name,
                 estimate_value                          AS value,
                 MAKE_DATE(estimate_year, 1, 1)          AS observation_date,
+                duration_end                            AS observation_end,
+                duration_start,
+                duration_end,
+                CASE dataset WHEN 'acs5' THEN 'ACS5' ELSE 'ANNUAL' END
+                                                        AS period_type,
+                dataset                                 AS acs_dataset,
+                margin_of_error,
+                margin_of_error_pct,
+                NULL::TEXT                              AS survey_concept,
                 NULL::TEXT                              AS unit_of_measure,
+                COALESCE(universe, variable_concept, table_id)
+                                                        AS value_semantics,
                 NULL::TEXT                              AS seasonal_adjustment,
+                NULL::BOOLEAN                           AS is_seasonally_adjusted,
+                NULL::BOOLEAN                           AS is_saar,
                 CASE dataset WHEN 'acs5' THEN 1
                              WHEN 'acs1' THEN 2
                              ELSE 3 END                 AS dataset_rank,
@@ -66,10 +79,18 @@ def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
             FROM silver_census.fact_demographics
             WHERE estimate_year = %s
               AND estimate_value IS NOT NULL
+              AND variable_code IS NOT NULL
+              AND variable_code != ''
         )
         SELECT
             geo_id, element_id, source_system, element_name,
-            value, observation_date, unit_of_measure, seasonal_adjustment
+            value, observation_date, observation_end,
+            duration_start, duration_end,
+            period_type, acs_dataset,
+            margin_of_error, margin_of_error_pct,
+            survey_concept,
+            unit_of_measure, value_semantics,
+            seasonal_adjustment, is_seasonally_adjusted, is_saar
         FROM ranked
         WHERE rn = 1
     """
@@ -86,22 +107,79 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         hook = _get_hook()
 
     sql_fetch = """
-        SELECT DISTINCT ON (variable_code)
-            variable_code                                       AS element_id,
-            'CENSUS_ACS'                                        AS source_system,
-            COALESCE(variable_label, variable_concept, variable_code)
-                                                                AS element_name,
-            NULL::TEXT                                          AS unit_of_measure
-        FROM silver_census.fact_demographics
-        ORDER BY variable_code
+        WITH ranked AS (
+            SELECT
+                variable_code AS element_id,
+                'CENSUS_ACS' AS source_system,
+                COALESCE(NULLIF(variable_label, ''), NULLIF(variable_concept, ''), variable_code) AS element_name,
+                CASE
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median%%income%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%earning%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%median%%value%%'
+                      OR LOWER(COALESCE(variable_label, '')) LIKE '%%aggregate%%income%%'
+                        THEN 'Dollars'
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%median age%%'
+                        THEN 'Years'
+                    WHEN LOWER(COALESCE(variable_label, '')) LIKE '%%percent%%'
+                        THEN 'Percent'
+                    ELSE 'Persons'
+                END::TEXT AS unit_of_measure,
+                COALESCE(
+                    NULLIF(TRIM(variable_concept), ''),
+                    NULLIF(TRIM(universe), ''),
+                    table_id
+                ) AS value_semantics,
+                table_id AS metric_family,
+                'acs' AS source_product,
+                variable_concept AS survey_concept,
+                'ACS5' AS default_period_type,
+                FALSE AS is_seasonally_adjusted_default,
+                FALSE AS is_saar_default,
+                ROW_NUMBER() OVER (
+                    PARTITION BY variable_code
+                    ORDER BY
+                        CASE dataset WHEN 'acs5' THEN 1
+                                     WHEN 'acs1' THEN 2
+                                     ELSE 3 END,
+                        estimate_year DESC
+                ) AS rn
+            FROM silver_census.fact_demographics
+            WHERE variable_code IS NOT NULL
+              AND variable_code <> ''
+        )
+        SELECT
+            element_id,
+            source_system,
+            element_name,
+            unit_of_measure,
+            value_semantics,
+            metric_family,
+            source_product,
+            survey_concept,
+            default_period_type,
+            is_seasonally_adjusted_default,
+            is_saar_default
+        FROM ranked
+        WHERE rn = 1
     """
     upsert_sql = """
-        INSERT INTO gold.dim_element (element_id, source_system, element_name, unit_of_measure)
+        INSERT INTO gold.dim_element (
+            element_id, source_system, element_name, unit_of_measure,
+            value_semantics, metric_family, source_product, survey_concept,
+            default_period_type, is_seasonally_adjusted_default, is_saar_default
+        )
         VALUES %s
         ON CONFLICT (element_id, source_system)
         DO UPDATE SET
             element_name    = EXCLUDED.element_name,
             unit_of_measure = EXCLUDED.unit_of_measure,
+            value_semantics = EXCLUDED.value_semantics,
+            metric_family   = EXCLUDED.metric_family,
+            source_product  = EXCLUDED.source_product,
+            survey_concept  = EXCLUDED.survey_concept,
+            default_period_type = EXCLUDED.default_period_type,
+            is_seasonally_adjusted_default = EXCLUDED.is_seasonally_adjusted_default,
+            is_saar_default = EXCLUDED.is_saar_default,
             updated_at      = NOW()
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

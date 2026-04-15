@@ -39,25 +39,75 @@ def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
     sql = """
         WITH ranked AS (
             SELECT
-                geo_id,
-                series_id                               AS element_id,
-                'BLS'                                   AS source_system,
-                COALESCE(measure_name, series_id)       AS element_name,
-                value,
-                period_date                             AS observation_date,
-                NULL::TEXT                              AS unit_of_measure,
-                seasonal_adjustment,
+                f.geo_id,
+                f.series_id                               AS element_id,
+                'BLS'                                     AS source_system,
+                COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.series_id)
+                                                          AS element_name,
+                f.value,
+                f.period_date                             AS observation_date,
+                COALESCE(f.duration_end, f.period_date)   AS observation_end,
+                f.duration_start,
+                f.duration_end,
+                'MONTHLY'                                 AS period_type,
+                NULL::TEXT                                AS acs_dataset,
+                NULL::NUMERIC                            AS margin_of_error,
+                NULL::NUMERIC                            AS margin_of_error_pct,
+                CASE
+                    WHEN f.program = 'la' THEN 'LAUS_LOCAL_AREA'
+                    WHEN f.program = 'ln' THEN 'CPS_HOUSEHOLD'
+                    WHEN f.program = 'ce' THEN 'CES_ESTABLISHMENT'
+                    WHEN f.program = 'cu' THEN 'CPI_PRICE'
+                    WHEN f.program = 'jt' THEN 'JOLTS'
+                    ELSE UPPER(f.program)
+                END                                       AS survey_concept,
+                CASE
+                    WHEN f.program = 'la' AND f.measure_code IN ('03','07','08')
+                        THEN 'Percent'
+                    WHEN f.program = 'la' AND f.measure_code IN ('04','05','06','09')
+                        THEN 'Persons'
+                    WHEN f.program = 'cu' THEN 'Index 1982-1984=100'
+                    WHEN f.program = 'ce' THEN 'Thousands of Persons'
+                    WHEN f.program = 'jt' THEN 'Level in Thousands'
+                    WHEN f.program = 'ln'
+                         AND LOWER(COALESCE(bs.title, '')) LIKE '%%rate%%'
+                        THEN 'Percent'
+                    WHEN f.program = 'ln'
+                         AND LOWER(COALESCE(bs.title, '')) LIKE '%%level%%'
+                        THEN 'Thousands of Persons'
+                    ELSE NULL
+                END::TEXT                                  AS unit_of_measure,
+                COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.program)
+                                                          AS value_semantics,
+                f.seasonal_adjustment,
+                CASE f.seasonal_adjustment
+                    WHEN 'S' THEN TRUE
+                    WHEN 'U' THEN FALSE
+                    ELSE NULL
+                END                                       AS is_seasonally_adjusted,
+                FALSE                                     AS is_saar,
                 ROW_NUMBER() OVER (
-                    PARTITION BY geo_id, series_id
-                    ORDER BY period_date DESC
-                )                                       AS rn
-            FROM silver_bls.fact_labor_statistics
-            WHERE date_trunc('month', period_date)::date = %s
-              AND value IS NOT NULL
+                    PARTITION BY f.geo_id, f.series_id
+                    ORDER BY f.period_date DESC
+                )                                         AS rn
+            FROM silver_bls.fact_labor_statistics f
+            LEFT JOIN raw_bls.bls_series bs
+                ON f.series_id = bs.series_id
+               AND f.program = bs.program
+            WHERE date_trunc('month', f.period_date)::date = %s
+              AND f.value IS NOT NULL
+              AND f.series_id IS NOT NULL
+              AND f.series_id != ''
         )
         SELECT
             geo_id, element_id, source_system, element_name,
-            value, observation_date, unit_of_measure, seasonal_adjustment
+            value, observation_date, observation_end,
+            duration_start, duration_end,
+            period_type, acs_dataset,
+            margin_of_error, margin_of_error_pct,
+            survey_concept,
+            unit_of_measure, value_semantics,
+            seasonal_adjustment, is_seasonally_adjusted, is_saar
         FROM ranked
         WHERE rn = 1
     """
@@ -74,21 +124,78 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
         hook = _get_hook()
 
     sql_fetch = """
-        SELECT DISTINCT ON (series_id)
-            series_id                                           AS element_id,
+        SELECT DISTINCT ON (f.series_id)
+            f.series_id                                         AS element_id,
             'BLS'                                               AS source_system,
-            COALESCE(measure_name, series_id)                   AS element_name,
-            NULL::TEXT                                          AS unit_of_measure
-        FROM silver_bls.fact_labor_statistics
-        ORDER BY series_id
+            COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.series_id)     AS element_name,
+            CASE
+                WHEN f.program = 'la' AND f.measure_code IN ('03','07','08')
+                    THEN 'Percent'
+                WHEN f.program = 'la' AND f.measure_code IN ('04','05','06','09')
+                    THEN 'Persons'
+                WHEN f.program = 'cu' THEN 'Index 1982-1984=100'
+                WHEN f.program = 'ce' THEN 'Thousands of Persons'
+                WHEN f.program = 'jt' THEN 'Level in Thousands'
+                WHEN f.program = 'ln'
+                     AND LOWER(COALESCE(bs.title, '')) LIKE '%%rate%%'
+                    THEN 'Percent'
+                WHEN f.program = 'ln'
+                     AND LOWER(COALESCE(bs.title, '')) LIKE '%%level%%'
+                    THEN 'Thousands of Persons'
+                ELSE NULL
+            END::TEXT                                           AS unit_of_measure,
+            COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.program)       AS value_semantics,
+            CASE
+                WHEN f.program = 'la' THEN 'LAUS'
+                WHEN f.program = 'ln' THEN 'CPS'
+                WHEN f.program = 'ce' THEN 'CES'
+                WHEN f.program = 'cu' THEN 'CPI'
+                WHEN f.program = 'jt' THEN 'JOLTS'
+                ELSE UPPER(f.program)
+            END                                                 AS metric_family,
+            CASE
+                WHEN f.program = 'la' THEN 'LAUS'
+                WHEN f.program = 'ln' THEN 'CPS'
+                WHEN f.program = 'ce' THEN 'CES'
+                WHEN f.program = 'cu' THEN 'CPI'
+                WHEN f.program = 'jt' THEN 'JOLTS'
+                ELSE UPPER(f.program)
+            END                                                 AS source_product,
+            CASE
+                WHEN f.program = 'la' THEN 'LAUS_LOCAL_AREA'
+                WHEN f.program = 'ln' THEN 'CPS_HOUSEHOLD'
+                WHEN f.program = 'ce' THEN 'CES_ESTABLISHMENT'
+                WHEN f.program = 'cu' THEN 'CPI_PRICE'
+                WHEN f.program = 'jt' THEN 'JOLTS'
+                ELSE UPPER(f.program)
+            END                                                 AS survey_concept,
+            'MONTHLY'                                           AS default_period_type,
+            NULL::BOOLEAN                                       AS is_seasonally_adjusted_default,
+            FALSE                                               AS is_saar_default
+        FROM silver_bls.fact_labor_statistics f
+        LEFT JOIN raw_bls.bls_series bs
+            ON f.series_id = bs.series_id
+           AND f.program = bs.program
+        ORDER BY f.series_id
     """
     upsert_sql = """
-        INSERT INTO gold.dim_element (element_id, source_system, element_name, unit_of_measure)
+        INSERT INTO gold.dim_element (
+            element_id, source_system, element_name, unit_of_measure,
+            value_semantics, metric_family, source_product, survey_concept,
+            default_period_type, is_seasonally_adjusted_default, is_saar_default
+        )
         VALUES %s
         ON CONFLICT (element_id, source_system)
         DO UPDATE SET
             element_name    = EXCLUDED.element_name,
             unit_of_measure = EXCLUDED.unit_of_measure,
+            value_semantics = EXCLUDED.value_semantics,
+            metric_family   = EXCLUDED.metric_family,
+            source_product  = EXCLUDED.source_product,
+            survey_concept  = EXCLUDED.survey_concept,
+            default_period_type = EXCLUDED.default_period_type,
+            is_seasonally_adjusted_default = EXCLUDED.is_seasonally_adjusted_default,
+            is_saar_default = EXCLUDED.is_saar_default,
             updated_at      = NOW()
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
