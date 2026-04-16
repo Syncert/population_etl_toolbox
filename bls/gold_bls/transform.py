@@ -416,8 +416,8 @@ def _upsert_bls_rows(hook: PostgresHook, rows: list[tuple]) -> int:
                 WHEN d.geo_level = 'state' THEN 'STATE'
                 WHEN d.geo_level = 'county' THEN 'COUNTY'
                 WHEN r.geo_id = 'us:1' THEN 'NATIONAL'
-                WHEN r.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
-                WHEN r.geo_id LIKE 'state:%' THEN 'STATE'
+                WHEN r.geo_id LIKE 'state:%%|county:%%' THEN 'COUNTY'
+                WHEN r.geo_id LIKE 'state:%%' THEN 'STATE'
                 ELSE 'NATIONAL'
             END AS geo_level,
             CASE WHEN d.state_fips IS NOT NULL THEN LPAD(d.state_fips::TEXT, 2, '0') ELSE NULL END AS state_id,

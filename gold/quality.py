@@ -118,10 +118,10 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
     sql = """
         SELECT COUNT(*)
         FROM (
-            SELECT observation_date, fred_series_sk, realtime_start, realtime_end, COUNT(*) AS cnt
+            SELECT observation_date, fred_series_sk, COUNT(*) AS cnt
             FROM gold.fact_fred_observation
             WHERE date_trunc('month', observation_date)::date = %s
-            GROUP BY observation_date, fred_series_sk, realtime_start, realtime_end
+            GROUP BY observation_date, fred_series_sk
             HAVING COUNT(*) > 1
         ) dups
     """
@@ -130,7 +130,7 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {violations} duplicate series/date groups")
 
     semantic_sql = """
         SELECT COUNT(*)

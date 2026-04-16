@@ -265,6 +265,28 @@ def _upsert_fred_rows(hook: PostgresHook, rows: list[tuple]) -> int:
     if not rows:
         return 0
 
+    delete_sql = """
+        DELETE FROM gold.fact_fred_observation g
+        USING (
+            VALUES %s
+        ) AS r(
+            series_id,
+            value,
+            observation_date,
+            duration_start,
+            duration_end,
+            domain,
+            series_title,
+            unit_of_measure,
+            frequency,
+            seasonal_adjustment
+        )
+        JOIN gold.dim_fred_series fs
+          ON fs.series_id = r.series_id
+        WHERE g.fred_series_sk = fs.fred_series_sk
+          AND g.observation_date = r.observation_date
+    """
+
     sql = """
         INSERT INTO gold.fact_fred_observation (
             geo_id, geo_level, time_sk, observation_date, duration_start, duration_end,
@@ -281,8 +303,8 @@ def _upsert_fred_rows(hook: PostgresHook, rows: list[tuple]) -> int:
             r.duration_end,
             fs.fred_series_sk,
             r.value,
-            NULL::DATE,
-            NULL::DATE,
+            DATE '9999-12-31',
+            DATE '9999-12-31',
             r.frequency,
             r.unit_of_measure,
             r.seasonal_adjustment,
@@ -325,6 +347,7 @@ def _upsert_fred_rows(hook: PostgresHook, rows: list[tuple]) -> int:
     from psycopg2.extras import execute_values
 
     with hook.get_conn() as conn, conn.cursor() as cur:
+        execute_values(cur, delete_sql, rows)
         execute_values(cur, sql, rows)
         row_count = cur.rowcount
         conn.commit()

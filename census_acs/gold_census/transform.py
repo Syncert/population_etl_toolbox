@@ -82,7 +82,14 @@ def _seed_acs_metric_catalog(cur) -> int:
             'LAST' AS recommended_aggregation,
             'data-eng' AS owner_team,
             TRUE AS is_active
-        FROM gold.dim_acs_variable v
+        FROM (
+            SELECT DISTINCT ON (dataset_code, variable_code)
+                acs_table_sk, dataset_code, variable_code,
+                variable_label, concept, universe,
+                is_publishable_default, value_role
+            FROM gold.dim_acs_variable
+            ORDER BY dataset_code, variable_code, vintage_year DESC
+        ) v
         JOIN gold.dim_acs_table t
           ON t.acs_table_sk = v.acs_table_sk
         ON CONFLICT (metric_code)
@@ -200,19 +207,20 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                 dataset_code, vintage_year, table_id, table_title, concept, universe,
                 survey_span_years, reference_url
             )
-            SELECT DISTINCT
+            SELECT
                 f.dataset AS dataset_code,
                 f.estimate_year AS vintage_year,
                 f.table_id,
-                COALESCE(NULLIF(f.variable_concept, ''), f.table_id) AS table_title,
-                f.variable_concept AS concept,
-                f.universe,
+                COALESCE(NULLIF(MIN(f.variable_concept), ''), f.table_id) AS table_title,
+                MIN(f.variable_concept) AS concept,
+                MIN(f.universe) AS universe,
                 CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
                 'https://api.census.gov/data/' || f.estimate_year::TEXT || '/acs/' || f.dataset || '/variables.json' AS reference_url
             FROM silver_census.fact_demographics f
             WHERE f.table_id IS NOT NULL
               AND f.table_id <> ''
               AND f.dataset IN ('acs1', 'acs5')
+            GROUP BY f.dataset, f.estimate_year, f.table_id
             ON CONFLICT (dataset_code, vintage_year, table_id)
             DO UPDATE SET
                 table_title = EXCLUDED.table_title,
@@ -240,11 +248,19 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                 f.universe,
                 'ESTIMATE'::TEXT AS value_role
             FROM (
-                SELECT DISTINCT dataset, estimate_year, table_id, variable_code, variable_label, variable_concept, universe
+                SELECT
+                    dataset,
+                    estimate_year,
+                    MIN(table_id)         AS table_id,
+                    variable_code,
+                    MIN(variable_label)   AS variable_label,
+                    MIN(variable_concept) AS variable_concept,
+                    MIN(universe)         AS universe
                 FROM silver_census.fact_demographics
                 WHERE variable_code IS NOT NULL
                   AND variable_code <> ''
                   AND dataset IN ('acs1', 'acs5')
+                GROUP BY dataset, estimate_year, variable_code
             ) f
             JOIN gold.dim_acs_table t
               ON t.dataset_code = f.dataset
@@ -299,8 +315,8 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
                 WHEN d.geo_level = 'state' THEN 'STATE'
                 WHEN d.geo_level = 'county' THEN 'COUNTY'
                 WHEN r.geo_id = 'us:1' THEN 'NATIONAL'
-                WHEN r.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
-                WHEN r.geo_id LIKE 'state:%' THEN 'STATE'
+                WHEN r.geo_id LIKE 'state:%%|county:%%' THEN 'COUNTY'
+                WHEN r.geo_id LIKE 'state:%%' THEN 'STATE'
                 ELSE 'NATIONAL'
             END AS geo_level,
             CASE WHEN d.state_fips IS NOT NULL THEN LPAD(d.state_fips::TEXT, 2, '0') ELSE NULL END AS state_id,
