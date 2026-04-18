@@ -556,6 +556,46 @@ WHERE is_active = TRUE;
 
 ---
 
+### vw_acs_dashboard_metrics
+
+**Purpose:** Dashboard-ready ACS view with analyst-friendly labels, geography fields, and governance metadata  
+**Definition:** Builds from `fact_acs_observation`, joins ACS metadata + metric catalog, restricts to active geographies, and keeps the single most recent available observation per `(geo_id, variable_code)`.
+
+**Columns:**
+- Time/filtering: `observation_date`, `duration_start`, `duration_end`, `dataset_code`, `vintage_year`
+- Geography/filtering: `geo_id`, `geo_level`, `state_fips`, `county_fips`, `state_name`, `county_name`
+- Variable identity: `table_id`, `table_title`, `variable_code`, `variable_label`, `metric_code`, `metric_display_name`
+- Definition/context: `concept`, `universe`, `denominator_hint`, `is_publishable_default`
+- Governance: `dashboard_suitability`, `business_definition`, `caveats`, `comparability_group`, `do_not_compare_with`, `recommended_aggregation`, `owner_team`
+- Values/quality: `estimate_value`, `margin_of_error`, `margin_of_error_pct`, `estimate_annotation`, `moe_annotation`, `as_of_date`, `updated_at`
+
+**Use Cases:**
+- Build state and county ACS dashboards without joining surrogate keys
+- Filter metrics to public-safe (`dashboard_suitability = 'PUBLIC_SAFE'`) or publishable defaults
+- Drive metric pickers by `metric_display_name` while preserving canonical `metric_code`
+- Support KPI tiles with latest available ACS values across mixed ACS1/ACS5 coverage
+
+**Query Pattern:**
+```sql
+SELECT
+    observation_date,
+    geo_level,
+    state_name,
+    county_name,
+    metric_code,
+    COALESCE(metric_display_name, variable_label) AS metric_name,
+    estimate_value,
+    margin_of_error,
+    dashboard_suitability
+FROM gold.vw_acs_dashboard_metrics
+WHERE geo_level IN ('STATE', 'COUNTY')
+  AND metric_code = 'ACS:acs5:B01003_001E'
+  AND observation_date >= DATE '2020-01-01'
+ORDER BY observation_date DESC, state_name, county_name;
+```
+
+---
+
 ## Use Cases
 
 ### 1. **Build a Population Growth Dashboard**

@@ -364,3 +364,91 @@ FROM gold.fact_bls_observation b
 JOIN gold.dim_bls_survey s
     ON s.bls_survey_sk = b.bls_survey_sk
 WHERE b.measure_category IN ('EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS');
+
+CREATE OR REPLACE VIEW gold.vw_acs_dashboard_metrics AS
+WITH ranked AS (
+    SELECT
+        ao.observation_date,
+        ao.duration_start,
+        ao.duration_end,
+        ao.geo_id,
+        ao.geo_level,
+        d.state_fips,
+        d.county_fips,
+        ao.state_name,
+        ao.county_name,
+        ao.dataset_code,
+        ao.vintage_year,
+        t.table_id,
+        t.table_title,
+        v.variable_code,
+        v.variable_label,
+        COALESCE(v.concept, t.concept) AS concept,
+        COALESCE(v.universe, t.universe) AS universe,
+        v.denominator_hint,
+        v.is_publishable_default,
+        ('ACS:' || ao.dataset_code || ':' || v.variable_code) AS metric_code,
+        ao.estimate_value,
+        ao.margin_of_error,
+        ao.margin_of_error_pct,
+        ao.estimate_annotation,
+        ao.moe_annotation,
+        ao.as_of_date,
+        ao.updated_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY ao.geo_id, v.variable_code
+            ORDER BY ao.observation_date DESC,
+                     ao.updated_at DESC,
+                     CASE ao.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 3 END
+        ) AS recency_rank
+    FROM gold.fact_acs_observation ao
+    JOIN gold.dim_acs_variable v
+        ON v.acs_variable_sk = ao.acs_variable_sk
+    JOIN gold.dim_acs_table t
+        ON t.acs_table_sk = ao.acs_table_sk
+    JOIN gold.dim_geo d
+        ON d.geo_id = ao.geo_id
+    WHERE d.is_active = TRUE
+)
+SELECT
+    r.observation_date,
+    r.duration_start,
+    r.duration_end,
+    r.geo_id,
+    r.geo_level,
+    r.state_fips,
+    r.county_fips,
+    r.state_name,
+    r.county_name,
+    r.dataset_code,
+    r.vintage_year,
+    r.table_id,
+    r.table_title,
+    r.variable_code,
+    r.variable_label,
+    r.concept,
+    r.universe,
+    r.denominator_hint,
+    r.is_publishable_default,
+    r.metric_code,
+    mc.metric_display_name,
+    mc.dashboard_suitability,
+    mc.business_definition,
+    mc.caveats,
+    mc.comparability_group,
+    mc.do_not_compare_with,
+    mc.recommended_aggregation,
+    mc.owner_team,
+    r.estimate_value,
+    r.margin_of_error,
+    r.margin_of_error_pct,
+    r.estimate_annotation,
+    r.moe_annotation,
+    r.as_of_date,
+    r.updated_at
+FROM ranked r
+LEFT JOIN gold.dim_metric_catalog mc
+    ON mc.metric_code = r.metric_code
+   AND mc.source_code = 'CENSUS_ACS'
+   AND mc.is_active = TRUE
+WHERE r.recency_rank = 1;
