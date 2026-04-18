@@ -63,6 +63,15 @@ class BlsConfig(BaseModel):
     #    - CES   -> jobs, establishment-based employment     (ce)
     #    - CPI   -> prices / inflation                       (cu)
     #    - JOLTS -> labor market flows and tightness         (jt)
+    #
+    # WARNING:
+    # Similar metric names across BLS programs are not automatically
+    # comparable. Preserve at least program, series_id, measure_name,
+    # unit, seasonal_adjustment, geo_level, and observation_basis in the
+    # gold layer. Household measures (CPS/LN, LAUS) are not the same thing
+    # as establishment/payroll measures (CES), and price indexes (CPI) and
+    # flow measures (JOLTS) should not be flattened into the same semantic
+    # bucket as level-based labor statistics.
     # ------------------------------------------------------------------
     curated_by_program: Dict[str, List[str]] = {
 
@@ -96,6 +105,10 @@ class BlsConfig(BaseModel):
             "LNS12000000",  # Employment level (national)
             "LNS11000000",  # Civilian labor force level (national)
             "LNS11300000",  # Labor force participation rate (national)
+            "LNS12300000",  # Employment-population ratio (national)
+            "LNS15000000",  # Not in labor force (national)
+            "LNS13327709",  # U-6 total labor underutilization rate
+            "LNS13025703",  # Unemployed 27 weeks and over
         ],
 
         # --------------------------------------------------------------
@@ -107,6 +120,10 @@ class BlsConfig(BaseModel):
         # --------------------------------------------------------------
         "ce": [
             "CES0000000001",  # Total nonfarm payroll employment (national)
+            "CES0500000001",  # Total private employment
+            "CES0500000002",  # Average weekly hours of all employees, total private
+            "CES0500000003",  # Average hourly earnings of all employees, total private
+            "CES0500000008",  # Average weekly earnings of all employees, total private
         ],
 
         # --------------------------------------------------------------
@@ -117,6 +134,8 @@ class BlsConfig(BaseModel):
         # --------------------------------------------------------------
         "cu": [
             "CUUR0000SA0",    # CPI-U, all items, U.S. city average
+            "CUUR0000SA0L1E", # CPI-U, all items less food and energy (core CPI)
+            "CWUR0000SA0",    # CPI-W, all items, U.S. city average
         ],
 
         # --------------------------------------------------------------
@@ -127,6 +146,11 @@ class BlsConfig(BaseModel):
         # --------------------------------------------------------------
         "jt": [
             "JTS000000000000000JOL",  # Job openings, total nonfarm (national)
+            "JTS000000000000000HIR",  # Hires, total nonfarm (national)
+            "JTS000000000000000QUR",  # Quits, total nonfarm (national)
+            "JTS000000000000000LDL",  # Layoffs and discharges, total nonfarm (national)
+            "JTS000000000000000TSL",  # Total separations, total nonfarm (national)
+            "JTS000000000000000OSL",  # Other separations, total nonfarm (national)
         ],
     }
 

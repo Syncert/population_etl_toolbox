@@ -275,14 +275,21 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
 # ---------------------------------------------------------------------------
 
 def ensure_gold_schema(hook: PostgresHook | None = None) -> None:
-    """Read and execute gold/DDL/gold.sql to ensure schema and tables exist."""
+    """Execute all gold DDL SQL files in deterministic order."""
     if hook is None:
         hook = _get_hook()
-    sql = _DDL_PATH.read_text(encoding="utf-8")
+    ddl_dir = _DDL_PATH.parent
+    ddl_files = sorted(ddl_dir.glob("*.sql"))
+    if not ddl_files:
+        raise FileNotFoundError(f"No DDL SQL files found in {ddl_dir}")
+
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        for ddl_file in ddl_files:
+            sql = ddl_file.read_text(encoding="utf-8")
+            cur.execute(sql)
+            logger.info("Applied gold DDL: %s", ddl_file)
         conn.commit()
-    logger.info("Gold schema ensured via %s", _DDL_PATH)
+    logger.info("Gold schema ensured via %d DDL file(s) in %s", len(ddl_files), ddl_dir)
 
 
 def build_shard_list(
