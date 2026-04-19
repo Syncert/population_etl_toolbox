@@ -453,7 +453,7 @@ def sync_geo_dim(
             county_name  = EXCLUDED.county_name,
             latitude     = EXCLUDED.latitude,
             longitude    = EXCLUDED.longitude,
-            geom         = EXCLUDED.geom,
+            geom         = COALESCE(EXCLUDED.geom, silver_ref.dim_geo.geom),
             is_active    = EXCLUDED.is_active,
             source       = EXCLUDED.source,
             source_year  = EXCLUDED.source_year,
