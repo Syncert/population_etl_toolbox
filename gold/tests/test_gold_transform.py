@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 # ---------------------------------------------------------------------------
 # Stub out airflow and psycopg2 so the module can be imported without them
@@ -167,14 +169,14 @@ class TestGeoCoordinateSqlPropagation(unittest.TestCase):
     """Gold upserts should propagate latitude/longitude from dim_geo."""
 
     def test_acs_upsert_sql_contains_geo_coordinates(self):
-        source = Path("census_acs/gold_census/transform.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "census_acs/gold_census/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
         self.assertIn("d.latitude", source)
         self.assertIn("d.longitude", source)
 
     def test_bls_upsert_sql_contains_geo_coordinates(self):
-        source = Path("bls/gold_bls/transform.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "bls/gold_bls/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
         self.assertIn("d.latitude", source)
