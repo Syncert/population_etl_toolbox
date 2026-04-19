@@ -5,12 +5,14 @@ from __future__ import annotations
 import io
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 import zipfile
 
 import httpx
 import polars as pl
+import shapefile as pyshp
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from silver_ref.config import CONFIG
@@ -33,12 +35,14 @@ def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 
-def _state_geojson_url(year: int) -> str:
-    return f"{GENZ_ROOT}/GENZ{year}/geojson/cb_{year}_us_state_500k.geojson"
+def _state_boundary_url(year: int) -> str:
+    """Census cartographic boundary shapefile zip for states."""
+    return f"{GENZ_ROOT}/GENZ{year}/shp/cb_{year}_us_state_500k.zip"
 
 
-def _county_geojson_url(year: int) -> str:
-    return f"{GENZ_ROOT}/GENZ{year}/geojson/cb_{year}_us_county_500k.geojson"
+def _county_boundary_url(year: int) -> str:
+    """Census cartographic boundary shapefile zip for counties."""
+    return f"{GENZ_ROOT}/GENZ{year}/shp/cb_{year}_us_county_500k.zip"
 
 
 def _url_exists(url: str, timeout_s: float = 10.0) -> bool:
@@ -106,34 +110,142 @@ def _fetch_zipped_tsv(url: str) -> pl.DataFrame:
     )
 
 
-def _fetch_geojson(url: str) -> dict:
-    with httpx.Client(timeout=120, follow_redirects=True) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-    payload = resp.json()
-    if not isinstance(payload, dict) or "features" not in payload:
-        raise RuntimeError(f"Invalid GeoJSON payload from {url}")
-    return payload
+def _fetch_boundary_features(url: str, retries: int = 3) -> list[dict]:
+    """Download a Census cartographic boundary shapefile zip and return a list
+    of GeoJSON-style feature dicts ``{"properties": {...}, "geometry": {...}}``.
+
+    Uses *pyshp* (``shapefile`` package) to parse the shapefile components
+    directly from memory — no temp files needed.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=15.0)
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+
+            zip_bytes = io.BytesIO(resp.content)
+            with zipfile.ZipFile(zip_bytes) as zf:
+                names = zf.namelist()
+                shp_name = next((n for n in names if n.lower().endswith(".shp")), None)
+                shx_name = next((n for n in names if n.lower().endswith(".shx")), None)
+                dbf_name = next((n for n in names if n.lower().endswith(".dbf")), None)
+
+                if not all([shp_name, shx_name, dbf_name]):
+                    raise RuntimeError(
+                        f"Shapefile zip missing .shp/.shx/.dbf in {url}. "
+                        f"Contents: {names}"
+                    )
+
+                reader = pyshp.Reader(
+                    shp=io.BytesIO(zf.read(shp_name)),
+                    shx=io.BytesIO(zf.read(shx_name)),
+                    dbf=io.BytesIO(zf.read(dbf_name)),
+                )
+
+            field_names = [f[0] for f in reader.fields[1:]]  # skip DeletionFlag
+            features: list[dict] = []
+            for sr in reader.shapeRecords():
+                features.append(
+                    {
+                        "properties": dict(zip(field_names, sr.record)),
+                        "geometry": sr.shape.__geo_interface__,
+                    }
+                )
+
+            mb = len(resp.content) / 1_048_576
+            logger.info(
+                "Fetched shapefile: %s (%d features, %.1f MB, attempt %d)",
+                url, len(features), mb, attempt,
+            )
+            return features
+
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Shapefile fetch attempt %d/%d failed for %s: %s",
+                attempt, retries, url, exc,
+            )
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+
+    raise RuntimeError(
+        f"Failed to fetch shapefile from {url} after {retries} attempts"
+    ) from last_exc
 
 
-def _load_polygon_lookup(years: list[int]) -> tuple[dict[str, str], dict[str, str]]:
-    """Load state/county polygon geometry JSON keyed by FIPS from Census cartographic GeoJSON."""
-    if not years:
-        return {}, {}
+def resolve_latest_genz_year(
+    start_year: Optional[int] = None,
+    min_year: int = 2013,
+) -> int:
+    """Probe Census TIGER/GENZ URLs to find the latest year with available
+    cartographic boundary shapefiles (state + county).
+
+    Falls back to county-only if no year has both.
+    """
+    y0 = start_year or datetime.now(timezone.utc).year
+    county_only_year: Optional[int] = None
+
+    for y in range(y0, min_year - 1, -1):
+        county_ok = _url_exists(_county_boundary_url(y), timeout_s=15.0)
+        if not county_ok:
+            logger.debug("GENZ %d: county shapefile not available", y)
+            continue
+
+        state_ok = _url_exists(_state_boundary_url(y), timeout_s=15.0)
+        if state_ok:
+            logger.info(
+                "Resolved GENZ year=%d (state + county shapefiles available)", y
+            )
+            return y
+
+        if county_only_year is None:
+            county_only_year = y
+            logger.info(
+                "GENZ %d: county shapefile available, state not "
+                "(will use if no better year found)",
+                y,
+            )
+
+    if county_only_year is not None:
+        logger.info(
+            "Resolved GENZ year=%d (county-only; no year has both state + county)",
+            county_only_year,
+        )
+        return county_only_year
+
+    raise RuntimeError(
+        f"No GENZ cartographic boundary shapefiles found for any year {min_year}..{y0}. "
+        f"Check network access to {GENZ_ROOT}."
+    )
+
+
+def _load_polygon_lookup(
+    genz_year: Optional[int] = None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Load state/county polygon geometry JSON keyed by FIPS from Census
+    cartographic boundary GeoJSON.
+
+    Resolves the latest available GENZ year when *genz_year* is ``None``.
+    State and county downloads are independent — one can succeed without the
+    other.
+    """
+    if genz_year is None:
+        try:
+            genz_year = resolve_latest_genz_year()
+        except RuntimeError as exc:
+            logger.error("Cannot resolve GENZ year for polygon data: %s", exc)
+            return {}, {}
 
     state_polygons: dict[str, str] = {}
     county_polygons: dict[str, str] = {}
-    for y in sorted(set(years), reverse=True):
-        state_url = _state_geojson_url(y)
-        county_url = _county_geojson_url(y)
-        try:
-            state_geojson = _fetch_geojson(state_url)
-            county_geojson = _fetch_geojson(county_url)
-        except Exception as e:
-            logger.warning("Polygon GeoJSON load skipped for year=%s: %s", y, e)
-            continue
 
-        for feature in state_geojson.get("features", []):
+    # --- State polygons (independent) ------------------------------------
+    state_url = _state_boundary_url(genz_year)
+    try:
+        state_features = _fetch_boundary_features(state_url)
+        for feature in state_features:
             props = feature.get("properties") or {}
             geometry = feature.get("geometry")
             statefp = props.get("STATEFP")
@@ -141,25 +253,39 @@ def _load_polygon_lookup(years: list[int]) -> tuple[dict[str, str], dict[str, st
                 state_polygons[str(statefp).zfill(2)] = json.dumps(
                     geometry, separators=(",", ":")
                 )
+        logger.info(
+            "Loaded %d state polygons from GENZ %d", len(state_polygons), genz_year
+        )
+    except Exception as exc:
+        logger.warning("State polygon load failed for GENZ %d: %s", genz_year, exc)
 
-        for feature in county_geojson.get("features", []):
+    # --- County polygons (independent) -----------------------------------
+    county_url = _county_boundary_url(genz_year)
+    try:
+        county_features = _fetch_boundary_features(county_url)
+        for feature in county_features:
             props = feature.get("properties") or {}
             geometry = feature.get("geometry")
             statefp = props.get("STATEFP")
             countyfp = props.get("COUNTYFP")
             if statefp and countyfp and geometry:
-                county_polygons[
-                    f"{str(statefp).zfill(2)}{str(countyfp).zfill(3)}"
-                ] = json.dumps(geometry, separators=(",", ":"))
-
+                fips5 = f"{str(statefp).zfill(2)}{str(countyfp).zfill(3)}"
+                county_polygons[fips5] = json.dumps(
+                    geometry, separators=(",", ":")
+                )
         logger.info(
-            "Loaded polygon GeoJSON for year=%s (states=%s, counties=%s)",
-            y,
-            len(state_polygons),
-            len(county_polygons),
+            "Loaded %d county polygons from GENZ %d",
+            len(county_polygons), genz_year,
         )
-        if state_polygons and county_polygons:
-            break
+    except Exception as exc:
+        logger.warning("County polygon load failed for GENZ %d: %s", genz_year, exc)
+
+    if not state_polygons and not county_polygons:
+        logger.error(
+            "NO polygons loaded for GENZ year %d. dim_geo.geom will remain NULL. "
+            "Check network access to %s",
+            genz_year, GENZ_ROOT,
+        )
 
     return state_polygons, county_polygons
 
@@ -210,7 +336,7 @@ def sync_geo_dim(
         )
 
     yearly_frames: list[pl.DataFrame] = []
-    state_polygons, county_polygons = _load_polygon_lookup(years)
+    state_polygons, county_polygons = _load_polygon_lookup()
     state_poly_df = (
         pl.DataFrame(
             {
