@@ -143,6 +143,17 @@ def sync_geo_dim(
 
     yearly_frames: list[pl.DataFrame] = []
 
+    def _coord_expr(frame: pl.DataFrame, source_col: str, out_col: str) -> pl.Expr:
+        if source_col in frame.columns:
+            return (
+                pl.col(source_col)
+                .cast(pl.Utf8)
+                .str.strip_chars()
+                .cast(pl.Float64, strict=False)
+                .alias(out_col)
+            )
+        return pl.lit(None, dtype=pl.Float64).alias(out_col)
+
     for y in years:
         states_url = _states_url(y)
         counties_url = _counties_url(y)
@@ -174,24 +185,8 @@ def sync_geo_dim(
                     st.select([
                         pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
                         pl.col("NAME").cast(pl.Utf8).alias("state_name"),
-                        (
-                            pl.col("INTPTLAT")
-                            .cast(pl.Utf8)
-                            .str.strip_chars()
-                            .cast(pl.Float64, strict=False)
-                            .alias("latitude")
-                            if "INTPTLAT" in st.columns
-                            else pl.lit(None, dtype=pl.Float64).alias("latitude")
-                        ),
-                        (
-                            pl.col("INTPTLONG")
-                            .cast(pl.Utf8)
-                            .str.strip_chars()
-                            .cast(pl.Float64, strict=False)
-                            .alias("longitude")
-                            if "INTPTLONG" in st.columns
-                            else pl.lit(None, dtype=pl.Float64).alias("longitude")
-                        ),
+                        _coord_expr(st, "INTPTLAT", "latitude"),
+                        _coord_expr(st, "INTPTLONG", "longitude"),
                     ])
                     .with_columns([
                         pl.lit("state").alias("geo_level"),
@@ -224,24 +219,8 @@ def sync_geo_dim(
             co.select([
                 pl.col("GEOID").cast(pl.Utf8).str.zfill(5).alias("geoid5"),
                 pl.col("NAME").cast(pl.Utf8).alias("county_name"),
-                (
-                    pl.col("INTPTLAT")
-                    .cast(pl.Utf8)
-                    .str.strip_chars()
-                    .cast(pl.Float64, strict=False)
-                    .alias("latitude")
-                    if "INTPTLAT" in co.columns
-                    else pl.lit(None, dtype=pl.Float64).alias("latitude")
-                ),
-                (
-                    pl.col("INTPTLONG")
-                    .cast(pl.Utf8)
-                    .str.strip_chars()
-                    .cast(pl.Float64, strict=False)
-                    .alias("longitude")
-                    if "INTPTLONG" in co.columns
-                    else pl.lit(None, dtype=pl.Float64).alias("longitude")
-                ),
+                _coord_expr(co, "INTPTLAT", "latitude"),
+                _coord_expr(co, "INTPTLONG", "longitude"),
             ])
             .with_columns([
                 pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
