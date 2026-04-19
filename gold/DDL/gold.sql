@@ -172,7 +172,6 @@ CREATE TABLE IF NOT EXISTS gold.fact_acs_observation (
     county_name        TEXT,
     geo_latitude       DOUBLE PRECISION,
     geo_longitude      DOUBLE PRECISION,
-    geo_geom           geometry(MultiPolygon, 4326),
     time_sk            INTEGER REFERENCES silver_ref.dim_time(time_sk),
     observation_date   DATE NOT NULL,
     duration_start     DATE,
