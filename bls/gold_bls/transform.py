@@ -403,7 +403,7 @@ def _upsert_bls_rows(hook: PostgresHook, rows: list[tuple]) -> int:
     sql = """
         INSERT INTO gold.fact_bls_observation (
             geo_id, geo_level, state_id, state_name, county_id, county_name,
-            geo_latitude, geo_longitude,
+            geo_latitude, geo_longitude, geo_polygon_geojson,
             time_sk, period_date, duration_start, duration_end,
             bls_survey_sk, bls_series_sk, program_code,
             value, period_code, seasonal_adjustment_status,
@@ -431,6 +431,7 @@ def _upsert_bls_rows(hook: PostgresHook, rows: list[tuple]) -> int:
             d.county_name,
             d.latitude,
             d.longitude,
+            d.geo_polygon_geojson,
             t.time_sk,
             r.period_date,
             r.duration_start,
@@ -479,6 +480,7 @@ def _upsert_bls_rows(hook: PostgresHook, rows: list[tuple]) -> int:
             county_name = EXCLUDED.county_name,
             geo_latitude = EXCLUDED.geo_latitude,
             geo_longitude = EXCLUDED.geo_longitude,
+            geo_polygon_geojson = EXCLUDED.geo_polygon_geojson,
             time_sk = EXCLUDED.time_sk,
             duration_start = EXCLUDED.duration_start,
             duration_end = EXCLUDED.duration_end,

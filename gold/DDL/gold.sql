@@ -18,6 +18,7 @@ SELECT
     county_name,
     latitude,
     longitude,
+    geo_polygon_geojson,
     is_active,
     source,
     source_year,
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS gold.fact_acs_observation (
     county_name        TEXT,
     geo_latitude       DOUBLE PRECISION,
     geo_longitude      DOUBLE PRECISION,
+    geo_polygon_geojson TEXT,
     time_sk            INTEGER REFERENCES silver_ref.dim_time(time_sk),
     observation_date   DATE NOT NULL,
     duration_start     DATE,
@@ -197,6 +199,7 @@ CREATE TABLE IF NOT EXISTS gold.fact_bls_observation (
     county_name               TEXT,
     geo_latitude              DOUBLE PRECISION,
     geo_longitude             DOUBLE PRECISION,
+    geo_polygon_geojson       TEXT,
     time_sk                   INTEGER REFERENCES silver_ref.dim_time(time_sk),
     period_date               DATE NOT NULL,
     duration_start            DATE,
@@ -242,6 +245,12 @@ CREATE TABLE IF NOT EXISTS gold.fact_fred_observation (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (observation_date, fred_series_sk, realtime_start, realtime_end)
 );
+
+ALTER TABLE gold.fact_acs_observation
+    ADD COLUMN IF NOT EXISTS geo_polygon_geojson TEXT;
+
+ALTER TABLE gold.fact_bls_observation
+    ADD COLUMN IF NOT EXISTS geo_polygon_geojson TEXT;
 
 -- ---------------------------------------------------------------------------
 -- Shared metric catalog + bridges
@@ -362,6 +371,7 @@ SELECT
     b.geo_id,
     b.geo_latitude,
     b.geo_longitude,
+    b.geo_polygon_geojson,
     b.program_code,
     s.survey_name,
     b.measure_category,
@@ -387,6 +397,7 @@ WITH ranked AS (
         ao.county_name,
         ao.geo_latitude,
         ao.geo_longitude,
+        ao.geo_polygon_geojson,
         ao.dataset_code,
         ao.vintage_year,
         t.table_id,
@@ -432,6 +443,7 @@ SELECT
     r.county_name,
     r.geo_latitude,
     r.geo_longitude,
+    r.geo_polygon_geojson,
     r.dataset_code,
     r.vintage_year,
     r.table_id,

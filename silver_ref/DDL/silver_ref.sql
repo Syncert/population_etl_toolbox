@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     county_name TEXT,
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
+    geo_polygon_geojson TEXT,
     is_active BOOLEAN,
     source TEXT,
     source_year INT,
@@ -33,6 +34,9 @@ ALTER TABLE silver_ref.dim_geo
 
 ALTER TABLE silver_ref.dim_geo
     ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS geo_polygon_geojson TEXT;
 
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_time (

@@ -87,6 +87,7 @@ The schema follows a **dimensional modeling** approach with:
 | `name` | TEXT | Human-friendly geo name |
 | `state_name`, `county_name` | TEXT | Denormalized convenience fields |
 | `latitude`, `longitude` | DOUBLE PRECISION | Gazetteer internal point coordinates for map plotting |
+| `geo_polygon_geojson` | TEXT | GIS polygon geometry (GeoJSON geometry object) for choropleth/polygon map layers |
 | `is_active` | BOOLEAN | TRUE if currently valid; FALSE for historical/obsolete geos |
 | `source`, `source_year` | TEXT, INT | Provenance; e.g., `CENSUS`, 2020 |
 | `first_seen_year`, `last_seen_year` | INT | Temporal coverage in source data |

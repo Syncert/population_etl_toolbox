@@ -165,22 +165,26 @@ class TestAcsPrecedenceSqlContents(unittest.TestCase):
         self.assertIn("ASC", source)
 
 
-class TestGeoCoordinateSqlPropagation(unittest.TestCase):
-    """Gold upserts should propagate latitude/longitude from dim_geo."""
+class TestGoldGeoShapeSqlPropagation(unittest.TestCase):
+    """Gold upserts should propagate coordinates and polygon geometry from dim_geo."""
 
     def test_acs_upsert_sql_contains_geo_coordinates(self):
         source = (_REPO_ROOT / "census_acs/gold_census/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
+        self.assertIn("geo_polygon_geojson", source)
         self.assertIn("d.latitude", source)
         self.assertIn("d.longitude", source)
+        self.assertIn("d.geo_polygon_geojson", source)
 
     def test_bls_upsert_sql_contains_geo_coordinates(self):
         source = (_REPO_ROOT / "bls/gold_bls/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
+        self.assertIn("geo_polygon_geojson", source)
         self.assertIn("d.latitude", source)
         self.assertIn("d.longitude", source)
+        self.assertIn("d.geo_polygon_geojson", source)
 
 
 class TestGoldUpsertEnrichment(unittest.TestCase):

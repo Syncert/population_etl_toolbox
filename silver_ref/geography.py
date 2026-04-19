@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -17,6 +18,7 @@ from silver_ref.config import CONFIG
 logger = logging.getLogger(__name__)
 
 GAZ_ROOT = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer"
+GENZ_ROOT = "https://www2.census.gov/geo/tiger"
 
 
 def _states_url(year: int) -> str:
@@ -29,6 +31,14 @@ def _counties_url(year: int) -> str:
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def _state_geojson_url(year: int) -> str:
+    return f"{GENZ_ROOT}/GENZ{year}/geojson/cb_{year}_us_state_500k.geojson"
+
+
+def _county_geojson_url(year: int) -> str:
+    return f"{GENZ_ROOT}/GENZ{year}/geojson/cb_{year}_us_county_500k.geojson"
 
 
 def _url_exists(url: str, timeout_s: float = 10.0) -> bool:
@@ -96,6 +106,64 @@ def _fetch_zipped_tsv(url: str) -> pl.DataFrame:
     )
 
 
+def _fetch_geojson(url: str) -> dict:
+    with httpx.Client(timeout=120, follow_redirects=True) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, dict) or "features" not in payload:
+        raise RuntimeError(f"Invalid GeoJSON payload from {url}")
+    return payload
+
+
+def _load_polygon_lookup(years: list[int]) -> tuple[dict[str, str], dict[str, str]]:
+    """Load state/county polygon geometry JSON keyed by FIPS from Census cartographic GeoJSON."""
+    if not years:
+        return {}, {}
+
+    state_polygons: dict[str, str] = {}
+    county_polygons: dict[str, str] = {}
+    for y in sorted(set(years), reverse=True):
+        state_url = _state_geojson_url(y)
+        county_url = _county_geojson_url(y)
+        try:
+            state_geojson = _fetch_geojson(state_url)
+            county_geojson = _fetch_geojson(county_url)
+        except Exception as e:
+            logger.warning("Polygon GeoJSON load skipped for year=%s: %s", y, e)
+            continue
+
+        for feature in state_geojson.get("features", []):
+            props = feature.get("properties") or {}
+            geometry = feature.get("geometry")
+            statefp = props.get("STATEFP")
+            if statefp and geometry:
+                state_polygons[str(statefp).zfill(2)] = json.dumps(
+                    geometry, separators=(",", ":")
+                )
+
+        for feature in county_geojson.get("features", []):
+            props = feature.get("properties") or {}
+            geometry = feature.get("geometry")
+            statefp = props.get("STATEFP")
+            countyfp = props.get("COUNTYFP")
+            if statefp and countyfp and geometry:
+                county_polygons[
+                    f"{str(statefp).zfill(2)}{str(countyfp).zfill(3)}"
+                ] = json.dumps(geometry, separators=(",", ":"))
+
+        logger.info(
+            "Loaded polygon GeoJSON for year=%s (states=%s, counties=%s)",
+            y,
+            len(state_polygons),
+            len(county_polygons),
+        )
+        if state_polygons and county_polygons:
+            break
+
+    return state_polygons, county_polygons
+
+
 def sync_geo_dim(
     source_year: Optional[int] = None,
     min_year: int = 2010,
@@ -142,6 +210,27 @@ def sync_geo_dim(
         )
 
     yearly_frames: list[pl.DataFrame] = []
+    state_polygons, county_polygons = _load_polygon_lookup(years)
+    state_poly_df = (
+        pl.DataFrame(
+            {
+                "state_fips": list(state_polygons.keys()),
+                "geo_polygon_geojson": list(state_polygons.values()),
+            }
+        )
+        if state_polygons
+        else pl.DataFrame(schema={"state_fips": pl.Utf8, "geo_polygon_geojson": pl.Utf8})
+    )
+    county_poly_df = (
+        pl.DataFrame(
+            {
+                "geoid5": list(county_polygons.keys()),
+                "geo_polygon_geojson": list(county_polygons.values()),
+            }
+        )
+        if county_polygons
+        else pl.DataFrame(schema={"geoid5": pl.Utf8, "geo_polygon_geojson": pl.Utf8})
+    )
 
     def _coord_expr(frame: pl.DataFrame, source_col: str, out_col: str) -> pl.Expr:
         if source_col in frame.columns:
@@ -169,6 +258,7 @@ def sync_geo_dim(
                 "county_name": None,
                 "latitude": None,
                 "longitude": None,
+                "geo_polygon_geojson": None,
                 "is_active": True,
                 "source": "census_gazetteer",
                 "source_year": y,
@@ -200,6 +290,12 @@ def sync_geo_dim(
                         pl.lit(now).alias("ingested_at"),
                     ])
                 )
+                if state_poly_df.height > 0:
+                    st_df = st_df.join(state_poly_df, on="state_fips", how="left")
+                else:
+                    st_df = st_df.with_columns(
+                        pl.lit(None, dtype=pl.Utf8).alias("geo_polygon_geojson")
+                    )
                 st_df = st_df.with_columns([
                     pl.col("state_fips").cast(pl.Utf8),
                     pl.col("county_fips").cast(pl.Utf8),
@@ -239,8 +335,14 @@ def sync_geo_dim(
                 pl.lit(y).alias("source_year"),
                 pl.lit(now).alias("ingested_at"),
             ])
-            .drop("geoid5")
         )
+        if county_poly_df.height > 0:
+            co_df = co_df.join(county_poly_df, on="geoid5", how="left")
+        else:
+            co_df = co_df.with_columns(
+                pl.lit(None, dtype=pl.Utf8).alias("geo_polygon_geojson")
+            )
+        co_df = co_df.drop("geoid5")
 
         co_df = co_df.with_columns([
             pl.col("state_fips").cast(pl.Utf8),
@@ -267,6 +369,7 @@ def sync_geo_dim(
         "county_name",
         "latitude",
         "longitude",
+        "geo_polygon_geojson",
         "is_active",
         "source",
         "source_year",
@@ -292,6 +395,7 @@ def sync_geo_dim(
         pl.col("county_name").last().alias("county_name"),
         pl.col("latitude").last().alias("latitude"),
         pl.col("longitude").last().alias("longitude"),
+        pl.col("geo_polygon_geojson").last().alias("geo_polygon_geojson"),
         pl.col("is_active").last().alias("is_active"),
         pl.col("source").last().alias("source"),
         pl.col("source_year").last().alias("source_year"),
@@ -327,14 +431,14 @@ def sync_geo_dim(
     sql = """
         INSERT INTO silver_ref.dim_geo (
             geo_level, geo_id, state_fips, county_fips,
-            name, state_name, county_name, latitude, longitude,
+            name, state_name, county_name, latitude, longitude, geo_polygon_geojson,
             is_active, source, source_year,
             first_seen_year, last_seen_year,
             ingested_at
         )
         VALUES (
             %(geo_level)s, %(geo_id)s, %(state_fips)s, %(county_fips)s,
-            %(name)s, %(state_name)s, %(county_name)s, %(latitude)s, %(longitude)s,
+            %(name)s, %(state_name)s, %(county_name)s, %(latitude)s, %(longitude)s, %(geo_polygon_geojson)s,
             %(is_active)s, %(source)s, %(source_year)s,
             %(first_seen_year)s, %(last_seen_year)s,
             %(ingested_at)s
@@ -348,6 +452,7 @@ def sync_geo_dim(
             county_name  = EXCLUDED.county_name,
             latitude     = EXCLUDED.latitude,
             longitude    = EXCLUDED.longitude,
+            geo_polygon_geojson = EXCLUDED.geo_polygon_geojson,
             is_active    = EXCLUDED.is_active,
             source       = EXCLUDED.source,
             source_year  = EXCLUDED.source_year,
