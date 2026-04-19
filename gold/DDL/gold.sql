@@ -7,7 +7,8 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- ---------------------------------------------------------------------------
 -- Conformed dimensions (read-only views over silver_ref)
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW gold.dim_geo AS
+DROP VIEW IF EXISTS gold.dim_geo CASCADE;
+CREATE VIEW gold.dim_geo AS
 SELECT
     geo_sk,
     geo_level,
