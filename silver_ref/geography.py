@@ -215,21 +215,21 @@ def sync_geo_dim(
         pl.DataFrame(
             {
                 "state_fips": list(state_polygons.keys()),
-                "geo_polygon_geojson": list(state_polygons.values()),
+                "geom_geojson": list(state_polygons.values()),
             }
         )
         if state_polygons
-        else pl.DataFrame(schema={"state_fips": pl.Utf8, "geo_polygon_geojson": pl.Utf8})
+        else pl.DataFrame(schema={"state_fips": pl.Utf8, "geom_geojson": pl.Utf8})
     )
     county_poly_df = (
         pl.DataFrame(
             {
                 "geoid5": list(county_polygons.keys()),
-                "geo_polygon_geojson": list(county_polygons.values()),
+                "geom_geojson": list(county_polygons.values()),
             }
         )
         if county_polygons
-        else pl.DataFrame(schema={"geoid5": pl.Utf8, "geo_polygon_geojson": pl.Utf8})
+        else pl.DataFrame(schema={"geoid5": pl.Utf8, "geom_geojson": pl.Utf8})
     )
 
     def _coord_expr(frame: pl.DataFrame, source_col: str, out_col: str) -> pl.Expr:
@@ -258,7 +258,7 @@ def sync_geo_dim(
                 "county_name": None,
                 "latitude": None,
                 "longitude": None,
-                "geo_polygon_geojson": None,
+                "geom_geojson": None,
                 "is_active": True,
                 "source": "census_gazetteer",
                 "source_year": y,
@@ -294,7 +294,7 @@ def sync_geo_dim(
                     st_df = st_df.join(state_poly_df, on="state_fips", how="left")
                 else:
                     st_df = st_df.with_columns(
-                        pl.lit(None, dtype=pl.Utf8).alias("geo_polygon_geojson")
+                        pl.lit(None, dtype=pl.Utf8).alias("geom_geojson")
                     )
                 st_df = st_df.with_columns([
                     pl.col("state_fips").cast(pl.Utf8),
@@ -340,7 +340,7 @@ def sync_geo_dim(
             co_df = co_df.join(county_poly_df, on="geoid5", how="left")
         else:
             co_df = co_df.with_columns(
-                pl.lit(None, dtype=pl.Utf8).alias("geo_polygon_geojson")
+                pl.lit(None, dtype=pl.Utf8).alias("geom_geojson")
             )
         co_df = co_df.drop("geoid5")
 
@@ -369,7 +369,7 @@ def sync_geo_dim(
         "county_name",
         "latitude",
         "longitude",
-        "geo_polygon_geojson",
+        "geom_geojson",
         "is_active",
         "source",
         "source_year",
@@ -395,7 +395,7 @@ def sync_geo_dim(
         pl.col("county_name").last().alias("county_name"),
         pl.col("latitude").last().alias("latitude"),
         pl.col("longitude").last().alias("longitude"),
-        pl.col("geo_polygon_geojson").last().alias("geo_polygon_geojson"),
+        pl.col("geom_geojson").last().alias("geom_geojson"),
         pl.col("is_active").last().alias("is_active"),
         pl.col("source").last().alias("source"),
         pl.col("source_year").last().alias("source_year"),
@@ -431,14 +431,15 @@ def sync_geo_dim(
     sql = """
         INSERT INTO silver_ref.dim_geo (
             geo_level, geo_id, state_fips, county_fips,
-            name, state_name, county_name, latitude, longitude, geo_polygon_geojson,
+            name, state_name, county_name, latitude, longitude, geom,
             is_active, source, source_year,
             first_seen_year, last_seen_year,
             ingested_at
         )
         VALUES (
             %(geo_level)s, %(geo_id)s, %(state_fips)s, %(county_fips)s,
-            %(name)s, %(state_name)s, %(county_name)s, %(latitude)s, %(longitude)s, %(geo_polygon_geojson)s,
+            %(name)s, %(state_name)s, %(county_name)s, %(latitude)s, %(longitude)s,
+            ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%(geom_geojson)s), 4326)),
             %(is_active)s, %(source)s, %(source_year)s,
             %(first_seen_year)s, %(last_seen_year)s,
             %(ingested_at)s
@@ -452,7 +453,7 @@ def sync_geo_dim(
             county_name  = EXCLUDED.county_name,
             latitude     = EXCLUDED.latitude,
             longitude    = EXCLUDED.longitude,
-            geo_polygon_geojson = EXCLUDED.geo_polygon_geojson,
+            geom         = EXCLUDED.geom,
             is_active    = EXCLUDED.is_active,
             source       = EXCLUDED.source,
             source_year  = EXCLUDED.source_year,

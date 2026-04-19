@@ -2,6 +2,7 @@
 -- Gold analytics layer baseline schema (fresh install)
 
 CREATE SCHEMA IF NOT EXISTS gold;
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- ---------------------------------------------------------------------------
 -- Conformed dimensions (read-only views over silver_ref)
@@ -18,7 +19,8 @@ SELECT
     county_name,
     latitude,
     longitude,
-    geo_polygon_geojson,
+    geom,
+    ST_AsGeoJSON(geom)::TEXT AS geo_polygon_geojson,
     is_active,
     source,
     source_year,
@@ -170,7 +172,7 @@ CREATE TABLE IF NOT EXISTS gold.fact_acs_observation (
     county_name        TEXT,
     geo_latitude       DOUBLE PRECISION,
     geo_longitude      DOUBLE PRECISION,
-    geo_polygon_geojson TEXT,
+    geo_geom           geometry(MultiPolygon, 4326),
     time_sk            INTEGER REFERENCES silver_ref.dim_time(time_sk),
     observation_date   DATE NOT NULL,
     duration_start     DATE,
@@ -199,7 +201,7 @@ CREATE TABLE IF NOT EXISTS gold.fact_bls_observation (
     county_name               TEXT,
     geo_latitude              DOUBLE PRECISION,
     geo_longitude             DOUBLE PRECISION,
-    geo_polygon_geojson       TEXT,
+    geo_geom                  geometry(MultiPolygon, 4326),
     time_sk                   INTEGER REFERENCES silver_ref.dim_time(time_sk),
     period_date               DATE NOT NULL,
     duration_start            DATE,
@@ -247,10 +249,16 @@ CREATE TABLE IF NOT EXISTS gold.fact_fred_observation (
 );
 
 ALTER TABLE gold.fact_acs_observation
-    ADD COLUMN IF NOT EXISTS geo_polygon_geojson TEXT;
+    ADD COLUMN IF NOT EXISTS geo_geom geometry(MultiPolygon, 4326);
 
 ALTER TABLE gold.fact_bls_observation
-    ADD COLUMN IF NOT EXISTS geo_polygon_geojson TEXT;
+    ADD COLUMN IF NOT EXISTS geo_geom geometry(MultiPolygon, 4326);
+
+CREATE INDEX IF NOT EXISTS ix_fact_acs_geo_geom
+    ON gold.fact_acs_observation USING GIST (geo_geom);
+
+CREATE INDEX IF NOT EXISTS ix_fact_bls_geo_geom
+    ON gold.fact_bls_observation USING GIST (geo_geom);
 
 -- ---------------------------------------------------------------------------
 -- Shared metric catalog + bridges
@@ -371,7 +379,8 @@ SELECT
     b.geo_id,
     b.geo_latitude,
     b.geo_longitude,
-    b.geo_polygon_geojson,
+    b.geo_geom,
+    ST_AsGeoJSON(b.geo_geom)::TEXT AS geo_polygon_geojson,
     b.program_code,
     s.survey_name,
     b.measure_category,
@@ -397,7 +406,8 @@ WITH ranked AS (
         ao.county_name,
         ao.geo_latitude,
         ao.geo_longitude,
-        ao.geo_polygon_geojson,
+        ao.geo_geom,
+        ST_AsGeoJSON(ao.geo_geom)::TEXT AS geo_polygon_geojson,
         ao.dataset_code,
         ao.vintage_year,
         t.table_id,
@@ -443,6 +453,7 @@ SELECT
     r.county_name,
     r.geo_latitude,
     r.geo_longitude,
+    r.geo_geom,
     r.geo_polygon_geojson,
     r.dataset_code,
     r.vintage_year,

@@ -303,7 +303,7 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
     sql = """
         INSERT INTO gold.fact_acs_observation (
             geo_id, geo_level, state_id, state_name, county_id, county_name,
-            geo_latitude, geo_longitude, geo_polygon_geojson,
+            geo_latitude, geo_longitude, geo_geom,
             time_sk, observation_date, duration_start, duration_end,
             acs_table_sk, acs_variable_sk, dataset_code, vintage_year,
             estimate_value, margin_of_error, margin_of_error_pct,
@@ -330,7 +330,7 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
             d.county_name,
             d.latitude,
             d.longitude,
-            d.geo_polygon_geojson,
+            d.geom,
             t.time_sk,
             r.observation_date,
             r.duration_start,
@@ -374,7 +374,7 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
             county_name = EXCLUDED.county_name,
             geo_latitude = EXCLUDED.geo_latitude,
             geo_longitude = EXCLUDED.geo_longitude,
-            geo_polygon_geojson = EXCLUDED.geo_polygon_geojson,
+            geo_geom = EXCLUDED.geo_geom,
             time_sk = EXCLUDED.time_sk,
             duration_start = EXCLUDED.duration_start,
             duration_end = EXCLUDED.duration_end,

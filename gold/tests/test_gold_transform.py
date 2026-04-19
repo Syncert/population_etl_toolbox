@@ -172,19 +172,19 @@ class TestGoldGeoShapeSqlPropagation(unittest.TestCase):
         source = (_REPO_ROOT / "census_acs/gold_census/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
-        self.assertIn("geo_polygon_geojson", source)
+        self.assertIn("geo_geom", source)
         self.assertIn("d.latitude", source)
         self.assertIn("d.longitude", source)
-        self.assertIn("d.geo_polygon_geojson", source)
+        self.assertIn("d.geom", source)
 
     def test_bls_upsert_sql_contains_geo_coordinates(self):
         source = (_REPO_ROOT / "bls/gold_bls/transform.py").read_text(encoding="utf-8")
         self.assertIn("geo_latitude", source)
         self.assertIn("geo_longitude", source)
-        self.assertIn("geo_polygon_geojson", source)
+        self.assertIn("geo_geom", source)
         self.assertIn("d.latitude", source)
         self.assertIn("d.longitude", source)
-        self.assertIn("d.geo_polygon_geojson", source)
+        self.assertIn("d.geom", source)
 
 
 class TestGoldUpsertEnrichment(unittest.TestCase):
