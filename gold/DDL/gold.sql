@@ -248,7 +248,19 @@ CREATE TABLE IF NOT EXISTS gold.fact_fred_observation (
 );
 
 ALTER TABLE gold.fact_acs_observation
+    ADD COLUMN IF NOT EXISTS geo_latitude DOUBLE PRECISION;
+
+ALTER TABLE gold.fact_acs_observation
+    ADD COLUMN IF NOT EXISTS geo_longitude DOUBLE PRECISION;
+
+ALTER TABLE gold.fact_acs_observation
     ADD COLUMN IF NOT EXISTS geo_geom geometry(MultiPolygon, 4326);
+
+ALTER TABLE gold.fact_bls_observation
+    ADD COLUMN IF NOT EXISTS geo_latitude DOUBLE PRECISION;
+
+ALTER TABLE gold.fact_bls_observation
+    ADD COLUMN IF NOT EXISTS geo_longitude DOUBLE PRECISION;
 
 ALTER TABLE gold.fact_bls_observation
     ADD COLUMN IF NOT EXISTS geo_geom geometry(MultiPolygon, 4326);
