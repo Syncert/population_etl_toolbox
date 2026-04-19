@@ -497,7 +497,7 @@ The schema follows a **dimensional modeling** approach with:
 
 ## User-Facing Views
 
-### vw_metric_catalog
+### vw_metrics
 
 **Purpose:** Filtered, analyst-friendly view of active metrics  
 **Definition:** Selects from `dim_metric_catalog` where `is_active = TRUE`
@@ -522,16 +522,17 @@ WHERE is_active = TRUE;
 
 ---
 
-### vw_headline_macro_metrics
+### vw_macro_headlines
 
-**Purpose:** Quick headline view combining BLS and FRED observations with metadata  
+**Purpose:** Geo-enabled headline view combining BLS and FRED observations with metadata  
 **Union of:**
-- BLS observations joined with metric catalog (labor market headlines)
-- FRED observations joined with metric catalog (macroeconomic headlines)
+- BLS observations joined with metric catalog (labor market headlines) — includes geo columns
+- FRED observations joined with metric catalog (macroeconomic headlines) — geo columns are NULL (national-only)
 
 **Columns:**
 - `metric_code`, `metric_display_name`, `source_code`
-- `observation_date`, `geo_id` (always `us:1` for FRED)
+- `observation_date`, `geo_id`, `geo_level`
+- `geo_latitude`, `geo_longitude`, `geo_geom`, `geo_polygon_geojson`
 - `value`, `caveats`, `comparability_group`
 
 **Use Cases:**
@@ -541,16 +542,18 @@ WHERE is_active = TRUE;
 
 ---
 
-### vw_labor_market_overview
+### vw_bls_labor_market
 
-**Purpose:** Comprehensive labor market fact view with survey context  
-**Definition:** Joins `fact_bls_observation` with `dim_bls_survey`, filtered to labor-related measures
+**Purpose:** Comprehensive labor market fact view with survey context and metric-catalog enrichment  
+**Definition:** Joins `fact_bls_observation` with `dim_bls_survey`, `dim_bls_series`, and `dim_metric_catalog`, filtered to labor-related measures
 
 **Columns:**
 - `observation_date` (period_date from fact)
-- `geo_id`, `program_code`, `survey_name`
-- `measure_category`, `value_type`, `value`
+- `geo_id`, `geo_level`, `geo_latitude`, `geo_longitude`, `geo_geom`, `geo_polygon_geojson`
+- `program_code`, `survey_name`, `series_id`, `series_title`, `gold_metric_name`
+- `metric_code`, `metric_display_name`, `dashboard_suitability`, `business_definition`, `metric_caveats`
 - `comparison_warning`
+- `measure_category`, `value_type`, `value`, `as_of_date`, `updated_at`
 
 **Use Cases:**
 - Build labor market dashboards (employment, unemployment, openings, etc.)
@@ -559,7 +562,7 @@ WHERE is_active = TRUE;
 
 ---
 
-### vw_acs_dashboard_metrics
+### vw_acs_latest
 
 **Purpose:** Dashboard-ready ACS view with analyst-friendly labels, geography fields, and governance metadata  
 **Definition:** Builds from `fact_acs_observation`, joins ACS metadata + metric catalog, restricts to active geographies, and keeps the single most recent available observation per `(geo_id, variable_code)`.
@@ -590,7 +593,7 @@ SELECT
     estimate_value,
     margin_of_error,
     dashboard_suitability
-FROM gold.vw_acs_dashboard_metrics
+FROM gold.vw_acs_latest
 WHERE geo_level IN ('STATE', 'COUNTY')
   AND metric_code = 'ACS:acs5:B01003_001E'
   AND observation_date >= DATE '2020-01-01'
@@ -661,7 +664,7 @@ SELECT
     mc.business_definition,
     mc.caveats,
     mc.do_not_compare_with
-FROM gold.vw_metric_catalog mc
+FROM gold.vw_metrics mc
 WHERE mc.source_code = 'CENSUS_ACS'
   AND mc.dashboard_suitability = 'PUBLIC_SAFE'
   AND 'COUNTY' = ANY(mc.valid_geo_grains)
@@ -836,7 +839,7 @@ SELECT
     valid_geo_grains,
     valid_time_grains,
     business_definition
-FROM gold.vw_metric_catalog
+FROM gold.vw_metrics
 WHERE dashboard_suitability = 'PUBLIC_SAFE'
 ORDER BY source_object_type, metric_code;
 ```
@@ -867,7 +870,7 @@ ORDER BY source_object_type, metric_code;
 ### Deprecating a Metric
 
 1. Set `is_active = FALSE` in `dim_metric_catalog`
-2. Queries using `vw_metric_catalog` automatically exclude it
+2. Queries using `vw_metrics` automatically exclude it
 3. Existing fact rows remain for historical analysis
 
 ---

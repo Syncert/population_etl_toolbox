@@ -330,7 +330,8 @@ CREATE INDEX IF NOT EXISTS ix_metric_catalog_time_grains ON gold.dim_metric_cata
 -- ---------------------------------------------------------------------------
 -- User-facing views
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW gold.vw_metric_catalog AS
+DROP VIEW IF EXISTS gold.vw_metrics CASCADE;
+CREATE VIEW gold.vw_metrics AS
 SELECT
     c.metric_catalog_sk,
     c.metric_code,
@@ -351,13 +352,65 @@ SELECT
 FROM gold.dim_metric_catalog c
 WHERE c.is_active = TRUE;
 
-CREATE OR REPLACE VIEW gold.vw_headline_macro_metrics AS
+-- ---------------------------------------------------------------------------
+-- 1) FRED series view — series metadata + time-series observations
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_fred_series CASCADE;
+CREATE VIEW gold.vw_fred_series AS
+SELECT
+    f.observation_date,
+    f.duration_start,
+    f.duration_end,
+    f.geo_id,
+    f.geo_level,
+    fs.series_id,
+    fs.series_title,
+    fs.source_provider,
+    fs.original_source_name,
+    fs.is_primary_source_series,
+    fs.frequency,
+    fs.units,
+    fs.seasonal_adjustment,
+    fs.transformation_method,
+    f.value,
+    f.realtime_start,
+    f.realtime_end,
+    mc.metric_code,
+    mc.metric_display_name,
+    mc.dashboard_suitability,
+    mc.business_definition,
+    mc.caveats,
+    mc.comparability_group,
+    mc.do_not_compare_with,
+    mc.recommended_aggregation,
+    mc.owner_team,
+    f.as_of_date,
+    f.updated_at
+FROM gold.fact_fred_observation f
+JOIN gold.dim_fred_series fs
+    ON fs.fred_series_sk = f.fred_series_sk
+LEFT JOIN gold.bridge_metric_fred_series bm
+    ON bm.fred_series_sk = f.fred_series_sk
+LEFT JOIN gold.dim_metric_catalog mc
+    ON mc.metric_catalog_sk = bm.metric_catalog_sk
+   AND mc.is_active = TRUE;
+
+-- ---------------------------------------------------------------------------
+-- 2) Macro headlines — geo-enabled BLS + FRED union
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_macro_headlines CASCADE;
+CREATE VIEW gold.vw_macro_headlines AS
 SELECT
     c.metric_code,
     c.metric_display_name,
     c.source_code,
     b.period_date AS observation_date,
     b.geo_id,
+    b.geo_level,
+    b.geo_latitude,
+    b.geo_longitude,
+    b.geo_geom,
+    ST_AsGeoJSON(b.geo_geom)::TEXT AS geo_polygon_geojson,
     b.value,
     c.caveats,
     c.comparability_group
@@ -374,6 +427,11 @@ SELECT
     c.source_code,
     f.observation_date,
     f.geo_id,
+    f.geo_level,
+    NULL::DOUBLE PRECISION AS geo_latitude,
+    NULL::DOUBLE PRECISION AS geo_longitude,
+    NULL::geometry(MultiPolygon, 4326) AS geo_geom,
+    NULL::TEXT AS geo_polygon_geojson,
     f.value,
     c.caveats,
     c.comparability_group
@@ -384,26 +442,55 @@ JOIN gold.fact_fred_observation f
     ON f.fred_series_sk = fm.fred_series_sk
 WHERE c.is_active = TRUE;
 
-CREATE OR REPLACE VIEW gold.vw_labor_market_overview AS
+-- ---------------------------------------------------------------------------
+-- 3) BLS labor market — with metric-catalog enrichment
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_bls_labor_market CASCADE;
+CREATE VIEW gold.vw_bls_labor_market AS
 SELECT
     b.period_date AS observation_date,
     b.geo_id,
+    b.geo_level,
     b.geo_latitude,
     b.geo_longitude,
     b.geo_geom,
     ST_AsGeoJSON(b.geo_geom)::TEXT AS geo_polygon_geojson,
     b.program_code,
     s.survey_name,
+    bs.series_id,
+    bs.series_title,
+    bs.gold_metric_name,
+    mc.metric_code,
+    mc.metric_display_name,
+    mc.dashboard_suitability,
+    mc.business_definition,
+    mc.caveats          AS metric_caveats,
+    s.comparison_warning,
     b.measure_category,
     b.value_type,
     b.value,
-    s.comparison_warning
+    b.as_of_date,
+    b.updated_at
 FROM gold.fact_bls_observation b
 JOIN gold.dim_bls_survey s
     ON s.bls_survey_sk = b.bls_survey_sk
-WHERE b.measure_category IN ('EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION', 'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS');
+JOIN gold.dim_bls_series bs
+    ON bs.bls_series_sk = b.bls_series_sk
+LEFT JOIN gold.bridge_metric_bls_series bms
+    ON bms.bls_series_sk = b.bls_series_sk
+LEFT JOIN gold.dim_metric_catalog mc
+    ON mc.metric_catalog_sk = bms.metric_catalog_sk
+   AND mc.is_active = TRUE
+WHERE b.measure_category IN (
+    'EMPLOYMENT', 'UNEMPLOYMENT', 'LABOR_FORCE', 'PARTICIPATION',
+    'OPENINGS', 'HIRES', 'QUITS', 'LAYOFFS', 'SEPARATIONS'
+);
 
-CREATE OR REPLACE VIEW gold.vw_acs_dashboard_metrics AS
+-- ---------------------------------------------------------------------------
+-- 4) ACS latest — most recent per geography × variable, deduped
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_acs_latest CASCADE;
+CREATE VIEW gold.vw_acs_latest AS
 WITH ranked AS (
     SELECT
         ao.observation_date,
@@ -498,3 +585,155 @@ LEFT JOIN gold.dim_metric_catalog mc
    AND mc.source_code = 'CENSUS_ACS'
    AND mc.is_active = TRUE
 WHERE r.recency_rank = 1;
+
+-- ---------------------------------------------------------------------------
+-- 5) ACS trends — all vintages, no dedup (trend analysis)
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_acs_trends CASCADE;
+CREATE VIEW gold.vw_acs_trends AS
+SELECT
+    ao.observation_date,
+    ao.duration_start,
+    ao.duration_end,
+    ao.geo_id,
+    ao.geo_level,
+    d.state_fips,
+    d.county_fips,
+    ao.state_name,
+    ao.county_name,
+    ao.geo_latitude,
+    ao.geo_longitude,
+    ao.geo_geom,
+    ST_AsGeoJSON(ao.geo_geom)::TEXT AS geo_polygon_geojson,
+    ao.dataset_code,
+    ao.vintage_year,
+    t.table_id,
+    t.table_title,
+    v.variable_code,
+    v.variable_label,
+    COALESCE(v.concept, t.concept)   AS concept,
+    COALESCE(v.universe, t.universe) AS universe,
+    v.denominator_hint,
+    v.is_publishable_default,
+    ('ACS:' || ao.dataset_code || ':' || v.variable_code) AS metric_code,
+    ao.estimate_value,
+    ao.margin_of_error,
+    ao.margin_of_error_pct,
+    ao.estimate_annotation,
+    ao.moe_annotation,
+    ao.as_of_date,
+    ao.updated_at
+FROM gold.fact_acs_observation ao
+JOIN gold.dim_acs_variable v
+    ON v.acs_variable_sk = ao.acs_variable_sk
+JOIN gold.dim_acs_table t
+    ON t.acs_table_sk = ao.acs_table_sk
+JOIN gold.dim_geo d
+    ON d.geo_id = ao.geo_id
+WHERE d.is_active = TRUE;
+
+-- ---------------------------------------------------------------------------
+-- 6) Geo summary — one row per geography with latest key
+--    indicators from ACS, BLS, and FRED for choropleth mapping
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS gold.vw_geo_summary CASCADE;
+CREATE VIEW gold.vw_geo_summary AS
+WITH latest_acs AS (
+    SELECT DISTINCT ON (ao.geo_id, v.variable_code)
+        ao.geo_id,
+        ao.geo_level,
+        ao.state_name,
+        ao.county_name,
+        ao.geo_latitude,
+        ao.geo_longitude,
+        ao.geo_geom,
+        v.variable_code,
+        v.variable_label,
+        ao.estimate_value,
+        ao.margin_of_error,
+        ao.observation_date AS acs_observation_date,
+        ao.dataset_code     AS acs_dataset_code,
+        ao.vintage_year     AS acs_vintage_year
+    FROM gold.fact_acs_observation ao
+    JOIN gold.dim_acs_variable v
+        ON v.acs_variable_sk = ao.acs_variable_sk
+    JOIN gold.dim_geo d
+        ON d.geo_id = ao.geo_id
+    WHERE d.is_active = TRUE
+    ORDER BY ao.geo_id, v.variable_code,
+             ao.observation_date DESC,
+             CASE ao.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 3 END
+),
+latest_bls AS (
+    SELECT DISTINCT ON (b.geo_id, b.measure_category)
+        b.geo_id,
+        b.geo_level,
+        b.geo_latitude,
+        b.geo_longitude,
+        b.geo_geom,
+        b.measure_category,
+        b.value_type,
+        b.value              AS bls_value,
+        b.period_date        AS bls_observation_date,
+        b.program_code
+    FROM gold.fact_bls_observation b
+    ORDER BY b.geo_id, b.measure_category,
+             b.period_date DESC
+),
+geo_base AS (
+    SELECT
+        g.geo_id,
+        g.geo_level,
+        g.name,
+        g.state_fips,
+        g.county_fips,
+        g.state_name,
+        g.county_name,
+        g.latitude,
+        g.longitude,
+        g.geom,
+        ST_AsGeoJSON(g.geom)::TEXT AS geo_polygon_geojson
+    FROM gold.dim_geo g
+    WHERE g.is_active = TRUE
+)
+SELECT
+    gb.geo_id,
+    gb.geo_level,
+    gb.name           AS geo_name,
+    gb.state_fips,
+    gb.county_fips,
+    gb.state_name,
+    gb.county_name,
+    gb.latitude        AS geo_latitude,
+    gb.longitude       AS geo_longitude,
+    gb.geom            AS geo_geom,
+    gb.geo_polygon_geojson,
+    -- Latest ACS total-population estimate (B01003_001E)
+    pop.estimate_value              AS acs_total_population,
+    pop.margin_of_error             AS acs_total_pop_moe,
+    pop.acs_observation_date,
+    pop.acs_dataset_code,
+    pop.acs_vintage_year,
+    -- Latest ACS median household income (B19013_001E)
+    inc.estimate_value              AS acs_median_hh_income,
+    inc.margin_of_error             AS acs_median_hh_income_moe,
+    -- Latest BLS unemployment rate
+    ur.bls_value                    AS bls_unemployment_rate,
+    ur.bls_observation_date         AS bls_ur_observation_date,
+    -- Latest BLS employment level
+    emp.bls_value                   AS bls_employment_level,
+    emp.bls_observation_date        AS bls_emp_observation_date,
+    -- Latest BLS labor force
+    lf.bls_value                    AS bls_labor_force,
+    lf.bls_observation_date         AS bls_lf_observation_date
+FROM geo_base gb
+LEFT JOIN latest_acs pop
+    ON pop.geo_id = gb.geo_id AND pop.variable_code = 'B01003_001E'
+LEFT JOIN latest_acs inc
+    ON inc.geo_id = gb.geo_id AND inc.variable_code = 'B19013_001E'
+LEFT JOIN latest_bls ur
+    ON ur.geo_id = gb.geo_id  AND ur.measure_category = 'UNEMPLOYMENT' AND ur.value_type = 'RATE'
+LEFT JOIN latest_bls emp
+    ON emp.geo_id = gb.geo_id AND emp.measure_category = 'EMPLOYMENT' AND emp.value_type = 'LEVEL'
+LEFT JOIN latest_bls lf
+    ON lf.geo_id = gb.geo_id  AND lf.measure_category = 'LABOR_FORCE' AND lf.value_type = 'LEVEL';
