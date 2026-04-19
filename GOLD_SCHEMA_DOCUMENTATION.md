@@ -86,6 +86,7 @@ The schema follows a **dimensional modeling** approach with:
 | `county_fips` | INT | 001–840, zero-padded in fact tables |
 | `name` | TEXT | Human-friendly geo name |
 | `state_name`, `county_name` | TEXT | Denormalized convenience fields |
+| `latitude`, `longitude` | DOUBLE | Gazetteer internal point coordinates for map plotting |
 | `is_active` | BOOLEAN | TRUE if currently valid; FALSE for historical/obsolete geos |
 | `source`, `source_year` | TEXT, INT | Provenance; e.g., `CENSUS`, 2020 |
 | `first_seen_year`, `last_seen_year` | INT | Temporal coverage in source data |

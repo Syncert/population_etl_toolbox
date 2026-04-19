@@ -156,6 +156,8 @@ def sync_geo_dim(
                 "name": "United States",
                 "state_name": None,
                 "county_name": None,
+                "latitude": None,
+                "longitude": None,
                 "is_active": True,
                 "source": "census_gazetteer",
                 "source_year": y,
@@ -172,6 +174,24 @@ def sync_geo_dim(
                     st.select([
                         pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
                         pl.col("NAME").cast(pl.Utf8).alias("state_name"),
+                        (
+                            pl.col("INTPTLAT")
+                            .cast(pl.Utf8)
+                            .str.strip_chars()
+                            .cast(pl.Float64, strict=False)
+                            .alias("latitude")
+                            if "INTPTLAT" in st.columns
+                            else pl.lit(None, dtype=pl.Float64).alias("latitude")
+                        ),
+                        (
+                            pl.col("INTPTLONG")
+                            .cast(pl.Utf8)
+                            .str.strip_chars()
+                            .cast(pl.Float64, strict=False)
+                            .alias("longitude")
+                            if "INTPTLONG" in st.columns
+                            else pl.lit(None, dtype=pl.Float64).alias("longitude")
+                        ),
                     ])
                     .with_columns([
                         pl.lit("state").alias("geo_level"),
@@ -204,6 +224,24 @@ def sync_geo_dim(
             co.select([
                 pl.col("GEOID").cast(pl.Utf8).str.zfill(5).alias("geoid5"),
                 pl.col("NAME").cast(pl.Utf8).alias("county_name"),
+                (
+                    pl.col("INTPTLAT")
+                    .cast(pl.Utf8)
+                    .str.strip_chars()
+                    .cast(pl.Float64, strict=False)
+                    .alias("latitude")
+                    if "INTPTLAT" in co.columns
+                    else pl.lit(None, dtype=pl.Float64).alias("latitude")
+                ),
+                (
+                    pl.col("INTPTLONG")
+                    .cast(pl.Utf8)
+                    .str.strip_chars()
+                    .cast(pl.Float64, strict=False)
+                    .alias("longitude")
+                    if "INTPTLONG" in co.columns
+                    else pl.lit(None, dtype=pl.Float64).alias("longitude")
+                ),
             ])
             .with_columns([
                 pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
@@ -248,6 +286,8 @@ def sync_geo_dim(
         "name",
         "state_name",
         "county_name",
+        "latitude",
+        "longitude",
         "is_active",
         "source",
         "source_year",
@@ -271,6 +311,8 @@ def sync_geo_dim(
         pl.col("name").last().alias("name"),
         pl.col("state_name").last().alias("state_name"),
         pl.col("county_name").last().alias("county_name"),
+        pl.col("latitude").last().alias("latitude"),
+        pl.col("longitude").last().alias("longitude"),
         pl.col("is_active").last().alias("is_active"),
         pl.col("source").last().alias("source"),
         pl.col("source_year").last().alias("source_year"),
@@ -306,14 +348,14 @@ def sync_geo_dim(
     sql = """
         INSERT INTO silver_ref.dim_geo (
             geo_level, geo_id, state_fips, county_fips,
-            name, state_name, county_name,
+            name, state_name, county_name, latitude, longitude,
             is_active, source, source_year,
             first_seen_year, last_seen_year,
             ingested_at
         )
         VALUES (
             %(geo_level)s, %(geo_id)s, %(state_fips)s, %(county_fips)s,
-            %(name)s, %(state_name)s, %(county_name)s,
+            %(name)s, %(state_name)s, %(county_name)s, %(latitude)s, %(longitude)s,
             %(is_active)s, %(source)s, %(source_year)s,
             %(first_seen_year)s, %(last_seen_year)s,
             %(ingested_at)s
@@ -325,6 +367,8 @@ def sync_geo_dim(
             name         = EXCLUDED.name,
             state_name   = EXCLUDED.state_name,
             county_name  = EXCLUDED.county_name,
+            latitude     = EXCLUDED.latitude,
+            longitude    = EXCLUDED.longitude,
             is_active    = EXCLUDED.is_active,
             source       = EXCLUDED.source,
             source_year  = EXCLUDED.source_year,

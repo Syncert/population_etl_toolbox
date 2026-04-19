@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     name TEXT,
     state_name TEXT,
     county_name TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
     is_active BOOLEAN,
     source TEXT,
     source_year INT,
@@ -25,6 +27,12 @@ ALTER TABLE silver_ref.dim_geo
 
 ALTER TABLE silver_ref.dim_geo
     ADD COLUMN IF NOT EXISTS last_seen_year INT;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_time (

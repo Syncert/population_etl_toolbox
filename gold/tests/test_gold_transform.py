@@ -9,6 +9,7 @@ import sys
 import types
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -160,6 +161,24 @@ class TestAcsPrecedenceSqlContents(unittest.TestCase):
         source = inspect.getsource(gt._fetch_acs_for_month)
         self.assertIn("ORDER BY", source)
         self.assertIn("ASC", source)
+
+
+class TestGeoCoordinateSqlPropagation(unittest.TestCase):
+    """Gold upserts should propagate latitude/longitude from dim_geo."""
+
+    def test_acs_upsert_sql_contains_geo_coordinates(self):
+        source = Path("census_acs/gold_census/transform.py").read_text(encoding="utf-8")
+        self.assertIn("geo_latitude", source)
+        self.assertIn("geo_longitude", source)
+        self.assertIn("d.latitude", source)
+        self.assertIn("d.longitude", source)
+
+    def test_bls_upsert_sql_contains_geo_coordinates(self):
+        source = Path("bls/gold_bls/transform.py").read_text(encoding="utf-8")
+        self.assertIn("geo_latitude", source)
+        self.assertIn("geo_longitude", source)
+        self.assertIn("d.latitude", source)
+        self.assertIn("d.longitude", source)
 
 
 class TestGoldUpsertEnrichment(unittest.TestCase):
