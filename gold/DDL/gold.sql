@@ -1382,6 +1382,10 @@ CREATE OR REPLACE PROCEDURE gold.refresh_dashboard_serving_layer()
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    -- Disable statement timeout for the duration of this refresh.
+    -- The ACS and BLS staging inserts are large and legitimately take > 15 min.
+    SET LOCAL statement_timeout = 0;
+
     CALL gold.refresh_rpt_acs_observation_dashboard();
     CALL gold.refresh_rpt_bls_observation_dashboard();
     CALL gold.refresh_rpt_fred_observation_dashboard();
