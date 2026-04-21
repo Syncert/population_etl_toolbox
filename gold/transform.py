@@ -16,6 +16,7 @@ Gold fetch tuple shape:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import pathlib
 import re
@@ -63,6 +64,34 @@ def _get_hook() -> PostgresHook:
 
 _STATE_GEO_RE = re.compile(r"^state:(\d{1,2})$")
 _COUNTY_GEO_RE = re.compile(r"^state:(\d{1,2})\|county:(\d{1,3})$")
+
+_REQUIRED_GOLD_RELATIONS = (
+    "gold.dim_geo",
+    "gold.dim_time",
+    "gold.dim_source_system",
+    "gold.dim_metric_catalog",
+    "gold.fact_acs_observation",
+    "gold.fact_bls_observation",
+    "gold.fact_fred_observation",
+    "gold.rpt_acs_observation_dashboard",
+    "gold.rpt_bls_observation_dashboard",
+    "gold.rpt_fred_observation_dashboard",
+    "gold.mv_acs_latest_dashboard",
+    "gold.mv_bls_latest_dashboard",
+    "gold.mv_fred_latest_dashboard",
+)
+
+_REQUIRED_GOLD_PROCEDURES = (
+    "gold.refresh_rpt_acs_observation_dashboard()",
+    "gold.refresh_rpt_bls_observation_dashboard()",
+    "gold.refresh_rpt_fred_observation_dashboard()",
+    "gold.refresh_mv_acs_latest_dashboard()",
+    "gold.refresh_mv_bls_latest_dashboard()",
+    "gold.refresh_mv_fred_latest_dashboard()",
+    "gold.refresh_dashboard_serving_layer()",
+)
+
+_SCHEMA_STATE_COMPONENT = "gold_ddl"
 
 
 def _normalize_geo_id(geo_id: str | None) -> str | None:
@@ -161,6 +190,79 @@ def _lookup_geo_attributes(
             lookup[normalized] = attrs
 
     return lookup
+
+
+def _gold_schema_is_bootstrapped(cur: Any) -> bool:
+    """Return True when the core gold serving objects already exist."""
+    relation_checks = ",\n                ".join(
+        f"to_regclass('{relation_name}') IS NOT NULL"
+        for relation_name in _REQUIRED_GOLD_RELATIONS
+    )
+    procedure_checks = ",\n                ".join(
+        f"to_regprocedure('{procedure_name}') IS NOT NULL"
+        for procedure_name in _REQUIRED_GOLD_PROCEDURES
+    )
+    sql = f"""
+        SELECT
+            {relation_checks},
+            {procedure_checks}
+    """
+    cur.execute(sql)
+    checks = cur.fetchone()
+    return bool(checks and all(checks))
+
+
+def _compute_gold_ddl_hash(ddl_files: list[pathlib.Path]) -> str:
+    """Return a stable hash for the ordered gold DDL file set."""
+    digest = hashlib.sha256()
+    for ddl_file in ddl_files:
+        digest.update(str(ddl_file.name).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(ddl_file.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _ensure_schema_state_table(cur: Any) -> None:
+    """Create the lightweight metadata table used for DDL hash tracking."""
+    cur.execute("CREATE SCHEMA IF NOT EXISTS gold")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gold.schema_migration_state (
+            component_name TEXT PRIMARY KEY,
+            ddl_hash       TEXT NOT NULL,
+            applied_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+
+def _get_recorded_gold_ddl_hash(cur: Any) -> str | None:
+    """Return the last applied gold DDL hash, if one has been recorded."""
+    cur.execute(
+        """
+        SELECT ddl_hash
+        FROM gold.schema_migration_state
+        WHERE component_name = %s
+        """,
+        (_SCHEMA_STATE_COMPONENT,),
+    )
+    row = cur.fetchone()
+    return str(row[0]) if row else None
+
+
+def _record_gold_ddl_hash(cur: Any, ddl_hash: str) -> None:
+    """Persist the applied gold DDL hash for future bootstrap skips."""
+    cur.execute(
+        """
+        INSERT INTO gold.schema_migration_state (component_name, ddl_hash, applied_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (component_name) DO UPDATE
+        SET ddl_hash = EXCLUDED.ddl_hash,
+            applied_at = EXCLUDED.applied_at
+        """,
+        (_SCHEMA_STATE_COMPONENT, ddl_hash),
+    )
 
 
 def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) -> int:
@@ -275,21 +377,35 @@ def _upsert_gold_rows(hook: PostgresHook, rows: list[tuple], month_start: date) 
 # ---------------------------------------------------------------------------
 
 def ensure_gold_schema(hook: PostgresHook | None = None) -> None:
-    """Execute all gold DDL SQL files in deterministic order."""
+    """Apply gold DDL only when core serving objects are missing."""
     if hook is None:
         hook = _get_hook()
     ddl_dir = _DDL_PATH.parent
     ddl_files = sorted(ddl_dir.glob("*.sql"))
     if not ddl_files:
         raise FileNotFoundError(f"No DDL SQL files found in {ddl_dir}")
+    current_ddl_hash = _compute_gold_ddl_hash(ddl_files)
 
     with hook.get_conn() as conn, conn.cursor() as cur:
+        _ensure_schema_state_table(cur)
+        recorded_ddl_hash = _get_recorded_gold_ddl_hash(cur)
+        schema_is_bootstrapped = _gold_schema_is_bootstrapped(cur)
+
+        if schema_is_bootstrapped and recorded_ddl_hash == current_ddl_hash:
+            logger.info(
+                "Gold schema already bootstrapped with matching DDL hash; skipping DDL apply"
+            )
+            conn.commit()
+            return
+
         for ddl_file in ddl_files:
             sql = ddl_file.read_text(encoding="utf-8")
             # Schema bootstrap can legitimately run long on large objects.
             cur.execute("SET LOCAL statement_timeout = 0")
             cur.execute(sql)
             logger.info("Applied gold DDL: %s", ddl_file)
+
+        _record_gold_ddl_hash(cur, current_ddl_hash)
         conn.commit()
     logger.info("Gold schema ensured via %d DDL file(s) in %s", len(ddl_files), ddl_dir)
 
