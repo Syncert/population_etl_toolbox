@@ -497,89 +497,71 @@ The schema follows a **dimensional modeling** approach with:
 
 ## User-Facing Views
 
-### vw_metrics
+### Dashboard-Serving Layer
 
-**Purpose:** Filtered, analyst-friendly view of active metrics  
-**Definition:** Selects from `dim_metric_catalog` where `is_active = TRUE`
+The dashboard-serving layer is now persisted instead of view-driven. The primary BI objects are three denormalized tables populated by refresh procedures, plus three lightweight latest-snapshot tables built from those tables.
 
+### rpt_acs_observation_dashboard
+
+**Purpose:** Persisted ACS dashboard fact table with geography and metric metadata pre-joined  
+**Refresh:** `CALL gold.refresh_rpt_acs_observation_dashboard();`
+
+**Characteristics:**
+- Physical table, not a view
+- No runtime latest logic
+- Geography columns and `geo_polygon_geojson` are populated during refresh
+- Metric catalog enrichment is pre-joined into each row
+- Refresh uses a swap-table pattern: build a staged replacement table, analyze it, then atomically rename it into place
+
+### rpt_bls_observation_dashboard
+
+**Purpose:** Persisted BLS dashboard fact table with survey, series, geography, and metric governance already attached  
+**Refresh:** `CALL gold.refresh_rpt_bls_observation_dashboard();`
+
+**Characteristics:**
+- Physical table, not a union view
+- Keeps BLS semantics intact instead of forcing cross-source normalization
+- Includes dashboard filter columns such as `program_code`, `series_id`, `measure_category`, and `metric_code`
+- Refresh uses a swap-table pattern rather than `TRUNCATE` plus refill on the live serving table
+
+### rpt_fred_observation_dashboard
+
+**Purpose:** Persisted FRED dashboard fact table with national geography attached once at refresh time  
+**Refresh:** `CALL gold.refresh_rpt_fred_observation_dashboard();`
+
+**Characteristics:**
+- Physical table, not a live metadata join
+- Attaches the canonical national geography row for `geo_id = 'us:1'`
+- Retains FRED revision columns such as `realtime_start` and `realtime_end`
+- Refresh uses a staged replacement table so dashboard readers stay on the old copy until swap time
+
+### Latest Snapshot Tables
+
+**Objects:**
+- `gold.mv_acs_latest_dashboard`
+- `gold.mv_bls_latest_dashboard`
+- `gold.mv_fred_latest_dashboard`
+
+**Purpose:** Persist latest-only source-specific slices without pushing latest-selection work into BI queries
+
+**Implementation Note:**
+- The objects keep the `mv_` naming convention for continuity, but they are persisted tables refreshed by SQL procedures, not PostgreSQL materialized views
+- This avoids dependency problems with swap-renaming the source-specific dashboard tables during refresh
+
+**Refresh Order:**
+1. Refresh the three `rpt_*_observation_dashboard` tables
+2. Refresh the three `mv_*_latest_dashboard` materialized views
+
+**One-shot refresh:**
 ```sql
-SELECT
-    metric_catalog_sk, metric_code, metric_display_name,
-    source_code, source_object_type,
-    business_definition, caveats,
-    valid_geo_grains, valid_time_grains,
-    dashboard_suitability, comparability_group,
-    do_not_compare_with, recommended_aggregation,
-    owner_team, updated_at
-FROM gold.dim_metric_catalog
-WHERE is_active = TRUE;
+CALL gold.refresh_dashboard_serving_layer();
 ```
 
-**Use Cases:**
-- Discover available metrics for a report
-- Filter to public-safe metrics only
-- Understand metric definitions and limitations
-
----
-
-### vw_macro_headlines
-
-**Purpose:** Geo-enabled headline view combining BLS and FRED observations with metadata  
-**Union of:**
-- BLS observations joined with metric catalog (labor market headlines) — includes geo columns
-- FRED observations joined with metric catalog (macroeconomic headlines) — geo columns are NULL (national-only)
-
-**Columns:**
-- `metric_code`, `metric_display_name`, `source_code`
-- `observation_date`, `geo_id`, `geo_level`
-- `geo_latitude`, `geo_longitude`, `geo_geom`, `geo_polygon_geojson`
-- `value`, `caveats`, `comparability_group`
-
-**Use Cases:**
-- Build executive dashboards with latest labor + macro indicators
-- Quick snapshot of current economic conditions
-- Track revisions and data freshness across sources
-
----
-
-### vw_bls_labor_market
-
-**Purpose:** Comprehensive labor market fact view with survey context and metric-catalog enrichment  
-**Definition:** Joins `fact_bls_observation` with `dim_bls_survey`, `dim_bls_series`, and `dim_metric_catalog`, filtered to labor-related measures
-
-**Columns:**
-- `observation_date` (period_date from fact)
-- `geo_id`, `geo_level`, `geo_latitude`, `geo_longitude`, `geo_geom`, `geo_polygon_geojson`
-- `program_code`, `survey_name`, `series_id`, `series_title`, `gold_metric_name`
-- `metric_code`, `metric_display_name`, `dashboard_suitability`, `business_definition`, `metric_caveats`
-- `comparison_warning`
-- `measure_category`, `value_type`, `value`, `as_of_date`, `updated_at`
-
-**Use Cases:**
-- Build labor market dashboards (employment, unemployment, openings, etc.)
-- Understand which survey each series comes from
-- Access survey-level methodological warnings
-
----
-
-### vw_acs_latest
-
-**Purpose:** Dashboard-ready ACS view with analyst-friendly labels, geography fields, and governance metadata  
-**Definition:** Builds from `fact_acs_observation`, joins ACS metadata + metric catalog, restricts to active geographies, and keeps the single most recent available observation per `(geo_id, variable_code)`.
-
-**Columns:**
-- Time/filtering: `observation_date`, `duration_start`, `duration_end`, `dataset_code`, `vintage_year`
-- Geography/filtering: `geo_id`, `geo_level`, `state_fips`, `county_fips`, `state_name`, `county_name`
-- Variable identity: `table_id`, `table_title`, `variable_code`, `variable_label`, `metric_code`, `metric_display_name`
-- Definition/context: `concept`, `universe`, `denominator_hint`, `is_publishable_default`
-- Governance: `dashboard_suitability`, `business_definition`, `caveats`, `comparability_group`, `do_not_compare_with`, `recommended_aggregation`, `owner_team`
-- Values/quality: `estimate_value`, `margin_of_error`, `margin_of_error_pct`, `estimate_annotation`, `moe_annotation`, `as_of_date`, `updated_at`
-
-**Use Cases:**
-- Build state and county ACS dashboards without joining surrogate keys
-- Filter metrics to public-safe (`dashboard_suitability = 'PUBLIC_SAFE'`) or publishable defaults
-- Drive metric pickers by `metric_display_name` while preserving canonical `metric_code`
-- Support KPI tiles with latest available ACS values across mixed ACS1/ACS5 coverage
+**Swap Refresh Pattern:**
+1. Build a `__staging` table with the same shape as the serving table
+2. Load and analyze the staged table while dashboards continue reading the current table
+3. Take a short exclusive lock only for the rename step
+4. Rename current table to `__old`, rename staged table to the production name, then drop `__old`
 
 **Query Pattern:**
 ```sql
@@ -593,7 +575,7 @@ SELECT
     estimate_value,
     margin_of_error,
     dashboard_suitability
-FROM gold.vw_acs_latest
+FROM gold.mv_acs_latest_dashboard
 WHERE geo_level IN ('STATE', 'COUNTY')
   AND metric_code = 'ACS:acs5:B01003_001E'
   AND observation_date >= DATE '2020-01-01'
@@ -664,8 +646,9 @@ SELECT
     mc.business_definition,
     mc.caveats,
     mc.do_not_compare_with
-FROM gold.vw_metrics mc
+FROM gold.dim_metric_catalog mc
 WHERE mc.source_code = 'CENSUS_ACS'
+  AND mc.is_active = TRUE
   AND mc.dashboard_suitability = 'PUBLIC_SAFE'
   AND 'COUNTY' = ANY(mc.valid_geo_grains)
 ORDER BY mc.metric_code;
@@ -839,8 +822,9 @@ SELECT
     valid_geo_grains,
     valid_time_grains,
     business_definition
-FROM gold.vw_metrics
+FROM gold.dim_metric_catalog
 WHERE dashboard_suitability = 'PUBLIC_SAFE'
+  AND is_active = TRUE
 ORDER BY source_object_type, metric_code;
 ```
 
@@ -870,7 +854,7 @@ ORDER BY source_object_type, metric_code;
 ### Deprecating a Metric
 
 1. Set `is_active = FALSE` in `dim_metric_catalog`
-2. Queries using `vw_metrics` automatically exclude it
+2. Dashboard discovery queries should filter `dim_metric_catalog.is_active = TRUE`
 3. Existing fact rows remain for historical analysis
 
 ---

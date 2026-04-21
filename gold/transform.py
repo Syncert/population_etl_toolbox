@@ -286,6 +286,8 @@ def ensure_gold_schema(hook: PostgresHook | None = None) -> None:
     with hook.get_conn() as conn, conn.cursor() as cur:
         for ddl_file in ddl_files:
             sql = ddl_file.read_text(encoding="utf-8")
+            # Schema bootstrap can legitimately run long on large objects.
+            cur.execute("SET LOCAL statement_timeout = 0")
             cur.execute(sql)
             logger.info("Applied gold DDL: %s", ddl_file)
         conn.commit()

@@ -854,14 +854,24 @@ def bls_ingest():
             if result and result.get("output_rows", 0) > 0:
                 run_quality_checks(date.fromisoformat(result["month_start"]), "BLS")
 
+    @task(trigger_rule='all_success')
+    def refresh_dashboard_serving_layer() -> None:
+        """Rebuild persisted dashboard-serving tables and latest snapshots."""
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("CALL gold.refresh_dashboard_serving_layer();")
+            conn.commit()
+
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()
     gold_shards = gold_compute_shards()
     gold_merged = gold_merge_shard.expand(month_start=gold_shards)
     gold_coverage = gold_validate_coverage(gold_merged)
     gold_qa = gold_quality_check(gold_merged)
+    dashboard_refresh = refresh_dashboard_serving_layer()
 
     silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
+    [gold_coverage, gold_qa] >> dashboard_refresh
 
 
 # Instantiate DAG
