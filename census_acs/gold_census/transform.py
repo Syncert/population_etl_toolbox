@@ -385,12 +385,31 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
             margin_of_error_pct = EXCLUDED.margin_of_error_pct,
             as_of_date = EXCLUDED.as_of_date,
             updated_at = NOW()
+        WHERE (
+            fact_acs_observation.estimate_value IS DISTINCT FROM EXCLUDED.estimate_value
+            OR fact_acs_observation.margin_of_error IS DISTINCT FROM EXCLUDED.margin_of_error
+            OR fact_acs_observation.margin_of_error_pct IS DISTINCT FROM EXCLUDED.margin_of_error_pct
+            OR fact_acs_observation.geo_level IS DISTINCT FROM EXCLUDED.geo_level
+            OR fact_acs_observation.state_id IS DISTINCT FROM EXCLUDED.state_id
+            OR fact_acs_observation.state_name IS DISTINCT FROM EXCLUDED.state_name
+            OR fact_acs_observation.county_id IS DISTINCT FROM EXCLUDED.county_id
+            OR fact_acs_observation.county_name IS DISTINCT FROM EXCLUDED.county_name
+            OR fact_acs_observation.geo_latitude IS DISTINCT FROM EXCLUDED.geo_latitude
+            OR fact_acs_observation.geo_longitude IS DISTINCT FROM EXCLUDED.geo_longitude
+            OR fact_acs_observation.geo_geom IS DISTINCT FROM EXCLUDED.geo_geom
+            OR fact_acs_observation.time_sk IS DISTINCT FROM EXCLUDED.time_sk
+            OR fact_acs_observation.duration_start IS DISTINCT FROM EXCLUDED.duration_start
+            OR fact_acs_observation.duration_end IS DISTINCT FROM EXCLUDED.duration_end
+            OR fact_acs_observation.acs_table_sk IS DISTINCT FROM EXCLUDED.acs_table_sk
+            OR fact_acs_observation.vintage_year IS DISTINCT FROM EXCLUDED.vintage_year
+            OR fact_acs_observation.as_of_date IS DISTINCT FROM EXCLUDED.as_of_date
+        )
     """
 
     from psycopg2.extras import execute_values
 
     with hook.get_conn() as conn, conn.cursor() as cur:
-        execute_values(cur, sql, rows)
+        execute_values(cur, sql, rows, page_size=3000)
         row_count = cur.rowcount
         conn.commit()
 
