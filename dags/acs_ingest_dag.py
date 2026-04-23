@@ -765,6 +765,8 @@ def acs_ingest():
         """Rebuild persisted dashboard-serving tables and latest snapshots."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
+            # Connection-level defaults can enforce a timeout; disable it for this heavy refresh.
+            cur.execute("SET statement_timeout = 0;")
             cur.execute("CALL gold.refresh_dashboard_serving_layer();")
             conn.commit()
 
