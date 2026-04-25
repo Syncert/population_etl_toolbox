@@ -540,8 +540,6 @@ DROP PROCEDURE IF EXISTS gold.refresh_rpt_acs_observation_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_rpt_acs_observation_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
     DROP TABLE IF EXISTS gold.rpt_acs_observation_dashboard__staging;
     DROP TABLE IF EXISTS gold.rpt_acs_observation_dashboard__old;
@@ -549,12 +547,7 @@ BEGIN
     CREATE TABLE gold.rpt_acs_observation_dashboard__staging
         (LIKE gold.rpt_acs_observation_dashboard INCLUDING ALL);
 
-    FOR batch IN
-        SELECT DISTINCT ao.dataset_code, ao.vintage_year
-        FROM gold.fact_acs_observation ao
-        ORDER BY ao.dataset_code, ao.vintage_year
-    LOOP
-        INSERT INTO gold.rpt_acs_observation_dashboard__staging (
+    INSERT INTO gold.rpt_acs_observation_dashboard__staging (
             source_code,
             observation_date,
             duration_start,
@@ -596,8 +589,8 @@ BEGIN
             do_not_compare_with,
             recommended_aggregation,
             owner_team
-        )
-        WITH geo_base AS (
+    )
+    WITH geo_base AS (
             SELECT DISTINCT ON (g.geo_id)
                 g.geo_id,
                 g.geo_level,
@@ -615,8 +608,8 @@ BEGIN
             FROM gold.dim_geo g
             WHERE g.is_active = TRUE
             ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
-        )
-        SELECT
+    )
+    SELECT
             'CENSUS_ACS' AS source_code,
             ao.observation_date,
             ao.duration_start,
@@ -669,10 +662,7 @@ BEGIN
             ON bma.acs_variable_sk = ao.acs_variable_sk
         LEFT JOIN gold.dim_metric_catalog mc
             ON mc.metric_catalog_sk = bma.metric_catalog_sk
-           AND mc.is_active = TRUE
-        WHERE ao.dataset_code = batch.dataset_code
-          AND ao.vintage_year = batch.vintage_year;
-    END LOOP;
+           AND mc.is_active = TRUE;
 
     ANALYZE gold.rpt_acs_observation_dashboard__staging;
 
@@ -692,8 +682,6 @@ DROP PROCEDURE IF EXISTS gold.refresh_rpt_bls_observation_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_rpt_bls_observation_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
     DROP TABLE IF EXISTS gold.rpt_bls_observation_dashboard__staging;
     DROP TABLE IF EXISTS gold.rpt_bls_observation_dashboard__old;
@@ -701,13 +689,7 @@ BEGIN
     CREATE TABLE gold.rpt_bls_observation_dashboard__staging
         (LIKE gold.rpt_bls_observation_dashboard INCLUDING ALL);
 
-    FOR batch IN
-        SELECT DATE_TRUNC('month', b.period_date)::DATE AS batch_start
-        FROM gold.fact_bls_observation b
-        GROUP BY 1
-        ORDER BY 1
-    LOOP
-        INSERT INTO gold.rpt_bls_observation_dashboard__staging (
+    INSERT INTO gold.rpt_bls_observation_dashboard__staging (
             source_code,
             observation_date,
             duration_start,
@@ -746,8 +728,8 @@ BEGIN
             comparability_group,
             recommended_aggregation,
             owner_team
-        )
-        WITH geo_base AS (
+    )
+    WITH geo_base AS (
             SELECT DISTINCT ON (g.geo_id)
                 g.geo_id,
                 g.geo_level,
@@ -765,8 +747,8 @@ BEGIN
             FROM gold.dim_geo g
             WHERE g.is_active = TRUE
             ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
-        )
-        SELECT
+    )
+    SELECT
             'BLS' AS source_code,
             b.period_date AS observation_date,
             b.duration_start,
@@ -816,10 +798,7 @@ BEGIN
             ON bms.bls_series_sk = b.bls_series_sk
         LEFT JOIN gold.dim_metric_catalog mc
             ON mc.metric_catalog_sk = bms.metric_catalog_sk
-           AND mc.is_active = TRUE
-        WHERE b.period_date >= batch.batch_start
-          AND b.period_date < (batch.batch_start + INTERVAL '1 month')::DATE;
-    END LOOP;
+           AND mc.is_active = TRUE;
 
     ANALYZE gold.rpt_bls_observation_dashboard__staging;
 
@@ -839,8 +818,6 @@ DROP PROCEDURE IF EXISTS gold.refresh_rpt_fred_observation_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_rpt_fred_observation_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
     DROP TABLE IF EXISTS gold.rpt_fred_observation_dashboard__staging;
     DROP TABLE IF EXISTS gold.rpt_fred_observation_dashboard__old;
@@ -848,13 +825,7 @@ BEGIN
     CREATE TABLE gold.rpt_fred_observation_dashboard__staging
         (LIKE gold.rpt_fred_observation_dashboard INCLUDING ALL);
 
-    FOR batch IN
-        SELECT DATE_TRUNC('month', f.observation_date)::DATE AS batch_start
-        FROM gold.fact_fred_observation f
-        GROUP BY 1
-        ORDER BY 1
-    LOOP
-        INSERT INTO gold.rpt_fred_observation_dashboard__staging (
+    INSERT INTO gold.rpt_fred_observation_dashboard__staging (
             source_code,
             observation_date,
             duration_start,
@@ -894,8 +865,8 @@ BEGIN
             do_not_compare_with,
             recommended_aggregation,
             owner_team
-        )
-        WITH geo_base AS (
+    )
+    WITH geo_base AS (
             SELECT DISTINCT ON (g.geo_id)
                 g.geo_id,
                 g.geo_level,
@@ -913,8 +884,8 @@ BEGIN
             FROM gold.dim_geo g
             WHERE g.is_active = TRUE
             ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
-        )
-        SELECT
+    )
+    SELECT
             'FRED' AS source_code,
             f.observation_date,
             f.duration_start,
@@ -963,10 +934,7 @@ BEGIN
             ON bmf.fred_series_sk = f.fred_series_sk
         LEFT JOIN gold.dim_metric_catalog mc
             ON mc.metric_catalog_sk = bmf.metric_catalog_sk
-           AND mc.is_active = TRUE
-        WHERE f.observation_date >= batch.batch_start
-          AND f.observation_date < (batch.batch_start + INTERVAL '1 month')::DATE;
-    END LOOP;
+           AND mc.is_active = TRUE;
 
     ANALYZE gold.rpt_fred_observation_dashboard__staging;
 
@@ -1065,124 +1033,12 @@ DROP PROCEDURE IF EXISTS gold.refresh_mv_acs_latest_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_mv_acs_latest_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
-    DROP TABLE IF EXISTS gold.mv_acs_latest_dashboard__candidates;
     DROP TABLE IF EXISTS gold.mv_acs_latest_dashboard__staging;
     DROP TABLE IF EXISTS gold.mv_acs_latest_dashboard__old;
 
-    CREATE TABLE gold.mv_acs_latest_dashboard__candidates
-        (LIKE gold.mv_acs_latest_dashboard INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS);
-
     CREATE TABLE gold.mv_acs_latest_dashboard__staging
         (LIKE gold.mv_acs_latest_dashboard INCLUDING ALL);
-
-    FOR batch IN
-        SELECT DATE_TRUNC('year', d.observation_date)::DATE AS batch_start
-        FROM gold.rpt_acs_observation_dashboard d
-        GROUP BY 1
-        ORDER BY 1
-    LOOP
-        INSERT INTO gold.mv_acs_latest_dashboard__candidates (
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            geo_geom,
-            geo_polygon_geojson,
-            as_of_date,
-            updated_at,
-            dataset_code,
-            vintage_year,
-            table_id,
-            table_title,
-            variable_code,
-            variable_label,
-            concept,
-            universe,
-            denominator_hint,
-            is_publishable_default,
-            estimate_value,
-            margin_of_error,
-            margin_of_error_pct,
-            estimate_annotation,
-            moe_annotation,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            business_definition,
-            caveats,
-            comparability_group,
-            do_not_compare_with,
-            recommended_aggregation,
-            owner_team
-        )
-        SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code)
-            d.source_code,
-            d.observation_date,
-            d.duration_start,
-            d.duration_end,
-            d.time_sk,
-            d.geo_id,
-            d.geo_level,
-            d.state_fips,
-            d.county_fips,
-            d.state_name,
-            d.county_name,
-            d.geo_latitude,
-            d.geo_longitude,
-            d.geo_geom,
-            d.geo_polygon_geojson,
-            d.as_of_date,
-            d.updated_at,
-            d.dataset_code,
-            d.vintage_year,
-            d.table_id,
-            d.table_title,
-            d.variable_code,
-            d.variable_label,
-            d.concept,
-            d.universe,
-            d.denominator_hint,
-            d.is_publishable_default,
-            d.estimate_value,
-            d.margin_of_error,
-            d.margin_of_error_pct,
-            d.estimate_annotation,
-            d.moe_annotation,
-            d.metric_code,
-            d.metric_display_name,
-            d.dashboard_suitability,
-            d.business_definition,
-            d.caveats,
-            d.comparability_group,
-            d.do_not_compare_with,
-            d.recommended_aggregation,
-            d.owner_team
-        FROM gold.rpt_acs_observation_dashboard d
-        WHERE d.observation_date >= batch.batch_start
-          AND d.observation_date < (batch.batch_start + INTERVAL '1 year')::DATE
-        ORDER BY
-            d.geo_id,
-            d.variable_code,
-            d.metric_code,
-            d.observation_date DESC,
-            d.updated_at DESC,
-            CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
-            d.vintage_year DESC;
-    END LOOP;
-
-    ANALYZE gold.mv_acs_latest_dashboard__candidates;
 
     INSERT INTO gold.mv_acs_latest_dashboard__staging (
         source_code,
@@ -1269,7 +1125,7 @@ BEGIN
         d.do_not_compare_with,
         d.recommended_aggregation,
         d.owner_team
-    FROM gold.mv_acs_latest_dashboard__candidates d
+    FROM gold.rpt_acs_observation_dashboard d
     ORDER BY
         d.geo_id,
         d.variable_code,
@@ -1278,8 +1134,6 @@ BEGIN
         d.updated_at DESC,
         CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
         d.vintage_year DESC;
-
-    DROP TABLE gold.mv_acs_latest_dashboard__candidates;
 
     ANALYZE gold.mv_acs_latest_dashboard__staging;
 
@@ -1299,116 +1153,12 @@ DROP PROCEDURE IF EXISTS gold.refresh_mv_bls_latest_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_mv_bls_latest_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
-    DROP TABLE IF EXISTS gold.mv_bls_latest_dashboard__candidates;
     DROP TABLE IF EXISTS gold.mv_bls_latest_dashboard__staging;
     DROP TABLE IF EXISTS gold.mv_bls_latest_dashboard__old;
 
-    CREATE TABLE gold.mv_bls_latest_dashboard__candidates
-        (LIKE gold.mv_bls_latest_dashboard INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS);
-
     CREATE TABLE gold.mv_bls_latest_dashboard__staging
         (LIKE gold.mv_bls_latest_dashboard INCLUDING ALL);
-
-    FOR batch IN
-        SELECT DATE_TRUNC('year', d.observation_date)::DATE AS batch_start
-        FROM gold.rpt_bls_observation_dashboard d
-        GROUP BY 1
-        ORDER BY 1
-    LOOP
-        INSERT INTO gold.mv_bls_latest_dashboard__candidates (
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            geo_geom,
-            geo_polygon_geojson,
-            as_of_date,
-            updated_at,
-            program_code,
-            survey_name,
-            series_id,
-            series_title,
-            gold_metric_name,
-            measure_name,
-            measure_category,
-            value_type,
-            unit_of_measure,
-            seasonal_adjustment_status,
-            observation_basis,
-            value,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            business_definition,
-            metric_caveats,
-            comparison_warning,
-            comparability_group,
-            recommended_aggregation,
-            owner_team
-        )
-        SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
-            d.source_code,
-            d.observation_date,
-            d.duration_start,
-            d.duration_end,
-            d.time_sk,
-            d.geo_id,
-            d.geo_level,
-            d.state_fips,
-            d.county_fips,
-            d.state_name,
-            d.county_name,
-            d.geo_latitude,
-            d.geo_longitude,
-            d.geo_geom,
-            d.geo_polygon_geojson,
-            d.as_of_date,
-            d.updated_at,
-            d.program_code,
-            d.survey_name,
-            d.series_id,
-            d.series_title,
-            d.gold_metric_name,
-            d.measure_name,
-            d.measure_category,
-            d.value_type,
-            d.unit_of_measure,
-            d.seasonal_adjustment_status,
-            d.observation_basis,
-            d.value,
-            d.metric_code,
-            d.metric_display_name,
-            d.dashboard_suitability,
-            d.business_definition,
-            d.metric_caveats,
-            d.comparison_warning,
-            d.comparability_group,
-            d.recommended_aggregation,
-            d.owner_team
-        FROM gold.rpt_bls_observation_dashboard d
-        WHERE d.observation_date >= batch.batch_start
-          AND d.observation_date < (batch.batch_start + INTERVAL '1 year')::DATE
-        ORDER BY
-            d.geo_id,
-            d.series_id,
-            d.metric_code,
-            d.observation_date DESC,
-            d.updated_at DESC;
-    END LOOP;
-
-    ANALYZE gold.mv_bls_latest_dashboard__candidates;
 
     INSERT INTO gold.mv_bls_latest_dashboard__staging (
         source_code,
@@ -1489,15 +1239,13 @@ BEGIN
         d.comparability_group,
         d.recommended_aggregation,
         d.owner_team
-    FROM gold.mv_bls_latest_dashboard__candidates d
+    FROM gold.rpt_bls_observation_dashboard d
     ORDER BY
         d.geo_id,
         d.series_id,
         d.metric_code,
         d.observation_date DESC,
         d.updated_at DESC;
-
-    DROP TABLE gold.mv_bls_latest_dashboard__candidates;
 
     ANALYZE gold.mv_bls_latest_dashboard__staging;
 
@@ -1517,120 +1265,12 @@ DROP PROCEDURE IF EXISTS gold.refresh_mv_fred_latest_dashboard();
 CREATE OR REPLACE PROCEDURE gold.refresh_mv_fred_latest_dashboard()
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    batch RECORD;
 BEGIN
-    DROP TABLE IF EXISTS gold.mv_fred_latest_dashboard__candidates;
     DROP TABLE IF EXISTS gold.mv_fred_latest_dashboard__staging;
     DROP TABLE IF EXISTS gold.mv_fred_latest_dashboard__old;
 
-    CREATE TABLE gold.mv_fred_latest_dashboard__candidates
-        (LIKE gold.mv_fred_latest_dashboard INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS);
-
     CREATE TABLE gold.mv_fred_latest_dashboard__staging
         (LIKE gold.mv_fred_latest_dashboard INCLUDING ALL);
-
-    FOR batch IN
-        SELECT DATE_TRUNC('year', d.observation_date)::DATE AS batch_start
-        FROM gold.rpt_fred_observation_dashboard d
-        GROUP BY 1
-        ORDER BY 1
-    LOOP
-        INSERT INTO gold.mv_fred_latest_dashboard__candidates (
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            geo_geom,
-            geo_polygon_geojson,
-            as_of_date,
-            updated_at,
-            series_id,
-            series_title,
-            source_provider,
-            original_source_name,
-            is_primary_source_series,
-            is_republished_series,
-            frequency,
-            units,
-            seasonal_adjustment,
-            transformation_method,
-            realtime_start,
-            realtime_end,
-            value,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            business_definition,
-            caveats,
-            comparability_group,
-            do_not_compare_with,
-            recommended_aggregation,
-            owner_team
-        )
-        SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
-            d.source_code,
-            d.observation_date,
-            d.duration_start,
-            d.duration_end,
-            d.time_sk,
-            d.geo_id,
-            d.geo_level,
-            d.state_fips,
-            d.county_fips,
-            d.state_name,
-            d.county_name,
-            d.geo_latitude,
-            d.geo_longitude,
-            d.geo_geom,
-            d.geo_polygon_geojson,
-            d.as_of_date,
-            d.updated_at,
-            d.series_id,
-            d.series_title,
-            d.source_provider,
-            d.original_source_name,
-            d.is_primary_source_series,
-            d.is_republished_series,
-            d.frequency,
-            d.units,
-            d.seasonal_adjustment,
-            d.transformation_method,
-            d.realtime_start,
-            d.realtime_end,
-            d.value,
-            d.metric_code,
-            d.metric_display_name,
-            d.dashboard_suitability,
-            d.business_definition,
-            d.caveats,
-            d.comparability_group,
-            d.do_not_compare_with,
-            d.recommended_aggregation,
-            d.owner_team
-        FROM gold.rpt_fred_observation_dashboard d
-        WHERE d.observation_date >= batch.batch_start
-          AND d.observation_date < (batch.batch_start + INTERVAL '1 year')::DATE
-        ORDER BY
-            d.geo_id,
-            d.series_id,
-            d.metric_code,
-            d.observation_date DESC,
-            d.realtime_start DESC NULLS LAST,
-            d.realtime_end DESC NULLS LAST,
-            d.updated_at DESC;
-    END LOOP;
-
-    ANALYZE gold.mv_fred_latest_dashboard__candidates;
 
     INSERT INTO gold.mv_fred_latest_dashboard__staging (
         source_code,
@@ -1713,7 +1353,7 @@ BEGIN
         d.do_not_compare_with,
         d.recommended_aggregation,
         d.owner_team
-    FROM gold.mv_fred_latest_dashboard__candidates d
+    FROM gold.rpt_fred_observation_dashboard d
     ORDER BY
         d.geo_id,
         d.series_id,
@@ -1722,8 +1362,6 @@ BEGIN
         d.realtime_start DESC NULLS LAST,
         d.realtime_end DESC NULLS LAST,
         d.updated_at DESC;
-
-    DROP TABLE gold.mv_fred_latest_dashboard__candidates;
 
     ANALYZE gold.mv_fred_latest_dashboard__staging;
 
