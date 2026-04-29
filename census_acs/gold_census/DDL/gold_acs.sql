@@ -17,6 +17,7 @@ SELECT
     latitude,
     longitude,
     geom,
+    ST_AsGeoJSON(geom)::TEXT AS geo_polygon_geojson,
     is_active,
     source,
     source_year,
