@@ -441,6 +441,7 @@ def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -
     from psycopg2.extras import execute_values
 
     with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SET statement_timeout = 0;")
         execute_values(cur, sql, rows, page_size=3000)
         row_count = cur.rowcount
         conn.commit()
