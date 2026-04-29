@@ -55,6 +55,7 @@ from typing import Optional
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
@@ -462,84 +463,46 @@ def acs_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
 
-        sql_planned_update = """
-            UPDATE raw_census.acs_ingestion_slices
-            SET status = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.status
-                    ELSE 'planned'
-                END,
-                rows_loaded = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.rows_loaded
-                    ELSE 0
-                END,
-                variables_hash = %s,
-                variables_count = %s,
-                variables_hash_seen_at = %s,
-                last_error = NULL
-            WHERE dataset = %s
-            AND year = %s
-            AND geo_level = %s
-            AND state_fips IS NOT DISTINCT FROM %s;
-        """
-
-        sql_planned_insert = """
+        sql_planned_upsert = """
             INSERT INTO raw_census.acs_ingestion_slices (
                 dataset, year, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 variables_hash, variables_count, variables_hash_seen_at
-            )
-            VALUES (%s, %s, %s, %s,
-                    'planned', 0,
-                    NULL, NULL, NULL,
-                    %s, %s, %s)
-            ON CONFLICT DO NOTHING;
+            ) VALUES %s
+            ON CONFLICT (dataset, year, geo_level, COALESCE(state_fips, ''))
+            DO UPDATE SET
+                status = CASE
+                        WHEN raw_census.acs_ingestion_slices.status IN ('success', 'empty')
+                             AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
+                        THEN raw_census.acs_ingestion_slices.status
+                        ELSE 'planned'
+                    END,
+                rows_loaded = CASE
+                        WHEN raw_census.acs_ingestion_slices.status IN ('success', 'empty')
+                             AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
+                        THEN raw_census.acs_ingestion_slices.rows_loaded
+                        ELSE 0
+                    END,
+                variables_hash = EXCLUDED.variables_hash,
+                variables_count = EXCLUDED.variables_count,
+                variables_hash_seen_at = EXCLUDED.variables_hash_seen_at,
+                last_error = NULL;
         """
 
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            for batch in batches:
-                for w in batch:
-                    dataset = w["dataset"]
-                    year = int(w["year"])
-                    geo_level = w["geo_level"]
-                    state_fips = w.get("state_fips")
-                    vhash = w.get("variables_hash")
-                    vcount = int(w.get("variables_count", 0))
+        rows = [
+            (
+                w["dataset"], int(w["year"]), w["geo_level"], w.get("state_fips"),
+                'planned', 0, None, None, None,
+                w.get("variables_hash"), int(w.get("variables_count", 0)), now,
+            )
+            for batch in batches for w in batch
+        ]
 
-                    cur.execute(
-                        sql_planned_update,
-                        (
-                            vhash,  # hash compare #1
-                            vhash,  # hash compare #2
-                            vhash,  # set variables_hash
-                            vcount,
-                            now,
-                            dataset,
-                            year,
-                            geo_level,
-                            state_fips,
-                        ),
-                    )
-
-                    if cur.rowcount == 0:
-                        cur.execute(
-                            sql_planned_insert,
-                            (
-                                dataset,
-                                year,
-                                geo_level,
-                                state_fips,
-                                vhash,
-                                vcount,
-                                now,
-                            ),
-                        )
-
-            conn.commit()
+        if rows:
+            with hook.get_conn() as conn, conn.cursor() as cur:
+                execute_values(cur, sql_planned_upsert, rows, page_size=500)
+                conn.commit()
 
 
     # -----------------------------
@@ -610,8 +573,8 @@ def acs_ingest():
     @task(trigger_rule='none_failed')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from gold.transform import ensure_gold_schema
-        ensure_gold_schema()
+        from census_acs.gold_census.transform import ensure_acs_gold_schema
+        ensure_acs_gold_schema()
 
     @task(trigger_rule='none_failed')
     def gold_refresh_elements() -> None:
@@ -649,25 +612,23 @@ def acs_ingest():
             cur.execute(sql_silver_years)
             silver_years = [row[0] for row in cur.fetchall()]
 
-        if not silver_years:
-            logger.warning("[ACS GOLD] No estimate_years found in silver_census.fact_demographics — no shards generated.")
-            return []
+            if not silver_years:
+                logger.warning("[ACS GOLD] No estimate_years found in silver_census.fact_demographics — no shards generated.")
+                return []
 
-        logger.info("[ACS GOLD] Silver contains %d distinct estimate_year(s): %s", len(silver_years), silver_years)
+            logger.info("[ACS GOLD] Silver contains %d distinct estimate_year(s): %s", len(silver_years), silver_years)
 
-        # Step 2: cross-check against dim_time so we only emit dates that exist
-        # in the time dimension (guards against very old or future edge cases).
-        candidate_dates = [f"{yr}-01-01" for yr in silver_years]
+            # Step 2: cross-check against dim_time so we only emit dates that exist
+            # in the time dimension (guards against very old or future edge cases).
+            candidate_dates = [f"{yr}-01-01" for yr in silver_years]
 
-        sql_dim_check = """
-            SELECT date_trunc('month', date_key)::date AS month_start
-            FROM silver_ref.dim_time
-            WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
-              AND is_month_start = TRUE
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_dim_check, (candidate_dates,))
+            cur.execute("""
+                SELECT date_trunc('month', date_key)::date AS month_start
+                FROM silver_ref.dim_time
+                WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
+                  AND is_month_start = TRUE
+                ORDER BY month_start;
+            """, (candidate_dates,))
             confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
 
         missing = set(candidate_dates) - set(confirmed_shards)
@@ -755,19 +716,41 @@ def acs_ingest():
     def gold_quality_check(shard_results: list[dict]) -> None:
         """Run row-level quality checks on merged gold shards."""
         from datetime import date
-        from gold.quality import run_quality_checks
+        from utility.gold_quality import run_quality_checks
+        hook = _get_postgres_hook()
         for result in (shard_results or []):
             if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]), "CENSUS_ACS")
+                run_quality_checks(date.fromisoformat(result["month_start"]), "CENSUS_ACS", hook=hook)
+
+    @task(trigger_rule='none_failed')
+    def gold_refresh_window(shard_results: list[dict]) -> dict[str, str] | None:
+        """Compute min/max shard dates for incremental serving refresh."""
+        successful_months = [
+            date.fromisoformat(r["month_start"])
+            for r in (shard_results or [])
+            if r and r.get("output_rows", 0) > 0
+        ]
+        if not successful_months:
+            return None
+
+        return {
+            "start_date": min(successful_months).isoformat(),
+            "end_date": max(successful_months).isoformat(),
+        }
 
     @task(trigger_rule='all_success')
-    def refresh_dashboard_serving_layer() -> None:
-        """Rebuild persisted dashboard-serving tables and latest snapshots."""
+    def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
+        """Refresh ACS persisted serving tables and latest snapshots."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            # Connection-level defaults can enforce a timeout; disable it for this heavy refresh.
             cur.execute("SET statement_timeout = 0;")
-            cur.execute("CALL gold.refresh_dashboard_serving_layer();")
+            if refresh_window is None:
+                cur.execute("CALL gold.refresh_dashboard_serving_layer_acs(NULL, NULL);")
+            else:
+                cur.execute(
+                    "CALL gold.refresh_dashboard_serving_layer_acs(%s, %s);",
+                    (refresh_window["start_date"], refresh_window["end_date"]),
+                )
             conn.commit()
 
     gold_schema = gold_ensure_schema()
@@ -776,10 +759,11 @@ def acs_ingest():
     gold_merged = gold_merge_shard.expand(month_start=gold_shards)
     gold_coverage = gold_validate_coverage(gold_merged)
     gold_qa = gold_quality_check(gold_merged)
-    dashboard_refresh = refresh_dashboard_serving_layer()
+    refresh_window = gold_refresh_window(gold_merged)
+    dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
 
     silver_transform >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
-    [gold_coverage, gold_qa] >> dashboard_refresh
+    [gold_coverage, gold_qa] >> refresh_window >> dashboard_refresh
 
 
 # Instantiate DAG

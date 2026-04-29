@@ -88,7 +88,7 @@ The schema follows a **dimensional modeling** approach with:
 | `state_name`, `county_name` | TEXT | Denormalized convenience fields |
 | `latitude`, `longitude` | DOUBLE PRECISION | Gazetteer internal point coordinates for map plotting |
 | `geom` | GEOMETRY(MultiPolygon, 4326) | Canonical PostGIS polygon geometry for spatial operations/indexing |
-| `geo_polygon_geojson` | TEXT | Derived presentation field from `ST_AsGeoJSON(geom)` in reporting views |
+| `geo_polygon_geojson` | TEXT | No longer persisted in serving tables; generate at query/API layer when needed |
 | `is_active` | BOOLEAN | TRUE if currently valid; FALSE for historical/obsolete geos |
 | `source`, `source_year` | TEXT, INT | Provenance; e.g., `CENSUS`, 2020 |
 | `first_seen_year`, `last_seen_year` | INT | Temporal coverage in source data |
@@ -509,7 +509,7 @@ The dashboard-serving layer is now persisted instead of view-driven. The primary
 **Characteristics:**
 - Physical table, not a view
 - No runtime latest logic
-- Geography columns and `geo_polygon_geojson` are populated during refresh
+- Geography columns are populated during refresh from canonical `gold.dim_geo_latest`
 - Metric catalog enrichment is pre-joined into each row
 - Refresh uses a swap-table pattern: build a staged replacement table, analyze it, then atomically rename it into place
 
@@ -554,7 +554,9 @@ The dashboard-serving layer is now persisted instead of view-driven. The primary
 
 **One-shot refresh:**
 ```sql
-CALL gold.refresh_dashboard_serving_layer();
+CALL gold.refresh_dashboard_serving_layer_acs(NULL, NULL);
+CALL gold.refresh_dashboard_serving_layer_bls(NULL, NULL);
+CALL gold.refresh_dashboard_serving_layer_fred(NULL, NULL);
 ```
 
 **Swap Refresh Pattern:**
@@ -902,15 +904,5 @@ For heavy analytical workloads, consider materializing:
 | FRED observations | data-eng | Daily | Same day |
 | Metric catalog | data-eng | On ingestion | Realtime after metadata refresh |
 
----
-
-## Contact & Support
-
-For questions or issues with the gold schema:
-- **Data Engineering Team:** data-eng@company.internal
-- **Documentation:** See linked DDL files and transform modules
-- **Runbook:** gold schema rebuild, validation, and rollback procedures in ops documentation
-
----
 
 **End of Document**

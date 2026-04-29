@@ -10,21 +10,51 @@ The latest observation_date within each calendar month is selected per series_id
 from __future__ import annotations
 
 import logging
+import pathlib
 from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from gold.config import CONFIG
-from gold.transform import (
-    ensure_gold_schema,
-    build_shard_list,
-)
+from fred.config import CONFIG
+from utility.gold_schema import ensure_gold_schema_from_files
 
 logger = logging.getLogger(__name__)
+
+_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_fred.sql"
+_SCHEMA_COMPONENT = "gold_ddl_fred"
+_REQUIRED_RELATIONS = (
+    "gold.dim_geo",
+    "gold.dim_source_system",
+    "gold.dim_metric_catalog",
+    "gold.dim_geo_latest",
+    "gold.dim_fred_series",
+    "gold.fact_fred_observation",
+    "gold.rpt_fred_observation_dashboard",
+    "gold.mv_fred_latest_dashboard",
+)
+_REQUIRED_PROCEDURES = (
+    "gold.refresh_dim_geo_latest()",
+    "gold.refresh_rpt_fred_observation_dashboard(date,date)",
+    "gold.refresh_mv_fred_latest_dashboard(date,date)",
+    "gold.refresh_dashboard_serving_layer_fred(date,date)",
+)
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def ensure_fred_gold_schema(hook: PostgresHook | None = None) -> None:
+    if hook is None:
+        hook = _get_hook()
+
+    ensure_gold_schema_from_files(
+        ddl_files=[_DDL_PATH],
+        component_name=_SCHEMA_COMPONENT,
+        required_relations=_REQUIRED_RELATIONS,
+        required_procedures=_REQUIRED_PROCEDURES,
+        hook=hook,
+    )
 
 
 def _seed_fred_metric_catalog(cur) -> int:

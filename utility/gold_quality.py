@@ -6,28 +6,10 @@ from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from gold.config import CONFIG
-
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _get_hook() -> PostgresHook:
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
-
-
-# ---------------------------------------------------------------------------
-# Public checks
-# ---------------------------------------------------------------------------
-
 def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> int:
-    """Verify ACS shard uniqueness and semantic fields for the given month_start.
-
-    Returns the violation count; raises ValueError if > 0.
-    """
     sql = """
         SELECT COUNT(*) AS violations
         FROM (
@@ -64,15 +46,10 @@ def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> 
     if semantic_violations > 0:
         raise ValueError(f"check_acs_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
 
-    logger.info("check_acs_observation_constraints PASSED for %s", month_start)
     return violations
 
 
 def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> int:
-    """Verify BLS shard uniqueness and semantic fields for the given month_start.
-
-    Returns the violation count; raises ValueError if > 0.
-    """
     sql = """
         SELECT COUNT(*)
         FROM (
@@ -109,12 +86,10 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
     if semantic_violations > 0:
         raise ValueError(f"check_bls_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
 
-    logger.info("check_bls_observation_constraints PASSED for %s", month_start)
     return violations
 
 
 def check_fred_observation_constraints(hook: PostgresHook, month_start: date) -> int:
-    """Verify FRED shard uniqueness and semantic fields for the given month_start."""
     sql = """
         SELECT COUNT(*)
         FROM (
@@ -149,12 +124,10 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
     if semantic_violations > 0:
         raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
 
-    logger.info("check_fred_observation_constraints PASSED for %s", month_start)
     return violations
 
 
 def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
-    """Verify active metric catalog rows are mapped to at least one source object."""
     sql = """
         SELECT COUNT(*)
         FROM gold.dim_metric_catalog c
@@ -176,22 +149,10 @@ def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
     if violations > 0:
         raise ValueError(f"check_metric_catalog_fk_coverage FAILED: {violations} active metric(s) without source mapping")
 
-    logger.info("check_metric_catalog_fk_coverage PASSED")
     return violations
 
 
-def run_quality_checks(
-    month_start: date,
-    source_system: str,
-    hook: PostgresHook | None = None,
-) -> None:
-    """Run source-specific quality checks for a given month_start.
-
-    Logs pass for each check; raises on any failure.
-    """
-    if hook is None:
-        hook = _get_hook()
-
+def run_quality_checks(month_start: date, source_system: str, hook: PostgresHook) -> None:
     source = source_system.strip().upper()
     if source == "CENSUS_ACS":
         check_acs_observation_constraints(hook, month_start)
@@ -203,4 +164,3 @@ def run_quality_checks(
         raise ValueError(f"Unsupported source_system for QA: {source_system}")
 
     check_metric_catalog_fk_coverage(hook)
-    logger.info("All quality checks PASSED for %s (source=%s)", month_start, source)

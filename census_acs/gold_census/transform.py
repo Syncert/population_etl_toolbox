@@ -10,21 +10,53 @@ ACS 5-year estimates (acs5) take precedence over 1-year (acs1).
 from __future__ import annotations
 
 import logging
+import pathlib
 from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from gold.config import CONFIG
-from gold.transform import (
-    ensure_gold_schema,
-    build_shard_list,
-)
+from census_acs.config import CONFIG
+from utility.gold_schema import ensure_gold_schema_from_files
 
 logger = logging.getLogger(__name__)
+
+_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_acs.sql"
+_SCHEMA_COMPONENT = "gold_ddl_acs"
+_REQUIRED_RELATIONS = (
+    "gold.dim_geo",
+    "gold.dim_time",
+    "gold.dim_source_system",
+    "gold.dim_metric_catalog",
+    "gold.dim_geo_latest",
+    "gold.dim_acs_table",
+    "gold.dim_acs_variable",
+    "gold.fact_acs_observation",
+    "gold.rpt_acs_observation_dashboard",
+    "gold.mv_acs_latest_dashboard",
+)
+_REQUIRED_PROCEDURES = (
+    "gold.refresh_dim_geo_latest()",
+    "gold.refresh_rpt_acs_observation_dashboard(date,date)",
+    "gold.refresh_mv_acs_latest_dashboard(date,date)",
+    "gold.refresh_dashboard_serving_layer_acs(date,date)",
+)
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def ensure_acs_gold_schema(hook: PostgresHook | None = None) -> None:
+    if hook is None:
+        hook = _get_hook()
+
+    ensure_gold_schema_from_files(
+        ddl_files=[_DDL_PATH],
+        component_name=_SCHEMA_COMPONENT,
+        required_relations=_REQUIRED_RELATIONS,
+        required_procedures=_REQUIRED_PROCEDURES,
+        hook=hook,
+    )
 
 
 def _seed_acs_metric_catalog(cur) -> int:

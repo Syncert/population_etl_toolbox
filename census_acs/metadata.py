@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import httpx
 import psycopg2
 import re
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Adjust this import path to wherever db_connection.py lives in your project
 from utility.db_connection import (
@@ -29,6 +30,32 @@ _TARGET_DATABASE = "public_data"
 # connection. In local dev (no Airflow), this will be None and the factory
 # will fall back to POSTGRES_* env vars.
 _AIRFLOW_CONN_ID: Optional[str] = getattr(CONFIG, "postgres_conn_id", None)
+
+
+class CensusMetadataRetryableHTTP(Exception):
+    """Retry-worthy metadata HTTP failures from the Census API."""
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=2, max=60),
+    retry=retry_if_exception_type(
+        (CensusMetadataRetryableHTTP, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError)
+    ),
+)
+def _get_json_with_retry(url: str) -> Dict:
+    with httpx.Client(
+        timeout=httpx.Timeout(connect=10.0, read=90.0, write=10.0, pool=10.0),
+        follow_redirects=True,
+    ) as client:
+        resp = client.get(url)
+
+    if resp.status_code == 429 or 500 <= resp.status_code <= 599:
+        raise CensusMetadataRetryableHTTP(f"Retryable metadata response {resp.status_code} for {url}")
+
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
@@ -58,10 +85,7 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
     Fetch dataset metadata from data.json and filter to ACS 1- and 5- year datasets.
     Uses regex to match flexible title patterns.
     """
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.get(DATA_JSON_URL)
-        resp.raise_for_status()
-        data = resp.json()
+    data = _get_json_with_retry(DATA_JSON_URL)
 
     datasets = data.get("dataset", [])
     filtered: List[Dict] = []
@@ -183,10 +207,7 @@ def fetch_variables_json(year: int, dataset: str) -> Dict:
         raise ValueError(f"Unsupported dataset: {dataset}")
 
     url = f"https://api.census.gov/data/{year}/acs/{dataset}/variables.json"
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+    return _get_json_with_retry(url)
 
 
 def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
