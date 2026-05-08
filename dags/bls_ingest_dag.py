@@ -838,9 +838,25 @@ def bls_ingest():
     @task(trigger_rule='all_success')
     def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
         """Refresh BLS persisted serving tables and latest snapshots."""
+        started_at = datetime.now(timezone.utc)
+        window_start = refresh_window["start_date"] if refresh_window else None
+        window_end = refresh_window["end_date"] if refresh_window else None
+
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET statement_timeout = 0;")
+            cur.execute("SET application_name = %s;", ("airflow:bls:refresh_dashboard_serving_layer",))
+            cur.execute("SELECT pg_backend_pid();")
+            backend_pid = cur.fetchone()[0]
+
+            logger.info(
+                "[BLS GOLD] Starting dashboard serving refresh: backend_pid=%s window_start=%s window_end=%s",
+                backend_pid,
+                window_start,
+                window_end,
+            )
+
+            conn.notices.clear()
             if refresh_window is None:
                 cur.execute("CALL gold.refresh_dashboard_serving_layer_bls(NULL, NULL);")
             else:
@@ -848,7 +864,20 @@ def bls_ingest():
                     "CALL gold.refresh_dashboard_serving_layer_bls(%s, %s);",
                     (refresh_window["start_date"], refresh_window["end_date"]),
                 )
+
+            for notice in conn.notices:
+                logger.info("[BLS GOLD] [DB NOTICE] %s", notice.strip())
+
             conn.commit()
+
+        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
+        logger.info(
+            "[BLS GOLD] Completed dashboard serving refresh in %.2f seconds: backend_pid=%s window_start=%s window_end=%s",
+            elapsed_seconds,
+            backend_pid,
+            window_start,
+            window_end,
+        )
 
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()

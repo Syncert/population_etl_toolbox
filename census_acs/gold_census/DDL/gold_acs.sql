@@ -563,9 +563,28 @@ CREATE OR REPLACE PROCEDURE gold.refresh_dashboard_serving_layer_acs(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_started_at TIMESTAMPTZ := clock_timestamp();
+    v_step_started TIMESTAMPTZ;
 BEGIN
     SET LOCAL statement_timeout = 0;
+
+    RAISE NOTICE '[ACS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
+
+    v_step_started := clock_timestamp();
     CALL gold.refresh_rpt_acs_observation_dashboard(p_start_date, p_end_date);
+    RAISE NOTICE
+        '[ACS DASHBOARD REFRESH] step=refresh_rpt_acs_observation_dashboard duration_ms=%',
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
+
+    v_step_started := clock_timestamp();
     CALL gold.refresh_mv_acs_latest_dashboard(p_start_date, p_end_date);
+    RAISE NOTICE
+        '[ACS DASHBOARD REFRESH] step=refresh_mv_acs_latest_dashboard duration_ms=%',
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
+
+    RAISE NOTICE
+        '[ACS DASHBOARD REFRESH] completed total_duration_ms=%',
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
