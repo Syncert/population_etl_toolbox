@@ -30,11 +30,12 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
@@ -380,66 +381,48 @@ def fred_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
         
-        sql_planned_update = """
-            UPDATE raw_fred.fred_ingestion_slices
-            SET status = CASE
-                    WHEN status IN ('success','empty')
-                        AND series_hash = %s
-                    THEN status
-                    ELSE 'planned'
-                END,
-                rows_loaded = CASE
-                    WHEN status IN ('success','empty')
-                        AND series_hash = %s
-                    THEN rows_loaded
-                    ELSE 0
-                END,
-                series_hash = %s,
-                series_count = %s,
-                series_hash_seen_at = %s,
-                last_error = NULL
-            WHERE domain = %s
-              AND date_start = %s
-              AND date_end = %s;
-        """
-        
-        sql_planned_insert = """
+        sql_planned_upsert = """
             INSERT INTO raw_fred.fred_ingestion_slices (
                 domain, date_start, date_end,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 series_hash, series_count, series_hash_seen_at
-            )
-            VALUES (%s, %s, %s,
-                    'planned', 0,
-                    NULL, NULL, NULL,
-                    %s, %s, %s)
-            ON CONFLICT DO NOTHING;
+            ) VALUES %s
+            ON CONFLICT (domain, date_start, date_end)
+            DO UPDATE SET
+                status = CASE
+                        WHEN raw_fred.fred_ingestion_slices.status IN ('success', 'empty')
+                             AND raw_fred.fred_ingestion_slices.series_hash = EXCLUDED.series_hash
+                        THEN raw_fred.fred_ingestion_slices.status
+                        ELSE 'planned'
+                    END,
+                rows_loaded = CASE
+                        WHEN raw_fred.fred_ingestion_slices.status IN ('success', 'empty')
+                             AND raw_fred.fred_ingestion_slices.series_hash = EXCLUDED.series_hash
+                        THEN raw_fred.fred_ingestion_slices.rows_loaded
+                        ELSE 0
+                    END,
+                series_hash = EXCLUDED.series_hash,
+                series_count = EXCLUDED.series_count,
+                series_hash_seen_at = EXCLUDED.series_hash_seen_at,
+                last_error = NULL;
         """
         
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            for batch in batches:
-                for w in batch:
-                    domain = w["domain"]
-                    date_start = datetime.fromisoformat(w["date_start"]).date()
-                    date_end = datetime.fromisoformat(w["date_end"]).date()
-                    shash = w.get("series_hash")
-                    scount = int(w.get("series_count", 0))
-                    
-                    cur.execute(
-                        sql_planned_update,
-                        (shash, shash, shash, scount, now,
-                         domain, date_start, date_end),
-                    )
-                    
-                    if cur.rowcount == 0:
-                        cur.execute(
-                            sql_planned_insert,
-                            (domain, date_start, date_end,
-                             shash, scount, now),
-                        )
-            
-            conn.commit()
+        rows = [
+            (
+                w["domain"],
+                datetime.fromisoformat(w["date_start"]).date(),
+                datetime.fromisoformat(w["date_end"]).date(),
+                'planned', 0, None, None, None,
+                w.get("series_hash"), int(w.get("series_count", 0)), now,
+            )
+            for batch in batches for w in batch
+        ]
+        
+        if rows:
+            with hook.get_conn() as conn, conn.cursor() as cur:
+                execute_values(cur, sql_planned_upsert, rows, page_size=500)
+                conn.commit()
     
     # -----------------------------
     # Task 4: Ingest batch (mapped)
@@ -498,8 +481,8 @@ def fred_ingest():
     @task(trigger_rule='none_failed')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from gold.transform import ensure_gold_schema
-        ensure_gold_schema()
+        from fred.gold_fred.transform import ensure_fred_gold_schema
+        ensure_fred_gold_schema()
 
     @task(trigger_rule='none_failed')
     def gold_refresh_elements() -> None:
@@ -509,134 +492,90 @@ def fred_ingest():
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute gold shards driven by what actually exists in silver.
-
-        FRED is monthly so every distinct calendar month in
-        silver_fred.fact_economic_indicators is a valid shard.  Querying
-        silver directly handles both the initial load (all historical months)
-        and incremental updates (new months appear automatically).
-
-        Only non-missing observations are considered (is_missing = FALSE).
-        Cross-checked against silver_ref.dim_time.
-        """
+        """Compute the rolling date window covered by the current silver data."""
         hook = _get_postgres_hook()
-
-        sql_silver_months = """
-            SELECT DISTINCT date_trunc('month', observation_date)::date AS month_start
-            FROM silver_fred.fact_economic_indicators
-            WHERE is_missing = FALSE
-            ORDER BY month_start;
-        """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver_months)
-            silver_months = [row[0].isoformat() for row in cur.fetchall()]
-
-        if not silver_months:
-            logger.warning("[FRED GOLD] No months found in silver_fred.fact_economic_indicators — no shards generated.")
+            cur.execute("""
+                SELECT MIN(observation_date)::date
+                FROM silver_fred.fact_economic_indicators
+                WHERE observation_date >= (CURRENT_DATE - INTERVAL '2 years')
+                  AND is_missing = FALSE
+            """)
+            row = cur.fetchone()
+        if not row or row[0] is None:
+            logger.warning("[FRED GOLD] No data in silver rolling window; skipping gold refresh.")
             return []
-
-        logger.info("[FRED GOLD] Silver contains %d distinct month(s), range %s to %s",
-                    len(silver_months), silver_months[0], silver_months[-1])
-
-        sql_dim_check = """
-            SELECT date_trunc('month', date_key)::date AS month_start
-            FROM silver_ref.dim_time
-            WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
-              AND is_month_start = TRUE
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_dim_check, (silver_months,))
-            confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
-
-        missing = set(silver_months) - set(confirmed_shards)
-        if missing:
-            logger.warning("[FRED GOLD] %d month(s) not in dim_time, skipping: %s",
-                           len(missing), sorted(missing))
-
-        logger.info("[FRED GOLD] Emitting %d shard(s)", len(confirmed_shards))
-        return confirmed_shards
-
-    @task(trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
-    def gold_merge_shard(month_start: str) -> dict:
-        """Merge one gold month shard."""
-        from fred.gold_fred.transform import merge_fred_shard
-        return merge_fred_shard({"month_start": month_start})
+        return [row[0].isoformat()]
 
     @task(trigger_rule='none_failed')
-    def gold_validate_coverage(shard_results: list[dict]) -> dict:
-        """Validate gold row counts match silver for every calendar month.
-
-        Compares:
-        - silver_fred.fact_economic_indicators row counts per calendar month
-          (non-missing observations only)
-                - gold.fact_fred_observation row counts per calendar month
-
-        Raises ValueError if any month present in silver has zero rows in gold.
-        Returns a summary dict for XCom inspection.
-        """
+    def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
+        """Compute min/max date window for the serving-layer refresh from silver."""
+        if not shard_results:
+            return None
         hook = _get_postgres_hook()
-
-        sql_silver = """
-            SELECT date_trunc('month', observation_date)::date AS month_start,
-                   COUNT(*) AS silver_rows
-            FROM silver_fred.fact_economic_indicators
-            WHERE is_missing = FALSE
-            GROUP BY date_trunc('month', observation_date)::date
-            ORDER BY month_start;
-        """
-        sql_gold = """
-            SELECT date_trunc('month', observation_date)::date AS month_start,
-                   COUNT(*) AS gold_rows
-            FROM gold.fact_fred_observation
-            GROUP BY date_trunc('month', observation_date)::date
-            ORDER BY month_start;
-        """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver)
-            silver_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
-            cur.execute(sql_gold)
-            gold_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
+            cur.execute("""
+                SELECT MIN(observation_date)::date, MAX(observation_date)::date
+                FROM silver_fred.fact_economic_indicators
+                WHERE observation_date >= (CURRENT_DATE - INTERVAL '2 years')
+                  AND is_missing = FALSE
+            """)
+            row = cur.fetchone()
+        if not row or row[0] is None:
+            return None
+        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-        summary = {}
-        incomplete_months = []
-        for month, silver_rows in silver_counts.items():
-            gold_rows = gold_counts.get(month, 0)
-            summary[month] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
-            if gold_rows == 0:
-                incomplete_months.append(month)
-                logger.error("[FRED GOLD] Coverage gap: %s has %d silver rows but 0 gold rows.",
-                             month, silver_rows)
-            else:
-                logger.info("[FRED GOLD] Coverage OK: %s — silver=%d gold=%d",
-                            month, silver_rows, gold_rows)
+    @task(trigger_rule='all_success')
+    def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
+        """Refresh FRED persisted serving tables and latest snapshots."""
+        started_at = datetime.now(timezone.utc)
+        window_start = refresh_window["start_date"] if refresh_window else None
+        window_end = refresh_window["end_date"] if refresh_window else None
 
-        if incomplete_months:
-            raise ValueError(
-                f"[FRED GOLD] Gold transposition incomplete for {len(incomplete_months)} month(s): "
-                f"{incomplete_months}. Silver data exists but gold has 0 rows."
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0;")
+            cur.execute("SET application_name = %s;", ("airflow:fred:refresh_dashboard_serving_layer",))
+            cur.execute("SELECT pg_backend_pid();")
+            backend_pid = cur.fetchone()[0]
+
+            logger.info(
+                "[FRED GOLD] Starting dashboard serving refresh: backend_pid=%s window_start=%s window_end=%s",
+                backend_pid,
+                window_start,
+                window_end,
             )
 
-        logger.info("[FRED GOLD] Coverage validation passed for all %d month(s).", len(silver_counts))
-        return summary
+            conn.notices.clear()
+            if refresh_window is None:
+                cur.execute("CALL gold.refresh_dashboard_serving_layer_fred(NULL, NULL);")
+            else:
+                cur.execute(
+                    "CALL gold.refresh_dashboard_serving_layer_fred(%s, %s);",
+                    (refresh_window["start_date"], refresh_window["end_date"]),
+                )
 
-    @task(trigger_rule='none_failed')
-    def gold_quality_check(shard_results: list[dict]) -> None:
-        """Run row-level quality checks on merged gold shards."""
-        from datetime import date
-        from gold.quality import run_quality_checks
-        for result in (shard_results or []):
-            if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]), "FRED")
+            for notice in conn.notices:
+                logger.info("[FRED GOLD] [DB NOTICE] %s", notice.strip())
+
+            conn.commit()
+
+        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
+        logger.info(
+            "[FRED GOLD] Completed dashboard serving refresh in %.2f seconds: backend_pid=%s window_start=%s window_end=%s",
+            elapsed_seconds,
+            backend_pid,
+            window_start,
+            window_end,
+        )
 
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()
     gold_shards = gold_compute_shards()
-    gold_merged = gold_merge_shard.expand(month_start=gold_shards)
-    gold_coverage = gold_validate_coverage(gold_merged)
-    gold_qa = gold_quality_check(gold_merged)
+    refresh_window = gold_refresh_window(gold_shards)
+    dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
 
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
+    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> refresh_window >> dashboard_refresh
 
 
 # Instantiate DAG

@@ -1,6 +1,7 @@
 -- silver_ref/DDL/silver_ref.sql
 
 CREATE SCHEMA IF NOT EXISTS silver_ref;
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     geo_sk SERIAL PRIMARY KEY,
@@ -11,6 +12,9 @@ CREATE TABLE IF NOT EXISTS silver_ref.dim_geo (
     name TEXT,
     state_name TEXT,
     county_name TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    geom geometry(MultiPolygon, 4326),
     is_active BOOLEAN,
     source TEXT,
     source_year INT,
@@ -25,6 +29,18 @@ ALTER TABLE silver_ref.dim_geo
 
 ALTER TABLE silver_ref.dim_geo
     ADD COLUMN IF NOT EXISTS last_seen_year INT;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
+ALTER TABLE silver_ref.dim_geo
+    ADD COLUMN IF NOT EXISTS geom geometry(MultiPolygon, 4326);
+
+CREATE INDEX IF NOT EXISTS ix_dim_geo_geom
+    ON silver_ref.dim_geo USING GIST (geom);
 
 
 CREATE TABLE IF NOT EXISTS silver_ref.dim_time (

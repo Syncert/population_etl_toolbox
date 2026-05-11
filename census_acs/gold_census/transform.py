@@ -10,21 +10,53 @@ ACS 5-year estimates (acs5) take precedence over 1-year (acs1).
 from __future__ import annotations
 
 import logging
+import pathlib
 from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from gold.config import CONFIG
-from gold.transform import (
-    ensure_gold_schema,
-    build_shard_list,
-)
+from census_acs.config import CONFIG
+from utility.gold_schema import ensure_gold_schema_from_files
 
 logger = logging.getLogger(__name__)
+
+_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_acs.sql"
+_SCHEMA_COMPONENT = "gold_ddl_acs"
+_REQUIRED_RELATIONS = (
+    "gold.dim_geo",
+    "gold.dim_time",
+    "gold.dim_source_system",
+    "gold.dim_metric_catalog",
+    "gold.dim_geo_latest",
+    "gold.dim_acs_table",
+    "gold.dim_acs_variable",
+    "gold.fact_acs_observation",
+    "gold.rpt_observation_dashboard",
+    "gold.mv_latest_dashboard",
+)
+_REQUIRED_PROCEDURES = (
+    "gold.refresh_dim_geo_latest()",
+    "gold.refresh_rpt_acs_observation_dashboard(date,date)",
+    "gold.refresh_mv_acs_latest_dashboard(date,date)",
+    "gold.refresh_dashboard_serving_layer_acs(date,date)",
+)
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def ensure_acs_gold_schema(hook: PostgresHook | None = None) -> None:
+    if hook is None:
+        hook = _get_hook()
+
+    ensure_gold_schema_from_files(
+        ddl_files=[_DDL_PATH],
+        component_name=_SCHEMA_COMPONENT,
+        required_relations=_REQUIRED_RELATIONS,
+        required_procedures=_REQUIRED_PROCEDURES,
+        hook=hook,
+    )
 
 
 def _seed_acs_metric_catalog(cur) -> int:
@@ -130,71 +162,6 @@ def _seed_acs_metric_catalog(cur) -> int:
     return cur.fetchone()[0]
 
 
-def _fetch_acs_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
-    """Return ACS observation rows for the given month_start.
-
-    ACS is annual; data only exists for January 1st months.
-    acs5 takes precedence over acs1 for the same (geo_id, variable_code, year).
-    """
-    if month_start.month != 1 or month_start.day != 1:
-        return []
-
-    estimate_year = month_start.year
-    sql = """
-        WITH ranked AS (
-            SELECT
-                geo_id,
-                variable_code,
-                table_id,
-                dataset,
-                estimate_year,
-                estimate_value,
-                margin_of_error,
-                margin_of_error_pct,
-                MAKE_DATE(estimate_year, 1, 1)          AS observation_date,
-                duration_start,
-                duration_end,
-                variable_label,
-                variable_concept,
-                universe,
-                ROW_NUMBER() OVER (
-                    PARTITION BY geo_id, variable_code
-                    ORDER BY
-                        CASE dataset WHEN 'acs5' THEN 1
-                                     WHEN 'acs1' THEN 2
-                                     ELSE 3 END ASC
-                )                                       AS rn
-            FROM silver_census.fact_demographics
-            WHERE estimate_year = %s
-              AND estimate_value IS NOT NULL
-              AND variable_code IS NOT NULL
-              AND variable_code != ''
-        )
-        SELECT
-            geo_id,
-            variable_code,
-            table_id,
-            dataset,
-            estimate_year,
-            estimate_value,
-            margin_of_error,
-            margin_of_error_pct,
-            observation_date,
-            duration_start,
-            duration_end,
-            variable_label,
-            variable_concept,
-            universe
-        FROM ranked
-        WHERE rn = 1
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (estimate_year,))
-        rows = cur.fetchall()
-    logger.info("ACS fetch for %s: %d rows", month_start, len(rows))
-    return rows
-
-
 def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
     """Sync ACS source-specific metadata into gold.dim_acs_table and gold.dim_acs_variable."""
     if hook is None:
@@ -203,24 +170,49 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
+
             INSERT INTO gold.dim_acs_table (
                 dataset_code, vintage_year, table_id, table_title, concept, universe,
                 survey_span_years, reference_url
             )
+            WITH table_year_rollup AS (
+                SELECT
+                    f.dataset AS dataset_code,
+                    f.estimate_year AS vintage_year,
+                    f.table_id,
+                    MIN(f.variable_concept) AS year_concept,
+                    MIN(f.universe) AS year_universe
+                FROM silver_census.fact_demographics f
+                WHERE f.table_id IS NOT NULL
+                  AND f.table_id <> ''
+                  AND f.dataset IN ('acs1', 'acs5')
+                GROUP BY f.dataset, f.estimate_year, f.table_id
+            ),
+            table_cross_year_title AS (
+                SELECT DISTINCT ON (f.dataset, f.table_id)
+                    f.dataset AS dataset_code,
+                    f.table_id,
+                    NULLIF(f.variable_concept, '') AS canonical_table_title
+                FROM silver_census.fact_demographics f
+                WHERE f.table_id IS NOT NULL
+                  AND f.table_id <> ''
+                  AND f.dataset IN ('acs1', 'acs5')
+                  AND NULLIF(f.variable_concept, '') IS NOT NULL
+                ORDER BY f.dataset, f.table_id, f.estimate_year DESC
+            )
             SELECT
-                f.dataset AS dataset_code,
-                f.estimate_year AS vintage_year,
-                f.table_id,
-                COALESCE(NULLIF(MIN(f.variable_concept), ''), f.table_id) AS table_title,
-                MIN(f.variable_concept) AS concept,
-                MIN(f.universe) AS universe,
-                CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
-                'https://api.census.gov/data/' || f.estimate_year::TEXT || '/acs/' || f.dataset || '/variables.json' AS reference_url
-            FROM silver_census.fact_demographics f
-            WHERE f.table_id IS NOT NULL
-              AND f.table_id <> ''
-              AND f.dataset IN ('acs1', 'acs5')
-            GROUP BY f.dataset, f.estimate_year, f.table_id
+                r.dataset_code,
+                r.vintage_year,
+                r.table_id,
+                UPPER(COALESCE(NULLIF(r.year_concept, ''), c.canonical_table_title, r.table_id)) AS table_title,
+                UPPER(r.year_concept) AS concept,
+                r.year_universe AS universe,
+                CASE WHEN r.dataset_code = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
+                'https://api.census.gov/data/' || r.vintage_year::TEXT || '/acs/' || r.dataset_code || '/variables.json' AS reference_url
+            FROM table_year_rollup r
+            LEFT JOIN table_cross_year_title c
+              ON c.dataset_code = r.dataset_code
+             AND c.table_id = r.table_id
             ON CONFLICT (dataset_code, vintage_year, table_id)
             DO UPDATE SET
                 table_title = EXCLUDED.table_title,
@@ -293,139 +285,3 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         catalog_count,
     )
     return row_count
-
-
-def _upsert_acs_rows(hook: PostgresHook, month_start: date, rows: list[tuple]) -> int:
-    """Upsert ACS observation rows into gold.fact_acs_observation."""
-    if not rows:
-        return 0
-
-    sql = """
-        INSERT INTO gold.fact_acs_observation (
-            geo_id, geo_level, state_id, state_name, county_id, county_name,
-            time_sk, observation_date, duration_start, duration_end,
-            acs_table_sk, acs_variable_sk, dataset_code, vintage_year,
-            estimate_value, margin_of_error, margin_of_error_pct,
-            estimate_annotation, moe_annotation, as_of_date
-        )
-        SELECT
-            r.geo_id,
-            CASE
-                WHEN d.geo_level = 'us' THEN 'NATIONAL'
-                WHEN d.geo_level = 'state' THEN 'STATE'
-                WHEN d.geo_level = 'county' THEN 'COUNTY'
-                WHEN r.geo_id = 'us:1' THEN 'NATIONAL'
-                WHEN r.geo_id LIKE 'state:%%|county:%%' THEN 'COUNTY'
-                WHEN r.geo_id LIKE 'state:%%' THEN 'STATE'
-                ELSE 'NATIONAL'
-            END AS geo_level,
-            CASE WHEN d.state_fips IS NOT NULL THEN LPAD(d.state_fips::TEXT, 2, '0') ELSE NULL END AS state_id,
-            d.state_name,
-            CASE
-                WHEN d.state_fips IS NOT NULL AND d.county_fips IS NOT NULL
-                THEN CONCAT(LPAD(d.state_fips::TEXT, 2, '0'), LPAD(d.county_fips::TEXT, 3, '0'))
-                ELSE NULL
-            END AS county_id,
-            d.county_name,
-            t.time_sk,
-            r.observation_date,
-            r.duration_start,
-            r.duration_end,
-            at.acs_table_sk,
-            av.acs_variable_sk,
-            r.dataset,
-            r.estimate_year,
-            r.estimate_value,
-            r.margin_of_error,
-            r.margin_of_error_pct,
-            NULL::TEXT,
-            NULL::TEXT,
-            CURRENT_DATE
-        FROM (
-            VALUES %s
-        ) AS r(
-            geo_id, variable_code, table_id, dataset, estimate_year,
-            estimate_value, margin_of_error, margin_of_error_pct,
-            observation_date, duration_start, duration_end,
-            variable_label, variable_concept, universe
-        )
-        JOIN gold.dim_acs_table at
-          ON at.dataset_code = r.dataset
-         AND at.vintage_year = r.estimate_year
-         AND at.table_id = r.table_id
-        JOIN gold.dim_acs_variable av
-          ON av.dataset_code = r.dataset
-         AND av.vintage_year = r.estimate_year
-         AND av.variable_code = r.variable_code
-        LEFT JOIN silver_ref.dim_geo d
-          ON d.geo_id = r.geo_id
-        LEFT JOIN silver_ref.dim_time t
-          ON t.date_key = r.observation_date
-        ON CONFLICT (geo_id, observation_date, acs_variable_sk, dataset_code)
-        DO UPDATE SET
-            geo_level = EXCLUDED.geo_level,
-            state_id = EXCLUDED.state_id,
-            state_name = EXCLUDED.state_name,
-            county_id = EXCLUDED.county_id,
-            county_name = EXCLUDED.county_name,
-            time_sk = EXCLUDED.time_sk,
-            duration_start = EXCLUDED.duration_start,
-            duration_end = EXCLUDED.duration_end,
-            acs_table_sk = EXCLUDED.acs_table_sk,
-            vintage_year = EXCLUDED.vintage_year,
-            estimate_value = EXCLUDED.estimate_value,
-            margin_of_error = EXCLUDED.margin_of_error,
-            margin_of_error_pct = EXCLUDED.margin_of_error_pct,
-            as_of_date = EXCLUDED.as_of_date,
-            updated_at = NOW()
-    """
-
-    from psycopg2.extras import execute_values
-
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        execute_values(cur, sql, rows)
-        row_count = cur.rowcount
-        conn.commit()
-
-    return row_count
-
-
-def merge_acs_shard(shard: dict, hook: PostgresHook | None = None) -> dict:
-    """Process one month shard for ACS: fetch and upsert to gold.fact_acs_observation.
-
-    Args:
-        shard: dict with key "month_start" (ISO date string).
-        hook:  optional PostgresHook; created from CONFIG if not provided.
-
-    Returns:
-        dict with keys: month_start, input_rows, output_rows, source_system,
-                        sample_observation_dates.
-    """
-    if hook is None:
-        hook = _get_hook()
-
-    month_start = date.fromisoformat(shard["month_start"])
-    logger.info("[ACS GOLD] Processing shard %s", month_start)
-
-    rows = _fetch_acs_for_month(hook, month_start)
-    output_rows = _upsert_acs_rows(hook, month_start, rows)
-
-    sample_observation_dates: list[str] = []
-    for r in rows[:5]:
-        obs = r[8]
-        if obs is not None:
-            sample_observation_dates.append(
-                obs.isoformat() if hasattr(obs, "isoformat") else str(obs)
-            )
-
-    logger.info(
-        "[ACS GOLD] Shard %s: input=%d output=%d",
-        month_start, len(rows), output_rows,
-    )
-    return {
-        "month_start": month_start.isoformat(),
-        "input_rows": len(rows),
-        "output_rows": output_rows,
-        "source_system": "CENSUS_ACS",
-        "sample_observation_dates": sample_observation_dates,
-    }

@@ -10,21 +10,52 @@ is selected per (geo_id, series_id).
 from __future__ import annotations
 
 import logging
+import pathlib
 from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from gold.config import CONFIG
-from gold.transform import (
-    ensure_gold_schema,
-    build_shard_list,
-)
+from bls.config import CONFIG
+from utility.gold_schema import ensure_gold_schema_from_files
 
 logger = logging.getLogger(__name__)
+
+_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_bls.sql"
+_SCHEMA_COMPONENT = "gold_ddl_bls"
+_REQUIRED_RELATIONS = (
+    "gold.dim_geo",
+    "gold.dim_source_system",
+    "gold.dim_metric_catalog",
+    "gold.dim_geo_latest",
+    "gold.dim_bls_survey",
+    "gold.dim_bls_series",
+    "gold.fact_bls_observation",
+    "gold.rpt_observation_dashboard",
+    "gold.mv_latest_dashboard",
+)
+_REQUIRED_PROCEDURES = (
+    "gold.refresh_dim_geo_latest()",
+    "gold.refresh_rpt_bls_observation_dashboard(date,date)",
+    "gold.refresh_mv_bls_latest_dashboard(date,date)",
+    "gold.refresh_dashboard_serving_layer_bls(date,date)",
+)
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+
+
+def ensure_bls_gold_schema(hook: PostgresHook | None = None) -> None:
+    if hook is None:
+        hook = _get_hook()
+
+    ensure_gold_schema_from_files(
+        ddl_files=[_DDL_PATH],
+        component_name=_SCHEMA_COMPONENT,
+        required_relations=_REQUIRED_RELATIONS,
+        required_procedures=_REQUIRED_PROCEDURES,
+        hook=hook,
+    )
 
 
 def _seed_bls_metric_catalog(cur) -> int:
@@ -119,64 +150,6 @@ def _seed_bls_metric_catalog(cur) -> int:
         """
     )
     return cur.fetchone()[0]
-
-
-def _fetch_bls_for_month(hook: PostgresHook, month_start: date) -> list[tuple]:
-    """Return BLS observation rows from silver for the given month_start.
-
-    Selects the latest period_date per (geo_id, series_id) within the month.
-    """
-    sql = """
-        WITH ranked AS (
-            SELECT
-                f.geo_id,
-                f.series_id,
-                f.program,
-                f.value,
-                f.period_date,
-                f.duration_start,
-                f.duration_end,
-                f.period,
-                f.measure_code,
-                f.measure_name,
-                f.seasonal_adjustment,
-                f.geo_level,
-                COALESCE(NULLIF(bs.title, ''), NULLIF(f.measure_name, ''), f.series_id) AS series_title,
-                ROW_NUMBER() OVER (
-                    PARTITION BY f.geo_id, f.series_id
-                    ORDER BY f.period_date DESC
-                )                                         AS rn
-            FROM silver_bls.fact_labor_statistics f
-            LEFT JOIN raw_bls.bls_series bs
-                ON f.series_id = bs.series_id
-               AND f.program = bs.program
-            WHERE date_trunc('month', f.period_date)::date = %s
-              AND f.value IS NOT NULL
-              AND f.series_id IS NOT NULL
-              AND f.series_id != ''
-        )
-        SELECT
-            geo_id,
-            series_id,
-            program,
-            value,
-            period_date,
-            duration_start,
-            duration_end,
-            period,
-            measure_code,
-            measure_name,
-            seasonal_adjustment,
-            geo_level,
-            series_title
-        FROM ranked
-        WHERE rn = 1
-    """
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (month_start,))
-        rows = cur.fetchall()
-    logger.info("BLS fetch for %s: %d rows", month_start, len(rows))
-    return rows
 
 
 def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
@@ -393,148 +366,3 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
         catalog_count,
     )
     return row_count
-
-
-def _upsert_bls_rows(hook: PostgresHook, rows: list[tuple]) -> int:
-    """Upsert BLS observation rows into gold.fact_bls_observation."""
-    if not rows:
-        return 0
-
-    sql = """
-        INSERT INTO gold.fact_bls_observation (
-            geo_id, geo_level, state_id, state_name, county_id, county_name,
-            time_sk, period_date, duration_start, duration_end,
-            bls_survey_sk, bls_series_sk, program_code,
-            value, period_code, seasonal_adjustment_status,
-            observation_basis, measure_category, value_type,
-            as_of_date
-        )
-        SELECT
-            r.geo_id,
-            CASE
-                WHEN d.geo_level = 'us' THEN 'NATIONAL'
-                WHEN d.geo_level = 'state' THEN 'STATE'
-                WHEN d.geo_level = 'county' THEN 'COUNTY'
-                WHEN r.geo_id = 'us:1' THEN 'NATIONAL'
-                WHEN r.geo_id LIKE 'state:%%|county:%%' THEN 'COUNTY'
-                WHEN r.geo_id LIKE 'state:%%' THEN 'STATE'
-                ELSE 'NATIONAL'
-            END AS geo_level,
-            CASE WHEN d.state_fips IS NOT NULL THEN LPAD(d.state_fips::TEXT, 2, '0') ELSE NULL END AS state_id,
-            d.state_name,
-            CASE
-                WHEN d.state_fips IS NOT NULL AND d.county_fips IS NOT NULL
-                THEN CONCAT(LPAD(d.state_fips::TEXT, 2, '0'), LPAD(d.county_fips::TEXT, 3, '0'))
-                ELSE NULL
-            END AS county_id,
-            d.county_name,
-            t.time_sk,
-            r.period_date,
-            r.duration_start,
-            r.duration_end,
-            sv.bls_survey_sk,
-            sr.bls_series_sk,
-            UPPER(r.program) AS program_code,
-            r.value,
-            r.period,
-            r.seasonal_adjustment,
-            sv.observation_basis,
-            sr.measure_category,
-            sr.value_type,
-            CURRENT_DATE
-        FROM (
-            VALUES %s
-        ) AS r(
-            geo_id,
-            series_id,
-            program,
-            value,
-            period_date,
-            duration_start,
-            duration_end,
-            period,
-            measure_code,
-            measure_name,
-            seasonal_adjustment,
-            geo_level,
-            series_title
-        )
-        JOIN gold.dim_bls_series sr
-          ON sr.series_id = r.series_id
-        JOIN gold.dim_bls_survey sv
-          ON sv.bls_survey_sk = sr.bls_survey_sk
-        LEFT JOIN silver_ref.dim_geo d
-          ON d.geo_id = r.geo_id
-        LEFT JOIN silver_ref.dim_time t
-          ON t.date_key = r.period_date
-        ON CONFLICT (geo_id, period_date, bls_series_sk)
-        DO UPDATE SET
-            geo_level = EXCLUDED.geo_level,
-            state_id = EXCLUDED.state_id,
-            state_name = EXCLUDED.state_name,
-            county_id = EXCLUDED.county_id,
-            county_name = EXCLUDED.county_name,
-            time_sk = EXCLUDED.time_sk,
-            duration_start = EXCLUDED.duration_start,
-            duration_end = EXCLUDED.duration_end,
-            bls_survey_sk = EXCLUDED.bls_survey_sk,
-            program_code = EXCLUDED.program_code,
-            value = EXCLUDED.value,
-            period_code = EXCLUDED.period_code,
-            seasonal_adjustment_status = EXCLUDED.seasonal_adjustment_status,
-            observation_basis = EXCLUDED.observation_basis,
-            measure_category = EXCLUDED.measure_category,
-            value_type = EXCLUDED.value_type,
-            as_of_date = EXCLUDED.as_of_date,
-            updated_at = NOW()
-    """
-
-    from psycopg2.extras import execute_values
-
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        execute_values(cur, sql, rows)
-        row_count = cur.rowcount
-        conn.commit()
-
-    return row_count
-
-
-def merge_bls_shard(shard: dict, hook: PostgresHook | None = None) -> dict:
-    """Process one month shard for BLS: fetch and upsert to gold.fact_bls_observation.
-
-    Args:
-        shard: dict with key "month_start" (ISO date string).
-        hook:  optional PostgresHook; created from CONFIG if not provided.
-
-    Returns:
-        dict with keys: month_start, input_rows, output_rows, source_system,
-                        sample_observation_dates.
-    """
-    if hook is None:
-        hook = _get_hook()
-
-    month_start = date.fromisoformat(shard["month_start"])
-    logger.info("[BLS GOLD] Processing shard %s", month_start)
-
-    rows = _fetch_bls_for_month(hook, month_start)
-    output_rows = _upsert_bls_rows(hook, rows)
-
-    sample_observation_dates: list[str] = []
-    for r in rows[:5]:
-        obs = r[4]
-        if obs is not None:
-            sample_observation_dates.append(
-                obs.isoformat() if hasattr(obs, "isoformat") else str(obs)
-            )
-
-    logger.info(
-        "[BLS GOLD] Shard %s: input=%d output=%d",
-        month_start, len(rows), output_rows,
-    )
-    return {
-        "month_start": month_start.isoformat(),
-        "input_rows": len(rows),
-        "output_rows": output_rows,
-        "source_system": "BLS",
-        "sample_observation_dates": sample_observation_dates,
-    }

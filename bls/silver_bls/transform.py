@@ -226,9 +226,22 @@ def _extract_measure_code(series_id: str, program: str, fallback: str | None) ->
 
 
 def _get_program_row_count(hook: PostgresHook, program: str) -> int:
-    sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s;"
+    """Approximate row count using pg_class.reltuples to avoid a full table scan.
+
+    reltuples is updated by ANALYZE / autovacuum and is accurate enough for
+    the large-dataset threshold check.  The total table count is used as a
+    conservative upper bound (may trigger year-chunking for smaller programs,
+    but that is safe).
+    """
+    sql = """
+        SELECT COALESCE(c.reltuples, 0)::bigint
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'raw_bls'
+          AND c.relname = 'bls_long';
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (program,))
+        cur.execute(sql)
         row = cur.fetchone()
     return int(row[0]) if row else 0
 

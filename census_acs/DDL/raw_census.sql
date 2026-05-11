@@ -158,17 +158,25 @@ ALTER TABLE raw_census.acs_ingestion_slices
   );
 
 -- Uniqueness (your intended design)
-CREATE UNIQUE INDEX acs_ingestion_slices_uniq_nostate
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_nostate
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level)
 WHERE state_fips IS NULL;
 
-CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_state
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level, state_fips)
 WHERE state_fips IS NOT NULL;
 
+-- Expression-based unique index used by the bulk-upsert ON CONFLICT clause in the DAG.
+-- COALESCE maps NULL state_fips to '' so a single index covers all geo_levels uniformly.
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq
+ON raw_census.acs_ingestion_slices (dataset, year, geo_level, COALESCE(state_fips, ''));
+
 -- Optional: speed up lookups used by the DAG
-CREATE INDEX acs_ingestion_slices_status_idx
+CREATE INDEX IF NOT EXISTS acs_ingestion_slices_status_idx
 ON raw_census.acs_ingestion_slices (status);
 
-CREATE INDEX acs_ingestion_slices_hash_idx
+CREATE INDEX IF NOT EXISTS acs_ingestion_slices_hash_idx
 ON raw_census.acs_ingestion_slices (variables_hash);
+
+CREATE INDEX IF NOT EXISTS acs_ingestion_slices_lookup_idx
+ON raw_census.acs_ingestion_slices (dataset, year, geo_level, COALESCE(state_fips, ''));
