@@ -170,24 +170,49 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
+
             INSERT INTO gold.dim_acs_table (
                 dataset_code, vintage_year, table_id, table_title, concept, universe,
                 survey_span_years, reference_url
             )
+            WITH table_year_rollup AS (
+                SELECT
+                    f.dataset AS dataset_code,
+                    f.estimate_year AS vintage_year,
+                    f.table_id,
+                    MIN(f.variable_concept) AS year_concept,
+                    MIN(f.universe) AS year_universe
+                FROM silver_census.fact_demographics f
+                WHERE f.table_id IS NOT NULL
+                  AND f.table_id <> ''
+                  AND f.dataset IN ('acs1', 'acs5')
+                GROUP BY f.dataset, f.estimate_year, f.table_id
+            ),
+            table_cross_year_title AS (
+                SELECT DISTINCT ON (f.dataset, f.table_id)
+                    f.dataset AS dataset_code,
+                    f.table_id,
+                    NULLIF(f.variable_concept, '') AS canonical_table_title
+                FROM silver_census.fact_demographics f
+                WHERE f.table_id IS NOT NULL
+                  AND f.table_id <> ''
+                  AND f.dataset IN ('acs1', 'acs5')
+                  AND NULLIF(f.variable_concept, '') IS NOT NULL
+                ORDER BY f.dataset, f.table_id, f.estimate_year DESC
+            )
             SELECT
-                f.dataset AS dataset_code,
-                f.estimate_year AS vintage_year,
-                f.table_id,
-                COALESCE(NULLIF(MIN(f.variable_concept), ''), f.table_id) AS table_title,
-                MIN(f.variable_concept) AS concept,
-                MIN(f.universe) AS universe,
-                CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
-                'https://api.census.gov/data/' || f.estimate_year::TEXT || '/acs/' || f.dataset || '/variables.json' AS reference_url
-            FROM silver_census.fact_demographics f
-            WHERE f.table_id IS NOT NULL
-              AND f.table_id <> ''
-              AND f.dataset IN ('acs1', 'acs5')
-            GROUP BY f.dataset, f.estimate_year, f.table_id
+                r.dataset_code,
+                r.vintage_year,
+                r.table_id,
+                UPPER(COALESCE(NULLIF(r.year_concept, ''), c.canonical_table_title, r.table_id)) AS table_title,
+                UPPER(r.year_concept) AS concept,
+                r.year_universe AS universe,
+                CASE WHEN r.dataset_code = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
+                'https://api.census.gov/data/' || r.vintage_year::TEXT || '/acs/' || r.dataset_code || '/variables.json' AS reference_url
+            FROM table_year_rollup r
+            LEFT JOIN table_cross_year_title c
+              ON c.dataset_code = r.dataset_code
+             AND c.table_id = r.table_id
             ON CONFLICT (dataset_code, vintage_year, table_id)
             DO UPDATE SET
                 table_title = EXCLUDED.table_title,
