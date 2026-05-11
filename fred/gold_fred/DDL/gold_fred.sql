@@ -246,8 +246,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
         COALESCE(variable_code, ''),
         COALESCE(dataset_code, ''),
         COALESCE(metric_code, ''),
-        COALESCE(realtime_start::TEXT, ''),
-        COALESCE(realtime_end::TEXT, '')
+        COALESCE(realtime_start, '0001-01-01'::DATE),
+        COALESCE(realtime_end, '0001-01-01'::DATE)
     );
 CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_source_geo_date
     ON gold.rpt_observation_dashboard (source_code, geo_id, observation_date);
