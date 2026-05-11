@@ -50,7 +50,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from airflow.decorators import dag, task
@@ -584,159 +584,40 @@ def acs_ingest():
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute gold shards driven by what actually exists in silver.
-
-        ACS is annual: only YYYY-01-01 shards produce rows in gold.  Rather
-        than using a fixed date window (which misses years on initial load and
-        generates empty shards for years that don't exist yet), we query
-        silver_census.fact_demographics directly for all distinct estimate_years
-        and generate exactly one January-1 shard per year.
-
-        Cross-checked against silver_ref.dim_time so we never emit a shard
-        whose date_key doesn't exist in the time dimension.
-
-        Handles both:
-        - Initial load: all historical years in silver get a shard.
-        - Incremental updates: new years appearing in silver are automatically
-          picked up on the next DAG run without any code changes.
-        """
+        """Compute the rolling date window covered by the current silver data."""
         hook = _get_postgres_hook()
-
-        # Step 1: find every estimate_year that has rows in silver.
-        sql_silver_years = """
-            SELECT DISTINCT estimate_year
-            FROM silver_census.fact_demographics
-            ORDER BY estimate_year;
-        """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver_years)
-            silver_years = [row[0] for row in cur.fetchall()]
-
-            if not silver_years:
-                logger.warning("[ACS GOLD] No estimate_years found in silver_census.fact_demographics — no shards generated.")
-                return []
-
-            logger.info("[ACS GOLD] Silver contains %d distinct estimate_year(s): %s", len(silver_years), silver_years)
-
-            # Step 2: cross-check against dim_time so we only emit dates that exist
-            # in the time dimension (guards against very old or future edge cases).
-            candidate_dates = [f"{yr}-01-01" for yr in silver_years]
-
             cur.execute("""
-                SELECT date_trunc('month', date_key)::date AS month_start
-                FROM silver_ref.dim_time
-                WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
-                  AND is_month_start = TRUE
-                ORDER BY month_start;
-            """, (candidate_dates,))
-            confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
-
-        missing = set(candidate_dates) - set(confirmed_shards)
-        if missing:
-            logger.warning(
-                "[ACS GOLD] %d candidate shard(s) not found in dim_time and will be skipped: %s",
-                len(missing), sorted(missing),
-            )
-
-        logger.info("[ACS GOLD] Emitting %d shard(s): %s", len(confirmed_shards), confirmed_shards)
-        return confirmed_shards
-
-    @task(pool=GOLD_MERGE_POOL, trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
-    def gold_merge_shard(month_start: str) -> dict:
-        """Merge one gold month shard."""
-        from census_acs.gold_census.transform import merge_acs_shard
-        return merge_acs_shard({"month_start": month_start})
+                SELECT MIN(MAKE_DATE(estimate_year, 1, 1))::date
+                FROM silver_census.fact_demographics
+                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
+                  AND estimate_value IS NOT NULL
+            """)
+            row = cur.fetchone()
+        if not row or row[0] is None:
+            logger.warning("[ACS GOLD] No data in silver rolling window; skipping gold refresh.")
+            return []
+        return [row[0].isoformat()]
 
     @task(trigger_rule='none_failed')
-    def gold_validate_coverage(shard_results: list[dict]) -> dict:
-        """Validate that gold row counts match silver for every estimate_year.
-
-        Compares:
-        - silver_census.fact_demographics row counts per estimate_year
-        - gold.fact_acs_observation row counts per estimate_year
-
-        Raises ValueError if any year present in silver has zero rows in gold,
-        indicating an incomplete or failed transposition.
-
-        Returns a summary dict for logging/XCom inspection.
-        """
-        hook = _get_postgres_hook()
-
-        sql_silver = """
-            SELECT estimate_year, COUNT(*) AS silver_rows
-            FROM silver_census.fact_demographics
-            WHERE estimate_value IS NOT NULL
-            GROUP BY estimate_year
-            ORDER BY estimate_year;
-        """
-        sql_gold = """
-            SELECT EXTRACT(YEAR FROM observation_date)::int AS estimate_year,
-                   COUNT(*) AS gold_rows
-            FROM gold.fact_acs_observation
-            GROUP BY EXTRACT(YEAR FROM observation_date)
-            ORDER BY estimate_year;
-        """
-
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver)
-            silver_counts = {row[0]: row[1] for row in cur.fetchall()}
-
-            cur.execute(sql_gold)
-            gold_counts = {row[0]: row[1] for row in cur.fetchall()}
-
-        summary = {}
-        incomplete_years = []
-
-        for year, silver_rows in silver_counts.items():
-            gold_rows = gold_counts.get(year, 0)
-            # TaskFlow multiple_outputs requires dictionary keys to be strings.
-            summary[str(year)] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
-            if gold_rows == 0:
-                incomplete_years.append(year)
-                logger.error(
-                    "[ACS GOLD] Coverage gap: estimate_year=%d has %d silver rows but 0 gold rows.",
-                    year, silver_rows,
-                )
-            else:
-                logger.info(
-                    "[ACS GOLD] Coverage OK: estimate_year=%d — silver=%d gold=%d",
-                    year, silver_rows, gold_rows,
-                )
-
-        if incomplete_years:
-            raise ValueError(
-                f"[ACS GOLD] Gold transposition incomplete for {len(incomplete_years)} year(s): "
-                f"{incomplete_years}. Silver data exists but gold has 0 rows."
-            )
-
-        logger.info("[ACS GOLD] Coverage validation passed for all %d year(s).", len(silver_counts))
-        return summary
-
-    @task(trigger_rule='none_failed')
-    def gold_quality_check(shard_results: list[dict]) -> None:
-        """Run row-level quality checks on merged gold shards."""
-        from datetime import date
-        from utility.gold_quality import run_quality_checks
-        hook = _get_postgres_hook()
-        for result in (shard_results or []):
-            if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]), "CENSUS_ACS", hook=hook)
-
-    @task(trigger_rule='none_failed')
-    def gold_refresh_window(shard_results: list[dict]) -> dict[str, str] | None:
-        """Compute min/max shard dates for incremental serving refresh."""
-        successful_months = [
-            date.fromisoformat(r["month_start"])
-            for r in (shard_results or [])
-            if r and r.get("output_rows", 0) > 0
-        ]
-        if not successful_months:
+    def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
+        """Compute min/max date window for the serving-layer refresh from silver."""
+        if not shard_results:
             return None
-
-        return {
-            "start_date": min(successful_months).isoformat(),
-            "end_date": max(successful_months).isoformat(),
-        }
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    MIN(MAKE_DATE(estimate_year, 1, 1))::date,
+                    MAX(MAKE_DATE(estimate_year, 1, 1))::date
+                FROM silver_census.fact_demographics
+                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
+                  AND estimate_value IS NOT NULL
+            """)
+            row = cur.fetchone()
+        if not row or row[0] is None:
+            return None
+        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
     @task(trigger_rule='all_success')
     def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
@@ -785,14 +666,10 @@ def acs_ingest():
     gold_schema = gold_ensure_schema()
     gold_elements = gold_refresh_elements()
     gold_shards = gold_compute_shards()
-    gold_merged = gold_merge_shard.expand(month_start=gold_shards)
-    gold_coverage = gold_validate_coverage(gold_merged)
-    gold_qa = gold_quality_check(gold_merged)
-    refresh_window = gold_refresh_window(gold_merged)
+    refresh_window = gold_refresh_window(gold_shards)
     dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
 
-    silver_transform >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
-    [gold_coverage, gold_qa] >> refresh_window >> dashboard_refresh
+    silver_transform >> gold_schema >> gold_elements >> gold_shards >> refresh_window >> dashboard_refresh
 
 
 # Instantiate DAG
