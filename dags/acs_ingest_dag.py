@@ -121,6 +121,45 @@ def chunk_list(items: list, chunk_size: int) -> list[list]:
     return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
+def _get_county_state_fips_list(hook: PostgresHook) -> list[str]:
+    """
+    Return all state/territory FIPS codes that currently have county-equivalent
+    rows in raw_census.geo_dim.
+
+    This keeps county planning aligned with Census geography coverage, including
+    territories like Puerto Rico (72), American Samoa (60), Guam (66),
+    Northern Mariana Islands (69), and U.S. Virgin Islands (78), whenever
+    they are present in the synced Gazetteer county file.
+    """
+    sql = """
+        SELECT DISTINCT state_fips
+        FROM raw_census.geo_dim
+        WHERE geo_level = 'county'
+          AND state_fips IS NOT NULL
+        ORDER BY state_fips;
+    """
+
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+
+    state_fips_list = [str(r[0]).zfill(2) for r in rows if r and r[0] is not None]
+
+    if not state_fips_list:
+        # Fallback keeps DAG runnable if geo_dim has not been populated yet.
+        logger.warning(
+            "No county state_fips found in raw_census.geo_dim; falling back to legacy state list."
+        )
+        base_states = [
+            f"{i:02d}" for i in range(1, 57)
+            if i not in (3, 7, 14, 43)
+        ]
+        territory_county_equivalents = ["60", "66", "69", "72", "78"]
+        return base_states + territory_county_equivalents
+
+    return state_fips_list
+
+
 def _run_one_work_unit(work_unit: dict) -> int:
     """
     Plain Python function: does the DB ledger updates + calls ingest_slice().
@@ -354,12 +393,9 @@ def acs_ingest():
         """
         hook = _get_postgres_hook()
 
-        # County tasks are expanded by state FIPS.
-        # Keep this simple to start; you can extend to territories later.
-        state_fips_list = [
-            f"{i:02d}" for i in range(1, 57)
-            if i not in (3, 7, 14, 43)
-        ]
+        # County tasks are expanded by state/territory FIPS codes discovered
+        # from the synced Census geography dimension.
+        state_fips_list = _get_county_state_fips_list(hook)
 
         # Compute current variable set hash/count for each target (dataset, year).
         varset_meta: dict[tuple[str, int], dict] = {}
