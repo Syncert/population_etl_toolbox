@@ -16,7 +16,7 @@ A production-grade ETL system for ingesting, transforming, and serving economic 
 2. **Silver Layer** (`silver_*` schemas): Dimension-matched, deduplicated, and validated fact tables with comprehensive data quality logging
 3. **Analytical Layer** (future): Aggregated star schemas and domain-specific views for reporting and dashboards
 
-## Current State (Feb 2026)
+## Current State (May 2026)
 
 ### ✅ Completed
 - **Raw Layer Ingestion:** Census ACS (1yr/5yr), BLS (9 programs), FRED (48 domains) with hash-based change detection
@@ -190,15 +190,17 @@ export BLS_API_KEY="your_bls_api_key_here"
 
 Each module has a `config.py` file:
 
+For a configuration-agnostic overview (contract vs selected scope), see `documentation/CONFIGURATION.md`.
+
 **census_acs/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.datasets = ["acs1", "acs5"]  # which ACS datasets to ingest
-CONFIG.geographies = ["us", "state", "county"]  # geographic levels
-CONFIG.curated_variables = [
-    "B01003_001E",  # Total population
-    "B19013_001E",  # Median household income
-    # ... add your curated variables
+CONFIG.geo_levels = ["us", "state", "county"]  # geographic levels
+CONFIG.curated_tables = [
+    "B01003",  # Total population table
+    "B19013",  # Median household income table
+    # ... selected table scope is optional and environment-specific
 ]
 ```
 
@@ -247,9 +249,9 @@ This step:
 ```bash
 # In Airflow UI, manually trigger or use CLI:
 airflow dags test silver_ref
-airflow dags test acs_raw_ingest_dag
-airflow dags test bls_raw_ingest_dag
-airflow dags test fred_raw_ingest_dag
+airflow dags test acs_ingest
+airflow dags test bls_ingest
+airflow dags test fred_ingest
 ```
 
 Monitor logs to ensure:
@@ -279,7 +281,7 @@ for domain in ['labor_cycle', 'employment', ...]:
 "
 ```
 
-Or integrate into automated DAG (silver_transform_dag under construction).
+Or integrate into your automated silver refresh orchestration.
 
 ---
 
@@ -366,7 +368,7 @@ Example log output:
 — Check for failed or stale slices
 SELECT domain, status, COUNT(*) 
 FROM raw_census.acs_ingestion_slices 
-GROUP BY domain, status;
+GROUP BY dataset, status;
 ```
 
 **Geographic Coverage:**
@@ -413,7 +415,7 @@ population_etl_toolbox/
 │   └── DDL/silver_ref.sql
 ├── dags/                 — Airflow DAGs
 │   ├── silver_ref_dag.py
-│   ├── acs_raw_ingest_dag.py, bls_raw_ingest_dag.py, fred_raw_ingest_dag.py
+│   ├── acs_ingest_dag.py, bls_ingest_dag.py, fred_ingest_dag.py
 └── utility/              — Shared utilities (db_connection.py, etc.)
 ```
 
@@ -422,7 +424,7 @@ population_etl_toolbox/
 1. Create `new_source/` directory with `config.py`, `metadata.py`, `ingest.py`
 2. Create `new_source/DDL/raw_new_source.sql` and `silver_new_source/DDL/silver_new_source.sql`
 3. Implement ingestion functions following BLS/FRED/Census patterns
-4. Create `dags/new_source_raw_ingest_dag.py` following existing DAG structure
+4. Create `dags/new_source_ingest_dag.py` following existing DAG structure
 5. Define transformation logic in `new_source/silver_new_source/transform.py` using `TransformMetrics` class
 
 ---
@@ -446,6 +448,6 @@ For issues, questions, or contributions, see individual module READMEs or contac
 
 ---
 
-**Last Updated:** February 2026
+**Last Updated:** May 2026
 **Status:** Production (v2.1, FRED ledger fix applied)
 **Data Currency:** Daily ingestion updates (Gazetteer quarterly) 
