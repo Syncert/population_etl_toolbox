@@ -36,6 +36,10 @@ class CensusMetadataRetryableHTTP(Exception):
     """Retry-worthy metadata HTTP failures from the Census API."""
 
 
+class CensusMetadataNonJSONResponse(Exception):
+    """Metadata endpoint returned a non-JSON payload (often an HTML error page)."""
+
+
 @retry(
     reraise=True,
     stop=stop_after_attempt(5),
@@ -45,17 +49,42 @@ class CensusMetadataRetryableHTTP(Exception):
     ),
 )
 def _get_json_with_retry(url: str) -> Dict:
+    params = None
+    if "api.census.gov" in url and CONFIG.has_api_key:
+        params = {"key": CONFIG.census_api_key}
+
     with httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=90.0, write=10.0, pool=10.0),
         follow_redirects=True,
     ) as client:
-        resp = client.get(url)
+        resp = client.get(url, params=params)
 
     if resp.status_code == 429 or 500 <= resp.status_code <= 599:
         raise CensusMetadataRetryableHTTP(f"Retryable metadata response {resp.status_code} for {url}")
 
     resp.raise_for_status()
-    return resp.json()
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    text_preview = (resp.text or "")[:400]
+
+    # Census may redirect to an HTML page (e.g., /data/missing_key.html).
+    # Fail with a clear message instead of a raw JSONDecodeError.
+    if "json" not in ctype and text_preview.lstrip().startswith("<"):
+        if "missing_key" in str(resp.url) or "missing key" in text_preview.lower():
+            raise CensusMetadataNonJSONResponse(
+                "Census API returned an HTML missing_key page while fetching metadata. "
+                "Ensure CENSUS_API_KEY is configured and valid for Airflow tasks."
+            )
+        raise CensusMetadataNonJSONResponse(
+            f"Expected JSON from {url} but got content-type '{ctype}' from {resp.url}."
+        )
+
+    try:
+        return resp.json()
+    except json.JSONDecodeError as e:
+        raise CensusMetadataNonJSONResponse(
+            f"Expected JSON from {url} but response could not be decoded (final URL: {resp.url})."
+        ) from e
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
