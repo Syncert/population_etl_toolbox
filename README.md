@@ -109,7 +109,43 @@ silver_fred.fact_economic_indicators — FRED macro series
 - **Airflow 2.7+** (tested with 2.8)
 - **PostgreSQL 14+** (tested with 15)
 - **Python 3.10+**
-- **Python packages:** airflow, psycopg2, httpx, polars (see requirements.txt)
+- **Python packages:** managed via `pyproject.toml` extras
+
+### Python Environment and Install
+
+Standard local development install path:
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+# macOS/Linux
+# source .venv/bin/activate
+
+python -m pip install --upgrade pip
+pip install -e .[local]
+```
+
+This single command installs runtime dependencies and optional groups for Airflow, API/web development, and dev tooling.
+
+Smoke test imports (no PYTHONPATH/path hacks required):
+
+```bash
+python -c "import bls, census_acs, fred, silver_ref, utility; print('imports ok')"
+```
+
+Optional targeted installs:
+
+```bash
+# ETL orchestration only
+pip install -e .[airflow]
+
+# API/analytics web layer only
+pip install -e .[api]
+
+# Lint/test tooling only
+pip install -e .[dev]
+```
 
 ### 1. Database Setup
 
