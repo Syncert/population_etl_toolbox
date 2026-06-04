@@ -1,0 +1,143 @@
+services:
+  analytics_postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${ANALYTICS_DB:-population_etl}
+    volumes:
+      - analytics_postgres_data:/var/lib/postgresql/data
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${ANALYTICS_DB:-population_etl}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  service_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${SERVICE_DB:-airflow}
+    volumes:
+      - service_postgres_data:/var/lib/postgresql/data
+    networks: [platform]
+
+  redis:
+    image: redis:7-alpine
+    networks: [platform]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      API_ENV: ${API_ENV:-development}
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-INFO}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      USE_MOCK_DATA: ${USE_MOCK_DATA:-false}
+    depends_on:
+      analytics_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    networks: [platform]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    networks: [platform]
+
+  martin:
+    image: maplibre/martin:v0.13.0
+    environment:
+      MARTIN_DATABASE_URL: ${MARTIN_DATABASE_URL}
+    volumes:
+      - ../martin/config.yml:/etc/martin/config.yml:ro
+    command: ["--config", "/etc/martin/config.yml"]
+    depends_on:
+      analytics_postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    networks: [platform]
+
+  airflow-webserver:
+    build:
+      context: ../..
+      dockerfile: infra/airflow/Dockerfile
+    command: webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+      AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@service_postgres:5432/${SERVICE_DB:-airflow}
+      AIRFLOW_CONN_PUBLIC_DATA: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_postgres:5432/${ANALYTICS_DB:-population_etl}
+    volumes:
+      - ../../dags:/opt/airflow/dags
+    depends_on:
+      - service_postgres
+      - analytics_postgres
+      - redis
+    ports:
+      - "8080:8080"
+    networks: [platform]
+
+  airflow-scheduler:
+    build:
+      context: ../..
+      dockerfile: infra/airflow/Dockerfile
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+      AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@service_postgres:5432/${SERVICE_DB:-airflow}
+      AIRFLOW_CONN_PUBLIC_DATA: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_postgres:5432/${ANALYTICS_DB:-population_etl}
+    volumes:
+      - ../../dags:/opt/airflow/dags
+    depends_on:
+      - service_postgres
+      - analytics_postgres
+      - redis
+    networks: [platform]
+
+  airflow-triggerer:
+    build:
+      context: ../..
+      dockerfile: infra/airflow/Dockerfile
+    command: triggerer
+    environment:
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+      AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@service_postgres:5432/${SERVICE_DB:-airflow}
+      AIRFLOW_CONN_PUBLIC_DATA: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_postgres:5432/${ANALYTICS_DB:-population_etl}
+    volumes:
+      - ../../dags:/opt/airflow/dags
+    depends_on:
+      - service_postgres
+      - analytics_postgres
+      - redis
+    networks: [platform]
+
+networks:
+  platform:
+
+volumes:
+  analytics_postgres_data:
+  service_postgres_data:

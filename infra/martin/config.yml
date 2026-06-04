@@ -1,0 +1,34 @@
+listen_addresses: "0.0.0.0:3001"
+postgres:
+  connection_string: ${MARTIN_DATABASE_URL}
+
+# TODO: confirm final geometry table names. Expected tables in gold schema:
+# - gold.geo_counties
+# - gold.geo_states
+# - gold.geo_cbsas
+
+tables:
+  counties:
+    schema: silver_ref
+    table: dim_geo
+    geometry_column: geom
+    id_column: geo_id
+    properties:
+      - geo_id
+      - geo_level
+      - state_fips
+      - county_fips
+      - county_name
+      - state_name
+  states:
+    schema: silver_ref
+    table: dim_geo
+    geometry_column: geom
+    id_column: geo_id
+    where: "geo_level = 'state'"
+  cbsas:
+    schema: gold
+    table: dim_geography
+    geometry_column: null
+    id_column: geo_id
+    # TODO: wire CBSA geometry source when available.

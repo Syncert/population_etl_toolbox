@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "population-etl-toolbox"
-version = "0.1.0"
+version = "0.2.0"
 description = "ETL toolbox for Census ACS, BLS, and FRED data pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,8 @@ api = [
   "fastapi>=0.111,<1.0",
   "uvicorn[standard]>=0.30,<1.0",
   "sqlalchemy>=2.0,<3.0",
+  "pydantic-settings>=2.4,<3.0",
+  "redis>=5.0,<6.0",
 ]
 dev = [
   "pytest>=8.0,<9.0",
@@ -43,6 +45,6 @@ local = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["bls*", "census_acs*", "fred*", "silver_ref*", "utility*"]
+where = ["src", "."]
+include = ["population_etl_toolbox*", "bls*", "census_acs*", "fred*", "silver_ref*", "utility*"]
 exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
