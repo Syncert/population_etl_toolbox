@@ -3,16 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Data Ingestion Toolbox MVP</title>
+    <title>External MVP Smoke Dashboard</title>
     <style>
       :root {
-        --bg: #f4f1ea;
-        --panel: #fffdf9;
+        --bg: #f3efe7;
+        --panel: #fffdf8;
         --ink: #1f2933;
         --muted: #52606d;
         --accent: #0f766e;
         --accent-strong: #115e59;
         --border: #d9d4ca;
+        --ok-bg: #e8fbef;
+        --ok-ink: #0f5132;
+        --fail-bg: #fde9e9;
+        --fail-ink: #7f1d1d;
+        --warn-bg: #fff4df;
+        --warn-ink: #7c4a03;
       }
 
       * {
@@ -22,104 +28,472 @@
       body {
         margin: 0;
         font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-        background: linear-gradient(160deg, #f4f1ea 0%, #ece6da 55%, #f8f4ee 100%);
+        background: radial-gradient(circle at top left, #f7f3ec 0%, #ece4d7 60%, #efe8dc 100%);
         color: var(--ink);
       }
 
       main {
-        max-width: 860px;
-        margin: 3rem auto;
-        padding: 0 1rem;
+        max-width: 1100px;
+        margin: 2.5rem auto;
+        padding: 0 1rem 2rem;
       }
 
       .card {
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 14px;
-        padding: 1.5rem;
-        box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+        padding: 1rem;
+        box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+      }
+
+      .header {
+        padding: 1.35rem;
+        margin-bottom: 1rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
       }
 
       h1 {
-        margin-top: 0;
-        margin-bottom: 0.5rem;
+        margin: 0;
         font-size: clamp(1.5rem, 4vw, 2rem);
+      }
+
+      h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
       }
 
       p {
         color: var(--muted);
         line-height: 1.5;
+        margin: 0.6rem 0;
       }
 
       .actions {
         display: flex;
+        align-items: center;
         flex-wrap: wrap;
         gap: 0.75rem;
-        margin: 1rem 0 1.5rem;
+        margin-top: 1rem;
       }
 
-      .btn {
-        display: inline-block;
-        padding: 0.65rem 1rem;
-        border-radius: 999px;
+      button {
         border: 1px solid var(--accent);
         background: var(--accent);
-        color: #ffffff;
-        text-decoration: none;
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.6rem 1rem;
         font-weight: 600;
+        cursor: pointer;
       }
 
-      .btn.secondary {
-        background: transparent;
-        color: var(--accent-strong);
+      button:hover {
+        background: var(--accent-strong);
       }
 
-      h2 {
-        font-size: 1.1rem;
-        margin-top: 1.4rem;
+      button:disabled {
+        opacity: 0.7;
+        cursor: progress;
       }
 
-      ul {
-        padding-left: 1.2rem;
+      .status {
+        display: inline-block;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        padding: 0.2rem 0.6rem;
+        font-weight: 700;
+      }
+
+      .status.ok {
+        background: var(--ok-bg);
+        color: var(--ok-ink);
+      }
+
+      .status.fail {
+        background: var(--fail-bg);
+        color: var(--fail-ink);
+      }
+
+      .status.warn {
+        background: var(--warn-bg);
+        color: var(--warn-ink);
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .meta {
+        margin-top: 0.7rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        padding: 0.45rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.83rem;
+        letter-spacing: 0.02em;
+      }
+
+      .error {
+        margin-top: 0.6rem;
+        color: var(--fail-ink);
+        background: var(--fail-bg);
+        border: 1px solid #f4c7c7;
+        border-radius: 8px;
+        padding: 0.55rem 0.65rem;
       }
 
       code {
         background: #f4f7f7;
         border: 1px solid #d9ecea;
         border-radius: 6px;
-        padding: 0.1rem 0.35rem;
-        font-size: 0.93rem;
+        padding: 0.08rem 0.3rem;
+        font-size: 0.9rem;
       }
     </style>
   </head>
   <body>
     <main>
-      <section class="card">
-        <h1>Data Ingestion Toolbox MVP</h1>
+      <section class="card header">
+        <h1>External MVP Smoke Dashboard</h1>
         <p>
-          Lightweight frontend shell for external service-only mode. Use this page to
-          quickly verify API and map service availability while the full web app is
-          still planned.
+          Same-origin smoke checks through web proxy routes <code>/api</code> and
+          <code>/tiles</code>. This verifies service wiring and sample reads from the
+          current dataset.
         </p>
-
         <div class="actions">
-          <a class="btn" href="http://localhost:8000/health" target="_blank" rel="noreferrer">API Health</a>
-          <a class="btn secondary" href="http://localhost:3000/health" target="_blank" rel="noreferrer">Martin Health</a>
+          <button id="runChecksBtn" type="button">Run Checks</button>
+          <span id="runSummary" class="small">Ready.</span>
         </div>
-
-        <h2>Quick Checks</h2>
-        <ul>
-          <li>Catalog: <code>http://localhost:8000/api/catalog/metrics?limit=5</code></li>
-          <li>Latest data: <code>http://localhost:8000/api/observations/latest?metric_code=population&amp;geo_level=county&amp;limit=5</code></li>
-          <li>Martin catalog (or root fallback): <code>http://localhost:3000/catalog</code> then <code>http://localhost:3000/</code></li>
-        </ul>
-
-        <h2>Contract Note</h2>
-        <p>
-          API records and map layers should align on <code>geo_id</code> so data values
-          and geography tiles can be joined consistently.
+        <p class="small meta">
+          Geo alignment note: API observations and Martin layers should align on
+          <code>geo_id</code> for county/state joins.
         </p>
       </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>API Health</h2>
+          <div id="apiHealthState" class="status warn">PENDING</div>
+          <p id="apiHealthDetail" class="small">Waiting for checks.</p>
+          <div id="apiHealthError"></div>
+        </article>
+
+        <article class="card">
+          <h2>Martin Health</h2>
+          <div id="martinHealthState" class="status warn">PENDING</div>
+          <p id="martinHealthDetail" class="small">Waiting for checks.</p>
+          <div id="martinHealthError"></div>
+        </article>
+
+        <article class="card">
+          <h2>Metrics Sample (limit=10)</h2>
+          <div id="metricsState" class="status warn">PENDING</div>
+          <p id="metricsDetail" class="small">No data loaded yet.</p>
+          <div id="metricsError"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>metric_code</th>
+                <th>metric_name</th>
+                <th>source</th>
+              </tr>
+            </thead>
+            <tbody id="metricsBody">
+              <tr>
+                <td colspan="3" class="small">Run checks to load sample metrics.</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>Latest Observations (limit=8, county)</h2>
+          <div id="obsState" class="status warn">PENDING</div>
+          <p id="obsDetail" class="small">No metric selected yet.</p>
+          <div id="obsError"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>metric_code</th>
+                <th>geo_id</th>
+                <th>period_date</th>
+                <th>value</th>
+              </tr>
+            </thead>
+            <tbody id="obsBody">
+              <tr>
+                <td colspan="4" class="small">Run checks to load sample observations.</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+      </section>
     </main>
+
+    <script>
+      function setStatus(baseId, kind, text, detail, errorText) {
+        var stateEl = document.getElementById(baseId + "State");
+        var detailEl = document.getElementById(baseId + "Detail");
+        var errorEl = document.getElementById(baseId + "Error");
+
+        stateEl.className = "status " + kind;
+        stateEl.textContent = text;
+        detailEl.textContent = detail || "";
+
+        if (errorText) {
+          errorEl.innerHTML = '<div class="error">' + escapeHtml(errorText) + "</div>";
+        } else {
+          errorEl.innerHTML = "";
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function asArray(payload) {
+        if (Array.isArray(payload)) {
+          return payload;
+        }
+        if (payload && Array.isArray(payload.items)) {
+          return payload.items;
+        }
+        if (payload && Array.isArray(payload.data)) {
+          return payload.data;
+        }
+        if (payload && Array.isArray(payload.results)) {
+          return payload.results;
+        }
+        return [];
+      }
+
+      function renderTable(bodyId, rows, columns, emptyText) {
+        var tbody = document.getElementById(bodyId);
+        if (!rows.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="' +
+            columns.length +
+            '" class="small">' +
+            escapeHtml(emptyText) +
+            "</td></tr>";
+          return;
+        }
+
+        tbody.innerHTML = rows
+          .map(function (row) {
+            var cells = columns
+              .map(function (col) {
+                var value = row[col];
+                var text = value === undefined || value === null ? "" : String(value);
+                return "<td>" + escapeHtml(text) + "</td>";
+              })
+              .join("");
+            return "<tr>" + cells + "</tr>";
+          })
+          .join("");
+      }
+
+      async function fetchJson(url) {
+        var response = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!response.ok) {
+          throw new Error(url + " returned HTTP " + response.status);
+        }
+
+        var contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error(url + " did not return JSON");
+        }
+
+        return response.json();
+      }
+
+      async function checkApiHealth() {
+        var payload = await fetchJson("/api/health");
+        var msg = payload && payload.status ? String(payload.status) : "ok";
+        setStatus("apiHealth", "ok", "PASS", "/api/health responded: " + msg, "");
+        return true;
+      }
+
+      async function checkMartinHealth() {
+        try {
+          await fetchJson("/tiles/health");
+          setStatus("martinHealth", "ok", "PASS", "/tiles/health responded successfully.", "");
+          return true;
+        } catch (primaryErr) {
+          try {
+            var rootResponse = await fetch("/tiles/");
+            if (!rootResponse.ok) {
+              throw new Error("/tiles/ returned HTTP " + rootResponse.status);
+            }
+            setStatus(
+              "martinHealth",
+              "warn",
+              "PASS (fallback)",
+              "Fallback to /tiles/ succeeded; /tiles/health unavailable.",
+              ""
+            );
+            return true;
+          } catch (fallbackErr) {
+            throw new Error(primaryErr.message + " | fallback failed: " + fallbackErr.message);
+          }
+        }
+      }
+
+      async function loadMetrics() {
+        var payload = await fetchJson("/api/catalog/metrics?limit=10");
+        var rows = asArray(payload);
+
+        renderTable(
+          "metricsBody",
+          rows,
+          ["metric_code", "metric_name", "source"],
+          "No metrics available in catalog response."
+        );
+
+        var preferred = rows.find(function (r) {
+          return r && r.metric_code === "population";
+        });
+        var selected = preferred || rows[0] || null;
+
+        if (rows.length) {
+          setStatus(
+            "metrics",
+            "ok",
+            "PASS",
+            "Loaded " + rows.length + " metrics sample rows.",
+            ""
+          );
+        } else {
+          setStatus("metrics", "warn", "WARN", "Catalog returned zero rows.", "");
+        }
+
+        return selected ? String(selected.metric_code || "") : "";
+      }
+
+      async function loadObservations(metricCode) {
+        if (!metricCode) {
+          renderTable("obsBody", [], ["metric_code", "geo_id", "period_date", "value"], "No metric selected.");
+          setStatus("obs", "warn", "WARN", "No metric available to query observations.", "");
+          return;
+        }
+
+        var url =
+          "/api/observations/latest?metric_code=" +
+          encodeURIComponent(metricCode) +
+          "&geo_level=county&limit=8";
+        var payload = await fetchJson(url);
+        var rows = asArray(payload);
+
+        renderTable("obsBody", rows, ["metric_code", "geo_id", "period_date", "value"], "No observations returned.");
+
+        if (rows.length) {
+          setStatus(
+            "obs",
+            "ok",
+            "PASS",
+            "Loaded " + rows.length + " latest observation rows for metric_code=" + metricCode + ".",
+            ""
+          );
+        } else {
+          setStatus(
+            "obs",
+            "warn",
+            "WARN",
+            "Query succeeded for metric_code=" + metricCode + " but returned zero rows.",
+            ""
+          );
+        }
+      }
+
+      async function runChecks() {
+        var button = document.getElementById("runChecksBtn");
+        var summary = document.getElementById("runSummary");
+        button.disabled = true;
+        summary.textContent = "Running checks...";
+
+        setStatus("apiHealth", "warn", "RUNNING", "Checking /api/health...", "");
+        setStatus("martinHealth", "warn", "RUNNING", "Checking /tiles/health...", "");
+        setStatus("metrics", "warn", "RUNNING", "Reading /api/catalog/metrics?limit=10...", "");
+        setStatus("obs", "warn", "RUNNING", "Waiting for metric selection...", "");
+
+        var failures = [];
+        var metricCode = "";
+
+        try {
+          await checkApiHealth();
+        } catch (err) {
+          failures.push("api");
+          setStatus("apiHealth", "fail", "FAIL", "API health check failed.", err.message);
+        }
+
+        try {
+          await checkMartinHealth();
+        } catch (err) {
+          failures.push("martin");
+          setStatus("martinHealth", "fail", "FAIL", "Martin health check failed.", err.message);
+        }
+
+        try {
+          metricCode = await loadMetrics();
+        } catch (err) {
+          failures.push("metrics");
+          renderTable(
+            "metricsBody",
+            [],
+            ["metric_code", "metric_name", "source"],
+            "Unable to load metrics catalog sample."
+          );
+          setStatus("metrics", "fail", "FAIL", "Metrics sample read failed.", err.message);
+        }
+
+        try {
+          await loadObservations(metricCode);
+        } catch (err) {
+          failures.push("observations");
+          renderTable(
+            "obsBody",
+            [],
+            ["metric_code", "geo_id", "period_date", "value"],
+            "Unable to load observations sample."
+          );
+          setStatus("obs", "fail", "FAIL", "Latest observation sample read failed.", err.message);
+        }
+
+        if (failures.length) {
+          summary.textContent = "Completed with failures: " + failures.join(", ") + ".";
+        } else {
+          summary.textContent = "All smoke checks passed.";
+        }
+
+        button.disabled = false;
+      }
+
+      document.getElementById("runChecksBtn").addEventListener("click", runChecks);
+      runChecks();
+    </script>
   </body>
 </html>

@@ -63,13 +63,14 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 ### External Mode
 
 ```bash
-# API health
-curl http://localhost:8000/health
+# Web smoke dashboard and proxied API health
+curl http://localhost:3001/
+curl http://localhost:3001/api/health
 
-# Martin health/root
-curl http://localhost:3000/health
-# if /health is unavailable:
-curl http://localhost:3000/
+# Martin health/root via same-origin web proxy
+curl http://localhost:3001/tiles/health
+# if /tiles/health is unavailable:
+curl http://localhost:3001/tiles/
 
 # Optional Airflow DAG visibility (only when using --profile airflow-local)
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local exec airflow-webserver airflow dags list
@@ -82,12 +83,20 @@ Note: `ANALYTICS_DB_*` values in external mode power both API database connectiv
 Use these commands to verify the first API-to-map contract in external MVP mode:
 
 ```bash
-curl http://localhost:8000/api/catalog/metrics?limit=5
-curl "http://localhost:8000/api/observations/latest?metric_code=population&geo_level=county&limit=5"
-curl http://localhost:3000/catalog
-# if /catalog is unavailable:
-curl http://localhost:3000/
+curl http://localhost:3001/
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/catalog/metrics?limit=5
+curl "http://localhost:3001/api/observations/latest?metric_code=population&geo_level=county&limit=5"
+curl http://localhost:3001/tiles/health
+# if /tiles/health is unavailable:
+curl http://localhost:3001/tiles/
 ```
+
+Web smoke dashboard:
+- `http://localhost:3001`
+- Proxy routes from the web container:
+	- `/api/*` -> API service (`api:8000`)
+	- `/tiles/*` -> Martin service (`martin:3000`)
 
 Expected alignment key:
 - `geo_id` from API observation rows should align with geographic identifiers used by Martin-exposed map layers.

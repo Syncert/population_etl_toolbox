@@ -178,12 +178,20 @@ Available endpoints:
 Run the first contract checks end-to-end:
 
 ```bash
-curl http://localhost:8000/api/catalog/metrics?limit=5
-curl "http://localhost:8000/api/observations/latest?metric_code=population&geo_level=county&limit=5"
-curl http://localhost:3000/catalog
-# if /catalog is unavailable:
-curl http://localhost:3000/
+curl http://localhost:3001/
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/catalog/metrics?limit=5
+curl "http://localhost:3001/api/observations/latest?metric_code=population&geo_level=county&limit=5"
+curl http://localhost:3001/tiles/health
+# if /tiles/health is unavailable:
+curl http://localhost:3001/tiles/
 ```
+
+Web smoke dashboard:
+- `http://localhost:3001`
+- The web container proxies same-origin routes to backend services:
+    - `/api/*` -> API service (`api:8000`)
+    - `/tiles/*` -> Martin service (`martin:3000`)
 
 Expected contract alignment:
 - API observation responses expose `geo_id`.
