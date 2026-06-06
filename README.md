@@ -206,6 +206,23 @@ psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_
 
 ### 2. Airflow Setup
 
+#### Runtime Paths and Infra Files
+
+Airflow runtime paths are hard-wired via `infra/airflow/airflow.env.example`:
+
+```bash
+AIRFLOW__CORE__DAGS_FOLDER=/opt/data_ingestion_toolbox/dags
+PYTHONPATH=/opt/data_ingestion_toolbox/src:/opt/data_ingestion_toolbox
+AIRFLOW__CORE__LOAD_EXAMPLES=False
+```
+
+Use the Airflow compose stack at `infra/docker/docker-compose.airflow.yml`.
+
+```bash
+docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
+docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
+```
+
 #### Create Database Connection
 ```bash
 # In Airflow UI (Admin > Connections) or via CLI:

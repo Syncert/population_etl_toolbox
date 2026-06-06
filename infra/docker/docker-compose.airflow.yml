@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  airflow-init:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+    env_file:
+      - ../airflow/airflow.env.example
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Airflow
+      --lastname Admin
+      --role Admin
+      --email admin@example.com
+      "
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+      - airflow-init
+    env_file:
+      - ../airflow/airflow.env.example
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+      - airflow-init
+    env_file:
+      - ../airflow/airflow.env.example
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+    command: airflow scheduler
+
+volumes:
+  postgres_data:
