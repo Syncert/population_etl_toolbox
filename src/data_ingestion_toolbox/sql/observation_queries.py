@@ -58,7 +58,7 @@ def build_latest_mv_queries(
     list_sql = f"""
         SELECT
             {_OBSERVATION_SELECT}
-        FROM gold.mv_latest_dashboard
+        FROM gold.v_metric_latest_by_geo
         WHERE {where_sql}
         ORDER BY geo_id ASC
         LIMIT :limit OFFSET :offset
@@ -66,7 +66,7 @@ def build_latest_mv_queries(
 
     count_sql = f"""
         SELECT COUNT(*)
-        FROM gold.mv_latest_dashboard
+        FROM gold.v_metric_latest_by_geo
         WHERE {where_sql}
     """
 
@@ -105,7 +105,7 @@ def build_latest_rpt_fallback_queries(
                     PARTITION BY geo_id, metric_code
                     ORDER BY observation_date DESC, updated_at DESC
                 ) AS rn
-            FROM gold.rpt_observation_dashboard
+                FROM gold.v_metric_timeseries_by_geo
             WHERE {where_sql}
         )
     """
@@ -189,7 +189,7 @@ def build_timeseries_queries(
         params["end_date"] = end_date
 
     from_sql = """
-        FROM gold.rpt_observation_dashboard
+        FROM gold.v_metric_timeseries_by_geo
         WHERE
     """
 

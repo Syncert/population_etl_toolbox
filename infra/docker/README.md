@@ -6,7 +6,7 @@ Containerization artifacts and runtime definitions.
 
 - `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + a single Postgres metadata/service DB.
 - `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, web placeholder, and Airflow services.
-- `docker-compose.external.yml`: External integration stack with Redis, API, and Airflow services only, targeting existing Airflow metadata and analytics Postgres hosts.
+- `docker-compose.external.yml`: External integration stack targeting existing analytics and Airflow metadata Postgres hosts. Supports service-only local MVP (`redis`, `api`, `martin`, `web`) by default, with optional local Airflow services under profile `airflow-local`.
 
 ## Modes
 
@@ -22,9 +22,31 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 
 ```bash
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
-docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up airflow-init
-docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d
+docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
+
+### External MVP (Service-Only)
+
+This is the recommended local workflow when an existing Airflow deployment and populated warehouse already exist.
+
+```bash
+cp infra/docker/stack.external.env.example infra/docker/stack.external.env
+# fill secrets/host values in infra/docker/stack.external.env
+docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
+```
+
+### External + Local Airflow Profile (Optional)
+
+Use this only when you explicitly want local Airflow services for testing.
+
+```bash
+docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local up airflow-init
+docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local up -d redis api martin web airflow-webserver airflow-scheduler
+```
+
+Secrets guidance:
+- Put credentials in `infra/docker/stack.external.env` (local, gitignored) or provide them via host environment variables.
+- Do not put real secrets in tracked example files.
 
 ## Smoke Checks
 
@@ -44,6 +66,13 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 # API health
 curl http://localhost:8000/health
 
-# Airflow DAG visibility
-docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml exec airflow-webserver airflow dags list
+# Martin health/root
+curl http://localhost:3000/health
+# if /health is unavailable:
+curl http://localhost:3000/
+
+# Optional Airflow DAG visibility (only when using --profile airflow-local)
+docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local exec airflow-webserver airflow dags list
 ```
+
+Note: `ANALYTICS_DB_*` values in external mode power both API database connectivity and Martin database connectivity.

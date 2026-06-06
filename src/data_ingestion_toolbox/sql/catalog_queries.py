@@ -61,7 +61,7 @@ def build_metrics_queries(
         params["q"] = f"%{q}%"
 
     from_sql = """
-        FROM gold.dim_metric_catalog
+        FROM gold.dim_metric
     """
 
     if where_clauses:
@@ -135,7 +135,7 @@ def build_geographies_queries(
         params["q"] = f"%{q}%"
 
     from_sql = """
-        FROM gold.dim_geo_latest
+        FROM gold.dim_geography
     """
 
     if where_clauses:

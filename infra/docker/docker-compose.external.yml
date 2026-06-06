@@ -21,6 +21,24 @@ services:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
 
+  martin:
+    image: maplibre/martin:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      ["cp /etc/martin/martin.yml /tmp/martin.runtime.yml && printf '\npostgres:\n  connection_string: postgres://${ANALYTICS_DB_USER}:${ANALYTICS_DB_PASSWORD}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}\n' >> /tmp/martin.runtime.yml && exec martin --config /tmp/martin.runtime.yml"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../martin/martin.yml:/etc/martin/martin.yml:ro
+
+  web:
+    image: node:20-alpine
+    command: >
+      sh -c "echo 'Web placeholder container running on port 3001 (no app wired yet).' &&
+      while true; do sleep 3600; done"
+    ports:
+      - "3001:3001"
+
   airflow-common: &airflow-common
     build:
       context: ../../
@@ -36,6 +54,8 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    profiles:
+      - airflow-local
     command: >
       sh -c "
       airflow db migrate &&
@@ -55,6 +75,8 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
+    profiles:
+      - airflow-local
     depends_on:
       - airflow-init
       - redis
@@ -64,6 +86,8 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
+    profiles:
+      - airflow-local
     depends_on:
       - airflow-init
       - redis

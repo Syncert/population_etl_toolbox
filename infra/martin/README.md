@@ -2,7 +2,9 @@
 
 Infrastructure artifacts for Martin service deployment.
 
-The initial Martin runtime config is in `martin.yml` and is mounted by the full compose stack (`infra/docker/docker-compose.yml`).
+The Martin runtime config is in `martin.yml` and is mounted by compose stacks. It only contains listen/table mapping configuration.
+
+Database connectivity is injected at runtime by docker compose using `ANALYTICS_DB_*` environment variables.
 
 Expected source database:
 - Host: `analytics_postgres`

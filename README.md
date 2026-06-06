@@ -202,6 +202,9 @@ psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/raw_fre
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
+
+# Gold contract views (API-facing compatibility layer)
+psql -U postgres -d population_etl < sql/gold_contract/001_gold_contract_views.sql
 ```
 
 ### 2. Airflow Setup
@@ -220,7 +223,9 @@ Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` 
 
 Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
 
-The full platform now supports two deployment modes: internal self-contained (`docker-compose.yml`) and external integration (`docker-compose.external.yml`) where Airflow metadata and analytics Postgres can point at existing infrastructure via environment variables.
+The full platform now supports two deployment modes: internal self-contained (`docker-compose.yml`) and external integration (`docker-compose.external.yml`) where analytics Postgres and (optionally) Airflow metadata can point at existing infrastructure via environment variables.
+
+External mode can run as service-only local MVP (`redis`, `api`, `martin`, `web`) without local Airflow and is the recommended path when you already have an Airflow deployment and populated warehouse.
 
 ```bash
 docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
@@ -233,6 +238,24 @@ Full stack startup:
 cp infra/docker/stack.env.example infra/docker/stack.env
 docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up airflow-init
 docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
+```
+
+Optional helper script for internal/external stack lifecycle:
+
+```powershell
+# Defaults: -Mode internal -Action all
+./scripts/deploy_stack.ps1
+
+# External mode examples
+./scripts/deploy_stack.ps1 -Mode external -Action init
+./scripts/deploy_stack.ps1 -Mode external -Action up
+./scripts/deploy_stack.ps1 -Mode external -Action smoke
+./scripts/deploy_stack.ps1 -Mode external -Action down
+
+# Optional: include local Airflow services in external mode
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action init
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action up
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action smoke
 ```
 
 In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:

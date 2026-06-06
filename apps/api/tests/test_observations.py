@@ -56,10 +56,10 @@ class _LatestForwardingSession:
         sql = str(query).lower()
         self.params_seen.append(params or {})
 
-        if "from gold.mv_latest_dashboard" in sql and "count(*)" in sql:
+        if "from gold.v_metric_latest_by_geo" in sql and "count(*)" in sql:
             return _FakeResult(scalar_value=5)
 
-        if "from gold.mv_latest_dashboard" in sql:
+        if "from gold.v_metric_latest_by_geo" in sql:
             return _FakeResult(rows=[_observation_row()])
 
         return _FakeResult(rows=[])
@@ -69,10 +69,10 @@ class _LatestFallbackSession:
     def execute(self, query, _params=None):
         sql = str(query).lower()
 
-        if "from gold.mv_latest_dashboard" in sql and "count(*)" in sql:
+        if "from gold.v_metric_latest_by_geo" in sql and "count(*)" in sql:
             return _FakeResult(scalar_value=0)
 
-        if "from gold.mv_latest_dashboard" in sql:
+        if "from gold.v_metric_latest_by_geo" in sql:
             return _FakeResult(rows=[])
 
         if "with ranked" in sql and "count(*)" in sql:
@@ -88,10 +88,10 @@ class _TimeseriesSession:
     def execute(self, query, _params=None):
         sql = str(query).lower()
 
-        if "from gold.rpt_observation_dashboard" in sql and "count(*)" in sql:
+        if "from gold.v_metric_timeseries_by_geo" in sql and "count(*)" in sql:
             return _FakeResult(scalar_value=9)
 
-        if "from gold.rpt_observation_dashboard" in sql:
+        if "from gold.v_metric_timeseries_by_geo" in sql:
             return _FakeResult(rows=[_observation_row(metric_code="UNEMP", geo_id="06001")])
 
         return _FakeResult(rows=[])

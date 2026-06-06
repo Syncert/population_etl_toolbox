@@ -47,7 +47,9 @@ services:
     image: maplibre/martin:latest
     depends_on:
       - analytics_postgres
-    command: ["/martin", "--config", "/etc/martin/martin.yml"]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      ["cp /etc/martin/martin.yml /tmp/martin.runtime.yml && printf '\npostgres:\n  connection_string: postgres://${ANALYTICS_DB_USER:-analytics}:${ANALYTICS_DB_PASSWORD:-analytics}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}\n' >> /tmp/martin.runtime.yml && exec martin --config /tmp/martin.runtime.yml"]
     ports:
       - "3000:3000"
     volumes:

@@ -1,8 +1,6 @@
 # Initial Martin config; pending follow-up geometry naming cleanup in gold schema.
 listen_addresses: 0.0.0.0:3000
-
-postgres:
-  connection_string: postgres://analytics:analytics@analytics_postgres:5432/population_etl
+# DB connection is injected by compose at container startup.
 
 tables:
   gold.dim_geo_latest:

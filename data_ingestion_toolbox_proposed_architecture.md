@@ -103,9 +103,11 @@ harder to debug, harder to secure, and harder to migrate to AWS later.
 
 Implementation note: support two compose modes from the same repo. A
 self-contained internal mode runs all core services locally for fast
-bring-up. An external-existing mode runs API plus Airflow services while
-pointing Airflow metadata and analytics warehouse connections to
-environment-driven host credentials in an existing homelab stack.
+bring-up. An external-existing mode supports a service-only local MVP
+(api, martin, web, redis) against existing infrastructure, with optional
+local Airflow services enabled via profile for testing. Airflow metadata
+and analytics warehouse connections remain environment-driven to point at
+existing homelab hosts.
 
 ## Public services
 
@@ -331,6 +333,12 @@ FastAPI and using tiled geometry.
 | 6        | Martin tiles          | Serve county/state geometry from PostGIS or add TODO-backed config if geometry names need cleanup. |
 | 7        | Next.js MVP           | Metric selector, map shell, legend, tooltip, and side panel.                                       |
 | 8        | Public demo hardening | Reverse proxy routing, TLS, read-only API user, Redis cache, and private internal services.        |
+
+Implementation note (June 2026): initial gold contract compatibility views now
+live under `sql/gold_contract` (`001_gold_contract_views.sql`), and the FastAPI
+query layer points to named contract views (`gold.dim_metric`,
+`gold.dim_geography`, `gold.v_metric_latest_by_geo`,
+`gold.v_metric_timeseries_by_geo`) rather than source object names.
 
 ## First vertical slice
 
