@@ -85,8 +85,12 @@ class _LatestFallbackSession:
 
 
 class _TimeseriesSession:
+    def __init__(self):
+        self.params_seen = []
+
     def execute(self, query, _params=None):
         sql = str(query).lower()
+        self.params_seen.append(_params or {})
 
         if "from gold.v_metric_timeseries_by_geo" in sql and "count(*)" in sql:
             return _FakeResult(scalar_value=9)
@@ -184,3 +188,85 @@ def test_timeseries_rejects_invalid_date_range() -> None:
     assert response.status_code == 422
     payload = response.json()
     assert payload["detail"] == "start_date must be less than or equal to end_date"
+
+
+def test_latest_accepts_metric_id_alias() -> None:
+    fake = _LatestForwardingSession()
+
+    def _override_db():
+        yield fake
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/observations/latest",
+            params={
+                "metric_id": "POP_TOTAL",
+                "geo_level": "state",
+                "state_fips": "06",
+                "limit": 1,
+                "offset": 0,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake.params_seen[0]["metric_code"] == "POP_TOTAL"
+
+
+def test_timeseries_accepts_metric_id_alias() -> None:
+    fake = _TimeseriesSession()
+
+    def _override_db():
+        yield fake
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/observations/timeseries",
+            params={
+                "metric_id": "UNEMP",
+                "geo_id": "06001",
+                "limit": 1,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake.params_seen[0]["metric_code"] == "UNEMP"
+
+
+def test_latest_requires_metric_code_or_metric_id() -> None:
+    def _override_db():
+        yield _LatestForwardingSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/observations/latest", params={"limit": 1, "offset": 0})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["detail"] == "metric_code or metric_id is required"
+
+
+def test_timeseries_requires_metric_code_or_metric_id() -> None:
+    def _override_db():
+        yield _TimeseriesSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/observations/timeseries", params={"geo_id": "06001", "limit": 1})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["detail"] == "metric_code or metric_id is required"

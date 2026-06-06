@@ -173,6 +173,27 @@ Available endpoints:
 - `GET /api/observations/latest`
 - `GET /api/observations/timeseries`
 
+### Next.js Web App (Local Iteration)
+
+Run the new web app scaffold:
+
+```bash
+cd apps/web
+copy .env.local.example .env.local
+npm install
+npm run dev
+```
+
+Open `http://localhost:3100`.
+
+The Next.js app proxies local service traffic using same-origin rewrites:
+- `/api/*` -> API origin (default `http://localhost:8000`)
+- `/tiles/*` -> tile server origin (default `http://localhost:3000`)
+
+Override targets in `apps/web/.env.local`:
+- `NEXT_PUBLIC_API_ORIGIN`
+- `NEXT_PUBLIC_TILES_ORIGIN`
+
 ### API-to-Map Contract Smoke (External MVP)
 
 Run the first contract checks end-to-end:
