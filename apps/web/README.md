@@ -19,3 +19,11 @@ The Next.js app uses same-origin rewrites so browser calls stay under the app ho
 
 - `/api/*` -> `${NEXT_PUBLIC_API_ORIGIN}/api/*` (default `http://localhost:8000`)
 - `/tiles/*` -> `${NEXT_PUBLIC_TILES_ORIGIN}/*` (default `http://localhost:3000`)
+
+## Server Error Recovery
+
+If the dev server shows chunk/module errors (for example `./819.js`), clear the Next.js build cache and restart with:
+
+```bash
+npm run dev:reset
+```

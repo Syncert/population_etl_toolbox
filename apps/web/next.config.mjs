@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   async rewrites() {
     const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     const tilesOrigin = process.env.NEXT_PUBLIC_TILES_ORIGIN || "http://localhost:3000";

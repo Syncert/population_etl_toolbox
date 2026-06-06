@@ -30,11 +30,10 @@ function metricOptions(metrics) {
 }
 
 function observationToFeature(item) {
-  if (
-    !item ||
-    typeof item.geo_longitude !== "number" ||
-    typeof item.geo_latitude !== "number"
-  ) {
+  const longitude = Number(item?.geo_longitude);
+  const latitude = Number(item?.geo_latitude);
+
+  if (!item || !Number.isFinite(longitude) || !Number.isFinite(latitude)) {
     return null;
   }
 
@@ -49,71 +48,245 @@ function observationToFeature(item) {
     },
     geometry: {
       type: "Point",
-      coordinates: [item.geo_longitude, item.geo_latitude],
+      coordinates: [longitude, latitude],
     },
   };
 }
 
-async function discoverTileTemplate() {
-  const catalogResponse = await fetch("/tiles/catalog", { cache: "no-store" });
-  if (!catalogResponse.ok) {
-    throw new Error(`Tiles catalog unavailable (${catalogResponse.status})`);
-  }
-
-  const catalog = await catalogResponse.json();
+function collectTileCandidates(catalogPayload) {
   const candidates = [];
 
-  if (Array.isArray(catalog)) {
-    for (const entry of catalog) {
+  if (Array.isArray(catalogPayload)) {
+    for (const entry of catalogPayload) {
       if (typeof entry === "string") {
         candidates.push(entry);
       } else if (entry && typeof entry.id === "string") {
         candidates.push(entry.id);
       }
     }
-  } else if (catalog && typeof catalog === "object") {
-    if (Array.isArray(catalog.collections)) {
-      for (const entry of catalog.collections) {
+  } else if (catalogPayload && typeof catalogPayload === "object") {
+    if (Array.isArray(catalogPayload.collections)) {
+      for (const entry of catalogPayload.collections) {
         if (entry && typeof entry.id === "string") {
           candidates.push(entry.id);
         }
       }
     }
 
-    for (const key of Object.keys(catalog)) {
+    for (const key of Object.keys(catalogPayload)) {
       if (key !== "collections") {
         candidates.push(key);
       }
     }
   }
 
-  const uniqueCandidates = [...new Set(candidates)].filter(Boolean);
+  return [...new Set(candidates)].filter(Boolean);
+}
+
+function pickJoinKey(fields = {}) {
+  const fieldKeys = Array.isArray(fields)
+    ? fields
+    : Object.keys(fields || {});
+  const preferred = ["geo_id", "geoid", "GEOID", "county_fips", "state_fips"];
+
+  for (const preferredKey of preferred) {
+    const matched = fieldKeys.find(
+      (key) => typeof key === "string" && key.toLowerCase() === preferredKey.toLowerCase(),
+    );
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return "geo_id";
+}
+
+function normalizeTileTemplate(layerId) {
+  return `/tiles/${layerId}/{z}/{x}/{y}`;
+}
+
+function resolveRenderableSourceLayer(map, sourceId, candidates) {
+  const normalizedCandidates = Array.isArray(candidates)
+    ? candidates.filter((candidate) => typeof candidate === "string" && candidate)
+    : [];
+
+  for (const candidate of normalizedCandidates) {
+    try {
+      const features = map.querySourceFeatures(sourceId, { sourceLayer: candidate });
+      if (Array.isArray(features) && features.length > 0) {
+        return candidate;
+      }
+    } catch {
+      // Try next candidate when source-layer is not queryable.
+    }
+  }
+
+  return normalizedCandidates[0] || null;
+}
+
+async function discoverTileMetadata() {
+  const discoveryPaths = ["/tiles/catalog", "/tiles/"];
+  let uniqueCandidates = [];
+
+  for (const path of discoveryPaths) {
+    try {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) {
+        continue;
+      }
+
+      const payload = await response.json();
+      const candidates = collectTileCandidates(payload);
+      if (candidates.length > 0) {
+        uniqueCandidates = candidates;
+        break;
+      }
+    } catch {
+      // Continue to fallback discovery endpoint.
+    }
+  }
+
+  if (uniqueCandidates.length === 0) {
+    throw new Error("No tile layer ids discovered from /tiles/catalog or /tiles/");
+  }
 
   for (const id of uniqueCandidates) {
-    const tileJsonPaths = [
-      `/tiles/${id}`,
-      `/tiles/${id}.json`,
-      `/tiles/${id}/tilejson.json`,
-    ];
+    try {
+      const tileJsonResponse = await fetch(`/tiles/${id}`, { cache: "no-store" });
+      if (!tileJsonResponse.ok) {
+        continue;
+      }
 
-    for (const path of tileJsonPaths) {
-      try {
-        const tileJsonResponse = await fetch(path, { cache: "no-store" });
-        if (!tileJsonResponse.ok) {
+      const tileJson = await tileJsonResponse.json();
+      const vectorLayer =
+        Array.isArray(tileJson.vector_layers) && tileJson.vector_layers.length > 0
+          ? tileJson.vector_layers[0]
+          : null;
+      const sourceLayerCandidates = [];
+
+      if (Array.isArray(tileJson.vector_layers)) {
+        for (const item of tileJson.vector_layers) {
+          if (item && typeof item.id === "string") {
+            sourceLayerCandidates.push(item.id);
+          }
+        }
+      }
+
+      if (typeof tileJson.name === "string") {
+        sourceLayerCandidates.push(tileJson.name);
+      }
+
+      sourceLayerCandidates.push(id);
+
+      const dedupedSourceLayerCandidates = [];
+      const seenCandidates = new Set();
+      for (const candidate of sourceLayerCandidates) {
+        if (!candidate || seenCandidates.has(candidate)) {
           continue;
         }
+        seenCandidates.add(candidate);
+        dedupedSourceLayerCandidates.push(candidate);
+      }
 
-        const tileJson = await tileJsonResponse.json();
-        if (Array.isArray(tileJson.tiles) && tileJson.tiles.length > 0) {
-          return tileJson.tiles[0];
-        }
-      } catch {
-        // Try next tilejson path.
+      const sourceLayerId = dedupedSourceLayerCandidates[0] || id;
+      const joinKey = pickJoinKey(vectorLayer?.fields || {});
+
+      return {
+        layerId: id,
+        sourceLayer: sourceLayerId,
+        sourceLayerCandidates: dedupedSourceLayerCandidates,
+        joinKey,
+        tileTemplate: normalizeTileTemplate(id),
+      };
+    } catch {
+      // Try next layer id.
+    }
+  }
+
+  throw new Error("No TileJSON discovered from /tiles/{id}");
+}
+
+function observationJoinValue(item, joinKey) {
+  const normalizedJoinKey = typeof joinKey === "string" ? joinKey.toLowerCase() : "geo_id";
+
+  if (normalizedJoinKey === "geo_id") {
+    return item.geo_id || null;
+  }
+
+  if (normalizedJoinKey === "geoid") {
+    if (item.state_fips && item.county_fips) {
+      return `${item.state_fips}${item.county_fips}`;
+    }
+    if (item.state_fips) {
+      return item.state_fips;
+    }
+    if (typeof item.geo_id === "string") {
+      const countyMatch = item.geo_id.match(/^state:(\d{2})\|county:(\d{3})$/i);
+      if (countyMatch) {
+        return `${countyMatch[1]}${countyMatch[2]}`;
+      }
+
+      const stateMatch = item.geo_id.match(/^state:(\d{2})$/i);
+      if (stateMatch) {
+        return stateMatch[1];
       }
     }
   }
 
-  throw new Error("No tile template discovered from /tiles/catalog");
+  if (normalizedJoinKey === "county_fips") {
+    return item.county_fips || null;
+  }
+
+  if (normalizedJoinKey === "state_fips") {
+    return item.state_fips || null;
+  }
+
+  return item[joinKey] || item.geo_id || null;
+}
+
+function colorForValue(value, minValue, maxValue) {
+  if (!Number.isFinite(value) || !Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+    return "#d8dee3";
+  }
+
+  const palette = ["#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"];
+  const span = maxValue - minValue;
+  const ratio = span <= 0 ? 0 : (value - minValue) / span;
+  const index = Math.max(0, Math.min(palette.length - 1, Math.floor(ratio * palette.length)));
+  return palette[index];
+}
+
+function buildChoroplethMatchExpression(observations, joinKey) {
+  if (!Array.isArray(observations) || observations.length === 0) {
+    return ["literal", "#d8dee3"];
+  }
+
+  const keyedValues = [];
+  const keyedMap = new Map();
+
+  for (const item of observations) {
+    const joinValue = observationJoinValue(item, joinKey);
+    const numericValue = Number(item.value);
+    if (!joinValue || !Number.isFinite(numericValue)) {
+      continue;
+    }
+
+    keyedMap.set(String(joinValue), numericValue);
+  }
+
+  const values = [...keyedMap.values()];
+  if (values.length === 0) {
+    return ["literal", "#d8dee3"];
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+
+  for (const [key, numericValue] of keyedMap.entries()) {
+    keyedValues.push(key, colorForValue(numericValue, minValue, maxValue));
+  }
+
+  return ["match", ["to-string", ["get", joinKey]], ...keyedValues, "#d8dee3"];
 }
 
 export default function HomePage() {
@@ -137,6 +310,8 @@ export default function HomePage() {
     message: "selecting metric",
   });
   const [observations, setObservations] = useState([]);
+  const [tileMetadata, setTileMetadata] = useState(null);
+  const [activeSourceLayer, setActiveSourceLayer] = useState(null);
   const [mapReady, setMapReady] = useState(false);
 
   const options = useMemo(() => metricOptions(metrics), [metrics]);
@@ -183,9 +358,10 @@ export default function HomePage() {
       }
 
       try {
-        await discoverTileTemplate();
+        const discoveredTileMetadata = await discoverTileMetadata();
         if (!cancelled) {
-          setTilesHealth({ state: "ok", message: "catalog reachable" });
+          setTileMetadata(discoveredTileMetadata);
+          setActiveSourceLayer(discoveredTileMetadata.sourceLayer);
         }
       } catch (error) {
         if (!cancelled) {
@@ -205,6 +381,17 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (!tileMetadata) {
+      return;
+    }
+
+    setTilesHealth({
+      state: "ok",
+      message: `layer=${tileMetadata.layerId}; configured_source=${tileMetadata.sourceLayer}; active_source=${activeSourceLayer || tileMetadata.sourceLayer}; join=${tileMetadata.joinKey}`,
+    });
+  }, [tileMetadata, activeSourceLayer]);
+
+  useEffect(() => {
     if (!selectedMetric) {
       return;
     }
@@ -216,7 +403,8 @@ export default function HomePage() {
       try {
         const query = new URLSearchParams({
           metric_code: selectedMetric,
-          limit: "25",
+          geo_level: "COUNTY",
+          limit: "4000",
         });
         const response = await fetch(`/api/observations/latest?${query.toString()}`, {
           cache: "no-store",
@@ -227,13 +415,43 @@ export default function HomePage() {
         }
 
         const payload = await response.json();
-        const items = Array.isArray(payload.items) ? payload.items : [];
+        let items = Array.isArray(payload.items) ? payload.items : [];
+        let usedFallback = false;
+
+        if (items.length === 0) {
+          const fallbackQuery = new URLSearchParams({
+            metric_code: selectedMetric,
+            limit: "4000",
+          });
+          const fallbackResponse = await fetch(
+            `/api/observations/latest?${fallbackQuery.toString()}`,
+            {
+              cache: "no-store",
+            },
+          );
+
+          if (!fallbackResponse.ok) {
+            throw new Error(`status ${fallbackResponse.status}`);
+          }
+
+          const fallbackPayload = await fallbackResponse.json();
+          const fallbackItems = Array.isArray(fallbackPayload.items)
+            ? fallbackPayload.items
+            : [];
+
+          if (fallbackItems.length > 0) {
+            items = fallbackItems;
+            usedFallback = true;
+          }
+        }
 
         if (!cancelled) {
           setObservations(items);
           setObservationStatus({
             state: "ok",
-            message: `loaded ${items.length} records`,
+            message: usedFallback
+              ? `loaded ${items.length} records (fallback without geo_level)`
+              : `loaded ${items.length} records`,
           });
         }
       } catch (error) {
@@ -294,38 +512,12 @@ export default function HomePage() {
         source: "obs",
         paint: {
           "circle-color": "#0a7a6d",
-          "circle-radius": 5,
-          "circle-opacity": 0.75,
+          "circle-radius": 2.2,
+          "circle-opacity": 0.22,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1,
+          "circle-stroke-width": 0.5,
         },
       });
-
-      try {
-        const tileTemplate = await discoverTileTemplate();
-
-        if (!map.getSource("basemap")) {
-          map.addSource("basemap", {
-            type: "raster",
-            tiles: [tileTemplate],
-            tileSize: 256,
-          });
-
-          map.addLayer(
-            {
-              id: "basemap-layer",
-              type: "raster",
-              source: "basemap",
-              paint: {
-                "raster-opacity": 0.8,
-              },
-            },
-            "obs-points",
-          );
-        }
-      } catch {
-        // Keep fallback background if tiles are unavailable.
-      }
     });
 
     mapRef.current = map;
@@ -335,6 +527,97 @@ export default function HomePage() {
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded() || !mapReady || !tileMetadata) {
+      return;
+    }
+
+    const sourceLayerCandidates =
+      Array.isArray(tileMetadata.sourceLayerCandidates) && tileMetadata.sourceLayerCandidates.length > 0
+        ? tileMetadata.sourceLayerCandidates
+        : [tileMetadata.sourceLayer].filter(Boolean);
+    const configuredSourceLayer = tileMetadata.sourceLayer;
+    const currentSourceLayer = activeSourceLayer || configuredSourceLayer;
+
+    const removeChoropleth = () => {
+      if (map.getLayer("choropleth-outline")) {
+        map.removeLayer("choropleth-outline");
+      }
+      if (map.getLayer("choropleth-fill")) {
+        map.removeLayer("choropleth-fill");
+      }
+      if (map.getSource("choropleth")) {
+        map.removeSource("choropleth");
+      }
+    };
+
+    const addChoropleth = (sourceLayer) => {
+      if (!sourceLayer) {
+        return;
+      }
+
+      removeChoropleth();
+
+      map.addSource("choropleth", {
+        type: "vector",
+        tiles: [tileMetadata.tileTemplate],
+        minzoom: 0,
+        maxzoom: 22,
+      });
+
+      map.addLayer(
+        {
+          id: "choropleth-fill",
+          type: "fill",
+          source: "choropleth",
+          "source-layer": sourceLayer,
+          paint: {
+            "fill-color": "#f2f8ff",
+            "fill-opacity": 0.78,
+          },
+        },
+        "obs-points",
+      );
+
+      map.addLayer(
+        {
+          id: "choropleth-outline",
+          type: "line",
+          source: "choropleth",
+          "source-layer": sourceLayer,
+          paint: {
+            "line-color": "#2c4a66",
+            "line-width": 0.9,
+            "line-opacity": 0.75,
+          },
+        },
+        "obs-points",
+      );
+    };
+
+    addChoropleth(currentSourceLayer);
+
+    const idleHandler = () => {
+      const resolvedSourceLayer = resolveRenderableSourceLayer(
+        map,
+        "choropleth",
+        sourceLayerCandidates,
+      );
+
+      if (resolvedSourceLayer && resolvedSourceLayer !== currentSourceLayer) {
+        addChoropleth(resolvedSourceLayer);
+        setActiveSourceLayer(resolvedSourceLayer);
+      }
+    };
+
+    map.on("idle", idleHandler);
+
+    return () => {
+      map.off("idle", idleHandler);
+    };
+  }, [mapReady, tileMetadata, activeSourceLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -356,6 +639,14 @@ export default function HomePage() {
       features,
     });
 
+    if (map.getLayer("choropleth-fill") && tileMetadata?.joinKey) {
+      map.setPaintProperty(
+        "choropleth-fill",
+        "fill-color",
+        buildChoroplethMatchExpression(observations, tileMetadata.joinKey),
+      );
+    }
+
     if (features.length > 0) {
       const bounds = new maplibregl.LngLatBounds();
       for (const feature of features) {
@@ -364,7 +655,7 @@ export default function HomePage() {
       }
       map.fitBounds(bounds, { padding: 30, maxZoom: 7, duration: 800 });
     }
-  }, [mapReady, observations]);
+  }, [mapReady, observations, tileMetadata]);
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
 
@@ -426,7 +717,7 @@ export default function HomePage() {
 
         <article className="card">
           <h2>Map Preview</h2>
-          <p className="subtle">Points come from latest observations and render over discovered /tiles catalog layers when available.</p>
+          <p className="subtle">Choropleth polygons are joined to observations by discovered tile join key; low-opacity points remain for diagnostics.</p>
           <div className="map-shell" ref={mapContainerRef} />
         </article>
 

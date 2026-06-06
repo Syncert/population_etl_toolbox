@@ -26,7 +26,7 @@ def get_latest_observations(
     metric_id: Optional[str] = None,
     geo_level: Optional[str] = None,
     state_fips: Optional[str] = None,
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_session_dep),
 ) -> ObservationListResponse:
