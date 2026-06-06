@@ -220,6 +220,8 @@ Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` 
 
 Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
 
+The full platform now supports two deployment modes: internal self-contained (`docker-compose.yml`) and external integration (`docker-compose.external.yml`) where Airflow metadata and analytics Postgres can point at existing infrastructure via environment variables.
+
 ```bash
 docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
 docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler

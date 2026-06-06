@@ -101,6 +101,12 @@ focused containers. One container should not run Airflow, Postgres,
 FastAPI, Martin, and the frontend together. That approach would be
 harder to debug, harder to secure, and harder to migrate to AWS later.
 
+Implementation note: support two compose modes from the same repo. A
+self-contained internal mode runs all core services locally for fast
+bring-up. An external-existing mode runs API plus Airflow services while
+pointing Airflow metadata and analytics warehouse connections to
+environment-driven host credentials in an existing homelab stack.
+
 ## Public services
 
 - web: Next.js application exposed through the reverse proxy.
