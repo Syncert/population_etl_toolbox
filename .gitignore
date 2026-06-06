@@ -423,3 +423,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Next.js app artifacts
+apps/web/.next/
+apps/web/.turbo/
+apps/web/out/
+apps/web/.vercel/
+apps/web/coverage/
+apps/web/.eslintcache
