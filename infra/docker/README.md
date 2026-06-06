@@ -76,6 +76,12 @@ curl http://localhost:3001/tiles/
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local exec airflow-webserver airflow dags list
 ```
 
+One-command smoke (starts service-only external MVP stack by default):
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
+```
+
 Note: `ANALYTICS_DB_*` values in external mode power both API database connectivity and Martin database connectivity.
 
 ## API-to-Map Contract Smoke

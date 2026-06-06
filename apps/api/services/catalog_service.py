@@ -1,5 +1,6 @@
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from data_ingestion_toolbox.models import (
@@ -12,8 +13,21 @@ from data_ingestion_toolbox.models import (
 from data_ingestion_toolbox.sql.catalog_queries import (
     SOURCES_QUERY,
     build_geographies_queries,
+    build_geographies_queries_legacy,
     build_metrics_queries,
+    build_metrics_queries_legacy,
 )
+
+
+def _relation_exists(db: Session, relation_name: str) -> bool:
+    if not hasattr(db, "bind"):
+        return True
+
+    exists_query = text("SELECT to_regclass(:relation_name) IS NOT NULL")
+    exists = db.execute(exists_query, {"relation_name": relation_name}).scalar()
+    if exists is None:
+        return True
+    return bool(exists)
 
 
 def list_sources(db: Session) -> list[SourceSystem]:
@@ -30,7 +44,11 @@ def list_metrics(
     limit: int,
     offset: int,
 ) -> MetricListResponse:
-    list_query, count_query, params = build_metrics_queries(
+    metrics_builder = build_metrics_queries
+    if not _relation_exists(db, "gold.dim_metric"):
+        metrics_builder = build_metrics_queries_legacy
+
+    list_query, count_query, params = metrics_builder(
         source_code=source_code,
         active_only=active_only,
         dashboard_suitability=dashboard_suitability,
@@ -52,7 +70,11 @@ def list_geographies(
     limit: int,
     offset: int,
 ) -> GeographyListResponse:
-    list_query, count_query, params = build_geographies_queries(
+    geographies_builder = build_geographies_queries
+    if not _relation_exists(db, "gold.dim_geography"):
+        geographies_builder = build_geographies_queries_legacy
+
+    list_query, count_query, params = geographies_builder(
         geo_level=geo_level,
         state_fips=state_fips,
         q=q,

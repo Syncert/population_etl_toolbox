@@ -178,6 +178,10 @@ Available endpoints:
 Run the first contract checks end-to-end:
 
 ```bash
+powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
+```
+
+```bash
 curl http://localhost:3001/
 curl http://localhost:3001/api/health
 curl http://localhost:3001/api/catalog/metrics?limit=5
