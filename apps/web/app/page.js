@@ -29,6 +29,16 @@ function metricOptions(metrics) {
   }));
 }
 
+function metricSupportsCounty(metric) {
+  if (!metric || !Array.isArray(metric.valid_geo_grains)) {
+    return false;
+  }
+
+  return metric.valid_geo_grains.some(
+    (grain) => typeof grain === "string" && grain.toLowerCase() === "county",
+  );
+}
+
 function observationToFeature(item) {
   const longitude = Number(item?.geo_longitude);
   const latitude = Number(item?.geo_latitude);
@@ -83,6 +93,35 @@ function collectTileCandidates(catalogPayload) {
   return [...new Set(candidates)].filter(Boolean);
 }
 
+function prioritizeTileCandidates(candidates) {
+  const preferredOrder = ["dim_geo", "dim_geo_latest", "counties"];
+  const remaining = [];
+  const seen = new Set();
+
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    remaining.push(candidate);
+  }
+
+  const prioritized = [];
+  for (const preferred of preferredOrder) {
+    if (seen.has(preferred)) {
+      prioritized.push(preferred);
+    }
+  }
+
+  for (const candidate of remaining) {
+    if (!prioritized.includes(candidate)) {
+      prioritized.push(candidate);
+    }
+  }
+
+  return prioritized;
+}
+
 function pickJoinKey(fields = {}) {
   const fieldKeys = Array.isArray(fields)
     ? fields
@@ -103,6 +142,53 @@ function pickJoinKey(fields = {}) {
 
 function normalizeTileTemplate(layerId) {
   return `/tiles/${layerId}/{z}/{x}/{y}`;
+}
+
+function isVectorTileContentType(contentType) {
+  const normalized = (contentType || "").toLowerCase();
+  return (
+    normalized.includes("application/x-protobuf") ||
+    normalized.includes("application/vnd.mapbox-vector-tile") ||
+    normalized.includes("application/octet-stream")
+  );
+}
+
+function normalizeTileTemplateFromTileJson(rawTemplate) {
+  if (typeof rawTemplate !== "string" || !rawTemplate) {
+    return "";
+  }
+
+  let path = rawTemplate;
+
+  if (rawTemplate.startsWith("http://") || rawTemplate.startsWith("https://")) {
+    try {
+      const parsed = new URL(rawTemplate);
+      path = `${parsed.pathname}${parsed.search}`;
+    } catch {
+      return "";
+    }
+  }
+
+  if (!path.startsWith("/")) {
+    path = `/${path}`;
+  }
+
+  if (path.startsWith("/tiles/")) {
+    return path;
+  }
+
+  return `/tiles${path}`;
+}
+
+function buildSampleUrlFromTemplate(tileTemplate) {
+  return tileTemplate
+    .replaceAll("{z}", "0")
+    .replaceAll("{x}", "0")
+    .replaceAll("{y}", "0")
+    .replaceAll(
+      "{bbox-epsg-3857}",
+      "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
+    );
 }
 
 function resolveRenderableSourceLayer(map, sourceId, candidates) {
@@ -126,7 +212,7 @@ function resolveRenderableSourceLayer(map, sourceId, candidates) {
 
 async function discoverTileMetadata() {
   const discoveryPaths = ["/tiles/catalog", "/tiles/"];
-  let uniqueCandidates = [];
+  let prioritizedCandidates = [];
 
   for (const path of discoveryPaths) {
     try {
@@ -138,7 +224,7 @@ async function discoverTileMetadata() {
       const payload = await response.json();
       const candidates = collectTileCandidates(payload);
       if (candidates.length > 0) {
-        uniqueCandidates = candidates;
+        prioritizedCandidates = prioritizeTileCandidates(candidates);
         break;
       }
     } catch {
@@ -146,11 +232,11 @@ async function discoverTileMetadata() {
     }
   }
 
-  if (uniqueCandidates.length === 0) {
+  if (prioritizedCandidates.length === 0) {
     throw new Error("No tile layer ids discovered from /tiles/catalog or /tiles/");
   }
 
-  for (const id of uniqueCandidates) {
+  for (const id of prioritizedCandidates) {
     try {
       const tileJsonResponse = await fetch(`/tiles/${id}`, { cache: "no-store" });
       if (!tileJsonResponse.ok) {
@@ -188,6 +274,49 @@ async function discoverTileMetadata() {
         dedupedSourceLayerCandidates.push(candidate);
       }
 
+      const tileTemplateCandidates = [];
+
+      if (Array.isArray(tileJson.tiles)) {
+        for (const rawTemplate of tileJson.tiles) {
+          const normalizedTemplate = normalizeTileTemplateFromTileJson(rawTemplate);
+          if (normalizedTemplate) {
+            tileTemplateCandidates.push(normalizedTemplate);
+          }
+        }
+      }
+
+      tileTemplateCandidates.push(normalizeTileTemplate(id));
+      tileTemplateCandidates.push(`/${id}/{z}/{x}/{y}`);
+      tileTemplateCandidates.push(`/${id}/{z}/{x}/{y}.pbf`);
+      tileTemplateCandidates.push(`/tiles/${id}/{z}/{x}/{y}`);
+      tileTemplateCandidates.push(`/tiles/${id}/{z}/{x}/{y}.pbf`);
+
+      const dedupedTileTemplateCandidates = [];
+      const seenTileTemplates = new Set();
+      for (const candidateTemplate of tileTemplateCandidates) {
+        if (!candidateTemplate || seenTileTemplates.has(candidateTemplate)) {
+          continue;
+        }
+        seenTileTemplates.add(candidateTemplate);
+        dedupedTileTemplateCandidates.push(candidateTemplate);
+      }
+
+      let selectedTileTemplate = null;
+      for (const candidateTemplate of dedupedTileTemplateCandidates) {
+        const sampleUrl = buildSampleUrlFromTemplate(candidateTemplate);
+        const sampleTileResponse = await fetch(sampleUrl, { cache: "no-store" });
+        const sampleContentType = sampleTileResponse.headers.get("content-type") || "";
+
+        if (sampleTileResponse.ok && isVectorTileContentType(sampleContentType)) {
+          selectedTileTemplate = candidateTemplate;
+          break;
+        }
+      }
+
+      if (!selectedTileTemplate) {
+        continue;
+      }
+
       const sourceLayerId = dedupedSourceLayerCandidates[0] || id;
       const joinKey = pickJoinKey(vectorLayer?.fields || {});
 
@@ -196,14 +325,14 @@ async function discoverTileMetadata() {
         sourceLayer: sourceLayerId,
         sourceLayerCandidates: dedupedSourceLayerCandidates,
         joinKey,
-        tileTemplate: normalizeTileTemplate(id),
+        tileTemplate: selectedTileTemplate,
       };
     } catch {
       // Try next layer id.
     }
   }
 
-  throw new Error("No TileJSON discovered from /tiles/{id}");
+  throw new Error("No healthy vector tile endpoint found from discovered /tiles/{id} candidates");
 }
 
 function observationJoinValue(item, joinKey) {
@@ -314,7 +443,14 @@ export default function HomePage() {
   const [activeSourceLayer, setActiveSourceLayer] = useState(null);
   const [mapReady, setMapReady] = useState(false);
 
-  const options = useMemo(() => metricOptions(metrics), [metrics]);
+  const countyCapableMetrics = useMemo(
+    () => metrics.filter((metric) => metricSupportsCounty(metric)),
+    [metrics],
+  );
+  const options = useMemo(
+    () => metricOptions(countyCapableMetrics.length > 0 ? countyCapableMetrics : metrics),
+    [countyCapableMetrics, metrics],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -346,10 +482,12 @@ export default function HomePage() {
 
         const payload = await metricsResponse.json();
         const items = Array.isArray(payload.items) ? payload.items : [];
+        const countyItems = items.filter((metric) => metricSupportsCounty(metric));
+        const preferredItems = countyItems.length > 0 ? countyItems : items;
 
         if (!cancelled) {
           setMetrics(items);
-          setSelectedMetric(pickPreferredMetric(items));
+          setSelectedMetric(pickPreferredMetric(preferredItems));
         }
       } catch (error) {
         if (!cancelled) {
@@ -387,7 +525,7 @@ export default function HomePage() {
 
     setTilesHealth({
       state: "ok",
-      message: `layer=${tileMetadata.layerId}; configured_source=${tileMetadata.sourceLayer}; active_source=${activeSourceLayer || tileMetadata.sourceLayer}; join=${tileMetadata.joinKey}`,
+      message: `layer=${tileMetadata.layerId}; chosen_layer=${activeSourceLayer || tileMetadata.sourceLayer}; configured_source=${tileMetadata.sourceLayer}; active_source=${activeSourceLayer || tileMetadata.sourceLayer}; join=${tileMetadata.joinKey}; healthy_tile=true`,
     });
   }, [tileMetadata, activeSourceLayer]);
 
@@ -403,7 +541,7 @@ export default function HomePage() {
       try {
         const query = new URLSearchParams({
           metric_code: selectedMetric,
-          geo_level: "COUNTY",
+          geo_level: "county",
           limit: "4000",
         });
         const response = await fetch(`/api/observations/latest?${query.toString()}`, {
