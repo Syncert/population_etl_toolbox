@@ -5,7 +5,7 @@ Containerization artifacts and runtime definitions.
 ## Compose Stacks
 
 - `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + a single Postgres metadata/service DB.
-- `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, web placeholder, and Airflow services.
+- `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, web MVP shell, and Airflow services.
 - `docker-compose.external.yml`: External integration stack targeting existing analytics and Airflow metadata Postgres hosts. Supports service-only local MVP (`redis`, `api`, `martin`, `web`) by default, with optional local Airflow services under profile `airflow-local`.
 
 ## Modes
@@ -76,3 +76,21 @@ docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker
 ```
 
 Note: `ANALYTICS_DB_*` values in external mode power both API database connectivity and Martin database connectivity.
+
+## API-to-Map Contract Smoke
+
+Use these commands to verify the first API-to-map contract in external MVP mode:
+
+```bash
+curl http://localhost:8000/api/catalog/metrics?limit=5
+curl "http://localhost:8000/api/observations/latest?metric_code=population&geo_level=county&limit=5"
+curl http://localhost:3000/catalog
+# if /catalog is unavailable:
+curl http://localhost:3000/
+```
+
+Expected alignment key:
+- `geo_id` from API observation rows should align with geographic identifiers used by Martin-exposed map layers.
+
+Security reminder:
+- Keep real credentials in local untracked env files (for example `infra/docker/stack.external.env`), not in tracked examples.

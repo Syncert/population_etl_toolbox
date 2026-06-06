@@ -56,12 +56,11 @@ services:
       - ../martin/martin.yml:/etc/martin/martin.yml:ro
 
   web:
-    image: node:20-alpine
-    command: >
-      sh -c "echo 'Web placeholder container running on port 3001 (no app wired yet).' &&
-      while true; do sleep 3600; done"
+    image: nginx:alpine
     ports:
-      - "3001:3001"
+      - "3001:80"
+    volumes:
+      - ../web/index.html:/usr/share/nginx/html/index.html:ro
 
   airflow-common: &airflow-common
     build:
@@ -83,8 +82,9 @@ services:
     depends_on:
       - service_postgres
       - analytics_postgres
+    entrypoint: /bin/bash
     command: >
-      sh -c "
+      -c "
       airflow db migrate &&
       airflow users create
       --username admin

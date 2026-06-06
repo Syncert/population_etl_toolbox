@@ -173,6 +173,25 @@ Available endpoints:
 - `GET /api/observations/latest`
 - `GET /api/observations/timeseries`
 
+### API-to-Map Contract Smoke (External MVP)
+
+Run the first contract checks end-to-end:
+
+```bash
+curl http://localhost:8000/api/catalog/metrics?limit=5
+curl "http://localhost:8000/api/observations/latest?metric_code=population&geo_level=county&limit=5"
+curl http://localhost:3000/catalog
+# if /catalog is unavailable:
+curl http://localhost:3000/
+```
+
+Expected contract alignment:
+- API observation responses expose `geo_id`.
+- Martin layers/catalog entries should expose geography identifiers that map to the same county/state `geo_id` values.
+
+Security note:
+- Keep credentials only in local env files (for example `infra/docker/stack.external.env`) or host environment variables, never committed docs/examples.
+
 ### 1. Database Setup
 
 #### Create Schemas

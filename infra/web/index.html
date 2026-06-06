@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Data Ingestion Toolbox MVP</title>
+    <style>
+      :root {
+        --bg: #f4f1ea;
+        --panel: #fffdf9;
+        --ink: #1f2933;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --border: #d9d4ca;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: linear-gradient(160deg, #f4f1ea 0%, #ece6da 55%, #f8f4ee 100%);
+        color: var(--ink);
+      }
+
+      main {
+        max-width: 860px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+      }
+
+      h1 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: clamp(1.5rem, 4vw, 2rem);
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin: 1rem 0 1.5rem;
+      }
+
+      .btn {
+        display: inline-block;
+        padding: 0.65rem 1rem;
+        border-radius: 999px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .btn.secondary {
+        background: transparent;
+        color: var(--accent-strong);
+      }
+
+      h2 {
+        font-size: 1.1rem;
+        margin-top: 1.4rem;
+      }
+
+      ul {
+        padding-left: 1.2rem;
+      }
+
+      code {
+        background: #f4f7f7;
+        border: 1px solid #d9ecea;
+        border-radius: 6px;
+        padding: 0.1rem 0.35rem;
+        font-size: 0.93rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <h1>Data Ingestion Toolbox MVP</h1>
+        <p>
+          Lightweight frontend shell for external service-only mode. Use this page to
+          quickly verify API and map service availability while the full web app is
+          still planned.
+        </p>
+
+        <div class="actions">
+          <a class="btn" href="http://localhost:8000/health" target="_blank" rel="noreferrer">API Health</a>
+          <a class="btn secondary" href="http://localhost:3000/health" target="_blank" rel="noreferrer">Martin Health</a>
+        </div>
+
+        <h2>Quick Checks</h2>
+        <ul>
+          <li>Catalog: <code>http://localhost:8000/api/catalog/metrics?limit=5</code></li>
+          <li>Latest data: <code>http://localhost:8000/api/observations/latest?metric_code=population&amp;geo_level=county&amp;limit=5</code></li>
+          <li>Martin catalog (or root fallback): <code>http://localhost:3000/catalog</code> then <code>http://localhost:3000/</code></li>
+        </ul>
+
+        <h2>Contract Note</h2>
+        <p>
+          API records and map layers should align on <code>geo_id</code> so data values
+          and geography tiles can be joined consistently.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
