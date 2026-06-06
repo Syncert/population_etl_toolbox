@@ -159,9 +159,9 @@ values plus interpretability metadata.
 
 | **Object**                      | **Purpose**                                      | **Important fields / usage**                                                                    |
 |---------------------------------|--------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| gold.dim_metric                 | Metric catalog. One row per app-facing metric.   | metric_id, display_name, source, dataset, unit, frequency, supports_moe, description            |
+| gold.dim_metric                 | Metric catalog. One row per app-facing metric.   | metric_code, display_name, source, dataset, unit, frequency, supports_moe, description          |
 | gold.dim_geography              | Geography catalog. One row per public geography. | geo_id, geo_level, geo_name, state_fips, county_fips, state_name, geometry availability         |
-| gold.fact_observation           | Long metric observation table.                   | metric_id, geo_id, period, value, unit, source, dataset, vintage, release_date, margin_of_error |
+| gold.fact_observation           | Long metric observation table.                   | metric_code, geo_id, period, value, unit, source, dataset, vintage, release_date, margin_of_error |
 | gold.v_metric_latest_by_geo     | Latest value per metric/geography.               | Primary API source for choropleth maps.                                                         |
 | gold.v_metric_timeseries_by_geo | Time series by metric/geography.                 | Primary API source for side-panel trend charts.                                                 |
 | gold.v_metric_distribution      | Distribution stats and bin inputs.               | Supports quantile/log/equal interval/color scale decisions.                                     |
@@ -172,7 +172,7 @@ values plus interpretability metadata.
 The app should never need to know that population came from B01003, that
 LAUS series IDs are generated from area and measure codes, or that ACS1
 and ACS5 have different coverage. Those details belong in metadata, gold
-views, and API services. The app should know metric_id = population,
+views, and API services. The app should know metric_code = population,
 geo_level = county, period = latest.
 
 # 5. API Architecture
@@ -194,6 +194,10 @@ the analytical database.
 | GET /api/distribution/bins       | Distribution and suggested breakpoints.  | Legend, color scale, and outlier context.      |
 | GET /api/comparison              | Metric A vs Metric B.                    | Scatterplots and cross-metric analysis.        |
 | GET /api/models/...              | Forecast or risk score outputs.          | Later phase after gold contracts are stable.   |
+
+Implementation note: canonical query name is `metric_code`; `metric_id`
+is accepted as a backward-compatible alias on observations, distribution,
+and comparison endpoints.
 
 ## API response design
 
@@ -352,7 +356,7 @@ query layer points to named contract views (`gold.dim_metric`,
   view.
 
 - API: GET
-  /api/observations/latest?metric_id=population&geo_level=county.
+  /api/observations/latest?metric_code=population&geo_level=county.
 
 - Tiles: /tiles/counties/{z}/{x}/{y}.pbf through Martin.
 
@@ -386,13 +390,13 @@ query layer points to named contract views (`gold.dim_metric`,
 Example response shape for latest observations:
 
 {  
-"metric_id": "population",  
+"metric_code": "population",  
 "geo_level": "county",  
 "period": "latest",  
 "count": 3143,  
 "observations": \[  
 {  
-"metric_id": "population",  
+"metric_code": "population",  
 "geo_id": "55025",  
 "geo_level": "county",  
 "geo_name": "Dane County",  

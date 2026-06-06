@@ -172,6 +172,13 @@ Available endpoints:
 - `GET /api/catalog/geographies`
 - `GET /api/observations/latest`
 - `GET /api/observations/timeseries`
+- `GET /api/distribution/bins`
+- `GET /api/comparison`
+- `GET /api/models/status`
+
+Observation endpoint parameter note:
+- `GET /api/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
+- `GET /api/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
 
 ### Next.js Web App (Local Iteration)
 

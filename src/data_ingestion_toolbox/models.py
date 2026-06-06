@@ -91,3 +91,50 @@ class ObservationListResponse(BaseModel):
     limit: int
     offset: int
     items: list[ObservationDashboard]
+
+
+class DistributionBin(BaseModel):
+    bin_index: int
+    lower_bound: Optional[float] = None
+    upper_bound: Optional[float] = None
+    count: int
+
+
+class DistributionBinsResponse(BaseModel):
+    metric_code: str
+    geo_level: Optional[str] = None
+    total: int
+    bin_count: int
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    items: list[DistributionBin] = Field(default_factory=list)
+
+
+class ComparisonRow(BaseModel):
+    geo_id: str
+    geo_level: Optional[str] = None
+    state_fips: Optional[str] = None
+    county_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    county_name: Optional[str] = None
+    metric_code_a: str
+    metric_code_b: str
+    value_a: Optional[float] = None
+    value_b: Optional[float] = None
+    difference: Optional[float] = None
+    ratio: Optional[float] = None
+
+
+class ComparisonResponse(BaseModel):
+    metric_code_a: str
+    metric_code_b: str
+    total: int
+    limit: int
+    offset: int
+    items: list[ComparisonRow] = Field(default_factory=list)
+
+
+class ModelSurfaceStatusResponse(BaseModel):
+    status: str
+    models_enabled: bool
+    details: str
