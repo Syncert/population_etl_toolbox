@@ -59,7 +59,7 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             SELECT 
                 geo_level,
                 COUNT(*) as count
-            FROM silver_ref.dim_geo
+            from data_ingestion_toolbox.silver_ref.dim_geo
             GROUP BY geo_level
             ORDER BY geo_level;
         """)
@@ -214,14 +214,14 @@ def check_dimension_sync_status(postgres_conn_id: str = 'public_data'):
     with hook.get_conn() as conn, conn.cursor() as cur:
         # Check dim_geo last update
         cur.execute("""
-            SELECT MAX(ingested_at) as last_sync FROM silver_ref.dim_geo;
+            SELECT MAX(ingested_at) as last_sync from data_ingestion_toolbox.silver_ref.dim_geo;
         """)
         last_geo_sync = cur.fetchone()[0]
         logger.info(f"dim_geo last synced: {last_geo_sync}")
         
         # Check dim_time last update
         cur.execute("""
-            SELECT MAX(ingested_at) as last_sync FROM silver_ref.dim_time;
+            SELECT MAX(ingested_at) as last_sync from data_ingestion_toolbox.silver_ref.dim_time;
         """)
         last_time_sync = cur.fetchone()[0]
         logger.info(f"dim_time last synced: {last_time_sync}")
@@ -229,7 +229,7 @@ def check_dimension_sync_status(postgres_conn_id: str = 'public_data'):
         # Check date range coverage
         cur.execute("""
             SELECT MIN(date_key) as earliest, MAX(date_key) as latest 
-            FROM silver_ref.dim_time;
+            from data_ingestion_toolbox.silver_ref.dim_time;
         """)
         earliest, latest = cur.fetchone()
         logger.info(f"dim_time coverage: {earliest} to {latest}")

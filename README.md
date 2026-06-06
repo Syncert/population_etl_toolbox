@@ -1,6 +1,8 @@
-# population_etl_toolbox
+# data_ingestion_toolbox
 
 A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for real-time access to Census, BLS, and FRED data in a structured dimensional warehouse.
+
+Repository architecture reference: `data_ingestion_toolbox_proposed_architecture.md`.
 
 ## Project Vision
 
@@ -131,7 +133,7 @@ This single command installs runtime dependencies and optional groups for Airflo
 Smoke test imports (no PYTHONPATH/path hacks required):
 
 ```bash
-python -c "import bls, census_acs, fred, silver_ref, utility; print('imports ok')"
+python -c "import data_ingestion_toolbox, data_ingestion_toolbox.bls, data_ingestion_toolbox.census_acs, data_ingestion_toolbox.fred, data_ingestion_toolbox.silver_ref, data_ingestion_toolbox.utility; print('imports ok')"
 ```
 
 Optional targeted installs:
@@ -146,6 +148,30 @@ pip install -e .[api]
 # Lint/test tooling only
 pip install -e .[dev]
 ```
+
+### API MVP (Vertical Slice)
+
+Run the API locally:
+
+```bash
+pip install -e .[api]
+uvicorn apps.api.main:app --reload
+```
+
+Default environment variables (override as needed):
+- `DB_HOST` (default `localhost`)
+- `DB_PORT` (default `5432`)
+- `DB_USER` (default `postgres`)
+- `DB_PASSWORD` (default empty)
+- `DB_NAME` (default `population_etl`)
+
+Available endpoints:
+- `GET /health`
+- `GET /api/catalog/sources`
+- `GET /api/catalog/metrics`
+- `GET /api/catalog/geographies`
+- `GET /api/observations/latest`
+- `GET /api/observations/timeseries`
 
 ### 1. Database Setup
 
@@ -165,17 +191,17 @@ CREATE SCHEMA IF NOT EXISTS silver_fred;
 Execute all DDL scripts in order:
 ```bash
 # Reference dimensions (required first)
-psql -U postgres -d population_etl < silver_ref/DDL/silver_ref.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql
 
 # Raw schemas (data ingestion tables)
-psql -U postgres -d population_etl < census_acs/DDL/raw_census.sql
-psql -U postgres -d population_etl < bls/DDL/raw_bls.sql
-psql -U postgres -d population_etl < fred/DDL/raw_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/raw_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/raw_fred.sql
 
 # Silver schemas (transformed fact tables)
-psql -U postgres -d population_etl < census_acs/DDL/silver_census.sql
-psql -U postgres -d population_etl < bls/DDL/silver_bls.sql
-psql -U postgres -d population_etl < fred/DDL/silver_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
 ```
 
 ### 2. Airflow Setup
@@ -228,7 +254,7 @@ Each module has a `config.py` file:
 
 For a configuration-agnostic overview (contract vs selected scope), see `documentation/CONFIGURATION.md`.
 
-**census_acs/config.py:**
+**src/data_ingestion_toolbox/census_acs/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.datasets = ["acs1", "acs5"]  # which ACS datasets to ingest
@@ -240,7 +266,7 @@ CONFIG.curated_tables = [
 ]
 ```
 
-**bls/config.py:**
+**src/data_ingestion_toolbox/bls/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.programs = ["la", "cu", "ce"]  # LAUS, CPI, CES program codes
@@ -250,7 +276,7 @@ CONFIG.curated_by_program = {
 }
 ```
 
-**fred/config.py:**
+**src/data_ingestion_toolbox/fred/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.domains = ["labor_cycle", "employment", "prices", ...]  # FRED domains
@@ -264,10 +290,10 @@ Before first run, sync dimension tables:
 # Option A: Run via Airflow UI (trigger silver_ref DAG manually)
 
 # Option B: Run directly
-cd /path/to/population_etl_toolbox
+cd /path/to/data_ingestion_toolbox
 python -c "
-from silver_ref.geography import sync_geo_dim
-from silver_ref.time_dim import sync_time_dim
+from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
+from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 sync_geo_dim()  # Loads 14 years of Gazetteer data
 sync_time_dim()  # Loads daily calendar (1970 - 2100)
 "
@@ -300,9 +326,9 @@ Monitor logs to ensure:
 ```bash
 # Manual execution of transformation functions:
 python -c "
-from census_acs.silver_census.transform import transform_census_to_silver
-from bls.silver_bls.transform import transform_bls_to_silver
-from fred.silver_fred.transform import transform_fred_to_silver
+from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 # Transform Census
 transform_census_to_silver()
@@ -436,23 +462,25 @@ ORDER BY date DESC LIMIT 30;
 
 ### Project Structure
 ```
-population_etl_toolbox/
-├── census_acs/           — Census ACS ingestion & transforms
-│   ├── config.py, metadata.py, ingest.py, geography.py
-│   ├── silver_census/    — Census silver layer transforms
-│   ├── DDL/              — raw_census.sql, silver_census.sql
-│   └── tests/            — pytest suite
-├── bls/                  — BLS ingestion & transforms
-│   └── (similar structure)
-├── fred/                 — FRED ingestion & transforms
-│   └── (similar structure)
-├── silver_ref/           — Shared dimension tables
-│   ├── geography.py, time_dim.py
-│   └── DDL/silver_ref.sql
+data_ingestion_toolbox/
+├── apps/
+│   └── api/              — FastAPI service
+├── src/
+│   └── data_ingestion_toolbox/
+│       ├── bls/          — BLS ingestion and transforms
+│       ├── census_acs/   — Census ACS ingestion and transforms
+│       ├── fred/         — FRED ingestion and transforms
+│       ├── silver_ref/   — Shared dimensions
+│       ├── sql/          — Shared SQL helpers
+│       ├── utility/      — Shared utilities
+│       └── models.py, db.py, config.py
 ├── dags/                 — Airflow DAGs
-│   ├── silver_ref_dag.py
-│   ├── acs_ingest_dag.py, bls_ingest_dag.py, fred_ingest_dag.py
-└── utility/              — Shared utilities (db_connection.py, etc.)
+├── documentation/        — Architecture and operational docs
+├── scripts/              — Tooling and validation scripts
+├── infra/
+│   ├── airflow/
+│   ├── docker/
+│   └── martin/
 ```
 
 ### Adding a New Data Source

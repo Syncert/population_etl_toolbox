@@ -1,0 +1,3 @@
+from data_ingestion_toolbox.config import get_settings
+
+__all__ = ["get_settings"]
