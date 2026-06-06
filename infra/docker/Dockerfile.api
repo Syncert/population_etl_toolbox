@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/data_ingestion_toolbox
+
+COPY . /opt/data_ingestion_toolbox
+
+RUN pip install --no-cache-dir -e .[api]
+
+CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

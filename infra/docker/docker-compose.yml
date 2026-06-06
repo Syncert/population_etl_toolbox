@@ -1,0 +1,121 @@
+services:
+  analytics_postgres:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: analytics
+      POSTGRES_DB: population_etl
+    ports:
+      - "5433:5432"
+    volumes:
+      - analytics_postgres_data:/var/lib/postgresql/data
+
+  service_postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5434:5432"
+    volumes:
+      - service_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.api
+    depends_on:
+      - analytics_postgres
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DB_HOST: ${ANALYTICS_DB_HOST:-analytics_postgres}
+      DB_PORT: ${ANALYTICS_DB_PORT:-5432}
+      DB_USER: ${ANALYTICS_DB_USER:-analytics}
+      DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:-analytics}
+      DB_NAME: ${ANALYTICS_DB_NAME:-population_etl}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+
+  martin:
+    image: maplibre/martin:latest
+    depends_on:
+      - analytics_postgres
+    command: ["/martin", "--config", "/etc/martin/martin.yml"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../martin/martin.yml:/etc/martin/martin.yml:ro
+
+  web:
+    image: node:20-alpine
+    command: >
+      sh -c "echo 'Web placeholder container running on port 3001 (no app wired yet).' &&
+      while true; do sleep 3600; done"
+    ports:
+      - "3001:3001"
+
+  airflow-common: &airflow-common
+    build:
+      context: ../../
+      dockerfile: infra/airflow/Dockerfile
+    depends_on:
+      - service_postgres
+    env_file:
+      - ../airflow/airflow.env.example
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@service_postgres/airflow
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      - service_postgres
+      - analytics_postgres
+    command: >
+      sh -c "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Airflow
+      --lastname Admin
+      --role Admin
+      --email admin@example.com || true;
+      airflow connections delete public_data >/dev/null 2>&1 || true;
+      airflow connections add public_data --conn-type postgres --conn-host analytics_postgres --conn-port 5432 --conn-login analytics --conn-password analytics --conn-schema population_etl;
+      airflow pools set census_api 4 'Census Bureau API limit';
+      airflow pools set bls_api 4 'BLS API limit';
+      airflow pools set fred_api 4 'FRED API limit'
+      "
+
+  airflow-webserver:
+    <<: *airflow-common
+    depends_on:
+      - airflow-init
+      - redis
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    depends_on:
+      - airflow-init
+      - redis
+    command: airflow scheduler
+
+volumes:
+  analytics_postgres_data:
+  service_postgres_data:

@@ -216,16 +216,33 @@ PYTHONPATH=/opt/data_ingestion_toolbox/src:/opt/data_ingestion_toolbox
 AIRFLOW__CORE__LOAD_EXAMPLES=False
 ```
 
-Use the Airflow compose stack at `infra/docker/docker-compose.airflow.yml`.
+Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration + metadata DB.
+
+Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
 
 ```bash
 docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
 docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
 ```
 
-In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection (host `postgres`, port `5432`, database/schema `airflow`, user/password `airflow`) and ensures the `census_api`, `bls_api`, and `fred_api` pools exist with 4 slots.
+Full stack startup:
+
+```bash
+cp infra/docker/stack.env.example infra/docker/stack.env
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up airflow-init
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
+```
+
+In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:
+
+- Airflow-only compose seeds `public_data` -> host `postgres`, schema `airflow` (metadata DB).
+- Full compose seeds `public_data` -> host `analytics_postgres`, schema `population_etl` (analytics DB).
+
+For production/real runs, set `public_data` to your target analytics warehouse.
 
 #### Create Database Connection
+Only needed if you are not using compose init seeding.
+
 ```bash
 # In Airflow UI (Admin > Connections) or via CLI:
 airflow connections add \
