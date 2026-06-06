@@ -31,3 +31,5 @@ docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserve
 docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler airflow dags list
 docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler airflow dags test silver_ref
 ```
+
+In the compose environment, `airflow-init` also seeds the `public_data` Airflow connection and ensures the `census_api`, `bls_api`, and `fred_api` pools exist.

@@ -1,8 +1,6 @@
-version: "3.8"
-
 services:
   postgres:
-    image: postgres:15
+    image: postgis/postgis:15-3.4
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -10,8 +8,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  airflow-init:
-    image: apache/airflow:2.9.3
+  airflow-common: &airflow-common
+    build:
+      context: ../../
+      dockerfile: infra/airflow/Dockerfile
     depends_on:
       - postgres
     env_file:
@@ -22,6 +22,9 @@ services:
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
+
+  airflow-init:
+    <<: *airflow-common
     command: >
       bash -c "
       airflow db migrate &&
@@ -31,39 +34,26 @@ services:
       --firstname Airflow
       --lastname Admin
       --role Admin
-      --email admin@example.com
+      --email admin@example.com || true;
+      airflow connections delete public_data >/dev/null 2>&1 || true;
+      airflow connections add public_data --conn-type postgres --conn-host postgres --conn-port 5432 --conn-login airflow --conn-password airflow --conn-schema airflow;
+      airflow pools set census_api 4 'Census Bureau API limit';
+      airflow pools set bls_api 4 'BLS API limit';
+      airflow pools set fred_api 4 'FRED API limit'
       "
 
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    <<: *airflow-common
     depends_on:
-      - postgres
       - airflow-init
-    env_file:
-      - ../airflow/airflow.env.example
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    volumes:
-      - ../../:/opt/data_ingestion_toolbox
-    working_dir: /opt/data_ingestion_toolbox
     command: airflow webserver
     ports:
       - "8080:8080"
 
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    <<: *airflow-common
     depends_on:
-      - postgres
       - airflow-init
-    env_file:
-      - ../airflow/airflow.env.example
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    volumes:
-      - ../../:/opt/data_ingestion_toolbox
-    working_dir: /opt/data_ingestion_toolbox
     command: airflow scheduler
 
 volumes:

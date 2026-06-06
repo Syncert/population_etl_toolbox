@@ -223,6 +223,8 @@ docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
 docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
 ```
 
+In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection (host `postgres`, port `5432`, database/schema `airflow`, user/password `airflow`) and ensures the `census_api`, `bls_api`, and `fred_api` pools exist with 4 slots.
+
 #### Create Database Connection
 ```bash
 # In Airflow UI (Admin > Connections) or via CLI:
