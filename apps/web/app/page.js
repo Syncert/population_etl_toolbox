@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { VectorTile } from "@mapbox/vector-tile";
 import maplibregl from "maplibre-gl";
+import Protobuf from "pbf";
+
+const COUNTY_TILE_FILTER = ["has", "county_fips"];
+const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
+const CHOROPLETH_PALETTE = ["#f7e6a1", "#a8d08d", "#4f9f68", "#2f80b7", "#5e4fa2"];
 
 function normalizeMetricCode(code) {
   return typeof code === "string" ? code.toLowerCase() : "";
@@ -61,6 +67,22 @@ function observationToFeature(item) {
       coordinates: [longitude, latitude],
     },
   };
+}
+
+function isCountyObservation(item) {
+  if (!item) {
+    return false;
+  }
+
+  if (typeof item.geo_level === "string" && item.geo_level.toUpperCase() === "COUNTY") {
+    return true;
+  }
+
+  if (item.county_fips) {
+    return true;
+  }
+
+  return typeof item.geo_id === "string" && item.geo_id.toLowerCase().includes("|county:");
 }
 
 function collectTileCandidates(catalogPayload) {
@@ -144,6 +166,10 @@ function normalizeTileTemplate(layerId) {
   return `/tiles/${layerId}/{z}/{x}/{y}`;
 }
 
+function normalizeTileJsonUrl(layerId) {
+  return `/tiles/${layerId}`;
+}
+
 function isVectorTileContentType(contentType) {
   const normalized = (contentType || "").toLowerCase();
   return (
@@ -189,25 +215,6 @@ function buildSampleUrlFromTemplate(tileTemplate) {
       "{bbox-epsg-3857}",
       "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
     );
-}
-
-function resolveRenderableSourceLayer(map, sourceId, candidates) {
-  const normalizedCandidates = Array.isArray(candidates)
-    ? candidates.filter((candidate) => typeof candidate === "string" && candidate)
-    : [];
-
-  for (const candidate of normalizedCandidates) {
-    try {
-      const features = map.querySourceFeatures(sourceId, { sourceLayer: candidate });
-      if (Array.isArray(features) && features.length > 0) {
-        return candidate;
-      }
-    } catch {
-      // Try next candidate when source-layer is not queryable.
-    }
-  }
-
-  return normalizedCandidates[0] || null;
 }
 
 async function discoverTileMetadata() {
@@ -325,6 +332,7 @@ async function discoverTileMetadata() {
         sourceLayer: sourceLayerId,
         sourceLayerCandidates: dedupedSourceLayerCandidates,
         joinKey,
+        tileJsonUrl: normalizeTileJsonUrl(id),
         tileTemplate: selectedTileTemplate,
       };
     } catch {
@@ -333,6 +341,35 @@ async function discoverTileMetadata() {
   }
 
   throw new Error("No healthy vector tile endpoint found from discovered /tiles/{id} candidates");
+}
+
+async function loadPreviewTileFeatures(tileTemplate, sourceLayer) {
+  const sampleUrl = buildSampleUrlFromTemplate(tileTemplate);
+  const response = await fetch(sampleUrl, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`tile sample status ${response.status}`);
+  }
+
+  const tile = new VectorTile(new Protobuf(new Uint8Array(await response.arrayBuffer())));
+  const layer = tile.layers[sourceLayer] || tile.layers[Object.keys(tile.layers)[0]];
+
+  if (!layer) {
+    throw new Error("tile sample contained no vector layers");
+  }
+
+  const features = [];
+  for (let index = 0; index < layer.length; index += 1) {
+    const feature = layer.feature(index).toGeoJSON(0, 0, 0);
+    if (isCountyObservation(feature.properties)) {
+      features.push(feature);
+    }
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
 }
 
 function observationJoinValue(item, joinKey) {
@@ -375,19 +412,34 @@ function observationJoinValue(item, joinKey) {
 
 function colorForValue(value, minValue, maxValue) {
   if (!Number.isFinite(value) || !Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
-    return "#d8dee3";
+    return CHOROPLETH_FALLBACK_COLOR;
   }
 
-  const palette = ["#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"];
   const span = maxValue - minValue;
   const ratio = span <= 0 ? 0 : (value - minValue) / span;
-  const index = Math.max(0, Math.min(palette.length - 1, Math.floor(ratio * palette.length)));
-  return palette[index];
+  const index = Math.max(0, Math.min(CHOROPLETH_PALETTE.length - 1, Math.floor(ratio * CHOROPLETH_PALETTE.length)));
+  return CHOROPLETH_PALETTE[index];
 }
 
-function buildChoroplethMatchExpression(observations, joinKey) {
+function formatLegendValue(value) {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    notation: Math.abs(value) >= 10000 ? "compact" : "standard",
+    maximumFractionDigits: Math.abs(value) >= 10000 ? 1 : 0,
+  }).format(value);
+}
+
+function buildChoroplethModel(observations, joinKey) {
   if (!Array.isArray(observations) || observations.length === 0) {
-    return ["literal", "#d8dee3"];
+    return {
+      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
+      legendItems: [],
+      minValue: null,
+      maxValue: null,
+    };
   }
 
   const keyedValues = [];
@@ -405,17 +457,51 @@ function buildChoroplethMatchExpression(observations, joinKey) {
 
   const values = [...keyedMap.values()];
   if (values.length === 0) {
-    return ["literal", "#d8dee3"];
+    return {
+      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
+      legendItems: [],
+      minValue: null,
+      maxValue: null,
+    };
   }
 
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
+  const span = maxValue - minValue;
 
   for (const [key, numericValue] of keyedMap.entries()) {
     keyedValues.push(key, colorForValue(numericValue, minValue, maxValue));
   }
 
-  return ["match", ["to-string", ["get", joinKey]], ...keyedValues, "#d8dee3"];
+  const legendItems = CHOROPLETH_PALETTE.map((color, index) => {
+    if (span <= 0) {
+      return {
+        color,
+        label: formatLegendValue(minValue),
+      };
+    }
+
+    const start = minValue + (span * index) / CHOROPLETH_PALETTE.length;
+    const end = index === CHOROPLETH_PALETTE.length - 1
+      ? maxValue
+      : minValue + (span * (index + 1)) / CHOROPLETH_PALETTE.length;
+
+    return {
+      color,
+      label: `${formatLegendValue(start)} - ${formatLegendValue(end)}`,
+    };
+  });
+
+  return {
+    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    legendItems,
+    minValue,
+    maxValue,
+  };
+}
+
+function buildChoroplethMatchExpression(observations, joinKey) {
+  return buildChoroplethModel(observations, joinKey).expression;
 }
 
 export default function HomePage() {
@@ -541,7 +627,7 @@ export default function HomePage() {
       try {
         const query = new URLSearchParams({
           metric_code: selectedMetric,
-          geo_level: "county",
+          geo_level: "COUNTY",
           limit: "4000",
         });
         const response = await fetch(`/api/observations/latest?${query.toString()}`, {
@@ -578,7 +664,8 @@ export default function HomePage() {
             : [];
 
           if (fallbackItems.length > 0) {
-            items = fallbackItems;
+            const countyFallbackItems = fallbackItems.filter((item) => isCountyObservation(item));
+            items = countyFallbackItems.length > 0 ? countyFallbackItems : fallbackItems;
             usedFallback = true;
           }
         }
@@ -622,7 +709,7 @@ export default function HomePage() {
             id: "background",
             type: "background",
             paint: {
-              "background-color": "#e8eef2",
+              "background-color": "#dfe8ed",
             },
           },
         ],
@@ -634,8 +721,6 @@ export default function HomePage() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     map.on("load", async () => {
-      setMapReady(true);
-
       map.addSource("obs", {
         type: "geojson",
         data: {
@@ -650,12 +735,14 @@ export default function HomePage() {
         source: "obs",
         paint: {
           "circle-color": "#0a7a6d",
-          "circle-radius": 2.2,
-          "circle-opacity": 0.22,
+          "circle-radius": 1.4,
+          "circle-opacity": 0.08,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 0.5,
+          "circle-stroke-width": 0.25,
         },
       });
+
+      setMapReady(true);
     });
 
     mapRef.current = map;
@@ -668,16 +755,12 @@ export default function HomePage() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded() || !mapReady || !tileMetadata) {
+    if (!map || !mapReady || !tileMetadata) {
       return;
     }
 
-    const sourceLayerCandidates =
-      Array.isArray(tileMetadata.sourceLayerCandidates) && tileMetadata.sourceLayerCandidates.length > 0
-        ? tileMetadata.sourceLayerCandidates
-        : [tileMetadata.sourceLayer].filter(Boolean);
-    const configuredSourceLayer = tileMetadata.sourceLayer;
-    const currentSourceLayer = activeSourceLayer || configuredSourceLayer;
+    let cancelled = false;
+    const currentSourceLayer = activeSourceLayer || tileMetadata.sourceLayer;
 
     const removeChoropleth = () => {
       if (map.getLayer("choropleth-outline")) {
@@ -691,18 +774,21 @@ export default function HomePage() {
       }
     };
 
-    const addChoropleth = (sourceLayer) => {
+    const addChoropleth = async (sourceLayer) => {
       if (!sourceLayer) {
+        return;
+      }
+
+      const featureCollection = await loadPreviewTileFeatures(tileMetadata.tileTemplate, sourceLayer);
+      if (cancelled) {
         return;
       }
 
       removeChoropleth();
 
       map.addSource("choropleth", {
-        type: "vector",
-        tiles: [tileMetadata.tileTemplate],
-        minzoom: 0,
-        maxzoom: 22,
+        type: "geojson",
+        data: featureCollection,
       });
 
       map.addLayer(
@@ -710,10 +796,10 @@ export default function HomePage() {
           id: "choropleth-fill",
           type: "fill",
           source: "choropleth",
-          "source-layer": sourceLayer,
+          filter: COUNTY_TILE_FILTER,
           paint: {
-            "fill-color": "#f2f8ff",
-            "fill-opacity": 0.78,
+            "fill-color": buildChoroplethMatchExpression(observations, tileMetadata.joinKey),
+            "fill-opacity": 0.95,
           },
         },
         "obs-points",
@@ -724,42 +810,34 @@ export default function HomePage() {
           id: "choropleth-outline",
           type: "line",
           source: "choropleth",
-          "source-layer": sourceLayer,
+          filter: COUNTY_TILE_FILTER,
           paint: {
-            "line-color": "#2c4a66",
-            "line-width": 0.9,
-            "line-opacity": 0.75,
+            "line-color": "#22384d",
+            "line-width": 0.7,
+            "line-opacity": 0.85,
           },
         },
         "obs-points",
       );
     };
 
-    addChoropleth(currentSourceLayer);
-
-    const idleHandler = () => {
-      const resolvedSourceLayer = resolveRenderableSourceLayer(
-        map,
-        "choropleth",
-        sourceLayerCandidates,
-      );
-
-      if (resolvedSourceLayer && resolvedSourceLayer !== currentSourceLayer) {
-        addChoropleth(resolvedSourceLayer);
-        setActiveSourceLayer(resolvedSourceLayer);
+    addChoropleth(currentSourceLayer).catch((error) => {
+      if (!cancelled) {
+        setTilesHealth({
+          state: "warn",
+          message: error.message || "tile preview render failed",
+        });
       }
-    };
-
-    map.on("idle", idleHandler);
+    });
 
     return () => {
-      map.off("idle", idleHandler);
+      cancelled = true;
     };
-  }, [mapReady, tileMetadata, activeSourceLayer]);
+  }, [mapReady, tileMetadata, activeSourceLayer, observations]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded() || !mapReady) {
+    if (!map || !mapReady) {
       return;
     }
 
@@ -796,6 +874,10 @@ export default function HomePage() {
   }, [mapReady, observations, tileMetadata]);
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
+  const choroplethModel = useMemo(
+    () => buildChoroplethModel(observations, tileMetadata?.joinKey || "geo_id"),
+    [observations, tileMetadata],
+  );
 
   function pillClass(status) {
     if (status === "ok") {
@@ -856,7 +938,20 @@ export default function HomePage() {
         <article className="card">
           <h2>Map Preview</h2>
           <p className="subtle">Choropleth polygons are joined to observations by discovered tile join key; low-opacity points remain for diagnostics.</p>
-          <div className="map-shell" ref={mapContainerRef} />
+          <div className="map-shell">
+            <div className="map-canvas" ref={mapContainerRef} />
+            {choroplethModel.legendItems.length > 0 ? (
+              <div className="map-legend" aria-label="Choropleth value legend">
+                <div className="legend-title">Value</div>
+                {choroplethModel.legendItems.map((item) => (
+                  <div className="legend-row" key={`${item.color}-${item.label}`}>
+                    <span className="legend-swatch" style={{ backgroundColor: item.color }} />
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </article>
 
         <article className="card span-2">

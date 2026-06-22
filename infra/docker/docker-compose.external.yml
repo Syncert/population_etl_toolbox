@@ -23,9 +23,9 @@ services:
 
   martin:
     image: maplibre/martin:latest
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      ["cp /etc/martin/martin.yml /tmp/martin.runtime.yml && printf '\npostgres:\n  connection_string: postgres://${ANALYTICS_DB_USER}:${ANALYTICS_DB_PASSWORD}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}\n' >> /tmp/martin.runtime.yml && exec martin --config /tmp/martin.runtime.yml"]
+    command: --config /etc/martin/martin.yml
+    environment:
+      MARTIN_DATABASE_URL: postgres://${ANALYTICS_DB_USER:?Set ANALYTICS_DB_USER}:${ANALYTICS_DB_PASSWORD:?Set ANALYTICS_DB_PASSWORD}@${ANALYTICS_DB_HOST:?Set ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT:?Set ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME:?Set ANALYTICS_DB_NAME}
     ports:
       - "3000:3000"
     volumes:

@@ -1,10 +1,27 @@
-# Initial Martin config; pending follow-up geometry naming cleanup in gold schema.
-listen_addresses: 0.0.0.0:3000
-# DB connection is injected by compose at container startup.
+# Martin expands environment variables in config files at startup.
+listen_addresses: "0.0.0.0:3000"
+base_path: /tiles
 
-tables:
-  gold.dim_geo_latest:
-    layer_id: counties
-    geometry_column: geo_geom
-    id_column: geo_id
-    srid: 4326
+postgres:
+  connection_string: ${MARTIN_DATABASE_URL}
+  auto_publish: false
+  tables:
+    counties:
+      layer_id: counties
+      schema: gold
+      table: dim_geo_latest
+      geometry_column: geo_geom
+      id_column: ~
+      srid: 4326
+      minzoom: 0
+      maxzoom: 12
+      bounds: [-180.0, -90.0, 180.0, 90.0]
+      properties:
+        geo_id: text
+        geo_level: text
+        state_fips: text
+        county_fips: text
+        state_name: text
+        county_name: text
+        latitude: float8
+        longitude: float8

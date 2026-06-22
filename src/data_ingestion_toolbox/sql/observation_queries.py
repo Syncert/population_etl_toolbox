@@ -46,7 +46,7 @@ def build_latest_mv_queries(
     }
 
     if geo_level:
-        where_clauses.append("geo_level = :geo_level")
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
 
     if state_fips:
@@ -88,7 +88,7 @@ def build_latest_mv_queries_legacy(
     }
 
     if geo_level:
-        where_clauses.append("geo_level = :geo_level")
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
 
     if state_fips:
@@ -130,7 +130,7 @@ def build_latest_rpt_fallback_queries(
     }
 
     if geo_level:
-        where_clauses.append("geo_level = :geo_level")
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
 
     if state_fips:
@@ -206,7 +206,7 @@ def build_latest_rpt_fallback_queries_legacy(
     }
 
     if geo_level:
-        where_clauses.append("geo_level = :geo_level")
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
 
     if state_fips:
