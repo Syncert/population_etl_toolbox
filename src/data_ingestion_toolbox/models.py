@@ -49,14 +49,18 @@ class GeographyLatest(BaseModel):
 
 class ObservationDashboard(BaseModel):
     source_code: str
+    source: Optional[str] = None
     observation_date: date
+    period: Optional[str] = None
     duration_start: Optional[date] = None
     duration_end: Optional[date] = None
     time_sk: Optional[int] = None
     as_of_date: date
+    release_date: Optional[date] = None
     updated_at: datetime
     geo_id: str
     geo_level: str
+    geo_name: Optional[str] = None
     state_fips: Optional[str] = None
     county_fips: Optional[str] = None
     state_name: Optional[str] = None
@@ -69,7 +73,14 @@ class ObservationDashboard(BaseModel):
     value: Optional[Decimal] = None
     value_type: Optional[str] = None
     units: Optional[str] = None
+    unit: Optional[str] = None
     seasonal_adjustment_status: Optional[str] = None
+    dataset_code: Optional[str] = None
+    dataset: Optional[str] = None
+    vintage_year: Optional[int] = None
+    vintage: Optional[str] = None
+    margin_of_error: Optional[Decimal] = None
+    margin_of_error_pct: Optional[Decimal] = None
 
 
 class MetricListResponse(BaseModel):

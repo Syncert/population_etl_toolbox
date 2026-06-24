@@ -28,7 +28,7 @@ airflow = [
 api = [
   "fastapi>=0.111,<1.0",
   "uvicorn[standard]>=0.30,<1.0",
-  "sqlalchemy>=2.0,<3.0",
+  "sqlalchemy>=2.0.48,<3.0",
 ]
 dev = [
   "pytest>=8.0,<9.0",
@@ -36,7 +36,10 @@ dev = [
   "ruff>=0.6,<1.0",
 ]
 local = [
-  "data-ingestion-toolbox[airflow,api,dev]",
+  "data-ingestion-toolbox[api,dev]",
+]
+airflow-dev = [
+  "data-ingestion-toolbox[airflow,dev]",
 ]
 
 [tool.setuptools]

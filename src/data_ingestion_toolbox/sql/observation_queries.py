@@ -7,14 +7,18 @@ from sqlalchemy.sql.elements import TextClause
 
 _OBSERVATION_SELECT = """
     source_code,
+    source_code AS source,
     observation_date,
+    observation_date::TEXT AS period,
     duration_start,
     duration_end,
     time_sk,
     as_of_date,
+    as_of_date AS release_date,
     updated_at,
     geo_id,
     geo_level,
+    COALESCE(county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -27,7 +31,51 @@ _OBSERVATION_SELECT = """
     value,
     value_type,
     units,
-    seasonal_adjustment_status
+    units AS unit,
+    seasonal_adjustment_status,
+    dataset_code,
+    dataset_code AS dataset,
+    vintage_year,
+    vintage_year::TEXT AS vintage,
+    margin_of_error,
+    margin_of_error_pct
+"""
+
+
+_OBSERVATION_SELECT_FROM_RANKED = """
+    source_code,
+    source,
+    observation_date,
+    period,
+    duration_start,
+    duration_end,
+    time_sk,
+    as_of_date,
+    release_date,
+    updated_at,
+    geo_id,
+    geo_level,
+    geo_name,
+    state_fips,
+    county_fips,
+    state_name,
+    county_name,
+    geo_latitude,
+    geo_longitude,
+    metric_code,
+    metric_display_name,
+    dashboard_suitability,
+    value,
+    value_type,
+    units,
+    unit,
+    seasonal_adjustment_status,
+    dataset_code,
+    dataset,
+    vintage_year,
+    vintage,
+    margin_of_error,
+    margin_of_error_pct
 """
 
 
@@ -154,28 +202,9 @@ def build_latest_rpt_fallback_queries(
 
     list_sql = base_sql + """
         SELECT
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            as_of_date,
-            updated_at,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            value,
-            value_type,
-            units,
-            seasonal_adjustment_status
+    """
+    list_sql += _OBSERVATION_SELECT_FROM_RANKED
+    list_sql += """
         FROM ranked
         WHERE rn = 1
         ORDER BY geo_id ASC
@@ -230,28 +259,9 @@ def build_latest_rpt_fallback_queries_legacy(
 
     list_sql = base_sql + """
         SELECT
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            as_of_date,
-            updated_at,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            value,
-            value_type,
-            units,
-            seasonal_adjustment_status
+    """
+    list_sql += _OBSERVATION_SELECT_FROM_RANKED
+    list_sql += """
         FROM ranked
         WHERE rn = 1
         ORDER BY geo_id ASC
@@ -313,30 +323,9 @@ def build_timeseries_queries(
 
     from_sql += " AND ".join(where_clauses)
 
-    list_sql = """
+    list_sql = f"""
         SELECT
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            as_of_date,
-            updated_at,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            value,
-            value_type,
-            units,
-            seasonal_adjustment_status
+            {_OBSERVATION_SELECT}
     """
 
     list_sql += from_sql
@@ -375,30 +364,9 @@ def build_timeseries_queries_legacy(
 
     from_sql += " AND ".join(where_clauses)
 
-    list_sql = """
+    list_sql = f"""
         SELECT
-            source_code,
-            observation_date,
-            duration_start,
-            duration_end,
-            time_sk,
-            as_of_date,
-            updated_at,
-            geo_id,
-            geo_level,
-            state_fips,
-            county_fips,
-            state_name,
-            county_name,
-            geo_latitude,
-            geo_longitude,
-            metric_code,
-            metric_display_name,
-            dashboard_suitability,
-            value,
-            value_type,
-            units,
-            seasonal_adjustment_status
+            {_OBSERVATION_SELECT}
     """
 
     list_sql += from_sql

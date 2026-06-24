@@ -38,14 +38,18 @@ FROM gold.dim_geo_latest;
 CREATE OR REPLACE VIEW gold.fact_observation AS
 SELECT
     source_code,
+    source_code AS source,
     observation_date,
+    observation_date::TEXT AS period,
     duration_start,
     duration_end,
     time_sk,
     as_of_date,
+    as_of_date AS release_date,
     updated_at,
     geo_id,
     geo_level,
+    COALESCE(county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -58,20 +62,31 @@ SELECT
     value,
     value_type,
     units,
-    seasonal_adjustment_status
+    units AS unit,
+    seasonal_adjustment_status,
+    dataset_code,
+    dataset_code AS dataset,
+    vintage_year,
+    vintage_year::TEXT AS vintage,
+    margin_of_error,
+    margin_of_error_pct
 FROM gold.rpt_observation_dashboard;
 
 CREATE OR REPLACE VIEW gold.v_metric_latest_by_geo AS
 SELECT
     source_code,
+    source_code AS source,
     observation_date,
+    observation_date::TEXT AS period,
     duration_start,
     duration_end,
     time_sk,
     as_of_date,
+    as_of_date AS release_date,
     updated_at,
     geo_id,
     geo_level,
+    COALESCE(county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -84,20 +99,31 @@ SELECT
     value,
     value_type,
     units,
-    seasonal_adjustment_status
+    units AS unit,
+    seasonal_adjustment_status,
+    dataset_code,
+    dataset_code AS dataset,
+    vintage_year,
+    vintage_year::TEXT AS vintage,
+    margin_of_error,
+    margin_of_error_pct
 FROM gold.mv_latest_dashboard;
 
 CREATE OR REPLACE VIEW gold.v_metric_timeseries_by_geo AS
 SELECT
     source_code,
+    source_code AS source,
     observation_date,
+    observation_date::TEXT AS period,
     duration_start,
     duration_end,
     time_sk,
     as_of_date,
+    as_of_date AS release_date,
     updated_at,
     geo_id,
     geo_level,
+    COALESCE(county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -110,5 +136,12 @@ SELECT
     value,
     value_type,
     units,
-    seasonal_adjustment_status
+    units AS unit,
+    seasonal_adjustment_status,
+    dataset_code,
+    dataset_code AS dataset,
+    vintage_year,
+    vintage_year::TEXT AS vintage,
+    margin_of_error,
+    margin_of_error_pct
 FROM gold.rpt_observation_dashboard;

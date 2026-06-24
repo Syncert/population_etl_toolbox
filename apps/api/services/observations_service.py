@@ -26,6 +26,47 @@ def _relation_exists(db: Session, relation_name: str) -> bool:
     return bool(exists)
 
 
+def _relation_has_columns(db: Session, relation_name: str, column_names: list[str]) -> bool:
+    if not hasattr(db, "bind"):
+        return True
+
+    schema_name, _, table_name = relation_name.partition(".")
+    if not schema_name or not table_name:
+        return False
+
+    columns_query = text(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = :schema_name
+          AND table_name = :table_name
+          AND column_name = ANY(:column_names)
+        """
+    )
+    rows = db.execute(
+        columns_query,
+        {
+            "schema_name": schema_name,
+            "table_name": table_name,
+            "column_names": column_names,
+        },
+    ).scalars().all()
+    return set(rows) == set(column_names)
+
+
+def _relation_is_mvp_observation_contract(db: Session, relation_name: str) -> bool:
+    return _relation_exists(db, relation_name) and _relation_has_columns(
+        db,
+        relation_name,
+        [
+            "dataset_code",
+            "vintage_year",
+            "margin_of_error",
+            "margin_of_error_pct",
+        ],
+    )
+
+
 def list_latest_observations(
     db: Session,
     metric_code: str,
@@ -35,7 +76,7 @@ def list_latest_observations(
     offset: int,
 ) -> ObservationListResponse:
     latest_builder = build_latest_mv_queries
-    if not _relation_exists(db, "gold.v_metric_latest_by_geo"):
+    if not _relation_is_mvp_observation_contract(db, "gold.v_metric_latest_by_geo"):
         latest_builder = build_latest_mv_queries_legacy
 
     mv_list_query, mv_count_query, mv_params = latest_builder(
@@ -51,7 +92,7 @@ def list_latest_observations(
 
     if mv_total == 0:
         latest_fallback_builder = build_latest_rpt_fallback_queries
-        if not _relation_exists(db, "gold.v_metric_timeseries_by_geo"):
+        if not _relation_is_mvp_observation_contract(db, "gold.v_metric_timeseries_by_geo"):
             latest_fallback_builder = build_latest_rpt_fallback_queries_legacy
 
         rpt_list_query, rpt_count_query, rpt_params = latest_fallback_builder(
@@ -77,7 +118,7 @@ def list_timeseries_observations(
     limit: int,
 ) -> ObservationListResponse:
     timeseries_builder = build_timeseries_queries
-    if not _relation_exists(db, "gold.v_metric_timeseries_by_geo"):
+    if not _relation_is_mvp_observation_contract(db, "gold.v_metric_timeseries_by_geo"):
         timeseries_builder = build_timeseries_queries_legacy
 
     list_query, count_query, params = timeseries_builder(

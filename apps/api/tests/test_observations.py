@@ -24,14 +24,18 @@ class _FakeResult:
 def _observation_row(metric_code: str = "POP_TOTAL", geo_id: str = "US") -> dict:
     return {
         "source_code": "ACS",
+        "source": "ACS",
         "observation_date": "2025-01-01",
+        "period": "2025",
         "duration_start": None,
         "duration_end": None,
         "time_sk": 20250101,
         "as_of_date": "2025-02-01",
+        "release_date": "2025-02-01",
         "updated_at": datetime(2025, 2, 1, 0, 0, 0),
         "geo_id": geo_id,
         "geo_level": "state",
+        "geo_name": "California",
         "state_fips": "06",
         "county_fips": None,
         "state_name": "California",
@@ -44,7 +48,14 @@ def _observation_row(metric_code: str = "POP_TOTAL", geo_id: str = "US") -> dict
         "value": "100.0",
         "value_type": "level",
         "units": "people",
+        "unit": "people",
         "seasonal_adjustment_status": "NSA",
+        "dataset_code": "acs5",
+        "dataset": "acs5",
+        "vintage_year": 2025,
+        "vintage": "2025",
+        "margin_of_error": "1.5",
+        "margin_of_error_pct": "0.015",
     }
 
 
@@ -127,6 +138,16 @@ def test_latest_forwards_filters_and_uses_count_total() -> None:
     payload = response.json()
     assert payload["total"] == 5
     assert len(payload["items"]) == 1
+    item = payload["items"][0]
+    assert item["period"] == "2025"
+    assert item["source"] == "ACS"
+    assert item["dataset"] == "acs5"
+    assert item["vintage"] == "2025"
+    assert item["release_date"] == "2025-02-01"
+    assert item["unit"] == "people"
+    assert item["geo_name"] == "California"
+    assert item["margin_of_error"] == "1.5"
+    assert item["margin_of_error_pct"] == "0.015"
     assert fake.params_seen[0]["geo_level"] == "state"
     assert fake.params_seen[0]["state_fips"] == "06"
 
@@ -147,6 +168,7 @@ def test_latest_falls_back_to_rpt_when_mv_empty() -> None:
     assert payload["total"] == 3
     assert len(payload["items"]) == 1
     assert payload["items"][0]["metric_code"] == "UNEMP"
+    assert payload["items"][0]["dataset"] == "acs5"
 
 
 def test_timeseries_uses_count_total() -> None:
@@ -164,6 +186,7 @@ def test_timeseries_uses_count_total() -> None:
     payload = response.json()
     assert payload["total"] == 9
     assert len(payload["items"]) == 1
+    assert payload["items"][0]["period"] == "2025"
 
 
 def test_timeseries_rejects_invalid_date_range() -> None:

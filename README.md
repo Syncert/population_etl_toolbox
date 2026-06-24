@@ -115,7 +115,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 
 ### Python Environment and Install
 
-Standard local development install path:
+Standard local development install path for API, tests, and shared package work:
 
 ```bash
 python -m venv .venv
@@ -128,7 +128,7 @@ python -m pip install --upgrade pip
 pip install -e .[local]
 ```
 
-This single command installs runtime dependencies and optional groups for Airflow, API/web development, and dev tooling.
+This installs runtime dependencies plus API and dev tooling. Airflow is intentionally not included in `local` because Airflow pins a large dependency set and should run in Docker, WSL2, or a dedicated isolated environment.
 
 Smoke test imports (no PYTHONPATH/path hacks required):
 
@@ -139,14 +139,17 @@ python -c "import data_ingestion_toolbox, data_ingestion_toolbox.bls, data_inges
 Optional targeted installs:
 
 ```bash
-# ETL orchestration only
-pip install -e .[airflow]
-
 # API/analytics web layer only
 pip install -e .[api]
 
 # Lint/test tooling only
 pip install -e .[dev]
+
+# ETL orchestration only; use only in an Airflow-specific environment
+pip install -e .[airflow]
+
+# Airflow plus test tooling; use only in an Airflow-specific environment
+pip install -e .[airflow-dev]
 ```
 
 ### API MVP (Vertical Slice)
