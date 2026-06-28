@@ -84,6 +84,11 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartSe
 
 Note: `ANALYTICS_DB_*` values in external mode power both API database connectivity and Martin database connectivity.
 
+The smoke script also runs `scripts/check_mvp_geo_tile_join.py`, which verifies:
+- county geometry exists in `gold.dim_geo_latest.geo_geom`
+- Martin exposes the `counties` vector layer with a usable geography join key
+- sampled API observation `geo_id` values join back to county geometry rows
+
 ## API-to-Map Contract Smoke
 
 Use these commands to verify the first API-to-map contract in external MVP mode:
@@ -106,6 +111,18 @@ Web smoke dashboard:
 
 Expected alignment key:
 - `geo_id` from API observation rows should align with geographic identifiers used by Martin-exposed map layers.
+
+Direct API-to-map contract check:
+
+```bash
+python scripts/check_mvp_geo_tile_join.py `
+  --env-file infra/docker/stack.external.env `
+  --api-base-url http://localhost:3001/api/ `
+  --tiles-base-url http://localhost:3001/tiles/ `
+  --metric-code population
+```
+
+Current MVP note: the friendly `metric_code=population` may resolve through the checker to the canonical county-capable ACS metric `ACS:acs5:B01003_001` until a durable alias is added to `gold.dim_metric`.
 
 Security reminder:
 - Keep real credentials in local untracked env files (for example `infra/docker/stack.external.env`), not in tracked examples.

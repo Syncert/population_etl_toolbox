@@ -1,7 +1,9 @@
 param(
     [bool]$StartServices = $true,
     [string]$EnvFile = 'infra/docker/stack.external.env',
-    [string]$ComposeFile = 'infra/docker/docker-compose.external.yml'
+    [string]$ComposeFile = 'infra/docker/docker-compose.external.yml',
+    [string]$PythonExecutable = 'python',
+    [bool]$SkipGeoTileJoinCheck = $false
 )
 
 $ErrorActionPreference = 'Stop'
@@ -138,6 +140,57 @@ function Invoke-BrowserMapAssert {
     }
 }
 
+function Get-JsonItemsCount {
+    param($Json)
+
+    if ($Json -and $Json.items) {
+        return @($Json.items).Count
+    }
+    return 0
+}
+
+function Invoke-ObservationSample {
+    param([string]$MetricCode)
+
+    $encodedMetricCode = [uri]::EscapeDataString($MetricCode)
+    $uri = "http://localhost:3001/api/observations/latest?metric_code=$encodedMetricCode&geo_level=county&limit=5"
+    return Invoke-JsonGet -Name "observations-latest-$MetricCode" -Uri $uri
+}
+
+function Invoke-GeoTileJoinAssert {
+    if ($SkipGeoTileJoinCheck) {
+        Write-Warn -Name 'geo-tile-join' -Detail 'Skipping API-to-geometry join validation by request.'
+        return $true
+    }
+
+    try {
+        $args = @(
+            'scripts/check_mvp_geo_tile_join.py',
+            '--env-file', $EnvFile,
+            '--api-base-url', 'http://localhost:3001/api/',
+            '--tiles-base-url', 'http://localhost:3001/tiles/',
+            '--metric-code', $script:MetricCode,
+            '--geo-level', 'COUNTY',
+            '--layer-id', 'counties',
+            '--limit', '100',
+            '--minimum-join-ratio', '1.0'
+        )
+
+        & $PythonExecutable @args
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail -Name 'geo-tile-join' -Detail ("check_mvp_geo_tile_join.py failed with exit code $LASTEXITCODE")
+            return $false
+        }
+
+        Write-Pass -Name 'geo-tile-join' -Detail 'County geometry, Martin tile metadata, and API observation joins validated.'
+        return $true
+    }
+    catch {
+        Write-Fail -Name 'geo-tile-join' -Detail $_.Exception.Message
+        return $false
+    }
+}
+
 try {
     $shouldStartServices = $StartServices
 
@@ -160,40 +213,59 @@ try {
     }
 
     $metricCode = 'population'
-    $obsPrimary = Invoke-JsonGet -Name 'observations-latest-population' -Uri 'http://localhost:3001/api/observations/latest?metric_code=population&geo_level=county&limit=5'
-    if (-not $obsPrimary.Ok) {
+    $obsPrimary = Invoke-ObservationSample -MetricCode $metricCode
+    $obsPrimaryCount = Get-JsonItemsCount -Json $obsPrimary.Json
+    if ((-not $obsPrimary.Ok) -or $obsPrimaryCount -eq 0) {
+        if ($obsPrimary.Ok -and $obsPrimaryCount -eq 0) {
+            Write-Warn -Name 'observations-latest-population' -Detail 'Friendly metric_code=population returned zero county rows; trying canonical/fallback metrics.'
+        }
+
         $catalogItems = @()
         if ($catalogResult.Json -and $catalogResult.Json.items) {
             $catalogItems = @($catalogResult.Json.items)
         }
 
-        $firstMetricCode = $null
+        $candidateMetricCodes = @('ACS:acs5:B01003_001')
         if ($catalogItems.Count -gt 0) {
-            $firstMetricCode = [string]$catalogItems[0].metric_code
+            $candidateMetricCodes += [string]$catalogItems[0].metric_code
         }
 
-        if ([string]::IsNullOrWhiteSpace($firstMetricCode)) {
-            Write-Fail -Name 'observations-latest-fallback' -Detail 'Population metric failed and no fallback metric available from catalog.'
+        $selectedFallback = $null
+        foreach ($candidateMetricCode in $candidateMetricCodes) {
+            if ([string]::IsNullOrWhiteSpace($candidateMetricCode)) {
+                continue
+            }
+
+            $obsFallback = Invoke-ObservationSample -MetricCode $candidateMetricCode
+            $obsFallbackCount = Get-JsonItemsCount -Json $obsFallback.Json
+            if ($obsFallback.Ok -and $obsFallbackCount -gt 0) {
+                $selectedFallback = $candidateMetricCode
+                break
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($selectedFallback)) {
+            Write-Fail -Name 'observations-latest-fallback' -Detail 'No fallback metric returned county observation rows.'
             exit 1
         }
 
-        $metricCode = $firstMetricCode
-        $fallbackUri = "http://localhost:3001/api/observations/latest?metric_code=$metricCode&geo_level=county&limit=5"
-        $obsFallback = Invoke-JsonGet -Name 'observations-latest-fallback' -Uri $fallbackUri
-        if (-not $obsFallback.Ok) {
-            exit 1
-        }
+        $metricCode = $selectedFallback
         Write-Pass -Name 'observations-selected-metric' -Detail ("Using fallback metric_code=$metricCode")
     }
     else {
-        Write-Pass -Name 'observations-selected-metric' -Detail ("Using metric_code=$metricCode")
+        Write-Pass -Name 'observations-selected-metric' -Detail ("Using metric_code=$metricCode with rows=$obsPrimaryCount")
     }
+    $script:MetricCode = $metricCode
 
     $tileHealth = Invoke-JsonGet -Name 'tiles-health' -Uri 'http://localhost:3001/tiles/health'
     if (-not $tileHealth.Ok) {
         if (-not (Invoke-WebGet -Name 'tiles-root-fallback' -Uri 'http://localhost:3001/tiles/')) {
             exit 1
         }
+    }
+
+    if (-not (Invoke-GeoTileJoinAssert)) {
+        exit 1
     }
 
     if (-not (Invoke-BrowserMapAssert)) {
