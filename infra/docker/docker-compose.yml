@@ -56,13 +56,17 @@ services:
       - ../martin/martin.yml:/etc/martin/martin.yml:ro
 
   web:
-    image: nginx:alpine
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        API_ORIGIN: http://api:8000
+        TILES_ORIGIN: http://martin:3000
+    depends_on:
+      - api
+      - martin
     ports:
-      - "3001:80"
-    volumes:
-      - ../web/index.html:/usr/share/nginx/html/index.html:ro
-      - ../web/vendor:/usr/share/nginx/html/vendor:ro
-      - ../web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - "3001:3100"
 
   airflow-common: &airflow-common
     build:

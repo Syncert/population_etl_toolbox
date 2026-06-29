@@ -92,6 +92,32 @@ function Invoke-WebGet {
     }
 }
 
+function Invoke-NextWebAssert {
+    param([string]$Uri)
+
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -Method GET -TimeoutSec 30 -UseBasicParsing
+        $statusCode = [int]$response.StatusCode
+        $poweredBy = [string]$response.Headers['X-Powered-By']
+        if ($statusCode -lt 200 -or $statusCode -ge 300) {
+            throw "HTTP $statusCode"
+        }
+        if ($poweredBy -notmatch 'Next\.js') {
+            throw "Expected X-Powered-By: Next.js, received '$poweredBy'"
+        }
+        if ($response.Content -notmatch '/_next/static/') {
+            throw 'Next.js static asset references were not found in the web response.'
+        }
+
+        Write-Pass -Name 'web-root-nextjs' -Detail ("HTTP $statusCode with Next.js assets ($Uri)")
+        return $true
+    }
+    catch {
+        Write-Fail -Name 'web-root-nextjs' -Detail ("$Uri -> " + $_.Exception.Message)
+        return $false
+    }
+}
+
 function Invoke-BrowserMapAssert {
     $edgeCandidates = @()
     if (${env:ProgramFiles(x86)} -and -not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
@@ -108,30 +134,71 @@ function Invoke-BrowserMapAssert {
     }
 
     try {
-        $domDump = & $edgePath '--headless' '--disable-gpu' '--virtual-time-budget=15000' '--dump-dom' 'http://localhost:3001/' 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-            Write-Fail -Name 'browser-map-render' -Detail ("Edge headless DOM dump failed with exit code $LASTEXITCODE")
+        $browserProfile = Join-Path -Path $env:TEMP -ChildPath ("population-etl-smoke-" + [guid]::NewGuid().ToString('N'))
+        $browserStdout = Join-Path -Path $env:TEMP -ChildPath ("population-etl-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
+        $browserStderr = Join-Path -Path $env:TEMP -ChildPath ("population-etl-smoke-" + [guid]::NewGuid().ToString('N') + '.log')
+        $browserArgs = @(
+            '--headless=new',
+            '--disable-gpu',
+            '--no-first-run',
+            "--user-data-dir=$browserProfile",
+            '--virtual-time-budget=30000',
+            '--dump-dom',
+            'http://localhost:3001/'
+        )
+        $browserProcess = Start-Process -FilePath $edgePath -ArgumentList $browserArgs -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $browserStdout -RedirectStandardError $browserStderr
+        if ($browserProcess.ExitCode -ne 0) {
+            Write-Fail -Name 'browser-map-render' -Detail ("Edge headless DOM dump failed with exit code " + $browserProcess.ExitCode)
             return $false
         }
+        $domDump = Get-Content -Path $browserStdout -Raw
 
         if ([string]::IsNullOrWhiteSpace($domDump)) {
             Write-Fail -Name 'browser-map-render' -Detail 'Edge headless DOM dump returned no content.'
             return $false
         }
 
-        $mapStatePattern = '(?is)<[^>]*id=["'']mapState["''][^>]*>[^<]*(PASS|ok)\b'
-        if ($domDump -notmatch $mapStatePattern) {
-            Write-Fail -Name 'browser-map-render' -Detail 'Map status assertion failed: mapState PASS/ok marker not found.'
+        if ($domDump -notmatch '(?is)data-testid=["'']map-canvas["'']') {
+            Write-Fail -Name 'browser-map-render' -Detail 'Next.js map container marker was not found.'
             return $false
         }
 
-        $renderHintPattern = '(?is)(Map\s*tile\s*layer\s*rendered|Rendered\s*source-layer)'
-        if ($domDump -notmatch $renderHintPattern) {
-            Write-Fail -Name 'browser-map-render' -Detail 'Map render hint assertion failed: rendered tile-layer hint not found.'
+        if ($domDump -notmatch '(?is)class=["''][^"'']*maplibregl-canvas[^"'']*["'']') {
+            Write-Fail -Name 'browser-map-render' -Detail 'MapLibre canvas was not rendered.'
             return $false
         }
 
-        Write-Pass -Name 'browser-map-render' -Detail 'Headless Edge DOM shows mapState PASS/ok and rendered tile-layer hint.'
+        if ($domDump -notmatch '(?is)data-testid=["'']tiles-status["''][\s\S]*?healthy_tile=true') {
+            Write-Fail -Name 'browser-map-render' -Detail 'Healthy tile-layer status was not rendered.'
+            return $false
+        }
+
+        if ($domDump -notmatch '(?is)data-testid=["'']observations-status["''][\s\S]*?loaded\s+[1-9][0-9]*\s+(?:county\s+)?records') {
+            Write-Fail -Name 'browser-map-render' -Detail 'Loaded observation status was not rendered.'
+            return $false
+        }
+
+        if ($domDump -notmatch '(?is)API distribution') {
+            Write-Fail -Name 'browser-map-render' -Detail 'Distribution-backed legend was not rendered.'
+            return $false
+        }
+
+        if ($domDump -notmatch '(?is)data-selected-dataset=["'']acs5["'']') {
+            Write-Fail -Name 'browser-map-render' -Detail 'ACS5 was not the default county-map dataset.'
+            return $false
+        }
+
+        if ($domDump -notmatch '(?is)data-selected-metric=["'']ACS:acs5:B01003_001["'']') {
+            Write-Fail -Name 'browser-map-render' -Detail 'Canonical ACS5 population metric was not selected by default.'
+            return $false
+        }
+
+        if ($domDump -notmatch '(?is)data-testid=["'']state-select["'']' -or $domDump -notmatch '(?is)data-testid=["'']county-select["'']') {
+            Write-Fail -Name 'browser-map-render' -Detail 'State and county geography selectors were not rendered.'
+            return $false
+        }
+
+        Write-Pass -Name 'browser-map-render' -Detail 'Headless browser rendered canonical ACS5 population, geography selectors, MapLibre, observations, and API bins.'
         return $true
     }
     catch {
@@ -199,11 +266,13 @@ try {
         Invoke-ComposeUp
     }
 
-    if (-not (Invoke-WebGet -Name 'web-root' -Uri 'http://localhost:3001/')) {
+    if (-not (Invoke-NextWebAssert -Uri 'http://localhost:3001/')) {
         exit 1
     }
 
-    if (-not (Invoke-JsonGet -Name 'api-health' -Uri 'http://localhost:3001/api/health').Ok) {
+    $healthResult = Invoke-JsonGet -Name 'api-health' -Uri 'http://localhost:3001/api/health'
+    if ((-not $healthResult.Ok) -or $healthResult.Json.status -ne 'ok') {
+        Write-Fail -Name 'api-health-payload' -Detail 'Expected JSON status=ok.'
         exit 1
     }
 
@@ -211,6 +280,12 @@ try {
     if (-not $catalogResult.Ok) {
         exit 1
     }
+    $catalogItemsCount = Get-JsonItemsCount -Json $catalogResult.Json
+    if ($catalogItemsCount -eq 0) {
+        Write-Fail -Name 'catalog-metrics-content' -Detail 'Metric catalog returned no items.'
+        exit 1
+    }
+    Write-Pass -Name 'catalog-metrics-content' -Detail ("Metric catalog returned $catalogItemsCount sampled items.")
 
     $metricCode = 'population'
     $obsPrimary = Invoke-ObservationSample -MetricCode $metricCode

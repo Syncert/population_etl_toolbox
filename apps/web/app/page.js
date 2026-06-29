@@ -8,41 +8,75 @@ import Protobuf from "pbf";
 const COUNTY_TILE_FILTER = ["has", "county_fips"];
 const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
 const CHOROPLETH_PALETTE = ["#f7e6a1", "#a8d08d", "#4f9f68", "#2f80b7", "#5e4fa2"];
+const CATALOG_PAGE_SIZE = 1000;
+const DEFAULT_ACS_DATASET = "acs5";
+const DEFAULT_POPULATION_VARIABLE = "B01003_001";
 
-function normalizeMetricCode(code) {
-  return typeof code === "string" ? code.toLowerCase() : "";
+function metricDataset(metricCode) {
+  const parts = typeof metricCode === "string" ? metricCode.split(":") : [];
+  return parts.length >= 3 ? parts[1].toLowerCase() : "";
 }
 
-function pickPreferredMetric(metrics) {
+function metricVariable(metricCode) {
+  const parts = typeof metricCode === "string" ? metricCode.split(":") : [];
+  return parts.length >= 3 ? parts.slice(2).join(":") : "";
+}
+
+function pickPreferredMetric(metrics, dataset, preferredVariable = DEFAULT_POPULATION_VARIABLE) {
   if (!Array.isArray(metrics) || metrics.length === 0) {
     return "";
   }
 
-  const populationMetric = metrics.find((item) => {
-    const code = normalizeMetricCode(item.metric_code);
-    const name = normalizeMetricCode(item.metric_display_name);
-    return code.includes("pop") || name.includes("population");
-  });
+  const datasetMetrics = metrics.filter(
+    (item) => metricDataset(item.metric_code) === dataset,
+  );
+  const candidates = datasetMetrics.length > 0 ? datasetMetrics : metrics;
+  const matchingVariable = candidates.find(
+    (item) => metricVariable(item.metric_code) === preferredVariable,
+  );
+  const canonicalPopulation = candidates.find(
+    (item) => metricVariable(item.metric_code) === DEFAULT_POPULATION_VARIABLE,
+  );
 
-  return (populationMetric || metrics[0]).metric_code;
+  return (matchingVariable || canonicalPopulation || candidates[0]).metric_code;
 }
 
 function metricOptions(metrics) {
   return (metrics || []).map((metric) => ({
     value: metric.metric_code,
-    label: `${metric.metric_display_name} (${metric.metric_code})`,
+    label: `${metric.metric_display_name.replaceAll("!!", " › ")} (${metric.metric_code})`,
     source: metric.source_code,
   }));
 }
 
-function metricSupportsCounty(metric) {
-  if (!metric || !Array.isArray(metric.valid_geo_grains)) {
-    return false;
-  }
+async function fetchAllCatalogItems(path, query = {}) {
+  const items = [];
+  let offset = 0;
+  let total = null;
 
-  return metric.valid_geo_grains.some(
-    (grain) => typeof grain === "string" && grain.toLowerCase() === "county",
-  );
+  do {
+    const params = new URLSearchParams({
+      ...query,
+      limit: String(CATALOG_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const response = await fetch(`${path}?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const pageItems = Array.isArray(payload.items) ? payload.items : [];
+    total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : null;
+    items.push(...pageItems);
+    offset += pageItems.length;
+
+    if (pageItems.length === 0) {
+      break;
+    }
+  } while (total === null || items.length < total);
+
+  return items;
 }
 
 function observationToFeature(item) {
@@ -421,6 +455,47 @@ function colorForValue(value, minValue, maxValue) {
   return CHOROPLETH_PALETTE[index];
 }
 
+function distributionBins(payload) {
+  const minValue = Number(payload?.min_value);
+  const maxValue = Number(payload?.max_value);
+  const binCount = Number(payload?.bin_count);
+
+  if (
+    !Number.isFinite(minValue) ||
+    !Number.isFinite(maxValue) ||
+    !Number.isInteger(binCount) ||
+    binCount < 1 ||
+    binCount > CHOROPLETH_PALETTE.length ||
+    Number(payload?.total) < 1
+  ) {
+    return [];
+  }
+
+  const counts = new Map(
+    (payload.items || []).map((item) => [Number(item.bin_index), Number(item.count) || 0]),
+  );
+  const width = (maxValue - minValue) / binCount;
+
+  return CHOROPLETH_PALETTE.slice(0, binCount).map((color, index) => ({
+    binIndex: index + 1,
+    color,
+    lowerBound: minValue + index * width,
+    upperBound: index === binCount - 1 ? maxValue : minValue + (index + 1) * width,
+    count: counts.get(index + 1) || 0,
+  }));
+}
+
+function colorForDistributionValue(value, bins) {
+  if (!Number.isFinite(value) || bins.length === 0) {
+    return CHOROPLETH_FALLBACK_COLOR;
+  }
+
+  const matched = bins.find(
+    (bin, index) => index === bins.length - 1 || value < bin.upperBound,
+  );
+  return matched?.color || CHOROPLETH_FALLBACK_COLOR;
+}
+
 function formatLegendValue(value) {
   if (!Number.isFinite(value)) {
     return "-";
@@ -432,13 +507,151 @@ function formatLegendValue(value) {
   }).format(value);
 }
 
-function buildChoroplethModel(observations, joinKey) {
+function formatObservationValue(value, maximumFractionDigits = 1) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits,
+  }).format(numericValue);
+}
+
+function observationName(item) {
+  if (!item) {
+    return "Unknown county";
+  }
+
+  const county = item.geo_name || item.county_name || item.geo_id || "Unknown county";
+  return item.state_name ? `${county}, ${item.state_name}` : county;
+}
+
+function observationUnit(item) {
+  return item?.unit || item?.units || "value";
+}
+
+function marginOfErrorText(item) {
+  const marginOfError = Number(item?.margin_of_error);
+  if (Number.isFinite(marginOfError) && marginOfError >= 0) {
+    const marginPct = Number(item?.margin_of_error_pct);
+    const pctText = Number.isFinite(marginPct) && marginPct >= 0
+      ? ` (${formatObservationValue(marginPct, 2)}%)`
+      : "";
+    return `±${formatObservationValue(marginOfError)}${pctText}`;
+  }
+
+  if (marginOfError === -555555555) {
+    return "0 (Census-controlled estimate)";
+  }
+  if (marginOfError === -222222222) {
+    return "Not computed (insufficient sample)";
+  }
+  if (marginOfError === -333333333) {
+    return "Not computed (open-ended median)";
+  }
+  if (marginOfError === -666666666 || marginOfError === -888888888) {
+    return "Not applicable";
+  }
+  if (marginOfError === -999999999) {
+    return "Suppressed (sample too small)";
+  }
+
+  return "Not provided";
+}
+
+function buildObservationIndex(observations, joinKey) {
+  const index = new Map();
+
+  for (const item of observations || []) {
+    const joinValue = observationJoinValue(item, joinKey);
+    if (joinValue !== null && joinValue !== undefined && joinValue !== "") {
+      index.set(String(joinValue), item);
+    }
+  }
+
+  return index;
+}
+
+function buildSelectionFilter(joinValue, joinKey) {
+  return [
+    "==",
+    ["to-string", ["get", joinKey]],
+    joinValue === null || joinValue === undefined ? "__no_selected_county__" : String(joinValue),
+  ];
+}
+
+function TimeSeriesChart({ items }) {
+  const series = (items || [])
+    .map((item) => ({ ...item, numericValue: Number(item.value) }))
+    .filter((item) => Number.isFinite(item.numericValue))
+    .sort((left, right) => String(left.observation_date).localeCompare(String(right.observation_date)));
+
+  if (series.length === 0) {
+    return <p className="subtle chart-empty">No time-series observations are available.</p>;
+  }
+
+  const width = 640;
+  const height = 190;
+  const paddingX = 26;
+  const paddingTop = 18;
+  const paddingBottom = 34;
+  const values = series.map((item) => item.numericValue);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueSpan = maxValue - minValue || 1;
+  const chartWidth = width - paddingX * 2;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const points = series.map((item, index) => {
+    const x = series.length === 1
+      ? width / 2
+      : paddingX + (index / (series.length - 1)) * chartWidth;
+    const y = paddingTop + ((maxValue - item.numericValue) / valueSpan) * chartHeight;
+    return { ...item, x, y };
+  });
+
+  return (
+    <div className="timeseries-chart">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`${series.length} time-series observations from ${series[0].observation_date} to ${series[series.length - 1].observation_date}`}
+      >
+        <line className="chart-gridline" x1={paddingX} x2={width - paddingX} y1={paddingTop} y2={paddingTop} />
+        <line className="chart-gridline" x1={paddingX} x2={width - paddingX} y1={paddingTop + chartHeight} y2={paddingTop + chartHeight} />
+        {points.length > 1 ? (
+          <polyline
+            className="chart-line"
+            points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+          />
+        ) : null}
+        {points.map((point) => (
+          <circle key={`${point.observation_date}-${point.value}`} className="chart-point" cx={point.x} cy={point.y} r="4">
+            <title>{`${point.observation_date}: ${formatObservationValue(point.numericValue)}`}</title>
+          </circle>
+        ))}
+        <text className="chart-label" x={paddingX} y={height - 8}>{series[0].observation_date}</text>
+        <text className="chart-label chart-label-end" x={width - paddingX} y={height - 8}>{series[series.length - 1].observation_date}</text>
+        <text className="chart-value-label" x={paddingX} y={paddingTop - 5}>{formatObservationValue(maxValue)}</text>
+        <text className="chart-value-label" x={paddingX} y={paddingTop + chartHeight - 5}>{formatObservationValue(minValue)}</text>
+      </svg>
+    </div>
+  );
+}
+
+function buildChoroplethModel(
+  observations,
+  joinKey,
+  distribution = null,
+  missingValueLabel = "No observation",
+) {
   if (!Array.isArray(observations) || observations.length === 0) {
     return {
       expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [],
+      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
       minValue: null,
       maxValue: null,
+      usesDistribution: false,
     };
   }
 
@@ -459,21 +672,41 @@ function buildChoroplethModel(observations, joinKey) {
   if (values.length === 0) {
     return {
       expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [],
+      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
       minValue: null,
       maxValue: null,
+      usesDistribution: false,
     };
   }
 
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
+  const apiBins = distributionBins(distribution);
+  const usesDistribution = apiBins.length > 0;
+  const minValue = usesDistribution ? apiBins[0].lowerBound : Math.min(...values);
+  const maxValue = usesDistribution ? apiBins[apiBins.length - 1].upperBound : Math.max(...values);
   const span = maxValue - minValue;
 
   for (const [key, numericValue] of keyedMap.entries()) {
-    keyedValues.push(key, colorForValue(numericValue, minValue, maxValue));
+    keyedValues.push(
+      key,
+      usesDistribution
+        ? colorForDistributionValue(numericValue, apiBins)
+        : colorForValue(numericValue, minValue, maxValue),
+    );
   }
 
-  const legendItems = CHOROPLETH_PALETTE.map((color, index) => {
+  const legendItems = usesDistribution
+    ? apiBins.map((bin, index) => ({
+        color: bin.color,
+        label: apiBins.length === 1
+          ? "All numeric values"
+          : index === 0
+            ? `Up to ${formatLegendValue(bin.upperBound)}`
+            : index === apiBins.length - 1
+              ? `${formatLegendValue(bin.lowerBound)} and above`
+              : `${formatLegendValue(bin.lowerBound)} - ${formatLegendValue(bin.upperBound)}`,
+        count: bin.count,
+      }))
+    : CHOROPLETH_PALETTE.map((color, index) => {
     if (span <= 0) {
       return {
         color,
@@ -492,16 +725,32 @@ function buildChoroplethModel(observations, joinKey) {
     };
   });
 
+  legendItems.push({
+    color: CHOROPLETH_FALLBACK_COLOR,
+    label: missingValueLabel,
+  });
+
   return {
     expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
     legendItems,
     minValue,
     maxValue,
+    usesDistribution,
   };
 }
 
-function buildChoroplethMatchExpression(observations, joinKey) {
-  return buildChoroplethModel(observations, joinKey).expression;
+function buildChoroplethMatchExpression(
+  observations,
+  joinKey,
+  distribution = null,
+  missingValueLabel = "No observation",
+) {
+  return buildChoroplethModel(
+    observations,
+    joinKey,
+    distribution,
+    missingValueLabel,
+  ).expression;
 }
 
 export default function HomePage() {
@@ -518,25 +767,87 @@ export default function HomePage() {
   });
   const [metrics, setMetrics] = useState([]);
   const [metricsError, setMetricsError] = useState("");
+  const [selectedDataset, setSelectedDataset] = useState(DEFAULT_ACS_DATASET);
   const [selectedMetric, setSelectedMetric] = useState("");
+  const [states, setStates] = useState([]);
+  const [countyGeographies, setCountyGeographies] = useState([]);
+  const [geographiesError, setGeographiesError] = useState("");
+  const [selectedStateFips, setSelectedStateFips] = useState("");
 
   const [observationStatus, setObservationStatus] = useState({
     state: "idle",
     message: "selecting metric",
   });
   const [observations, setObservations] = useState([]);
+  const [distribution, setDistribution] = useState(null);
+  const [distributionStatus, setDistributionStatus] = useState({
+    state: "idle",
+    message: "waiting for metric",
+  });
   const [tileMetadata, setTileMetadata] = useState(null);
   const [activeSourceLayer, setActiveSourceLayer] = useState(null);
   const [mapReady, setMapReady] = useState(false);
+  const [hoveredCounty, setHoveredCounty] = useState(null);
+  const [selectedGeoId, setSelectedGeoId] = useState("");
+  const [timeseries, setTimeseries] = useState([]);
+  const [timeseriesStatus, setTimeseriesStatus] = useState({
+    state: "idle",
+    message: "Click a county to load its history.",
+  });
 
-  const countyCapableMetrics = useMemo(
-    () => metrics.filter((metric) => metricSupportsCounty(metric)),
-    [metrics],
+  const datasetMetrics = useMemo(
+    () => metrics.filter((metric) => metricDataset(metric.metric_code) === selectedDataset),
+    [metrics, selectedDataset],
   );
   const options = useMemo(
-    () => metricOptions(countyCapableMetrics.length > 0 ? countyCapableMetrics : metrics),
-    [countyCapableMetrics, metrics],
+    () => metricOptions(datasetMetrics),
+    [datasetMetrics],
   );
+  const counties = useMemo(
+    () => selectedStateFips
+      ? countyGeographies.filter((county) => county.state_fips === selectedStateFips)
+      : [],
+    [countyGeographies, selectedStateFips],
+  );
+  const observationIndex = useMemo(
+    () => buildObservationIndex(observations, tileMetadata?.joinKey || "geo_id"),
+    [observations, tileMetadata],
+  );
+  const selectedObservation = useMemo(
+    () => observations.find((item) => item.geo_id === selectedGeoId) || null,
+    [observations, selectedGeoId],
+  );
+  const selectedCountyGeography = useMemo(
+    () => countyGeographies.find((item) => item.geo_id === selectedGeoId) || null,
+    [countyGeographies, selectedGeoId],
+  );
+  const selectedCounty =
+    selectedObservation || timeseries[timeseries.length - 1] || selectedCountyGeography || null;
+  const selectedCountyHasObservation = Boolean(selectedObservation || timeseries.length > 0);
+  const geographyIndex = useMemo(
+    () => buildObservationIndex(countyGeographies, tileMetadata?.joinKey || "geo_id"),
+    [countyGeographies, tileMetadata],
+  );
+  const missingValueLabel = selectedDataset === "acs1"
+    ? "Not published in ACS1"
+    : "No observation";
+
+  useEffect(() => {
+    if (datasetMetrics.length === 0) {
+      return;
+    }
+
+    if (
+      metricDataset(selectedMetric) === selectedDataset &&
+      datasetMetrics.some((metric) => metric.metric_code === selectedMetric)
+    ) {
+      return;
+    }
+
+    setSelectedMetric(
+      pickPreferredMetric(metrics, selectedDataset, metricVariable(selectedMetric)),
+    );
+  }, [datasetMetrics, metrics, selectedDataset, selectedMetric]);
 
   useEffect(() => {
     let cancelled = false;
@@ -558,22 +869,14 @@ export default function HomePage() {
       }
 
       try {
-        const metricsResponse = await fetch("/api/catalog/metrics?limit=25", {
-          cache: "no-store",
+        const items = await fetchAllCatalogItems("/api/catalog/metrics", {
+          source_code: "CENSUS_ACS",
+          active_only: "true",
+          dashboard_suitability: "PUBLIC_SAFE",
         });
-
-        if (!metricsResponse.ok) {
-          throw new Error(`status ${metricsResponse.status}`);
-        }
-
-        const payload = await metricsResponse.json();
-        const items = Array.isArray(payload.items) ? payload.items : [];
-        const countyItems = items.filter((metric) => metricSupportsCounty(metric));
-        const preferredItems = countyItems.length > 0 ? countyItems : items;
 
         if (!cancelled) {
           setMetrics(items);
-          setSelectedMetric(pickPreferredMetric(preferredItems));
         }
       } catch (error) {
         if (!cancelled) {
@@ -630,6 +933,9 @@ export default function HomePage() {
           geo_level: "COUNTY",
           limit: "4000",
         });
+        if (selectedStateFips) {
+          query.set("state_fips", selectedStateFips);
+        }
         const response = await fetch(`/api/observations/latest?${query.toString()}`, {
           cache: "no-store",
         });
@@ -639,44 +945,15 @@ export default function HomePage() {
         }
 
         const payload = await response.json();
-        let items = Array.isArray(payload.items) ? payload.items : [];
-        let usedFallback = false;
-
-        if (items.length === 0) {
-          const fallbackQuery = new URLSearchParams({
-            metric_code: selectedMetric,
-            limit: "4000",
-          });
-          const fallbackResponse = await fetch(
-            `/api/observations/latest?${fallbackQuery.toString()}`,
-            {
-              cache: "no-store",
-            },
-          );
-
-          if (!fallbackResponse.ok) {
-            throw new Error(`status ${fallbackResponse.status}`);
-          }
-
-          const fallbackPayload = await fallbackResponse.json();
-          const fallbackItems = Array.isArray(fallbackPayload.items)
-            ? fallbackPayload.items
-            : [];
-
-          if (fallbackItems.length > 0) {
-            const countyFallbackItems = fallbackItems.filter((item) => isCountyObservation(item));
-            items = countyFallbackItems.length > 0 ? countyFallbackItems : fallbackItems;
-            usedFallback = true;
-          }
-        }
+        const items = Array.isArray(payload.items) ? payload.items : [];
 
         if (!cancelled) {
           setObservations(items);
           setObservationStatus({
             state: "ok",
-            message: usedFallback
-              ? `loaded ${items.length} records (fallback without geo_level)`
-              : `loaded ${items.length} records`,
+            message: items.length > 0
+              ? `loaded ${items.length} county records`
+              : `0 counties published for this selection`,
           });
         }
       } catch (error) {
@@ -692,7 +969,152 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMetric]);
+  }, [selectedMetric, selectedStateFips]);
+
+  useEffect(() => {
+    if (!selectedMetric) {
+      return;
+    }
+
+    let cancelled = false;
+    setDistribution(null);
+    setDistributionStatus({ state: "loading", message: "loading API bins" });
+
+    async function loadDistribution() {
+      try {
+        const query = new URLSearchParams({
+          metric_code: selectedMetric,
+          geo_level: "COUNTY",
+          bin_count: String(CHOROPLETH_PALETTE.length),
+        });
+        if (selectedStateFips) {
+          query.set("state_fips", selectedStateFips);
+        }
+        const response = await fetch(`/api/distribution/bins?${query.toString()}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (Number(payload.total) === 0) {
+          if (!cancelled) {
+            setDistribution(null);
+            setDistributionStatus({
+              state: "ok",
+              message: "no published values for selection",
+            });
+          }
+          return;
+        }
+        if (distributionBins(payload).length === 0) {
+          throw new Error("no distribution values");
+        }
+
+        if (!cancelled) {
+          setDistribution(payload);
+          setDistributionStatus({
+            state: "ok",
+            message: `${payload.bin_count} API bins across ${payload.total} records`,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDistribution(null);
+          setDistributionStatus({
+            state: "warn",
+            message: `${error.message}; using local fallback`,
+          });
+        }
+      }
+
+      try {
+        const [stateItems, countyItems] = await Promise.all([
+          fetchAllCatalogItems("/api/catalog/geographies", { geo_level: "STATE" }),
+          fetchAllCatalogItems("/api/catalog/geographies", { geo_level: "COUNTY" }),
+        ]);
+
+        if (!cancelled) {
+          setStates(
+            stateItems.sort((left, right) =>
+              String(left.state_name).localeCompare(String(right.state_name))),
+          );
+          setCountyGeographies(
+            countyItems.sort((left, right) =>
+              String(left.county_name).localeCompare(String(right.county_name))),
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGeographiesError(error.message || "Unable to load geography selectors.");
+        }
+      }
+    }
+
+    loadDistribution();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMetric, selectedStateFips]);
+
+  useEffect(() => {
+    if (!selectedMetric || !selectedGeoId) {
+      setTimeseries([]);
+      setTimeseriesStatus({
+        state: "idle",
+        message: "Click a county to load its history.",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setTimeseries([]);
+    setTimeseriesStatus({ state: "loading", message: "Loading county history..." });
+
+    async function loadTimeseries() {
+      try {
+        const query = new URLSearchParams({
+          metric_code: selectedMetric,
+          geo_id: selectedGeoId,
+          limit: "1000",
+        });
+        const response = await fetch(`/api/observations/timeseries?${query.toString()}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!cancelled) {
+          setTimeseries(items);
+          setTimeseriesStatus({
+            state: "ok",
+            message: `${items.length} historical observation${items.length === 1 ? "" : "s"}`,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setTimeseries([]);
+          setTimeseriesStatus({
+            state: "bad",
+            message: error.message || "Unable to load county history.",
+          });
+        }
+      }
+    }
+
+    loadTimeseries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMetric, selectedGeoId]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -760,9 +1182,62 @@ export default function HomePage() {
     }
 
     let cancelled = false;
+    let interactionHandlersAttached = false;
     const currentSourceLayer = activeSourceLayer || tileMetadata.sourceLayer;
 
+    const handleCountyMove = (event) => {
+      const feature = event.features?.[0];
+      const rawJoinValue = feature?.properties?.[tileMetadata.joinKey];
+      const observation = rawJoinValue === null || rawJoinValue === undefined
+        ? null
+        : observationIndex.get(String(rawJoinValue));
+      const geography = rawJoinValue === null || rawJoinValue === undefined
+        ? null
+        : geographyIndex.get(String(rawJoinValue));
+      const county = observation || geography;
+
+      if (!county) {
+        setHoveredCounty(null);
+        map.getCanvas().style.cursor = "";
+        return;
+      }
+
+      const container = map.getContainer();
+      setHoveredCounty({
+        observation: county,
+        hasObservation: Boolean(observation),
+        x: event.point.x,
+        y: Math.min(event.point.y, Math.max(8, container.clientHeight - 170)),
+        alignRight: event.point.x > container.clientWidth - 250,
+      });
+      map.getCanvas().style.cursor = "pointer";
+    };
+
+    const handleCountyLeave = () => {
+      setHoveredCounty(null);
+      map.getCanvas().style.cursor = "";
+    };
+
+    const handleCountyClick = (event) => {
+      const feature = event.features?.[0];
+      const rawJoinValue = feature?.properties?.[tileMetadata.joinKey];
+      const observation = rawJoinValue === null || rawJoinValue === undefined
+        ? null
+        : observationIndex.get(String(rawJoinValue));
+      const geography = rawJoinValue === null || rawJoinValue === undefined
+        ? null
+        : geographyIndex.get(String(rawJoinValue));
+      const county = observation || geography;
+
+      if (county?.geo_id) {
+        setSelectedGeoId(county.geo_id);
+      }
+    };
+
     const removeChoropleth = () => {
+      if (map.getLayer("choropleth-selected")) {
+        map.removeLayer("choropleth-selected");
+      }
       if (map.getLayer("choropleth-outline")) {
         map.removeLayer("choropleth-outline");
       }
@@ -798,7 +1273,12 @@ export default function HomePage() {
           source: "choropleth",
           filter: COUNTY_TILE_FILTER,
           paint: {
-            "fill-color": buildChoroplethMatchExpression(observations, tileMetadata.joinKey),
+            "fill-color": buildChoroplethMatchExpression(
+              observations,
+              tileMetadata.joinKey,
+              distribution,
+              missingValueLabel,
+            ),
             "fill-opacity": 0.95,
           },
         },
@@ -819,6 +1299,31 @@ export default function HomePage() {
         },
         "obs-points",
       );
+
+      const selectedItem = observations.find((item) => item.geo_id === selectedGeoId);
+      const selectedJoinValue = selectedItem
+        ? observationJoinValue(selectedItem, tileMetadata.joinKey)
+        : null;
+
+      map.addLayer(
+        {
+          id: "choropleth-selected",
+          type: "line",
+          source: "choropleth",
+          filter: buildSelectionFilter(selectedJoinValue, tileMetadata.joinKey),
+          paint: {
+            "line-color": "#d96b2b",
+            "line-width": 3,
+            "line-opacity": 1,
+          },
+        },
+        "obs-points",
+      );
+
+      map.on("mousemove", "choropleth-fill", handleCountyMove);
+      map.on("mouseleave", "choropleth-fill", handleCountyLeave);
+      map.on("click", "choropleth-fill", handleCountyClick);
+      interactionHandlersAttached = true;
     };
 
     addChoropleth(currentSourceLayer).catch((error) => {
@@ -832,8 +1337,24 @@ export default function HomePage() {
 
     return () => {
       cancelled = true;
+      setHoveredCounty(null);
+      map.getCanvas().style.cursor = "";
+      if (interactionHandlersAttached) {
+        map.off("mousemove", "choropleth-fill", handleCountyMove);
+        map.off("mouseleave", "choropleth-fill", handleCountyLeave);
+        map.off("click", "choropleth-fill", handleCountyClick);
+      }
     };
-  }, [mapReady, tileMetadata, activeSourceLayer, observations]);
+  }, [
+    mapReady,
+    tileMetadata,
+    activeSourceLayer,
+    observations,
+    observationIndex,
+    geographyIndex,
+    distribution,
+    missingValueLabel,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -859,7 +1380,12 @@ export default function HomePage() {
       map.setPaintProperty(
         "choropleth-fill",
         "fill-color",
-        buildChoroplethMatchExpression(observations, tileMetadata.joinKey),
+        buildChoroplethMatchExpression(
+          observations,
+          tileMetadata.joinKey,
+          distribution,
+          missingValueLabel,
+        ),
       );
     }
 
@@ -871,12 +1397,54 @@ export default function HomePage() {
       }
       map.fitBounds(bounds, { padding: 30, maxZoom: 7, duration: 800 });
     }
-  }, [mapReady, observations, tileMetadata]);
+  }, [mapReady, observations, tileMetadata, distribution, missingValueLabel]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !selectedStateFips || counties.length === 0) {
+      return;
+    }
+
+    const bounds = new maplibregl.LngLatBounds();
+    for (const county of counties) {
+      const longitude = Number(county.longitude);
+      const latitude = Number(county.latitude);
+      if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+        bounds.extend([longitude, latitude]);
+      }
+    }
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 45, maxZoom: 7, duration: 700 });
+    }
+  }, [counties, mapReady, selectedStateFips]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !tileMetadata?.joinKey || !map.getLayer("choropleth-selected")) {
+      return;
+    }
+
+    const selectedItem =
+      observations.find((item) => item.geo_id === selectedGeoId) || selectedCountyGeography;
+    const selectedJoinValue = selectedItem
+      ? observationJoinValue(selectedItem, tileMetadata.joinKey)
+      : null;
+    map.setFilter(
+      "choropleth-selected",
+      buildSelectionFilter(selectedJoinValue, tileMetadata.joinKey),
+    );
+  }, [mapReady, observations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
   const choroplethModel = useMemo(
-    () => buildChoroplethModel(observations, tileMetadata?.joinKey || "geo_id"),
-    [observations, tileMetadata],
+    () => buildChoroplethModel(
+      observations,
+      tileMetadata?.joinKey || "geo_id",
+      distribution,
+      missingValueLabel,
+    ),
+    [observations, tileMetadata, distribution, missingValueLabel],
   );
 
   function pillClass(status) {
@@ -890,63 +1458,242 @@ export default function HomePage() {
   }
 
   return (
-    <main className="dashboard">
+    <main
+      className="dashboard"
+      data-testid="dashboard"
+      data-selected-dataset={selectedDataset}
+      data-selected-metric={selectedMetric}
+      data-metric-count={metrics.length}
+      data-county-count={countyGeographies.length}
+    >
       <section className="hero">
         <h1>Population ETL Local Dashboard</h1>
         <p>App Router frontend with same-origin API and tile proxies for quick local iteration.</p>
       </section>
 
       <section className="status-row">
-        <span className={pillClass(apiHealth.state)}>
+        <span className={pillClass(apiHealth.state)} data-testid="api-status">
           API: <strong>{apiHealth.message}</strong>
         </span>
-        <span className={pillClass(tilesHealth.state)}>
+        <span className={pillClass(tilesHealth.state)} data-testid="tiles-status">
           Tiles: <strong>{tilesHealth.message}</strong>
         </span>
-        <span className={pillClass(observationStatus.state)}>
+        <span className={pillClass(observationStatus.state)} data-testid="observations-status">
           Observations: <strong>{observationStatus.message}</strong>
+        </span>
+        <span className={pillClass(distributionStatus.state)} data-testid="distribution-status">
+          Distribution: <strong>{distributionStatus.message}</strong>
         </span>
       </section>
 
       <section className="grid">
         <article className="card">
-          <h2>Metric Selector</h2>
-          <div className="controls">
-            <label htmlFor="metric-select">Metric</label>
-            <select
-              id="metric-select"
-              className="select"
-              value={selectedMetric}
-              onChange={(event) => setSelectedMetric(event.target.value)}
-              disabled={options.length === 0}
-            >
-              {options.map((option) => (
-                <option value={option.value} key={option.value}>
-                  {option.label}
+          <h2>Data &amp; Geography</h2>
+          <div className="selector-grid">
+            <div className="control-group">
+              <label htmlFor="dataset-select">ACS dataset</label>
+              <select
+                id="dataset-select"
+                className="select"
+                data-testid="dataset-select"
+                value={selectedDataset}
+                onChange={(event) => setSelectedDataset(event.target.value)}
+              >
+                <option value="acs5">ACS 5-year — complete county coverage</option>
+                <option value="acs1">ACS 1-year — partial county coverage</option>
+              </select>
+            </div>
+
+            <div className="control-group span-controls">
+              <label htmlFor="metric-select">Metric ({options.length.toLocaleString()} available)</label>
+              <select
+                id="metric-select"
+                className="select"
+                data-testid="metric-select"
+                value={selectedMetric}
+                onChange={(event) => setSelectedMetric(event.target.value)}
+                disabled={options.length === 0}
+              >
+                {options.map((option) => (
+                  <option value={option.value} key={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="control-group">
+              <label htmlFor="state-select">State</label>
+              <select
+                id="state-select"
+                className="select"
+                data-testid="state-select"
+                value={selectedStateFips}
+                onChange={(event) => {
+                  setSelectedStateFips(event.target.value);
+                  setSelectedGeoId("");
+                }}
+              >
+                <option value="">All states</option>
+                {states.map((state) => (
+                  <option value={state.state_fips} key={state.geo_id}>
+                    {state.state_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="control-group">
+              <label htmlFor="county-select">County</label>
+              <select
+                id="county-select"
+                className="select"
+                data-testid="county-select"
+                value={counties.some((county) => county.geo_id === selectedGeoId) ? selectedGeoId : ""}
+                onChange={(event) => setSelectedGeoId(event.target.value)}
+                disabled={!selectedStateFips || counties.length === 0}
+              >
+                <option value="">
+                  {selectedStateFips ? "All counties" : "Select a state first"}
                 </option>
-              ))}
-            </select>
+                {counties.map((county) => (
+                  <option value={county.geo_id} key={county.geo_id}>
+                    {county.county_name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           {metricsError ? <p className="subtle">Metrics error: {metricsError}</p> : null}
+          {geographiesError ? <p className="subtle">Geographies error: {geographiesError}</p> : null}
           {selectedMetricMeta ? (
             <p className="metric-meta">
-              Source: {selectedMetricMeta.source_code} | Suitability: {selectedMetricMeta.dashboard_suitability}
+              Source: {selectedMetricMeta.source_code} | Dataset: {selectedDataset.toUpperCase()} | Loaded catalog: {metrics.length.toLocaleString()} metrics
             </p>
           ) : null}
+          <p className={`coverage-note ${selectedDataset === "acs1" ? "partial" : "complete"}`}>
+            {selectedDataset === "acs1"
+              ? "ACS 1-year county coverage is partial: Census publishes counties with populations of 65,000 or more. Uncolored counties are not published in ACS1."
+              : "ACS 5-year estimates provide complete county coverage and are the default for nationwide county maps."}
+          </p>
+
+          <section className="county-panel" aria-live="polite">
+            <div className="county-panel-header">
+              <div>
+                <div className="eyebrow">Selected county</div>
+                <h3>{selectedCounty ? observationName(selectedCounty) : "Choose a county on the map"}</h3>
+              </div>
+              {selectedGeoId ? (
+                <button className="clear-button" type="button" onClick={() => setSelectedGeoId("")}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
+
+            {selectedCounty ? (
+              <>
+                <dl className="county-details">
+                  <div>
+                    <dt>Latest value</dt>
+                    <dd>
+                      {selectedCountyHasObservation
+                        ? `${formatObservationValue(selectedCounty.value)} ${observationUnit(selectedCounty)}`
+                        : missingValueLabel}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Period</dt>
+                    <dd>
+                      {selectedCountyHasObservation
+                        ? selectedCounty.period || selectedCounty.observation_date || "-"
+                        : "Not published"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>{selectedCountyHasObservation ? selectedCounty.source || selectedCounty.source_code || "-" : "CENSUS_ACS"}</dd>
+                  </div>
+                  <div>
+                    <dt>Dataset</dt>
+                    <dd>{selectedCounty.dataset || selectedCounty.dataset_code || selectedDataset}</dd>
+                  </div>
+                  <div>
+                    <dt>Margin of error</dt>
+                    <dd>{selectedCountyHasObservation ? marginOfErrorText(selectedCounty) : "Not published"}</dd>
+                  </div>
+                  <div>
+                    <dt>Geography ID</dt>
+                    <dd>{selectedCounty.geo_id}</dd>
+                  </div>
+                </dl>
+                <div className="timeseries-heading">
+                  <strong>History</strong>
+                  <span className={`inline-status ${timeseriesStatus.state}`}>{timeseriesStatus.message}</span>
+                </div>
+                <TimeSeriesChart items={timeseries} />
+              </>
+            ) : (
+              <p className="subtle county-prompt">
+                Hover for a quick read; click a county to pin its details and fetch its time series.
+              </p>
+            )}
+          </section>
         </article>
 
         <article className="card">
           <h2>Map Preview</h2>
           <p className="subtle">Choropleth polygons are joined to observations by discovered tile join key; low-opacity points remain for diagnostics.</p>
           <div className="map-shell">
-            <div className="map-canvas" ref={mapContainerRef} />
+            <div className="map-canvas" data-testid="map-canvas" ref={mapContainerRef} />
+            {hoveredCounty ? (
+              <div
+                className="county-tooltip"
+                role="tooltip"
+                style={{
+                  left: hoveredCounty.x,
+                  top: hoveredCounty.y,
+                  transform: hoveredCounty.alignRight
+                    ? "translate(calc(-100% - 12px), 12px)"
+                    : "translate(12px, 12px)",
+                }}
+              >
+                <strong>{observationName(hoveredCounty.observation)}</strong>
+                {hoveredCounty.hasObservation ? (
+                  <>
+                    <span>
+                      {formatObservationValue(hoveredCounty.observation.value)} {observationUnit(hoveredCounty.observation)}
+                    </span>
+                    <small>
+                      {hoveredCounty.observation.period || hoveredCounty.observation.observation_date} · {hoveredCounty.observation.source || hoveredCounty.observation.source_code}
+                    </small>
+                    <small>
+                      MOE: {marginOfErrorText(hoveredCounty.observation)}
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <span>{missingValueLabel}</span>
+                    <small>
+                      {selectedDataset === "acs1"
+                        ? "ACS1 publishes county estimates only for areas meeting its population threshold."
+                        : "No value was returned for the selected metric and vintage."}
+                    </small>
+                  </>
+                )}
+              </div>
+            ) : null}
             {choroplethModel.legendItems.length > 0 ? (
               <div className="map-legend" aria-label="Choropleth value legend">
-                <div className="legend-title">Value</div>
+                <div className="legend-title">
+                  Value · {choroplethModel.usesDistribution ? "API distribution" : "local fallback"}
+                </div>
                 {choroplethModel.legendItems.map((item) => (
                   <div className="legend-row" key={`${item.color}-${item.label}`}>
                     <span className="legend-swatch" style={{ backgroundColor: item.color }} />
-                    <span>{item.label}</span>
+                    <span>
+                      {item.label}
+                      {Number.isFinite(item.count) ? ` (${item.count})` : ""}
+                    </span>
                   </div>
                 ))}
               </div>
