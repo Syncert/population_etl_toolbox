@@ -5,7 +5,7 @@ Containerization artifacts and runtime definitions.
 ## Compose Stacks
 
 - `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + a single Postgres metadata/service DB.
-- `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, web MVP shell, and Airflow services.
+- `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, the Next.js MVP app, and Airflow services.
 - `docker-compose.external.yml`: External integration stack targeting existing analytics and Airflow metadata Postgres hosts. Supports service-only local MVP (`redis`, `api`, `martin`, `web`) by default, with optional local Airflow services under profile `airflow-local`.
 
 ## Modes
@@ -63,7 +63,7 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 ### External Mode
 
 ```bash
-# Web smoke dashboard and proxied API health
+# Next.js MVP app and proxied API health
 curl http://localhost:3001/
 curl http://localhost:3001/api/health
 
@@ -89,6 +89,8 @@ The smoke script also runs `scripts/check_mvp_geo_tile_join.py`, which verifies:
 - Martin exposes the `counties` vector layer with a usable geography join key
 - sampled API observation `geo_id` values join back to county geometry rows
 
+The browser-level portion additionally verifies that the public route is served by Next.js and renders MapLibre with healthy tiles, loaded observations, and API-backed distribution bins.
+
 ## API-to-Map Contract Smoke
 
 Use these commands to verify the first API-to-map contract in external MVP mode:
@@ -103,9 +105,9 @@ curl http://localhost:3001/tiles/health
 curl http://localhost:3001/tiles/
 ```
 
-Web smoke dashboard:
+Next.js MVP app:
 - `http://localhost:3001`
-- Proxy routes from the web container:
+- Same-origin routes proxied by the Next.js server:
 	- `/api/*` -> API service (`api:8000`)
 	- `/tiles/*` -> Martin service (`martin:3000`)
 
