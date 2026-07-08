@@ -795,6 +795,14 @@ export default function HomePage() {
     message: "Click a county to load its history.",
   });
 
+  // Gold schema explorer state — tracks live API probe status for all 4 schemas.
+  const [schemaStatus, setSchemaStatus] = useState({
+    gold_glossary: { state: "loading", message: "probing…", records: null },
+    gold_bls:      { state: "loading", message: "probing…", records: null },
+    gold_census:   { state: "loading", message: "probing…", records: null },
+    gold_fred:     { state: "loading", message: "probing…", records: null },
+  });
+  const [activeSchemaTab, setActiveSchemaTab] = useState("gold_glossary");
   const datasetMetrics = useMemo(
     () => metrics.filter((metric) => metricDataset(metric.metric_code) === selectedDataset),
     [metrics, selectedDataset],
@@ -1437,6 +1445,67 @@ export default function HomePage() {
   }, [mapReady, observations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
+
+  // Probe all 4 gold schemas once on mount.
+  useEffect(() => {
+    let cancelled = false;
+
+    function updateSchema(schema, patch) {
+      if (!cancelled) {
+        setSchemaStatus((prev) => ({ ...prev, [schema]: { ...prev[schema], ...patch } }));
+      }
+    }
+
+    async function probeGlossary() {
+      try {
+        const response = await fetch("/api/catalog/sources", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const sources = await response.json();
+        const count = Array.isArray(sources) ? sources.length : 0;
+        updateSchema("gold_glossary", {
+          state: "ok",
+          message: `${count} source${count !== 1 ? "s" : ""} in gold_glossary.dim_source_system`,
+          records: sources,
+        });
+      } catch (error) {
+        updateSchema("gold_glossary", { state: "bad", message: error.message, records: null });
+      }
+    }
+
+    async function probeSource(schema, apiPrefix, labelMetricCode) {
+      try {
+        const params = new URLSearchParams({ metric_code: labelMetricCode, limit: "3" });
+        const response = await fetch(`${apiPrefix}/observations/latest?${params.toString()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        const total = Number(payload.total) || 0;
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        updateSchema(schema, {
+          state: "ok",
+          message: `${total.toLocaleString()} observation${total !== 1 ? "s" : ""} for ${labelMetricCode}`,
+          records: items,
+        });
+      } catch (error) {
+        updateSchema(schema, { state: "bad", message: error.message, records: null });
+      }
+    }
+
+    probeGlossary();
+    probeSource("gold_bls",    "/api/bls",    "BLS:LAU:UNEMP_RATE");
+    probeSource("gold_census", "/api/census", "ACS:acs5:B01003_001E");
+    probeSource("gold_fred",   "/api/fred",   "FRED:UNRATE");
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const choroplethModel = useMemo(
     () => buildChoroplethModel(
       observations,
@@ -1736,6 +1805,124 @@ export default function HomePage() {
               </tbody>
             </table>
           </div>
+        </article>
+
+        <article className="card span-2" data-testid="gold-schema-explorer">
+          <h2>Gold Schema Explorer</h2>
+          <p className="subtle">
+            Live API probes demonstrating all four gold schemas.
+            <strong> gold_glossary</strong> serves shared metadata (sources, metrics, geographies).
+            <strong> gold_bls</strong>, <strong>gold_census</strong>, and <strong>gold_fred</strong> serve
+            source-specific observations.
+          </p>
+
+          <div className="schema-tab-bar" role="tablist">
+            {[
+              { key: "gold_glossary", label: "gold_glossary" },
+              { key: "gold_bls",      label: "gold_bls" },
+              { key: "gold_census",   label: "gold_census" },
+              { key: "gold_fred",     label: "gold_fred" },
+            ].map(({ key, label }) => {
+              const status = schemaStatus[key];
+              return (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={activeSchemaTab === key}
+                  className={`schema-tab ${activeSchemaTab === key ? "active" : ""} schema-tab-${status.state}`}
+                  onClick={() => setActiveSchemaTab(key)}
+                  data-testid={`schema-tab-${key}`}
+                >
+                  <span className={`tab-dot tab-dot-${status.state}`} aria-hidden="true" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {[
+            {
+              key: "gold_glossary",
+              title: "gold_glossary — Shared Metadata Catalog",
+              endpoint: "GET /api/catalog/sources",
+              description: "Populated from gold_glossary.dim_source_system. Centralises source registry, metric catalog, and geography dimension for all ETL pipelines.",
+              columns: ["source_code", "source_name", "source_type", "reference_url"],
+            },
+            {
+              key: "gold_bls",
+              title: "gold_bls — Bureau of Labor Statistics",
+              endpoint: "GET /api/bls/observations/latest",
+              description: "Source-isolated BLS observation schema. Contains dim_bls_survey, dim_bls_series, rpt_observation_dashboard, mv_latest_dashboard, and contract views v_metric_latest_by_geo / v_metric_timeseries_by_geo.",
+              columns: ["geo_id", "geo_level", "observation_date", "metric_code", "value", "units"],
+            },
+            {
+              key: "gold_census",
+              title: "gold_census — Census ACS",
+              endpoint: "GET /api/census/observations/latest",
+              description: "Source-isolated Census ACS observation schema. Contains dim_acs_table, dim_acs_variable, rpt_observation_dashboard, mv_latest_dashboard, and contract views.",
+              columns: ["geo_id", "geo_level", "observation_date", "metric_code", "value", "vintage"],
+            },
+            {
+              key: "gold_fred",
+              title: "gold_fred — FRED",
+              endpoint: "GET /api/fred/observations/latest",
+              description: "Source-isolated FRED observation schema. Contains dim_fred_series, rpt_observation_dashboard, mv_latest_dashboard, and contract views.",
+              columns: ["geo_id", "geo_level", "observation_date", "metric_code", "value", "units"],
+            },
+          ].map(({ key, title, endpoint, description, columns }) => {
+            if (activeSchemaTab !== key) {
+              return null;
+            }
+
+            const status = schemaStatus[key];
+            const records = status.records || [];
+
+            return (
+              <div key={key} className="schema-panel" role="tabpanel" data-testid={`schema-panel-${key}`}>
+                <div className="schema-panel-header">
+                  <h3>{title}</h3>
+                  <code className="schema-endpoint">{endpoint}</code>
+                </div>
+                <p className="subtle">{description}</p>
+
+                <div className={`schema-status schema-status-${status.state}`}>
+                  <span className={`tab-dot tab-dot-${status.state}`} aria-hidden="true" />
+                  {status.state === "loading" ? "Probing schema…" : status.message}
+                </div>
+
+                {records.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          {columns.map((col) => (
+                            <th key={col}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {records.slice(0, 8).map((row, rowIndex) => (
+                          <tr key={rowIndex}>
+                            {columns.map((col) => (
+                              <td key={col}>{row[col] ?? "-"}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  status.state !== "loading" ? (
+                    <p className="subtle schema-empty">
+                      {status.state === "bad"
+                        ? "Schema not reachable — ensure the per-source gold DDL has been applied and the ETL refresh procedures have run."
+                        : "No records returned for the probe metric. Apply the DDL and run the serving refresh to populate this schema."}
+                    </p>
+                  ) : null
+                )}
+              </div>
+            );
+          })}
         </article>
       </section>
     </main>
