@@ -262,6 +262,13 @@ CALL gold.refresh_dashboard_serving_layer_bls(NULL, NULL);
 CALL gold.refresh_dashboard_serving_layer_fred(NULL, NULL);
 ```
 
+### API read mapping
+
+- Latest map observations read `gold.mv_latest_dashboard` through `gold.v_metric_latest_by_geo`.
+- Historical timeseries read durable source fact views through `gold.v_metric_timeseries_by_geo`.
+- `gold.v_metric_timeseries_by_geo` unions `gold.fact_acs_observation`, `gold.fact_bls_observation`, and `gold.fact_fred_observation` with their metric bridges and dimensions.
+- Historical API reads must not use `gold.rpt_observation_dashboard`, because bounded serving refreshes may intentionally retain only a rolling window there.
+
 ---
 
 ## Example Queries

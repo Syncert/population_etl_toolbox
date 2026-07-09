@@ -108,6 +108,9 @@ function Invoke-NextWebAssert {
         if ($response.Content -notmatch '/_next/static/') {
             throw 'Next.js static asset references were not found in the web response.'
         }
+        if ([string]$response.Headers['X-Content-Type-Options'] -ne 'nosniff') {
+            throw 'Expected the public web security headers.'
+        }
 
         Write-Pass -Name 'web-root-nextjs' -Detail ("HTTP $statusCode with Next.js assets ($Uri)")
         return $true
@@ -144,7 +147,7 @@ function Invoke-BrowserMapAssert {
             "--user-data-dir=$browserProfile",
             '--virtual-time-budget=30000',
             '--dump-dom',
-            'http://localhost:3001/'
+            'http://localhost:3001/explore'
         )
         $browserProcess = Start-Process -FilePath $edgePath -ArgumentList $browserArgs -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $browserStdout -RedirectStandardError $browserStderr
         if ($browserProcess.ExitCode -ne 0) {
@@ -216,12 +219,60 @@ function Get-JsonItemsCount {
     return 0
 }
 
+function Invoke-RedisCacheAssert {
+    $uri = 'http://localhost:3001/api/catalog/metrics?active_only=true&limit=3&offset=0'
+    try {
+        $null = Invoke-WebRequest -Uri $uri -Method GET -TimeoutSec 30 -UseBasicParsing
+        $second = Invoke-WebRequest -Uri $uri -Method GET -TimeoutSec 30 -UseBasicParsing
+        $cacheState = [string]$second.Headers['X-Cache']
+        if ($cacheState -ne 'HIT') {
+            throw "Expected X-Cache=HIT on repeated catalog request, received '$cacheState'."
+        }
+        Write-Pass -Name 'redis-api-cache' -Detail 'Repeated public API request returned X-Cache=HIT.'
+        return $true
+    }
+    catch {
+        Write-Fail -Name 'redis-api-cache' -Detail $_.Exception.Message
+        return $false
+    }
+}
+
 function Invoke-ObservationSample {
     param([string]$MetricCode)
 
     $encodedMetricCode = [uri]::EscapeDataString($MetricCode)
     $uri = "http://localhost:3001/api/observations/latest?metric_code=$encodedMetricCode&geo_level=county&limit=5"
     return Invoke-JsonGet -Name "observations-latest-$MetricCode" -Uri $uri
+}
+
+function Invoke-HistoricalTimeseriesAssert {
+    param([string]$MetricCode)
+
+    $encodedMetricCode = [uri]::EscapeDataString($MetricCode)
+    $latestUri = "http://localhost:3001/api/observations/latest?metric_code=$encodedMetricCode&geo_level=county&limit=1"
+    $latest = Invoke-JsonGet -Name 'historical-seed-observation' -Uri $latestUri
+    if (-not $latest.Ok -or (Get-JsonItemsCount -Json $latest.Json) -eq 0) {
+        Write-Fail -Name 'historical-timeseries' -Detail 'No county observation was available to seed the history check.'
+        return $false
+    }
+
+    $geoId = [string]$latest.Json.items[0].geo_id
+    $encodedGeoId = [uri]::EscapeDataString($geoId)
+    $historyUri = "http://localhost:3001/api/observations/timeseries?metric_code=$encodedMetricCode&geo_id=$encodedGeoId&limit=1000"
+    $history = Invoke-JsonGet -Name 'historical-timeseries-request' -Uri $historyUri
+    if (-not $history.Ok) {
+        return $false
+    }
+
+    $items = @($history.Json.items)
+    $periods = @($items | ForEach-Object { [string]$_.period } | Where-Object { $_ } | Select-Object -Unique)
+    if ($items.Count -lt 2 -or $periods.Count -lt 2) {
+        Write-Fail -Name 'historical-timeseries' -Detail ("Expected multiple historical periods for geo_id=$geoId; rows=$($items.Count), periods=$($periods.Count).")
+        return $false
+    }
+
+    Write-Pass -Name 'historical-timeseries' -Detail ("geo_id=$geoId returned $($items.Count) rows across $($periods.Count) periods.")
+    return $true
 }
 
 function Invoke-GeoTileJoinAssert {
@@ -270,6 +321,12 @@ try {
         exit 1
     }
 
+    foreach ($route in @('catalog', 'explore', 'profiles', 'articles', 'builder')) {
+        if (-not (Invoke-WebGet -Name "analytics-route-$route" -Uri "http://localhost:3001/$route")) {
+            exit 1
+        }
+    }
+
     $healthResult = Invoke-JsonGet -Name 'api-health' -Uri 'http://localhost:3001/api/health'
     if ((-not $healthResult.Ok) -or $healthResult.Json.status -ne 'ok') {
         Write-Fail -Name 'api-health-payload' -Detail 'Expected JSON status=ok.'
@@ -286,6 +343,10 @@ try {
         exit 1
     }
     Write-Pass -Name 'catalog-metrics-content' -Detail ("Metric catalog returned $catalogItemsCount sampled items.")
+
+    if (-not (Invoke-RedisCacheAssert)) {
+        exit 1
+    }
 
     $metricCode = 'population'
     $obsPrimary = Invoke-ObservationSample -MetricCode $metricCode
@@ -331,6 +392,10 @@ try {
         Write-Pass -Name 'observations-selected-metric' -Detail ("Using metric_code=$metricCode with rows=$obsPrimaryCount")
     }
     $script:MetricCode = $metricCode
+
+    if (-not (Invoke-HistoricalTimeseriesAssert -MetricCode $metricCode)) {
+        exit 1
+    }
 
     $tileHealth = Invoke-JsonGet -Name 'tiles-health' -Uri 'http://localhost:3001/tiles/health'
     if (-not $tileHealth.Ok) {

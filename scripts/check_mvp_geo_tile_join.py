@@ -56,15 +56,67 @@ def _env_value(env_file_values: dict[str, str], key: str, default: str = "") -> 
     return os.getenv(key) or env_file_values.get(key, default)
 
 
-def _db_connect(env_file_values: dict[str, str]):
+def _db_connect(env_file_values: dict[str, str], serving_role: bool = False):
+    user_key = "ANALYTICS_API_DB_USER" if serving_role else "ANALYTICS_DB_USER"
+    password_key = "ANALYTICS_API_DB_PASSWORD" if serving_role else "ANALYTICS_DB_PASSWORD"
     return psycopg2.connect(
         host=_env_value(env_file_values, "ANALYTICS_DB_HOST", "localhost"),
         port=int(_env_value(env_file_values, "ANALYTICS_DB_PORT", "5432")),
-        user=_env_value(env_file_values, "ANALYTICS_DB_USER", "postgres"),
-        password=_env_value(env_file_values, "ANALYTICS_DB_PASSWORD", ""),
+        user=_env_value(env_file_values, user_key, "" if serving_role else "postgres"),
+        password=_env_value(env_file_values, password_key, ""),
         dbname=_env_value(env_file_values, "ANALYTICS_DB_NAME", "population_etl"),
         connect_timeout=10,
     )
+
+
+def check_serving_role(env_file_values: dict[str, str]) -> CheckResult:
+    configured_role = _env_value(env_file_values, "ANALYTICS_API_DB_USER", "")
+    if not configured_role:
+        return CheckResult(
+            "api-readonly-role",
+            False,
+            "ANALYTICS_API_DB_USER is not configured; run scripts/provision_api_readonly.py.",
+        )
+
+    conn = _db_connect(env_file_values, serving_role=True)
+    try:
+        sql = """
+            SELECT
+                current_user,
+                current_setting('transaction_read_only') = 'on' AS transaction_read_only,
+                has_schema_privilege(current_user, 'gold', 'USAGE') AS can_use_gold,
+                has_schema_privilege(current_user, 'gold', 'CREATE') AS can_create_in_gold,
+                COALESCE(bool_and(has_table_privilege(current_user, schemaname || '.' || tablename, 'SELECT')), false) AS can_select_all,
+                COALESCE(bool_or(has_table_privilege(current_user, schemaname || '.' || tablename, 'INSERT,UPDATE,DELETE,TRUNCATE')), false) AS can_mutate_any
+            FROM pg_tables
+            WHERE schemaname = 'gold'
+            GROUP BY current_user;
+        """
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            row = cur.fetchone()
+        if not row:
+            return CheckResult("api-readonly-role", False, "No gold tables were available for privilege validation.")
+        role, read_only, can_use, can_create, can_select_all, can_mutate_any = row
+        ok = (
+            role == configured_role
+            and bool(read_only)
+            and bool(can_use)
+            and not bool(can_create)
+            and bool(can_select_all)
+            and not bool(can_mutate_any)
+        )
+        return CheckResult(
+            "api-readonly-role",
+            ok,
+            (
+                f"role={role}; transaction_read_only={read_only}; can_use_gold={can_use}; "
+                f"can_create_in_gold={can_create}; can_select_all={can_select_all}; "
+                f"can_mutate_any={can_mutate_any}"
+            ),
+        )
+    finally:
+        conn.close()
 
 
 def _get_json(url: str, timeout: int = 30) -> Any:
@@ -375,6 +427,8 @@ def main() -> int:
 
         geometry_result, _counts = check_db_geometry(conn)
         results.append(geometry_result)
+
+        results.append(check_serving_role(env_file_values))
 
         api_result, observations, _selected_metric_code = check_api_observations(
             api_base_url=args.api_base_url,

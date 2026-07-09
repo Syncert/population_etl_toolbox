@@ -10,6 +10,8 @@ class Settings:
         self.db_user = os.getenv("DB_USER", "postgres")
         self.db_password = os.getenv("DB_PASSWORD", "")
         self.db_name = os.getenv("DB_NAME", "population_etl")
+        self.redis_url = os.getenv("REDIS_URL", "").strip()
+        self.api_cache_ttl_seconds = int(os.getenv("API_CACHE_TTL_SECONDS", "300"))
 
         self.api_title = os.getenv("API_TITLE", "Population ETL Toolbox API")
         self.api_version = os.getenv("API_VERSION", "0.1.0")

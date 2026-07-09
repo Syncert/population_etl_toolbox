@@ -239,6 +239,26 @@ def test_latest_accepts_metric_id_alias() -> None:
     assert fake.params_seen[0]["metric_code"] == "POP_TOTAL"
 
 
+def test_latest_resolves_product_friendly_population_alias() -> None:
+    fake = _LatestForwardingSession()
+
+    def _override_db():
+        yield fake
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/observations/latest",
+            params={"metric_code": "population", "geo_level": "county", "limit": 1},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake.params_seen[0]["metric_code"] == "ACS:acs5:B01003_001"
+
+
 def test_timeseries_accepts_metric_id_alias() -> None:
     fake = _TimeseriesSession()
 
