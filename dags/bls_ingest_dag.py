@@ -43,10 +43,18 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
-from data_ingestion_toolbox.bls.config import CONFIG
-from data_ingestion_toolbox.bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-from data_ingestion_toolbox.bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
-from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+try:
+    from data_ingestion_toolbox.bls.config import CONFIG
+    from data_ingestion_toolbox.bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
+    from data_ingestion_toolbox.bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
+    from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+except ImportError:
+    # Backward-compatible fallback for legacy Airflow layouts that copy
+    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
+    from bls.config import CONFIG
+    from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
+    from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
+    from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -68,7 +76,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "data_ingestion_toolbox" / "bls" / "DDL" / "silver_bls.sql"
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "src" / "data_ingestion_toolbox" / "bls" / "DDL" / "silver_bls.sql",
+        root / "bls" / "DDL" / "silver_bls.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"BLS silver DDL not found. Checked: {candidates}")
 
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
@@ -689,13 +705,19 @@ def bls_ingest():
     @task(trigger_rule='all_success')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from data_ingestion_toolbox.bls.gold_bls.transform import ensure_bls_gold_schema
+        try:
+            from data_ingestion_toolbox.bls.gold_bls.transform import ensure_bls_gold_schema
+        except ImportError:
+            from bls.gold_bls.transform import ensure_bls_gold_schema
         ensure_bls_gold_schema()
 
     @task(trigger_rule='all_success')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
-        from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
+        try:
+            from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
+        except ImportError:
+            from bls.gold_bls.transform import refresh_bls_elements
         refresh_bls_elements()
 
     @task(trigger_rule='all_success')

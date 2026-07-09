@@ -59,11 +59,20 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
-from data_ingestion_toolbox.census_acs.config import CONFIG
-from data_ingestion_toolbox.census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
-from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
-from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
-from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+try:
+    from data_ingestion_toolbox.census_acs.config import CONFIG
+    from data_ingestion_toolbox.census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
+    from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
+    from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
+    from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+except ImportError:
+    # Backward-compatible fallback for legacy Airflow layouts that copy
+    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
+    from census_acs.config import CONFIG
+    from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
+    from census_acs.ingest import ingest_slice, get_curated_variables
+    from census_acs.geography import sync_geo_dim
+    from census_acs.silver_census.transform import transform_census_to_silver
 
 
 # -----------------------------
@@ -92,7 +101,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "data_ingestion_toolbox" / "census_acs" / "DDL" / "silver_census.sql"
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "src" / "data_ingestion_toolbox" / "census_acs" / "DDL" / "silver_census.sql",
+        root / "census_acs" / "DDL" / "silver_census.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"ACS silver DDL not found. Checked: {candidates}")
 
 
 def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
@@ -609,13 +626,19 @@ def acs_ingest():
     @task(trigger_rule='none_failed')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from data_ingestion_toolbox.census_acs.gold_census.transform import ensure_acs_gold_schema
+        try:
+            from data_ingestion_toolbox.census_acs.gold_census.transform import ensure_acs_gold_schema
+        except ImportError:
+            from census_acs.gold_census.transform import ensure_acs_gold_schema
         ensure_acs_gold_schema()
 
     @task(trigger_rule='none_failed')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
-        from data_ingestion_toolbox.census_acs.gold_census.transform import refresh_acs_elements
+        try:
+            from data_ingestion_toolbox.census_acs.gold_census.transform import refresh_acs_elements
+        except ImportError:
+            from census_acs.gold_census.transform import refresh_acs_elements
         refresh_acs_elements()
 
     @task(trigger_rule='none_failed')

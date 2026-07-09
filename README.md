@@ -271,6 +271,38 @@ psql -U postgres -d population_etl < sql/gold_contract/001_gold_contract_views.s
 
 ### 2. Airflow Setup
 
+#### DAG Runtime Compatibility (MVP + Legacy Admin Layout)
+
+The DAGs in [dags/acs_ingest_dag.py](dags/acs_ingest_dag.py), [dags/bls_ingest_dag.py](dags/bls_ingest_dag.py), [dags/fred_ingest_dag.py](dags/fred_ingest_dag.py), and [dags/silver_ref_dag.py](dags/silver_ref_dag.py) support two runtime layouts:
+
+- MVP/package layout (preferred for this repository):
+    - Imports resolve through `data_ingestion_toolbox.*`.
+    - DDL files resolve under `src/data_ingestion_toolbox/.../DDL`.
+- Legacy admin layout (copy/paste compatibility):
+    - Imports fall back to sibling folders next to `dags` (`census_acs`, `bls`, `fred`, `silver_ref`).
+    - DDL files fall back to sibling paths like `../census_acs/DDL/...`.
+
+This preserves backward compatibility with existing Airflow administrative deployments that run from a folder tree and periodically receive copied DAG/module updates.
+
+For legacy copy/paste deployment, keep these folders together under the same Airflow project root:
+
+- `dags`
+- `census_acs`
+- `bls`
+- `fred`
+- `silver_ref`
+- `utility`
+
+Minimum smoke validation after copy:
+
+```bash
+airflow dags list
+airflow dags test silver_ref
+airflow dags test acs_ingest
+airflow dags test bls_ingest
+airflow dags test fred_ingest
+```
+
 #### Runtime Paths and Infra Files
 
 Airflow runtime paths are hard-wired via `infra/airflow/airflow.env.example`:

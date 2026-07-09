@@ -39,10 +39,18 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
-from data_ingestion_toolbox.fred.config import CONFIG
-from data_ingestion_toolbox.fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
-from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
-from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
+try:
+    from data_ingestion_toolbox.fred.config import CONFIG
+    from data_ingestion_toolbox.fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
+    from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
+    from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
+except ImportError:
+    # Backward-compatible fallback for legacy Airflow layouts that copy
+    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
+    from fred.config import CONFIG
+    from fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
+    from fred.ingest import ingest_slice, get_curated_series_for_domain
+    from fred.silver_fred.transform import transform_fred_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -64,7 +72,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "data_ingestion_toolbox" / "fred" / "DDL" / "silver_fred.sql"
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "src" / "data_ingestion_toolbox" / "fred" / "DDL" / "silver_fred.sql",
+        root / "fred" / "DDL" / "silver_fred.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"FRED silver DDL not found. Checked: {candidates}")
 
 
 def _series_fingerprint(domain: str) -> tuple[str, int]:
@@ -481,13 +497,19 @@ def fred_ingest():
     @task(trigger_rule='none_failed')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from data_ingestion_toolbox.fred.gold_fred.transform import ensure_fred_gold_schema
+        try:
+            from data_ingestion_toolbox.fred.gold_fred.transform import ensure_fred_gold_schema
+        except ImportError:
+            from fred.gold_fred.transform import ensure_fred_gold_schema
         ensure_fred_gold_schema()
 
     @task(trigger_rule='none_failed')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
-        from data_ingestion_toolbox.fred.gold_fred.transform import refresh_fred_elements
+        try:
+            from data_ingestion_toolbox.fred.gold_fred.transform import refresh_fred_elements
+        except ImportError:
+            from fred.gold_fred.transform import refresh_fred_elements
         refresh_fred_elements()
 
     @task(trigger_rule='none_failed')
