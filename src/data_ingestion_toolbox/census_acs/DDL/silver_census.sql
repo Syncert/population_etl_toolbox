@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS silver_census.fact_demographics (
 CREATE INDEX IF NOT EXISTS idx_fact_demo_time_sk ON silver_census.fact_demographics(time_sk);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_geo_sk ON silver_census.fact_demographics(geo_sk);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_dataset ON silver_census.fact_demographics(dataset);
+
+-- Supports API history lookups by geography and canonical ACS metric.
+CREATE INDEX IF NOT EXISTS idx_fact_demo_history_lookup
+    ON silver_census.fact_demographics (geo_id, dataset, variable_code, estimate_year);
 CREATE INDEX IF NOT EXISTS idx_fact_demo_table_id ON silver_census.fact_demographics(table_id);
 -- idx_fact_demo_upsert_key removed: redundant with the fact_demographics_uk UNIQUE constraint
 -- which already creates a B-tree index on (dataset, table_id, variable_code, geo_id, estimate_year).

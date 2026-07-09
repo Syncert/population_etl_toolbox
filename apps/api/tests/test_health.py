@@ -12,3 +12,5 @@ def test_health_route_returns_ok() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "data-ingestion-toolbox-api"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"

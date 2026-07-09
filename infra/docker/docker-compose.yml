@@ -6,9 +6,10 @@ services:
       POSTGRES_PASSWORD: analytics
       POSTGRES_DB: population_etl
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${ANALYTICS_DB_HOST_PORT:-5433}:5432"
     volumes:
       - analytics_postgres_data:/var/lib/postgresql/data
+      - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/001_api_readonly.sql:ro
 
   service_postgres:
     image: postgres:15
@@ -17,14 +18,13 @@ services:
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     ports:
-      - "5434:5432"
+      - "127.0.0.1:${SERVICE_DB_HOST_PORT:-5434}:5432"
     volumes:
       - service_postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
 
   api:
     build:
@@ -34,11 +34,16 @@ services:
     environment:
       DB_HOST: ${ANALYTICS_DB_HOST:-analytics_postgres}
       DB_PORT: ${ANALYTICS_DB_PORT:-5432}
-      DB_USER: ${ANALYTICS_DB_USER:-analytics}
-      DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:-analytics}
+      DB_USER: ${ANALYTICS_API_DB_USER:-api_reader}
+      DB_PASSWORD: ${ANALYTICS_API_DB_PASSWORD:-api_reader}
       DB_NAME: ${ANALYTICS_DB_NAME:-population_etl}
+      REDIS_URL: redis://redis:6379/0
+      API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+    depends_on:
+      - analytics_postgres
+      - redis
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
@@ -49,9 +54,9 @@ services:
       - analytics_postgres
     command: --config /etc/martin/martin.yml
     environment:
-      MARTIN_DATABASE_URL: postgres://${ANALYTICS_DB_USER:-analytics}:${ANALYTICS_DB_PASSWORD:-analytics}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
+      MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:-api_reader}:${ANALYTICS_API_DB_PASSWORD:-api_reader}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${MARTIN_HOST_PORT:-3000}:3000"
     volumes:
       - ../martin/martin.yml:/etc/martin/martin.yml:ro
 
@@ -66,7 +71,7 @@ services:
       - api
       - martin
     ports:
-      - "3001:3100"
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_HOST_PORT:-3001}:3100"
 
   airflow-common: &airflow-common
     build:
@@ -113,7 +118,7 @@ services:
       - redis
     command: airflow webserver
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${AIRFLOW_HOST_PORT:-8080}:8080"
 
   airflow-scheduler:
     <<: *airflow-common

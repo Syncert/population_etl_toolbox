@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMiddleware
 from apps.api.routers import catalog, comparison, distribution, health, models, observations
 from data_ingestion_toolbox.config import get_settings
 
@@ -10,6 +11,13 @@ app = FastAPI(
     version=settings.api_version,
     description=settings.api_description,
 )
+
+app.add_middleware(
+    RedisResponseCacheMiddleware,
+    redis_url=settings.redis_url,
+    ttl_seconds=settings.api_cache_ttl_seconds,
+)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health.router)
 app.include_router(catalog.router)

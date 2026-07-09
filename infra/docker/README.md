@@ -22,6 +22,7 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 
 ```bash
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
+python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 
@@ -32,6 +33,7 @@ This is the recommended local workflow when an existing Airflow deployment and p
 ```bash
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
 # fill secrets/host values in infra/docker/stack.external.env
+python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 
@@ -82,14 +84,16 @@ One-command smoke (starts service-only external MVP stack by default):
 powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
 ```
 
-Note: `ANALYTICS_DB_*` values in external mode power both API database connectivity and Martin database connectivity.
+`ANALYTICS_DB_*` credentials remain the ETL/owner connection. The public API and Martin use the separate `ANALYTICS_API_DB_*` role. `provision_api_readonly.py` creates that role, grants `SELECT` across `gold`, removes write/schema privileges, enables read-only transactions by default, and stores a generated password in the local gitignored env file.
 
 The smoke script also runs `scripts/check_mvp_geo_tile_join.py`, which verifies:
 - county geometry exists in `gold.dim_geo_latest.geo_geom`
+- API/Martin credentials connect as a read-only role with no mutation privileges
 - Martin exposes the `counties` vector layer with a usable geography join key
 - sampled API observation `geo_id` values join back to county geometry rows
 
-The browser-level portion additionally verifies that the public route is served by Next.js and renders MapLibre with healthy tiles, loaded observations, and API-backed distribution bins.
+The suite also checks every Analytics MVP route, security headers, a real Redis cache hit, and a browser-rendered MapLibre view with healthy tiles, loaded observations, and API-backed distribution bins.
+It also seeds a county from the latest endpoint and requires the historical endpoint to return multiple distinct periods.
 
 ## API-to-Map Contract Smoke
 
@@ -107,6 +111,7 @@ curl http://localhost:3001/tiles/
 
 Next.js MVP app:
 - `http://localhost:3001`
+- Analytics routes: `/catalog`, `/explore`, `/profiles`, `/articles`, and `/builder`
 - Same-origin routes proxied by the Next.js server:
 	- `/api/*` -> API service (`api:8000`)
 	- `/tiles/*` -> Martin service (`martin:3000`)
@@ -124,7 +129,9 @@ python scripts/check_mvp_geo_tile_join.py `
   --metric-code population
 ```
 
-Current MVP note: the friendly `metric_code=population` may resolve through the checker to the canonical county-capable ACS metric `ACS:acs5:B01003_001` until a durable alias is added to `gold.dim_metric`.
+The product-friendly `metric_code=population` alias resolves centrally to canonical county-capable metric `ACS:acs5:B01003_001`; returned rows retain the canonical source code for traceability.
 
 Security reminder:
 - Keep real credentials in local untracked env files (for example `infra/docker/stack.external.env`), not in tracked examples.
+- Only the Next.js gateway binds broadly by default. API, Martin, Postgres, Redis, and Airflow are internal or loopback-bound.
+- Public analytical GET responses use Redis with a bounded TTL and fall back to the database if Redis is unavailable.

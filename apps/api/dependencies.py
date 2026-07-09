@@ -1,7 +1,6 @@
 import logging
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
 from data_ingestion_toolbox.db import get_db_session
 
