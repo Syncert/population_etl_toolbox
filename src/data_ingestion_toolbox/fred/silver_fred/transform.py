@@ -161,7 +161,7 @@ def _get_hook() -> PostgresHook:
 def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
-        from data_ingestion_toolbox.silver_ref.dim_time
+        from silver_ref.dim_time
         WHERE date_key BETWEEN %s AND %s;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

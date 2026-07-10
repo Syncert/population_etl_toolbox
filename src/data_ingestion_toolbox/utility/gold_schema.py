@@ -122,10 +122,10 @@ def build_shard_list(
     window_end: date,
     hook: PostgresHook,
 ) -> list[str]:
-    """Return ISO month_start strings from data_ingestion_toolbox.silver_ref.dim_time within the window."""
+        """Return ISO month_start strings from silver_ref.dim_time within the window."""
     sql = """
         SELECT DISTINCT date_trunc('month', date_key)::date AS month_start
-        from data_ingestion_toolbox.silver_ref.dim_time
+                from silver_ref.dim_time
         WHERE date_key >= %s
           AND date_key <= %s
           AND is_month_start = TRUE

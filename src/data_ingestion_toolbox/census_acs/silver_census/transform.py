@@ -213,7 +213,7 @@ def _get_hook() -> PostgresHook:
 def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
-        from data_ingestion_toolbox.silver_ref.dim_time
+        from silver_ref.dim_time
         WHERE date_key BETWEEN %s AND %s;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
@@ -228,7 +228,7 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
 def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
     sql = """
         SELECT geo_sk, geo_level, geo_id
-        from data_ingestion_toolbox.silver_ref.dim_geo;
+        from silver_ref.dim_geo;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -260,7 +260,7 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
     sql = """
         WITH needed(geo_level, geo_id) AS (VALUES %s)
         SELECT g.geo_sk, g.geo_level, g.geo_id
-        from data_ingestion_toolbox.silver_ref.dim_geo g
+                from silver_ref.dim_geo g
         JOIN needed n
           ON g.geo_level = n.geo_level
          AND g.geo_id = n.geo_id;
@@ -278,7 +278,7 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
 def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
     sql = """
         SELECT COUNT(*)
-        from data_ingestion_toolbox.silver_ref.dim_geo
+                from silver_ref.dim_geo
         WHERE geo_level = 'state'
           AND geo_id ~ '^state:[0-9]$';
     """
