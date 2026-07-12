@@ -97,13 +97,13 @@ CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_acs_variable (
     PRIMARY KEY (metric_catalog_sk, acs_variable_sk)
 );
 
-CREATE TABLE IF NOT EXISTS gold.bridge_metric_bls_series (
+CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_bls_series (
     metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
     bls_series_sk     BIGINT NOT NULL,
     PRIMARY KEY (metric_catalog_sk, bls_series_sk)
 );
 
-CREATE TABLE IF NOT EXISTS gold.bridge_metric_fred_series (
+CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_fred_series (
     metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
     fred_series_sk    BIGINT NOT NULL,
     PRIMARY KEY (metric_catalog_sk, fred_series_sk)

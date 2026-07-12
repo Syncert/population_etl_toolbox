@@ -643,24 +643,23 @@ def acs_ingest():
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute the rolling date window covered by the current silver data."""
+        """Compute the full-history date floor covered by current silver data."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
                 SELECT MIN(MAKE_DATE(estimate_year, 1, 1))::date
                 FROM silver_census.fact_demographics
-                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
-                  AND estimate_value IS NOT NULL
+                WHERE estimate_value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
-            logger.warning("[ACS GOLD] No data in silver rolling window; skipping gold refresh.")
+            logger.warning("[ACS GOLD] No data in silver full-history window; skipping gold refresh.")
             return []
         return [row[0].isoformat()]
 
     @task(trigger_rule='none_failed')
     def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute min/max date window for the serving-layer refresh from silver."""
+        """Compute full-history min/max date bounds for serving-layer refresh."""
         if not shard_results:
             return None
         hook = _get_postgres_hook()
@@ -670,8 +669,7 @@ def acs_ingest():
                     MIN(MAKE_DATE(estimate_year, 1, 1))::date,
                     MAX(MAKE_DATE(estimate_year, 1, 1))::date
                 FROM silver_census.fact_demographics
-                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
-                  AND estimate_value IS NOT NULL
+                WHERE estimate_value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:

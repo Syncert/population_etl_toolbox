@@ -301,7 +301,20 @@ BEGIN
         comparability_group,
         do_not_compare_with,
         recommended_aggregation,
-        owner_team
+        owner_team,
+        value,
+        units,
+        seasonal_adjustment_status,
+        series_id,
+        series_title,
+        source_provider,
+        original_source_name,
+        is_primary_source_series,
+        is_republished_series,
+        frequency,
+        transformation_method,
+        realtime_start,
+        realtime_end
     )
     SELECT
         'FRED',

@@ -514,24 +514,23 @@ def fred_ingest():
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute the rolling date window covered by the current silver data."""
+        """Compute the full-history date floor covered by current silver data."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
                 SELECT MIN(observation_date)::date
                 FROM silver_fred.fact_economic_indicators
-                WHERE observation_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND is_missing = FALSE
+                WHERE is_missing = FALSE
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
-            logger.warning("[FRED GOLD] No data in silver rolling window; skipping gold refresh.")
+            logger.warning("[FRED GOLD] No data in silver full-history window; skipping gold refresh.")
             return []
         return [row[0].isoformat()]
 
     @task(trigger_rule='none_failed')
     def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute min/max date window for the serving-layer refresh from silver."""
+        """Compute full-history min/max date bounds for serving-layer refresh."""
         if not shard_results:
             return None
         hook = _get_postgres_hook()
@@ -539,8 +538,7 @@ def fred_ingest():
             cur.execute("""
                 SELECT MIN(observation_date)::date, MAX(observation_date)::date
                 FROM silver_fred.fact_economic_indicators
-                WHERE observation_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND is_missing = FALSE
+                WHERE is_missing = FALSE
             """)
             row = cur.fetchone()
         if not row or row[0] is None:

@@ -32,13 +32,13 @@ _REQUIRED_RELATIONS = (
     "gold_census.dim_acs_table",
     "gold_census.dim_acs_variable",
     "gold_census.fact_acs_observation",
-    "gold_census.rpt_observation_dashboard",
-    "gold_census.mv_latest_dashboard",
+    "gold_census.rpt_acs_observations",
+    "gold_census.mv_acs_latest",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
-    "gold_census.refresh_rpt_acs_observation_dashboard(date,date)",
-    "gold_census.refresh_mv_acs_latest_dashboard(date,date)",
+    "gold_census.refresh_rpt_acs_observations(date,date)",
+    "gold_census.refresh_mv_acs_latest(date,date)",
     "gold_census.refresh_dashboard_serving_layer_acs(date,date)",
 )
 

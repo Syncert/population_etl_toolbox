@@ -722,10 +722,10 @@ def bls_ingest():
 
     @task(trigger_rule='all_success')
     def gold_compute_shards() -> list[str]:
-        """Compute the rolling date window covered by the current silver data.
+        """Compute the full-history date floor covered by current silver data.
 
         Returns a single-element list [month_start_iso] representing the
-        earliest month in the two-year rolling window, used only for
+        earliest month in the available history, used only for
         downstream compatibility; the actual refresh range is computed
         in gold_refresh_window from silver directly.
         """
@@ -734,18 +734,17 @@ def bls_ingest():
             cur.execute("""
                 SELECT MIN(period_date)::date
                 FROM silver_bls.fact_labor_statistics
-                WHERE period_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND value IS NOT NULL
+                WHERE value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
-            logger.warning("[BLS GOLD] No data in silver rolling window; skipping gold refresh.")
+            logger.warning("[BLS GOLD] No data in silver full-history window; skipping gold refresh.")
             return []
         return [row[0].isoformat()]
 
     @task(trigger_rule='all_success')
     def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute min/max date window for the serving-layer refresh from silver."""
+        """Compute full-history min/max date bounds for serving-layer refresh."""
         if not shard_results:
             return None
         hook = _get_postgres_hook()
@@ -753,8 +752,7 @@ def bls_ingest():
             cur.execute("""
                 SELECT MIN(period_date)::date, MAX(period_date)::date
                 FROM silver_bls.fact_labor_statistics
-                WHERE period_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND value IS NOT NULL
+                WHERE value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
