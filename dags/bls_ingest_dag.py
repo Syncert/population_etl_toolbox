@@ -784,10 +784,10 @@ def bls_ingest():
 
             conn.notices.clear()
             if refresh_window is None:
-                cur.execute("CALL gold.refresh_dashboard_serving_layer_bls(NULL, NULL);")
+                cur.execute("CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL);")
             else:
                 cur.execute(
-                    "CALL gold.refresh_dashboard_serving_layer_bls(%s, %s);",
+                    "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s);",
                     (refresh_window["start_date"], refresh_window["end_date"]),
                 )
 

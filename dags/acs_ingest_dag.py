@@ -701,10 +701,10 @@ def acs_ingest():
 
             conn.notices.clear()
             if refresh_window is None:
-                cur.execute("CALL gold.refresh_dashboard_serving_layer_acs(NULL, NULL);")
+                cur.execute("CALL gold_census.refresh_dashboard_serving_layer_acs(NULL, NULL);")
             else:
                 cur.execute(
-                    "CALL gold.refresh_dashboard_serving_layer_acs(%s, %s);",
+                    "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s);",
                     (refresh_window["start_date"], refresh_window["end_date"]),
                 )
 
