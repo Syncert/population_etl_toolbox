@@ -1,10 +1,11 @@
 -- bls/gold_bls/DDL/gold_bls.sql
 -- Subject-scoped gold DDL for BLS objects and serving refresh.
 
-CREATE SCHEMA IF NOT EXISTS gold;
+CREATE SCHEMA IF NOT EXISTS gold_glossary;
+CREATE SCHEMA IF NOT EXISTS gold_bls;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
-CREATE OR REPLACE VIEW gold.dim_geo AS
+CREATE OR REPLACE VIEW gold_glossary.dim_geo AS
 SELECT
     geo_sk,
     geo_level,
@@ -26,7 +27,7 @@ SELECT
     ingested_at
 FROM silver_ref.dim_geo;
 
-CREATE TABLE IF NOT EXISTS gold.dim_source_system (
+CREATE TABLE IF NOT EXISTS gold_glossary.dim_source_system (
     source_system_sk BIGSERIAL PRIMARY KEY,
     source_code      TEXT NOT NULL UNIQUE,
     source_name      TEXT NOT NULL,
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS gold.dim_source_system (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO gold.dim_source_system (source_code, source_name, source_type, reference_url)
+INSERT INTO gold_glossary.dim_source_system (source_code, source_name, source_type, reference_url)
 VALUES
     ('CENSUS_ACS', 'US Census ACS', 'PRIMARY', 'https://www.census.gov/programs-surveys/acs'),
     ('BLS', 'Bureau of Labor Statistics', 'PRIMARY', 'https://www.bls.gov/'),
@@ -46,11 +47,11 @@ SET source_name = EXCLUDED.source_name,
     reference_url = EXCLUDED.reference_url,
     updated_at = NOW();
 
-CREATE TABLE IF NOT EXISTS gold.dim_metric_catalog (
+CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     metric_catalog_sk      BIGSERIAL PRIMARY KEY,
     metric_code            TEXT NOT NULL UNIQUE,
     metric_display_name    TEXT NOT NULL,
-    source_code            TEXT NOT NULL REFERENCES gold.dim_source_system(source_code),
+    source_code            TEXT NOT NULL REFERENCES gold_glossary.dim_source_system(source_code),
     source_object_type     TEXT NOT NULL CHECK (source_object_type IN ('ACS_VARIABLE', 'BLS_SERIES', 'FRED_SERIES', 'COMPOSITE_VIEW')),
     business_definition    TEXT,
     caveats                TEXT,
@@ -66,13 +67,13 @@ CREATE TABLE IF NOT EXISTS gold.dim_metric_catalog (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS gold.bridge_metric_bls_series (
-    metric_catalog_sk BIGINT NOT NULL REFERENCES gold.dim_metric_catalog(metric_catalog_sk),
+CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_bls_series (
+    metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
     bls_series_sk     BIGINT NOT NULL,
     PRIMARY KEY (metric_catalog_sk, bls_series_sk)
 );
 
-CREATE TABLE IF NOT EXISTS gold.dim_geo_latest (
+CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
     geo_id       TEXT PRIMARY KEY,
     geo_level    TEXT,
     state_fips   TEXT,
@@ -85,14 +86,14 @@ CREATE TABLE IF NOT EXISTS gold.dim_geo_latest (
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-DROP PROCEDURE IF EXISTS gold.refresh_dim_geo_latest();
-CREATE OR REPLACE PROCEDURE gold.refresh_dim_geo_latest()
+DROP PROCEDURE IF EXISTS gold_glossary.refresh_dim_geo_latest();
+CREATE OR REPLACE PROCEDURE gold_glossary.refresh_dim_geo_latest()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    TRUNCATE TABLE gold.dim_geo_latest;
+    TRUNCATE TABLE gold_glossary.dim_geo_latest;
 
-    INSERT INTO gold.dim_geo_latest (
+    INSERT INTO gold_glossary.dim_geo_latest (
         geo_id,
         geo_level,
         state_fips,
@@ -120,13 +121,13 @@ BEGIN
         g.longitude,
         g.geom,
         NOW()
-    FROM gold.dim_geo g
+    FROM gold_glossary.dim_geo g
     WHERE g.is_active = TRUE
     ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC;
 END;
 $$;
 
-CREATE TABLE IF NOT EXISTS gold.dim_bls_survey (
+CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_survey (
     bls_survey_sk      BIGSERIAL PRIMARY KEY,
     program_code       TEXT NOT NULL UNIQUE,
     survey_name        TEXT NOT NULL,
@@ -139,9 +140,9 @@ CREATE TABLE IF NOT EXISTS gold.dim_bls_survey (
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS gold.dim_bls_series (
+CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     bls_series_sk              BIGSERIAL PRIMARY KEY,
-    bls_survey_sk              BIGINT NOT NULL REFERENCES gold.dim_bls_survey(bls_survey_sk),
+    bls_survey_sk              BIGINT NOT NULL REFERENCES gold_bls.dim_bls_survey(bls_survey_sk),
     program_code               TEXT NOT NULL,
     series_id                  TEXT NOT NULL UNIQUE,
     series_title               TEXT,
@@ -164,7 +165,7 @@ CREATE TABLE IF NOT EXISTS gold.dim_bls_series (
 );
 
 -- fact_bls_observation: view over silver — no duplicate observation storage
-CREATE OR REPLACE VIEW gold.fact_bls_observation AS
+CREATE OR REPLACE VIEW gold_bls.fact_bls_observation AS
 SELECT
     s.geo_id,
     CASE
@@ -192,14 +193,14 @@ SELECT
     CURRENT_DATE       AS as_of_date,
     s.ingested_at      AS updated_at
 FROM silver_bls.fact_labor_statistics s
-JOIN gold.dim_bls_series sr ON sr.series_id = s.series_id
-JOIN gold.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
+JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id
+JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
 WHERE s.value IS NOT NULL
   AND s.series_id IS NOT NULL
   AND s.series_id <> '';
 
 -- Unified serving tables (IF NOT EXISTS — idempotent regardless of DDL execution order)
-CREATE TABLE IF NOT EXISTS gold.rpt_observation_dashboard (
+CREATE TABLE IF NOT EXISTS gold_bls.rpt_observation_dashboard (
     source_code                TEXT NOT NULL,
     observation_date           DATE NOT NULL,
     duration_start             DATE,
@@ -266,7 +267,7 @@ CREATE TABLE IF NOT EXISTS gold.rpt_observation_dashboard (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
-    ON gold.rpt_observation_dashboard (
+    ON gold_bls.rpt_observation_dashboard (
         source_code,
         geo_id,
         observation_date,
@@ -278,17 +279,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
         COALESCE(realtime_end, '0001-01-01'::DATE)
     );
 CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_source_geo_date
-    ON gold.rpt_observation_dashboard (source_code, geo_id, observation_date);
+    ON gold_bls.rpt_observation_dashboard (source_code, geo_id, observation_date);
 CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_metric_date
-    ON gold.rpt_observation_dashboard (metric_code, observation_date);
+    ON gold_bls.rpt_observation_dashboard (metric_code, observation_date);
 CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_obs_brin
-    ON gold.rpt_observation_dashboard USING BRIN (observation_date);
+    ON gold_bls.rpt_observation_dashboard USING BRIN (observation_date);
 
-CREATE TABLE IF NOT EXISTS gold.mv_latest_dashboard
-    (LIKE gold.rpt_observation_dashboard INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+CREATE TABLE IF NOT EXISTS gold_bls.mv_latest_dashboard
+    (LIKE gold_bls.rpt_observation_dashboard INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_latest_dashboard
-    ON gold.mv_latest_dashboard (
+    ON gold_bls.mv_latest_dashboard (
         source_code,
         geo_id,
         COALESCE(series_id, ''),
@@ -297,29 +298,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_latest_dashboard
         COALESCE(metric_code, '')
     );
 CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_source_metric
-    ON gold.mv_latest_dashboard (source_code, metric_code);
+    ON gold_bls.mv_latest_dashboard (source_code, metric_code);
 CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_observation_date
-    ON gold.mv_latest_dashboard (observation_date);
+    ON gold_bls.mv_latest_dashboard (observation_date);
 
-DROP PROCEDURE IF EXISTS gold.refresh_rpt_bls_observation_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold.refresh_rpt_bls_observation_dashboard(
+DROP PROCEDURE IF EXISTS gold_bls.refresh_rpt_bls_observation_dashboard(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_bls.refresh_rpt_bls_observation_dashboard(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    CALL gold.refresh_dim_geo_latest();
+    CALL gold_glossary.refresh_dim_geo_latest();
 
     IF p_start_date IS NULL OR p_end_date IS NULL THEN
-        DELETE FROM gold.rpt_observation_dashboard WHERE source_code = 'BLS';
+        DELETE FROM gold_bls.rpt_observation_dashboard WHERE source_code = 'BLS';
     ELSE
-        DELETE FROM gold.rpt_observation_dashboard
+        DELETE FROM gold_bls.rpt_observation_dashboard
         WHERE source_code = 'BLS'
           AND observation_date BETWEEN p_start_date AND p_end_date;
     END IF;
 
-    INSERT INTO gold.rpt_observation_dashboard (
+    INSERT INTO gold_bls.rpt_observation_dashboard (
         source_code,
         observation_date,
         duration_start,
@@ -396,23 +397,23 @@ BEGIN
         COALESCE(b.observation_basis, s.observation_basis),
         bs.gold_metric_name,
         s.comparison_warning
-    FROM gold.fact_bls_observation b
-    JOIN gold.dim_bls_survey s  ON s.bls_survey_sk  = b.bls_survey_sk
-    JOIN gold.dim_bls_series bs ON bs.bls_series_sk = b.bls_series_sk
-    LEFT JOIN gold.dim_geo_latest gl ON gl.geo_id = b.geo_id
-    LEFT JOIN gold.bridge_metric_bls_series bms ON bms.bls_series_sk = b.bls_series_sk
-    LEFT JOIN gold.dim_metric_catalog mc
+    FROM gold_bls.fact_bls_observation b
+    JOIN gold_bls.dim_bls_survey s  ON s.bls_survey_sk  = b.bls_survey_sk
+    JOIN gold_bls.dim_bls_series bs ON bs.bls_series_sk = b.bls_series_sk
+    LEFT JOIN gold_glossary.dim_geo_latest gl ON gl.geo_id = b.geo_id
+    LEFT JOIN gold_glossary.bridge_metric_bls_series bms ON bms.bls_series_sk = b.bls_series_sk
+    LEFT JOIN gold_glossary.dim_metric_catalog mc
         ON mc.metric_catalog_sk = bms.metric_catalog_sk
        AND mc.is_active = TRUE
     WHERE (p_start_date IS NULL OR p_end_date IS NULL
            OR b.period_date BETWEEN p_start_date AND p_end_date);
 
-    ANALYZE gold.rpt_observation_dashboard;
+    ANALYZE gold_bls.rpt_observation_dashboard;
 END;
 $$;
 
-DROP PROCEDURE IF EXISTS gold.refresh_mv_bls_latest_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold.refresh_mv_bls_latest_dashboard(
+DROP PROCEDURE IF EXISTS gold_bls.refresh_mv_bls_latest_dashboard(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_bls.refresh_mv_bls_latest_dashboard(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
@@ -420,12 +421,12 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     -- Always rebuild the BLS slice — the mv is bounded by N_series × N_geos, not N_observations.
-    DELETE FROM gold.mv_latest_dashboard WHERE source_code = 'BLS';
+    DELETE FROM gold_bls.mv_latest_dashboard WHERE source_code = 'BLS';
 
-    INSERT INTO gold.mv_latest_dashboard
+    INSERT INTO gold_bls.mv_latest_dashboard
     SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
         d.*
-    FROM gold.rpt_observation_dashboard d
+    FROM gold_bls.rpt_observation_dashboard d
     WHERE d.source_code = 'BLS'
     ORDER BY
         d.geo_id,
@@ -434,12 +435,12 @@ BEGIN
         d.observation_date DESC,
         d.updated_at DESC;
 
-    ANALYZE gold.mv_latest_dashboard;
+    ANALYZE gold_bls.mv_latest_dashboard;
 END;
 $$;
 
-DROP PROCEDURE IF EXISTS gold.refresh_dashboard_serving_layer_bls(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold.refresh_dashboard_serving_layer_bls(
+DROP PROCEDURE IF EXISTS gold_bls.refresh_dashboard_serving_layer_bls(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_bls.refresh_dashboard_serving_layer_bls(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
@@ -454,13 +455,13 @@ BEGIN
     RAISE NOTICE '[BLS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
 
     v_step_started := clock_timestamp();
-    CALL gold.refresh_rpt_bls_observation_dashboard(p_start_date, p_end_date);
+    CALL gold_bls.refresh_rpt_bls_observation_dashboard(p_start_date, p_end_date);
     RAISE NOTICE
         '[BLS DASHBOARD REFRESH] step=refresh_rpt_bls_observation_dashboard duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold.refresh_mv_bls_latest_dashboard(p_start_date, p_end_date);
+    CALL gold_bls.refresh_mv_bls_latest_dashboard(p_start_date, p_end_date);
     RAISE NOTICE
         '[BLS DASHBOARD REFRESH] step=refresh_mv_bls_latest_dashboard duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);

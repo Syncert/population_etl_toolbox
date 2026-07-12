@@ -23,20 +23,21 @@ logger = logging.getLogger(__name__)
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_fred.sql"
 _SCHEMA_COMPONENT = "gold_ddl_fred"
 _REQUIRED_RELATIONS = (
-    "gold.dim_geo",
-    "gold.dim_source_system",
-    "gold.dim_metric_catalog",
-    "gold.dim_geo_latest",
-    "gold.dim_fred_series",
-    "gold.fact_fred_observation",
-    "gold.rpt_observation_dashboard",
-    "gold.mv_latest_dashboard",
+    "gold_glossary.dim_geo",
+    "gold_glossary.dim_source_system",
+    "gold_glossary.dim_metric_catalog",
+    "gold_glossary.dim_geo_latest",
+    "gold_glossary.bridge_metric_fred_series",
+    "gold_fred.dim_fred_series",
+    "gold_fred.fact_fred_observation",
+    "gold_fred.rpt_observation_dashboard",
+    "gold_fred.mv_latest_dashboard",
 )
 _REQUIRED_PROCEDURES = (
-    "gold.refresh_dim_geo_latest()",
-    "gold.refresh_rpt_fred_observation_dashboard(date,date)",
-    "gold.refresh_mv_fred_latest_dashboard(date,date)",
-    "gold.refresh_dashboard_serving_layer_fred(date,date)",
+    "gold_glossary.refresh_dim_geo_latest()",
+    "gold_fred.refresh_rpt_fred_observation_dashboard(date,date)",
+    "gold_fred.refresh_mv_fred_latest_dashboard(date,date)",
+    "gold_fred.refresh_dashboard_serving_layer_fred(date,date)",
 )
 
 
@@ -70,7 +71,7 @@ def _seed_fred_metric_catalog(cur) -> int:
               AND f.series_id <> ''
             ORDER BY f.series_id, f.observation_date DESC
         )
-        INSERT INTO gold.dim_metric_catalog (
+        INSERT INTO gold_glossary.dim_metric_catalog (
             metric_code,
             metric_display_name,
             source_code,
@@ -125,7 +126,7 @@ def _seed_fred_metric_catalog(cur) -> int:
             'LAST' AS recommended_aggregation,
             'data-eng' AS owner_team,
             TRUE AS is_active
-        FROM gold.dim_fred_series s
+        FROM gold_fred.dim_fred_series s
         LEFT JOIN series_domain sd
           ON sd.series_id = s.series_id
         ON CONFLICT (metric_code)
@@ -147,10 +148,10 @@ def _seed_fred_metric_catalog(cur) -> int:
 
     cur.execute(
         """
-        INSERT INTO gold.bridge_metric_fred_series (metric_catalog_sk, fred_series_sk)
+        INSERT INTO gold_glossary.bridge_metric_fred_series (metric_catalog_sk, fred_series_sk)
         SELECT c.metric_catalog_sk, s.fred_series_sk
-        FROM gold.dim_metric_catalog c
-        JOIN gold.dim_fred_series s
+        FROM gold_glossary.dim_metric_catalog c
+        JOIN gold_fred.dim_fred_series s
           ON c.metric_code = 'FRED:' || s.series_id
         ON CONFLICT (metric_catalog_sk, fred_series_sk) DO NOTHING;
         """
@@ -159,7 +160,7 @@ def _seed_fred_metric_catalog(cur) -> int:
     cur.execute(
         """
         SELECT COUNT(*)
-        FROM gold.dim_metric_catalog
+        FROM gold_glossary.dim_metric_catalog
         WHERE source_code = 'FRED'
         """
     )
@@ -167,14 +168,14 @@ def _seed_fred_metric_catalog(cur) -> int:
 
 
 def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
-    """Sync FRED source-specific metadata into gold.dim_fred_series."""
+    """Sync FRED source-specific metadata into gold_fred.dim_fred_series."""
     if hook is None:
         hook = _get_hook()
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO gold.dim_fred_series (
+            INSERT INTO gold_fred.dim_fred_series (
                 series_id,
                 series_title,
                 source_provider,
@@ -227,7 +228,7 @@ def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
             """
         )
 
-        cur.execute("SELECT COUNT(*) FROM gold.dim_fred_series")
+        cur.execute("SELECT COUNT(*) FROM gold_fred.dim_fred_series")
         row_count = cur.fetchone()[0]
         catalog_count = _seed_fred_metric_catalog(cur)
         conn.commit()

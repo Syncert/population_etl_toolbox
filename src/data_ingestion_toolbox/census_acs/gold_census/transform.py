@@ -23,22 +23,23 @@ logger = logging.getLogger(__name__)
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_acs.sql"
 _SCHEMA_COMPONENT = "gold_ddl_acs"
 _REQUIRED_RELATIONS = (
-    "gold.dim_geo",
-    "gold.dim_time",
-    "gold.dim_source_system",
-    "gold.dim_metric_catalog",
-    "gold.dim_geo_latest",
-    "gold.dim_acs_table",
-    "gold.dim_acs_variable",
-    "gold.fact_acs_observation",
-    "gold.rpt_observation_dashboard",
-    "gold.mv_latest_dashboard",
+    "gold_glossary.dim_geo",
+    "gold_glossary.dim_time",
+    "gold_glossary.dim_source_system",
+    "gold_glossary.dim_metric_catalog",
+    "gold_glossary.dim_geo_latest",
+    "gold_glossary.bridge_metric_acs_variable",
+    "gold_census.dim_acs_table",
+    "gold_census.dim_acs_variable",
+    "gold_census.fact_acs_observation",
+    "gold_census.rpt_observation_dashboard",
+    "gold_census.mv_latest_dashboard",
 )
 _REQUIRED_PROCEDURES = (
-    "gold.refresh_dim_geo_latest()",
-    "gold.refresh_rpt_acs_observation_dashboard(date,date)",
-    "gold.refresh_mv_acs_latest_dashboard(date,date)",
-    "gold.refresh_dashboard_serving_layer_acs(date,date)",
+    "gold_glossary.refresh_dim_geo_latest()",
+    "gold_census.refresh_rpt_acs_observation_dashboard(date,date)",
+    "gold_census.refresh_mv_acs_latest_dashboard(date,date)",
+    "gold_census.refresh_dashboard_serving_layer_acs(date,date)",
 )
 
 
@@ -63,7 +64,7 @@ def _seed_acs_metric_catalog(cur) -> int:
     """Populate dim_metric_catalog and bridge_metric_acs_variable from dim_acs_variable."""
     cur.execute(
         """
-        INSERT INTO gold.dim_metric_catalog (
+        INSERT INTO gold_glossary.dim_metric_catalog (
             metric_code,
             metric_display_name,
             source_code,
@@ -119,10 +120,10 @@ def _seed_acs_metric_catalog(cur) -> int:
                 acs_table_sk, dataset_code, variable_code,
                 variable_label, concept, universe,
                 is_publishable_default, value_role
-            FROM gold.dim_acs_variable
+            FROM gold_census.dim_acs_variable
             ORDER BY dataset_code, variable_code, vintage_year DESC
         ) v
-        JOIN gold.dim_acs_table t
+        JOIN gold_census.dim_acs_table t
           ON t.acs_table_sk = v.acs_table_sk
         ON CONFLICT (metric_code)
         DO UPDATE SET
@@ -143,10 +144,10 @@ def _seed_acs_metric_catalog(cur) -> int:
 
     cur.execute(
         """
-        INSERT INTO gold.bridge_metric_acs_variable (metric_catalog_sk, acs_variable_sk)
+        INSERT INTO gold_glossary.bridge_metric_acs_variable (metric_catalog_sk, acs_variable_sk)
         SELECT c.metric_catalog_sk, v.acs_variable_sk
-        FROM gold.dim_metric_catalog c
-        JOIN gold.dim_acs_variable v
+        FROM gold_glossary.dim_metric_catalog c
+        JOIN gold_census.dim_acs_variable v
           ON c.metric_code = 'ACS:' || v.dataset_code || ':' || v.variable_code
         ON CONFLICT (metric_catalog_sk, acs_variable_sk) DO NOTHING;
         """
@@ -155,7 +156,7 @@ def _seed_acs_metric_catalog(cur) -> int:
     cur.execute(
         """
         SELECT COUNT(*)
-        FROM gold.dim_metric_catalog
+        FROM gold_glossary.dim_metric_catalog
         WHERE source_code = 'CENSUS_ACS'
         """
     )
@@ -163,7 +164,7 @@ def _seed_acs_metric_catalog(cur) -> int:
 
 
 def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
-    """Sync ACS source-specific metadata into gold.dim_acs_table and gold.dim_acs_variable."""
+    """Sync ACS source-specific metadata into gold_census.dim_acs_table and gold_census.dim_acs_variable."""
     if hook is None:
         hook = _get_hook()
 
@@ -171,7 +172,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         cur.execute(
             """
 
-            INSERT INTO gold.dim_acs_table (
+            INSERT INTO gold_census.dim_acs_table (
                 dataset_code, vintage_year, table_id, table_title, concept, universe,
                 survey_span_years, reference_url
             )
@@ -226,7 +227,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
 
         cur.execute(
             """
-            INSERT INTO gold.dim_acs_variable (
+            INSERT INTO gold_census.dim_acs_variable (
                 acs_table_sk, dataset_code, vintage_year, variable_code,
                 variable_label, concept, universe, value_role
             )
@@ -254,7 +255,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
                   AND dataset IN ('acs1', 'acs5')
                 GROUP BY dataset, estimate_year, variable_code
             ) f
-            JOIN gold.dim_acs_table t
+            JOIN gold_census.dim_acs_table t
               ON t.dataset_code = f.dataset
              AND t.vintage_year = f.estimate_year
              AND t.table_id = f.table_id
@@ -272,7 +273,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         cur.execute(
             """
             SELECT COUNT(*)
-            FROM gold.dim_acs_variable
+            FROM gold_census.dim_acs_variable
             """
         )
         row_count = cur.fetchone()[0]

@@ -23,10 +23,10 @@ def _compute_ddl_hash(ddl_files: list[pathlib.Path]) -> str:
 
 
 def _ensure_schema_state_table(cur: Any) -> None:
-    cur.execute("CREATE SCHEMA IF NOT EXISTS gold")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS gold_glossary")
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS gold.schema_migration_state (
+        CREATE TABLE IF NOT EXISTS gold_glossary.schema_migration_state (
             component_name TEXT PRIMARY KEY,
             ddl_hash       TEXT NOT NULL,
             applied_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -39,7 +39,7 @@ def _get_recorded_hash(cur: Any, component_name: str) -> str | None:
     cur.execute(
         """
         SELECT ddl_hash
-        FROM gold.schema_migration_state
+        FROM gold_glossary.schema_migration_state
         WHERE component_name = %s
         """,
         (component_name,),
@@ -51,7 +51,7 @@ def _get_recorded_hash(cur: Any, component_name: str) -> str | None:
 def _record_hash(cur: Any, component_name: str, ddl_hash: str) -> None:
     cur.execute(
         """
-        INSERT INTO gold.schema_migration_state (component_name, ddl_hash, applied_at)
+        INSERT INTO gold_glossary.schema_migration_state (component_name, ddl_hash, applied_at)
         VALUES (%s, %s, NOW())
         ON CONFLICT (component_name) DO UPDATE
         SET ddl_hash = EXCLUDED.ddl_hash,
