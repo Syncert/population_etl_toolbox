@@ -1,5 +1,7 @@
 -- census_acs/gold_census/DDL/gold_acs.sql
--- Subject-scoped gold DDL for ACS objects and serving refresh.
+-- REFACTORED: Source-First Architecture
+-- Subject-scoped gold DDL for ACS objects — no unified wide table.
+-- Per-source serving table with ACS-specific columns only.
 
 CREATE SCHEMA IF NOT EXISTS gold_glossary;
 CREATE SCHEMA IF NOT EXISTS gold_census;
@@ -194,7 +196,10 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
     UNIQUE (dataset_code, vintage_year, variable_code)
 );
 
--- fact_acs_observation: view over silver — no duplicate observation storage
+-- ============================================================
+-- ACS FACT VIEW (source of truth)
+-- ============================================================
+
 CREATE OR REPLACE VIEW gold_census.fact_acs_observation AS
 SELECT
     s.geo_id,
@@ -231,9 +236,12 @@ WHERE s.estimate_value IS NOT NULL
   AND s.variable_code IS NOT NULL
   AND s.variable_code <> '';
 
--- Unified serving tables (IF NOT EXISTS — idempotent regardless of DDL execution order)
-CREATE TABLE IF NOT EXISTS gold_census.rpt_observation_dashboard (
-    source_code                TEXT NOT NULL,
+-- ============================================================
+-- ACS-SCOPED SERVING TABLE (Source-First: ACS-specific columns only)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
+    source_code                TEXT NOT NULL DEFAULT 'CENSUS_ACS',
     observation_date           DATE NOT NULL,
     duration_start             DATE,
     duration_end               DATE,
@@ -248,6 +256,25 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_observation_dashboard (
     county_name                TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
+    -- ACS-specific columns (no NULLs for these)
+    dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
+    vintage_year               INTEGER NOT NULL,
+    table_id                   TEXT NOT NULL,
+    table_title                TEXT,
+    variable_code              TEXT NOT NULL,
+    variable_label             TEXT,
+    concept                    TEXT,
+    universe                   TEXT,
+    denominator_hint           TEXT,
+    is_publishable_default     BOOLEAN,
+    estimate_value             NUMERIC NOT NULL,
+    margin_of_error            NUMERIC,
+    margin_of_error_pct        NUMERIC,
+    estimate_annotation        TEXT,
+    moe_annotation             TEXT,
+    value_type                 TEXT,
+    units                      TEXT,
+    -- Metric catalog association
     metric_code                TEXT,
     metric_display_name        TEXT,
     dashboard_suitability      TEXT,
@@ -256,86 +283,56 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_observation_dashboard (
     comparability_group        TEXT,
     do_not_compare_with        TEXT[],
     recommended_aggregation    TEXT,
-    owner_team                 TEXT,
-    value                      NUMERIC,
-    value_type                 TEXT,
-    units                      TEXT,
-    seasonal_adjustment_status TEXT,
-    -- BLS-specific (NULL for other sources)
-    series_id                  TEXT,
-    program_code               TEXT,
-    survey_name                TEXT,
-    series_title               TEXT,
-    measure_name               TEXT,
-    measure_category           TEXT,
-    observation_basis          TEXT,
-    gold_metric_name           TEXT,
-    comparison_warning         TEXT,
-    -- ACS-specific (NULL for other sources)
-    dataset_code               TEXT,
-    vintage_year               INTEGER,
-    table_id                   TEXT,
-    table_title                TEXT,
-    variable_code              TEXT,
-    variable_label             TEXT,
-    concept                    TEXT,
-    universe                   TEXT,
-    denominator_hint           TEXT,
-    is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC,
-    margin_of_error            NUMERIC,
-    margin_of_error_pct        NUMERIC,
-    estimate_annotation        TEXT,
-    moe_annotation             TEXT,
-    -- FRED-specific (NULL for other sources)
-    source_provider            TEXT,
-    original_source_name       TEXT,
-    is_primary_source_series   BOOLEAN,
-    is_republished_series      BOOLEAN,
-    frequency                  TEXT,
-    transformation_method      TEXT,
-    realtime_start             DATE,
-    realtime_end               DATE
+    owner_team                 TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
-    ON gold_census.rpt_observation_dashboard (
-        source_code,
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_acs_observations_nk
+    ON gold_census.rpt_acs_observations (
         geo_id,
         observation_date,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
-        COALESCE(metric_code, ''),
-        COALESCE(realtime_start, '0001-01-01'::DATE),
-        COALESCE(realtime_end, '0001-01-01'::DATE)
-    );
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_source_geo_date
-    ON gold_census.rpt_observation_dashboard (source_code, geo_id, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_metric_date
-    ON gold_census.rpt_observation_dashboard (metric_code, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_obs_brin
-    ON gold_census.rpt_observation_dashboard USING BRIN (observation_date);
-
-CREATE TABLE IF NOT EXISTS gold_census.mv_latest_dashboard
-    (LIKE gold_census.rpt_observation_dashboard INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_latest_dashboard
-    ON gold_census.mv_latest_dashboard (
-        source_code,
-        geo_id,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
+        dataset_code,
+        vintage_year,
+        variable_code,
         COALESCE(metric_code, '')
     );
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_source_metric
-    ON gold_census.mv_latest_dashboard (source_code, metric_code);
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_observation_date
-    ON gold_census.mv_latest_dashboard (observation_date);
 
-DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observation_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observation_dashboard(
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_source_geo_date
+    ON gold_census.rpt_acs_observations (source_code, geo_id, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_date
+    ON gold_census.rpt_acs_observations (metric_code, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_dataset_vintage
+    ON gold_census.rpt_acs_observations (dataset_code, vintage_year);
+
+-- ============================================================
+-- ACS MATERIALIZED VIEW (Per-source latest)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_census.mv_acs_latest
+    (LIKE gold_census.rpt_acs_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_acs_latest
+    ON gold_census.mv_acs_latest (
+        geo_id,
+        dataset_code,
+        vintage_year,
+        variable_code,
+        COALESCE(metric_code, '')
+    );
+
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_source_metric
+    ON gold_census.mv_acs_latest (source_code, metric_code);
+
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_vintage
+    ON gold_census.mv_acs_latest (dataset_code, vintage_year);
+
+-- ============================================================
+-- ACS REFRESH PROCEDURES
+-- ============================================================
+
+DROP PROCEDURE IF EXISTS gold_census.refresh_rpt_acs_observations(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observations(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
@@ -344,15 +341,11 @@ AS $$
 BEGIN
     CALL gold_glossary.refresh_dim_geo_latest();
 
-    IF p_start_date IS NULL OR p_end_date IS NULL THEN
-        DELETE FROM gold_census.rpt_observation_dashboard WHERE source_code = 'CENSUS_ACS';
-    ELSE
-        DELETE FROM gold_census.rpt_observation_dashboard
-        WHERE source_code = 'CENSUS_ACS'
-          AND observation_date BETWEEN p_start_date AND p_end_date;
-    END IF;
+    -- For ACS, observations are annual, so date range is less critical
+    -- but we support it for consistency
+    DELETE FROM gold_census.rpt_acs_observations;
 
-    INSERT INTO gold_census.rpt_observation_dashboard (
+    INSERT INTO gold_census.rpt_acs_observations (
         source_code,
         observation_date,
         duration_start,
@@ -442,30 +435,27 @@ BEGIN
     LEFT JOIN gold_glossary.bridge_metric_acs_variable bma ON bma.acs_variable_sk = ao.acs_variable_sk
     LEFT JOIN gold_glossary.dim_metric_catalog mc
         ON mc.metric_catalog_sk = bma.metric_catalog_sk
-       AND mc.is_active = TRUE
-    WHERE (p_start_date IS NULL OR p_end_date IS NULL
-           OR ao.observation_date BETWEEN p_start_date AND p_end_date);
+       AND mc.is_active = TRUE;
 
-    ANALYZE gold_census.rpt_observation_dashboard;
+    ANALYZE gold_census.rpt_acs_observations;
 END;
 $$;
 
-DROP PROCEDURE IF EXISTS gold_census.refresh_mv_acs_latest_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_census.refresh_mv_acs_latest_dashboard(
+DROP PROCEDURE IF EXISTS gold_census.refresh_mv_acs_latest();
+CREATE OR REPLACE PROCEDURE gold_census.refresh_mv_acs_latest(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Always rebuild the CENSUS_ACS slice — bounded by N_variables × N_geos.
-    DELETE FROM gold_census.mv_latest_dashboard WHERE source_code = 'CENSUS_ACS';
+    -- Rebuild ACS slice — bounded by N_variables × N_geos.
+    DELETE FROM gold_census.mv_acs_latest;
 
-    INSERT INTO gold_census.mv_latest_dashboard
+    INSERT INTO gold_census.mv_acs_latest
     SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code)
         d.*
-    FROM gold_census.rpt_observation_dashboard d
-    WHERE d.source_code = 'CENSUS_ACS'
+    FROM gold_census.rpt_acs_observations d
     ORDER BY
         d.geo_id,
         d.variable_code,
@@ -475,7 +465,7 @@ BEGIN
         CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
         d.vintage_year DESC;
 
-    ANALYZE gold_census.mv_latest_dashboard;
+    ANALYZE gold_census.mv_acs_latest;
 END;
 $$;
 
@@ -495,15 +485,15 @@ BEGIN
     RAISE NOTICE '[ACS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
 
     v_step_started := clock_timestamp();
-    CALL gold_census.refresh_rpt_acs_observation_dashboard(p_start_date, p_end_date);
+    CALL gold_census.refresh_rpt_acs_observations(p_start_date, p_end_date);
     RAISE NOTICE
-        '[ACS DASHBOARD REFRESH] step=refresh_rpt_acs_observation_dashboard duration_ms=%',
+        '[ACS DASHBOARD REFRESH] step=refresh_rpt_acs_observations duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold_census.refresh_mv_acs_latest_dashboard(p_start_date, p_end_date);
+    CALL gold_census.refresh_mv_acs_latest();
     RAISE NOTICE
-        '[ACS DASHBOARD REFRESH] step=refresh_mv_acs_latest_dashboard duration_ms=%',
+        '[ACS DASHBOARD REFRESH] step=refresh_mv_acs_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     RAISE NOTICE

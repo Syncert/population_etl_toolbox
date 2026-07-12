@@ -1,5 +1,7 @@
 -- fred/gold_fred/DDL/gold_fred.sql
--- Subject-scoped gold DDL for FRED objects and serving refresh.
+-- REFACTORED: Source-First Architecture
+-- Subject-scoped gold DDL for FRED objects — no unified wide table.
+-- Per-source serving table with FRED-specific columns only.
 
 CREATE SCHEMA IF NOT EXISTS gold_glossary;
 CREATE SCHEMA IF NOT EXISTS gold_fred;
@@ -145,7 +147,10 @@ CREATE TABLE IF NOT EXISTS gold_fred.dim_fred_series (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- fact_fred_observation: view over silver — no duplicate observation storage
+-- ============================================================
+-- FRED FACT VIEW (source of truth)
+-- ============================================================
+
 CREATE OR REPLACE VIEW gold_fred.fact_fred_observation AS
 SELECT
     'us:1'       AS geo_id,
@@ -171,23 +176,42 @@ WHERE s.is_missing = FALSE
   AND s.series_id IS NOT NULL
   AND s.series_id <> '';
 
--- Unified serving tables (IF NOT EXISTS — idempotent regardless of DDL execution order)
-CREATE TABLE IF NOT EXISTS gold_fred.rpt_observation_dashboard (
-    source_code                TEXT NOT NULL,
+-- ============================================================
+-- FRED-SCOPED SERVING TABLE (Source-First: FRED-specific columns only)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_fred.rpt_fred_observations (
+    source_code                TEXT NOT NULL DEFAULT 'FRED',
     observation_date           DATE NOT NULL,
     duration_start             DATE,
     duration_end               DATE,
     time_sk                    INTEGER,
     as_of_date                 DATE NOT NULL,
     updated_at                 TIMESTAMPTZ NOT NULL,
-    geo_id                     TEXT NOT NULL,
-    geo_level                  TEXT NOT NULL,
+    geo_id                     TEXT NOT NULL DEFAULT 'us:1',
+    geo_level                  TEXT NOT NULL DEFAULT 'NATIONAL',
     state_fips                 TEXT,
     county_fips                TEXT,
     state_name                 TEXT,
     county_name                TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
+    -- FRED-specific columns (no NULLs for these)
+    series_id                  TEXT NOT NULL,
+    series_title               TEXT,
+    value                      NUMERIC NOT NULL,
+    value_type                 TEXT,
+    units                      TEXT,
+    frequency                  TEXT,
+    seasonal_adjustment_status TEXT,
+    source_provider            TEXT,
+    original_source_name       TEXT,
+    is_primary_source_series   BOOLEAN,
+    is_republished_series      BOOLEAN,
+    transformation_method      TEXT,
+    realtime_start             DATE,
+    realtime_end               DATE,
+    -- Metric catalog association
     metric_code                TEXT,
     metric_display_name        TEXT,
     dashboard_suitability      TEXT,
@@ -196,86 +220,51 @@ CREATE TABLE IF NOT EXISTS gold_fred.rpt_observation_dashboard (
     comparability_group        TEXT,
     do_not_compare_with        TEXT[],
     recommended_aggregation    TEXT,
-    owner_team                 TEXT,
-    value                      NUMERIC,
-    value_type                 TEXT,
-    units                      TEXT,
-    seasonal_adjustment_status TEXT,
-    -- BLS-specific (NULL for other sources)
-    series_id                  TEXT,
-    program_code               TEXT,
-    survey_name                TEXT,
-    series_title               TEXT,
-    measure_name               TEXT,
-    measure_category           TEXT,
-    observation_basis          TEXT,
-    gold_metric_name           TEXT,
-    comparison_warning         TEXT,
-    -- ACS-specific (NULL for other sources)
-    dataset_code               TEXT,
-    vintage_year               INTEGER,
-    table_id                   TEXT,
-    table_title                TEXT,
-    variable_code              TEXT,
-    variable_label             TEXT,
-    concept                    TEXT,
-    universe                   TEXT,
-    denominator_hint           TEXT,
-    is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC,
-    margin_of_error            NUMERIC,
-    margin_of_error_pct        NUMERIC,
-    estimate_annotation        TEXT,
-    moe_annotation             TEXT,
-    -- FRED-specific (NULL for other sources)
-    source_provider            TEXT,
-    original_source_name       TEXT,
-    is_primary_source_series   BOOLEAN,
-    is_republished_series      BOOLEAN,
-    frequency                  TEXT,
-    transformation_method      TEXT,
-    realtime_start             DATE,
-    realtime_end               DATE
+    owner_team                 TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
-    ON gold_fred.rpt_observation_dashboard (
-        source_code,
-        geo_id,
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_fred_observations_nk
+    ON gold_fred.rpt_fred_observations (
         observation_date,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
+        series_id,
         COALESCE(metric_code, ''),
         COALESCE(realtime_start, '0001-01-01'::DATE),
         COALESCE(realtime_end, '0001-01-01'::DATE)
     );
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_source_geo_date
-    ON gold_fred.rpt_observation_dashboard (source_code, geo_id, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_metric_date
-    ON gold_fred.rpt_observation_dashboard (metric_code, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_obs_brin
-    ON gold_fred.rpt_observation_dashboard USING BRIN (observation_date);
 
-CREATE TABLE IF NOT EXISTS gold_fred.mv_latest_dashboard
-    (LIKE gold_fred.rpt_observation_dashboard INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+CREATE INDEX IF NOT EXISTS ix_rpt_fred_observations_metric_date
+    ON gold_fred.rpt_fred_observations (metric_code, observation_date);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_latest_dashboard
-    ON gold_fred.mv_latest_dashboard (
-        source_code,
-        geo_id,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
-        COALESCE(metric_code, '')
+CREATE INDEX IF NOT EXISTS ix_rpt_fred_observations_series_date
+    ON gold_fred.rpt_fred_observations (series_id, observation_date);
+
+-- ============================================================
+-- FRED MATERIALIZED VIEW (Per-source latest)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_fred.mv_fred_latest
+    (LIKE gold_fred.rpt_fred_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_fred_latest
+    ON gold_fred.mv_fred_latest (
+        series_id,
+        COALESCE(metric_code, ''),
+        COALESCE(realtime_start, '0001-01-01'::DATE),
+        COALESCE(realtime_end, '0001-01-01'::DATE)
     );
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_source_metric
-    ON gold_fred.mv_latest_dashboard (source_code, metric_code);
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_observation_date
-    ON gold_fred.mv_latest_dashboard (observation_date);
 
-DROP PROCEDURE IF EXISTS gold_fred.refresh_rpt_fred_observation_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_fred.refresh_rpt_fred_observation_dashboard(
+CREATE INDEX IF NOT EXISTS ix_mv_fred_latest_source_metric
+    ON gold_fred.mv_fred_latest (source_code, metric_code);
+
+CREATE INDEX IF NOT EXISTS ix_mv_fred_latest_observation_date
+    ON gold_fred.mv_fred_latest (observation_date);
+
+-- ============================================================
+-- FRED REFRESH PROCEDURES
+-- ============================================================
+
+DROP PROCEDURE IF EXISTS gold_fred.refresh_rpt_fred_observations(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_fred.refresh_rpt_fred_observations(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
@@ -284,15 +273,11 @@ AS $$
 BEGIN
     CALL gold_glossary.refresh_dim_geo_latest();
 
-    IF p_start_date IS NULL OR p_end_date IS NULL THEN
-        DELETE FROM gold_fred.rpt_observation_dashboard WHERE source_code = 'FRED';
-    ELSE
-        DELETE FROM gold_fred.rpt_observation_dashboard
-        WHERE source_code = 'FRED'
-          AND observation_date BETWEEN p_start_date AND p_end_date;
-    END IF;
+    -- FRED is national-only, so limited need for date filtering
+    -- but we support it for consistency with other sources
+    DELETE FROM gold_fred.rpt_fred_observations;
 
-    INSERT INTO gold_fred.rpt_observation_dashboard (
+    INSERT INTO gold_fred.rpt_fred_observations (
         source_code,
         observation_date,
         duration_start,
@@ -316,20 +301,7 @@ BEGIN
         comparability_group,
         do_not_compare_with,
         recommended_aggregation,
-        owner_team,
-        value,
-        units,
-        seasonal_adjustment_status,
-        series_id,
-        series_title,
-        source_provider,
-        original_source_name,
-        is_primary_source_series,
-        is_republished_series,
-        frequency,
-        transformation_method,
-        realtime_start,
-        realtime_end
+        owner_team
     )
     SELECT
         'FRED',
@@ -379,28 +351,26 @@ BEGIN
     WHERE (p_start_date IS NULL OR p_end_date IS NULL
            OR f.observation_date BETWEEN p_start_date AND p_end_date);
 
-    ANALYZE gold_fred.rpt_observation_dashboard;
+    ANALYZE gold_fred.rpt_fred_observations;
 END;
 $$;
 
-DROP PROCEDURE IF EXISTS gold_fred.refresh_mv_fred_latest_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_fred.refresh_mv_fred_latest_dashboard(
+DROP PROCEDURE IF EXISTS gold_fred.refresh_mv_fred_latest();
+CREATE OR REPLACE PROCEDURE gold_fred.refresh_mv_fred_latest(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Always rebuild the FRED slice — bounded by N_series (national only).
-    DELETE FROM gold_fred.mv_latest_dashboard WHERE source_code = 'FRED';
+    -- Rebuild FRED slice — bounded by N_series (national only).
+    DELETE FROM gold_fred.mv_fred_latest;
 
-    INSERT INTO gold_fred.mv_latest_dashboard
-    SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
+    INSERT INTO gold_fred.mv_fred_latest
+    SELECT DISTINCT ON (d.series_id, d.metric_code)
         d.*
-    FROM gold_fred.rpt_observation_dashboard d
-    WHERE d.source_code = 'FRED'
+    FROM gold_fred.rpt_fred_observations d
     ORDER BY
-        d.geo_id,
         d.series_id,
         d.metric_code,
         d.observation_date DESC,
@@ -408,7 +378,7 @@ BEGIN
         d.realtime_end DESC NULLS LAST,
         d.updated_at DESC;
 
-    ANALYZE gold_fred.mv_latest_dashboard;
+    ANALYZE gold_fred.mv_fred_latest;
 END;
 $$;
 
@@ -428,15 +398,15 @@ BEGIN
     RAISE NOTICE '[FRED DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
 
     v_step_started := clock_timestamp();
-    CALL gold_fred.refresh_rpt_fred_observation_dashboard(p_start_date, p_end_date);
+    CALL gold_fred.refresh_rpt_fred_observations(p_start_date, p_end_date);
     RAISE NOTICE
-        '[FRED DASHBOARD REFRESH] step=refresh_rpt_fred_observation_dashboard duration_ms=%',
+        '[FRED DASHBOARD REFRESH] step=refresh_rpt_fred_observations duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold_fred.refresh_mv_fred_latest_dashboard(p_start_date, p_end_date);
+    CALL gold_fred.refresh_mv_fred_latest();
     RAISE NOTICE
-        '[FRED DASHBOARD REFRESH] step=refresh_mv_fred_latest_dashboard duration_ms=%',
+        '[FRED DASHBOARD REFRESH] step=refresh_mv_fred_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     RAISE NOTICE

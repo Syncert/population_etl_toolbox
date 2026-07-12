@@ -1,5 +1,7 @@
 -- bls/gold_bls/DDL/gold_bls.sql
--- Subject-scoped gold DDL for BLS objects and serving refresh.
+-- REFACTORED: Source-First Architecture
+-- Subject-scoped gold DDL for BLS objects — no unified wide table.
+-- Serving tables contain BLS-specific columns only; no NULL pollution.
 
 CREATE SCHEMA IF NOT EXISTS gold_glossary;
 CREATE SCHEMA IF NOT EXISTS gold_bls;
@@ -164,7 +166,10 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- fact_bls_observation: view over silver — no duplicate observation storage
+-- ============================================================
+-- BLS FACT VIEW (unchanged — source of truth)
+-- ============================================================
+
 CREATE OR REPLACE VIEW gold_bls.fact_bls_observation AS
 SELECT
     s.geo_id,
@@ -199,9 +204,12 @@ WHERE s.value IS NOT NULL
   AND s.series_id IS NOT NULL
   AND s.series_id <> '';
 
--- Unified serving tables (IF NOT EXISTS — idempotent regardless of DDL execution order)
-CREATE TABLE IF NOT EXISTS gold_bls.rpt_observation_dashboard (
-    source_code                TEXT NOT NULL,
+-- ============================================================
+-- BLS-SCOPED SERVING TABLE (Source-First: BLS-specific columns only)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_bls.rpt_bls_observations (
+    source_code                TEXT NOT NULL DEFAULT 'BLS',
     observation_date           DATE NOT NULL,
     duration_start             DATE,
     duration_end               DATE,
@@ -216,6 +224,21 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_observation_dashboard (
     county_name                TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
+    -- BLS-specific columns (no NULLs for these)
+    series_id                  TEXT NOT NULL,
+    program_code               TEXT NOT NULL,
+    survey_name                TEXT,
+    series_title               TEXT,
+    measure_name               TEXT,
+    measure_category           TEXT,
+    observation_basis          TEXT,
+    units                      TEXT,
+    value                      NUMERIC NOT NULL,
+    value_type                 TEXT,
+    seasonal_adjustment_status TEXT,
+    gold_metric_name           TEXT,
+    comparison_warning         TEXT,
+    -- Metric catalog association
     metric_code                TEXT,
     metric_display_name        TEXT,
     dashboard_suitability      TEXT,
@@ -224,86 +247,52 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_observation_dashboard (
     comparability_group        TEXT,
     do_not_compare_with        TEXT[],
     recommended_aggregation    TEXT,
-    owner_team                 TEXT,
-    value                      NUMERIC,
-    value_type                 TEXT,
-    units                      TEXT,
-    seasonal_adjustment_status TEXT,
-    -- BLS-specific (NULL for other sources)
-    series_id                  TEXT,
-    program_code               TEXT,
-    survey_name                TEXT,
-    series_title               TEXT,
-    measure_name               TEXT,
-    measure_category           TEXT,
-    observation_basis          TEXT,
-    gold_metric_name           TEXT,
-    comparison_warning         TEXT,
-    -- ACS-specific (NULL for other sources)
-    dataset_code               TEXT,
-    vintage_year               INTEGER,
-    table_id                   TEXT,
-    table_title                TEXT,
-    variable_code              TEXT,
-    variable_label             TEXT,
-    concept                    TEXT,
-    universe                   TEXT,
-    denominator_hint           TEXT,
-    is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC,
-    margin_of_error            NUMERIC,
-    margin_of_error_pct        NUMERIC,
-    estimate_annotation        TEXT,
-    moe_annotation             TEXT,
-    -- FRED-specific (NULL for other sources)
-    source_provider            TEXT,
-    original_source_name       TEXT,
-    is_primary_source_series   BOOLEAN,
-    is_republished_series      BOOLEAN,
-    frequency                  TEXT,
-    transformation_method      TEXT,
-    realtime_start             DATE,
-    realtime_end               DATE
+    owner_team                 TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_observation_dashboard_nk
-    ON gold_bls.rpt_observation_dashboard (
-        source_code,
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_bls_observations_nk
+    ON gold_bls.rpt_bls_observations (
         geo_id,
         observation_date,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
-        COALESCE(metric_code, ''),
-        COALESCE(realtime_start, '0001-01-01'::DATE),
-        COALESCE(realtime_end, '0001-01-01'::DATE)
-    );
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_source_geo_date
-    ON gold_bls.rpt_observation_dashboard (source_code, geo_id, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_metric_date
-    ON gold_bls.rpt_observation_dashboard (metric_code, observation_date);
-CREATE INDEX IF NOT EXISTS ix_rpt_observation_dashboard_obs_brin
-    ON gold_bls.rpt_observation_dashboard USING BRIN (observation_date);
-
-CREATE TABLE IF NOT EXISTS gold_bls.mv_latest_dashboard
-    (LIKE gold_bls.rpt_observation_dashboard INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_latest_dashboard
-    ON gold_bls.mv_latest_dashboard (
-        source_code,
-        geo_id,
-        COALESCE(series_id, ''),
-        COALESCE(variable_code, ''),
-        COALESCE(dataset_code, ''),
+        series_id,
         COALESCE(metric_code, '')
     );
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_source_metric
-    ON gold_bls.mv_latest_dashboard (source_code, metric_code);
-CREATE INDEX IF NOT EXISTS ix_mv_latest_dashboard_observation_date
-    ON gold_bls.mv_latest_dashboard (observation_date);
 
-DROP PROCEDURE IF EXISTS gold_bls.refresh_rpt_bls_observation_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_bls.refresh_rpt_bls_observation_dashboard(
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_source_geo_date
+    ON gold_bls.rpt_bls_observations (source_code, geo_id, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_metric_date
+    ON gold_bls.rpt_bls_observations (metric_code, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_obs_brin
+    ON gold_bls.rpt_bls_observations USING BRIN (observation_date);
+
+-- ============================================================
+-- BLS MATERIALIZED VIEW (Per-source latest)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS gold_bls.mv_bls_latest
+    (LIKE gold_bls.rpt_bls_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_bls_latest
+    ON gold_bls.mv_bls_latest (
+        geo_id,
+        series_id,
+        COALESCE(metric_code, '')
+    );
+
+CREATE INDEX IF NOT EXISTS ix_mv_bls_latest_source_metric
+    ON gold_bls.mv_bls_latest (source_code, metric_code);
+
+CREATE INDEX IF NOT EXISTS ix_mv_bls_latest_observation_date
+    ON gold_bls.mv_bls_latest (observation_date);
+
+-- ============================================================
+-- BLS REFRESH PROCEDURES (Updated to populate per-source table)
+-- ============================================================
+
+DROP PROCEDURE IF EXISTS gold_bls.refresh_rpt_bls_observations(DATE, DATE);
+CREATE OR REPLACE PROCEDURE gold_bls.refresh_rpt_bls_observations(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
@@ -313,14 +302,13 @@ BEGIN
     CALL gold_glossary.refresh_dim_geo_latest();
 
     IF p_start_date IS NULL OR p_end_date IS NULL THEN
-        DELETE FROM gold_bls.rpt_observation_dashboard WHERE source_code = 'BLS';
+        DELETE FROM gold_bls.rpt_bls_observations;
     ELSE
-        DELETE FROM gold_bls.rpt_observation_dashboard
-        WHERE source_code = 'BLS'
-          AND observation_date BETWEEN p_start_date AND p_end_date;
+        DELETE FROM gold_bls.rpt_bls_observations
+        WHERE observation_date BETWEEN p_start_date AND p_end_date;
     END IF;
 
-    INSERT INTO gold_bls.rpt_observation_dashboard (
+    INSERT INTO gold_bls.rpt_bls_observations (
         source_code,
         observation_date,
         duration_start,
@@ -336,6 +324,19 @@ BEGIN
         county_name,
         geo_latitude,
         geo_longitude,
+        series_id,
+        program_code,
+        survey_name,
+        series_title,
+        measure_name,
+        measure_category,
+        observation_basis,
+        units,
+        value,
+        value_type,
+        seasonal_adjustment_status,
+        gold_metric_name,
+        comparison_warning,
         metric_code,
         metric_display_name,
         dashboard_suitability,
@@ -344,20 +345,7 @@ BEGIN
         comparability_group,
         do_not_compare_with,
         recommended_aggregation,
-        owner_team,
-        value,
-        value_type,
-        units,
-        seasonal_adjustment_status,
-        series_id,
-        program_code,
-        survey_name,
-        series_title,
-        measure_name,
-        measure_category,
-        observation_basis,
-        gold_metric_name,
-        comparison_warning
+        owner_team
     )
     SELECT
         'BLS',
@@ -375,6 +363,19 @@ BEGIN
         gl.county_name,
         gl.latitude,
         gl.longitude,
+        bs.series_id,
+        b.program_code,
+        s.survey_name,
+        bs.series_title,
+        bs.measure_name,
+        b.measure_category,
+        COALESCE(b.observation_basis, s.observation_basis),
+        bs.unit_of_measure,
+        b.value,
+        b.value_type,
+        COALESCE(b.seasonal_adjustment_status, bs.seasonal_adjustment_status),
+        bs.gold_metric_name,
+        s.comparison_warning,
         COALESCE(mc.metric_code,          'BLS:' || bs.series_id),
         COALESCE(mc.metric_display_name,  bs.gold_metric_name, bs.series_title),
         COALESCE(mc.dashboard_suitability,'EXPERIMENTAL'),
@@ -383,20 +384,7 @@ BEGIN
         mc.comparability_group,
         COALESCE(mc.do_not_compare_with, ARRAY[]::TEXT[]),
         mc.recommended_aggregation,
-        mc.owner_team,
-        b.value,
-        b.value_type,
-        bs.unit_of_measure,
-        COALESCE(b.seasonal_adjustment_status, bs.seasonal_adjustment_status),
-        bs.series_id,
-        b.program_code,
-        s.survey_name,
-        bs.series_title,
-        bs.measure_name,
-        b.measure_category,
-        COALESCE(b.observation_basis, s.observation_basis),
-        bs.gold_metric_name,
-        s.comparison_warning
+        mc.owner_team
     FROM gold_bls.fact_bls_observation b
     JOIN gold_bls.dim_bls_survey s  ON s.bls_survey_sk  = b.bls_survey_sk
     JOIN gold_bls.dim_bls_series bs ON bs.bls_series_sk = b.bls_series_sk
@@ -408,26 +396,25 @@ BEGIN
     WHERE (p_start_date IS NULL OR p_end_date IS NULL
            OR b.period_date BETWEEN p_start_date AND p_end_date);
 
-    ANALYZE gold_bls.rpt_observation_dashboard;
+    ANALYZE gold_bls.rpt_bls_observations;
 END;
 $$;
 
-DROP PROCEDURE IF EXISTS gold_bls.refresh_mv_bls_latest_dashboard(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_bls.refresh_mv_bls_latest_dashboard(
+DROP PROCEDURE IF EXISTS gold_bls.refresh_mv_bls_latest();
+CREATE OR REPLACE PROCEDURE gold_bls.refresh_mv_bls_latest(
     p_start_date DATE DEFAULT NULL,
     p_end_date DATE DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Always rebuild the BLS slice — the mv is bounded by N_series × N_geos, not N_observations.
-    DELETE FROM gold_bls.mv_latest_dashboard WHERE source_code = 'BLS';
+    -- Always rebuild the BLS slice — bounded by N_series × N_geos, not N_observations.
+    DELETE FROM gold_bls.mv_bls_latest;
 
-    INSERT INTO gold_bls.mv_latest_dashboard
+    INSERT INTO gold_bls.mv_bls_latest
     SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
         d.*
-    FROM gold_bls.rpt_observation_dashboard d
-    WHERE d.source_code = 'BLS'
+    FROM gold_bls.rpt_bls_observations d
     ORDER BY
         d.geo_id,
         d.series_id,
@@ -435,7 +422,7 @@ BEGIN
         d.observation_date DESC,
         d.updated_at DESC;
 
-    ANALYZE gold_bls.mv_latest_dashboard;
+    ANALYZE gold_bls.mv_bls_latest;
 END;
 $$;
 
@@ -455,15 +442,15 @@ BEGIN
     RAISE NOTICE '[BLS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
 
     v_step_started := clock_timestamp();
-    CALL gold_bls.refresh_rpt_bls_observation_dashboard(p_start_date, p_end_date);
+    CALL gold_bls.refresh_rpt_bls_observations(p_start_date, p_end_date);
     RAISE NOTICE
-        '[BLS DASHBOARD REFRESH] step=refresh_rpt_bls_observation_dashboard duration_ms=%',
+        '[BLS DASHBOARD REFRESH] step=refresh_rpt_bls_observations duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold_bls.refresh_mv_bls_latest_dashboard(p_start_date, p_end_date);
+    CALL gold_bls.refresh_mv_bls_latest();
     RAISE NOTICE
-        '[BLS DASHBOARD REFRESH] step=refresh_mv_bls_latest_dashboard duration_ms=%',
+        '[BLS DASHBOARD REFRESH] step=refresh_mv_bls_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     RAISE NOTICE
