@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
     -- ACS-specific columns (no NULLs for these)
+    value                      NUMERIC NOT NULL,
     dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
