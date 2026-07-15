@@ -351,7 +351,7 @@ def acs_ingest():
     @task
     def sync_geographies() -> None:
         # Auto-pick latest available Gazetteer year
-        sync_geo_dim(source_year=None, min_year=2010)
+        sync_geo_dim(source_year=None, min_year=1990)
 
 
     # -----------------------------

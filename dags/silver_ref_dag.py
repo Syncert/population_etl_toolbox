@@ -69,7 +69,7 @@ def silver_ref():
 
     @task
     def load_dim_geo() -> int:
-        return sync_geo_dim(source_year=None, min_year=2010)
+        return sync_geo_dim(source_year=None, min_year=1990)
 
     @task
     def load_dim_time() -> int:

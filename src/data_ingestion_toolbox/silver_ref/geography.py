@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -28,6 +29,12 @@ def _states_url(year: int) -> str:
 
 
 def _counties_url(year: int) -> str:
+    if year == 2010:
+        return f"{GAZ_ROOT}/Gaz_counties_national.zip"
+    if year == 2000:
+        return f"{GAZ_ROOT}/county2k.zip"
+    if year == 1990:
+        return f"{GAZ_ROOT}/counties.zip"
     return f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_counties_national.zip"
 
 
@@ -64,7 +71,7 @@ def _url_exists(url: str, timeout_s: float = 10.0) -> bool:
 
 def resolve_latest_gazetteer_year(
     start_year: Optional[int] = None,
-    min_year: int = 2010,
+    min_year: int = 1990,
 ) -> int:
     y0 = start_year or datetime.now(timezone.utc).year
 
@@ -139,6 +146,131 @@ def _fetch_zipped_tsv(url: str, retries: int = 3) -> pl.DataFrame:
         "Could not parse Gazetteer file into expected columns. "
         f"First header line: {first_line[:200]}"
     )
+
+
+def _fetch_zipped_text(url: str, retries: int = 3) -> str:
+    last_exc: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            with httpx.Client(timeout=60, follow_redirects=True) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+                zbytes = resp.content
+
+            if len(zbytes) < 4 or not zbytes.startswith(b"PK"):
+                preview = zbytes[:200].decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"Expected a zip payload from {url} but received non-zip content. "
+                    f"Content-Type={resp.headers.get('content-type', 'unknown')!r}; "
+                    f"preview={preview!r}"
+                )
+
+            with zipfile.ZipFile(io.BytesIO(zbytes)) as zf:
+                txt_names = [n for n in zf.namelist() if n.lower().endswith(".txt")]
+                if not txt_names:
+                    raise RuntimeError(f"No .txt found inside zip: {url}")
+                return zf.read(txt_names[0]).decode("utf-8", errors="replace")
+
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Gazetteer text fetch attempt %d/%d failed for %s: %s",
+                attempt,
+                retries,
+                url,
+                exc,
+            )
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+
+    raise RuntimeError(
+        f"Failed to fetch Gazetteer zip from {url} after {retries} attempts"
+    ) from last_exc
+
+
+def _parse_1990_counties(text: str) -> pl.DataFrame:
+    rows = []
+    schema = {
+        "GEOID": pl.Utf8,
+        "NAME": pl.Utf8,
+        "INTPTLAT": pl.Float64,
+        "INTPTLONG": pl.Float64,
+    }
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+
+        state_fips = line[0:2].strip()
+        county_fips = line[5:8].strip()
+        county_name = line[9:69].strip()
+        latitude = line[-20:-10].strip()
+        longitude = line[-10:].strip()
+
+        if not (state_fips and county_fips and county_name):
+            continue
+
+        rows.append(
+            {
+                "GEOID": f"{state_fips.zfill(2)}{county_fips.zfill(3)}",
+                "NAME": county_name,
+                "INTPTLAT": _legacy_microdegree_to_float(latitude),
+                "INTPTLONG": _legacy_microdegree_to_float(longitude),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
+
+
+def _parse_2000_counties(text: str) -> pl.DataFrame:
+    rows = []
+    schema = {
+        "GEOID": pl.Utf8,
+        "NAME": pl.Utf8,
+        "INTPTLAT": pl.Utf8,
+        "INTPTLONG": pl.Utf8,
+    }
+    for line in text.splitlines():
+        if len(line) < 15:
+            continue
+
+        geoid = line[2:7].strip()
+        county_name = line[7:73].strip()
+        coord_match = re.search(
+            r"([+-]?\d+\.\d+)\s*([+-]\d+\.\d+)\s*$",
+            line,
+        )
+        latitude = coord_match.group(1) if coord_match else None
+        longitude = coord_match.group(2) if coord_match else None
+
+        if not (geoid and county_name):
+            continue
+
+        rows.append(
+            {
+                "GEOID": geoid.zfill(5),
+                "NAME": county_name,
+                "INTPTLAT": latitude,
+                "INTPTLONG": longitude,
+            }
+        )
+
+    return pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
+
+
+def _legacy_microdegree_to_float(value: str) -> float | None:
+    try:
+        return int(value) / 1_000_000
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_counties_gazetteer(year: int, url: str) -> pl.DataFrame:
+    if year == 1990:
+        return _parse_1990_counties(_fetch_zipped_text(url))
+    if year == 2000:
+        return _parse_2000_counties(_fetch_zipped_text(url))
+    return _fetch_zipped_tsv(url)
 
 
 def _fetch_boundary_features(url: str, retries: int = 3) -> list[dict]:
@@ -323,7 +455,7 @@ def _load_polygon_lookup(
 
 def sync_geo_dim(
     source_year: Optional[int] = None,
-    min_year: int = 2010,
+    min_year: int = 1990,
 ) -> int:
     """
     Upsert US + states + counties into silver_ref.dim_geo.
@@ -466,7 +598,7 @@ def sync_geo_dim(
             logger.debug("States file not available for year=%s (expected for 2023+)", y)
 
         # Counties file is required
-        co = _fetch_zipped_tsv(counties_url)
+        co = _fetch_counties_gazetteer(y, counties_url)
 
         co_df = (
             co.select([
