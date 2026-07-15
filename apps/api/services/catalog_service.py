@@ -12,9 +12,12 @@ from data_ingestion_toolbox.models import (
 )
 from data_ingestion_toolbox.sql.catalog_queries import (
     SOURCES_QUERY,
+    SOURCES_QUERY_GLOSSARY,
     build_geographies_queries,
+    build_geographies_queries_glossary,
     build_geographies_queries_legacy,
     build_metrics_queries,
+    build_metrics_queries_glossary,
     build_metrics_queries_legacy,
 )
 
@@ -31,7 +34,10 @@ def _relation_exists(db: Session, relation_name: str) -> bool:
 
 
 def list_sources(db: Session) -> list[SourceSystem]:
-    rows = db.execute(SOURCES_QUERY).mappings().all()
+    if _relation_exists(db, "gold_glossary.dim_source_system"):
+        rows = db.execute(SOURCES_QUERY_GLOSSARY).mappings().all()
+    else:
+        rows = db.execute(SOURCES_QUERY).mappings().all()
     return [SourceSystem.model_validate(row) for row in rows]
 
 
@@ -44,8 +50,11 @@ def list_metrics(
     limit: int,
     offset: int,
 ) -> MetricListResponse:
-    metrics_builder = build_metrics_queries
-    if not _relation_exists(db, "gold.dim_metric"):
+    if _relation_exists(db, "gold_glossary.dim_metric"):
+        metrics_builder = build_metrics_queries_glossary
+    elif _relation_exists(db, "gold.dim_metric"):
+        metrics_builder = build_metrics_queries
+    else:
         metrics_builder = build_metrics_queries_legacy
 
     list_query, count_query, params = metrics_builder(
@@ -70,8 +79,11 @@ def list_geographies(
     limit: int,
     offset: int,
 ) -> GeographyListResponse:
-    geographies_builder = build_geographies_queries
-    if not _relation_exists(db, "gold.dim_geography"):
+    if _relation_exists(db, "gold_glossary.dim_geography"):
+        geographies_builder = build_geographies_queries_glossary
+    elif _relation_exists(db, "gold.dim_geography"):
+        geographies_builder = build_geographies_queries
+    else:
         geographies_builder = build_geographies_queries_legacy
 
     list_query, count_query, params = geographies_builder(

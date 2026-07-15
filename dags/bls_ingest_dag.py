@@ -43,10 +43,18 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
-from data_ingestion_toolbox.bls.config import CONFIG
-from data_ingestion_toolbox.bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-from data_ingestion_toolbox.bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
-from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+try:
+    from data_ingestion_toolbox.bls.config import CONFIG
+    from data_ingestion_toolbox.bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
+    from data_ingestion_toolbox.bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
+    from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+except ImportError:
+    # Backward-compatible fallback for legacy Airflow layouts that copy
+    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
+    from bls.config import CONFIG
+    from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
+    from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
+    from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -68,7 +76,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "data_ingestion_toolbox" / "bls" / "DDL" / "silver_bls.sql"
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "src" / "data_ingestion_toolbox" / "bls" / "DDL" / "silver_bls.sql",
+        root / "bls" / "DDL" / "silver_bls.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"BLS silver DDL not found. Checked: {candidates}")
 
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
@@ -367,7 +383,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 @dag(
     dag_id="bls_ingest",
     default_args=DEFAULT_ARGS,
-    schedule="0 7 1 * *",  # monthly on the 1st at 07:00
+    schedule="0 7 * * 0",  # weekly on Sundays at 07:00 UTC
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
@@ -426,7 +442,7 @@ def bls_ingest():
            Always re-ingested unconditionally, regardless of prior status.
            This ensures BLS revisions, late-filed data, and appropriations-lapse
            backfills (footnote X/N/9) are picked up automatically on every
-           monthly DAG run.  Two years back is used because BLS frequently
+           weekly DAG run.  Two years back is used because BLS frequently
            revises LAUS county benchmarks ~18 months after initial release.
 
         Skip logic
@@ -689,21 +705,27 @@ def bls_ingest():
     @task(trigger_rule='all_success')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from data_ingestion_toolbox.bls.gold_bls.transform import ensure_bls_gold_schema
+        try:
+            from data_ingestion_toolbox.bls.gold_bls.transform import ensure_bls_gold_schema
+        except ImportError:
+            from bls.gold_bls.transform import ensure_bls_gold_schema
         ensure_bls_gold_schema()
 
     @task(trigger_rule='all_success')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
-        from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
+        try:
+            from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
+        except ImportError:
+            from bls.gold_bls.transform import refresh_bls_elements
         refresh_bls_elements()
 
     @task(trigger_rule='all_success')
     def gold_compute_shards() -> list[str]:
-        """Compute the rolling date window covered by the current silver data.
+        """Compute the full-history date floor covered by current silver data.
 
         Returns a single-element list [month_start_iso] representing the
-        earliest month in the two-year rolling window, used only for
+        earliest month in the available history, used only for
         downstream compatibility; the actual refresh range is computed
         in gold_refresh_window from silver directly.
         """
@@ -712,18 +734,17 @@ def bls_ingest():
             cur.execute("""
                 SELECT MIN(period_date)::date
                 FROM silver_bls.fact_labor_statistics
-                WHERE period_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND value IS NOT NULL
+                WHERE value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
-            logger.warning("[BLS GOLD] No data in silver rolling window; skipping gold refresh.")
+            logger.warning("[BLS GOLD] No data in silver full-history window; skipping gold refresh.")
             return []
         return [row[0].isoformat()]
 
     @task(trigger_rule='all_success')
     def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute min/max date window for the serving-layer refresh from silver."""
+        """Compute full-history min/max date bounds for serving-layer refresh."""
         if not shard_results:
             return None
         hook = _get_postgres_hook()
@@ -731,8 +752,7 @@ def bls_ingest():
             cur.execute("""
                 SELECT MIN(period_date)::date, MAX(period_date)::date
                 FROM silver_bls.fact_labor_statistics
-                WHERE period_date >= (CURRENT_DATE - INTERVAL '2 years')
-                  AND value IS NOT NULL
+                WHERE value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
@@ -762,10 +782,10 @@ def bls_ingest():
 
             conn.notices.clear()
             if refresh_window is None:
-                cur.execute("CALL gold.refresh_dashboard_serving_layer_bls(NULL, NULL);")
+                cur.execute("CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL);")
             else:
                 cur.execute(
-                    "CALL gold.refresh_dashboard_serving_layer_bls(%s, %s);",
+                    "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s);",
                     (refresh_window["start_date"], refresh_window["end_date"]),
                 )
 

@@ -14,7 +14,7 @@ def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> 
         SELECT COUNT(*) AS violations
         FROM (
             SELECT geo_id, observation_date, variable_code, dataset_code, metric_code, COUNT(*) AS cnt
-            FROM gold.rpt_observation_dashboard
+            FROM gold_census.rpt_observation_dashboard
             WHERE source_code = 'CENSUS_ACS'
               AND date_trunc('month', observation_date)::date = %s
             GROUP BY geo_id, observation_date, variable_code, dataset_code, metric_code
@@ -30,7 +30,7 @@ def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> 
 
     semantic_sql = """
         SELECT COUNT(*)
-        FROM gold.rpt_observation_dashboard
+        FROM gold_census.rpt_observation_dashboard
         WHERE source_code = 'CENSUS_ACS'
           AND date_trunc('month', observation_date)::date = %s
           AND (
@@ -55,7 +55,7 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
         SELECT COUNT(*)
         FROM (
             SELECT geo_id, observation_date, series_id, metric_code, COUNT(*) AS cnt
-            FROM gold.rpt_observation_dashboard
+            FROM gold_bls.rpt_observation_dashboard
             WHERE source_code = 'BLS'
               AND date_trunc('month', observation_date)::date = %s
             GROUP BY geo_id, observation_date, series_id, metric_code
@@ -71,7 +71,7 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
 
     semantic_sql = """
         SELECT COUNT(*)
-        FROM gold.rpt_observation_dashboard
+        FROM gold_bls.rpt_observation_dashboard
         WHERE source_code = 'BLS'
           AND date_trunc('month', observation_date)::date = %s
           AND (
@@ -95,7 +95,7 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
         SELECT COUNT(*)
         FROM (
             SELECT geo_id, observation_date, series_id, metric_code, COUNT(*) AS cnt
-            FROM gold.rpt_observation_dashboard
+            FROM gold_fred.rpt_observation_dashboard
             WHERE source_code = 'FRED'
               AND date_trunc('month', observation_date)::date = %s
             GROUP BY geo_id, observation_date, series_id, metric_code
@@ -111,7 +111,7 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
 
     semantic_sql = """
         SELECT COUNT(*)
-        FROM gold.rpt_observation_dashboard
+        FROM gold_fred.rpt_observation_dashboard
         WHERE source_code = 'FRED'
           AND date_trunc('month', observation_date)::date = %s
           AND (
@@ -133,16 +133,16 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
 def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
     sql = """
         SELECT COUNT(*)
-        FROM gold.dim_metric_catalog c
+        FROM gold_glossary.dim_metric_catalog c
         WHERE c.is_active = TRUE
           AND NOT EXISTS (
-              SELECT 1 FROM gold.bridge_metric_acs_variable a WHERE a.metric_catalog_sk = c.metric_catalog_sk
+                     SELECT 1 FROM gold_glossary.bridge_metric_acs_variable a WHERE a.metric_catalog_sk = c.metric_catalog_sk
           )
           AND NOT EXISTS (
-              SELECT 1 FROM gold.bridge_metric_bls_series b WHERE b.metric_catalog_sk = c.metric_catalog_sk
+                     SELECT 1 FROM gold_glossary.bridge_metric_bls_series b WHERE b.metric_catalog_sk = c.metric_catalog_sk
           )
           AND NOT EXISTS (
-              SELECT 1 FROM gold.bridge_metric_fred_series f WHERE f.metric_catalog_sk = c.metric_catalog_sk
+                     SELECT 1 FROM gold_glossary.bridge_metric_fred_series f WHERE f.metric_catalog_sk = c.metric_catalog_sk
           )
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

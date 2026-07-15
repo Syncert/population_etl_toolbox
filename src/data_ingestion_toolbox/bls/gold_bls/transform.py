@@ -23,21 +23,22 @@ logger = logging.getLogger(__name__)
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_bls.sql"
 _SCHEMA_COMPONENT = "gold_ddl_bls"
 _REQUIRED_RELATIONS = (
-    "gold.dim_geo",
-    "gold.dim_source_system",
-    "gold.dim_metric_catalog",
-    "gold.dim_geo_latest",
-    "gold.dim_bls_survey",
-    "gold.dim_bls_series",
-    "gold.fact_bls_observation",
-    "gold.rpt_observation_dashboard",
-    "gold.mv_latest_dashboard",
+    "gold_glossary.dim_geo",
+    "gold_glossary.dim_source_system",
+    "gold_glossary.dim_metric_catalog",
+    "gold_glossary.dim_geo_latest",
+    "gold_glossary.bridge_metric_bls_series",
+    "gold_bls.dim_bls_survey",
+    "gold_bls.dim_bls_series",
+    "gold_bls.fact_bls_observation",
+    "gold_bls.rpt_observation_dashboard",
+    "gold_bls.mv_latest_dashboard",
 )
 _REQUIRED_PROCEDURES = (
-    "gold.refresh_dim_geo_latest()",
-    "gold.refresh_rpt_bls_observation_dashboard(date,date)",
-    "gold.refresh_mv_bls_latest_dashboard(date,date)",
-    "gold.refresh_dashboard_serving_layer_bls(date,date)",
+    "gold_glossary.refresh_dim_geo_latest()",
+    "gold_bls.refresh_rpt_bls_observation_dashboard(date,date)",
+    "gold_bls.refresh_mv_bls_latest_dashboard(date,date)",
+    "gold_bls.refresh_dashboard_serving_layer_bls(date,date)",
 )
 
 
@@ -62,7 +63,7 @@ def _seed_bls_metric_catalog(cur) -> int:
     """Populate dim_metric_catalog and bridge_metric_bls_series from dim_bls_series."""
     cur.execute(
         """
-        INSERT INTO gold.dim_metric_catalog (
+        INSERT INTO gold_glossary.dim_metric_catalog (
             metric_code,
             metric_display_name,
             source_code,
@@ -111,8 +112,8 @@ def _seed_bls_metric_catalog(cur) -> int:
             'LAST' AS recommended_aggregation,
             'data-eng' AS owner_team,
             TRUE AS is_active
-        FROM gold.dim_bls_series s
-        JOIN gold.dim_bls_survey sv
+        FROM gold_bls.dim_bls_series s
+        JOIN gold_bls.dim_bls_survey sv
           ON sv.bls_survey_sk = s.bls_survey_sk
         ON CONFLICT (metric_code)
         DO UPDATE SET
@@ -133,10 +134,10 @@ def _seed_bls_metric_catalog(cur) -> int:
 
     cur.execute(
         """
-        INSERT INTO gold.bridge_metric_bls_series (metric_catalog_sk, bls_series_sk)
+        INSERT INTO gold_glossary.bridge_metric_bls_series (metric_catalog_sk, bls_series_sk)
         SELECT c.metric_catalog_sk, s.bls_series_sk
-        FROM gold.dim_metric_catalog c
-        JOIN gold.dim_bls_series s
+        FROM gold_glossary.dim_metric_catalog c
+        JOIN gold_bls.dim_bls_series s
           ON c.metric_code = 'BLS:' || s.series_id
         ON CONFLICT (metric_catalog_sk, bls_series_sk) DO NOTHING;
         """
@@ -145,7 +146,7 @@ def _seed_bls_metric_catalog(cur) -> int:
     cur.execute(
         """
         SELECT COUNT(*)
-        FROM gold.dim_metric_catalog
+        FROM gold_glossary.dim_metric_catalog
         WHERE source_code = 'BLS'
         """
     )
@@ -153,14 +154,14 @@ def _seed_bls_metric_catalog(cur) -> int:
 
 
 def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
-    """Sync BLS source-specific metadata into gold.dim_bls_survey and gold.dim_bls_series."""
+    """Sync BLS source-specific metadata into gold_bls.dim_bls_survey and gold_bls.dim_bls_series."""
     if hook is None:
         hook = _get_hook()
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO gold.dim_bls_survey (
+            INSERT INTO gold_bls.dim_bls_survey (
                 program_code, survey_name, survey_universe, observation_basis,
                 primary_concept, id_construction_type, comparison_warning, reference_url
             )
@@ -200,7 +201,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
 
         cur.execute(
             """
-            INSERT INTO gold.dim_bls_series (
+            INSERT INTO gold_bls.dim_bls_series (
                 bls_survey_sk,
                 program_code,
                 series_id,
@@ -332,7 +333,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
             LEFT JOIN raw_bls.bls_series bs
                 ON bs.series_id = f.series_id
                AND bs.program = f.program
-            JOIN gold.dim_bls_survey s
+            JOIN gold_bls.dim_bls_survey s
               ON s.program_code = UPPER(f.program)
             WHERE f.series_id IS NOT NULL
               AND f.series_id <> ''
@@ -355,7 +356,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
             """
         )
 
-        cur.execute("SELECT COUNT(*) FROM gold.dim_bls_series")
+        cur.execute("SELECT COUNT(*) FROM gold_bls.dim_bls_series")
         row_count = cur.fetchone()[0]
         catalog_count = _seed_bls_metric_catalog(cur)
         conn.commit()

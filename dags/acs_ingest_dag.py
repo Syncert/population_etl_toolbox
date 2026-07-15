@@ -59,11 +59,20 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
-from data_ingestion_toolbox.census_acs.config import CONFIG
-from data_ingestion_toolbox.census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
-from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
-from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
-from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+try:
+    from data_ingestion_toolbox.census_acs.config import CONFIG
+    from data_ingestion_toolbox.census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
+    from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
+    from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
+    from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+except ImportError:
+    # Backward-compatible fallback for legacy Airflow layouts that copy
+    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
+    from census_acs.config import CONFIG
+    from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
+    from census_acs.ingest import ingest_slice, get_curated_variables
+    from census_acs.geography import sync_geo_dim
+    from census_acs.silver_census.transform import transform_census_to_silver
 
 
 # -----------------------------
@@ -92,7 +101,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "data_ingestion_toolbox" / "census_acs" / "DDL" / "silver_census.sql"
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "src" / "data_ingestion_toolbox" / "census_acs" / "DDL" / "silver_census.sql",
+        root / "census_acs" / "DDL" / "silver_census.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"ACS silver DDL not found. Checked: {candidates}")
 
 
 def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
@@ -334,7 +351,7 @@ def acs_ingest():
     @task
     def sync_geographies() -> None:
         # Auto-pick latest available Gazetteer year
-        sync_geo_dim(source_year=None, min_year=2010)
+        sync_geo_dim(source_year=None, min_year=1990)
 
 
     # -----------------------------
@@ -609,35 +626,40 @@ def acs_ingest():
     @task(trigger_rule='none_failed')
     def gold_ensure_schema() -> None:
         """Ensure gold schema exists."""
-        from data_ingestion_toolbox.census_acs.gold_census.transform import ensure_acs_gold_schema
+        try:
+            from data_ingestion_toolbox.census_acs.gold_census.transform import ensure_acs_gold_schema
+        except ImportError:
+            from census_acs.gold_census.transform import ensure_acs_gold_schema
         ensure_acs_gold_schema()
 
     @task(trigger_rule='none_failed')
     def gold_refresh_elements() -> None:
         """Refresh gold element dictionary from silver sources."""
-        from data_ingestion_toolbox.census_acs.gold_census.transform import refresh_acs_elements
+        try:
+            from data_ingestion_toolbox.census_acs.gold_census.transform import refresh_acs_elements
+        except ImportError:
+            from census_acs.gold_census.transform import refresh_acs_elements
         refresh_acs_elements()
 
     @task(trigger_rule='none_failed')
     def gold_compute_shards() -> list[str]:
-        """Compute the rolling date window covered by the current silver data."""
+        """Compute the full-history date floor covered by current silver data."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
                 SELECT MIN(MAKE_DATE(estimate_year, 1, 1))::date
                 FROM silver_census.fact_demographics
-                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
-                  AND estimate_value IS NOT NULL
+                WHERE estimate_value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
-            logger.warning("[ACS GOLD] No data in silver rolling window; skipping gold refresh.")
+            logger.warning("[ACS GOLD] No data in silver full-history window; skipping gold refresh.")
             return []
         return [row[0].isoformat()]
 
     @task(trigger_rule='none_failed')
     def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute min/max date window for the serving-layer refresh from silver."""
+        """Compute full-history min/max date bounds for serving-layer refresh."""
         if not shard_results:
             return None
         hook = _get_postgres_hook()
@@ -647,8 +669,7 @@ def acs_ingest():
                     MIN(MAKE_DATE(estimate_year, 1, 1))::date,
                     MAX(MAKE_DATE(estimate_year, 1, 1))::date
                 FROM silver_census.fact_demographics
-                WHERE estimate_year >= (EXTRACT(YEAR FROM CURRENT_DATE)::int - 2)
-                  AND estimate_value IS NOT NULL
+                WHERE estimate_value IS NOT NULL
             """)
             row = cur.fetchone()
         if not row or row[0] is None:
@@ -678,10 +699,10 @@ def acs_ingest():
 
             conn.notices.clear()
             if refresh_window is None:
-                cur.execute("CALL gold.refresh_dashboard_serving_layer_acs(NULL, NULL);")
+                cur.execute("CALL gold_census.refresh_dashboard_serving_layer_acs(NULL, NULL);")
             else:
                 cur.execute(
-                    "CALL gold.refresh_dashboard_serving_layer_acs(%s, %s);",
+                    "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s);",
                     (refresh_window["start_date"], refresh_window["end_date"]),
                 )
 

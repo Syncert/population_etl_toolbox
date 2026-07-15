@@ -374,3 +374,162 @@ def build_timeseries_queries_legacy(
 
     count_sql = "SELECT COUNT(*) " + from_sql
     return text(list_sql), text(count_sql), params
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Schema-parameterized builders: target a specific per-source gold schema.
+# Supported schemas: "gold_bls", "gold_census", "gold_fred", "gold" (default).
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Maps API source parameter values to their gold schema names.
+SOURCE_SCHEMA_MAP: dict[str, str] = {
+    "bls": "gold_bls",
+    "census": "gold_census",
+    "fred": "gold_fred",
+}
+
+
+def build_latest_mv_queries_for_schema(
+    schema: str,
+    metric_code: str,
+    geo_level: Optional[str],
+    state_fips: Optional[str],
+    limit: int,
+    offset: int,
+) -> tuple[TextClause, TextClause, dict]:
+    """Build latest-observation queries targeting a specific source schema."""
+    where_clauses = ["metric_code = :metric_code"]
+    params: dict = {
+        "metric_code": metric_code,
+        "limit": limit,
+        "offset": offset,
+    }
+
+    if geo_level:
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
+        params["geo_level"] = geo_level
+
+    if state_fips:
+        where_clauses.append("state_fips = :state_fips")
+        params["state_fips"] = state_fips
+
+    where_sql = " AND ".join(where_clauses)
+
+    list_sql = f"""
+        SELECT
+            {_OBSERVATION_SELECT}
+        FROM {schema}.v_metric_latest_by_geo
+        WHERE {where_sql}
+        ORDER BY geo_id ASC
+        LIMIT :limit OFFSET :offset
+    """
+
+    count_sql = f"""
+        SELECT COUNT(*)
+        FROM {schema}.v_metric_latest_by_geo
+        WHERE {where_sql}
+    """
+
+    return text(list_sql), text(count_sql), params
+
+
+def build_latest_rpt_fallback_queries_for_schema(
+    schema: str,
+    metric_code: str,
+    geo_level: Optional[str],
+    state_fips: Optional[str],
+    limit: int,
+    offset: int,
+) -> tuple[TextClause, TextClause, dict]:
+    """Build latest-observation fallback queries targeting a specific source schema."""
+    where_clauses = ["metric_code = :metric_code"]
+    params: dict = {
+        "metric_code": metric_code,
+        "limit": limit,
+        "offset": offset,
+    }
+
+    if geo_level:
+        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
+        params["geo_level"] = geo_level
+
+    if state_fips:
+        where_clauses.append("state_fips = :state_fips")
+        params["state_fips"] = state_fips
+
+    where_sql = " AND ".join(where_clauses)
+
+    base_sql = f"""
+        WITH ranked AS (
+            SELECT
+                {_OBSERVATION_SELECT},
+                ROW_NUMBER() OVER (
+                    PARTITION BY geo_id, metric_code
+                    ORDER BY observation_date DESC, updated_at DESC
+                ) AS rn
+                FROM {schema}.v_metric_timeseries_by_geo
+            WHERE {where_sql}
+        )
+    """
+
+    list_sql = base_sql + """
+        SELECT
+    """
+    list_sql += _OBSERVATION_SELECT_FROM_RANKED
+    list_sql += """
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY geo_id ASC
+        LIMIT :limit OFFSET :offset
+    """
+
+    count_sql = base_sql + """
+        SELECT COUNT(*)
+        FROM ranked
+        WHERE rn = 1
+    """
+
+    return text(list_sql), text(count_sql), params
+
+
+def build_timeseries_queries_for_schema(
+    schema: str,
+    metric_code: str,
+    geo_id: str,
+    start_date: Optional[date],
+    end_date: Optional[date],
+    limit: int,
+) -> tuple[TextClause, TextClause, dict]:
+    """Build time-series observation queries targeting a specific source schema."""
+    where_clauses = ["metric_code = :metric_code", "geo_id = :geo_id"]
+    params: dict = {
+        "metric_code": metric_code,
+        "geo_id": geo_id,
+        "limit": limit,
+    }
+
+    if start_date:
+        where_clauses.append("observation_date >= :start_date")
+        params["start_date"] = start_date
+
+    if end_date:
+        where_clauses.append("observation_date <= :end_date")
+        params["end_date"] = end_date
+
+    from_sql = f"""
+        FROM {schema}.v_metric_timeseries_by_geo
+        WHERE
+    """
+
+    from_sql += " AND ".join(where_clauses)
+
+    list_sql = f"""
+        SELECT
+            {_OBSERVATION_SELECT}
+    """
+
+    list_sql += from_sql
+    list_sql += " ORDER BY observation_date ASC LIMIT :limit"
+
+    count_sql = "SELECT COUNT(*) " + from_sql
+    return text(list_sql), text(count_sql), params
