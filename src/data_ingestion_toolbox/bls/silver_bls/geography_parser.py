@@ -47,7 +47,7 @@ def parse_bls_geography(series_id: str, program: str) -> Dict[str, Optional[str]
                 state_fips = area_code[2:4]
                 county_fips_full = area_code[4:9]
                 if state_fips.isdigit() and county_fips_full.isdigit():
-                    county_fips = county_fips_full[-3:]
+                    county_fips = county_fips_full[:3]
                     return {
                         "geo_level": "county",
                         "geo_id": f"state:{state_fips}|county:{county_fips}",

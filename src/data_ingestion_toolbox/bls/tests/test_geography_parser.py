@@ -23,14 +23,20 @@ def test_parse_laus_state():
 
 def test_parse_laus_county():
     # CN + state_fips + 5-digit county FIPS (includes state+county), then padding
-    # Example county_fips_full=01001 -> county part is 001
-    r = parse_bls_geography("LAUCN01010010000000003", program="la")
-    # NOTE: the prefix is LAU + seasonal(U) + area_code starting with CN...
-    # This is a synthetic example just to validate slicing behavior.
-    assert r["geo_level"] in ("county", None)
-    if r["geo_level"] == "county":
-        assert r["state_fips"] == "01"
-        assert r["county_fips"].isdigit() and len(r["county_fips"]) == 3
+    # Example BLS county area code uses the 3-digit county FIPS followed by 00.
+    r = parse_bls_geography("LAUCN0100100003", program="la")
+    assert r["geo_level"] == "county"
+    assert r["state_fips"] == "01"
+    assert r["county_fips"] == "001"
+    assert r["geo_id"] == "state:01|county:001"
+
+
+def test_parse_laus_county_with_independent_city_code():
+    r = parse_bls_geography("LAUCN5151000003", program="la")
+    assert r["geo_level"] == "county"
+    assert r["state_fips"] == "51"
+    assert r["county_fips"] == "510"
+    assert r["geo_id"] == "state:51|county:510"
 
 
 if __name__ == "__main__":
