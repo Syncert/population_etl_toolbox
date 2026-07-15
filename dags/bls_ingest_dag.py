@@ -383,7 +383,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 @dag(
     dag_id="bls_ingest",
     default_args=DEFAULT_ARGS,
-    schedule="0 7 1 * *",  # monthly on the 1st at 07:00
+    schedule="0 7 * * 0",  # weekly on Sundays at 07:00 UTC
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
@@ -442,7 +442,7 @@ def bls_ingest():
            Always re-ingested unconditionally, regardless of prior status.
            This ensures BLS revisions, late-filed data, and appropriations-lapse
            backfills (footnote X/N/9) are picked up automatically on every
-           monthly DAG run.  Two years back is used because BLS frequently
+           weekly DAG run.  Two years back is used because BLS frequently
            revises LAUS county benchmarks ~18 months after initial release.
 
         Skip logic

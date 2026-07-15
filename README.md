@@ -78,7 +78,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 |-----|----------|---------|
 | `silver_ref` | Monthly (1st @ 05:00 UTC) | Sync geographic gazetteer (14 years) and time dimension |
 | `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
-| `bls_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS series (100+ programs, national + state + county) |
+| `bls_ingest_dag` | Weekly Sundays @ 07:00 UTC | Ingest BLS series (100+ programs, national + state + county) |
 | `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
 
 ### Key Design Decisions
