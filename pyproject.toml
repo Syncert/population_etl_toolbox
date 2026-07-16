@@ -3,12 +3,12 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "population-etl-toolbox"
+name = "data-ingestion-toolbox"
 version = "0.1.0"
 description = "ETL toolbox for Census ACS, BLS, and FRED data pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "population_etl_toolbox contributors" }]
+authors = [{ name = "data_ingestion_toolbox contributors" }]
 license = { text = "Proprietary" }
 dependencies = [
   "httpx>=0.27,<1.0",
@@ -27,8 +27,9 @@ airflow = [
 ]
 api = [
   "fastapi>=0.111,<1.0",
+  "redis>=5.0,<6.0",
   "uvicorn[standard]>=0.30,<1.0",
-  "sqlalchemy>=2.0,<3.0",
+  "sqlalchemy>=2.0.48,<3.0",
 ]
 dev = [
   "pytest>=8.0,<9.0",
@@ -36,13 +37,19 @@ dev = [
   "ruff>=0.6,<1.0",
 ]
 local = [
-  "population-etl-toolbox[airflow,api,dev]",
+  "data-ingestion-toolbox[api,dev]",
+]
+airflow-dev = [
+  "data-ingestion-toolbox[airflow,dev]",
 ]
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["bls*", "census_acs*", "fred*", "silver_ref*", "utility*"]
+where = [".", "src"]
+include = ["apps*", "data_ingestion_toolbox*"]
 exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]

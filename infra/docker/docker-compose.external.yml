@@ -1,0 +1,103 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.api
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DB_HOST: ${ANALYTICS_DB_HOST}
+      DB_PORT: ${ANALYTICS_DB_PORT}
+      DB_USER: ${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}
+      DB_PASSWORD: ${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}}
+      DB_NAME: ${ANALYTICS_DB_NAME}
+      REDIS_URL: redis://redis:6379/0
+      API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+
+  martin:
+    image: maplibre/martin:latest
+    command: --config /etc/martin/martin.yml
+    environment:
+      MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER:?Set ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD:?Set ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST:?Set ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT:?Set ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME:?Set ANALYTICS_DB_NAME}
+    ports:
+      - "127.0.0.1:${MARTIN_HOST_PORT:-3000}:3000"
+    volumes:
+      - ../martin/martin.yml:/etc/martin/martin.yml:ro
+
+  web:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        API_ORIGIN: http://api:8000
+        TILES_ORIGIN: http://martin:3000
+    depends_on:
+      - api
+      - martin
+    ports:
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_HOST_PORT:-3001}:3100"
+
+  airflow-common: &airflow-common
+    build:
+      context: ../../
+      dockerfile: infra/airflow/Dockerfile
+    env_file:
+      - ../airflow/airflow.env.example
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
+    volumes:
+      - ../../:/opt/data_ingestion_toolbox
+    working_dir: /opt/data_ingestion_toolbox
+
+  airflow-init:
+    <<: *airflow-common
+    profiles:
+      - airflow-local
+    entrypoint: /bin/bash
+    command: >
+      -c "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Airflow
+      --lastname Admin
+      --role Admin
+      --email admin@example.com || true;
+      airflow connections delete public_data >/dev/null 2>&1 || true;
+      airflow connections add public_data --conn-type postgres --conn-host ${PUBLIC_DATA_DB_HOST:-${ANALYTICS_DB_HOST}} --conn-port ${PUBLIC_DATA_DB_PORT:-${ANALYTICS_DB_PORT}} --conn-login ${PUBLIC_DATA_DB_USER:-${ANALYTICS_DB_USER}} --conn-password ${PUBLIC_DATA_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}} --conn-schema ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}};
+      airflow pools set census_api 4 'Census Bureau API limit';
+      airflow pools set bls_api 4 'BLS API limit';
+      airflow pools set fred_api 4 'FRED API limit'
+      "
+
+  airflow-webserver:
+    <<: *airflow-common
+    profiles:
+      - airflow-local
+    depends_on:
+      - airflow-init
+      - redis
+    command: airflow webserver
+    ports:
+      - "127.0.0.1:${AIRFLOW_HOST_PORT:-8080}:8080"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    profiles:
+      - airflow-local
+    depends_on:
+      - airflow-init
+      - redis
+    command: airflow scheduler

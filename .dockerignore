@@ -1,0 +1,11 @@
+.git
+.github
+.conda
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+apps/web/.next
+apps/web/.next-dev
+infra/docker/stack.env
+infra/docker/stack.external.env

@@ -1,6 +1,8 @@
-# population_etl_toolbox
+# data_ingestion_toolbox
 
 A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for real-time access to Census, BLS, and FRED data in a structured dimensional warehouse.
+
+Repository architecture reference: `data_ingestion_toolbox_proposed_architecture.md`.
 
 ## Project Vision
 
@@ -76,7 +78,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 |-----|----------|---------|
 | `silver_ref` | Monthly (1st @ 05:00 UTC) | Sync geographic gazetteer (14 years) and time dimension |
 | `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
-| `bls_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS series (100+ programs, national + state + county) |
+| `bls_ingest_dag` | Weekly Sundays @ 07:00 UTC | Ingest BLS series (100+ programs, national + state + county) |
 | `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
 
 ### Key Design Decisions
@@ -113,7 +115,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 
 ### Python Environment and Install
 
-Standard local development install path:
+Standard local development install path for API, tests, and shared package work:
 
 ```bash
 python -m venv .venv
@@ -126,26 +128,112 @@ python -m pip install --upgrade pip
 pip install -e .[local]
 ```
 
-This single command installs runtime dependencies and optional groups for Airflow, API/web development, and dev tooling.
+This installs runtime dependencies plus API and dev tooling. Airflow is intentionally not included in `local` because Airflow pins a large dependency set and should run in Docker, WSL2, or a dedicated isolated environment.
 
 Smoke test imports (no PYTHONPATH/path hacks required):
 
 ```bash
-python -c "import bls, census_acs, fred, silver_ref, utility; print('imports ok')"
+python -c "import data_ingestion_toolbox, data_ingestion_toolbox.bls, data_ingestion_toolbox.census_acs, data_ingestion_toolbox.fred, data_ingestion_toolbox.silver_ref, data_ingestion_toolbox.utility; print('imports ok')"
 ```
 
 Optional targeted installs:
 
 ```bash
-# ETL orchestration only
-pip install -e .[airflow]
-
 # API/analytics web layer only
 pip install -e .[api]
 
 # Lint/test tooling only
 pip install -e .[dev]
+
+# ETL orchestration only; use only in an Airflow-specific environment
+pip install -e .[airflow]
+
+# Airflow plus test tooling; use only in an Airflow-specific environment
+pip install -e .[airflow-dev]
 ```
+
+### API MVP (Vertical Slice)
+
+Run the API locally:
+
+```bash
+pip install -e .[api]
+uvicorn apps.api.main:app --reload
+```
+
+Default environment variables (override as needed):
+- `DB_HOST` (default `localhost`)
+- `DB_PORT` (default `5432`)
+- `DB_USER` (default `postgres`)
+- `DB_PASSWORD` (default empty)
+- `DB_NAME` (default `population_etl`)
+
+Available endpoints:
+- `GET /health`
+- `GET /api/catalog/sources`
+- `GET /api/catalog/metrics`
+- `GET /api/catalog/geographies`
+- `GET /api/observations/latest`
+- `GET /api/observations/timeseries`
+- `GET /api/distribution/bins`
+- `GET /api/comparison`
+- `GET /api/models/status`
+
+Observation endpoint parameter note:
+- `GET /api/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
+- `GET /api/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
+
+### Next.js Web App (Local Iteration)
+
+Run the new web app scaffold:
+
+```bash
+cd apps/web
+copy .env.local.example .env.local
+npm install
+npm run dev
+```
+
+Open `http://localhost:3100`.
+
+The Next.js app proxies local service traffic using same-origin rewrites:
+- `/api/*` -> API origin (default `http://localhost:8000`)
+- `/tiles/*` -> tile server origin (default `http://localhost:3000`)
+
+Override targets in `apps/web/.env.local`:
+- `NEXT_PUBLIC_API_ORIGIN`
+- `NEXT_PUBLIC_TILES_ORIGIN`
+
+### API-to-Map Contract Smoke (External MVP)
+
+Run the first contract checks end-to-end:
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
+```
+
+```bash
+curl http://localhost:3001/
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/catalog/metrics?limit=5
+curl "http://localhost:3001/api/observations/latest?metric_code=population&geo_level=county&limit=5"
+curl http://localhost:3001/tiles/health
+# if /tiles/health is unavailable:
+curl http://localhost:3001/tiles/
+```
+
+Web smoke dashboard:
+- `http://localhost:3001`
+- The web container proxies same-origin routes to backend services:
+    - `/api/*` -> API service (`api:8000`)
+    - `/tiles/*` -> Martin service (`martin:3000`)
+
+Expected contract alignment:
+- API observation responses expose `geo_id`.
+- Martin layers/catalog entries should expose geography identifiers that map to the same county/state `geo_id` values.
+
+Security note:
+- Keep credentials only in local env files (for example `infra/docker/stack.external.env`) or host environment variables, never committed docs/examples.
 
 ### 1. Database Setup
 
@@ -165,22 +253,115 @@ CREATE SCHEMA IF NOT EXISTS silver_fred;
 Execute all DDL scripts in order:
 ```bash
 # Reference dimensions (required first)
-psql -U postgres -d population_etl < silver_ref/DDL/silver_ref.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql
 
 # Raw schemas (data ingestion tables)
-psql -U postgres -d population_etl < census_acs/DDL/raw_census.sql
-psql -U postgres -d population_etl < bls/DDL/raw_bls.sql
-psql -U postgres -d population_etl < fred/DDL/raw_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/raw_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/raw_fred.sql
 
 # Silver schemas (transformed fact tables)
-psql -U postgres -d population_etl < census_acs/DDL/silver_census.sql
-psql -U postgres -d population_etl < bls/DDL/silver_bls.sql
-psql -U postgres -d population_etl < fred/DDL/silver_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
+
+# Gold contract views (API-facing compatibility layer)
+psql -U postgres -d population_etl < sql/gold_contract/001_gold_contract_views.sql
 ```
 
 ### 2. Airflow Setup
 
+#### DAG Runtime Compatibility (MVP + Legacy Admin Layout)
+
+The DAGs in [dags/acs_ingest_dag.py](dags/acs_ingest_dag.py), [dags/bls_ingest_dag.py](dags/bls_ingest_dag.py), [dags/fred_ingest_dag.py](dags/fred_ingest_dag.py), and [dags/silver_ref_dag.py](dags/silver_ref_dag.py) support two runtime layouts:
+
+- MVP/package layout (preferred for this repository):
+    - Imports resolve through `data_ingestion_toolbox.*`.
+    - DDL files resolve under `src/data_ingestion_toolbox/.../DDL`.
+- Legacy admin layout (copy/paste compatibility):
+    - Imports fall back to sibling folders next to `dags` (`census_acs`, `bls`, `fred`, `silver_ref`).
+    - DDL files fall back to sibling paths like `../census_acs/DDL/...`.
+
+This preserves backward compatibility with existing Airflow administrative deployments that run from a folder tree and periodically receive copied DAG/module updates.
+
+For legacy copy/paste deployment, keep these folders together under the same Airflow project root:
+
+- `dags`
+- `census_acs`
+- `bls`
+- `fred`
+- `silver_ref`
+- `utility`
+
+Minimum smoke validation after copy:
+
+```bash
+airflow dags list
+airflow dags test silver_ref
+airflow dags test acs_ingest
+airflow dags test bls_ingest
+airflow dags test fred_ingest
+```
+
+#### Runtime Paths and Infra Files
+
+Airflow runtime paths are hard-wired via `infra/airflow/airflow.env.example`:
+
+```bash
+AIRFLOW__CORE__DAGS_FOLDER=/opt/data_ingestion_toolbox/dags
+PYTHONPATH=/opt/data_ingestion_toolbox/src:/opt/data_ingestion_toolbox
+AIRFLOW__CORE__LOAD_EXAMPLES=False
+```
+
+Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration + metadata DB.
+
+Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
+
+The full platform now supports two deployment modes: internal self-contained (`docker-compose.yml`) and external integration (`docker-compose.external.yml`) where analytics Postgres and (optionally) Airflow metadata can point at existing infrastructure via environment variables.
+
+External mode can run as service-only local MVP (`redis`, `api`, `martin`, `web`) without local Airflow and is the recommended path when you already have an Airflow deployment and populated warehouse.
+
+```bash
+docker compose -f infra/docker/docker-compose.airflow.yml up airflow-init
+docker compose -f infra/docker/docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
+```
+
+Full stack startup:
+
+```bash
+cp infra/docker/stack.env.example infra/docker/stack.env
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up airflow-init
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
+```
+
+Optional helper script for internal/external stack lifecycle:
+
+```powershell
+# Defaults: -Mode internal -Action all
+./scripts/deploy_stack.ps1
+
+# External mode examples
+./scripts/deploy_stack.ps1 -Mode external -Action init
+./scripts/deploy_stack.ps1 -Mode external -Action up
+./scripts/deploy_stack.ps1 -Mode external -Action smoke
+./scripts/deploy_stack.ps1 -Mode external -Action down
+
+# Optional: include local Airflow services in external mode
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action init
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action up
+./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action smoke
+```
+
+In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:
+
+- Airflow-only compose seeds `public_data` -> host `postgres`, schema `airflow` (metadata DB).
+- Full compose seeds `public_data` -> host `analytics_postgres`, schema `population_etl` (analytics DB).
+
+For production/real runs, set `public_data` to your target analytics warehouse.
+
 #### Create Database Connection
+Only needed if you are not using compose init seeding.
+
 ```bash
 # In Airflow UI (Admin > Connections) or via CLI:
 airflow connections add \
@@ -228,7 +409,7 @@ Each module has a `config.py` file:
 
 For a configuration-agnostic overview (contract vs selected scope), see `documentation/CONFIGURATION.md`.
 
-**census_acs/config.py:**
+**src/data_ingestion_toolbox/census_acs/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.datasets = ["acs1", "acs5"]  # which ACS datasets to ingest
@@ -240,7 +421,7 @@ CONFIG.curated_tables = [
 ]
 ```
 
-**bls/config.py:**
+**src/data_ingestion_toolbox/bls/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.programs = ["la", "cu", "ce"]  # LAUS, CPI, CES program codes
@@ -250,7 +431,7 @@ CONFIG.curated_by_program = {
 }
 ```
 
-**fred/config.py:**
+**src/data_ingestion_toolbox/fred/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.domains = ["labor_cycle", "employment", "prices", ...]  # FRED domains
@@ -264,10 +445,10 @@ Before first run, sync dimension tables:
 # Option A: Run via Airflow UI (trigger silver_ref DAG manually)
 
 # Option B: Run directly
-cd /path/to/population_etl_toolbox
+cd /path/to/data_ingestion_toolbox
 python -c "
-from silver_ref.geography import sync_geo_dim
-from silver_ref.time_dim import sync_time_dim
+from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
+from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 sync_geo_dim()  # Loads 14 years of Gazetteer data
 sync_time_dim()  # Loads daily calendar (1970 - 2100)
 "
@@ -300,9 +481,9 @@ Monitor logs to ensure:
 ```bash
 # Manual execution of transformation functions:
 python -c "
-from census_acs.silver_census.transform import transform_census_to_silver
-from bls.silver_bls.transform import transform_bls_to_silver
-from fred.silver_fred.transform import transform_fred_to_silver
+from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 # Transform Census
 transform_census_to_silver()
@@ -436,23 +617,25 @@ ORDER BY date DESC LIMIT 30;
 
 ### Project Structure
 ```
-population_etl_toolbox/
-├── census_acs/           — Census ACS ingestion & transforms
-│   ├── config.py, metadata.py, ingest.py, geography.py
-│   ├── silver_census/    — Census silver layer transforms
-│   ├── DDL/              — raw_census.sql, silver_census.sql
-│   └── tests/            — pytest suite
-├── bls/                  — BLS ingestion & transforms
-│   └── (similar structure)
-├── fred/                 — FRED ingestion & transforms
-│   └── (similar structure)
-├── silver_ref/           — Shared dimension tables
-│   ├── geography.py, time_dim.py
-│   └── DDL/silver_ref.sql
+data_ingestion_toolbox/
+├── apps/
+│   └── api/              — FastAPI service
+├── src/
+│   └── data_ingestion_toolbox/
+│       ├── bls/          — BLS ingestion and transforms
+│       ├── census_acs/   — Census ACS ingestion and transforms
+│       ├── fred/         — FRED ingestion and transforms
+│       ├── silver_ref/   — Shared dimensions
+│       ├── sql/          — Shared SQL helpers
+│       ├── utility/      — Shared utilities
+│       └── models.py, db.py, config.py
 ├── dags/                 — Airflow DAGs
-│   ├── silver_ref_dag.py
-│   ├── acs_ingest_dag.py, bls_ingest_dag.py, fred_ingest_dag.py
-└── utility/              — Shared utilities (db_connection.py, etc.)
+├── documentation/        — Architecture and operational docs
+├── scripts/              — Tooling and validation scripts
+├── infra/
+│   ├── airflow/
+│   ├── docker/
+│   └── martin/
 ```
 
 ### Adding a New Data Source

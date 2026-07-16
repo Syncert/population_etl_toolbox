@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>External MVP Smoke Dashboard</title>
+    <link href="/vendor/maplibre-gl/maplibre-gl.css" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f3efe7;
+        --panel: #fffdf8;
+        --ink: #1f2933;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --border: #d9d4ca;
+        --ok-bg: #e8fbef;
+        --ok-ink: #0f5132;
+        --fail-bg: #fde9e9;
+        --fail-ink: #7f1d1d;
+        --warn-bg: #fff4df;
+        --warn-ink: #7c4a03;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: radial-gradient(circle at top left, #f7f3ec 0%, #ece4d7 60%, #efe8dc 100%);
+        color: var(--ink);
+      }
+
+      main {
+        max-width: 1100px;
+        margin: 2.5rem auto;
+        padding: 0 1rem 2rem;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+      }
+
+      .header {
+        padding: 1.35rem;
+        margin-bottom: 1rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.5rem, 4vw, 2rem);
+      }
+
+      h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+        margin: 0.6rem 0;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      button {
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.6rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: var(--accent-strong);
+      }
+
+      button:disabled {
+        opacity: 0.7;
+        cursor: progress;
+      }
+
+      .status {
+        display: inline-block;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        padding: 0.2rem 0.6rem;
+        font-weight: 700;
+      }
+
+      .status.ok {
+        background: var(--ok-bg);
+        color: var(--ok-ink);
+      }
+
+      .status.fail {
+        background: var(--fail-bg);
+        color: var(--fail-ink);
+      }
+
+      .status.warn {
+        background: var(--warn-bg);
+        color: var(--warn-ink);
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .meta {
+        margin-top: 0.7rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        padding: 0.45rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.83rem;
+        letter-spacing: 0.02em;
+      }
+
+      .error {
+        margin-top: 0.6rem;
+        color: var(--fail-ink);
+        background: var(--fail-bg);
+        border: 1px solid #f4c7c7;
+        border-radius: 8px;
+        padding: 0.55rem 0.65rem;
+      }
+
+      .map-wrap {
+        margin-top: 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .map-canvas {
+        width: 100%;
+        min-height: 320px;
+        background: linear-gradient(180deg, #f5f3ee 0%, #ebdfcf 100%);
+      }
+
+      .map-footnote {
+        margin-top: 0.5rem;
+      }
+
+      code {
+        background: #f4f7f7;
+        border: 1px solid #d9ecea;
+        border-radius: 6px;
+        padding: 0.08rem 0.3rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card header">
+        <h1>External MVP Smoke Dashboard</h1>
+        <p>
+          Same-origin smoke checks through web proxy routes <code>/api</code> and
+          <code>/tiles</code>. This verifies service wiring and sample reads from the
+          current dataset.
+        </p>
+        <div class="actions">
+          <button id="runChecksBtn" type="button">Run Checks</button>
+          <button id="rerunChecksBtn" type="button">Rerun Checks</button>
+          <span id="runSummary" class="small">Ready.</span>
+        </div>
+        <p class="small meta">
+          Geo alignment note: API observations and Martin layers should align on
+          <code>geo_id</code> for county/state joins.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>API Health</h2>
+          <div id="apiHealthState" class="status warn">PENDING</div>
+          <p id="apiHealthDetail" class="small">Waiting for checks.</p>
+          <div id="apiHealthError"></div>
+        </article>
+
+        <article class="card">
+          <h2>Martin Health</h2>
+          <div id="martinHealthState" class="status warn">PENDING</div>
+          <p id="martinHealthDetail" class="small">Waiting for checks.</p>
+          <div id="martinHealthError"></div>
+        </article>
+
+        <article class="card">
+          <h2>Metrics Sample (limit=25)</h2>
+          <div id="metricsState" class="status warn">PENDING</div>
+          <p id="metricsDetail" class="small">No data loaded yet.</p>
+          <div id="metricsError"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>metric_code</th>
+                <th>metric_display_name</th>
+                <th>source_code</th>
+              </tr>
+            </thead>
+            <tbody id="metricsBody">
+              <tr>
+                <td colspan="3" class="small">Run checks to load sample metrics.</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>Latest Observations (limit=8, county)</h2>
+          <div id="obsState" class="status warn">PENDING</div>
+          <p id="obsDetail" class="small">No metric selected yet.</p>
+          <div id="obsError"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>metric_code</th>
+                <th>geo_id</th>
+                <th>observation_date</th>
+                <th>value</th>
+              </tr>
+            </thead>
+            <tbody id="obsBody">
+              <tr>
+                <td colspan="4" class="small">Run checks to load sample observations.</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>Demo Join Panel</h2>
+          <div id="demoState" class="status warn">PENDING</div>
+          <p id="demoDetail" class="small">Load checks to bind a metric and tile layer.</p>
+          <div id="demoError"></div>
+          <p class="small">
+            <strong>Metric selector:</strong>
+          </p>
+          <select id="metricSelect" style="width: 100%; margin-bottom: 0.6rem; padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: #fff;"></select>
+          <p id="joinKeyText" class="small">Join key: geo_id | Selected tile layer id: n/a</p>
+          <p id="tileCatalogText" class="small">Tile endpoint check pending.</p>
+          <p id="tileTemplateText" class="small">Tile URL template: unavailable.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>geo_id</th>
+                <th>observation_date</th>
+                <th>metric_code</th>
+                <th>value</th>
+              </tr>
+            </thead>
+            <tbody id="panelObsBody">
+              <tr>
+                <td colspan="4" class="small">Run checks to load a geo_id-keyed sample.</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>Map Tile Rendering</h2>
+          <div id="mapState" class="status warn">PENDING</div>
+          <p id="mapDetail" class="small">Waiting for checks.</p>
+          <div id="mapError"></div>
+          <div class="map-wrap">
+            <div id="mapCanvas" class="map-canvas"></div>
+          </div>
+          <p id="mapRenderHint" class="small map-footnote">Map render check pending.</p>
+        </article>
+      </section>
+    </main>
+
+    <script src="/vendor/maplibre-gl/maplibre-gl.js"></script>
+    <script>
+      var appState = {
+        selectedMetricCode: "",
+        selectedTileLayerId: "",
+        selectedTileTemplate: "",
+        selectedTileEndpointLabel: "",
+        selectedSourceLayerId: "",
+        map: null,
+        mapReady: false,
+        mapSourceId: "smokeTilesSource",
+        mapLayerId: "smokeTilesFill",
+      };
+
+      function setStatus(baseId, kind, text, detail, errorText) {
+        var stateEl = document.getElementById(baseId + "State");
+        var detailEl = document.getElementById(baseId + "Detail");
+        var errorEl = document.getElementById(baseId + "Error");
+
+        stateEl.className = "status " + kind;
+        stateEl.textContent = text;
+        detailEl.textContent = detail || "";
+
+        if (errorText) {
+          errorEl.innerHTML = '<div class="error">' + escapeHtml(errorText) + "</div>";
+        } else {
+          errorEl.innerHTML = "";
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function asArray(payload) {
+        if (Array.isArray(payload)) {
+          return payload;
+        }
+        if (payload && Array.isArray(payload.items)) {
+          return payload.items;
+        }
+        if (payload && Array.isArray(payload.data)) {
+          return payload.data;
+        }
+        if (payload && Array.isArray(payload.results)) {
+          return payload.results;
+        }
+        return [];
+      }
+
+      function firstNonEmpty() {
+        for (var i = 0; i < arguments.length; i += 1) {
+          var value = arguments[i];
+          if (value !== undefined && value !== null && String(value).trim() !== "") {
+            return String(value);
+          }
+        }
+        return "";
+      }
+
+      function renderTable(bodyId, rows, columns, emptyText) {
+        var tbody = document.getElementById(bodyId);
+        if (!rows.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="' +
+            columns.length +
+            '" class="small">' +
+            escapeHtml(emptyText) +
+            "</td></tr>";
+          return;
+        }
+
+        tbody.innerHTML = rows
+          .map(function (row) {
+            var cells = columns
+              .map(function (col) {
+                var value = row[col];
+                var text = value === undefined || value === null ? "" : String(value);
+                return "<td>" + escapeHtml(text) + "</td>";
+              })
+              .join("");
+            return "<tr>" + cells + "</tr>";
+          })
+          .join("");
+      }
+
+      async function fetchJson(url) {
+        var response = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!response.ok) {
+          throw new Error(url + " returned HTTP " + response.status);
+        }
+
+        var contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error(url + " did not return JSON");
+        }
+
+        return response.json();
+      }
+
+      async function fetchAny(url) {
+        var response = await fetch(url, { headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.8" } });
+        if (!response.ok) {
+          throw new Error(url + " returned HTTP " + response.status);
+        }
+
+        var contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          return {
+            response: response,
+            payload: await response.json(),
+            isJson: true,
+          };
+        }
+
+        return {
+          response: response,
+          payload: await response.text(),
+          isJson: false,
+        };
+      }
+
+      function parseTileLayers(payload) {
+        if (!payload) {
+          return [];
+        }
+
+        if (Array.isArray(payload)) {
+          return payload
+            .map(function (entry, index) {
+              var layerId =
+                firstNonEmpty(entry && entry.id, entry && entry.layer, entry && entry.name) ||
+                "layer_" + String(index + 1);
+              return { layerId: layerId, entry: entry };
+            });
+        }
+
+        if (Array.isArray(payload.layers)) {
+          return payload.layers.map(function (entry, index) {
+            var layerId =
+              firstNonEmpty(entry && entry.id, entry && entry.layer, entry && entry.name) ||
+              "layer_" + String(index + 1);
+            return { layerId: layerId, entry: entry };
+          });
+        }
+
+        var source = payload.tilesets && typeof payload.tilesets === "object" ? payload.tilesets : payload;
+        if (source && typeof source === "object") {
+          return Object.keys(source)
+            .filter(function (key) {
+              return key !== "links" && key !== "meta" && key !== "version";
+            })
+            .map(function (key) {
+              return {
+                layerId: key,
+                entry: source[key],
+              };
+            });
+        }
+
+        return [];
+      }
+
+      function resolveTileTemplate(layerId, entry) {
+        if (entry && Array.isArray(entry.tiles) && entry.tiles.length) {
+          return String(entry.tiles[0]);
+        }
+
+        if (entry && entry.tilejson && typeof entry.tilejson === "string") {
+          var path = entry.tilejson;
+          if (path.endsWith(".json")) {
+            path = path.slice(0, -5);
+          }
+          return path.replace(/\/$/, "") + "/{z}/{x}/{y}";
+        }
+
+        if (layerId) {
+          return "/tiles/" + encodeURIComponent(layerId) + "/{z}/{x}/{y}";
+        }
+
+        return "";
+      }
+
+      function normalizeTileTemplate(template) {
+        var value = String(template || "").trim();
+        if (!value) {
+          return "";
+        }
+
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+          return value;
+        }
+        if (value.startsWith("/")) {
+          return window.location.origin.replace(/\/$/, "") + value;
+        }
+        return window.location.origin.replace(/\/$/, "") + "/tiles/" + value;
+      }
+
+      function resolveSourceLayerId(layerId, entry) {
+        if (
+          entry &&
+          Array.isArray(entry.vector_layers) &&
+          entry.vector_layers.length &&
+          entry.vector_layers[0] &&
+          entry.vector_layers[0].id
+        ) {
+          return String(entry.vector_layers[0].id);
+        }
+
+        if (entry && entry.id) {
+          return String(entry.id);
+        }
+
+        return String(layerId || "");
+      }
+
+      function resolveTileCandidates(template) {
+        var normalized = normalizeTileTemplate(template);
+        if (!normalized) {
+          return [];
+        }
+
+        var candidates = [normalized];
+        if (!normalized.endsWith(".pbf")) {
+          candidates.push(normalized + ".pbf");
+        }
+        return candidates;
+      }
+
+      function initMapIfNeeded() {
+        if (appState.mapReady && appState.map) {
+          return;
+        }
+
+        if (typeof maplibregl === "undefined" || !maplibregl || !maplibregl.Map) {
+          setStatus("map", "warn", "WARN", "MapLibre library unavailable in browser context.", "");
+          return;
+        }
+
+        var mapCanvas = document.getElementById("mapCanvas");
+        if (!mapCanvas) {
+          setStatus("map", "warn", "WARN", "Map canvas element not found.", "");
+          return;
+        }
+
+        appState.map = new maplibregl.Map({
+          container: "mapCanvas",
+          style: {
+            version: 8,
+            sources: {},
+            layers: [
+              {
+                id: "background",
+                type: "background",
+                paint: {
+                  "background-color": "#f6f2ea",
+                },
+              },
+            ],
+          },
+          center: [-98.5795, 39.8283],
+          zoom: 3,
+        });
+
+        appState.map.on("load", function () {
+          appState.mapReady = true;
+          setStatus("map", "ok", "PASS", "Map initialized and ready for tile layer rendering.", "");
+          refreshMapLayer();
+        });
+
+        appState.map.on("error", function (event) {
+          var detail = event && event.error && event.error.message
+            ? event.error.message
+            : "Map rendering error";
+          setStatus("map", "warn", "WARN", "Map initialized with render warnings.", detail);
+        });
+
+        setStatus("map", "warn", "RUNNING", "Initializing MapLibre canvas...", "");
+      }
+
+      function refreshMapLayer() {
+        var hint = document.getElementById("mapRenderHint");
+        if (!appState.mapReady || !appState.map) {
+          if (hint) {
+            hint.textContent = "Map not ready yet."
+          }
+          return;
+        }
+
+        if (!appState.selectedTileTemplate || !appState.selectedSourceLayerId) {
+          if (hint) {
+            hint.textContent = "Select or load a tile layer to render map tiles.";
+          }
+          setStatus("map", "warn", "WARN", "Missing tile template or source layer id for rendering.", "");
+          return;
+        }
+
+        var tiles = resolveTileCandidates(appState.selectedTileTemplate);
+        if (!tiles.length) {
+          if (hint) {
+            hint.textContent = "No valid tile URL template available.";
+          }
+          setStatus("map", "warn", "WARN", "Unable to derive tile URL candidates.", "");
+          return;
+        }
+
+        if (appState.map.getLayer(appState.mapLayerId + "-line")) {
+          appState.map.removeLayer(appState.mapLayerId + "-line");
+        }
+        if (appState.map.getLayer(appState.mapLayerId)) {
+          appState.map.removeLayer(appState.mapLayerId);
+        }
+        if (appState.map.getSource(appState.mapSourceId)) {
+          appState.map.removeSource(appState.mapSourceId);
+        }
+
+        appState.map.addSource(appState.mapSourceId, {
+          type: "vector",
+          tiles: tiles,
+        });
+
+        appState.map.addLayer({
+          id: appState.mapLayerId,
+          type: "fill",
+          source: appState.mapSourceId,
+          "source-layer": appState.selectedSourceLayerId,
+          paint: {
+            "fill-color": "#2f855a",
+            "fill-opacity": 0.18,
+          },
+        });
+
+        appState.map.addLayer({
+          id: appState.mapLayerId + "-line",
+          type: "line",
+          source: appState.mapSourceId,
+          "source-layer": appState.selectedSourceLayerId,
+          paint: {
+            "line-color": "#1f5f46",
+            "line-width": 1.1,
+          },
+        });
+
+        if (hint) {
+          hint.textContent =
+            "Rendered source-layer " +
+            appState.selectedSourceLayerId +
+            " from " +
+            appState.selectedTileEndpointLabel +
+            ".";
+        }
+
+        setStatus(
+          "map",
+          "ok",
+          "PASS",
+          "Map tile layer rendered using source-layer=" + appState.selectedSourceLayerId + ".",
+          ""
+        );
+      }
+
+      function updatePanelLabels(tileEndpointLabel, tileTemplate) {
+        var joinKeyText = document.getElementById("joinKeyText");
+        var tileCatalogText = document.getElementById("tileCatalogText");
+        var tileTemplateText = document.getElementById("tileTemplateText");
+
+        appState.selectedTileEndpointLabel = tileEndpointLabel || appState.selectedTileEndpointLabel || "";
+        appState.selectedTileTemplate = tileTemplate || appState.selectedTileTemplate || "";
+
+        joinKeyText.textContent =
+          "Join key: geo_id | Selected tile layer id: " +
+          (appState.selectedTileLayerId || "n/a") +
+          " | Source-layer id: " +
+          (appState.selectedSourceLayerId || "n/a") +
+          " | Selected metric: " +
+          (appState.selectedMetricCode || "n/a");
+
+        tileCatalogText.textContent =
+          "Tile endpoint loader: " + (appState.selectedTileEndpointLabel || "unavailable");
+        tileTemplateText.textContent =
+          "Tile URL template: " + (appState.selectedTileTemplate || "unavailable");
+      }
+
+      async function checkApiHealth() {
+        var payload = await fetchJson("/api/health");
+        var msg = payload && payload.status ? String(payload.status) : "ok";
+        setStatus("apiHealth", "ok", "PASS", "/api/health responded: " + msg, "");
+        return true;
+      }
+
+      async function loadTileCatalog() {
+        var tileEndpointLabel = "";
+        try {
+          var catalogResult = await fetchAny("/tiles/catalog");
+          tileEndpointLabel = "/tiles/catalog";
+          var layers = catalogResult.isJson ? parseTileLayers(catalogResult.payload) : [];
+          if (!layers.length) {
+            setStatus(
+              "martinHealth",
+              "warn",
+              "PASS (catalog empty)",
+              "Tile catalog endpoint responded but exposed zero layers.",
+              ""
+            );
+            appState.selectedTileLayerId = "";
+            appState.selectedSourceLayerId = "";
+            updatePanelLabels(tileEndpointLabel, "");
+            refreshMapLayer();
+            return;
+          }
+
+          appState.selectedTileLayerId = layers[0].layerId;
+          appState.selectedSourceLayerId = resolveSourceLayerId(layers[0].layerId, layers[0].entry);
+          var template = resolveTileTemplate(layers[0].layerId, layers[0].entry);
+          updatePanelLabels(tileEndpointLabel, template);
+          refreshMapLayer();
+          return;
+        } catch (catalogErr) {
+          try {
+            var rootResult = await fetchAny("/tiles/");
+            tileEndpointLabel = "/tiles/ (fallback)";
+            var fallbackLayers = rootResult.isJson ? parseTileLayers(rootResult.payload) : [];
+            appState.selectedTileLayerId = fallbackLayers.length ? fallbackLayers[0].layerId : "";
+            appState.selectedSourceLayerId = fallbackLayers.length
+              ? resolveSourceLayerId(fallbackLayers[0].layerId, fallbackLayers[0].entry)
+              : "";
+            var fallbackTemplate = fallbackLayers.length
+              ? resolveTileTemplate(fallbackLayers[0].layerId, fallbackLayers[0].entry)
+              : "";
+            updatePanelLabels(tileEndpointLabel, fallbackTemplate);
+            refreshMapLayer();
+            return;
+          } catch (rootErr) {
+            throw new Error(catalogErr.message + " | fallback failed: " + rootErr.message);
+          }
+        }
+      }
+
+      async function checkMartinHealth() {
+        try {
+          await fetchJson("/tiles/health");
+          await loadTileCatalog();
+          setStatus("martinHealth", "ok", "PASS", "/tiles/health responded successfully.", "");
+          return true;
+        } catch (primaryErr) {
+          try {
+            var rootResponse = await fetch("/tiles/");
+            if (!rootResponse.ok) {
+              throw new Error("/tiles/ returned HTTP " + rootResponse.status);
+            }
+            await loadTileCatalog();
+            setStatus(
+              "martinHealth",
+              "warn",
+              "PASS (fallback)",
+              "Fallback to /tiles/ succeeded; /tiles/health unavailable.",
+              ""
+            );
+            return true;
+          } catch (fallbackErr) {
+            throw new Error(primaryErr.message + " | fallback failed: " + fallbackErr.message);
+          }
+        }
+      }
+
+      async function loadMetrics() {
+        var payload = await fetchJson("/api/catalog/metrics?limit=25");
+        var rows = asArray(payload);
+        var selectEl = document.getElementById("metricSelect");
+
+        renderTable(
+          "metricsBody",
+          rows,
+          ["metric_code", "metric_display_name", "source_code"],
+          "No metrics available in catalog response."
+        );
+
+        if (rows.length) {
+          selectEl.innerHTML = rows
+            .map(function (row) {
+              var code = firstNonEmpty(row.metric_code, "");
+              var displayName = firstNonEmpty(row.metric_display_name, code);
+              var sourceCode = firstNonEmpty(row.source_code, "n/a");
+              return (
+                '<option value="' +
+                escapeHtml(code) +
+                '">' +
+                escapeHtml(code + " - " + displayName + " (" + sourceCode + ")") +
+                "</option>"
+              );
+            })
+            .join("");
+        } else {
+          selectEl.innerHTML = '<option value="">No metrics available</option>';
+        }
+
+        var preferred = rows.find(function (r) {
+          return r && r.metric_code === "population";
+        });
+        var selected = preferred || rows[0] || null;
+        appState.selectedMetricCode = selected ? String(selected.metric_code || "") : "";
+        selectEl.value = appState.selectedMetricCode;
+        updatePanelLabels("", "");
+
+        if (rows.length) {
+          setStatus(
+            "metrics",
+            "ok",
+            "PASS",
+            "Loaded " + rows.length + " metrics into selector and sample table.",
+            ""
+          );
+        } else {
+          setStatus("metrics", "warn", "WARN", "Catalog returned zero rows.", "");
+        }
+
+        return appState.selectedMetricCode;
+      }
+
+      async function loadObservations(metricCode) {
+        if (!metricCode) {
+          renderTable("obsBody", [], ["metric_code", "geo_id", "observation_date", "value"], "No metric selected.");
+          renderTable(
+            "panelObsBody",
+            [],
+            ["geo_id", "observation_date", "metric_code", "value"],
+            "No metric selected."
+          );
+          setStatus("obs", "warn", "WARN", "No metric available to query observations.", "");
+          setStatus("demo", "warn", "WARN", "No metric selected for demo panel.", "");
+          return;
+        }
+
+        var url =
+          "/api/observations/latest?metric_code=" +
+          encodeURIComponent(metricCode) +
+          "&geo_level=county&limit=8";
+        var payload = await fetchJson(url);
+        var rows = asArray(payload);
+
+        appState.selectedMetricCode = metricCode;
+        updatePanelLabels(document.getElementById("tileCatalogText").textContent.replace("Tile endpoint loader: ", ""), document.getElementById("tileTemplateText").textContent.replace("Tile URL template: ", ""));
+
+        renderTable("obsBody", rows, ["metric_code", "geo_id", "observation_date", "value"], "No observations returned.");
+        renderTable(
+          "panelObsBody",
+          rows,
+          ["geo_id", "observation_date", "metric_code", "value"],
+          "No observations returned for selected metric."
+        );
+
+        if (rows.length) {
+          setStatus(
+            "obs",
+            "ok",
+            "PASS",
+            "Loaded " + rows.length + " latest observation rows for metric_code=" + metricCode + ".",
+            ""
+          );
+          setStatus(
+            "demo",
+            "ok",
+            "PASS",
+            "Sample table keyed by geo_id loaded for metric_code=" + metricCode + ".",
+            ""
+          );
+        } else {
+          setStatus(
+            "obs",
+            "warn",
+            "WARN",
+            "Query succeeded for metric_code=" + metricCode + " but returned zero rows.",
+            ""
+          );
+          setStatus(
+            "demo",
+            "warn",
+            "WARN",
+            "No rows returned for selected metric_code=" + metricCode + ".",
+            ""
+          );
+        }
+      }
+
+      async function runChecks() {
+        var button = document.getElementById("runChecksBtn");
+        var rerunButton = document.getElementById("rerunChecksBtn");
+        var summary = document.getElementById("runSummary");
+        button.disabled = true;
+        rerunButton.disabled = true;
+        summary.textContent = "Running checks...";
+
+        setStatus("apiHealth", "warn", "RUNNING", "Checking /api/health...", "");
+        setStatus("martinHealth", "warn", "RUNNING", "Checking /tiles/health and tile catalog...", "");
+        setStatus("metrics", "warn", "RUNNING", "Reading /api/catalog/metrics?limit=25...", "");
+        setStatus("obs", "warn", "RUNNING", "Waiting for metric selection...", "");
+        setStatus("demo", "warn", "RUNNING", "Preparing demo panel...", "");
+        setStatus("map", "warn", "RUNNING", "Preparing map canvas and tile rendering check...", "");
+        initMapIfNeeded();
+
+        var failures = [];
+        var metricCode = "";
+
+        try {
+          await checkApiHealth();
+        } catch (err) {
+          failures.push("api");
+          setStatus("apiHealth", "fail", "FAIL", "API health check failed.", err.message);
+        }
+
+        try {
+          await checkMartinHealth();
+        } catch (err) {
+          failures.push("martin");
+          setStatus("martinHealth", "fail", "FAIL", "Martin health check failed.", err.message);
+        }
+
+        try {
+          metricCode = await loadMetrics();
+        } catch (err) {
+          failures.push("metrics");
+          renderTable(
+            "metricsBody",
+            [],
+            ["metric_code", "metric_display_name", "source_code"],
+            "Unable to load metrics catalog sample."
+          );
+          setStatus("metrics", "fail", "FAIL", "Metrics sample read failed.", err.message);
+        }
+
+        try {
+          await loadObservations(metricCode);
+        } catch (err) {
+          failures.push("observations");
+          renderTable(
+            "obsBody",
+            [],
+            ["metric_code", "geo_id", "observation_date", "value"],
+            "Unable to load observations sample."
+          );
+          renderTable(
+            "panelObsBody",
+            [],
+            ["geo_id", "observation_date", "metric_code", "value"],
+            "Unable to load panel observations sample."
+          );
+          setStatus("obs", "fail", "FAIL", "Latest observation sample read failed.", err.message);
+          setStatus("demo", "fail", "FAIL", "Demo panel load failed.", err.message);
+        }
+
+        if (failures.length) {
+          summary.textContent = "Completed with failures: " + failures.join(", ") + ".";
+        } else {
+          summary.textContent = "All smoke checks passed.";
+        }
+
+        button.disabled = false;
+        rerunButton.disabled = false;
+      }
+
+      async function onMetricSelectionChange() {
+        var selectEl = document.getElementById("metricSelect");
+        var metricCode = selectEl.value || "";
+        appState.selectedMetricCode = metricCode;
+        updatePanelLabels(
+          document.getElementById("tileCatalogText").textContent.replace("Tile endpoint loader: ", ""),
+          document.getElementById("tileTemplateText").textContent.replace("Tile URL template: ", "")
+        );
+
+        try {
+          setStatus("obs", "warn", "RUNNING", "Refreshing observations for selected metric...", "");
+          setStatus("demo", "warn", "RUNNING", "Refreshing panel sample by geo_id...", "");
+          await loadObservations(metricCode);
+        } catch (err) {
+          setStatus("obs", "fail", "FAIL", "Metric switch observation refresh failed.", err.message);
+          setStatus("demo", "fail", "FAIL", "Metric switch panel refresh failed.", err.message);
+        }
+      }
+
+      document.getElementById("runChecksBtn").addEventListener("click", runChecks);
+      document.getElementById("rerunChecksBtn").addEventListener("click", runChecks);
+      document.getElementById("metricSelect").addEventListener("change", onMetricSelectionChange);
+      initMapIfNeeded();
+      runChecks();
+    </script>
+  </body>
+</html>

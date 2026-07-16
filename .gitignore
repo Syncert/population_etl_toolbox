@@ -9,7 +9,14 @@
 *.user
 *.userosscache
 *.sln.docstates
+.env
+.env.*
 *.env
+*.env.*
+!*.env.example
+!**/*.env.example
+infra/docker/stack.env
+infra/docker/stack.external.env
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -416,3 +423,12 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Next.js app artifacts
+apps/web/.next/
+apps/web/.next-dev/
+apps/web/.turbo/
+apps/web/out/
+apps/web/.vercel/
+apps/web/coverage/
+apps/web/.eslintcache
