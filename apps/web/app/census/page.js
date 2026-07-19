@@ -2,6 +2,6 @@
 
 import SourceExplorerPage from "../../components/SourceExplorerPage";
 
-export default function ExplorePage() {
+export default function CensusPage() {
   return <SourceExplorerPage sourceKey="census" />;
 }

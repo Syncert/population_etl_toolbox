@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from data_ingestion_toolbox.models import (
@@ -15,9 +16,11 @@ from data_ingestion_toolbox.sql.catalog_queries import (
     SOURCES_QUERY_GLOSSARY,
     build_geographies_queries,
     build_geographies_queries_glossary,
+    build_geographies_queries_glossary_legacy,
     build_geographies_queries_legacy,
     build_metrics_queries,
     build_metrics_queries_glossary,
+    build_metrics_queries_glossary_legacy,
     build_metrics_queries_legacy,
 )
 
@@ -27,7 +30,12 @@ def _relation_exists(db: Session, relation_name: str) -> bool:
         return True
 
     exists_query = text("SELECT to_regclass(:relation_name) IS NOT NULL")
-    exists = db.execute(exists_query, {"relation_name": relation_name}).scalar()
+    try:
+        exists = db.execute(exists_query, {"relation_name": relation_name}).scalar()
+    except SQLAlchemyError:
+        # Permission errors on optional schemas should not fail the request;
+        # treat inaccessible relations as absent and continue fallback probing.
+        return False
     if exists is None:
         return True
     return bool(exists)
@@ -52,6 +60,8 @@ def list_metrics(
 ) -> MetricListResponse:
     if _relation_exists(db, "gold_glossary.dim_metric"):
         metrics_builder = build_metrics_queries_glossary
+    elif _relation_exists(db, "gold_glossary.dim_metric_catalog"):
+        metrics_builder = build_metrics_queries_glossary_legacy
     elif _relation_exists(db, "gold.dim_metric"):
         metrics_builder = build_metrics_queries
     else:
@@ -81,6 +91,8 @@ def list_geographies(
 ) -> GeographyListResponse:
     if _relation_exists(db, "gold_glossary.dim_geography"):
         geographies_builder = build_geographies_queries_glossary
+    elif _relation_exists(db, "gold_glossary.dim_geo_latest"):
+        geographies_builder = build_geographies_queries_glossary_legacy
     elif _relation_exists(db, "gold.dim_geography"):
         geographies_builder = build_geographies_queries
     else:

@@ -68,15 +68,15 @@ function Invoke-Compose {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
 
     $composeContext = Resolve-ComposeContext
-    $args = @('-f', $composeContext.ComposeFile)
+    $composeCliArgs = @('-f', $composeContext.ComposeFile)
 
     if (-not $UseHostEnv) {
-        $args = @('--env-file', $composeContext.EnvFile) + $args
+        $composeCliArgs = @('--env-file', $composeContext.EnvFile) + $composeCliArgs
     }
 
-    $args += $ComposeArgs
-    Write-Log ("docker compose " + ($args -join ' '))
-    & docker compose @args
+    $composeCliArgs += $ComposeArgs
+    Write-Log ("docker compose " + ($composeCliArgs -join ' '))
+    & docker compose @composeCliArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose failed with exit code $LASTEXITCODE"
     }
@@ -85,7 +85,8 @@ function Invoke-Compose {
 function Invoke-Init {
     if ($Mode -eq 'external' -and -not $WithLocalAirflow) {
         Write-Log 'External service-only init: starting redis/api/martin/web'
-        Invoke-Compose up -d (Get-ExternalServiceSet)
+        $services = Get-ExternalServiceSet
+        Invoke-Compose up '-d' @services
         return
     }
 
@@ -96,12 +97,13 @@ function Invoke-Init {
 function Invoke-Up {
     if ($Mode -eq 'external' -and -not $WithLocalAirflow) {
         Write-Log 'Starting external service-only stack in detached mode'
-        Invoke-Compose up -d (Get-ExternalServiceSet)
+        $services = Get-ExternalServiceSet
+        Invoke-Compose up '-d' @services
         return
     }
 
     Write-Log 'Starting stack in detached mode'
-    Invoke-Compose up -d
+    Invoke-Compose up '-d'
 }
 
 function Invoke-Smoke {

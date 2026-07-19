@@ -1079,6 +1079,26 @@ main.dashboard {
   margin: 0 0 12px;
 }
 
+.source-page-tabs {
+  width: max-content;
+  margin: 0 0 12px;
+}
+
+.source-tab {
+  min-width: max-content;
+  border-radius: 4px;
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.source-tab.selected {
+  background: var(--ink);
+  color: white;
+}
+
 .workspace-panel[data-active="false"] {
   display: none;
 }
