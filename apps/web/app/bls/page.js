@@ -1,7 +1,7 @@
 "use client";
 
-import SourceExplorerPage from "../../components/SourceExplorerPage";
+import SourceDashboard from "../../components/SourceDashboard";
 
 export default function BlsPage() {
-  return <SourceExplorerPage sourceKey="bls" />;
+  return <SourceDashboard sourceKey="bls" />;
 }
