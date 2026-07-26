@@ -9,7 +9,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
 
 import httpx
 import polars as pl
@@ -91,19 +91,23 @@ def expand_laus_series_ids(
     LAUS series ID format: LA{seasonal}{area_code}{measure_code}
     
     - seasonal: 'S' (seasonally adjusted) or 'U' (not seasonally adjusted)
-    - area_code: varies by geography (US=0000000000, state=ST##000000, county=CN##NNNNN)
+    - area_code: official 15-character LAUS area code
     - measure_code: 03, 04, 05, 06, 07, 08, 09
     
     This function queries the metadata from raw_bls.bls_series to get valid area codes.
     """
-    from .geography import get_laus_area_codes
+    from .geography import build_laus_series_id, get_laus_area_codes
     
     area_codes = get_laus_area_codes(geo_level=geo_level, state_fips=state_fips)
     
     series_ids = []
     for area_code in area_codes:
         for measure_code in measure_codes:
-            series_id = f"LA{seasonal}{area_code}{measure_code}"
+            series_id = build_laus_series_id(
+                area_code=area_code,
+                measure_code=measure_code,
+                seasonal=seasonal,
+            )
             series_ids.append(series_id)
     
     return series_ids
@@ -201,7 +205,7 @@ def fetch_bls_api(
 
             # Empty results are OK (not an error)
             if "no data available" in str(message).lower():
-                raise BlsNoContent(f"No data available for series")
+                raise BlsNoContent("No data available for series")
 
             # Daily API quota exhausted — Airflow will retry in 24h; tenacity skips
             if status == "REQUEST_NOT_PROCESSED" or "daily threshold" in str(message).lower():
@@ -307,54 +311,18 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
         return df
     
     if program == "la":
-        # LAUS series ID parsing: LA{S|U}{10-digit area_code}{2-digit measure}
-        # Area code structure:
-        #   - 0000000000 = US
-        #   - ST##000000 = State (ST=state FIPS)
-        #   - CN##NNNNN = County (##=state FIPS, NNNNN=county FIPS)
-        #   - MT####### = Metro
-        #   - CI####### = City
+        from .geography import parse_laus_series_id
         
-        def parse_laus_series_id(series_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-            """
-            Returns: (geo_level, geo_id, state_fips, county_fips)
-            """
-            if not series_id or len(series_id) < 15:
-                return None, None, None, None
-            
-            # Extract area code (positions 3-12, 10 digits)
-            area_code = series_id[3:13]
-            
-            if area_code == "0000000000":
-                return "us", "us:1", None, None
-            
-            prefix = area_code[:2]
-            
-            if prefix == "ST":
-                state_fips = area_code[2:4]
-                return "state", f"state:{state_fips}", state_fips, None
-            
-            if prefix == "CN":
-                state_fips = area_code[2:4]
-                county_fips = area_code[4:9]
-                return "county", f"state:{state_fips}|county:{county_fips}", state_fips, county_fips
-            
-            if prefix in ("MT", "CI"):
-                # Metro/City - we won't parse FIPS for these in this version
-                return prefix.lower(), None, None, None
-            
-            return None, None, None, None
-        
-        # Apply parsing
+        # Apply the same canonical parser used by generation and silver.
         parsed = df.select("series_id").to_series().map_elements(
             parse_laus_series_id, return_dtype=pl.Object
         )
         
         geo_info = pl.DataFrame({
-            "geo_level": [x[0] if x else None for x in parsed],
-            "geo_id": [x[1] if x else None for x in parsed],
-            "state_fips": [x[2] if x else None for x in parsed],
-            "county_fips": [x[3] if x else None for x in parsed],
+            "geo_level": [x["geo_level"] for x in parsed],
+            "geo_id": [x["geo_id"] for x in parsed],
+            "state_fips": [x["state_fips"] for x in parsed],
+            "county_fips": [x["county_fips"] for x in parsed],
         })
         
         df = pl.concat([df, geo_info], how="horizontal")

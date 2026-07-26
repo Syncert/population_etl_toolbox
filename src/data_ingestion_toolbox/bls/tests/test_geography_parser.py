@@ -14,17 +14,14 @@ def test_parse_laus_us():
 
 
 def test_parse_laus_state():
-    # ST + state_fips + padding zeros (length can vary)
-    r = parse_bls_geography("LAUST01000000000000003", program="la")
+    r = parse_bls_geography("LAUST010000000000003", program="la")
     assert r["geo_level"] == "state"
     assert r["geo_id"] == "state:01"
     assert r["state_fips"] == "01"
 
 
 def test_parse_laus_county():
-    # CN + state_fips + 5-digit county FIPS (includes state+county), then padding
-    # Example BLS county area code uses the 3-digit county FIPS followed by 00.
-    r = parse_bls_geography("LAUCN0100100003", program="la")
+    r = parse_bls_geography("LAUCN010010000000003", program="la")
     assert r["geo_level"] == "county"
     assert r["state_fips"] == "01"
     assert r["county_fips"] == "001"
@@ -32,11 +29,36 @@ def test_parse_laus_county():
 
 
 def test_parse_laus_county_with_independent_city_code():
-    r = parse_bls_geography("LAUCN5151000003", program="la")
+    r = parse_bls_geography("LAUCN515100000000003", program="la")
     assert r["geo_level"] == "county"
     assert r["state_fips"] == "51"
     assert r["county_fips"] == "510"
     assert r["geo_id"] == "state:51|county:510"
+
+
+def test_parse_laus_metro():
+    r = parse_bls_geography("LAUMT171698000000003", program="la")
+    assert r == {
+        "geo_level": "metro",
+        "geo_id": "metro:16980",
+        "state_fips": "17",
+        "county_fips": None,
+    }
+
+
+def test_parse_laus_city():
+    r = parse_bls_geography("LAUCT480500000000003", program="la")
+    assert r == {
+        "geo_level": "city",
+        "geo_id": "state:48|city:05000",
+        "state_fips": "48",
+        "county_fips": None,
+    }
+
+
+def test_rejects_legacy_short_laus_id():
+    r = parse_bls_geography("LAUCN0100100003", program="la")
+    assert all(value is None for value in r.values())
 
 
 if __name__ == "__main__":
