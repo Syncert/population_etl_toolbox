@@ -62,6 +62,25 @@ BEGIN
     END IF;
 END $$;
 
+-- Enforce the official LAUS grammar for new rows while allowing this DDL to
+-- deploy before any legacy rows have been remediated. Validate after running
+-- sql/remediation/laus_15_character_area_codes.sql.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'bls_long_laus_series_id_chk'
+    ) THEN
+        ALTER TABLE raw_bls.bls_long
+        ADD CONSTRAINT bls_long_laus_series_id_chk
+        CHECK (
+            program <> 'la'
+            OR series_id ~ '^LA[SU][A-Z0-9]{15}[0-9]{2}$'
+        ) NOT VALID;
+    END IF;
+END $$;
+
 -- -----------------------------
 -- 2) Dataset/program availability table
 -- -----------------------------
@@ -103,6 +122,31 @@ CREATE TABLE IF NOT EXISTS raw_bls.bls_series (
 
 CREATE INDEX IF NOT EXISTS bls_series_program_idx
     ON raw_bls.bls_series (program);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'bls_series_laus_format_chk'
+    ) THEN
+        ALTER TABLE raw_bls.bls_series
+        ADD CONSTRAINT bls_series_laus_format_chk
+        CHECK (
+            program <> 'la'
+            OR (
+                seasonal IS NOT NULL
+                AND seasonal IN ('S', 'U')
+                AND measure IS NOT NULL
+                AND measure ~ '^[0-9]{2}$'
+                AND area_code IS NOT NULL
+                AND series_id ~ '^LA[SU][A-Z0-9]{15}[0-9]{2}$'
+                AND area_code ~ '^[A-Z0-9]{15}$'
+                AND series_id = 'LA' || seasonal || area_code || measure
+            )
+        ) NOT VALID;
+    END IF;
+END $$;
 
 -- -----------------------------
 -- 4) Slice ledger (like acs_ingestion_slices)

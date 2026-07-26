@@ -140,6 +140,26 @@ def build_metrics_queries_glossary(
     )
 
 
+def build_metrics_queries_glossary_legacy(
+    source_code: Optional[str],
+    active_only: Optional[bool],
+    dashboard_suitability: Optional[str],
+    q: Optional[str],
+    limit: int,
+    offset: int,
+) -> tuple[TextClause, TextClause, dict]:
+    """Build metrics queries targeting gold_glossary.dim_metric_catalog."""
+    return _build_metrics_queries_from_table(
+        "gold_glossary.dim_metric_catalog",
+        source_code=source_code,
+        active_only=active_only,
+        dashboard_suitability=dashboard_suitability,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+
 def build_metrics_queries_legacy(
     source_code: Optional[str],
     active_only: Optional[bool],
@@ -253,6 +273,24 @@ def build_geographies_queries_glossary(
     """Build geography queries targeting gold_glossary.dim_geography."""
     return _build_geographies_queries_from_table(
         "gold_glossary.dim_geography",
+        geo_level=geo_level,
+        state_fips=state_fips,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def build_geographies_queries_glossary_legacy(
+    geo_level: Optional[str],
+    state_fips: Optional[str],
+    q: Optional[str],
+    limit: int,
+    offset: int,
+) -> tuple[TextClause, TextClause, dict]:
+    """Build geography queries targeting gold_glossary.dim_geo_latest."""
+    return _build_geographies_queries_from_table(
+        "gold_glossary.dim_geo_latest",
         geo_level=geo_level,
         state_fips=state_fips,
         q=q,

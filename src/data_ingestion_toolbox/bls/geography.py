@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import List, Optional
 
 import psycopg2
@@ -13,6 +14,26 @@ from .config import CONFIG
 logger = logging.getLogger(__name__)
 
 _TARGET_DATABASE = "public_data"
+
+LAUS_AREA_CODE_LENGTH = 15
+LAUS_SERIES_ID_LENGTH = 20
+LAUS_NATIONAL_AREA_CODE = "0" * LAUS_AREA_CODE_LENGTH
+_LAUS_AREA_CODE_RE = re.compile(r"^[A-Z0-9]{15}$")
+_LAUS_MEASURE_CODE_RE = re.compile(r"^[0-9]{2}$")
+_LAUS_SERIES_ID_RE = re.compile(r"^LA[SU][A-Z0-9]{15}[0-9]{2}$")
+
+
+def _empty_laus_parse() -> dict:
+    return {
+        "program": None,
+        "seasonal": None,
+        "area_code": None,
+        "measure_code": None,
+        "geo_level": None,
+        "geo_id": None,
+        "state_fips": None,
+        "county_fips": None,
+    }
 
 
 def _get_pg_connection():
@@ -34,10 +55,10 @@ def get_laus_area_codes(
     
     LAUS area code format (15 characters):
     - US:      000000000000000  (15 zeros)
-    - State:   ST##000000000000  (ST + 2-digit state FIPS + 12 zeros)
-    - County:  CN##NNNNN0000000  (CN + 2-digit state FIPS + 5-digit county + 7 zeros)
+    - State:   ST##00000000000   (ST + 2-digit state FIPS + 11 zeros)
+    - County:  CN#####00000000   (CN + 5-digit state/county FIPS + 8 zeros)
     - Metro:   MT#############   (MT + 13 digits)
-    - City:    CI#############   (CI + 13 digits)
+    - City:    CT#############   (CT + 13 digits)
     
     This function queries raw_bls.bls_series metadata to get valid area codes
     that have been synced from BLS download.bls.gov metadata files.
@@ -50,18 +71,19 @@ def get_laus_area_codes(
         List of 15-character LAUS area codes
     """
     if geo_level == "us":
-        # US national level always uses area code with 15 zeros
-        # This code may not exist in metadata but is valid for API queries
-        return ["000000000000000"]
+        # LAUS metadata does not publish a national series, but retaining the
+        # all-zero code makes the official-width grammar explicit and supports
+        # parsing legacy national rows. CPS/LN remains the national data source.
+        return [LAUS_NATIONAL_AREA_CODE]
     
     elif geo_level == "state":
         # Query all state-level area codes from metadata
-        # State area codes: ST##000000 where ## is state FIPS
+        # State area codes: ST##00000000000 where ## is state FIPS
         return _get_area_codes_from_db(prefix="ST")
     
     elif geo_level == "county":
         # Query county-level area codes for a specific state
-        # County area codes: CN##NNNNN where ## is state FIPS
+        # County area codes: CN#####00000000 where ##### is state+county FIPS
         if not state_fips:
             raise ValueError("state_fips required for county-level LAUS area codes")
         
@@ -72,12 +94,12 @@ def get_laus_area_codes(
         return _get_area_codes_from_db(prefix=f"CN{state_fips_padded}")
     
     elif geo_level == "metro":
-        # Metro area codes: MT#######
+        # Metro area codes: MT + 13 digits
         return _get_area_codes_from_db(prefix="MT")
     
     elif geo_level == "city":
-        # City area codes: CI#######
-        return _get_area_codes_from_db(prefix="CI")
+        # Official LAUS city area codes use CT, not CI.
+        return _get_area_codes_from_db(prefix="CT")
     
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -88,7 +110,7 @@ def _get_area_codes_from_db(prefix: str) -> List[str]:
     Query raw_bls.bls_series for area codes matching a prefix pattern.
     
     Args:
-        prefix: Area code prefix (e.g., 'ST', 'CN06', 'MT', 'CI')
+        prefix: Area code prefix (e.g., 'ST', 'CN06', 'MT', 'CT')
     
     Returns:
         List of distinct area codes
@@ -104,6 +126,8 @@ def _get_area_codes_from_db(prefix: str) -> List[str]:
                 WHERE program = 'la'
                   AND area_code LIKE %s
                   AND area_code IS NOT NULL
+                  AND LENGTH(area_code) = 15
+                  AND area_code ~ '^[A-Z0-9]{15}$'
                 ORDER BY area_code;
             """
             
@@ -123,52 +147,53 @@ def parse_laus_series_id(series_id: str) -> dict:
     """
     Parse a LAUS series ID into its components.
     
-    LAUS series ID format: LA{S|U}{area_code}{measure_code}
+    Official LAUS series ID format: LA{S|U}{area_code}{measure_code}
     - Positions 0-1:  'LA' (program identifier)
     - Position 2:     'S' (seasonally adjusted) or 'U' (not seasonally adjusted)
-    - Positions 3-12: 10-digit area code
-    - Positions 13-14: 2-digit measure code (03, 04, 05, 06, 07, 08, 09)
+    - Positions 3-17: 15-character area code
+    - Positions 18-19: 2-digit measure code (03, 04, 05, 06, 07, 08, 09)
     
     Returns:
-        Dict with keys: program, seasonal, area_code, measure_code, geo_level, state_fips, county_fips
+        Parsed components and normalized geography fields. Invalid or legacy
+        non-20-character IDs return the same keys with null values.
     """
-    if not series_id or len(series_id) < 15:
-        return {
-            "program": None,
-            "seasonal": None,
-            "area_code": None,
-            "measure_code": None,
-            "geo_level": None,
-            "state_fips": None,
-            "county_fips": None,
-        }
+    if not isinstance(series_id, str) or not _LAUS_SERIES_ID_RE.fullmatch(series_id):
+        return _empty_laus_parse()
     
     program = series_id[0:2]  # 'LA'
-    seasonal = series_id[2]    # 'S' or 'U'
-    area_code = series_id[3:13]  # 10 digits
-    measure_code = series_id[13:15]  # 2 digits
+    seasonal = series_id[2]  # 'S' or 'U'
+    area_code = series_id[3:18]  # 15 characters
+    measure_code = series_id[18:20]  # 2 digits
     
     # Parse geography from area code
     geo_level = None
+    geo_id = None
     state_fips = None
     county_fips = None
     
-    if area_code == "0000000000":
+    if area_code == LAUS_NATIONAL_AREA_CODE:
         geo_level = "us"
+        geo_id = "us:1"
     else:
         prefix = area_code[:2]
         
-        if prefix == "ST":
+        if prefix == "ST" and re.fullmatch(r"ST\d{2}0{11}", area_code):
             geo_level = "state"
             state_fips = area_code[2:4]
-        elif prefix == "CN":
+            geo_id = f"state:{state_fips}"
+        elif prefix == "CN" and re.fullmatch(r"CN\d{5}0{8}", area_code):
             geo_level = "county"
             state_fips = area_code[2:4]
-            county_fips = area_code[4:9]
-        elif prefix == "MT":
+            county_fips = area_code[4:7]
+            geo_id = f"state:{state_fips}|county:{county_fips}"
+        elif prefix == "MT" and re.fullmatch(r"MT\d{7}0{6}", area_code):
             geo_level = "metro"
-        elif prefix == "CI":
+            state_fips = area_code[2:4]
+            geo_id = f"metro:{area_code[4:9]}"
+        elif prefix == "CT" and re.fullmatch(r"CT\d{7}0{6}", area_code):
             geo_level = "city"
+            state_fips = area_code[2:4]
+            geo_id = f"state:{state_fips}|city:{area_code[4:9]}"
     
     return {
         "program": program,
@@ -176,6 +201,7 @@ def parse_laus_series_id(series_id: str) -> dict:
         "area_code": area_code,
         "measure_code": measure_code,
         "geo_level": geo_level,
+        "geo_id": geo_id,
         "state_fips": state_fips,
         "county_fips": county_fips,
     }
@@ -190,17 +216,20 @@ def build_laus_series_id(
     Build a LAUS series ID from components.
     
     Args:
-        area_code: 10-digit LAUS area code
+        area_code: Official 15-character LAUS area code
         measure_code: 2-digit measure code (03, 04, 05, 06, 07, 08, 09)
         seasonal: 'S' (seasonally adjusted) or 'U' (not seasonally adjusted)
     
     Returns:
-        Full 15-character LAUS series ID
+        Full 20-character LAUS series ID
     """
-    if len(area_code) != 10:
-        raise ValueError(f"area_code must be 10 digits, got: {area_code}")
-    if len(measure_code) != 2:
-        raise ValueError(f"measure_code must be 2 digits, got: {measure_code}")
+    if not isinstance(area_code, str) or not _LAUS_AREA_CODE_RE.fullmatch(area_code):
+        raise ValueError(
+            "area_code must be exactly 15 uppercase alphanumeric characters, "
+            f"got: {area_code!r}"
+        )
+    if not isinstance(measure_code, str) or not _LAUS_MEASURE_CODE_RE.fullmatch(measure_code):
+        raise ValueError(f"measure_code must be exactly 2 digits, got: {measure_code!r}")
     if seasonal not in ("S", "U"):
         raise ValueError(f"seasonal must be 'S' or 'U', got: {seasonal}")
     

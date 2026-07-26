@@ -89,17 +89,25 @@ class _SourceSchemaSession:
             return _FakeResult(rows=["dataset_code", "vintage_year", "margin_of_error", "margin_of_error_pct"])
 
         schema = self._schema.lower()
+        source_tables = {
+            "gold_bls": ("gold_bls.mv_bls_latest", "gold_bls.rpt_bls_observations"),
+            "gold_census": ("gold_census.mv_acs_latest", "gold_census.rpt_acs_observations"),
+            "gold_fred": ("gold_fred.mv_fred_latest", "gold_fred.rpt_fred_observations"),
+        }
+        latest_table, timeseries_table = source_tables[schema]
+        latest_relations = (f"{schema}.v_metric_latest_by_geo", latest_table)
+        timeseries_relations = (f"{schema}.v_metric_timeseries_by_geo", timeseries_table)
 
-        if f"from {schema}.v_metric_latest_by_geo" in sql and "count(*)" in sql:
+        if any(f"from {relation}" in sql for relation in latest_relations) and "count(*)" in sql:
             return _FakeResult(scalar_value=len(self._rows))
 
-        if f"from {schema}.v_metric_latest_by_geo" in sql:
+        if any(f"from {relation}" in sql for relation in latest_relations):
             return _FakeResult(rows=self._rows)
 
-        if f"from {schema}.v_metric_timeseries_by_geo" in sql and "count(*)" in sql:
+        if any(f"from {relation}" in sql for relation in timeseries_relations) and "count(*)" in sql:
             return _FakeResult(scalar_value=len(self._rows))
 
-        if f"from {schema}.v_metric_timeseries_by_geo" in sql:
+        if any(f"from {relation}" in sql for relation in timeseries_relations):
             return _FakeResult(rows=self._rows)
 
         return _FakeResult(rows=[])

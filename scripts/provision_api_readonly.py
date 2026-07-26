@@ -84,7 +84,7 @@ def provision(values: dict[str, str], role_name: str, role_password: str) -> Non
                     sql.Identifier(database), sql.Identifier(role_name)
                 )
             )
-            for schema in ("gold",):
+            for schema in ("gold", "gold_glossary", "gold_bls", "gold_census", "gold_fred"):
                 cursor.execute("SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema,))
                 if not cursor.fetchone():
                     continue
@@ -135,7 +135,10 @@ def main() -> int:
                 "ANALYTICS_API_DB_PASSWORD": role_password,
             },
         )
-    print(f"Provisioned read-only role '{role_name}' for schema gold.")
+    print(
+        f"Provisioned read-only role '{role_name}' for serving schemas "
+        "gold, gold_glossary, gold_bls, gold_census, and gold_fred when present."
+    )
     if args.write_env:
         print(f"Updated {env_path} with serving credentials (password not displayed).")
     else:

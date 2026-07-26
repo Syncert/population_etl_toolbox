@@ -17,6 +17,7 @@
 !**/*.env.example
 infra/docker/stack.env
 infra/docker/stack.external.env
+!**/.env*.example
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

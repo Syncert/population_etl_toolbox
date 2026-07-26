@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.metric_aliases import resolve_metric_code
 from apps.api.services.observations_service import (
     list_latest_observations_for_source,
     list_timeseries_observations_for_source,
@@ -18,11 +19,11 @@ _SOURCE = "bls"
 
 
 def _resolve_metric_code(metric_code: Optional[str], metric_id: Optional[str]) -> str:
-    if metric_code:
-        return metric_code
-    if metric_id:
-        return metric_id
-    raise HTTPException(status_code=422, detail="metric_code or metric_id is required")
+    return resolve_metric_code(
+        metric_code=metric_code,
+        metric_id=metric_id,
+        detail="metric_code or metric_id is required",
+    )
 
 
 @router.get("/observations/latest", response_model=ObservationListResponse)

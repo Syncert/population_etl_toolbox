@@ -36,6 +36,9 @@ Constraints and indexes:
 - Primary key: id
 - Unique index: bls_long_uniq on (program, series_id, year, period)
 - Check constraint: bls_long_period_chk with regex ^[A-Z][0-9]{2}$
+- LAUS format check: new `program = 'la'` rows must use a 20-character
+  series id containing the official 15-character area code. The constraint is
+  initially `NOT VALID` so deployments can precede legacy-row remediation.
 
 ### raw_bls.bls_datasets
 
@@ -72,6 +75,29 @@ Constraints and indexes:
 
 - Primary key: (program, series_id)
 - Index: bls_series_program_idx(program)
+- LAUS metadata format check: `series_id` must equal
+  `LA || seasonal || area_code || measure`, with a 15-character area code.
+
+## LAUS Series and Geography Contract
+
+The official LAUS series layout is:
+
+`LA` + `S|U` + 15-character `area_code` + 2-digit `measure_code`
+
+The resulting series id is exactly 20 characters. Representative values:
+
+| Geography | Area code | Unadjusted unemployment-rate series |
+|---|---|---|
+| National grammar sentinel | `000000000000000` | `LAU00000000000000003` |
+| Alabama | `ST0100000000000` | `LAUST010000000000003` |
+| Cook County, IL | `CN1703100000000` | `LAUCN170310000000003` |
+| Chicago metro | `MT1716980000000` | `LAUMT171698000000003` |
+| Austin city, TX | `CT4805000000000` | `LAUCT480500000000003` |
+
+City codes use the `CT` prefix. County codes contain the 5-digit combined
+state/county FIPS; `county_fips` is the final three digits of that value.
+National labor statistics should normally come from the configured CPS/LN
+series; the all-zero LAUS area code is retained as a grammar/parsing sentinel.
 
 ### raw_bls.bls_ingestion_slices
 
@@ -147,3 +173,21 @@ Common issues:
 1. Threshold reached: check retry/defer behavior and schedule window.
 2. Sparse series output: verify selected selectors for the target program.
 3. Invalid area codes: validate geography parser and source series format assumptions.
+
+## Existing LAUS Row Remediation
+
+Use `sql/remediation/laus_15_character_area_codes.sql` after deploying the
+parser fix. The script:
+
+1. Reports LAUS series-id lengths, missing metadata joins, and malformed IDs.
+2. Recomputes `geo_level`, `geo_id`, `state_fips`, and the 3-character
+   `county_fips` in place for canonical 20-character IDs.
+3. Verifies that canonical county rows no longer contain bad geography.
+
+Malformed series IDs must not be padded or rewritten in place: the identifier
+does not prove which authoritative BLS series supplied the value. Quarantine
+or export those rows, remove them from RAW, mark the affected ingestion slices
+`planned`, and reingest them with the corrected generator. Then rebuild LAUS
+silver rows and refresh the BLS gold serving layer so previously propagated
+geography is replaced. Validate the two `NOT VALID` format constraints only
+after malformed RAW and metadata rows are gone.
