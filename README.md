@@ -70,14 +70,24 @@ silver_fred.fact_economic_indicators — FRED macro series
 ├─ (time_sk, series_id, value) — no geography dimension
 ```
 
+#### Source-Specific Gold Layers
+
+The deprecated shared `gold` schema is not used. Each ingestion DAG owns and
+refreshes its matching serving schema:
+
+- Census ACS: `gold_census`
+- BLS: `gold_bls`
+- FRED: `gold_fred`
+- Shared dimensions and metric mappings: `gold_glossary`
+
 ### Airflow DAGs
 
 | DAG | Schedule | Purpose |
 |-----|----------|---------|
 | `silver_ref` | Monthly (1st @ 05:00 UTC) | Sync geographic gazetteer (14 years) and time dimension |
-| `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
-| `bls_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS series (100+ programs, national + state + county) |
-| `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
+| `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest ACS, transform silver, refresh `gold_census` |
+| `bls_ingest_dag` | Daily @ 02:30 UTC | Ingest BLS, transform silver, refresh `gold_bls` |
+| `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED, transform silver, refresh `gold_fred` |
 
 ### Key Design Decisions
 
@@ -123,26 +133,43 @@ CREATE SCHEMA IF NOT EXISTS silver_ref;
 CREATE SCHEMA IF NOT EXISTS silver_census;
 CREATE SCHEMA IF NOT EXISTS silver_bls;
 CREATE SCHEMA IF NOT EXISTS silver_fred;
+CREATE SCHEMA IF NOT EXISTS gold_glossary;
+CREATE SCHEMA IF NOT EXISTS gold_census;
+CREATE SCHEMA IF NOT EXISTS gold_bls;
+CREATE SCHEMA IF NOT EXISTS gold_fred;
 ```
 
 #### Run DDL
 Execute all DDL scripts in order:
 ```bash
 # Reference dimensions (required first)
-psql -U postgres -d population_etl < silver_ref/DDL/silver_ref.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql
 
 # Raw schemas (data ingestion tables)
-psql -U postgres -d population_etl < census_acs/DDL/raw_census.sql
-psql -U postgres -d population_etl < bls/DDL/raw_bls.sql
-psql -U postgres -d population_etl < fred/DDL/raw_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/raw_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/raw_fred.sql
 
 # Silver schemas (transformed fact tables)
-psql -U postgres -d population_etl < census_acs/DDL/silver_census.sql
-psql -U postgres -d population_etl < bls/DDL/silver_bls.sql
-psql -U postgres -d population_etl < fred/DDL/silver_fred.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
+
+# Source-specific gold serving schemas
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql
 ```
 
 ### 2. Airflow Setup
+
+#### Deploy the Python package
+
+Copy `src/data_ingestion_toolbox` into a directory on Airflow's Python path
+(for example, directly under the DAG folder), then deploy the files in `dags/`.
+The DAGs import source code through the `data_ingestion_toolbox` package and
+resolve bundled DDL relative to that package, so the repository layout is not
+required at runtime.
 
 #### Create Database Connection
 ```bash
@@ -190,7 +217,7 @@ export BLS_API_KEY="your_bls_api_key_here"
 
 Each module has a `config.py` file:
 
-**census_acs/config.py:**
+**src/data_ingestion_toolbox/census_acs/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.datasets = ["acs1", "acs5"]  # which ACS datasets to ingest
@@ -202,7 +229,7 @@ CONFIG.curated_variables = [
 ]
 ```
 
-**bls/config.py:**
+**src/data_ingestion_toolbox/bls/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.programs = ["la", "cu", "ce"]  # LAUS, CPI, CES program codes
@@ -212,7 +239,7 @@ CONFIG.curated_by_program = {
 }
 ```
 
-**fred/config.py:**
+**src/data_ingestion_toolbox/fred/config.py:**
 ```python
 CONFIG.postgres_conn_id = "public_data"
 CONFIG.domains = ["labor_cycle", "employment", "prices", ...]  # FRED domains
@@ -227,9 +254,9 @@ Before first run, sync dimension tables:
 
 # Option B: Run directly
 cd /path/to/population_etl_toolbox
-python -c "
-from silver_ref.geography import sync_geo_dim
-from silver_ref.time_dim import sync_time_dim
+PYTHONPATH=src python -c "
+from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
+from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 sync_geo_dim()  # Loads 14 years of Gazetteer data
 sync_time_dim()  # Loads daily calendar (1970 - 2100)
 "
@@ -262,9 +289,9 @@ Monitor logs to ensure:
 ```bash
 # Manual execution of transformation functions:
 python -c "
-from census_acs.silver_census.transform import transform_census_to_silver
-from bls.silver_bls.transform import transform_bls_to_silver
-from fred.silver_fred.transform import transform_fred_to_silver
+from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
+from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 # Transform Census
 transform_census_to_silver()
@@ -399,31 +426,23 @@ ORDER BY date DESC LIMIT 30;
 ### Project Structure
 ```
 population_etl_toolbox/
-├── census_acs/           — Census ACS ingestion & transforms
-│   ├── config.py, metadata.py, ingest.py, geography.py
-│   ├── silver_census/    — Census silver layer transforms
-│   ├── DDL/              — raw_census.sql, silver_census.sql
-│   └── tests/            — pytest suite
-├── bls/                  — BLS ingestion & transforms
-│   └── (similar structure)
-├── fred/                 — FRED ingestion & transforms
-│   └── (similar structure)
-├── silver_ref/           — Shared dimension tables
-│   ├── geography.py, time_dim.py
-│   └── DDL/silver_ref.sql
-├── dags/                 — Airflow DAGs
-│   ├── silver_ref_dag.py
-│   ├── acs_raw_ingest_dag.py, bls_raw_ingest_dag.py, fred_raw_ingest_dag.py
-└── utility/              — Shared utilities (db_connection.py, etc.)
+├── src/data_ingestion_toolbox/
+│   ├── census_acs/         — ACS ingestion, silver, and gold_census
+│   ├── bls/                — BLS ingestion, silver, and gold_bls
+│   ├── fred/               — FRED ingestion, silver, and gold_fred
+│   ├── silver_ref/         — Shared dimension tables
+│   ├── utility/            — Shared database utilities
+│   └── sql/remediation/    — Reviewed one-off remediation SQL
+└── dags/                   — Airflow DAG definitions
 ```
 
 ### Adding a New Data Source
 
-1. Create `new_source/` directory with `config.py`, `metadata.py`, `ingest.py`
-2. Create `new_source/DDL/raw_new_source.sql` and `silver_new_source/DDL/silver_new_source.sql`
+1. Create `src/data_ingestion_toolbox/new_source/` with `config.py`, `metadata.py`, and `ingest.py`
+2. Add raw and silver DDL under the new source package
 3. Implement ingestion functions following BLS/FRED/Census patterns
 4. Create `dags/new_source_raw_ingest_dag.py` following existing DAG structure
-5. Define transformation logic in `new_source/silver_new_source/transform.py` using `TransformMetrics` class
+5. Define transformation logic in `src/data_ingestion_toolbox/new_source/silver_new_source/transform.py`
 
 ---
 

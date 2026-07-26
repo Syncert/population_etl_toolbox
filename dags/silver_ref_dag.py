@@ -12,9 +12,10 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from silver_ref.config import CONFIG
-from silver_ref.geography import sync_geo_dim
-from silver_ref.time_dim import sync_time_dim
+from data_ingestion_toolbox import silver_ref as silver_ref_package
+from data_ingestion_toolbox.silver_ref.config import CONFIG
+from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
+from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 
 
 DEFAULT_ARGS = {
@@ -30,7 +31,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "silver_ref" / "DDL" / "silver_ref.sql"
+    return Path(silver_ref_package.__file__).resolve().parent / "DDL" / "silver_ref.sql"
 
 
 @dag(

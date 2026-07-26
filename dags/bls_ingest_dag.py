@@ -22,9 +22,9 @@
 # - Create a pool named "bls_api" in Airflow UI and set its size conservatively (start with 4).
 #
 # ASSUMPTIONS:
-# - bls.config.CONFIG has postgres_conn_id, programs, curated_by_program
-# - bls.metadata provides sync_bls_series_metadata(), sync_bls_datasets_table()
-# - bls.ingest provides ingest_slice()
+# - data_ingestion_toolbox.bls.config.CONFIG has postgres_conn_id, programs, curated_by_program
+# - data_ingestion_toolbox.bls.metadata provides sync_bls_series_metadata(), sync_bls_datasets_table()
+# - data_ingestion_toolbox.bls.ingest provides ingest_slice()
 # - BLS_API_KEY environment variable is set
 
 from __future__ import annotations
@@ -33,19 +33,27 @@ import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from data_ingestion_toolbox import bls as bls_package
+from data_ingestion_toolbox.bls.config import CONFIG
+from data_ingestion_toolbox.bls.metadata import (
+    sync_bls_series_metadata,
+    sync_bls_datasets_table,
+)
+from data_ingestion_toolbox.bls.ingest import (
+    BlsDailyThresholdExceeded,
+    BlsRetryableHTTP,
+    get_curated_series_for_program,
+    ingest_slice,
+)
+from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
 
 logger = logging.getLogger(__name__)
-
-from bls.config import CONFIG
-from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
-from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -67,7 +75,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "bls" / "DDL" / "silver_bls.sql"
+    return Path(bls_package.__file__).resolve().parent / "DDL" / "silver_bls.sql"
 
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
@@ -718,151 +726,75 @@ def bls_ingest():
     raw_ingest >> silver_schema >> silver_transforms
 
     # -----------------------------
-    # Gold update terminal tasks
+    # gold_bls serving layer
     # -----------------------------
-    @task(trigger_rule='all_success')
-    def gold_ensure_schema() -> None:
-        """Ensure gold schema exists."""
-        from gold.transform import ensure_gold_schema
-        ensure_gold_schema()
+    @task(trigger_rule="all_success")
+    def ensure_gold_bls_schema() -> None:
+        """Apply the source-specific gold_bls DDL."""
+        from data_ingestion_toolbox.bls.gold_bls.transform import (
+            ensure_bls_gold_schema,
+        )
 
-    @task(trigger_rule='all_success')
-    def gold_refresh_elements() -> None:
-        """Refresh gold element dictionary from silver sources."""
-        from bls.gold_bls.transform import refresh_bls_elements
-        refresh_bls_elements()
+        ensure_bls_gold_schema()
 
-    @task(trigger_rule='all_success')
-    def gold_compute_shards() -> list[str]:
-        """Compute gold shards driven by what actually exists in silver.
+    @task(trigger_rule="all_success")
+    def refresh_gold_bls_elements() -> int:
+        """Refresh BLS dimensions and metric mappings in gold_bls."""
+        from data_ingestion_toolbox.bls.gold_bls.transform import (
+            refresh_bls_elements,
+        )
 
-        BLS is monthly so every distinct calendar month in silver_bls.fact_labor_statistics
-        is a valid shard.  Querying silver directly handles both the initial load
-        (all historical months) and incremental updates (new months appear
-        automatically on the next DAG run).
+        return refresh_bls_elements()
 
-        Cross-checked against silver_ref.dim_time to guard against dates
-        outside the time dimension.
-        """
+    @task(trigger_rule="all_success")
+    def get_gold_bls_refresh_window() -> dict[str, str] | None:
+        """Return the complete BLS date range currently available in silver."""
         hook = _get_postgres_hook()
-
-        sql_silver_months = """
-            SELECT DISTINCT date_trunc('month', period_date)::date AS month_start
-            FROM silver_bls.fact_labor_statistics
-            ORDER BY month_start;
-        """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver_months)
-            silver_months = [row[0].isoformat() for row in cur.fetchall()]
-
-        if not silver_months:
-            logger.warning("[BLS GOLD] No months found in silver_bls.fact_labor_statistics — no shards generated.")
-            return []
-
-        logger.info("[BLS GOLD] Silver contains %d distinct month(s), range %s to %s",
-                    len(silver_months), silver_months[0], silver_months[-1])
-
-        sql_dim_check = """
-            SELECT date_trunc('month', date_key)::date AS month_start
-            FROM silver_ref.dim_time
-            WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
-              AND is_month_start = TRUE
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_dim_check, (silver_months,))
-            confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
-
-        missing = set(silver_months) - set(confirmed_shards)
-        if missing:
-            logger.warning("[BLS GOLD] %d month(s) not in dim_time, skipping: %s",
-                           len(missing), sorted(missing))
-
-        logger.info("[BLS GOLD] Emitting %d shard(s)", len(confirmed_shards))
-        return confirmed_shards
-
-    @task(trigger_rule='all_success', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
-    def gold_merge_shard(month_start: str) -> dict:
-        """Merge one gold month shard."""
-        from bls.gold_bls.transform import merge_bls_shard
-        return merge_bls_shard({"month_start": month_start})
-
-    @task(trigger_rule='all_success')
-    def gold_validate_coverage(shard_results: list[dict]) -> dict:
-        """Validate gold row counts match silver for every calendar month.
-
-        Compares:
-        - silver_bls.fact_labor_statistics row counts per calendar month
-        - gold.fact_bls_observation row counts per calendar month
-
-        Raises ValueError if any month present in silver has zero rows in gold,
-        indicating an incomplete or failed transposition.
-
-        Returns a summary dict for XCom inspection.
-        """
-        hook = _get_postgres_hook()
-
-        sql_silver = """
-            SELECT date_trunc('month', period_date)::date AS month_start,
-                   COUNT(*) AS silver_rows
-            FROM silver_bls.fact_labor_statistics
-            WHERE value IS NOT NULL
-            GROUP BY date_trunc('month', period_date)::date
-            ORDER BY month_start;
-        """
-        sql_gold = """
-            SELECT date_trunc('month', period_date)::date AS month_start,
-                   COUNT(*) AS gold_rows
-            FROM gold.fact_bls_observation
-            GROUP BY date_trunc('month', period_date)::date
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver)
-            silver_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
-            cur.execute(sql_gold)
-            gold_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
-
-        summary = {}
-        incomplete_months = []
-        for month, silver_rows in silver_counts.items():
-            gold_rows = gold_counts.get(month, 0)
-            summary[month] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
-            if gold_rows == 0:
-                incomplete_months.append(month)
-                logger.error("[BLS GOLD] Coverage gap: %s has %d silver rows but 0 gold rows.",
-                             month, silver_rows)
-            else:
-                logger.info("[BLS GOLD] Coverage OK: %s — silver=%d gold=%d",
-                            month, silver_rows, gold_rows)
-
-        if incomplete_months:
-            raise ValueError(
-                f"[BLS GOLD] Gold transposition incomplete for {len(incomplete_months)} month(s): "
-                f"{incomplete_months}. Silver data exists but gold has 0 rows."
+            cur.execute(
+                """
+                SELECT MIN(period_date)::date, MAX(period_date)::date
+                FROM silver_bls.fact_labor_statistics
+                WHERE value IS NOT NULL
+                """
             )
+            row = cur.fetchone()
 
-        logger.info("[BLS GOLD] Coverage validation passed for all %d month(s).", len(silver_counts))
-        return summary
+        if not row or row[0] is None:
+            logger.warning("[gold_bls] No silver data available; skipping serving refresh.")
+            return None
 
-    @task(trigger_rule='all_success')
-    def gold_quality_check(shard_results: list[dict]) -> None:
-        """Run row-level quality checks on merged gold shards."""
-        from datetime import date
-        from gold.quality import run_quality_checks
-        for result in (shard_results or []):
-            if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]), "BLS")
+        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-    gold_schema = gold_ensure_schema()
-    gold_elements = gold_refresh_elements()
-    gold_shards = gold_compute_shards()
-    gold_merged = gold_merge_shard.expand(month_start=gold_shards)
-    gold_coverage = gold_validate_coverage(gold_merged)
-    gold_qa = gold_quality_check(gold_merged)
+    @task(trigger_rule="all_success")
+    def refresh_gold_bls_serving_layer(
+        refresh_window: dict[str, str] | None,
+    ) -> None:
+        """Refresh persisted BLS serving tables in gold_bls."""
+        if refresh_window is None:
+            return
 
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(
+                "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s)",
+                (refresh_window["start_date"], refresh_window["end_date"]),
+            )
+            conn.commit()
 
+    gold_bls_schema = ensure_gold_bls_schema()
+    gold_bls_elements = refresh_gold_bls_elements()
+    gold_bls_window = get_gold_bls_refresh_window()
+    gold_bls_refresh = refresh_gold_bls_serving_layer(gold_bls_window)
+
+    (
+        silver_transforms
+        >> gold_bls_schema
+        >> gold_bls_elements
+        >> gold_bls_window
+        >> gold_bls_refresh
+    )
 
 # Instantiate DAG
 bls_ingest_dag = bls_ingest()

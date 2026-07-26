@@ -20,9 +20,9 @@
 # - Create a pool named "fred_api" in Airflow UI and set its size conservatively (start with 4).
 #
 # ASSUMPTIONS:
-# - fred.config.CONFIG has postgres_conn_id, curated_series_ids, curated_by_domain
-# - fred.metadata provides sync_fred_series_metadata(), sync_fred_datasets_table()
-# - fred.ingest provides ingest_slice()
+# - data_ingestion_toolbox.fred.config.CONFIG has postgres_conn_id, curated_series_ids, curated_by_domain
+# - data_ingestion_toolbox.fred.metadata provides sync_fred_series_metadata(), sync_fred_datasets_table()
+# - data_ingestion_toolbox.fred.ingest provides ingest_slice()
 # - FRED_API_KEY environment variable is set
 
 from __future__ import annotations
@@ -31,17 +31,19 @@ import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from data_ingestion_toolbox import fred as fred_package
+from data_ingestion_toolbox.fred.config import CONFIG
+from data_ingestion_toolbox.fred.metadata import (
+    sync_fred_series_metadata,
+    sync_fred_datasets_table,
+)
+from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
+from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 logger = logging.getLogger(__name__)
-
-from fred.config import CONFIG
-from fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
-from fred.ingest import ingest_slice, get_curated_series_for_domain
-from fred.silver_fred.transform import transform_fred_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -63,7 +65,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "fred" / "DDL" / "silver_fred.sql"
+    return Path(fred_package.__file__).resolve().parent / "DDL" / "silver_fred.sql"
 
 
 def _series_fingerprint(domain: str) -> tuple[str, int]:
@@ -493,151 +495,75 @@ def fred_ingest():
     raw_ingest >> silver_schema >> silver_transforms
 
     # -----------------------------
-    # Gold update terminal tasks
+    # gold_fred serving layer
     # -----------------------------
-    @task(trigger_rule='none_failed')
-    def gold_ensure_schema() -> None:
-        """Ensure gold schema exists."""
-        from gold.transform import ensure_gold_schema
-        ensure_gold_schema()
+    @task(trigger_rule="none_failed")
+    def ensure_gold_fred_schema() -> None:
+        """Apply the source-specific gold_fred DDL."""
+        from data_ingestion_toolbox.fred.gold_fred.transform import (
+            ensure_fred_gold_schema,
+        )
 
-    @task(trigger_rule='none_failed')
-    def gold_refresh_elements() -> None:
-        """Refresh gold element dictionary from silver sources."""
-        from fred.gold_fred.transform import refresh_fred_elements
-        refresh_fred_elements()
+        ensure_fred_gold_schema()
 
-    @task(trigger_rule='none_failed')
-    def gold_compute_shards() -> list[str]:
-        """Compute gold shards driven by what actually exists in silver.
+    @task(trigger_rule="none_failed")
+    def refresh_gold_fred_elements() -> int:
+        """Refresh FRED dimensions and metric mappings in gold_fred."""
+        from data_ingestion_toolbox.fred.gold_fred.transform import (
+            refresh_fred_elements,
+        )
 
-        FRED is monthly so every distinct calendar month in
-        silver_fred.fact_economic_indicators is a valid shard.  Querying
-        silver directly handles both the initial load (all historical months)
-        and incremental updates (new months appear automatically).
+        return refresh_fred_elements()
 
-        Only non-missing observations are considered (is_missing = FALSE).
-        Cross-checked against silver_ref.dim_time.
-        """
+    @task(trigger_rule="none_failed")
+    def get_gold_fred_refresh_window() -> dict[str, str] | None:
+        """Return the complete FRED date range currently available in silver."""
         hook = _get_postgres_hook()
-
-        sql_silver_months = """
-            SELECT DISTINCT date_trunc('month', observation_date)::date AS month_start
-            FROM silver_fred.fact_economic_indicators
-            WHERE is_missing = FALSE
-            ORDER BY month_start;
-        """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver_months)
-            silver_months = [row[0].isoformat() for row in cur.fetchall()]
-
-        if not silver_months:
-            logger.warning("[FRED GOLD] No months found in silver_fred.fact_economic_indicators — no shards generated.")
-            return []
-
-        logger.info("[FRED GOLD] Silver contains %d distinct month(s), range %s to %s",
-                    len(silver_months), silver_months[0], silver_months[-1])
-
-        sql_dim_check = """
-            SELECT date_trunc('month', date_key)::date AS month_start
-            FROM silver_ref.dim_time
-            WHERE date_trunc('month', date_key)::date = ANY(%s::date[])
-              AND is_month_start = TRUE
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_dim_check, (silver_months,))
-            confirmed_shards = [row[0].isoformat() for row in cur.fetchall()]
-
-        missing = set(silver_months) - set(confirmed_shards)
-        if missing:
-            logger.warning("[FRED GOLD] %d month(s) not in dim_time, skipping: %s",
-                           len(missing), sorted(missing))
-
-        logger.info("[FRED GOLD] Emitting %d shard(s)", len(confirmed_shards))
-        return confirmed_shards
-
-    @task(trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.gold_merge_max_active_tis)
-    def gold_merge_shard(month_start: str) -> dict:
-        """Merge one gold month shard."""
-        from fred.gold_fred.transform import merge_fred_shard
-        return merge_fred_shard({"month_start": month_start})
-
-    @task(trigger_rule='none_failed')
-    def gold_validate_coverage(shard_results: list[dict]) -> dict:
-        """Validate gold row counts match silver for every calendar month.
-
-        Compares:
-        - silver_fred.fact_economic_indicators row counts per calendar month
-          (non-missing observations only)
-                - gold.fact_fred_observation row counts per calendar month
-
-        Raises ValueError if any month present in silver has zero rows in gold.
-        Returns a summary dict for XCom inspection.
-        """
-        hook = _get_postgres_hook()
-
-        sql_silver = """
-            SELECT date_trunc('month', observation_date)::date AS month_start,
-                   COUNT(*) AS silver_rows
-            FROM silver_fred.fact_economic_indicators
-            WHERE is_missing = FALSE
-            GROUP BY date_trunc('month', observation_date)::date
-            ORDER BY month_start;
-        """
-        sql_gold = """
-            SELECT date_trunc('month', observation_date)::date AS month_start,
-                   COUNT(*) AS gold_rows
-            FROM gold.fact_fred_observation
-            GROUP BY date_trunc('month', observation_date)::date
-            ORDER BY month_start;
-        """
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_silver)
-            silver_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
-            cur.execute(sql_gold)
-            gold_counts = {row[0].isoformat(): row[1] for row in cur.fetchall()}
-
-        summary = {}
-        incomplete_months = []
-        for month, silver_rows in silver_counts.items():
-            gold_rows = gold_counts.get(month, 0)
-            summary[month] = {"silver_rows": silver_rows, "gold_rows": gold_rows}
-            if gold_rows == 0:
-                incomplete_months.append(month)
-                logger.error("[FRED GOLD] Coverage gap: %s has %d silver rows but 0 gold rows.",
-                             month, silver_rows)
-            else:
-                logger.info("[FRED GOLD] Coverage OK: %s — silver=%d gold=%d",
-                            month, silver_rows, gold_rows)
-
-        if incomplete_months:
-            raise ValueError(
-                f"[FRED GOLD] Gold transposition incomplete for {len(incomplete_months)} month(s): "
-                f"{incomplete_months}. Silver data exists but gold has 0 rows."
+            cur.execute(
+                """
+                SELECT MIN(observation_date)::date, MAX(observation_date)::date
+                FROM silver_fred.fact_economic_indicators
+                WHERE is_missing = FALSE
+                """
             )
+            row = cur.fetchone()
 
-        logger.info("[FRED GOLD] Coverage validation passed for all %d month(s).", len(silver_counts))
-        return summary
+        if not row or row[0] is None:
+            logger.warning("[gold_fred] No silver data available; skipping serving refresh.")
+            return None
 
-    @task(trigger_rule='none_failed')
-    def gold_quality_check(shard_results: list[dict]) -> None:
-        """Run row-level quality checks on merged gold shards."""
-        from datetime import date
-        from gold.quality import run_quality_checks
-        for result in (shard_results or []):
-            if result and result.get("output_rows", 0) > 0:
-                run_quality_checks(date.fromisoformat(result["month_start"]), "FRED")
+        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-    gold_schema = gold_ensure_schema()
-    gold_elements = gold_refresh_elements()
-    gold_shards = gold_compute_shards()
-    gold_merged = gold_merge_shard.expand(month_start=gold_shards)
-    gold_coverage = gold_validate_coverage(gold_merged)
-    gold_qa = gold_quality_check(gold_merged)
+    @task(trigger_rule="none_failed")
+    def refresh_gold_fred_serving_layer(
+        refresh_window: dict[str, str] | None,
+    ) -> None:
+        """Refresh persisted FRED serving tables in gold_fred."""
+        if refresh_window is None:
+            return
 
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> gold_merged >> [gold_coverage, gold_qa]
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s)",
+                (refresh_window["start_date"], refresh_window["end_date"]),
+            )
+            conn.commit()
 
+    gold_fred_schema = ensure_gold_fred_schema()
+    gold_fred_elements = refresh_gold_fred_elements()
+    gold_fred_window = get_gold_fred_refresh_window()
+    gold_fred_refresh = refresh_gold_fred_serving_layer(gold_fred_window)
+
+    (
+        silver_transforms
+        >> gold_fred_schema
+        >> gold_fred_elements
+        >> gold_fred_window
+        >> gold_fred_refresh
+    )
 
 # Instantiate DAG
 fred_ingest_dag = fred_ingest()
