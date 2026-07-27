@@ -18,7 +18,7 @@ class BlsConfig(BaseModel):
       (hash-based slice ledger in raw_bls)
 
     Philosophy:
-    - LAUS is programmatic (generate IDs from area + measure)
+    - LAUS requests are selected from published metadata by geography + measure
     - National series are explicit and minimal
     - Do NOT force QCEW into a fake "series_id" abstraction
     """
@@ -47,12 +47,9 @@ class BlsConfig(BaseModel):
     # IMPORTANT DESIGN NOTES:
     #
     # 1) LAUS entries below are NOT full series IDs.
-    #    They are *measure codes* that must be dynamically expanded
-    #    in ingest.py using:
-    #
-    #        LA{seasonal}{area_code}{measure_code}
-    #
-    #    This avoids hardcoding thousands of county/state series.
+    #    They are *measure-code filters*. ingest.py selects complete matching
+    #    series IDs from raw_bls.bls_series so unavailable combinations are
+    #    never requested.
     #
     # 2) CES, CPI, and JOLTS entries ARE full series IDs.
     #    These programs do not use area-code expansion in the same way.

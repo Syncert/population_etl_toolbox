@@ -9,7 +9,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
 
 import httpx
 import polars as pl
@@ -97,19 +97,17 @@ def expand_laus_series_ids(
     - area_code: a published 15-character LAUS subnational area code
     - measure_code: 03, 04, 05, 06, 07, 08, 09
     
-    This function queries the metadata from raw_bls.bls_series to get valid area codes.
+    This function returns only complete series IDs published in
+    raw_bls.bls_series. It does not construct an area/measure cross product.
     """
-    from .geography import get_laus_area_codes
-    
-    area_codes = get_laus_area_codes(geo_level=geo_level, state_fips=state_fips)
-    
-    series_ids = []
-    for area_code in area_codes:
-        for measure_code in measure_codes:
-            series_id = f"LA{seasonal}{area_code}{measure_code}"
-            series_ids.append(series_id)
-    
-    return series_ids
+    from .geography import get_laus_series_ids
+
+    return get_laus_series_ids(
+        measure_codes=measure_codes,
+        geo_level=geo_level,
+        state_fips=state_fips,
+        seasonal=seasonal,
+    )
 
 
 def chunked(items: List[str], chunk_size: int) -> List[List[str]]:
@@ -310,47 +308,20 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
         return df
     
     if program == "la":
-        # LAUS series ID parsing: LA{S|U}{10-digit area_code}{2-digit measure}
-        # Area code structure:
-        #   - 0000000000 = US
-        #   - ST##000000 = State (ST=state FIPS)
-        #   - CN##NNNNN = County (##=state FIPS, NNNNN=county FIPS)
-        #   - MT####### = Metro
-        #   - CI####### = City
-        
-        def parse_laus_series_id(series_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-            """
-            Returns: (geo_level, geo_id, state_fips, county_fips)
-            """
-            if not series_id or len(series_id) < 15:
-                return None, None, None, None
-            
-            # Extract area code (positions 3-12, 10 digits)
-            area_code = series_id[3:13]
-            
-            if area_code == "0000000000":
-                return "us", "us:1", None, None
-            
-            prefix = area_code[:2]
-            
-            if prefix == "ST":
-                state_fips = area_code[2:4]
-                return "state", f"state:{state_fips}", state_fips, None
-            
-            if prefix == "CN":
-                state_fips = area_code[2:4]
-                county_fips = area_code[4:9]
-                return "county", f"state:{state_fips}|county:{county_fips}", state_fips, county_fips
-            
-            if prefix in ("MT", "CI"):
-                # Metro/City - we won't parse FIPS for these in this version
-                return prefix.lower(), None, None, None
-            
-            return None, None, None, None
+        from .geography import parse_laus_series_id
+
+        def parse_geography(series_id: str) -> tuple:
+            parsed = parse_laus_series_id(series_id)
+            return (
+                parsed["geo_level"],
+                parsed["geo_id"],
+                parsed["state_fips"],
+                parsed["county_fips"],
+            )
         
         # Apply parsing
         parsed = df.select("series_id").to_series().map_elements(
-            parse_laus_series_id, return_dtype=pl.Object
+            parse_geography, return_dtype=pl.Object
         )
         
         geo_info = pl.DataFrame({

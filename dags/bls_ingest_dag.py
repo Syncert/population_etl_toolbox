@@ -80,9 +80,10 @@ def _silver_ddl_path() -> Path:
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
     """
-    Compute a stable fingerprint of the curated series/measure codes for a program.
+    Compute a stable fingerprint of the series eligible for ingestion.
     
-    For LAUS: fingerprints measure codes (which expand to many series).
+    For LAUS: fingerprints complete published state/county series IDs matching
+    the curated measure filters.
     For others: fingerprints full series IDs.
     
     Returns: (hash_digest, series_count)
@@ -90,6 +91,28 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
     series_list = get_curated_series_for_program(program)
     if not series_list:
         return "", 0
+
+    if program == "la":
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT series_id
+                FROM raw_bls.bls_series
+                WHERE program = 'la'
+                  AND seasonal = 'U'
+                  AND measure = ANY(%s)
+                  AND (
+                      series_id ~ '^LA[SU]ST[0-9]{2}0{11}[0-9]{2}$'
+                      OR series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$'
+                  )
+                ORDER BY series_id
+                """,
+                (series_list,),
+            )
+            series_list = [row[0] for row in cur.fetchall()]
+        if not series_list:
+            return "", 0
     
     series_sorted = sorted(series_list)
     payload = "|".join(series_sorted).encode("utf-8")

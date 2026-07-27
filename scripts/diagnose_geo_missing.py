@@ -40,8 +40,8 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             SELECT 
                 CASE 
                     WHEN series_id LIKE 'LNS%' THEN 'US'
-                    WHEN series_id LIKE 'LASST%' THEN 'State'  
-                    WHEN series_id LIKE 'LAUCN%' THEN 'County'
+                    WHEN series_id ~ '^LA[SU]ST[0-9]{2}0{11}[0-9]{2}$' THEN 'State'
+                    WHEN series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$' THEN 'County'
                     ELSE 'Unknown'
                 END as geo_type,
                 COUNT(*) as record_count
@@ -67,28 +67,55 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
         for geo_level, count in cur.fetchall():
             logger.info(f"  {geo_level}: {count:,}")
     
-    # 4. Find counties in BLS data but not in dim_geo
+    # 4. Audit stored raw LAUS geography against the canonical 20-character ID.
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM raw_bls.bls_long
+            WHERE program = 'la'
+              AND series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$'
+              AND (
+                  geo_level IS DISTINCT FROM 'county'
+                  OR state_fips IS DISTINCT FROM SUBSTRING(series_id, 6, 2)
+                  OR county_fips IS DISTINCT FROM SUBSTRING(series_id, 8, 3)
+                  OR geo_id IS DISTINCT FROM (
+                      'state:' || SUBSTRING(series_id, 6, 2)
+                      || '|county:' || SUBSTRING(series_id, 8, 3)
+                  )
+              );
+        """)
+        malformed_raw_count = cur.fetchone()[0]
+
+    if malformed_raw_count:
+        logger.warning(
+            "Found %s raw LAUS county rows with stale derived geography fields. "
+            "The stored series IDs and observations are valid; rerun raw enrichment "
+            "or update the derived fields, then rerun the LA silver transform.",
+            f"{malformed_raw_count:,}",
+        )
+    else:
+        logger.info("Raw LAUS county geography fields match canonical series parsing.")
+
+    # 5. Find canonical BLS geographies that are not in dim_geo.
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
             WITH bls_geo AS (
                 SELECT DISTINCT
                     CASE 
                         WHEN series_id LIKE 'LNS%' THEN 'us'
-                        WHEN series_id LIKE 'LASST%' AND SUBSTRING(series_id, 6, 2) = '00' THEN 'us'
-                        WHEN series_id LIKE 'LASST%' THEN 'state'
-                        WHEN series_id LIKE 'LAUCN%' THEN 'county'
+                        WHEN series_id ~ '^LA[SU]ST[0-9]{2}0{11}[0-9]{2}$' THEN 'state'
+                        WHEN series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$' THEN 'county'
                         ELSE NULL
                     END AS geo_level,
                     CASE 
                         WHEN series_id LIKE 'LNS%' THEN 'us:1'
-                        WHEN series_id LIKE 'LASST%' AND SUBSTRING(series_id, 6, 2) = '00' THEN 'us:1'
-                        WHEN series_id LIKE 'LASST%' THEN 'state:' || SUBSTRING(series_id, 6, 2)
-                        WHEN series_id LIKE 'LAUCN%' THEN 
+                        WHEN series_id ~ '^LA[SU]ST[0-9]{2}0{11}[0-9]{2}$'
+                            THEN 'state:' || SUBSTRING(series_id, 6, 2)
+                        WHEN series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$' THEN
                             'state:' || SUBSTRING(series_id, 6, 2) || '|county:' || SUBSTRING(series_id, 8, 3)
                         ELSE NULL
                     END AS geo_id
                 FROM raw_bls.bls_long
-                WHERE geo_level IS NOT NULL AND geo_id IS NOT NULL
             )
             SELECT 
                 bls.geo_level,
@@ -98,6 +125,7 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             FROM bls_geo bls
             LEFT JOIN silver_ref.dim_geo dg 
                 ON bls.geo_level = dg.geo_level AND bls.geo_id = dg.geo_id
+            WHERE bls.geo_level IS NOT NULL AND bls.geo_id IS NOT NULL
             GROUP BY bls.geo_level, bls.geo_id, dg.geo_sk
             ORDER BY status DESC, bls.geo_level, bls.geo_id;
         """)
