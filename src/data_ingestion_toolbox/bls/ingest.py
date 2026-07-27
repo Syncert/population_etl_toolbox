@@ -94,7 +94,7 @@ def expand_laus_series_ids(
     LAUS series ID format: LA{seasonal}{area_code}{measure_code}
     
     - seasonal: 'S' (seasonally adjusted) or 'U' (not seasonally adjusted)
-    - area_code: varies by geography (US=0000000000, state=ST##000000, county=CN##NNNNN)
+    - area_code: a published 15-character LAUS subnational area code
     - measure_code: 03, 04, 05, 06, 07, 08, 09
     
     This function queries the metadata from raw_bls.bls_series to get valid area codes.
@@ -457,7 +457,7 @@ def ingest_slice(
     Ingest one slice of BLS data.
     
     For LAUS (program='la'):
-        - Requires geo_level ('us', 'state', 'county')
+        - Requires a subnational geo_level ('state', 'county')
         - For 'county', requires state_fips
         - Expands measure codes to full series IDs
     

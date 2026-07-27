@@ -1,37 +1,26 @@
-import logging
-from data_ingestion_toolbox.bls.ingest import (
-    expand_laus_series_ids,
-    get_curated_series_for_program,
-    ingest_slice,
-)
+"""Regression tests for national household labor-statistics routing."""
 
-logging.basicConfig(level=logging.INFO)
+import pytest
 
-# Test what series IDs are generated
-measure_codes = get_curated_series_for_program("la")
-print(f"Measure codes for LAUS: {measure_codes}")
+from data_ingestion_toolbox.bls.config import CONFIG
+from data_ingestion_toolbox.bls.geography import get_laus_area_codes
 
-series_ids = expand_laus_series_ids(
-    measure_codes=measure_codes,
-    geo_level="us",
-    state_fips=None,
-    seasonal="U"
-)
-print(f"\nGenerated {len(series_ids)} series IDs for US level:")
-for sid in series_ids[:5]:
-    print(f"  {sid} (length: {len(sid)})")
 
-# Try to ingest
-print("\n=== Attempting ingestion ===")
-try:
-    rows = ingest_slice(
-        program="la",
-        start_year=2023,
-        end_year=2023,
-        geo_level="us"
-    )
-    print(f"Ingested {rows} rows")
-except Exception as e:
-    print(f"Error: {e}")
-    import traceback
-    traceback.print_exc()
+def test_laus_national_area_is_rejected() -> None:
+    """LAUS has no national area; callers must use CPS/LN."""
+    with pytest.raises(ValueError, match=r"use CPS/LN"):
+        get_laus_area_codes("us")
+
+
+def test_authoritative_national_cps_series_remain_curated() -> None:
+    """Core national household measures must continue to come from CPS."""
+    cps_series = set(CONFIG.curated_by_program["ln"])
+
+    assert {
+        "LNS14000000",  # unemployment rate
+        "LNS13000000",  # unemployment level
+        "LNS12000000",  # employment level
+        "LNS11000000",  # civilian labor force
+        "LNS11300000",  # labor force participation rate
+        "LNS12300000",  # employment-population ratio
+    } <= cps_series

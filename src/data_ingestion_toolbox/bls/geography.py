@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-import psycopg2
-
 from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
 from .config import CONFIG
 
@@ -17,6 +15,8 @@ _TARGET_DATABASE = "public_data"
 
 def _get_pg_connection():
     """Get database connection."""
+    import psycopg2
+
     details = PostgresConnectionFactory.auto(
         conn_id=getattr(CONFIG, "postgres_conn_id", None),
         prefix="POSTGRES_",
@@ -33,7 +33,6 @@ def get_laus_area_codes(
     Get LAUS area codes for a given geographic level.
     
     LAUS area code format (15 characters):
-    - US:      000000000000000  (15 zeros)
     - State:   ST##000000000000  (ST + 2-digit state FIPS + 12 zeros)
     - County:  CN##NNNNN0000000  (CN + 2-digit state FIPS + 5-digit county + 7 zeros)
     - Metro:   MT#############   (MT + 13 digits)
@@ -43,16 +42,17 @@ def get_laus_area_codes(
     that have been synced from BLS download.bls.gov metadata files.
     
     Args:
-        geo_level: One of 'us', 'state', 'county', 'metro', 'city'
+        geo_level: One of 'state', 'county', 'metro', 'city'
         state_fips: Required for county level, 2-digit state FIPS code
     
     Returns:
         List of 15-character LAUS area codes
     """
     if geo_level == "us":
-        # US national level always uses area code with 15 zeros
-        # This code may not exist in metadata but is valid for API queries
-        return ["000000000000000"]
+        raise ValueError(
+            "LAUS does not publish national series; use CPS/LN series for "
+            "U.S. household labor statistics"
+        )
     
     elif geo_level == "state":
         # Query all state-level area codes from metadata
@@ -157,7 +157,7 @@ def parse_laus_series_id(series_id: str) -> dict:
         geo_level = "us"
     else:
         prefix = area_code[:2]
-        
+
         if prefix == "ST":
             geo_level = "state"
             state_fips = area_code[2:4]

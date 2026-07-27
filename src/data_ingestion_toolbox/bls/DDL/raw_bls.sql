@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS raw_bls.bls_ingestion_slices (
     year_start     INTEGER NOT NULL,
     year_end       INTEGER NOT NULL,
     
-    geo_level      TEXT,                         -- 'us'/'state'/'county' (for LAUS), NULL for other programs
+    geo_level      TEXT,                         -- 'state'/'county' (for LAUS), NULL for other programs
     state_fips     TEXT,                         -- state FIPS for county-level LAUS, NULL otherwise
 
     series_hash    TEXT,

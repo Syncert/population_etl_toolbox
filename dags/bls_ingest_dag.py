@@ -6,7 +6,7 @@
 # 1) Syncs BLS series metadata from download.bls.gov
 # 2) Syncs BLS datasets table to track program availability
 # 3) Builds ingestion plan for configured programs and years
-#    - For LAUS (program='la'): expands by geography (us/state/county)
+#    - For LAUS (program='la'): expands by subnational geography (state/county)
 #    - For other programs (CES/CPI/JOLTS): ingests national series
 # 4) Skips slices already completed for the current series set (hash-based)
 # 5) Uses a Pool ("bls_api") to limit concurrency and respect BLS API limits
@@ -386,7 +386,7 @@ def bls_ingest():
     
     - Sync metadata (series + datasets)
     - Build ingestion plan for each program
-    - For LAUS: expand by geography (us/state/county)
+    - For LAUS: expand by subnational geography (state/county)
     - For others: ingest national series
     - Skip completed slices unless series set changed (hash mismatch)
     - Track progress in raw_bls.bls_ingestion_slices
@@ -543,7 +543,7 @@ def bls_ingest():
         for program in synced_programs:
             if program == "la":
                 geos: list[tuple[str, Optional[str]]] = (
-                    [("us", None), ("state", None)]
+                    [("state", None)]
                     + [("county", sf) for sf in state_fips_list]
                 )
                 for geo_level, state_fips in geos:

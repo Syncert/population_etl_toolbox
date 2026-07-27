@@ -79,7 +79,8 @@ class BlsConfig(BaseModel):
         # LAUS — Local Area Unemployment Statistics (la)
         #
         # Measure codes only.
-        # Valid for national, state, county, metro, and city geographies.
+        # Expanded only for published LAUS subnational geographies. National
+        # household labor statistics come from the CPS/LN series below.
         # Counties are typically NOT seasonally adjusted.
         # --------------------------------------------------------------
         "la": [
