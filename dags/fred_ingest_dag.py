@@ -41,6 +41,9 @@ from data_ingestion_toolbox.fred.metadata import (
     sync_fred_datasets_table,
 )
 from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
+from data_ingestion_toolbox.fred.domain_coverage import (
+    assert_configured_domain_coverage,
+)
 from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 logger = logging.getLogger(__name__)
@@ -82,6 +85,11 @@ def _series_fingerprint(domain: str) -> tuple[str, int]:
     payload = "|".join(series_sorted).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
     return digest, len(series_sorted)
+
+
+def _configured_series_by_domain() -> dict[str, list[str]]:
+    """Return the validated domain classification used by every DAG layer."""
+    return CONFIG.configured_series_by_domain()
 
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
@@ -300,17 +308,12 @@ def fred_ingest():
         roll_start = f"{current_year - 2}-01-01"   # e.g. in 2026 → 2024-01-01
         roll_end   = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # yesterday
 
-        # Compute series fingerprints for each domain
+        # Compute series fingerprints for each validated, single-owner domain.
         domain_meta = {}
-        for domain in CONFIG.domains:
+        for domain in _configured_series_by_domain():
             shash, scount = _series_fingerprint(domain)
             if scount > 0:
                 domain_meta[domain] = {"series_hash": shash, "series_count": scount}
-
-        # Also add a slice for all series combined (domain=None)
-        shash_all, scount_all = _series_fingerprint(None)
-        if scount_all > 0:
-            domain_meta["all"] = {"series_hash": shash_all, "series_count": scount_all}
 
         # Load completed slices so we can skip historical ones
         completed = set()
@@ -489,7 +492,7 @@ def fred_ingest():
 
     silver_schema = ensure_silver_schema()
     silver_transforms = transform_to_silver_by_domain.expand(
-        domain=["labor_cycle", "housing", "prices", "rates", "macro"]
+        domain=list(_configured_series_by_domain())
     )
 
     raw_ingest >> silver_schema >> silver_transforms
@@ -552,10 +555,16 @@ def fred_ingest():
             )
             conn.commit()
 
+    @task(trigger_rule="none_failed")
+    def confirm_configured_domain_coverage() -> None:
+        """Confirm every configured FRED series reached silver and served gold."""
+        assert_configured_domain_coverage(_get_postgres_hook())
+
     gold_fred_schema = ensure_gold_fred_schema()
     gold_fred_elements = refresh_gold_fred_elements()
     gold_fred_window = get_gold_fred_refresh_window()
     gold_fred_refresh = refresh_gold_fred_serving_layer(gold_fred_window)
+    domain_coverage = confirm_configured_domain_coverage()
 
     (
         silver_transforms
@@ -563,6 +572,7 @@ def fred_ingest():
         >> gold_fred_elements
         >> gold_fred_window
         >> gold_fred_refresh
+        >> domain_coverage
     )
 
 # Instantiate DAG

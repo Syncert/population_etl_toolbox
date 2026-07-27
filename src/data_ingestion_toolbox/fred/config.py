@@ -112,6 +112,75 @@ class FredConfig(BaseModel):
     def has_api_key(self) -> bool:
         return bool(self.fred_api_key)
 
+    def configured_series_by_domain(self) -> Dict[str, List[str]]:
+        """
+        Return the validated, single-owner domain classification.
+
+        A FRED observation is unique by series and date in both raw and silver,
+        so assigning one series to multiple domains would make the final domain
+        depend on ingestion order.
+        """
+        duplicate_domains = sorted({
+            domain for domain in self.domains if self.domains.count(domain) > 1
+        })
+        if duplicate_domains:
+            raise ValueError(
+                f"FRED domains must be unique; duplicates: {duplicate_domains}"
+            )
+
+        configured_domains = set(self.domains)
+        classified_domains = set(self.curated_by_domain)
+        missing_domains = sorted(configured_domains - classified_domains)
+        extra_domains = sorted(classified_domains - configured_domains)
+        empty_domains = sorted(
+            domain
+            for domain in self.domains
+            if not self.curated_by_domain.get(domain)
+        )
+        if missing_domains or extra_domains or empty_domains:
+            raise ValueError(
+                "Invalid FRED domain classification: "
+                f"missing={missing_domains}, extra={extra_domains}, "
+                f"empty={empty_domains}"
+            )
+
+        owners: Dict[str, List[str]] = {}
+        for domain in self.domains:
+            for series_id in self.curated_by_domain[domain]:
+                owners.setdefault(series_id, []).append(domain)
+
+        multiply_classified = {
+            series_id: domains
+            for series_id, domains in owners.items()
+            if len(domains) > 1
+        }
+        if multiply_classified:
+            raise ValueError(
+                "Each FRED series must belong to exactly one domain; "
+                f"conflicts: {multiply_classified}"
+            )
+
+        duplicate_curated = sorted({
+            series_id
+            for series_id in self.curated_series_ids
+            if self.curated_series_ids.count(series_id) > 1
+        })
+        classified_series = set(owners)
+        curated_series = set(self.curated_series_ids)
+        unclassified = sorted(curated_series - classified_series)
+        uncurated = sorted(classified_series - curated_series)
+        if duplicate_curated or unclassified or uncurated:
+            raise ValueError(
+                "FRED curated series and domain classification must match: "
+                f"duplicate_curated={duplicate_curated}, "
+                f"unclassified={unclassified}, uncurated={uncurated}"
+            )
+
+        return {
+            domain: list(self.curated_by_domain[domain])
+            for domain in self.domains
+        }
+
 
 
 CONFIG = FredConfig()
