@@ -47,6 +47,8 @@ class FredConfig(BaseModel):
         "UNRATE",     # Unemployment rate
         "CIVPART",    # Labor force participation rate
         "JTSJOL",     # Job openings: total nonfarm (labor demand / tightness)
+        "ICSA",       # Initial unemployment insurance claims
+        "INDPRO",     # Industrial production index
 
         # ------------------------------------------------------------------
         # HOUSING SUPPLY & AFFORDABILITY (leading indicators)
@@ -54,18 +56,29 @@ class FredConfig(BaseModel):
         "PERMIT",         # New housing units authorized by permits
         "HOUST",          # Housing starts
         "MORTGAGE30US",   # 30-year fixed mortgage rate
+        "MSACSR",         # Monthly supply of new houses
+        "MSPUS",          # Median sales price of houses sold
 
         # ------------------------------------------------------------------
         # PRICES / INFLATION (used to deflate nominal ACS & wage values)
         # ------------------------------------------------------------------
         "CPIAUCSL",   # CPI-U, all items
+        "PCEPI",      # PCE price index, all items
+        "PCEPILFE",   # PCE price index excluding food and energy
 
         # ------------------------------------------------------------------
         # MACRO / POLICY CONTEXT (scenario & regime modeling)
         # ------------------------------------------------------------------
         "FEDFUNDS",   # Effective federal funds rate
         "DGS10",      # 10-year Treasury yield
+        "T10Y2Y",     # 10-year minus 2-year Treasury spread
+        "T10YIE",     # 10-year breakeven inflation rate
+        "NFCI",       # Chicago Fed National Financial Conditions Index
         "GDPC1",      # Real GDP
+        "PCEC96",     # Real personal consumption expenditures
+        "DSPIC96",    # Real disposable personal income
+        "PSAVERT",    # Personal saving rate
+        "RSAFS",      # Advance retail and food-services sales
     ]
 
     # Optional grouping by domain for readability, dashboards, or docs.
@@ -76,21 +89,34 @@ class FredConfig(BaseModel):
             "UNRATE",
             "CIVPART",
             "JTSJOL",
+            "ICSA",
+            "INDPRO",
         ],
         "housing": [
             "PERMIT",
             "HOUST",
             "MORTGAGE30US",
+            "MSACSR",
+            "MSPUS",
         ],
         "prices": [
             "CPIAUCSL",
+            "PCEPI",
+            "PCEPILFE",
         ],
         "rates": [
             "FEDFUNDS",
             "DGS10",
+            "T10Y2Y",
+            "T10YIE",
+            "NFCI",
         ],
         "macro": [
             "GDPC1",
+            "PCEC96",
+            "DSPIC96",
+            "PSAVERT",
+            "RSAFS",
         ],
     }
 

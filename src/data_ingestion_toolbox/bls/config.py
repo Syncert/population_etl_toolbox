@@ -107,6 +107,14 @@ class BlsConfig(BaseModel):
             "LNS15000000",  # Not in labor force (national)
             "LNS13327709",  # U-6 total labor underutilization rate
             "LNS13025703",  # Unemployed 27 weeks and over
+            "LNS12300060",  # Employment-population ratio, ages 25-54
+            "LNS11300060",  # Labor force participation rate, ages 25-54
+            "LNS12032194",  # Employed part time for economic reasons
+            "LNS13008276",  # Median duration of unemployment
+            "LNS14000003",  # Unemployment rate, White
+            "LNS14000006",  # Unemployment rate, Black or African American
+            "LNS14000009",  # Unemployment rate, Hispanic or Latino
+            "LNS14032183",  # Unemployment rate, Asian
         ],
 
         # --------------------------------------------------------------
@@ -121,7 +129,19 @@ class BlsConfig(BaseModel):
             "CES0500000001",  # Total private employment
             "CES0500000002",  # Average weekly hours of all employees, total private
             "CES0500000003",  # Average hourly earnings of all employees, total private
-            "CES0500000008",  # Average weekly earnings of all employees, total private
+            "CES0500000008",  # Average hourly earnings, production/nonsupervisory employees
+            "CES0500000011",  # Average weekly earnings of all employees, total private
+            "CES1000000001",  # Mining and logging employment
+            "CES2000000001",  # Construction employment
+            "CES3000000001",  # Manufacturing employment
+            "CES4000000001",  # Trade, transportation, and utilities employment
+            "CES5000000001",  # Information employment
+            "CES5500000001",  # Financial activities employment
+            "CES6000000001",  # Professional and business services employment
+            "CES6500000001",  # Private education and health services employment
+            "CES7000000001",  # Leisure and hospitality employment
+            "CES8000000001",  # Other services employment
+            "CES9000000001",  # Government employment
         ],
 
         # --------------------------------------------------------------
@@ -134,6 +154,12 @@ class BlsConfig(BaseModel):
             "CUUR0000SA0",    # CPI-U, all items, U.S. city average
             "CUUR0000SA0L1E", # CPI-U, all items less food and energy (core CPI)
             "CWUR0000SA0",    # CPI-W, all items, U.S. city average
+            "CUUR0000SAF1",   # CPI-U, food
+            "CUUR0000SA0E",   # CPI-U, energy
+            "CUUR0000SAH1",   # CPI-U, shelter
+            "CUUR0000SEHA",   # CPI-U, rent of primary residence
+            "CUUR0000SEHC",   # CPI-U, owners' equivalent rent
+            "CUUR0000SAM",    # CPI-U, medical care
         ],
 
         # --------------------------------------------------------------
@@ -143,12 +169,19 @@ class BlsConfig(BaseModel):
         # Measures labor market churn: openings, hires, quits, separations.
         # --------------------------------------------------------------
         "jt": [
-            "JTS000000000000000JOL",  # Job openings, total nonfarm (national)
-            "JTS000000000000000HIR",  # Hires, total nonfarm (national)
-            "JTS000000000000000QUR",  # Quits, total nonfarm (national)
-            "JTS000000000000000LDL",  # Layoffs and discharges, total nonfarm (national)
-            "JTS000000000000000TSL",  # Total separations, total nonfarm (national)
-            "JTS000000000000000OSL",  # Other separations, total nonfarm (national)
+            "JTS000000000000000JOL",  # Job openings level, total nonfarm
+            "JTS000000000000000JOR",  # Job openings rate, total nonfarm
+            "JTS000000000000000HIL",  # Hires level, total nonfarm
+            "JTS000000000000000HIR",  # Hires rate, total nonfarm
+            "JTS000000000000000QUL",  # Quits level, total nonfarm
+            "JTS000000000000000QUR",  # Quits rate, total nonfarm
+            "JTS000000000000000LDL",  # Layoffs and discharges level, total nonfarm
+            "JTS000000000000000LDR",  # Layoffs and discharges rate, total nonfarm
+            "JTS000000000000000TSL",  # Total separations level, total nonfarm
+            "JTS000000000000000TSR",  # Total separations rate, total nonfarm
+            "JTS000000000000000OSL",  # Other separations level, total nonfarm
+            "JTS000000000000000OSR",  # Other separations rate, total nonfarm
+            "JTS000000000000000UOR",  # Unemployed persons per job opening
         ],
     }
 

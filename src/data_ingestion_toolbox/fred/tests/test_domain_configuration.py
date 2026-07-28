@@ -38,6 +38,24 @@ def test_default_configuration_has_one_owner_for_every_curated_series() -> None:
     } == set(CONFIG.curated_series_ids)
 
 
+def test_recommended_platform_series_remain_curated() -> None:
+    assert {
+        "ICSA",
+        "INDPRO",
+        "MSACSR",
+        "MSPUS",
+        "PCEPI",
+        "PCEPILFE",
+        "T10Y2Y",
+        "T10YIE",
+        "NFCI",
+        "PCEC96",
+        "DSPIC96",
+        "PSAVERT",
+        "RSAFS",
+    } <= set(CONFIG.curated_series_ids)
+
+
 def test_configured_series_by_domain_rejects_conflicting_owners() -> None:
     config = _config(
         curated_by_domain={
