@@ -1,4 +1,4 @@
-# fred/ingest.py
+# data_ingestion_toolbox/fred/ingest.py
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ import polars as pl
 import psycopg2
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
+from data_ingestion_toolbox.utility.db_connection import (
+    PostgresConnectionDetails,
+    PostgresConnectionFactory,
+)
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)

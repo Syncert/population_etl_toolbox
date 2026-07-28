@@ -20,17 +20,14 @@
 # REQUIRED AIRFLOW POOLS:
 # - Create a pool named "census_api" in Airflow UI and set its size conservatively (start with 4).
 #   This is the macro-level rate limiter that prevents your executor from stampeding the Census API.
-# - Create a pool named "acs_gold_merge" in Airflow UI and set its size to 2–3.
-#   This paces concurrent writes to gold.fact_metrics to prevent checkpoint storms and lock contention.
-#
 # ASSUMPTIONS ABOUT YOUR CODEBASE:
-# - census_acs.config.CONFIG exists and has:
+# - data_ingestion_toolbox.census_acs.config.CONFIG exists and has:
 #     CONFIG.postgres_conn_id : Airflow connection id for Postgres
 #     CONFIG.datasets         : list like ["acs1", "acs5"]
-# - census_acs.metadata provides:
+# - data_ingestion_toolbox.census_acs.metadata provides:
 #     sync_acs_dataset_table()
 #     sync_variable_metadata_for_year(year: int, dataset: str)
-# - census_acs.ingest provides:
+# - data_ingestion_toolbox.census_acs.ingest provides:
 #     ingest_slice(year: int, dataset: str, geo_level: str, state_fips: Optional[str]) -> int
 #     get_curated_variables(year: int, dataset: str) -> list[str]
 # - ingest_slice returns 0 when there is nothing to load (perfect for ACS1 county coverage).
@@ -50,29 +47,24 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from psycopg2.extras import execute_values
+from data_ingestion_toolbox import census_acs as census_acs_package
+from data_ingestion_toolbox.census_acs.config import CONFIG
+from data_ingestion_toolbox.census_acs.metadata import (
+    sync_acs_dataset_table,
+    sync_variable_metadata_for_year,
+)
+from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
+from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
+from data_ingestion_toolbox.census_acs.silver_census.transform import (
+    transform_census_to_silver,
+)
 
 logger = logging.getLogger(__name__)
-
-try:
-    from data_ingestion_toolbox.census_acs.config import CONFIG
-    from data_ingestion_toolbox.census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
-    from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
-    from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
-    from data_ingestion_toolbox.census_acs.silver_census.transform import transform_census_to_silver
-except ImportError:
-    # Backward-compatible fallback for legacy Airflow layouts that copy
-    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
-    from census_acs.config import CONFIG
-    from census_acs.metadata import sync_acs_dataset_table, sync_variable_metadata_for_year
-    from census_acs.ingest import ingest_slice, get_curated_variables
-    from census_acs.geography import sync_geo_dim
-    from census_acs.silver_census.transform import transform_census_to_silver
 
 
 # -----------------------------
@@ -88,7 +80,6 @@ DEFAULT_ARGS = {
 # Pool-based throttling: create these in Airflow UI (Admin -> Pools)
 # Start conservative (e.g., 4). Increase slowly while watching for HTTP 429s.
 CENSUS_API_POOL = "census_api"
-GOLD_MERGE_POOL = "acs_gold_merge"
 
 
 def _get_postgres_hook() -> PostgresHook:
@@ -101,15 +92,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    root = Path(__file__).resolve().parents[1]
-    candidates = [
-        root / "src" / "data_ingestion_toolbox" / "census_acs" / "DDL" / "silver_census.sql",
-        root / "census_acs" / "DDL" / "silver_census.sql",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"ACS silver DDL not found. Checked: {candidates}")
+    return Path(census_acs_package.__file__).resolve().parent / "DDL" / "silver_census.sql"
 
 
 def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
@@ -136,45 +119,6 @@ def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
     return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
-
-
-def _get_county_state_fips_list(hook: PostgresHook) -> list[str]:
-    """
-    Return all state/territory FIPS codes that currently have county-equivalent
-    rows in raw_census.geo_dim.
-
-    This keeps county planning aligned with Census geography coverage, including
-    territories like Puerto Rico (72), American Samoa (60), Guam (66),
-    Northern Mariana Islands (69), and U.S. Virgin Islands (78), whenever
-    they are present in the synced Gazetteer county file.
-    """
-    sql = """
-        SELECT DISTINCT state_fips
-        FROM raw_census.geo_dim
-        WHERE geo_level = 'county'
-          AND state_fips IS NOT NULL
-        ORDER BY state_fips;
-    """
-
-    with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        rows = cur.fetchall()
-
-    state_fips_list = [str(r[0]).zfill(2) for r in rows if r and r[0] is not None]
-
-    if not state_fips_list:
-        # Fallback keeps DAG runnable if geo_dim has not been populated yet.
-        logger.warning(
-            "No county state_fips found in raw_census.geo_dim; falling back to legacy state list."
-        )
-        base_states = [
-            f"{i:02d}" for i in range(1, 57)
-            if i not in (3, 7, 14, 43)
-        ]
-        territory_county_equivalents = ["60", "66", "69", "72", "78"]
-        return base_states + territory_county_equivalents
-
-    return state_fips_list
 
 
 def _run_one_work_unit(work_unit: dict) -> int:
@@ -351,7 +295,7 @@ def acs_ingest():
     @task
     def sync_geographies() -> None:
         # Auto-pick latest available Gazetteer year
-        sync_geo_dim(source_year=None, min_year=1990)
+        sync_geo_dim(source_year=None, min_year=2010)
 
 
     # -----------------------------
@@ -410,9 +354,12 @@ def acs_ingest():
         """
         hook = _get_postgres_hook()
 
-        # County tasks are expanded by state/territory FIPS codes discovered
-        # from the synced Census geography dimension.
-        state_fips_list = _get_county_state_fips_list(hook)
+        # County tasks are expanded by state FIPS.
+        # Keep this simple to start; you can extend to territories later.
+        state_fips_list = [
+            f"{i:02d}" for i in range(1, 57)
+            if i not in (3, 7, 14, 43)
+        ]
 
         # Compute current variable set hash/count for each target (dataset, year).
         varset_meta: dict[tuple[str, int], dict] = {}
@@ -516,46 +463,84 @@ def acs_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
 
-        sql_planned_upsert = """
+        sql_planned_update = """
+            UPDATE raw_census.acs_ingestion_slices
+            SET status = CASE
+                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
+                        AND raw_census.acs_ingestion_slices.variables_hash = %s
+                    THEN raw_census.acs_ingestion_slices.status
+                    ELSE 'planned'
+                END,
+                rows_loaded = CASE
+                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
+                        AND raw_census.acs_ingestion_slices.variables_hash = %s
+                    THEN raw_census.acs_ingestion_slices.rows_loaded
+                    ELSE 0
+                END,
+                variables_hash = %s,
+                variables_count = %s,
+                variables_hash_seen_at = %s,
+                last_error = NULL
+            WHERE dataset = %s
+            AND year = %s
+            AND geo_level = %s
+            AND state_fips IS NOT DISTINCT FROM %s;
+        """
+
+        sql_planned_insert = """
             INSERT INTO raw_census.acs_ingestion_slices (
                 dataset, year, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 variables_hash, variables_count, variables_hash_seen_at
-            ) VALUES %s
-            ON CONFLICT (dataset, year, geo_level, COALESCE(state_fips, ''))
-            DO UPDATE SET
-                status = CASE
-                        WHEN raw_census.acs_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
-                        THEN raw_census.acs_ingestion_slices.status
-                        ELSE 'planned'
-                    END,
-                rows_loaded = CASE
-                        WHEN raw_census.acs_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_census.acs_ingestion_slices.variables_hash = EXCLUDED.variables_hash
-                        THEN raw_census.acs_ingestion_slices.rows_loaded
-                        ELSE 0
-                    END,
-                variables_hash = EXCLUDED.variables_hash,
-                variables_count = EXCLUDED.variables_count,
-                variables_hash_seen_at = EXCLUDED.variables_hash_seen_at,
-                last_error = NULL;
+            )
+            VALUES (%s, %s, %s, %s,
+                    'planned', 0,
+                    NULL, NULL, NULL,
+                    %s, %s, %s)
+            ON CONFLICT DO NOTHING;
         """
 
-        rows = [
-            (
-                w["dataset"], int(w["year"]), w["geo_level"], w.get("state_fips"),
-                'planned', 0, None, None, None,
-                w.get("variables_hash"), int(w.get("variables_count", 0)), now,
-            )
-            for batch in batches for w in batch
-        ]
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            for batch in batches:
+                for w in batch:
+                    dataset = w["dataset"]
+                    year = int(w["year"])
+                    geo_level = w["geo_level"]
+                    state_fips = w.get("state_fips")
+                    vhash = w.get("variables_hash")
+                    vcount = int(w.get("variables_count", 0))
 
-        if rows:
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                execute_values(cur, sql_planned_upsert, rows, page_size=500)
-                conn.commit()
+                    cur.execute(
+                        sql_planned_update,
+                        (
+                            vhash,  # hash compare #1
+                            vhash,  # hash compare #2
+                            vhash,  # set variables_hash
+                            vcount,
+                            now,
+                            dataset,
+                            year,
+                            geo_level,
+                            state_fips,
+                        ),
+                    )
+
+                    if cur.rowcount == 0:
+                        cur.execute(
+                            sql_planned_insert,
+                            (
+                                dataset,
+                                year,
+                                geo_level,
+                                state_fips,
+                                vhash,
+                                vcount,
+                                now,
+                            ),
+                        )
+
+            conn.commit()
 
 
     # -----------------------------
@@ -621,113 +606,77 @@ def acs_ingest():
     raw_ingest >> silver_schema >> silver_transform
 
     # -----------------------------
-    # Gold update terminal tasks
+    # gold_census serving layer
     # -----------------------------
-    @task(trigger_rule='none_failed')
-    def gold_ensure_schema() -> None:
-        """Ensure gold schema exists."""
-        try:
-            from data_ingestion_toolbox.census_acs.gold_census.transform import ensure_acs_gold_schema
-        except ImportError:
-            from census_acs.gold_census.transform import ensure_acs_gold_schema
+    @task(trigger_rule="none_failed")
+    def ensure_gold_census_schema() -> None:
+        """Apply the source-specific gold_census DDL."""
+        from data_ingestion_toolbox.census_acs.gold_census.transform import (
+            ensure_acs_gold_schema,
+        )
+
         ensure_acs_gold_schema()
 
-    @task(trigger_rule='none_failed')
-    def gold_refresh_elements() -> None:
-        """Refresh gold element dictionary from silver sources."""
-        try:
-            from data_ingestion_toolbox.census_acs.gold_census.transform import refresh_acs_elements
-        except ImportError:
-            from census_acs.gold_census.transform import refresh_acs_elements
-        refresh_acs_elements()
+    @task(trigger_rule="none_failed")
+    def refresh_gold_census_elements() -> int:
+        """Refresh ACS dimensions and metric mappings in gold_census."""
+        from data_ingestion_toolbox.census_acs.gold_census.transform import (
+            refresh_acs_elements,
+        )
 
-    @task(trigger_rule='none_failed')
-    def gold_compute_shards() -> list[str]:
-        """Compute the full-history date floor covered by current silver data."""
+        return refresh_acs_elements()
+
+    @task(trigger_rule="none_failed")
+    def get_gold_census_refresh_window() -> dict[str, str] | None:
+        """Return the complete ACS date range currently available in silver."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT MIN(MAKE_DATE(estimate_year, 1, 1))::date
-                FROM silver_census.fact_demographics
-                WHERE estimate_value IS NOT NULL
-            """)
-            row = cur.fetchone()
-        if not row or row[0] is None:
-            logger.warning("[ACS GOLD] No data in silver full-history window; skipping gold refresh.")
-            return []
-        return [row[0].isoformat()]
-
-    @task(trigger_rule='none_failed')
-    def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute full-history min/max date bounds for serving-layer refresh."""
-        if not shard_results:
-            return None
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     MIN(MAKE_DATE(estimate_year, 1, 1))::date,
                     MAX(MAKE_DATE(estimate_year, 1, 1))::date
                 FROM silver_census.fact_demographics
                 WHERE estimate_value IS NOT NULL
-            """)
+                """
+            )
             row = cur.fetchone()
+
         if not row or row[0] is None:
+            logger.warning("[gold_census] No silver data available; skipping serving refresh.")
             return None
+
         return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-    @task(trigger_rule='all_success')
-    def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
-        """Refresh ACS persisted serving tables and latest snapshots."""
-        started_at = datetime.now(timezone.utc)
-        window_start = refresh_window["start_date"] if refresh_window else None
-        window_end = refresh_window["end_date"] if refresh_window else None
+    @task(trigger_rule="none_failed")
+    def refresh_gold_census_serving_layer(
+        refresh_window: dict[str, str] | None,
+    ) -> None:
+        """Refresh persisted ACS serving tables in gold_census."""
+        if refresh_window is None:
+            return
 
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0;")
-            cur.execute("SET application_name = %s;", ("airflow:acs:refresh_dashboard_serving_layer",))
-            cur.execute("SELECT pg_backend_pid();")
-            backend_pid = cur.fetchone()[0]
-
-            logger.info(
-                "[ACS GOLD] Starting dashboard serving refresh: backend_pid=%s window_start=%s window_end=%s",
-                backend_pid,
-                window_start,
-                window_end,
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(
+                "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s)",
+                (refresh_window["start_date"], refresh_window["end_date"]),
             )
-
-            conn.notices.clear()
-            if refresh_window is None:
-                cur.execute("CALL gold_census.refresh_dashboard_serving_layer_acs(NULL, NULL);")
-            else:
-                cur.execute(
-                    "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s);",
-                    (refresh_window["start_date"], refresh_window["end_date"]),
-                )
-
-            for notice in conn.notices:
-                logger.info("[ACS GOLD] [DB NOTICE] %s", notice.strip())
-
             conn.commit()
 
-        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
-        logger.info(
-            "[ACS GOLD] Completed dashboard serving refresh in %.2f seconds: backend_pid=%s window_start=%s window_end=%s",
-            elapsed_seconds,
-            backend_pid,
-            window_start,
-            window_end,
-        )
+    gold_census_schema = ensure_gold_census_schema()
+    gold_census_elements = refresh_gold_census_elements()
+    gold_census_window = get_gold_census_refresh_window()
+    gold_census_refresh = refresh_gold_census_serving_layer(gold_census_window)
 
-    gold_schema = gold_ensure_schema()
-    gold_elements = gold_refresh_elements()
-    gold_shards = gold_compute_shards()
-    refresh_window = gold_refresh_window(gold_shards)
-    dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
-
-    silver_transform >> gold_schema >> gold_elements >> gold_shards >> refresh_window >> dashboard_refresh
-
+    (
+        silver_transform
+        >> gold_census_schema
+        >> gold_census_elements
+        >> gold_census_window
+        >> gold_census_refresh
+    )
 
 # Instantiate DAG
 acs_ingest_dag = acs_ingest()

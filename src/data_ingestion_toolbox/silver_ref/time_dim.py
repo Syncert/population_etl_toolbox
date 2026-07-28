@@ -1,4 +1,4 @@
-# silver_ref/time_dim.py
+# data_ingestion_toolbox/silver_ref/time_dim.py
 
 from __future__ import annotations
 

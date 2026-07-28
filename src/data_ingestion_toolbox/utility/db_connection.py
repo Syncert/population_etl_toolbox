@@ -1,4 +1,4 @@
-# utility/db_connection.py
+# data_ingestion_toolbox/utility/db_connection.py
 
 from __future__ import annotations
 

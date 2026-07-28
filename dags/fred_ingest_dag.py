@@ -20,9 +20,9 @@
 # - Create a pool named "fred_api" in Airflow UI and set its size conservatively (start with 4).
 #
 # ASSUMPTIONS:
-# - fred.config.CONFIG has postgres_conn_id, curated_series_ids, curated_by_domain
-# - fred.metadata provides sync_fred_series_metadata(), sync_fred_datasets_table()
-# - fred.ingest provides ingest_slice()
+# - data_ingestion_toolbox.fred.config.CONFIG has postgres_conn_id, curated_series_ids, curated_by_domain
+# - data_ingestion_toolbox.fred.metadata provides sync_fred_series_metadata(), sync_fred_datasets_table()
+# - data_ingestion_toolbox.fred.ingest provides ingest_slice()
 # - FRED_API_KEY environment variable is set
 
 from __future__ import annotations
@@ -30,27 +30,23 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from psycopg2.extras import execute_values
+from data_ingestion_toolbox import fred as fred_package
+from data_ingestion_toolbox.fred.config import CONFIG
+from data_ingestion_toolbox.fred.metadata import (
+    sync_fred_series_metadata,
+    sync_fred_datasets_table,
+)
+from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
+from data_ingestion_toolbox.fred.domain_coverage import (
+    assert_configured_domain_coverage,
+)
+from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 
 logger = logging.getLogger(__name__)
-
-try:
-    from data_ingestion_toolbox.fred.config import CONFIG
-    from data_ingestion_toolbox.fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
-    from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
-    from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
-except ImportError:
-    # Backward-compatible fallback for legacy Airflow layouts that copy
-    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
-    from fred.config import CONFIG
-    from fred.metadata import sync_fred_series_metadata, sync_fred_datasets_table
-    from fred.ingest import ingest_slice, get_curated_series_for_domain
-    from fred.silver_fred.transform import transform_fred_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -72,15 +68,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    root = Path(__file__).resolve().parents[1]
-    candidates = [
-        root / "src" / "data_ingestion_toolbox" / "fred" / "DDL" / "silver_fred.sql",
-        root / "fred" / "DDL" / "silver_fred.sql",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"FRED silver DDL not found. Checked: {candidates}")
+    return Path(fred_package.__file__).resolve().parent / "DDL" / "silver_fred.sql"
 
 
 def _series_fingerprint(domain: str) -> tuple[str, int]:
@@ -97,6 +85,11 @@ def _series_fingerprint(domain: str) -> tuple[str, int]:
     payload = "|".join(series_sorted).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
     return digest, len(series_sorted)
+
+
+def _configured_series_by_domain() -> dict[str, list[str]]:
+    """Return the validated domain classification used by every DAG layer."""
+    return CONFIG.configured_series_by_domain()
 
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
@@ -315,17 +308,12 @@ def fred_ingest():
         roll_start = f"{current_year - 2}-01-01"   # e.g. in 2026 → 2024-01-01
         roll_end   = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # yesterday
 
-        # Compute series fingerprints for each domain
+        # Compute series fingerprints for each validated, single-owner domain.
         domain_meta = {}
-        for domain in CONFIG.domains:
+        for domain in _configured_series_by_domain():
             shash, scount = _series_fingerprint(domain)
             if scount > 0:
                 domain_meta[domain] = {"series_hash": shash, "series_count": scount}
-
-        # Also add a slice for all series combined (domain=None)
-        shash_all, scount_all = _series_fingerprint(None)
-        if scount_all > 0:
-            domain_meta["all"] = {"series_hash": shash_all, "series_count": scount_all}
 
         # Load completed slices so we can skip historical ones
         completed = set()
@@ -397,48 +385,66 @@ def fred_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
         
-        sql_planned_upsert = """
+        sql_planned_update = """
+            UPDATE raw_fred.fred_ingestion_slices
+            SET status = CASE
+                    WHEN status IN ('success','empty')
+                        AND series_hash = %s
+                    THEN status
+                    ELSE 'planned'
+                END,
+                rows_loaded = CASE
+                    WHEN status IN ('success','empty')
+                        AND series_hash = %s
+                    THEN rows_loaded
+                    ELSE 0
+                END,
+                series_hash = %s,
+                series_count = %s,
+                series_hash_seen_at = %s,
+                last_error = NULL
+            WHERE domain = %s
+              AND date_start = %s
+              AND date_end = %s;
+        """
+        
+        sql_planned_insert = """
             INSERT INTO raw_fred.fred_ingestion_slices (
                 domain, date_start, date_end,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 series_hash, series_count, series_hash_seen_at
-            ) VALUES %s
-            ON CONFLICT (domain, date_start, date_end)
-            DO UPDATE SET
-                status = CASE
-                        WHEN raw_fred.fred_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_fred.fred_ingestion_slices.series_hash = EXCLUDED.series_hash
-                        THEN raw_fred.fred_ingestion_slices.status
-                        ELSE 'planned'
-                    END,
-                rows_loaded = CASE
-                        WHEN raw_fred.fred_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_fred.fred_ingestion_slices.series_hash = EXCLUDED.series_hash
-                        THEN raw_fred.fred_ingestion_slices.rows_loaded
-                        ELSE 0
-                    END,
-                series_hash = EXCLUDED.series_hash,
-                series_count = EXCLUDED.series_count,
-                series_hash_seen_at = EXCLUDED.series_hash_seen_at,
-                last_error = NULL;
+            )
+            VALUES (%s, %s, %s,
+                    'planned', 0,
+                    NULL, NULL, NULL,
+                    %s, %s, %s)
+            ON CONFLICT DO NOTHING;
         """
         
-        rows = [
-            (
-                w["domain"],
-                datetime.fromisoformat(w["date_start"]).date(),
-                datetime.fromisoformat(w["date_end"]).date(),
-                'planned', 0, None, None, None,
-                w.get("series_hash"), int(w.get("series_count", 0)), now,
-            )
-            for batch in batches for w in batch
-        ]
-        
-        if rows:
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                execute_values(cur, sql_planned_upsert, rows, page_size=500)
-                conn.commit()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            for batch in batches:
+                for w in batch:
+                    domain = w["domain"]
+                    date_start = datetime.fromisoformat(w["date_start"]).date()
+                    date_end = datetime.fromisoformat(w["date_end"]).date()
+                    shash = w.get("series_hash")
+                    scount = int(w.get("series_count", 0))
+                    
+                    cur.execute(
+                        sql_planned_update,
+                        (shash, shash, shash, scount, now,
+                         domain, date_start, date_end),
+                    )
+                    
+                    if cur.rowcount == 0:
+                        cur.execute(
+                            sql_planned_insert,
+                            (domain, date_start, date_end,
+                             shash, scount, now),
+                        )
+            
+            conn.commit()
     
     # -----------------------------
     # Task 4: Ingest batch (mapped)
@@ -486,117 +492,88 @@ def fred_ingest():
 
     silver_schema = ensure_silver_schema()
     silver_transforms = transform_to_silver_by_domain.expand(
-        domain=["labor_cycle", "housing", "prices", "rates", "macro"]
+        domain=list(_configured_series_by_domain())
     )
 
     raw_ingest >> silver_schema >> silver_transforms
 
     # -----------------------------
-    # Gold update terminal tasks
+    # gold_fred serving layer
     # -----------------------------
-    @task(trigger_rule='none_failed')
-    def gold_ensure_schema() -> None:
-        """Ensure gold schema exists."""
-        try:
-            from data_ingestion_toolbox.fred.gold_fred.transform import ensure_fred_gold_schema
-        except ImportError:
-            from fred.gold_fred.transform import ensure_fred_gold_schema
+    @task(trigger_rule="none_failed")
+    def ensure_gold_fred_schema() -> None:
+        """Apply the source-specific gold_fred DDL."""
+        from data_ingestion_toolbox.fred.gold_fred.transform import (
+            ensure_fred_gold_schema,
+        )
+
         ensure_fred_gold_schema()
 
-    @task(trigger_rule='none_failed')
-    def gold_refresh_elements() -> None:
-        """Refresh gold element dictionary from silver sources."""
-        try:
-            from data_ingestion_toolbox.fred.gold_fred.transform import refresh_fred_elements
-        except ImportError:
-            from fred.gold_fred.transform import refresh_fred_elements
-        refresh_fred_elements()
+    @task(trigger_rule="none_failed")
+    def refresh_gold_fred_elements() -> int:
+        """Refresh FRED dimensions and metric mappings in gold_fred."""
+        from data_ingestion_toolbox.fred.gold_fred.transform import (
+            refresh_fred_elements,
+        )
 
-    @task(trigger_rule='none_failed')
-    def gold_compute_shards() -> list[str]:
-        """Compute the full-history date floor covered by current silver data."""
+        return refresh_fred_elements()
+
+    @task(trigger_rule="none_failed")
+    def get_gold_fred_refresh_window() -> dict[str, str] | None:
+        """Return the complete FRED date range currently available in silver."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT MIN(observation_date)::date
-                FROM silver_fred.fact_economic_indicators
-                WHERE is_missing = FALSE
-            """)
-            row = cur.fetchone()
-        if not row or row[0] is None:
-            logger.warning("[FRED GOLD] No data in silver full-history window; skipping gold refresh.")
-            return []
-        return [row[0].isoformat()]
-
-    @task(trigger_rule='none_failed')
-    def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute full-history min/max date bounds for serving-layer refresh."""
-        if not shard_results:
-            return None
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT MIN(observation_date)::date, MAX(observation_date)::date
                 FROM silver_fred.fact_economic_indicators
                 WHERE is_missing = FALSE
-            """)
+                """
+            )
             row = cur.fetchone()
+
         if not row or row[0] is None:
+            logger.warning("[gold_fred] No silver data available; skipping serving refresh.")
             return None
+
         return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-    @task(trigger_rule='all_success')
-    def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
-        """Refresh FRED persisted serving tables and latest snapshots."""
-        started_at = datetime.now(timezone.utc)
-        window_start = refresh_window["start_date"] if refresh_window else None
-        window_end = refresh_window["end_date"] if refresh_window else None
+    @task(trigger_rule="none_failed")
+    def refresh_gold_fred_serving_layer(
+        refresh_window: dict[str, str] | None,
+    ) -> None:
+        """Refresh persisted FRED serving tables in gold_fred."""
+        if refresh_window is None:
+            return
 
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0;")
-            cur.execute("SET application_name = %s;", ("airflow:fred:refresh_dashboard_serving_layer",))
-            cur.execute("SELECT pg_backend_pid();")
-            backend_pid = cur.fetchone()[0]
-
-            logger.info(
-                "[FRED GOLD] Starting dashboard serving refresh: backend_pid=%s window_start=%s window_end=%s",
-                backend_pid,
-                window_start,
-                window_end,
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s)",
+                (refresh_window["start_date"], refresh_window["end_date"]),
             )
-
-            conn.notices.clear()
-            if refresh_window is None:
-                cur.execute("CALL gold_fred.refresh_dashboard_serving_layer_fred(NULL, NULL);")
-            else:
-                cur.execute(
-                    "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s);",
-                    (refresh_window["start_date"], refresh_window["end_date"]),
-                )
-
-            for notice in conn.notices:
-                logger.info("[FRED GOLD] [DB NOTICE] %s", notice.strip())
-
             conn.commit()
 
-        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
-        logger.info(
-            "[FRED GOLD] Completed dashboard serving refresh in %.2f seconds: backend_pid=%s window_start=%s window_end=%s",
-            elapsed_seconds,
-            backend_pid,
-            window_start,
-            window_end,
-        )
+    @task(trigger_rule="none_failed")
+    def confirm_configured_domain_coverage() -> None:
+        """Confirm every configured FRED series reached silver and served gold."""
+        assert_configured_domain_coverage(_get_postgres_hook())
 
-    gold_schema = gold_ensure_schema()
-    gold_elements = gold_refresh_elements()
-    gold_shards = gold_compute_shards()
-    refresh_window = gold_refresh_window(gold_shards)
-    dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
+    gold_fred_schema = ensure_gold_fred_schema()
+    gold_fred_elements = refresh_gold_fred_elements()
+    gold_fred_window = get_gold_fred_refresh_window()
+    gold_fred_refresh = refresh_gold_fred_serving_layer(gold_fred_window)
+    domain_coverage = confirm_configured_domain_coverage()
 
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> refresh_window >> dashboard_refresh
-
+    (
+        silver_transforms
+        >> gold_fred_schema
+        >> gold_fred_elements
+        >> gold_fred_window
+        >> gold_fred_refresh
+        >> domain_coverage
+    )
 
 # Instantiate DAG
 fred_ingest_dag = fred_ingest()

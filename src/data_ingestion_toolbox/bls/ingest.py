@@ -1,4 +1,4 @@
-# bls/ingest.py
+# data_ingestion_toolbox/bls/ingest.py
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ import polars as pl
 import psycopg2
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory, PostgresConnectionDetails
+from data_ingestion_toolbox.utility.db_connection import (
+    PostgresConnectionDetails,
+    PostgresConnectionFactory,
+)
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)
@@ -91,26 +94,20 @@ def expand_laus_series_ids(
     LAUS series ID format: LA{seasonal}{area_code}{measure_code}
     
     - seasonal: 'S' (seasonally adjusted) or 'U' (not seasonally adjusted)
-    - area_code: official 15-character LAUS area code
+    - area_code: a published 15-character LAUS subnational area code
     - measure_code: 03, 04, 05, 06, 07, 08, 09
     
-    This function queries the metadata from raw_bls.bls_series to get valid area codes.
+    This function returns only complete series IDs published in
+    raw_bls.bls_series. It does not construct an area/measure cross product.
     """
-    from .geography import build_laus_series_id, get_laus_area_codes
-    
-    area_codes = get_laus_area_codes(geo_level=geo_level, state_fips=state_fips)
-    
-    series_ids = []
-    for area_code in area_codes:
-        for measure_code in measure_codes:
-            series_id = build_laus_series_id(
-                area_code=area_code,
-                measure_code=measure_code,
-                seasonal=seasonal,
-            )
-            series_ids.append(series_id)
-    
-    return series_ids
+    from .geography import get_laus_series_ids
+
+    return get_laus_series_ids(
+        measure_codes=measure_codes,
+        geo_level=geo_level,
+        state_fips=state_fips,
+        seasonal=seasonal,
+    )
 
 
 def chunked(items: List[str], chunk_size: int) -> List[List[str]]:
@@ -205,7 +202,7 @@ def fetch_bls_api(
 
             # Empty results are OK (not an error)
             if "no data available" in str(message).lower():
-                raise BlsNoContent("No data available for series")
+                raise BlsNoContent(f"No data available for series")
 
             # Daily API quota exhausted — Airflow will retry in 24h; tenacity skips
             if status == "REQUEST_NOT_PROCESSED" or "daily threshold" in str(message).lower():
@@ -312,17 +309,26 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
     
     if program == "la":
         from .geography import parse_laus_series_id
+
+        def parse_geography(series_id: str) -> tuple:
+            parsed = parse_laus_series_id(series_id)
+            return (
+                parsed["geo_level"],
+                parsed["geo_id"],
+                parsed["state_fips"],
+                parsed["county_fips"],
+            )
         
-        # Apply the same canonical parser used by generation and silver.
+        # Apply parsing
         parsed = df.select("series_id").to_series().map_elements(
-            parse_laus_series_id, return_dtype=pl.Object
+            parse_geography, return_dtype=pl.Object
         )
         
         geo_info = pl.DataFrame({
-            "geo_level": [x["geo_level"] for x in parsed],
-            "geo_id": [x["geo_id"] for x in parsed],
-            "state_fips": [x["state_fips"] for x in parsed],
-            "county_fips": [x["county_fips"] for x in parsed],
+            "geo_level": [x[0] if x else None for x in parsed],
+            "geo_id": [x[1] if x else None for x in parsed],
+            "state_fips": [x[2] if x else None for x in parsed],
+            "county_fips": [x[3] if x else None for x in parsed],
         })
         
         df = pl.concat([df, geo_info], how="horizontal")
@@ -422,7 +428,7 @@ def ingest_slice(
     Ingest one slice of BLS data.
     
     For LAUS (program='la'):
-        - Requires geo_level ('us', 'state', 'county')
+        - Requires a subnational geo_level ('state', 'county')
         - For 'county', requires state_fips
         - Expands measure codes to full series IDs
     

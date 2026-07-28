@@ -1,4 +1,4 @@
-# include/census_acs/metadata.py
+# data_ingestion_toolbox/census_acs/metadata.py
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Dict, List, Optional
 import httpx
 import psycopg2
 import re
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Adjust this import path to wherever db_connection.py lives in your project
 from data_ingestion_toolbox.utility.db_connection import (
@@ -30,61 +29,6 @@ _TARGET_DATABASE = "public_data"
 # connection. In local dev (no Airflow), this will be None and the factory
 # will fall back to POSTGRES_* env vars.
 _AIRFLOW_CONN_ID: Optional[str] = getattr(CONFIG, "postgres_conn_id", None)
-
-
-class CensusMetadataRetryableHTTP(Exception):
-    """Retry-worthy metadata HTTP failures from the Census API."""
-
-
-class CensusMetadataNonJSONResponse(Exception):
-    """Metadata endpoint returned a non-JSON payload (often an HTML error page)."""
-
-
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=2, max=60),
-    retry=retry_if_exception_type(
-        (CensusMetadataRetryableHTTP, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError)
-    ),
-)
-def _get_json_with_retry(url: str) -> Dict:
-    params = None
-    if "api.census.gov" in url and CONFIG.has_api_key:
-        params = {"key": CONFIG.census_api_key}
-
-    with httpx.Client(
-        timeout=httpx.Timeout(connect=10.0, read=90.0, write=10.0, pool=10.0),
-        follow_redirects=True,
-    ) as client:
-        resp = client.get(url, params=params)
-
-    if resp.status_code == 429 or 500 <= resp.status_code <= 599:
-        raise CensusMetadataRetryableHTTP(f"Retryable metadata response {resp.status_code} for {url}")
-
-    resp.raise_for_status()
-
-    ctype = (resp.headers.get("content-type") or "").lower()
-    text_preview = (resp.text or "")[:400]
-
-    # Census may redirect to an HTML page (e.g., /data/missing_key.html).
-    # Fail with a clear message instead of a raw JSONDecodeError.
-    if "json" not in ctype and text_preview.lstrip().startswith("<"):
-        if "missing_key" in str(resp.url) or "missing key" in text_preview.lower():
-            raise CensusMetadataNonJSONResponse(
-                "Census API returned an HTML missing_key page while fetching metadata. "
-                "Ensure CENSUS_API_KEY is configured and valid for Airflow tasks."
-            )
-        raise CensusMetadataNonJSONResponse(
-            f"Expected JSON from {url} but got content-type '{ctype}' from {resp.url}."
-        )
-
-    try:
-        return resp.json()
-    except json.JSONDecodeError as e:
-        raise CensusMetadataNonJSONResponse(
-            f"Expected JSON from {url} but response could not be decoded (final URL: {resp.url})."
-        ) from e
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
@@ -114,7 +58,10 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
     Fetch dataset metadata from data.json and filter to ACS 1- and 5- year datasets.
     Uses regex to match flexible title patterns.
     """
-    data = _get_json_with_retry(DATA_JSON_URL)
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(DATA_JSON_URL)
+        resp.raise_for_status()
+        data = resp.json()
 
     datasets = data.get("dataset", [])
     filtered: List[Dict] = []
@@ -236,7 +183,10 @@ def fetch_variables_json(year: int, dataset: str) -> Dict:
         raise ValueError(f"Unsupported dataset: {dataset}")
 
     url = f"https://api.census.gov/data/{year}/acs/{dataset}/variables.json"
-    return _get_json_with_retry(url)
+    with httpx.Client(timeout=60.0) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return resp.json()
 
 
 def sync_variable_metadata_for_year(year: int, dataset: str) -> None:

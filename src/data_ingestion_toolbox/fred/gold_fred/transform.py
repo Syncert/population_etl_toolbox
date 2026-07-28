@@ -1,17 +1,12 @@
 """
-Gold analytics layer — FRED subject transform.
+Gold analytics layer for the ``gold_fred`` schema.
 
-Handles fetching FRED silver data for a given month and upserting
-into the shared gold.fact_metrics table.
-
-FRED has no geo_id column; all rows default to geo_id='us:1'.
-The latest observation_date within each calendar month is selected per series_id.
+Bootstraps source-specific objects and refreshes FRED metadata from silver.
 """
 from __future__ import annotations
 
 import logging
 import pathlib
-from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -30,13 +25,13 @@ _REQUIRED_RELATIONS = (
     "gold_glossary.bridge_metric_fred_series",
     "gold_fred.dim_fred_series",
     "gold_fred.fact_fred_observation",
-    "gold_fred.rpt_observation_dashboard",
-    "gold_fred.mv_latest_dashboard",
+    "gold_fred.rpt_fred_observations",
+    "gold_fred.mv_fred_latest",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
-    "gold_fred.refresh_rpt_fred_observation_dashboard(date,date)",
-    "gold_fred.refresh_mv_fred_latest_dashboard(date,date)",
+    "gold_fred.refresh_rpt_fred_observations(date,date)",
+    "gold_fred.refresh_mv_fred_latest(date,date)",
     "gold_fred.refresh_dashboard_serving_layer_fred(date,date)",
 )
 

@@ -159,7 +159,7 @@ def _get_hook() -> PostgresHook:
 def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
-        from silver_ref.dim_time
+        FROM silver_ref.dim_time
         WHERE date_key BETWEEN %s AND %s;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
@@ -174,7 +174,7 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
 def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
     sql = """
         SELECT geo_sk, geo_level, geo_id
-        from silver_ref.dim_geo;
+        FROM silver_ref.dim_geo;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -204,7 +204,7 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
     sql = """
         WITH needed(geo_level, geo_id) AS (VALUES %s)
         SELECT g.geo_sk, g.geo_level, g.geo_id
-                from silver_ref.dim_geo g
+        FROM silver_ref.dim_geo g
         JOIN needed n
           ON g.geo_level = n.geo_level
          AND g.geo_id = n.geo_id;
@@ -226,22 +226,9 @@ def _extract_measure_code(series_id: str, program: str, fallback: str | None) ->
 
 
 def _get_program_row_count(hook: PostgresHook, program: str) -> int:
-    """Approximate row count using pg_class.reltuples to avoid a full table scan.
-
-    reltuples is updated by ANALYZE / autovacuum and is accurate enough for
-    the large-dataset threshold check.  The total table count is used as a
-    conservative upper bound (may trigger year-chunking for smaller programs,
-    but that is safe).
-    """
-    sql = """
-        SELECT COALESCE(c.reltuples, 0)::bigint
-        FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'raw_bls'
-          AND c.relname = 'bls_long';
-    """
+    sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s;"
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, (program,))
         row = cur.fetchone()
     return int(row[0]) if row else 0
 
