@@ -5,10 +5,11 @@ import os
 # Test BLS API directly
 url = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
-# Try the US-level series
+# Try official LAUS examples and the CPS national series.
 series_ids = [
-    "LAU00000000000000003",  # Our generated format
-    "LNS14000000",           # Known national unemployment rate series
+    "LAUST010000000000003",   # Alabama unemployment rate
+    "LAUCN010010000000003",   # Autauga County unemployment rate
+    "LNS14000000",            # CPS national unemployment rate series
 ]
 
 payload = {

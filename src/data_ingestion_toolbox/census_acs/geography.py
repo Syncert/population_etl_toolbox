@@ -1,10 +1,9 @@
-# census_acs/geography.py
+# data_ingestion_toolbox/census_acs/geography.py
 
 from __future__ import annotations
 
 import io
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Optional
 import zipfile
@@ -74,50 +73,19 @@ def resolve_latest_gazetteer_year(
     )
 
 
-def _fetch_zipped_tsv(url: str, retries: int = 3) -> pl.DataFrame:
-    last_exc: Exception | None = None
+def _fetch_zipped_tsv(url: str) -> pl.DataFrame:
+    with httpx.Client(timeout=60, follow_redirects=True) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        zbytes = resp.content
 
-    for attempt in range(1, retries + 1):
-        try:
-            with httpx.Client(timeout=60, follow_redirects=True) as client:
-                resp = client.get(url)
-                resp.raise_for_status()
-                zbytes = resp.content
+    with zipfile.ZipFile(io.BytesIO(zbytes)) as zf:
+        txt_names = [n for n in zf.namelist() if n.lower().endswith(".txt")]
+        if not txt_names:
+            raise RuntimeError(f"No .txt found inside zip: {url}")
 
-            if len(zbytes) < 4 or not zbytes.startswith(b"PK"):
-                preview = zbytes[:200].decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"Expected a zip payload from {url} but received non-zip content. "
-                    f"Content-Type={resp.headers.get('content-type', 'unknown')!r}; "
-                    f"preview={preview!r}"
-                )
-
-            with zipfile.ZipFile(io.BytesIO(zbytes)) as zf:
-                txt_names = [n for n in zf.namelist() if n.lower().endswith(".txt")]
-                if not txt_names:
-                    raise RuntimeError(f"No .txt found inside zip: {url}")
-
-                with zf.open(txt_names[0]) as f:
-                    text = f.read().decode("utf-8", errors="replace")
-
-            break
-
-        except Exception as exc:
-            last_exc = exc
-            logger.warning(
-                "Gazetteer fetch attempt %d/%d failed for %s: %s",
-                attempt,
-                retries,
-                url,
-                exc,
-            )
-            if attempt < retries:
-                time.sleep(2 ** attempt)
-
-    else:
-        raise RuntimeError(
-            f"Failed to fetch Gazetteer zip from {url} after {retries} attempts"
-        ) from last_exc
+        with zf.open(txt_names[0]) as f:
+            text = f.read().decode("utf-8", errors="replace")
 
     # Try tab first (older), then pipe (newer), using GEOID as the “success” signal.
     for sep in ("\t", "|"):

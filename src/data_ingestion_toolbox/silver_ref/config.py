@@ -1,4 +1,4 @@
-# silver_ref/config.py
+# data_ingestion_toolbox/silver_ref/config.py
 
 from __future__ import annotations
 

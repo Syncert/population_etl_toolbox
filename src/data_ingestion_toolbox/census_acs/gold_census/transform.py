@@ -1,17 +1,12 @@
 """
-Gold analytics layer — ACS/Census subject transform.
+Gold analytics layer for the ``gold_census`` schema.
 
-Handles fetching ACS silver data for a given month and upserting
-into the shared gold.fact_metrics table.
-
-ACS data is annual; month_start must be January 1st to yield rows.
-ACS 5-year estimates (acs5) take precedence over 1-year (acs1).
+Bootstraps source-specific objects and refreshes ACS metadata from silver.
 """
 from __future__ import annotations
 
 import logging
 import pathlib
-from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -169,106 +164,116 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
         hook = _get_hook()
 
     with hook.get_conn() as conn, conn.cursor() as cur:
+        # Keep the metadata aggregates bounded to one ACS release at a time.
+        # Aggregating every geography row across every release in one statement
+        # can create multi-GB PostgreSQL temporary files.
         cur.execute(
             """
-
-            INSERT INTO gold_census.dim_acs_table (
-                dataset_code, vintage_year, table_id, table_title, concept, universe,
-                survey_span_years, reference_url
-            )
-            WITH table_year_rollup AS (
-                SELECT
-                    f.dataset AS dataset_code,
-                    f.estimate_year AS vintage_year,
-                    f.table_id,
-                    MIN(f.variable_concept) AS year_concept,
-                    MIN(f.universe) AS year_universe
-                FROM silver_census.fact_demographics f
-                WHERE f.table_id IS NOT NULL
-                  AND f.table_id <> ''
-                  AND f.dataset IN ('acs1', 'acs5')
-                GROUP BY f.dataset, f.estimate_year, f.table_id
-            ),
-            table_cross_year_title AS (
-                SELECT DISTINCT ON (f.dataset, f.table_id)
-                    f.dataset AS dataset_code,
-                    f.table_id,
-                    NULLIF(f.variable_concept, '') AS canonical_table_title
-                FROM silver_census.fact_demographics f
-                WHERE f.table_id IS NOT NULL
-                  AND f.table_id <> ''
-                  AND f.dataset IN ('acs1', 'acs5')
-                  AND NULLIF(f.variable_concept, '') IS NOT NULL
-                ORDER BY f.dataset, f.table_id, f.estimate_year DESC
-            )
-            SELECT
-                r.dataset_code,
-                r.vintage_year,
-                r.table_id,
-                UPPER(COALESCE(NULLIF(r.year_concept, ''), c.canonical_table_title, r.table_id)) AS table_title,
-                UPPER(r.year_concept) AS concept,
-                r.year_universe AS universe,
-                CASE WHEN r.dataset_code = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
-                'https://api.census.gov/data/' || r.vintage_year::TEXT || '/acs/' || r.dataset_code || '/variables.json' AS reference_url
-            FROM table_year_rollup r
-            LEFT JOIN table_cross_year_title c
-              ON c.dataset_code = r.dataset_code
-             AND c.table_id = r.table_id
-            ON CONFLICT (dataset_code, vintage_year, table_id)
-            DO UPDATE SET
-                table_title = EXCLUDED.table_title,
-                concept = EXCLUDED.concept,
-                universe = EXCLUDED.universe,
-                survey_span_years = EXCLUDED.survey_span_years,
-                reference_url = EXCLUDED.reference_url,
-                updated_at = NOW();
+            SELECT DISTINCT dataset, estimate_year
+            FROM silver_census.fact_demographics
+            WHERE source_system = 'CENSUS_ACS'
+              AND dataset IN ('acs1', 'acs5')
+            ORDER BY dataset, estimate_year
             """
         )
+        releases = cur.fetchall()
 
-        cur.execute(
-            """
-            INSERT INTO gold_census.dim_acs_variable (
-                acs_table_sk, dataset_code, vintage_year, variable_code,
-                variable_label, concept, universe, value_role
-            )
-            SELECT
-                t.acs_table_sk,
-                f.dataset,
-                f.estimate_year,
-                f.variable_code,
-                COALESCE(NULLIF(f.variable_label, ''), NULLIF(f.variable_concept, ''), f.variable_code) AS variable_label,
-                f.variable_concept,
-                f.universe,
-                'ESTIMATE'::TEXT AS value_role
-            FROM (
+        for dataset_code, vintage_year in releases:
+            cur.execute(
+                """
+                INSERT INTO gold_census.dim_acs_table (
+                    dataset_code, vintage_year, table_id, table_title, concept, universe,
+                    survey_span_years, reference_url
+                )
                 SELECT
-                    dataset,
-                    estimate_year,
-                    MIN(table_id)         AS table_id,
-                    variable_code,
-                    MIN(variable_label)   AS variable_label,
-                    MIN(variable_concept) AS variable_concept,
-                    MIN(universe)         AS universe
-                FROM silver_census.fact_demographics
-                WHERE variable_code IS NOT NULL
-                  AND variable_code <> ''
-                  AND dataset IN ('acs1', 'acs5')
-                GROUP BY dataset, estimate_year, variable_code
-            ) f
-            JOIN gold_census.dim_acs_table t
-              ON t.dataset_code = f.dataset
-             AND t.vintage_year = f.estimate_year
-             AND t.table_id = f.table_id
-            ON CONFLICT (dataset_code, vintage_year, variable_code)
-            DO UPDATE SET
-                acs_table_sk = EXCLUDED.acs_table_sk,
-                variable_label = EXCLUDED.variable_label,
-                concept = EXCLUDED.concept,
-                universe = EXCLUDED.universe,
-                value_role = EXCLUDED.value_role,
-                updated_at = NOW();
-            """
-        )
+                    f.dataset,
+                    f.estimate_year,
+                    f.table_id,
+                    UPPER(COALESCE(
+                        NULLIF(MIN(f.variable_concept), ''),
+                        NULLIF(rt.concept, ''),
+                        f.table_id
+                    )) AS table_title,
+                    UPPER(MIN(f.variable_concept)) AS concept,
+                    MIN(f.universe) AS universe,
+                    CASE WHEN f.dataset = 'acs5' THEN 5 ELSE 1 END AS survey_span_years,
+                    'https://api.census.gov/data/' || f.estimate_year::TEXT ||
+                        '/acs/' || f.dataset || '/variables.json' AS reference_url
+                FROM silver_census.fact_demographics f
+                LEFT JOIN raw_census.acs_tables rt
+                  ON rt.dataset = f.dataset
+                 AND rt.table_id = f.table_id
+                WHERE f.dataset = %s
+                  AND f.estimate_year = %s
+                  AND f.source_system = 'CENSUS_ACS'
+                  AND f.table_id IS NOT NULL
+                  AND f.table_id <> ''
+                GROUP BY
+                    f.dataset, f.estimate_year, f.table_id, rt.concept
+                ON CONFLICT (dataset_code, vintage_year, table_id)
+                DO UPDATE SET
+                    table_title = EXCLUDED.table_title,
+                    concept = EXCLUDED.concept,
+                    universe = EXCLUDED.universe,
+                    survey_span_years = EXCLUDED.survey_span_years,
+                    reference_url = EXCLUDED.reference_url,
+                    updated_at = NOW();
+                """,
+                (dataset_code, vintage_year),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO gold_census.dim_acs_variable (
+                    acs_table_sk, dataset_code, vintage_year, variable_code,
+                    variable_label, concept, universe, value_role
+                )
+                WITH variable_rollup AS (
+                    SELECT
+                        dataset,
+                        estimate_year,
+                        MIN(table_id) AS table_id,
+                        variable_code,
+                        MIN(variable_label) AS variable_label,
+                        MIN(variable_concept) AS variable_concept,
+                        MIN(universe) AS universe
+                    FROM silver_census.fact_demographics
+                    WHERE dataset = %s
+                      AND estimate_year = %s
+                      AND source_system = 'CENSUS_ACS'
+                      AND variable_code IS NOT NULL
+                      AND variable_code <> ''
+                    GROUP BY dataset, estimate_year, variable_code
+                )
+                SELECT
+                    t.acs_table_sk,
+                    f.dataset,
+                    f.estimate_year,
+                    f.variable_code,
+                    COALESCE(
+                        NULLIF(f.variable_label, ''),
+                        NULLIF(f.variable_concept, ''),
+                        f.variable_code
+                    ) AS variable_label,
+                    f.variable_concept,
+                    f.universe,
+                    'ESTIMATE'::TEXT AS value_role
+                FROM variable_rollup f
+                JOIN gold_census.dim_acs_table t
+                  ON t.dataset_code = f.dataset
+                 AND t.vintage_year = f.estimate_year
+                 AND t.table_id = f.table_id
+                ON CONFLICT (dataset_code, vintage_year, variable_code)
+                DO UPDATE SET
+                    acs_table_sk = EXCLUDED.acs_table_sk,
+                    variable_label = EXCLUDED.variable_label,
+                    concept = EXCLUDED.concept,
+                    universe = EXCLUDED.universe,
+                    value_role = EXCLUDED.value_role,
+                    updated_at = NOW();
+                """,
+                (dataset_code, vintage_year),
+            )
 
         cur.execute(
             """

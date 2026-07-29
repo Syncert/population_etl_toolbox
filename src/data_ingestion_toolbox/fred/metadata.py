@@ -1,4 +1,4 @@
-# fred/metadata.py
+# data_ingestion_toolbox/fred/metadata.py
 
 from __future__ import annotations
 

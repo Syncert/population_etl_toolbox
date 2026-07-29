@@ -1,17 +1,12 @@
 """
-Gold analytics layer — BLS subject transform.
+Gold analytics layer for the ``gold_bls`` schema.
 
-Handles fetching BLS silver data for a given month and upserting
-into the shared gold.fact_metrics table.
-
-BLS data is monthly; the latest period_date within each calendar month
-is selected per (geo_id, series_id).
+Bootstraps source-specific objects and refreshes BLS metadata from silver.
 """
 from __future__ import annotations
 
 import logging
 import pathlib
-from datetime import date
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -31,13 +26,13 @@ _REQUIRED_RELATIONS = (
     "gold_bls.dim_bls_survey",
     "gold_bls.dim_bls_series",
     "gold_bls.fact_bls_observation",
-    "gold_bls.rpt_observation_dashboard",
-    "gold_bls.mv_latest_dashboard",
+    "gold_bls.rpt_bls_observations",
+    "gold_bls.mv_bls_latest",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
-    "gold_bls.refresh_rpt_bls_observation_dashboard(date,date)",
-    "gold_bls.refresh_mv_bls_latest_dashboard(date,date)",
+    "gold_bls.refresh_rpt_bls_observations(date,date)",
+    "gold_bls.refresh_mv_bls_latest(date,date)",
     "gold_bls.refresh_dashboard_serving_layer_bls(date,date)",
 )
 

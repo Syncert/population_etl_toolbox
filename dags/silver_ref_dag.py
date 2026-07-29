@@ -12,16 +12,10 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-try:
-    from data_ingestion_toolbox.silver_ref.config import CONFIG
-    from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
-    from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
-except ImportError:
-    # Backward-compatible fallback for legacy Airflow layouts that copy
-    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
-    from silver_ref.config import CONFIG
-    from silver_ref.geography import sync_geo_dim
-    from silver_ref.time_dim import sync_time_dim
+from data_ingestion_toolbox import silver_ref as silver_ref_package
+from data_ingestion_toolbox.silver_ref.config import CONFIG
+from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
+from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 
 
 DEFAULT_ARGS = {
@@ -37,15 +31,7 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _ddl_path() -> Path:
-    root = Path(__file__).resolve().parents[1]
-    candidates = [
-        root / "src" / "data_ingestion_toolbox" / "silver_ref" / "DDL" / "silver_ref.sql",
-        root / "silver_ref" / "DDL" / "silver_ref.sql",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"silver_ref DDL not found. Checked: {candidates}")
+    return Path(silver_ref_package.__file__).resolve().parent / "DDL" / "silver_ref.sql"
 
 
 @dag(
@@ -69,7 +55,7 @@ def silver_ref():
 
     @task
     def load_dim_geo() -> int:
-        return sync_geo_dim(source_year=None, min_year=1990)
+        return sync_geo_dim(source_year=None, min_year=2010)
 
     @task
     def load_dim_time() -> int:

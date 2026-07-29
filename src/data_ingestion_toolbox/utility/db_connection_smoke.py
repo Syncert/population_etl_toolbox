@@ -1,23 +1,5 @@
-from data_ingestion_toolbox.utility.db_connection import (
-    PostgresConnectionDetails,
-    PostgresConnectionFactory,
-)
+from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
 from sqlalchemy import create_engine, text
-
-
-def test_sqlalchemy_url_formatting_is_deterministic() -> None:
-    details = PostgresConnectionDetails(
-        host="localhost",
-        port=5432,
-        user="tester",
-        password="secret",
-        database="demo",
-    )
-
-    assert details.sqlalchemy_url() == (
-        "postgresql+psycopg2://tester:secret@localhost:5432/demo"
-    )
-
 
 def main():
     try:

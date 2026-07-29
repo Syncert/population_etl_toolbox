@@ -1,4 +1,4 @@
-# include/bls/config.py
+# data_ingestion_toolbox/bls/config.py
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class BlsConfig(BaseModel):
       (hash-based slice ledger in raw_bls)
 
     Philosophy:
-    - LAUS is programmatic (generate IDs from area + measure)
+    - LAUS requests are selected from published metadata by geography + measure
     - National series are explicit and minimal
     - Do NOT force QCEW into a fake "series_id" abstraction
     """
@@ -47,12 +47,9 @@ class BlsConfig(BaseModel):
     # IMPORTANT DESIGN NOTES:
     #
     # 1) LAUS entries below are NOT full series IDs.
-    #    They are *measure codes* that must be dynamically expanded
-    #    in ingest.py using:
-    #
-    #        LA{seasonal}{area_code}{measure_code}
-    #
-    #    This avoids hardcoding thousands of county/state series.
+    #    They are *measure-code filters*. ingest.py selects complete matching
+    #    series IDs from raw_bls.bls_series so unavailable combinations are
+    #    never requested.
     #
     # 2) CES, CPI, and JOLTS entries ARE full series IDs.
     #    These programs do not use area-code expansion in the same way.
@@ -67,8 +64,8 @@ class BlsConfig(BaseModel):
     # WARNING:
     # Similar metric names across BLS programs are not automatically
     # comparable. Preserve at least program, series_id, measure_name,
-    # unit, seasonal_adjustment, geo_level, and observation_basis in the
-    # gold layer. Household measures (CPS/LN, LAUS) are not the same thing
+    # unit, seasonal_adjustment, geo_level, and observation_basis in downstream
+    # models. Household measures (CPS/LN, LAUS) are not the same thing
     # as establishment/payroll measures (CES), and price indexes (CPI) and
     # flow measures (JOLTS) should not be flattened into the same semantic
     # bucket as level-based labor statistics.
@@ -79,7 +76,8 @@ class BlsConfig(BaseModel):
         # LAUS — Local Area Unemployment Statistics (la)
         #
         # Measure codes only.
-        # Valid for national, state, county, metro, and city geographies.
+        # Expanded only for published LAUS subnational geographies. National
+        # household labor statistics come from the CPS/LN series below.
         # Counties are typically NOT seasonally adjusted.
         # --------------------------------------------------------------
         "la": [
@@ -109,6 +107,14 @@ class BlsConfig(BaseModel):
             "LNS15000000",  # Not in labor force (national)
             "LNS13327709",  # U-6 total labor underutilization rate
             "LNS13025703",  # Unemployed 27 weeks and over
+            "LNS12300060",  # Employment-population ratio, ages 25-54
+            "LNS11300060",  # Labor force participation rate, ages 25-54
+            "LNS12032194",  # Employed part time for economic reasons
+            "LNS13008276",  # Median duration of unemployment
+            "LNS14000003",  # Unemployment rate, White
+            "LNS14000006",  # Unemployment rate, Black or African American
+            "LNS14000009",  # Unemployment rate, Hispanic or Latino
+            "LNS14032183",  # Unemployment rate, Asian
         ],
 
         # --------------------------------------------------------------
@@ -123,7 +129,19 @@ class BlsConfig(BaseModel):
             "CES0500000001",  # Total private employment
             "CES0500000002",  # Average weekly hours of all employees, total private
             "CES0500000003",  # Average hourly earnings of all employees, total private
-            "CES0500000008",  # Average weekly earnings of all employees, total private
+            "CES0500000008",  # Average hourly earnings, production/nonsupervisory employees
+            "CES0500000011",  # Average weekly earnings of all employees, total private
+            "CES1000000001",  # Mining and logging employment
+            "CES2000000001",  # Construction employment
+            "CES3000000001",  # Manufacturing employment
+            "CES4000000001",  # Trade, transportation, and utilities employment
+            "CES5000000001",  # Information employment
+            "CES5500000001",  # Financial activities employment
+            "CES6000000001",  # Professional and business services employment
+            "CES6500000001",  # Private education and health services employment
+            "CES7000000001",  # Leisure and hospitality employment
+            "CES8000000001",  # Other services employment
+            "CES9000000001",  # Government employment
         ],
 
         # --------------------------------------------------------------
@@ -136,6 +154,12 @@ class BlsConfig(BaseModel):
             "CUUR0000SA0",    # CPI-U, all items, U.S. city average
             "CUUR0000SA0L1E", # CPI-U, all items less food and energy (core CPI)
             "CWUR0000SA0",    # CPI-W, all items, U.S. city average
+            "CUUR0000SAF1",   # CPI-U, food
+            "CUUR0000SA0E",   # CPI-U, energy
+            "CUUR0000SAH1",   # CPI-U, shelter
+            "CUUR0000SEHA",   # CPI-U, rent of primary residence
+            "CUUR0000SEHC",   # CPI-U, owners' equivalent rent
+            "CUUR0000SAM",    # CPI-U, medical care
         ],
 
         # --------------------------------------------------------------
@@ -145,12 +169,19 @@ class BlsConfig(BaseModel):
         # Measures labor market churn: openings, hires, quits, separations.
         # --------------------------------------------------------------
         "jt": [
-            "JTS000000000000000JOL",  # Job openings, total nonfarm (national)
-            "JTS000000000000000HIR",  # Hires, total nonfarm (national)
-            "JTS000000000000000QUR",  # Quits, total nonfarm (national)
-            "JTS000000000000000LDL",  # Layoffs and discharges, total nonfarm (national)
-            "JTS000000000000000TSL",  # Total separations, total nonfarm (national)
-            "JTS000000000000000OSL",  # Other separations, total nonfarm (national)
+            "JTS000000000000000JOL",  # Job openings level, total nonfarm
+            "JTS000000000000000JOR",  # Job openings rate, total nonfarm
+            "JTS000000000000000HIL",  # Hires level, total nonfarm
+            "JTS000000000000000HIR",  # Hires rate, total nonfarm
+            "JTS000000000000000QUL",  # Quits level, total nonfarm
+            "JTS000000000000000QUR",  # Quits rate, total nonfarm
+            "JTS000000000000000LDL",  # Layoffs and discharges level, total nonfarm
+            "JTS000000000000000LDR",  # Layoffs and discharges rate, total nonfarm
+            "JTS000000000000000TSL",  # Total separations level, total nonfarm
+            "JTS000000000000000TSR",  # Total separations rate, total nonfarm
+            "JTS000000000000000OSL",  # Other separations level, total nonfarm
+            "JTS000000000000000OSR",  # Other separations rate, total nonfarm
+            "JTS000000000000000UOR",  # Unemployed persons per job opening
         ],
     }
 
@@ -170,7 +201,6 @@ class BlsConfig(BaseModel):
     # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
     # prevent Postgres connection exhaustion.
     silver_max_active_tis: int = 4
-    gold_merge_max_active_tis: int = 8
 
     @property
     def has_api_key(self) -> bool:
@@ -180,7 +210,7 @@ CONFIG = BlsConfig()
 
 # ---------------------------------------------------------------------------
 # Human-readable labels for BLS programs and LAUS measure codes.
-# Used by silver transforms (measure_name derivation) and gold dim_element.
+# Used by silver transforms for measure-name derivation.
 # ---------------------------------------------------------------------------
 BLS_PROGRAM_LABELS: Dict[str, str] = {
     "la": "LAUS",

@@ -17,7 +17,7 @@ def parse_bls_geography(series_id: str, program: str) -> Dict[str, Optional[str]
     series_id = series_id or ""
     program = (program or "").lower()
 
-    if program == "la" or series_id.startswith("LA"):
+    if program == "la":
         parsed = parse_laus_series_id(series_id)
         return {
             "geo_level": parsed["geo_level"],

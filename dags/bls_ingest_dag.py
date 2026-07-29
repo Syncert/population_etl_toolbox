@@ -6,7 +6,7 @@
 # 1) Syncs BLS series metadata from download.bls.gov
 # 2) Syncs BLS datasets table to track program availability
 # 3) Builds ingestion plan for configured programs and years
-#    - For LAUS (program='la'): expands by geography (us/state/county)
+#    - For LAUS (program='la'): expands by subnational geography (state/county)
 #    - For other programs (CES/CPI/JOLTS): ingests national series
 # 4) Skips slices already completed for the current series set (hash-based)
 # 5) Uses a Pool ("bls_api") to limit concurrency and respect BLS API limits
@@ -22,9 +22,9 @@
 # - Create a pool named "bls_api" in Airflow UI and set its size conservatively (start with 4).
 #
 # ASSUMPTIONS:
-# - bls.config.CONFIG has postgres_conn_id, programs, curated_by_program
-# - bls.metadata provides sync_bls_series_metadata(), sync_bls_datasets_table()
-# - bls.ingest provides ingest_slice()
+# - data_ingestion_toolbox.bls.config.CONFIG has postgres_conn_id, programs, curated_by_program
+# - data_ingestion_toolbox.bls.metadata provides sync_bls_series_metadata(), sync_bls_datasets_table()
+# - data_ingestion_toolbox.bls.ingest provides ingest_slice()
 # - BLS_API_KEY environment variable is set
 
 from __future__ import annotations
@@ -32,29 +32,28 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from psycopg2.extras import execute_values
+from data_ingestion_toolbox import bls as bls_package
+from data_ingestion_toolbox.bls.config import CONFIG
+from data_ingestion_toolbox.bls.metadata import (
+    sync_bls_series_metadata,
+    sync_bls_datasets_table,
+)
+from data_ingestion_toolbox.bls.ingest import (
+    BlsDailyThresholdExceeded,
+    BlsRetryableHTTP,
+    get_curated_series_for_program,
+    ingest_slice,
+)
+from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
 
 logger = logging.getLogger(__name__)
-
-try:
-    from data_ingestion_toolbox.bls.config import CONFIG
-    from data_ingestion_toolbox.bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-    from data_ingestion_toolbox.bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
-    from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
-except ImportError:
-    # Backward-compatible fallback for legacy Airflow layouts that copy
-    # sibling folders (silver_ref/, bls/, census_acs/, fred/) next to dags/.
-    from bls.config import CONFIG
-    from bls.metadata import sync_bls_series_metadata, sync_bls_datasets_table
-    from bls.ingest import ingest_slice, get_curated_series_for_program, BlsRetryableHTTP, BlsDailyThresholdExceeded
-    from bls.silver_bls.transform import transform_bls_to_silver
 
 # -----------------------------
 # Airflow defaults & constants
@@ -76,22 +75,15 @@ def _get_postgres_hook() -> PostgresHook:
 
 
 def _silver_ddl_path() -> Path:
-    root = Path(__file__).resolve().parents[1]
-    candidates = [
-        root / "src" / "data_ingestion_toolbox" / "bls" / "DDL" / "silver_bls.sql",
-        root / "bls" / "DDL" / "silver_bls.sql",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"BLS silver DDL not found. Checked: {candidates}")
+    return Path(bls_package.__file__).resolve().parent / "DDL" / "silver_bls.sql"
 
 
 def _series_fingerprint(program: str) -> tuple[str, int]:
     """
-    Compute a stable fingerprint of the curated series/measure codes for a program.
+    Compute a stable fingerprint of the series eligible for ingestion.
     
-    For LAUS: fingerprints measure codes (which expand to many series).
+    For LAUS: fingerprints complete published state/county series IDs matching
+    the curated measure filters.
     For others: fingerprints full series IDs.
     
     Returns: (hash_digest, series_count)
@@ -99,6 +91,28 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
     series_list = get_curated_series_for_program(program)
     if not series_list:
         return "", 0
+
+    if program == "la":
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT series_id
+                FROM raw_bls.bls_series
+                WHERE program = 'la'
+                  AND seasonal = 'U'
+                  AND measure = ANY(%s)
+                  AND (
+                      series_id ~ '^LA[SU]ST[0-9]{2}0{11}[0-9]{2}$'
+                      OR series_id ~ '^LA[SU]CN[0-9]{5}0{8}[0-9]{2}$'
+                  )
+                ORDER BY series_id
+                """,
+                (series_list,),
+            )
+            series_list = [row[0] for row in cur.fetchall()]
+        if not series_list:
+            return "", 0
     
     series_sorted = sorted(series_list)
     payload = "|".join(series_sorted).encode("utf-8")
@@ -383,7 +397,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 @dag(
     dag_id="bls_ingest",
     default_args=DEFAULT_ARGS,
-    schedule="0 7 * * 0",  # weekly on Sundays at 07:00 UTC
+    schedule="0 7 1 * *",  # monthly on the 1st at 07:00
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
@@ -395,7 +409,7 @@ def bls_ingest():
     
     - Sync metadata (series + datasets)
     - Build ingestion plan for each program
-    - For LAUS: expand by geography (us/state/county)
+    - For LAUS: expand by subnational geography (state/county)
     - For others: ingest national series
     - Skip completed slices unless series set changed (hash mismatch)
     - Track progress in raw_bls.bls_ingestion_slices
@@ -442,7 +456,7 @@ def bls_ingest():
            Always re-ingested unconditionally, regardless of prior status.
            This ensures BLS revisions, late-filed data, and appropriations-lapse
            backfills (footnote X/N/9) are picked up automatically on every
-           weekly DAG run.  Two years back is used because BLS frequently
+           monthly DAG run.  Two years back is used because BLS frequently
            revises LAUS county benchmarks ~18 months after initial release.
 
         Skip logic
@@ -475,26 +489,38 @@ def bls_ingest():
             shash, scount = _series_fingerprint(program)
             series_meta[program] = {"series_hash": shash, "series_count": scount}
 
-        # Load completed and planned slices in one round-trip.
+        # Load completed historical slices so we can skip them
         completed = set()
-        planned_to_retry = set()
-        sql_slice_status = """
-            SELECT program, year_start, year_end, geo_level, state_fips, series_hash, status
+        sql_completed = """
+            SELECT program, year_start, year_end, geo_level, state_fips, series_hash
             FROM raw_bls.bls_ingestion_slices
-            WHERE status IN ('success', 'empty', 'planned');
+            WHERE status IN ('success', 'empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_slice_status)
-            for program, sy, ey, geo_level, state_fips, series_hash, status in cur.fetchall():
-                key = (
+            cur.execute(sql_completed)
+            for program, sy, ey, geo_level, state_fips, series_hash in cur.fetchall():
+                completed.add((
                     str(program), int(sy), int(ey),
                     geo_level if geo_level is not None else None,
                     state_fips if state_fips is not None else None,
-                )
-                if status in ('success', 'empty'):
-                    completed.add((*key, series_hash))
-                else:  # 'planned'
-                    planned_to_retry.add(key)
+                    series_hash,
+                ))
+
+        # Load planned slices (retry these)
+        planned_to_retry = set()
+        sql_planned = """
+            SELECT program, year_start, year_end, geo_level, state_fips
+            FROM raw_bls.bls_ingestion_slices
+            WHERE status = 'planned';
+        """
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql_planned)
+            for program, sy, ey, geo_level, state_fips in cur.fetchall():
+                planned_to_retry.add((
+                    str(program), int(sy), int(ey),
+                    geo_level if geo_level is not None else None,
+                    state_fips if state_fips is not None else None,
+                ))
 
         def hist_is_done(
             program: str, sy: int, ey: int,
@@ -540,7 +566,7 @@ def bls_ingest():
         for program in synced_programs:
             if program == "la":
                 geos: list[tuple[str, Optional[str]]] = (
-                    [("us", None), ("state", None)]
+                    [("state", None)]
                     + [("county", sf) for sf in state_fips_list]
                 )
                 for geo_level, state_fips in geos:
@@ -581,47 +607,70 @@ def bls_ingest():
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
         
-        sql_planned_upsert = """
+        sql_planned_update = """
+            UPDATE raw_bls.bls_ingestion_slices
+            SET status = CASE
+                    WHEN status IN ('success','empty')
+                        AND series_hash = %s
+                    THEN status
+                    ELSE 'planned'
+                END,
+                rows_loaded = CASE
+                    WHEN status IN ('success','empty')
+                        AND series_hash = %s
+                    THEN rows_loaded
+                    ELSE 0
+                END,
+                series_hash = %s,
+                series_count = %s,
+                series_hash_seen_at = %s,
+                last_error = NULL
+            WHERE program = %s
+              AND year_start = %s
+              AND year_end = %s
+              AND geo_level IS NOT DISTINCT FROM %s
+              AND state_fips IS NOT DISTINCT FROM %s;
+        """
+        
+        sql_planned_insert = """
             INSERT INTO raw_bls.bls_ingestion_slices (
                 program, year_start, year_end, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 series_hash, series_count, series_hash_seen_at
-            ) VALUES %s
-            ON CONFLICT (program, year_start, year_end, COALESCE(geo_level, ''), COALESCE(state_fips, ''))
-            DO UPDATE SET
-                status = CASE
-                        WHEN raw_bls.bls_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_bls.bls_ingestion_slices.series_hash = EXCLUDED.series_hash
-                        THEN raw_bls.bls_ingestion_slices.status
-                        ELSE 'planned'
-                    END,
-                rows_loaded = CASE
-                        WHEN raw_bls.bls_ingestion_slices.status IN ('success', 'empty')
-                             AND raw_bls.bls_ingestion_slices.series_hash = EXCLUDED.series_hash
-                        THEN raw_bls.bls_ingestion_slices.rows_loaded
-                        ELSE 0
-                    END,
-                series_hash = EXCLUDED.series_hash,
-                series_count = EXCLUDED.series_count,
-                series_hash_seen_at = EXCLUDED.series_hash_seen_at,
-                last_error = NULL;
+            )
+            VALUES (%s, %s, %s, %s, %s,
+                    'planned', 0,
+                    NULL, NULL, NULL,
+                    %s, %s, %s)
+            ON CONFLICT DO NOTHING;
         """
         
-        rows = [
-            (
-                w["program"], int(w["start_year"]), int(w["end_year"]),
-                w.get("geo_level"), w.get("state_fips"),
-                'planned', 0, None, None, None,
-                w.get("series_hash"), int(w.get("series_count", 0)), now,
-            )
-            for batch in batches for w in batch
-        ]
-        
-        if rows:
-            with hook.get_conn() as conn, conn.cursor() as cur:
-                execute_values(cur, sql_planned_upsert, rows, page_size=500)
-                conn.commit()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            for batch in batches:
+                for w in batch:
+                    program = w["program"]
+                    start_year = int(w["start_year"])
+                    end_year = int(w["end_year"])
+                    geo_level = w.get("geo_level")
+                    state_fips = w.get("state_fips")
+                    shash = w.get("series_hash")
+                    scount = int(w.get("series_count", 0))
+                    
+                    cur.execute(
+                        sql_planned_update,
+                        (shash, shash, shash, scount, now,
+                         program, start_year, end_year, geo_level, state_fips),
+                    )
+                    
+                    if cur.rowcount == 0:
+                        cur.execute(
+                            sql_planned_insert,
+                            (program, start_year, end_year, geo_level, state_fips,
+                             shash, scount, now),
+                        )
+            
+            conn.commit()
     
     # -----------------------------
     # Task 4: Ingest batch (mapped)
@@ -700,117 +749,75 @@ def bls_ingest():
     raw_ingest >> silver_schema >> silver_transforms
 
     # -----------------------------
-    # Gold update terminal tasks
+    # gold_bls serving layer
     # -----------------------------
-    @task(trigger_rule='all_success')
-    def gold_ensure_schema() -> None:
-        """Ensure gold schema exists."""
-        try:
-            from data_ingestion_toolbox.bls.gold_bls.transform import ensure_bls_gold_schema
-        except ImportError:
-            from bls.gold_bls.transform import ensure_bls_gold_schema
+    @task(trigger_rule="all_success")
+    def ensure_gold_bls_schema() -> None:
+        """Apply the source-specific gold_bls DDL."""
+        from data_ingestion_toolbox.bls.gold_bls.transform import (
+            ensure_bls_gold_schema,
+        )
+
         ensure_bls_gold_schema()
 
-    @task(trigger_rule='all_success')
-    def gold_refresh_elements() -> None:
-        """Refresh gold element dictionary from silver sources."""
-        try:
-            from data_ingestion_toolbox.bls.gold_bls.transform import refresh_bls_elements
-        except ImportError:
-            from bls.gold_bls.transform import refresh_bls_elements
-        refresh_bls_elements()
+    @task(trigger_rule="all_success")
+    def refresh_gold_bls_elements() -> int:
+        """Refresh BLS dimensions and metric mappings in gold_bls."""
+        from data_ingestion_toolbox.bls.gold_bls.transform import (
+            refresh_bls_elements,
+        )
 
-    @task(trigger_rule='all_success')
-    def gold_compute_shards() -> list[str]:
-        """Compute the full-history date floor covered by current silver data.
+        return refresh_bls_elements()
 
-        Returns a single-element list [month_start_iso] representing the
-        earliest month in the available history, used only for
-        downstream compatibility; the actual refresh range is computed
-        in gold_refresh_window from silver directly.
-        """
+    @task(trigger_rule="all_success")
+    def get_gold_bls_refresh_window() -> dict[str, str] | None:
+        """Return the complete BLS date range currently available in silver."""
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT MIN(period_date)::date
-                FROM silver_bls.fact_labor_statistics
-                WHERE value IS NOT NULL
-            """)
-            row = cur.fetchone()
-        if not row or row[0] is None:
-            logger.warning("[BLS GOLD] No data in silver full-history window; skipping gold refresh.")
-            return []
-        return [row[0].isoformat()]
-
-    @task(trigger_rule='all_success')
-    def gold_refresh_window(shard_results: list[str]) -> dict[str, str] | None:
-        """Compute full-history min/max date bounds for serving-layer refresh."""
-        if not shard_results:
-            return None
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT MIN(period_date)::date, MAX(period_date)::date
                 FROM silver_bls.fact_labor_statistics
                 WHERE value IS NOT NULL
-            """)
+                """
+            )
             row = cur.fetchone()
+
         if not row or row[0] is None:
+            logger.warning("[gold_bls] No silver data available; skipping serving refresh.")
             return None
+
         return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
 
-    @task(trigger_rule='all_success')
-    def refresh_dashboard_serving_layer(refresh_window: dict[str, str] | None) -> None:
-        """Refresh BLS persisted serving tables and latest snapshots."""
-        started_at = datetime.now(timezone.utc)
-        window_start = refresh_window["start_date"] if refresh_window else None
-        window_end = refresh_window["end_date"] if refresh_window else None
+    @task(trigger_rule="all_success")
+    def refresh_gold_bls_serving_layer(
+        refresh_window: dict[str, str] | None,
+    ) -> None:
+        """Refresh persisted BLS serving tables in gold_bls."""
+        if refresh_window is None:
+            return
 
         hook = _get_postgres_hook()
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0;")
-            cur.execute("SET application_name = %s;", ("airflow:bls:refresh_dashboard_serving_layer",))
-            cur.execute("SELECT pg_backend_pid();")
-            backend_pid = cur.fetchone()[0]
-
-            logger.info(
-                "[BLS GOLD] Starting dashboard serving refresh: backend_pid=%s window_start=%s window_end=%s",
-                backend_pid,
-                window_start,
-                window_end,
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(
+                "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s)",
+                (refresh_window["start_date"], refresh_window["end_date"]),
             )
-
-            conn.notices.clear()
-            if refresh_window is None:
-                cur.execute("CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL);")
-            else:
-                cur.execute(
-                    "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s);",
-                    (refresh_window["start_date"], refresh_window["end_date"]),
-                )
-
-            for notice in conn.notices:
-                logger.info("[BLS GOLD] [DB NOTICE] %s", notice.strip())
-
             conn.commit()
 
-        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
-        logger.info(
-            "[BLS GOLD] Completed dashboard serving refresh in %.2f seconds: backend_pid=%s window_start=%s window_end=%s",
-            elapsed_seconds,
-            backend_pid,
-            window_start,
-            window_end,
-        )
+    gold_bls_schema = ensure_gold_bls_schema()
+    gold_bls_elements = refresh_gold_bls_elements()
+    gold_bls_window = get_gold_bls_refresh_window()
+    gold_bls_refresh = refresh_gold_bls_serving_layer(gold_bls_window)
 
-    gold_schema = gold_ensure_schema()
-    gold_elements = gold_refresh_elements()
-    gold_shards = gold_compute_shards()
-    refresh_window = gold_refresh_window(gold_shards)
-    dashboard_refresh = refresh_dashboard_serving_layer(refresh_window)
-
-    silver_transforms >> gold_schema >> gold_elements >> gold_shards >> refresh_window >> dashboard_refresh
-
+    (
+        silver_transforms
+        >> gold_bls_schema
+        >> gold_bls_elements
+        >> gold_bls_window
+        >> gold_bls_refresh
+    )
 
 # Instantiate DAG
 bls_ingest_dag = bls_ingest()
