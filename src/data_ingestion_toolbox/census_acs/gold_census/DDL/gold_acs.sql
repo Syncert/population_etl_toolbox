@@ -449,22 +449,40 @@ CREATE OR REPLACE PROCEDURE gold_census.refresh_mv_acs_latest(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_geo_id TEXT;
 BEGIN
-    -- Rebuild ACS slice — bounded by N_variables × N_geos.
+    -- Rebuild the ACS slice one geography at a time. Sorting every wide report
+    -- row in one DISTINCT ON can exceed PostgreSQL's temp_file_limit. geo_id is
+    -- part of the DISTINCT key, so these independent batches are equivalent to
+    -- the global query while bounding temporary space to one geography.
     DELETE FROM gold_census.mv_acs_latest;
 
-    INSERT INTO gold_census.mv_acs_latest
-    SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code)
-        d.*
-    FROM gold_census.rpt_acs_observations d
-    ORDER BY
-        d.geo_id,
-        d.variable_code,
-        d.metric_code,
-        d.observation_date DESC,
-        d.updated_at DESC,
-        CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
-        d.vintage_year DESC;
+    FOR v_geo_id IN
+        SELECT DISTINCT d.geo_id
+        FROM gold_census.rpt_acs_observations d
+        ORDER BY d.geo_id
+    LOOP
+        INSERT INTO gold_census.mv_acs_latest
+        WITH latest_row AS MATERIALIZED (
+            -- Keep the per-geography sort narrow; fetch wide report columns
+            -- only after the winning physical rows have been identified.
+            SELECT DISTINCT ON (d.variable_code, d.metric_code)
+                d.ctid AS row_ctid
+            FROM gold_census.rpt_acs_observations d
+            WHERE d.geo_id = v_geo_id
+            ORDER BY
+                d.variable_code,
+                d.metric_code,
+                d.observation_date DESC,
+                d.updated_at DESC,
+                CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
+                d.vintage_year DESC
+        )
+        SELECT d.*
+        FROM gold_census.rpt_acs_observations d
+        JOIN latest_row l ON l.row_ctid = d.ctid;
+    END LOOP;
 
     ANALYZE gold_census.mv_acs_latest;
 END;
