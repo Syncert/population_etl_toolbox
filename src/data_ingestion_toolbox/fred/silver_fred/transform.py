@@ -340,7 +340,32 @@ def transform_fred_to_silver(domain: str) -> int:
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
-            ingested_at = EXCLUDED.ingested_at;
+            ingested_at = EXCLUDED.ingested_at
+        WHERE (
+            silver_fred.fact_economic_indicators.time_sk,
+            silver_fred.fact_economic_indicators.duration_start,
+            silver_fred.fact_economic_indicators.duration_end,
+            silver_fred.fact_economic_indicators.domain,
+            silver_fred.fact_economic_indicators.value,
+            silver_fred.fact_economic_indicators.is_missing,
+            silver_fred.fact_economic_indicators.series_title,
+            silver_fred.fact_economic_indicators.unit_of_measure,
+            silver_fred.fact_economic_indicators.frequency,
+            silver_fred.fact_economic_indicators.seasonal_adjustment,
+            silver_fred.fact_economic_indicators.source_system
+        ) IS DISTINCT FROM (
+            EXCLUDED.time_sk,
+            EXCLUDED.duration_start,
+            EXCLUDED.duration_end,
+            EXCLUDED.domain,
+            EXCLUDED.value,
+            EXCLUDED.is_missing,
+            EXCLUDED.series_title,
+            EXCLUDED.unit_of_measure,
+            EXCLUDED.frequency,
+            EXCLUDED.seasonal_adjustment,
+            EXCLUDED.source_system
+        );
     """
 
     try:

@@ -52,6 +52,10 @@ from data_ingestion_toolbox.bls.ingest import (
     ingest_slice,
 )
 from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
+from data_ingestion_toolbox.utility.gold_schema import (
+    ServingRefreshChunkConfig,
+    refresh_serving_layer_in_year_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -761,6 +765,16 @@ def bls_ingest():
         ensure_bls_gold_schema()
 
     @task(trigger_rule="all_success")
+    def refresh_gold_geography() -> None:
+        """Synchronize the shared current-geography table in a short transaction."""
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET lock_timeout = '30s'")
+            cur.execute("SET statement_timeout = '10min'")
+            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            conn.commit()
+
+    @task(trigger_rule="all_success")
     def refresh_gold_bls_elements() -> int:
         """Refresh BLS dimensions and metric mappings in gold_bls."""
         from data_ingestion_toolbox.bls.gold_bls.transform import (
@@ -770,52 +784,43 @@ def bls_ingest():
         return refresh_bls_elements()
 
     @task(trigger_rule="all_success")
-    def get_gold_bls_refresh_window() -> dict[str, str] | None:
-        """Return the complete BLS date range currently available in silver."""
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT MIN(period_date)::date, MAX(period_date)::date
-                FROM silver_bls.fact_labor_statistics
-                WHERE value IS NOT NULL
-                """
-            )
-            row = cur.fetchone()
-
-        if not row or row[0] is None:
-            logger.warning("[gold_bls] No silver data available; skipping serving refresh.")
-            return None
-
-        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
-
-    @task(trigger_rule="all_success")
-    def refresh_gold_bls_serving_layer(
-        refresh_window: dict[str, str] | None,
-    ) -> None:
-        """Refresh persisted BLS serving tables in gold_bls."""
-        if refresh_window is None:
-            return
-
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0")
-            cur.execute(
-                "CALL gold_bls.refresh_dashboard_serving_layer_bls(%s, %s)",
-                (refresh_window["start_date"], refresh_window["end_date"]),
-            )
-            conn.commit()
+    def refresh_gold_bls_serving_layer() -> dict[str, int]:
+        """Refresh changed BLS years as independently committed annual chunks."""
+        return refresh_serving_layer_in_year_chunks(
+            hook=_get_postgres_hook(),
+            config=ServingRefreshChunkConfig(
+                source_code="BLS",
+                log_label="BLS",
+                report_table="gold_bls.rpt_bls_observations",
+                report_date_column="observation_date",
+                changed_chunks_sql="""
+                    SELECT
+                        MAKE_DATE(s.year, 1, 1) AS chunk_start,
+                        MAKE_DATE(s.year, 12, 31) AS chunk_end,
+                        MAX(s.ingested_at) AS target_watermark
+                    FROM silver_bls.fact_labor_statistics s
+                    WHERE s.value IS NOT NULL
+                      AND s.ingested_at > %s
+                    GROUP BY s.year
+                    ORDER BY s.year
+                """,
+                report_procedure="gold_bls.refresh_rpt_bls_observations",
+                latest_procedure="gold_bls.refresh_mv_bls_latest",
+                statement_timeout="60min",
+            ),
+            task_logger=logger,
+        )
 
     gold_bls_schema = ensure_gold_bls_schema()
+    gold_geography = refresh_gold_geography()
     gold_bls_elements = refresh_gold_bls_elements()
-    gold_bls_window = get_gold_bls_refresh_window()
-    gold_bls_refresh = refresh_gold_bls_serving_layer(gold_bls_window)
+    gold_bls_refresh = refresh_gold_bls_serving_layer()
 
     (
         silver_transforms
         >> gold_bls_schema
+        >> gold_geography
         >> gold_bls_elements
-        >> gold_bls_window
         >> gold_bls_refresh
     )
 

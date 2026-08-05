@@ -23,6 +23,8 @@ _REQUIRED_RELATIONS = (
     "gold_glossary.dim_source_system",
     "gold_glossary.dim_metric_catalog",
     "gold_glossary.dim_geo_latest",
+    "gold_glossary.serving_refresh_state",
+    "gold_glossary.serving_refresh_chunk_state",
     "gold_glossary.bridge_metric_acs_variable",
     "gold_census.dim_acs_table",
     "gold_census.dim_acs_variable",
@@ -34,7 +36,7 @@ _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
     "gold_census.refresh_rpt_acs_observations(date,date)",
     "gold_census.refresh_mv_acs_latest(date,date)",
-    "gold_census.refresh_dashboard_serving_layer_acs(date,date)",
+    "gold_census.refresh_dashboard_serving_layer_acs(date,date,boolean)",
 )
 
 

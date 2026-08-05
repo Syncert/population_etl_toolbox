@@ -63,6 +63,10 @@ from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
 )
+from data_ingestion_toolbox.utility.gold_schema import (
+    ServingRefreshChunkConfig,
+    refresh_serving_layer_in_year_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -618,6 +622,16 @@ def acs_ingest():
         ensure_acs_gold_schema()
 
     @task(trigger_rule="none_failed")
+    def refresh_gold_geography() -> None:
+        """Synchronize the shared current-geography table in a short transaction."""
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET lock_timeout = '30s'")
+            cur.execute("SET statement_timeout = '10min'")
+            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            conn.commit()
+
+    @task(trigger_rule="none_failed")
     def refresh_gold_census_elements() -> int:
         """Refresh ACS dimensions and metric mappings in gold_census."""
         from data_ingestion_toolbox.census_acs.gold_census.transform import (
@@ -627,54 +641,43 @@ def acs_ingest():
         return refresh_acs_elements()
 
     @task(trigger_rule="none_failed")
-    def get_gold_census_refresh_window() -> dict[str, str] | None:
-        """Return the complete ACS date range currently available in silver."""
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    MIN(MAKE_DATE(estimate_year, 1, 1))::date,
-                    MAX(MAKE_DATE(estimate_year, 1, 1))::date
-                FROM silver_census.fact_demographics
-                WHERE estimate_value IS NOT NULL
-                """
-            )
-            row = cur.fetchone()
-
-        if not row or row[0] is None:
-            logger.warning("[gold_census] No silver data available; skipping serving refresh.")
-            return None
-
-        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
-
-    @task(trigger_rule="none_failed")
-    def refresh_gold_census_serving_layer(
-        refresh_window: dict[str, str] | None,
-    ) -> None:
-        """Refresh persisted ACS serving tables in gold_census."""
-        if refresh_window is None:
-            return
-
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0")
-            cur.execute(
-                "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s)",
-                (refresh_window["start_date"], refresh_window["end_date"]),
-            )
-            conn.commit()
+    def refresh_gold_census_serving_layer() -> dict[str, int]:
+        """Refresh changed ACS vintages as independently committed annual chunks."""
+        return refresh_serving_layer_in_year_chunks(
+            hook=_get_postgres_hook(),
+            config=ServingRefreshChunkConfig(
+                source_code="CENSUS_ACS",
+                log_label="ACS",
+                report_table="gold_census.rpt_acs_observations",
+                report_date_column="observation_date",
+                changed_chunks_sql="""
+                    SELECT
+                        MAKE_DATE(s.estimate_year, 1, 1) AS chunk_start,
+                        MAKE_DATE(s.estimate_year, 12, 31) AS chunk_end,
+                        MAX(s.ingested_at) AS target_watermark
+                    FROM silver_census.fact_demographics s
+                    WHERE s.estimate_value IS NOT NULL
+                      AND s.ingested_at > %s
+                    GROUP BY s.estimate_year
+                    ORDER BY s.estimate_year
+                """,
+                report_procedure="gold_census.refresh_rpt_acs_observations",
+                latest_procedure="gold_census.refresh_mv_acs_latest",
+                statement_timeout="90min",
+            ),
+            task_logger=logger,
+        )
 
     gold_census_schema = ensure_gold_census_schema()
+    gold_geography = refresh_gold_geography()
     gold_census_elements = refresh_gold_census_elements()
-    gold_census_window = get_gold_census_refresh_window()
-    gold_census_refresh = refresh_gold_census_serving_layer(gold_census_window)
+    gold_census_refresh = refresh_gold_census_serving_layer()
 
     (
         silver_transform
         >> gold_census_schema
+        >> gold_geography
         >> gold_census_elements
-        >> gold_census_window
         >> gold_census_refresh
     )
 

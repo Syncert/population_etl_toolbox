@@ -45,6 +45,10 @@ from data_ingestion_toolbox.fred.domain_coverage import (
     assert_configured_domain_coverage,
 )
 from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
+from data_ingestion_toolbox.utility.gold_schema import (
+    ServingRefreshChunkConfig,
+    refresh_serving_layer_in_year_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -510,6 +514,16 @@ def fred_ingest():
         ensure_fred_gold_schema()
 
     @task(trigger_rule="none_failed")
+    def refresh_gold_geography() -> None:
+        """Synchronize the shared current-geography table in a short transaction."""
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET lock_timeout = '30s'")
+            cur.execute("SET statement_timeout = '10min'")
+            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            conn.commit()
+
+    @task(trigger_rule="none_failed")
     def refresh_gold_fred_elements() -> int:
         """Refresh FRED dimensions and metric mappings in gold_fred."""
         from data_ingestion_toolbox.fred.gold_fred.transform import (
@@ -519,41 +533,34 @@ def fred_ingest():
         return refresh_fred_elements()
 
     @task(trigger_rule="none_failed")
-    def get_gold_fred_refresh_window() -> dict[str, str] | None:
-        """Return the complete FRED date range currently available in silver."""
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT MIN(observation_date)::date, MAX(observation_date)::date
-                FROM silver_fred.fact_economic_indicators
-                WHERE is_missing = FALSE
-                """
-            )
-            row = cur.fetchone()
-
-        if not row or row[0] is None:
-            logger.warning("[gold_fred] No silver data available; skipping serving refresh.")
-            return None
-
-        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
-
-    @task(trigger_rule="none_failed")
-    def refresh_gold_fred_serving_layer(
-        refresh_window: dict[str, str] | None,
-    ) -> None:
-        """Refresh persisted FRED serving tables in gold_fred."""
-        if refresh_window is None:
-            return
-
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0")
-            cur.execute(
-                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s)",
-                (refresh_window["start_date"], refresh_window["end_date"]),
-            )
-            conn.commit()
+    def refresh_gold_fred_serving_layer() -> dict[str, int]:
+        """Refresh changed FRED years as independently committed annual chunks."""
+        return refresh_serving_layer_in_year_chunks(
+            hook=_get_postgres_hook(),
+            config=ServingRefreshChunkConfig(
+                source_code="FRED",
+                log_label="FRED",
+                report_table="gold_fred.rpt_fred_observations",
+                report_date_column="observation_date",
+                changed_chunks_sql="""
+                    SELECT
+                        MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 1, 1)
+                            AS chunk_start,
+                        MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 12, 31)
+                            AS chunk_end,
+                        MAX(s.ingested_at) AS target_watermark
+                    FROM silver_fred.fact_economic_indicators s
+                    WHERE s.is_missing = FALSE
+                      AND s.ingested_at > %s
+                    GROUP BY EXTRACT(YEAR FROM s.observation_date)
+                    ORDER BY EXTRACT(YEAR FROM s.observation_date)
+                """,
+                report_procedure="gold_fred.refresh_rpt_fred_observations",
+                latest_procedure="gold_fred.refresh_mv_fred_latest",
+                statement_timeout="30min",
+            ),
+            task_logger=logger,
+        )
 
     @task(trigger_rule="none_failed")
     def confirm_configured_domain_coverage() -> None:
@@ -561,16 +568,16 @@ def fred_ingest():
         assert_configured_domain_coverage(_get_postgres_hook())
 
     gold_fred_schema = ensure_gold_fred_schema()
+    gold_geography = refresh_gold_geography()
     gold_fred_elements = refresh_gold_fred_elements()
-    gold_fred_window = get_gold_fred_refresh_window()
-    gold_fred_refresh = refresh_gold_fred_serving_layer(gold_fred_window)
+    gold_fred_refresh = refresh_gold_fred_serving_layer()
     domain_coverage = confirm_configured_domain_coverage()
 
     (
         silver_transforms
         >> gold_fred_schema
+        >> gold_geography
         >> gold_fred_elements
-        >> gold_fred_window
         >> gold_fred_refresh
         >> domain_coverage
     )

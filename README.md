@@ -102,6 +102,35 @@ silver_fred.fact_economic_indicators — FRED macro series
 - Airflow pools limit concurrent API calls (Census, BLS, FRED each have own pool)
 - Default: 4 concurrent requests per API (configurable per environment)
 
+**Incremental Gold Serving Refresh:**
+- `gold_glossary.serving_refresh_state` stores a silver `ingested_at` watermark per source.
+- Scheduled refreshes split changed history into calendar-year chunks. Each report/latest chunk and its row in `gold_glossary.serving_refresh_chunk_state` commit together.
+- A retry skips completed annual chunks and resumes at the first incomplete year; a failed year is rolled back without undoing earlier years.
+- Each chunk recomputes latest rows only for affected natural keys.
+- Geography synchronization commits in a separate short task, so ACS, BLS, and FRED cannot hold a shared geography lock throughout a report rebuild.
+- A bounded `lock_timeout` and source-specific `statement_timeout` prevent refreshes from waiting indefinitely.
+- Airflow logs the planned window and every chunk start, skip, completion, failure, duration, target watermark, and resulting report-row count. PostgreSQL procedures also emit row-count and duration notices.
+
+To force a source reconciliation manually, use the three-argument procedure and set `p_force_full` to `TRUE`:
+
+```sql
+CALL gold_census.refresh_dashboard_serving_layer_acs(NULL, NULL, TRUE);
+CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
+CALL gold_fred.refresh_dashboard_serving_layer_fred(NULL, NULL, TRUE);
+```
+
+Supplying dates with `p_force_full = TRUE` rebuilds only that date range and intentionally leaves the normal incremental watermark unchanged.
+Manual calls to the outer procedures remain single transactions. Scheduled DAG refreshes use the resumable annual checkpoint path.
+
+Chunk status can be inspected with:
+
+```sql
+SELECT source_code, chunk_start, chunk_end, status, attempt_count,
+       target_silver_ingested_at, completed_silver_ingested_at, last_error
+FROM gold_glossary.serving_refresh_chunk_state
+ORDER BY source_code, chunk_start;
+```
+
 ---
 
 ## Setup & Configuration
@@ -265,7 +294,15 @@ psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/s
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
 
-# Gold contract views (API-facing compatibility layer)
+# Shared gold glossary objects (run once before source-specific gold DDL)
+psql -U postgres -d population_etl < sql/gold_contract/002_gold_glossary_schema.sql
+
+# Source-specific gold tables, indexes, and refresh procedures
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql
+psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql
+
+# API-facing compatibility views (run after the source gold objects exist)
 psql -U postgres -d population_etl < sql/gold_contract/001_gold_contract_views.sql
 ```
 

@@ -22,6 +22,8 @@ _REQUIRED_RELATIONS = (
     "gold_glossary.dim_source_system",
     "gold_glossary.dim_metric_catalog",
     "gold_glossary.dim_geo_latest",
+    "gold_glossary.serving_refresh_state",
+    "gold_glossary.serving_refresh_chunk_state",
     "gold_glossary.bridge_metric_bls_series",
     "gold_bls.dim_bls_survey",
     "gold_bls.dim_bls_series",
@@ -33,7 +35,7 @@ _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
     "gold_bls.refresh_rpt_bls_observations(date,date)",
     "gold_bls.refresh_mv_bls_latest(date,date)",
-    "gold_bls.refresh_dashboard_serving_layer_bls(date,date)",
+    "gold_bls.refresh_dashboard_serving_layer_bls(date,date,boolean)",
 )
 
 

@@ -52,6 +52,38 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_state (
+    source_code                 TEXT PRIMARY KEY
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    last_silver_ingested_at     TIMESTAMPTZ NOT NULL DEFAULT '-infinity'::TIMESTAMPTZ,
+    last_refresh_started_at     TIMESTAMPTZ,
+    last_refresh_completed_at   TIMESTAMPTZ,
+    last_window_start           DATE,
+    last_window_end             DATE,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_chunk_state (
+    source_code                         TEXT NOT NULL
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    chunk_start                         DATE NOT NULL,
+    chunk_end                           DATE NOT NULL,
+    target_silver_ingested_at           TIMESTAMPTZ NOT NULL,
+    completed_silver_ingested_at        TIMESTAMPTZ,
+    status                              TEXT NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED')),
+    attempt_count                       INTEGER NOT NULL DEFAULT 0,
+    last_refresh_started_at             TIMESTAMPTZ,
+    last_refresh_completed_at           TIMESTAMPTZ,
+    last_error                          TEXT,
+    updated_at                          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (source_code, chunk_start, chunk_end),
+    CHECK (chunk_end >= chunk_start)
+);
+
+CREATE INDEX IF NOT EXISTS ix_serving_refresh_chunk_state_status
+    ON gold_glossary.serving_refresh_chunk_state (source_code, status, chunk_start);
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Bridge tables (metric ↔ source-specific series/variables)
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -97,7 +129,7 @@ CREATE OR REPLACE PROCEDURE gold_glossary.refresh_dim_geo_latest()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    TRUNCATE TABLE gold_glossary.dim_geo_latest;
+    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_dim_geo_latest'));
 
     INSERT INTO gold_glossary.dim_geo_latest (
         geo_id,
@@ -129,7 +161,44 @@ BEGIN
         NOW()
     FROM silver_ref.dim_geo g
     WHERE g.is_active = TRUE
-    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC;
+    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
+    ON CONFLICT (geo_id) DO UPDATE
+    SET geo_level = EXCLUDED.geo_level,
+        state_fips = EXCLUDED.state_fips,
+        county_fips = EXCLUDED.county_fips,
+        state_name = EXCLUDED.state_name,
+        county_name = EXCLUDED.county_name,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        geo_geom = EXCLUDED.geo_geom,
+        refreshed_at = NOW()
+    WHERE (
+        gold_glossary.dim_geo_latest.geo_level,
+        gold_glossary.dim_geo_latest.state_fips,
+        gold_glossary.dim_geo_latest.county_fips,
+        gold_glossary.dim_geo_latest.state_name,
+        gold_glossary.dim_geo_latest.county_name,
+        gold_glossary.dim_geo_latest.latitude,
+        gold_glossary.dim_geo_latest.longitude,
+        gold_glossary.dim_geo_latest.geo_geom
+    ) IS DISTINCT FROM (
+        EXCLUDED.geo_level,
+        EXCLUDED.state_fips,
+        EXCLUDED.county_fips,
+        EXCLUDED.state_name,
+        EXCLUDED.county_name,
+        EXCLUDED.latitude,
+        EXCLUDED.longitude,
+        EXCLUDED.geo_geom
+    );
+
+    DELETE FROM gold_glossary.dim_geo_latest d
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM silver_ref.dim_geo g
+        WHERE g.is_active = TRUE
+          AND g.geo_id = d.geo_id
+    );
 END;
 $$;
 

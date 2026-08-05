@@ -331,7 +331,44 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
-            ingested_at = EXCLUDED.ingested_at;
+            ingested_at = EXCLUDED.ingested_at
+        WHERE (
+            silver_bls.fact_labor_statistics.time_sk,
+            silver_bls.fact_labor_statistics.geo_sk,
+            silver_bls.fact_labor_statistics.duration_start,
+            silver_bls.fact_labor_statistics.duration_end,
+            silver_bls.fact_labor_statistics.program,
+            silver_bls.fact_labor_statistics.geo_level,
+            silver_bls.fact_labor_statistics.geo_id,
+            silver_bls.fact_labor_statistics.state_fips,
+            silver_bls.fact_labor_statistics.county_fips,
+            silver_bls.fact_labor_statistics.value,
+            silver_bls.fact_labor_statistics.year,
+            silver_bls.fact_labor_statistics.period,
+            silver_bls.fact_labor_statistics.period_name,
+            silver_bls.fact_labor_statistics.measure_code,
+            silver_bls.fact_labor_statistics.measure_name,
+            silver_bls.fact_labor_statistics.seasonal_adjustment,
+            silver_bls.fact_labor_statistics.source_system
+        ) IS DISTINCT FROM (
+            EXCLUDED.time_sk,
+            EXCLUDED.geo_sk,
+            EXCLUDED.duration_start,
+            EXCLUDED.duration_end,
+            EXCLUDED.program,
+            EXCLUDED.geo_level,
+            EXCLUDED.geo_id,
+            EXCLUDED.state_fips,
+            EXCLUDED.county_fips,
+            EXCLUDED.value,
+            EXCLUDED.year,
+            EXCLUDED.period,
+            EXCLUDED.period_name,
+            EXCLUDED.measure_code,
+            EXCLUDED.measure_name,
+            EXCLUDED.seasonal_adjustment,
+            EXCLUDED.source_system
+        );
     """
 
     try:

@@ -24,3 +24,4 @@ CREATE INDEX IF NOT EXISTS idx_fact_econ_time_sk ON silver_fred.fact_economic_in
 CREATE INDEX IF NOT EXISTS idx_fact_econ_series_id ON silver_fred.fact_economic_indicators(series_id);
 CREATE INDEX IF NOT EXISTS idx_fact_econ_domain ON silver_fred.fact_economic_indicators(domain);
 CREATE INDEX IF NOT EXISTS idx_fact_econ_duration_start ON silver_fred.fact_economic_indicators(duration_start);
+CREATE INDEX IF NOT EXISTS idx_fact_econ_ingested_at ON silver_fred.fact_economic_indicators(ingested_at);

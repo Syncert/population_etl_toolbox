@@ -937,7 +937,32 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
             universe = EXCLUDED.universe,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
-            ingested_at = EXCLUDED.ingested_at;
+            ingested_at = EXCLUDED.ingested_at
+        WHERE (
+            silver_census.fact_demographics.time_sk,
+            silver_census.fact_demographics.geo_sk,
+            silver_census.fact_demographics.duration_start,
+            silver_census.fact_demographics.duration_end,
+            silver_census.fact_demographics.estimate_value,
+            silver_census.fact_demographics.margin_of_error,
+            silver_census.fact_demographics.margin_of_error_pct,
+            silver_census.fact_demographics.variable_label,
+            silver_census.fact_demographics.variable_concept,
+            silver_census.fact_demographics.universe,
+            silver_census.fact_demographics.source_system
+        ) IS DISTINCT FROM (
+            EXCLUDED.time_sk,
+            EXCLUDED.geo_sk,
+            EXCLUDED.duration_start,
+            EXCLUDED.duration_end,
+            EXCLUDED.estimate_value,
+            EXCLUDED.margin_of_error,
+            EXCLUDED.margin_of_error_pct,
+            EXCLUDED.variable_label,
+            EXCLUDED.variable_concept,
+            EXCLUDED.universe,
+            EXCLUDED.source_system
+        );
     """
 
     try:
