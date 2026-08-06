@@ -5,6 +5,9 @@ on:
   push:
     branches: [main, "copilot/**", "feat/**"]
 
+permissions:
+  contents: read
+
 jobs:
   etl-unit:
     name: ETL unit tests (Python 3.11)

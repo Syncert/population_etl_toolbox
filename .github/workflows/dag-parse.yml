@@ -9,6 +9,9 @@ on:
   push:
     branches: [main, "copilot/**", "feat/**"]
 
+permissions:
+  contents: read
+
 jobs:
   dag-parse:
     name: DAG parse tests (Airflow 2.9.3 + Python 3.11)

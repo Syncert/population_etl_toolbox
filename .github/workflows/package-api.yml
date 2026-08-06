@@ -5,6 +5,9 @@ on:
   push:
     branches: [main, "copilot/**", "feat/**"]
 
+permissions:
+  contents: read
+
 jobs:
   package-api:
     name: Package build and install smoke (Python 3.11)
