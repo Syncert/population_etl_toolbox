@@ -15,6 +15,7 @@ data-ingestion-toolbox[airflow,dev]
 
 [api]
 fastapi<1.0,>=0.111
+redis<6.0,>=5.0
 uvicorn[standard]<1.0,>=0.30
 sqlalchemy<3.0,>=2.0.48
 
