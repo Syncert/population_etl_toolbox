@@ -53,3 +53,17 @@ exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
+testpaths = ["tests"]
+addopts = "--strict-markers -m 'not database and not redis and not external and not e2e and not performance and not slow'"
+markers = [
+  "unit: deterministic, process-local logic; no network or infrastructure",
+  "dag: Airflow DAG import and structure tests; requires airflow-dev environment",
+  "api: FastAPI router, service, schema, or middleware tests",
+  "integration: tests that exercise multiple real application components",
+  "database: requires a disposable postgres:16-alpine container",
+  "redis: requires a disposable Redis 7 service",
+  "external: live external-source contract tests; scheduled only",
+  "e2e: raw-to-API deterministic end-to-end fixture flow",
+  "performance: load, volume, or benchmark scenarios",
+  "slow: expected duration exceeds 30 seconds",
+]

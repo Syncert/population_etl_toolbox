@@ -1,0 +1,43 @@
+name: dag-parse
+
+on:
+  pull_request:
+    paths:
+      - "dags/**"
+      - "src/**"
+      - "pyproject.toml"
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+
+jobs:
+  dag-parse:
+    name: DAG parse tests (Airflow 2.9.3 + Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: >-
+            ${{ runner.os }}-pip-dag-py311-airflow293-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install package + Airflow 2.9.3 + dev dependencies
+        run: |
+          pip install -e ".[airflow-dev]" \
+            apache-airflow==2.9.3 \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
+          pip check
+
+      - name: Run DAG tests
+        env:
+          AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+        run: pytest -m dag tests/dags/ --tb=short -q

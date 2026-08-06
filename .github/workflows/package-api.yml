@@ -1,0 +1,41 @@
+name: package-api
+
+on:
+  pull_request:
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+
+jobs:
+  package-api:
+    name: Package build and install smoke (Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: >-
+            ${{ runner.os }}-pip-build-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build --outdir dist/
+
+      - name: Install wheel into clean environment
+        run: |
+          pip install dist/*.whl
+          pip check
+
+      - name: Import smoke test
+        run: python -c "import data_ingestion_toolbox; print('import ok')"

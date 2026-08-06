@@ -652,6 +652,56 @@ ORDER BY date DESC LIMIT 30;
 
 ## Development
 
+### Testing
+
+All tests live under `tests/`.  Two separate Python environments are required
+because the API and Airflow layers have conflicting SQLAlchemy version
+requirements.
+
+#### API + ETL unit tests (Python 3.11, `.[api,dev]`)
+
+```bash
+# Install
+pip install -e ".[api,dev]"
+
+# Run all unit tests (default: excludes database, redis, external, e2e, performance, slow)
+pytest tests/unit/
+
+# ETL unit tests only (Census, BLS, FRED, shared)
+pytest -m "unit and not api" tests/unit/
+
+# API unit tests only
+pytest -m "unit and api" tests/unit/
+
+# Full unit suite with coverage
+pytest --cov=src --cov=apps --cov-report=term-missing tests/unit/
+```
+
+#### DAG structural tests (Python 3.11, `.[airflow-dev]`)
+
+```bash
+pip install -e ".[airflow-dev]" \
+  apache-airflow==2.9.3 \
+  --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
+
+pytest -m dag tests/dags/
+```
+
+#### Marker reference
+
+| Marker        | Description                                              |
+|---------------|----------------------------------------------------------|
+| `unit`        | Deterministic, process-local logic; no network/infra     |
+| `dag`         | Airflow DAG import and structure tests                   |
+| `api`         | FastAPI router/service/schema/middleware tests           |
+| `integration` | Multi-component tests requiring running services         |
+| `database`    | Requires a disposable Postgres 16 container              |
+| `redis`       | Requires a disposable Redis 7 service                    |
+| `external`    | Live external-source contract tests (scheduled only)     |
+| `e2e`         | Raw-to-API deterministic end-to-end fixture flow         |
+| `performance` | Load, volume, or benchmark scenarios                     |
+| `slow`        | Expected duration exceeds 30 seconds                     |
+
 ### Project Structure
 ```
 data_ingestion_toolbox/
