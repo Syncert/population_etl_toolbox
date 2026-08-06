@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dag-parse:
     name: DAG parse tests (Airflow 2.9.3 + Python 3.11)
@@ -35,12 +39,24 @@ jobs:
 
       - name: Install package + Airflow 2.9.3 + dev dependencies
         run: |
-          pip install -e ".[airflow-dev]" \
+          python -m pip install \
             apache-airflow==2.9.3 \
+            apache-airflow-providers-postgres==5.11.2 \
             --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
-          pip check
+          python -m pip install -e ".[airflow-dev]"
+          python -m pip check
+          python -c "import airflow; assert airflow.__version__ == '2.9.3'"
+          python -c "from importlib.metadata import version; assert version('apache-airflow-providers-postgres') == '5.11.2'"
 
       - name: Run DAG tests
         env:
           AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-        run: pytest -m dag tests/dags/ --tb=short -q
+          RUN_DAG_TESTS: "1"
+        run: pytest -m dag tests/dags/ --tb=short -q --junitxml=junit-dags.xml
+
+      - name: Upload DAG test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-dags
+          path: junit-dags.xml

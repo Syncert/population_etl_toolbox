@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   api-unit:
     name: API unit tests (Python 3.11)
@@ -27,19 +31,24 @@ jobs:
         with:
           path: ~/.cache/pip
           key: >-
-            ${{ runner.os }}-pip-api-${{ hashFiles('pyproject.toml') }}
+            ${{ runner.os }}-pip-api-py311-${{ hashFiles('pyproject.toml') }}
 
       - name: Install package + API + dev dependencies
         run: |
-          pip install -e ".[api,dev]"
-          pip check
+          python -m pip install -e ".[api,dev]"
+          python -m pip check
 
       - name: Run API unit tests
-        run: pytest -m "unit and api" --tb=short -q --cov=apps --cov-report=xml:coverage-api.xml
+        run: >-
+          pytest -m "unit and api" tests/unit/api --tb=short -q
+          --cov=apps --cov-report=xml:coverage-api.xml
+          --junitxml=junit-api.xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage-api
-          path: coverage-api.xml
+          path: |
+            coverage-api.xml
+            junit-api.xml

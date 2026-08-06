@@ -10,25 +10,17 @@ Run these tests in the dedicated airflow-dev venv:
 
 from __future__ import annotations
 
+import importlib.util
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 _DAGS_FOLDER = str(Path(__file__).resolve().parents[2] / "dags")
 
-try:
-    import airflow  # noqa: F401
-
-    _AIRFLOW_AVAILABLE = True
-except ModuleNotFoundError:
-    _AIRFLOW_AVAILABLE = False
-
-pytestmark = pytest.mark.skipif(
-    not _AIRFLOW_AVAILABLE,
-    reason="Airflow not installed; run in the airflow-dev venv.",
-)
+_AIRFLOW_AVAILABLE = importlib.util.find_spec("airflow") is not None
+pytestmark = pytest.mark.dag
 
 # --------------------------------------------------------------------------
 # Expected DAG inventory
@@ -63,30 +55,30 @@ EXPECTED_INGEST_POOLS = {
 # DAG-001: No import errors
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 def test_dagbag_has_no_import_errors(dagbag) -> None:
     """DAG-001: DagBag loads the repository dag folder without import errors."""
-    assert dagbag.import_errors == {}, (
-        f"DAG import errors: {dagbag.import_errors}"
-    )
+    assert dagbag.import_errors == {}, f"DAG import errors: {dagbag.import_errors}"
 
 
 # --------------------------------------------------------------------------
 # DAG-002: Expected DAG inventory
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 def test_expected_dag_ids_are_present(dagbag) -> None:
     """DAG-002: all expected DAG IDs and no unexpected ones."""
     assert set(dagbag.dag_ids) == EXPECTED_DAG_IDS, (
-        f"DAG IDs differ: found={set(dagbag.dag_ids)!r}, "
-        f"expected={EXPECTED_DAG_IDS!r}"
+        f"DAG IDs differ: found={set(dagbag.dag_ids)!r}, expected={EXPECTED_DAG_IDS!r}"
     )
 
 
 # --------------------------------------------------------------------------
 # DAG-003: DAG ID uniqueness
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.dag
 def test_dag_ids_are_unique(dagbag) -> None:
@@ -99,6 +91,7 @@ def test_dag_ids_are_unique(dagbag) -> None:
 # --------------------------------------------------------------------------
 # DAG-004: Required metadata
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_DAG_IDS))
@@ -116,6 +109,7 @@ def test_dag_required_metadata(dagbag, dag_id: str) -> None:
 # DAG-005: Schedule contract
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id,expected_cron", sorted(EXPECTED_SCHEDULES.items()))
 def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str) -> None:
@@ -131,6 +125,7 @@ def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str) -> None:
 # DAG-006: Task ID uniqueness
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_DAG_IDS))
 def test_task_ids_are_unique_within_dag(dagbag, dag_id: str) -> None:
@@ -145,6 +140,7 @@ def test_task_ids_are_unique_within_dag(dagbag, dag_id: str) -> None:
 # --------------------------------------------------------------------------
 # DAG-007: External API pools on ingest_batch tasks
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id,expected_pool", sorted(EXPECTED_INGEST_POOLS.items()))
@@ -166,11 +162,12 @@ def test_ingest_batch_task_uses_correct_pool(
 # DAG-008: Retry policy
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
-@pytest.mark.parametrize("dag_id,expected_retries", sorted(EXPECTED_DEFAULT_RETRIES.items()))
-def test_dag_default_retries(
-    dagbag, dag_id: str, expected_retries: int
-) -> None:
+@pytest.mark.parametrize(
+    "dag_id,expected_retries", sorted(EXPECTED_DEFAULT_RETRIES.items())
+)
+def test_dag_default_retries(dagbag, dag_id: str, expected_retries: int) -> None:
     """DAG-008: default retries match the declared contract."""
     dag = dagbag.dags[dag_id]
     actual = dag.default_args.get("retries")
@@ -195,6 +192,7 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
 # DAG-009: Reference dimension dependencies
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 def test_silver_ref_ensure_schema_upstream_of_both_dims(dagbag) -> None:
     """DAG-009: ensure_schema is upstream of load_dim_geo and load_dim_time."""
@@ -216,6 +214,7 @@ def test_silver_ref_ensure_schema_upstream_of_both_dims(dagbag) -> None:
 # DAG-010: Source pipeline ordering
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", ["acs_ingest", "bls_ingest", "fred_ingest"])
 def test_source_pipeline_order(dagbag, dag_id: str) -> None:
@@ -226,28 +225,51 @@ def test_source_pipeline_order(dagbag, dag_id: str) -> None:
     def _task_ids_matching(keyword: str) -> list[str]:
         return [t.task_id for t in dag.tasks if keyword in t.task_id]
 
-    metadata_tasks = _task_ids_matching("metadata") or _task_ids_matching("sync_")
-    ingest_tasks = _task_ids_matching("ingest")
-    silver_tasks = _task_ids_matching("silver") or _task_ids_matching("transform")
-    gold_tasks = _task_ids_matching("gold") or _task_ids_matching("refresh")
+    plan_tasks = _task_ids_matching("build_ingestion_plan")
+    ingest_tasks = _task_ids_matching("ingest_batch")
+    silver_tasks = _task_ids_matching("transform_to_silver")
+    gold_tasks = [
+        task_id
+        for task_id in _task_ids_matching("serving_layer")
+        if "refresh_gold" in task_id
+    ]
 
-    # At minimum we want both metadata/ingest and silver/gold present
-    assert ingest_tasks, f"{dag_id}: no ingest task found"
-    assert silver_tasks or gold_tasks, (
-        f"{dag_id}: no silver/gold task found"
-    )
+    for label, tasks in {
+        "planning": plan_tasks,
+        "ingestion": ingest_tasks,
+        "silver": silver_tasks,
+        "gold": gold_tasks,
+    }.items():
+        assert tasks, f"{dag_id}: no {label} task found"
+
+    def _is_upstream(ancestor_id: str, descendant_id: str) -> bool:
+        descendant = dag.get_task(descendant_id)
+        return ancestor_id in {
+            task.task_id for task in descendant.get_flat_relatives(upstream=True)
+        }
+
+    for ingest_task in ingest_tasks:
+        assert any(_is_upstream(plan, ingest_task) for plan in plan_tasks), (
+            f"{dag_id}: planning is not upstream of {ingest_task}"
+        )
+    for silver_task in silver_tasks:
+        assert any(_is_upstream(ingest, silver_task) for ingest in ingest_tasks), (
+            f"{dag_id}: ingestion is not upstream of {silver_task}"
+        )
+    for gold_task in gold_tasks:
+        assert any(_is_upstream(silver, gold_task) for silver in silver_tasks), (
+            f"{dag_id}: silver is not upstream of {gold_task}"
+        )
 
 
 # --------------------------------------------------------------------------
 # DAG-011: No side effects at import time
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.dag
 def test_no_external_calls_at_import_time() -> None:
     """DAG-011: loading DAGs makes zero HTTP, database, or Redis calls."""
-    import importlib
-    import sys
-
     call_log: list[str] = []
 
     def _mock_http(*args, **kwargs):  # noqa: ANN002
@@ -258,30 +280,30 @@ def test_no_external_calls_at_import_time() -> None:
         call_log.append(f"DB: {args!r}")
         raise RuntimeError("DB call blocked during import")
 
+    def _mock_redis(*args, **kwargs):  # noqa: ANN002
+        call_log.append(f"Redis: {args!r}")
+        raise RuntimeError("Redis call blocked during import")
+
     with (
         patch("httpx.Client.get", _mock_http),
         patch("httpx.Client.post", _mock_http),
         patch("requests.get", _mock_http),
         patch("psycopg2.connect", _mock_db),
+        patch("sqlalchemy.create_engine", _mock_db),
+        patch("redis.Redis.from_url", _mock_redis),
     ):
-        # Force re-import by removing cached modules
-        dag_modules = [k for k in sys.modules if k.startswith("dags.") or "dag" in k]
-        for mod in dag_modules:
-            sys.modules.pop(mod, None)
-
         from airflow.models import DagBag
 
         bag = DagBag(dag_folder=_DAGS_FOLDER, include_examples=False)
 
     assert bag.import_errors == {}, bag.import_errors
-    assert call_log == [], (
-        f"External calls detected during DAG import: {call_log}"
-    )
+    assert call_log == [], f"External calls detected during DAG import: {call_log}"
 
 
 # --------------------------------------------------------------------------
 # DAG-012: Parse time budget
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.dag
 def test_each_dag_file_parses_within_2_seconds() -> None:
@@ -289,19 +311,21 @@ def test_each_dag_file_parses_within_2_seconds() -> None:
     from airflow.models import DagBag
 
     dag_folder = Path(_DAGS_FOLDER)
-    for dag_file in sorted(dag_folder.glob("*.py")):
+    for dag_file in sorted(dag_folder.glob("*_dag.py")):
         start = time.monotonic()
         bag = DagBag(dag_folder=str(dag_file), include_examples=False)
         elapsed = time.monotonic() - start
         assert bag.import_errors == {}, f"{dag_file.name}: {bag.import_errors}"
-        assert elapsed < 2.0, (
-            f"{dag_file.name} took {elapsed:.2f}s (limit: 2s)"
-        )
+        assert elapsed < 2.0, f"{dag_file.name} took {elapsed:.2f}s (limit: 2s)"
 
 
 @pytest.mark.dag
-def test_complete_dag_folder_parses_within_10_seconds(dagbag) -> None:
+def test_complete_dag_folder_parses_within_10_seconds() -> None:
     """DAG-012: the complete dag folder parses in under 10 seconds."""
-    # dagbag fixture is module-scoped so parse already happened;
-    # we just assert no errors occurred.
-    assert dagbag.import_errors == {}
+    from airflow.models import DagBag
+
+    start = time.monotonic()
+    bag = DagBag(dag_folder=_DAGS_FOLDER, include_examples=False)
+    elapsed = time.monotonic() - start
+    assert bag.import_errors == {}, bag.import_errors
+    assert elapsed < 10.0, f"Complete DAG folder took {elapsed:.2f}s (limit: 10s)"

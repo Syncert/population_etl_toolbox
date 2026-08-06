@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -71,7 +70,7 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
     # And "1-year", "5-year", "1 year", "5 year", "1-Year", "5-Year", etc.
     pattern = re.compile(
         r"(?:american community survey|acs|census).*?(?:1[-\s]year|5[-\s]year|1[-\s]years|5[-\s]years)",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     for ds in datasets:
@@ -95,11 +94,13 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
         except ValueError:
             continue
 
-        filtered.append({
-            "title": title,
-            "year": year,
-            "identifier": ident,
-        })
+        filtered.append(
+            {
+                "title": title,
+                "year": year,
+                "identifier": ident,
+            }
+        )
 
     return filtered
 
@@ -131,12 +132,12 @@ def sync_acs_dataset_table() -> None:
             id_part = identifier.split("/")[-1]
 
             # Classify by ID prefix
-            if id_part == ("ACSDT1Y" + str(year)) :
+            if id_part == ("ACSDT1Y" + str(year)):
                 dataset = "acs1"
-                census_id = ("ACSDT1Y" + str(year))
-            elif id_part== ("ACSDT5Y" + str(year)):
+                census_id = "ACSDT1Y" + str(year)
+            elif id_part == ("ACSDT5Y" + str(year)):
                 dataset = "acs5"
-                census_id = ("ACSDT5Y" + str(year))
+                census_id = "ACSDT5Y" + str(year)
             else:
                 skipped_count += 1
                 continue
@@ -238,7 +239,16 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                     predicate_type = EXCLUDED.predicate_type,
                     group_name = EXCLUDED.group_name;
                 """,
-                (dataset, year, var_name, table_id, label, concept, predicate_type, group),
+                (
+                    dataset,
+                    year,
+                    var_name,
+                    table_id,
+                    label,
+                    concept,
+                    predicate_type,
+                    group,
+                ),
             )
 
             # Now pull MOE variables from attributes and insert them too
@@ -250,7 +260,11 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                 moe_name = a
 
                 # MOE variables usually share concept/table; label can be derived
-                moe_label = (label.replace("Estimate", "Margin of Error") if isinstance(label, str) else None)
+                moe_label = (
+                    label.replace("Estimate", "Margin of Error")
+                    if isinstance(label, str)
+                    else None
+                )
 
                 cur.execute(
                     """
@@ -267,7 +281,16 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
                         predicate_type = EXCLUDED.predicate_type,
                         group_name = EXCLUDED.group_name;
                     """,
-                    (dataset, year, moe_name, table_id, moe_label, concept, predicate_type, group),
+                    (
+                        dataset,
+                        year,
+                        moe_name,
+                        table_id,
+                        moe_label,
+                        concept,
+                        predicate_type,
+                        group,
+                    ),
                 )
 
             # track table metadata

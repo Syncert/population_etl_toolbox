@@ -5,7 +5,6 @@ for sizes 0, 1, n, n+1, and exact multiples of the chunk size).
 """
 
 import pytest
-from typing import List
 
 from data_ingestion_toolbox.census_acs.ingest import chunked
 

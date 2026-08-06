@@ -24,12 +24,13 @@ LARGE_PROGRAM_ROW_THRESHOLD = 500_000
 @dataclass
 class TransformMetrics:
     """Track and log BLS silver transform metrics."""
+
     dataset_name: str
-    
+
     # Pre-transform
     raw_rows_by_program: dict[str, int] = field(default_factory=dict)
     schema_issues: list[str] = field(default_factory=list)
-    
+
     # Per-chunk
     chunk_input_rows: int = 0
     chunk_output_rows: int = 0
@@ -41,17 +42,17 @@ class TransformMetrics:
     geo_dim_hits: int = 0
     geo_dim_misses: int = 0
     null_counts: dict[str, int] = field(default_factory=dict)
-    
+
     # Upsert
     upsert_duration_sec: float = 0.0
     upsert_inserted: int = 0
     upsert_total: int = 0
-    
+
     # Post-transform
     total_processed: int = 0
     total_inserted: int = 0
     errors_encountered: list[str] = field(default_factory=list)
-    
+
     def log_pre_transform(self) -> None:
         """Log pre-transform diagnostics."""
         if self.raw_rows_by_program:
@@ -65,14 +66,14 @@ class TransformMetrics:
                 programs_summary,
                 sum(self.raw_rows_by_program.values()),
             )
-        
+
         if self.schema_issues:
             logger.warning(
                 "[%s PRE-TRANSFORM] Schema validation issues: %s",
                 self.dataset_name,
                 "; ".join(self.schema_issues),
             )
-    
+
     def log_chunk_start(self, program: str, input_rows: int) -> None:
         """Log start of chunk processing."""
         self.chunk_input_rows = input_rows
@@ -82,7 +83,7 @@ class TransformMetrics:
             program,
             input_rows,
         )
-    
+
     def log_chunk_complete(self, program: str) -> None:
         """Log chunk processing results."""
         pct_output = (
@@ -98,7 +99,7 @@ class TransformMetrics:
             self.chunk_output_rows,
             pct_output,
         )
-        
+
         if self.rows_missing_time or self.rows_missing_geo:
             logger.warning(
                 "[%s CHUNK] Rows filtered: missing_time=%s, missing_geo=%s",
@@ -106,25 +107,24 @@ class TransformMetrics:
                 self.rows_missing_time,
                 self.rows_missing_geo,
             )
-        
+
         if self.rows_deduplicated:
             logger.info(
                 "[%s CHUNK] Deduplicated %s rows",
                 self.dataset_name,
                 self.rows_deduplicated,
             )
-        
+
         if self.null_counts:
             null_summary = "; ".join(
-                f"{col}={count:,}"
-                for col, count in sorted(self.null_counts.items())
+                f"{col}={count:,}" for col, count in sorted(self.null_counts.items())
             )
             logger.info(
                 "[%s CHUNK] Null counts by column: %s",
                 self.dataset_name,
                 null_summary,
             )
-    
+
     def log_upsert_complete(self, upserted: int, duration_sec: float) -> None:
         """Log upsert results."""
         self.upsert_total += upserted
@@ -135,7 +135,7 @@ class TransformMetrics:
             duration_sec,
             upserted,
         )
-    
+
     def log_transform_summary(self) -> None:
         """Log final transform summary."""
         logger.info(
@@ -145,18 +145,19 @@ class TransformMetrics:
             self.total_inserted,
             len(self.errors_encountered),
         )
-        
+
         if self.errors_encountered:
             for err in self.errors_encountered:
                 logger.error("[%s SUMMARY] Error: %s", self.dataset_name, err)
-
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
 
-def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
+def _load_time_dim(
+    hook: PostgresHook, start_date: date, end_date: date
+) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
         FROM silver_ref.dim_time
@@ -166,8 +167,10 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
-        schema=["time_sk", "date_key"]
+    return (
+        pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"])
+        if rows
+        else pl.DataFrame(schema=["time_sk", "date_key"])
     )
 
 
@@ -180,8 +183,10 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
         cur.execute(sql)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
-        schema=["geo_sk", "geo_level", "geo_id"]
+    return (
+        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        if rows
+        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
     )
 
 
@@ -214,12 +219,16 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
         execute_values(cur, sql, geo_tuples, page_size=5000)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
-        schema=["geo_sk", "geo_level", "geo_id"]
+    return (
+        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        if rows
+        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
     )
 
 
-def _extract_measure_code(series_id: str, program: str, fallback: str | None) -> str | None:
+def _extract_measure_code(
+    series_id: str, program: str, fallback: str | None
+) -> str | None:
     if (program or "").lower() == "la" and series_id and series_id[-2:].isdigit():
         return series_id[-2:]
     return fallback
@@ -241,7 +250,9 @@ def _get_program_years(hook: PostgresHook, program: str) -> list[int]:
     return [int(r[0]) for r in rows]
 
 
-def _fetch_raw_rows(hook: PostgresHook, program: str, year: int | None = None) -> list[tuple]:
+def _fetch_raw_rows(
+    hook: PostgresHook, program: str, year: int | None = None
+) -> list[tuple]:
     sql = """
         SELECT
             bl.series_id,
@@ -270,7 +281,12 @@ def _fetch_raw_rows(hook: PostgresHook, program: str, year: int | None = None) -
         return cur.fetchall()
 
 
-def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uuid.UUID, ingested_at: datetime) -> int:
+def _upsert_silver_rows(
+    hook: PostgresHook,
+    df: pl.DataFrame,
+    load_batch_id: uuid.UUID,
+    ingested_at: datetime,
+) -> int:
     if df.is_empty():
         return 0
 
@@ -382,7 +398,9 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
     return len(records)
 
 
-def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None) -> pl.DataFrame:
+def _transform_rows_to_silver_df(
+    hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None
+) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame()
 
@@ -407,7 +425,9 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
     series_ids = df.get_column("series_id").to_list()
     program = str(df.get_column("program")[0]) if df.height else ""
 
-    period_results = [parse_bls_period_to_date(int(y), p) for y, p in zip(years, periods)]
+    period_results = [
+        parse_bls_period_to_date(int(y), p) for y, p in zip(years, periods)
+    ]
     period_date = [p[0] for p in period_results]
     duration_start = [p[1] for p in period_results]
     duration_end = [p[2] for p in period_results]
@@ -419,7 +439,9 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
     county_fips = [g["county_fips"] for g in geo_results]
 
     if program.lower() == "la":
-        measure_code = [sid[-2:] if (sid and sid[-2:].isdigit()) else None for sid in series_ids]
+        measure_code = [
+            sid[-2:] if (sid and sid[-2:].isdigit()) else None for sid in series_ids
+        ]
     else:
         measure_fallback = df.get_column("measure_code").to_list()
         measure_code = [
@@ -543,7 +565,9 @@ def transform_bls_to_silver(program: str) -> int:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(sql, (program, y))
                 row = cur.fetchone()
-                metrics.raw_rows_by_program[f"{program}_{y}"] = int(row[0]) if row else 0
+                metrics.raw_rows_by_program[f"{program}_{y}"] = (
+                    int(row[0]) if row else 0
+                )
         metrics.log_pre_transform()
 
     upserted_total = 0
@@ -553,18 +577,22 @@ def transform_bls_to_silver(program: str) -> int:
             rows = _fetch_raw_rows(hook, program, year=y)
             if not rows:
                 continue
-            
+
             metrics.log_chunk_start(f"{program}_year={y}", len(rows))
-            
+
             df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(f"{program}_year={y}")
-                
+
                 upsert_start = datetime.now(timezone.utc)
-                upserted = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
-                
+                upserted = _upsert_silver_rows(
+                    hook, df_silver, load_batch_id, ingested_at
+                )
+                upsert_duration = (
+                    datetime.now(timezone.utc) - upsert_start
+                ).total_seconds()
+
                 metrics.log_upsert_complete(upserted, upsert_duration)
                 upserted_total += upserted
                 metrics.total_processed += len(rows)
@@ -577,11 +605,15 @@ def transform_bls_to_silver(program: str) -> int:
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(program)
-                
+
                 upsert_start = datetime.now(timezone.utc)
-                upserted_total = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
-                
+                upserted_total = _upsert_silver_rows(
+                    hook, df_silver, load_batch_id, ingested_at
+                )
+                upsert_duration = (
+                    datetime.now(timezone.utc) - upsert_start
+                ).total_seconds()
+
                 metrics.log_upsert_complete(upserted_total, upsert_duration)
                 metrics.total_processed = len(rows)
                 metrics.total_inserted = upserted_total

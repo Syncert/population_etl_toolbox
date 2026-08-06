@@ -58,7 +58,9 @@ def _env_value(env_file_values: dict[str, str], key: str, default: str = "") -> 
 
 def _db_connect(env_file_values: dict[str, str], serving_role: bool = False):
     user_key = "ANALYTICS_API_DB_USER" if serving_role else "ANALYTICS_DB_USER"
-    password_key = "ANALYTICS_API_DB_PASSWORD" if serving_role else "ANALYTICS_DB_PASSWORD"
+    password_key = (
+        "ANALYTICS_API_DB_PASSWORD" if serving_role else "ANALYTICS_DB_PASSWORD"
+    )
     return psycopg2.connect(
         host=_env_value(env_file_values, "ANALYTICS_DB_HOST", "localhost"),
         port=int(_env_value(env_file_values, "ANALYTICS_DB_PORT", "5432")),
@@ -96,7 +98,11 @@ def check_serving_role(env_file_values: dict[str, str]) -> CheckResult:
             cur.execute(sql)
             row = cur.fetchone()
         if not row:
-            return CheckResult("api-readonly-role", False, "No gold tables were available for privilege validation.")
+            return CheckResult(
+                "api-readonly-role",
+                False,
+                "No gold tables were available for privilege validation.",
+            )
         role, read_only, can_use, can_create, can_select_all, can_mutate_any = row
         ok = (
             role == configured_role
@@ -120,7 +126,9 @@ def check_serving_role(env_file_values: dict[str, str]) -> CheckResult:
 
 
 def _get_json(url: str, timeout: int = 30) -> Any:
-    response = requests.get(url, timeout=timeout, headers={"Accept": "application/json"})
+    response = requests.get(
+        url, timeout=timeout, headers={"Accept": "application/json"}
+    )
     response.raise_for_status()
     return response.json()
 
@@ -191,9 +199,13 @@ def _sample_tile_url(tilejson: Any, tiles_base_url: str, layer_id: str) -> str:
         if isinstance(tiles, list) and tiles:
             template = _normalize_tile_template(str(tiles[0]), tiles_base_url)
         else:
-            template = urljoin(_normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}")
+            template = urljoin(
+                _normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}"
+            )
     else:
-        template = urljoin(_normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}")
+        template = urljoin(
+            _normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}"
+        )
 
     return (
         template.replace("{z}", "0")
@@ -258,11 +270,15 @@ def _metric_supports_geo(metric: dict[str, Any], geo_level: str) -> bool:
     return any(str(grain).upper() == geo_level.upper() for grain in valid_geo_grains)
 
 
-def _discover_metric_code(api_base_url: str, requested_metric_code: str, geo_level: str) -> str | None:
+def _discover_metric_code(
+    api_base_url: str, requested_metric_code: str, geo_level: str
+) -> str | None:
     if requested_metric_code.lower() != "population":
         return None
 
-    catalog_url = urljoin(_normalize_base_url(api_base_url), "catalog/metrics?q=population&limit=250")
+    catalog_url = urljoin(
+        _normalize_base_url(api_base_url), "catalog/metrics?q=population&limit=250"
+    )
     payload = _get_json(catalog_url)
     items = payload.get("items", []) if isinstance(payload, dict) else []
     if not isinstance(items, list):
@@ -297,7 +313,9 @@ def _discover_metric_code(api_base_url: str, requested_metric_code: str, geo_lev
     return str(candidates[0].get("metric_code") or "") or None
 
 
-def _fetch_observations(api_base_url: str, metric_code: str, geo_level: str, limit: int) -> tuple[str, list[dict[str, Any]]]:
+def _fetch_observations(
+    api_base_url: str, metric_code: str, geo_level: str, limit: int
+) -> tuple[str, list[dict[str, Any]]]:
     url = urljoin(
         _normalize_base_url(api_base_url),
         f"observations/latest?metric_code={metric_code}&geo_level={geo_level}&limit={limit}",
@@ -332,7 +350,9 @@ def check_api_observations(
                     break
 
     if not items:
-        discovered_metric_code = _discover_metric_code(api_base_url, metric_code, geo_level)
+        discovered_metric_code = _discover_metric_code(
+            api_base_url, metric_code, geo_level
+        )
         if discovered_metric_code:
             fallback_url, fallback_items = _fetch_observations(
                 api_base_url,
@@ -347,10 +367,16 @@ def check_api_observations(
 
     ok = len(items) > 0
     detail = f"metric_code={selected_metric_code}; requested_metric_code={metric_code}; items={len(items)}; url={url}"
-    return CheckResult("api-county-observations", ok, detail), items, selected_metric_code
+    return (
+        CheckResult("api-county-observations", ok, detail),
+        items,
+        selected_metric_code,
+    )
 
 
-def check_martin_tiles(tiles_base_url: str, layer_id: str) -> tuple[CheckResult, str | None]:
+def check_martin_tiles(
+    tiles_base_url: str, layer_id: str
+) -> tuple[CheckResult, str | None]:
     tilejson_url = _tile_layer_url(tiles_base_url, layer_id)
     tilejson = _get_json(tilejson_url)
     vector_layer = _extract_vector_layer(tilejson, layer_id)
@@ -375,10 +401,16 @@ def check_martin_tiles(tiles_base_url: str, layer_id: str) -> tuple[CheckResult,
     return CheckResult("martin-county-tiles", ok, detail), join_key
 
 
-def check_observation_geometry_join(conn, observations: list[dict[str, Any]], minimum_join_ratio: float) -> CheckResult:
-    geo_ids = sorted({str(item.get("geo_id")) for item in observations if item.get("geo_id")})
+def check_observation_geometry_join(
+    conn, observations: list[dict[str, Any]], minimum_join_ratio: float
+) -> CheckResult:
+    geo_ids = sorted(
+        {str(item.get("geo_id")) for item in observations if item.get("geo_id")}
+    )
     if not geo_ids:
-        return CheckResult("api-geometry-join", False, "No geo_id values returned by API observations.")
+        return CheckResult(
+            "api-geometry-join", False, "No geo_id values returned by API observations."
+        )
 
     sql = """
         SELECT COUNT(*)::int
@@ -403,7 +435,9 @@ def check_observation_geometry_join(conn, observations: list[dict[str, Any]], mi
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate MVP Martin/API county join contract.")
+    parser = argparse.ArgumentParser(
+        description="Validate MVP Martin/API county join contract."
+    )
     parser.add_argument("--env-file", default="infra/docker/stack.external.env")
     parser.add_argument("--api-base-url", default="http://localhost:3001/api/")
     parser.add_argument("--tiles-base-url", default="http://localhost:3001/tiles/")
@@ -412,7 +446,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--layer-id", default="counties")
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--minimum-join-ratio", type=float, default=1.0)
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON summary.")
+    parser.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON summary."
+    )
     return parser.parse_args()
 
 

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pathlib
-import sys
 
 
 REQUIRED_FILES = [
@@ -63,9 +62,7 @@ def main() -> int:
             failures.append(f"Missing required string in README.md: {token}")
 
     last_updated_lines = [
-        line.strip()
-        for line in readme_text.splitlines()
-        if "Last Updated:" in line
+        line.strip() for line in readme_text.splitlines() if "Last Updated:" in line
     ]
 
     if not last_updated_lines:

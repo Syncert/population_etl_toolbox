@@ -5,7 +5,7 @@ These models define the contract between API routers, services, and consumers.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict

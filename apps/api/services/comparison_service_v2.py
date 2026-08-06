@@ -29,10 +29,10 @@ def list_metric_comparison(
 ) -> ComparisonResponse:
     """
     Compare two metrics from the same source.
-    
+
     For cross-source comparisons (e.g., BLS unemployment vs ACS median income),
     use a source-specific view created in gold schema (e.g., gold.v_labor_vs_income).
-    
+
     Raises:
         ValueError: If metrics are from different sources
     """
@@ -42,11 +42,11 @@ def list_metric_comparison(
     )
     if not is_valid:
         raise ValueError(error_msg)
-    
+
     # Get the source and route to the correct table
     sources = get_sources_from_metrics(db, [metric_code_a, metric_code_b])
     source_code = sources[metric_code_a]  # Both guaranteed to have same source
-    table_name = get_table_for_source(source_code, table_type='latest')
+    table_name = get_table_for_source(source_code, table_type="latest")
 
     base_sql = f"""
     WITH a AS (
@@ -160,13 +160,13 @@ def list_metric_comparison_cross_source(
 ) -> ComparisonResponse:
     """
     Compare two metrics from DIFFERENT sources using an explicit cross-source view.
-    
+
     This function looks for a view named after the two metrics, e.g.:
     - gold.v_bls_vs_acs_labor_income
     - gold.v_labor_unemployment_vs_fred_rates
-    
+
     You must create these views explicitly for each cross-source use case.
-    
+
     Args:
         db: Database session
         metric_code_a: First metric (any source)
@@ -175,20 +175,13 @@ def list_metric_comparison_cross_source(
         state_fips: State FIPS filter
         limit: Pagination limit
         offset: Pagination offset
-    
+
     Returns:
         ComparisonResponse with results from the cross-source view
-    
+
     Raises:
         ValueError: If the cross-source view doesn't exist
     """
-    # Try to find the cross-source view by convention
-    # (You'll need to create these views in your gold schema)
-    view_candidates = [
-        f"gold.v_comparison_{metric_code_a.replace(':', '_').lower()}_vs_{metric_code_b.replace(':', '_').lower()}",
-        f"gold.v_comparison_{metric_code_b.replace(':', '_').lower()}_vs_{metric_code_a.replace(':', '_').lower()}",
-    ]
-    
     # For now, raise an error directing users to create a view
     raise NotImplementedError(
         f"Cross-source comparison not yet configured. "

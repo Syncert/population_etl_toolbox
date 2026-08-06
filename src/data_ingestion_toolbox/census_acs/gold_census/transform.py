@@ -3,6 +3,7 @@ Gold analytics layer for the ``gold_census`` schema.
 
 Bootstraps source-specific objects and refreshes ACS metadata from silver.
 """
+
 from __future__ import annotations
 
 import logging

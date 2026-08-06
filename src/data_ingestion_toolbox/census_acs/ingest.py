@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import math
 import uuid
 import random
 import time
@@ -17,28 +16,51 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 import json
 import logging
 
 from .config import CONFIG
 
+CENSUS_NULL_SENTINELS = {
+    "-222222222",
+    "-333333333",
+    "-555555555",
+    "-666666666",
+    "-888888888",
+    "-999999999",
+}
 
-#classes for HTTP responses
+
+# classes for HTTP responses
 class CensusNoContent(Exception):
     """HTTP 204 from Census API: treat as empty slice, not a failure."""
+
     pass
+
 
 class CensusRetryableHTTP(Exception):
     """Retry-worthy HTTP cases (429 / 5xx)"""
+
     pass
 
-#initialize logger
+
+class CensusPayloadError(ValueError):
+    """The Census payload shape cannot be normalized safely."""
+
+
+# initialize logger
 logger = logging.getLogger(__name__)
 
 # Which database inside the Postgres instance do you want?
 # If you want this configurable, put it in CONFIG (recommended).
 _TARGET_DATABASE = "public_data"
+
 
 def _get_pg_conn_details() -> "PostgresConnectionDetails":
     """
@@ -51,13 +73,13 @@ def _get_pg_conn_details() -> "PostgresConnectionDetails":
         database=getattr(CONFIG, "target_database", _TARGET_DATABASE),
     )
 
+
 def _get_pg_connection():
     """
     Open a psycopg2 connection using the factory’s connection details.
     """
     details = _get_pg_conn_details()
     return psycopg2.connect(**details.psycopg_kwargs())
-
 
 
 def get_curated_variables(year: int, dataset: str) -> List[str]:
@@ -74,7 +96,7 @@ def get_curated_variables(year: int, dataset: str) -> List[str]:
           AND table_id = ANY(%s)
         ORDER BY variable_name;
     """
-    
+
     with _get_pg_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, (dataset, year, CONFIG.curated_tables))
@@ -87,7 +109,9 @@ def chunked(iterable: List[str], n: int) -> Iterable[List[str]]:
         yield iterable[i : i + n]
 
 
-def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[str, str]:
+def build_geo_params(
+    geo_level: str, state_fips: Optional[str] = None
+) -> Dict[str, str]:
     """
     Build the 'for' and 'in' query params for the ACS API, given geo_level.
     """
@@ -107,7 +131,14 @@ def build_geo_params(geo_level: str, state_fips: Optional[str] = None) -> Dict[s
     reraise=True,
     stop=stop_after_attempt(8),
     wait=wait_exponential(multiplier=2, min=5, max=900),  # up to 15 minutes
-    retry=retry_if_exception_type((CensusRetryableHTTP, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError)),
+    retry=retry_if_exception_type(
+        (
+            CensusRetryableHTTP,
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.HTTPError,
+        )
+    ),
 )
 def fetch_acs_api(
     year: int,
@@ -135,20 +166,28 @@ def fetch_acs_api(
 
     with httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
-                      ) as client:
+    ) as client:
         resp = client.get(base_url, params=params)
 
         # 204 = No Content (not an error; means "nothing for this query")
         if resp.status_code == 204:
             logger.info(
                 "Census 204 No Content: year=%s dataset=%s geo_level=%s state_fips=%s vars_count=%s first_vars=%s url=%s",
-                year, dataset, geo_level, state_fips, len(variables), variables[:5], str(resp.url),
+                year,
+                dataset,
+                geo_level,
+                state_fips,
+                len(variables),
+                variables[:5],
+                str(resp.url),
             )
             return []
 
         # Sometimes APIs return 200 but still give an empty body (rare, but safe to handle)
         if resp.status_code == 200 and not resp.content:
-            logger.info("Census 200 but empty body (treat empty): url=%s", str(resp.url))
+            logger.info(
+                "Census 200 but empty body (treat empty): url=%s", str(resp.url)
+            )
             return []
 
         # 429 = rate limited -> retryable
@@ -189,10 +228,28 @@ def rows_to_polars(
     load_batch_id: uuid.UUID,
 ) -> pl.DataFrame:
     if not raw:
-        return pl.DataFrame()
+        raise CensusNoContent("Census response contained no rows")
 
     header = raw[0]
     records = raw[1:]
+    if not header or not records:
+        raise CensusNoContent("Census response contained no data records")
+    if len(set(header)) != len(header):
+        raise CensusPayloadError("Census response contains duplicate headers")
+    if any(len(record) != len(header) for record in records):
+        raise CensusPayloadError("Census response row length does not match header")
+    expected_geo_columns = {
+        "us": {"us"},
+        "state": {"state"},
+        "county": {"state", "county"},
+    }
+    if geo_level not in expected_geo_columns:
+        raise ValueError(f"Unsupported geo_level: {geo_level}")
+    missing_geo = expected_geo_columns[geo_level] - set(header)
+    if missing_geo:
+        raise CensusPayloadError(
+            f"Census response missing geography columns: {sorted(missing_geo)}"
+        )
 
     df = pl.DataFrame(records, schema=[str(h) for h in header], orient="row")
 
@@ -216,7 +273,12 @@ def rows_to_polars(
     elif geo_level == "county":
         df = df.with_columns(
             geo_id=pl.concat_str(
-                [pl.lit("state:"), pl.col("state"), pl.lit("|county:"), pl.col("county")]
+                [
+                    pl.lit("state:"),
+                    pl.col("state"),
+                    pl.lit("|county:"),
+                    pl.col("county"),
+                ]
             ),
             state_fips=pl.col("state"),
             county_fips=pl.col("county"),
@@ -225,21 +287,21 @@ def rows_to_polars(
         raise ValueError(f"Unsupported geo_level: {geo_level}")
 
     # Melt variable columns into long format
-    long_df = df.melt(
-        id_vars=["geo_id", "state_fips", "county_fips"],
-        value_vars=var_cols,
+    long_df = df.unpivot(
+        index=["geo_id", "state_fips", "county_fips"],
+        on=var_cols,
         variable_name="variable_name",
         value_name="value_str",
     )
 
     # 1) Force value_str to Utf8 before any .str operations
-    long_df = long_df.with_columns(
-        pl.col("value_str").cast(pl.Utf8).alias("value_str")
-    )
+    long_df = long_df.with_columns(pl.col("value_str").cast(pl.Utf8).alias("value_str"))
 
     # 2) Now safe to use string methods
     long_df = long_df.with_columns(
         pl.when(pl.col("value_str").str.strip_chars().eq(""))
+        .then(None)
+        .when(pl.col("value_str").is_in(CENSUS_NULL_SENTINELS))
         .then(None)
         .otherwise(pl.col("value_str"))
         .alias("value_str")
@@ -250,12 +312,9 @@ def rows_to_polars(
         pl.col("value_str").cast(pl.Float64, strict=False).alias("value")
     ).drop("value_str")
 
-    #derive table_id from variable_name (e.g. 'B01001_001E' -> 'B01001')
+    # derive table_id from variable_name (e.g. 'B01001_001E' -> 'B01001')
     long_df = long_df.with_columns(
-        pl.col("variable_name")
-        .str.split("_")
-        .list.get(0)
-        .alias("table_id")
+        pl.col("variable_name").str.split("_").list.get(0).alias("table_id")
     )
 
     # derive measure_type from variable_name (last char: E or M)
@@ -292,7 +351,9 @@ def rows_to_polars(
     return long_df
 
 
-def load_df_to_acs_long(df: pl.DataFrame, dataset: str, year: int, geo_level: str) -> int:
+def load_df_to_acs_long(
+    df: pl.DataFrame, dataset: str, year: int, geo_level: str
+) -> int:
     """
     Bulk load a Polars DataFrame into raw_census.acs_long using COPY.
 
@@ -402,6 +463,9 @@ def ingest_slice(
             state_fips=state_fips,
         )
 
+        if not raw:
+            continue
+
         time.sleep(0.2 + random.random() * 0.3)  # 0.2–0.5s
 
         df = rows_to_polars(
@@ -419,4 +483,6 @@ def ingest_slice(
         return 0
 
     combined = pl.concat(frames, how="vertical_relaxed")
-    return load_df_to_acs_long(combined, dataset=dataset, year=year, geo_level=geo_level)
+    return load_df_to_acs_long(
+        combined, dataset=dataset, year=year, geo_level=geo_level
+    )

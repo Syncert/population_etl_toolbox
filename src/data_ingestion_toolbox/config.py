@@ -14,9 +14,7 @@ class Settings:
     """Minimal application settings read from environment variables."""
 
     def __init__(self) -> None:
-        self.api_title: str = os.environ.get(
-            "API_TITLE", "Population ETL Toolbox API"
-        )
+        self.api_title: str = os.environ.get("API_TITLE", "Population ETL Toolbox API")
         self.api_version: str = os.environ.get("API_VERSION", "0.1.0")
         self.api_description: str = os.environ.get(
             "API_DESCRIPTION",

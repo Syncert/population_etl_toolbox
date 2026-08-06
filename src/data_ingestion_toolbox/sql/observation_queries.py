@@ -212,7 +212,9 @@ def build_latest_rpt_fallback_queries(
     where = _build_where_latest(metric_code, geo_level, state_fips, params)
     view = "gold.v_metric_timeseries_by_geo"
     cte = f"WITH ranked AS (SELECT {_MVP_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
-    list_q = text(f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset")
+    list_q = text(
+        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+    )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params
 
@@ -228,7 +230,9 @@ def build_latest_rpt_fallback_queries_legacy(
     where = _build_where_latest(metric_code, geo_level, state_fips, params)
     view = "gold.rpt_observation_dashboard"
     cte = f"WITH ranked AS (SELECT {_LEGACY_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
-    list_q = text(f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset")
+    list_q = text(
+        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+    )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params
 
@@ -250,7 +254,9 @@ def build_latest_rpt_fallback_queries_for_schema(
     where = _build_where_latest(metric_code, geo_level, state_fips, params)
     view = f"{schema}.v_metric_timeseries_by_geo"
     cte = f"WITH ranked AS (SELECT {_MVP_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
-    list_q = text(f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset")
+    list_q = text(
+        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+    )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params
 

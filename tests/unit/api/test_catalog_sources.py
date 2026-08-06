@@ -65,6 +65,7 @@ def test_catalog_sources_route_without_real_db() -> None:
 @pytest.mark.api
 def test_catalog_sources_db_error_is_sanitized() -> None:
     """API-016: SQLAlchemy error returns 503 with only the safe message."""
+
     def _failing_override_db():
         yield _FailingSession()
 

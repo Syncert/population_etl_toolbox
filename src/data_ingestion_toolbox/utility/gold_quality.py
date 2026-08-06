@@ -1,4 +1,5 @@
 """Gold layer data quality checks."""
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,9 @@ def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> 
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(f"check_acs_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+        raise ValueError(
+            f"check_acs_observation_constraints FAILED for {month_start}: {violations} duplicate groups"
+        )
 
     semantic_sql = """
         SELECT COUNT(*)
@@ -45,7 +48,9 @@ def check_acs_observation_constraints(hook: PostgresHook, month_start: date) -> 
         semantic_violations = cur.fetchone()[0]
 
     if semantic_violations > 0:
-        raise ValueError(f"check_acs_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+        raise ValueError(
+            f"check_acs_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations"
+        )
 
     return violations
 
@@ -67,7 +72,9 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(f"check_bls_observation_constraints FAILED for {month_start}: {violations} duplicate groups")
+        raise ValueError(
+            f"check_bls_observation_constraints FAILED for {month_start}: {violations} duplicate groups"
+        )
 
     semantic_sql = """
         SELECT COUNT(*)
@@ -85,7 +92,9 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
         semantic_violations = cur.fetchone()[0]
 
     if semantic_violations > 0:
-        raise ValueError(f"check_bls_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+        raise ValueError(
+            f"check_bls_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations"
+        )
 
     return violations
 
@@ -107,7 +116,9 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {violations} duplicate series/date groups")
+        raise ValueError(
+            f"check_fred_observation_constraints FAILED for {month_start}: {violations} duplicate series/date groups"
+        )
 
     semantic_sql = """
         SELECT COUNT(*)
@@ -125,7 +136,9 @@ def check_fred_observation_constraints(hook: PostgresHook, month_start: date) ->
         semantic_violations = cur.fetchone()[0]
 
     if semantic_violations > 0:
-        raise ValueError(f"check_fred_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations")
+        raise ValueError(
+            f"check_fred_observation_constraints FAILED for {month_start}: {semantic_violations} semantic violations"
+        )
 
     return violations
 
@@ -150,12 +163,16 @@ def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
         violations = cur.fetchone()[0]
 
     if violations > 0:
-        raise ValueError(f"check_metric_catalog_fk_coverage FAILED: {violations} active metric(s) without source mapping")
+        raise ValueError(
+            f"check_metric_catalog_fk_coverage FAILED: {violations} active metric(s) without source mapping"
+        )
 
     return violations
 
 
-def run_quality_checks(month_start: date, source_system: str, hook: PostgresHook) -> None:
+def run_quality_checks(
+    month_start: date, source_system: str, hook: PostgresHook
+) -> None:
     source = source_system.strip().upper()
     if source == "CENSUS_ACS":
         check_acs_observation_constraints(hook, month_start)

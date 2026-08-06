@@ -20,12 +20,13 @@ FRED_OBS_DOC = "https://fred.stlouisfed.org/docs/api/fred/series_observations.ht
 @dataclass
 class TransformMetrics:
     """Track and log FRED silver transform metrics."""
+
     dataset_name: str
-    
+
     # Pre-transform
     raw_rows_by_domain: dict[str, int] = field(default_factory=dict)
     schema_issues: list[str] = field(default_factory=list)
-    
+
     # Per-chunk
     chunk_input_rows: int = 0
     chunk_output_rows: int = 0
@@ -34,17 +35,17 @@ class TransformMetrics:
     time_dim_hits: int = 0
     time_dim_misses: int = 0
     null_counts: dict[str, int] = field(default_factory=dict)
-    
+
     # Upsert
     upsert_duration_sec: float = 0.0
     upsert_inserted: int = 0
     upsert_total: int = 0
-    
+
     # Post-transform
     total_processed: int = 0
     total_inserted: int = 0
     errors_encountered: list[str] = field(default_factory=list)
-    
+
     def log_pre_transform(self) -> None:
         """Log pre-transform diagnostics."""
         if self.raw_rows_by_domain:
@@ -58,14 +59,14 @@ class TransformMetrics:
                 domains_summary,
                 sum(self.raw_rows_by_domain.values()),
             )
-        
+
         if self.schema_issues:
             logger.warning(
                 "[%s PRE-TRANSFORM] Schema validation issues: %s",
                 self.dataset_name,
                 "; ".join(self.schema_issues),
             )
-    
+
     def log_chunk_start(self, domain: str, input_rows: int) -> None:
         """Log start of chunk processing."""
         self.chunk_input_rows = input_rows
@@ -75,7 +76,7 @@ class TransformMetrics:
             domain,
             input_rows,
         )
-    
+
     def log_chunk_complete(self, domain: str) -> None:
         """Log chunk processing results."""
         pct_output = (
@@ -91,42 +92,46 @@ class TransformMetrics:
             self.chunk_output_rows,
             pct_output,
         )
-        
+
         if self.rows_missing_time:
             logger.warning(
                 "[%s CHUNK] Rows filtered: missing_time=%s",
                 self.dataset_name,
                 self.rows_missing_time,
             )
-        
+
         if self.rows_deduplicated:
             logger.info(
                 "[%s CHUNK] Deduplicated %s rows",
                 self.dataset_name,
                 self.rows_deduplicated,
             )
-        
+
         if self.time_dim_misses:
             logger.info(
                 "[%s CHUNK] Time dimension coverage: %s hits, %s misses (%.1f%%)",
                 self.dataset_name,
                 self.time_dim_hits,
                 self.time_dim_misses,
-                (self.time_dim_misses / (self.time_dim_hits + self.time_dim_misses) * 100)
-                if (self.time_dim_hits + self.time_dim_misses) > 0 else 0,
+                (
+                    self.time_dim_misses
+                    / (self.time_dim_hits + self.time_dim_misses)
+                    * 100
+                )
+                if (self.time_dim_hits + self.time_dim_misses) > 0
+                else 0,
             )
-        
+
         if self.null_counts:
             null_summary = "; ".join(
-                f"{col}={count:,}"
-                for col, count in sorted(self.null_counts.items())
+                f"{col}={count:,}" for col, count in sorted(self.null_counts.items())
             )
             logger.info(
                 "[%s CHUNK] Null counts by column: %s",
                 self.dataset_name,
                 null_summary,
             )
-    
+
     def log_upsert_complete(self, upserted: int, duration_sec: float) -> None:
         """Log upsert results."""
         self.upsert_total += upserted
@@ -137,7 +142,7 @@ class TransformMetrics:
             duration_sec,
             upserted,
         )
-    
+
     def log_transform_summary(self) -> None:
         """Log final transform summary."""
         logger.info(
@@ -147,18 +152,19 @@ class TransformMetrics:
             self.total_inserted,
             len(self.errors_encountered),
         )
-        
+
         if self.errors_encountered:
             for err in self.errors_encountered:
                 logger.error("[%s SUMMARY] Error: %s", self.dataset_name, err)
-
 
 
 def _get_hook() -> PostgresHook:
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
 
-def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
+def _load_time_dim(
+    hook: PostgresHook, start_date: date, end_date: date
+) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
         FROM silver_ref.dim_time
@@ -168,8 +174,10 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
-        schema=["time_sk", "date_key"]
+    return (
+        pl.DataFrame(rows, schema=["time_sk", "date_key"])
+        if rows
+        else pl.DataFrame(schema=["time_sk", "date_key"])
     )
 
 
@@ -248,10 +256,12 @@ def transform_fred_to_silver(domain: str) -> int:
     duration_start = [d[0] for d in durations]
     duration_end = [d[1] for d in durations]
 
-    df = df.with_columns([
-        pl.Series("duration_start", duration_start),
-        pl.Series("duration_end", duration_end),
-    ])
+    df = df.with_columns(
+        [
+            pl.Series("duration_start", duration_start),
+            pl.Series("duration_end", duration_end),
+        ]
+    )
 
     min_date = min(duration_start)
     max_date = max(duration_start)

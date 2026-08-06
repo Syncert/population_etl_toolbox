@@ -43,8 +43,8 @@ class _ComparisonSession:
                         "county_fips": "001",
                         "state_name": "California",
                         "county_name": "Alameda",
-                        "metric_code_a": "POP_TOTAL",
-                        "metric_code_b": "UNEMP_RATE",
+                        "metric_code_a": _params["metric_code_a"],
+                        "metric_code_b": _params["metric_code_b"],
                         "value_a": 100.0,
                         "value_b": 10.0,
                         "difference": 90.0,
@@ -60,6 +60,7 @@ class _ComparisonSession:
 @pytest.mark.api
 def test_comparison_accepts_metric_id_aliases() -> None:
     """API-015: comparison returns paired values and total."""
+
     def _override_db():
         yield _ComparisonSession()
 
@@ -88,6 +89,7 @@ def test_comparison_accepts_metric_id_aliases() -> None:
 @pytest.mark.api
 def test_comparison_requires_metric_a() -> None:
     """API-003: missing metric_a returns 422."""
+
     def _override_db():
         yield _ComparisonSession()
 
@@ -106,6 +108,7 @@ def test_comparison_requires_metric_a() -> None:
 @pytest.mark.api
 def test_comparison_requires_metric_b() -> None:
     """API-003: missing metric_b returns 422."""
+
     def _override_db():
         yield _ComparisonSession()
 
@@ -118,3 +121,40 @@ def test_comparison_requires_metric_b() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "metric_code_b or metric_id_b is required"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+@pytest.mark.parametrize(
+    ("metric_a", "metric_b"),
+    [
+        ("FRED:UNRATE", "FRED:CIVPART"),
+        ("ACS:acs5:B01003_001", "FRED:UNRATE"),
+    ],
+)
+def test_comparison_aligns_same_and_cross_source_metrics(
+    metric_a: str, metric_b: str
+) -> None:
+    """API-015: same- and cross-source metrics pair once by geography."""
+
+    def _override_db():
+        yield _ComparisonSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        response = TestClient(app).get(
+            "/api/comparison",
+            params={"metric_code_a": metric_a, "metric_code_b": metric_b},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["metric_code_a"] == metric_a
+    assert payload["metric_code_b"] == metric_b
+    assert payload["total"] == 2
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["geo_id"] == "06001"
+    assert payload["items"][0]["value_a"] == 100.0
+    assert payload["items"][0]["value_b"] == 10.0

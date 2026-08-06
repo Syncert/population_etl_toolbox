@@ -8,13 +8,14 @@ from typing import List
 
 
 class AcsConfig(BaseModel):
-    census_api_key: str = Field(default_factory=lambda: os.environ.get("CENSUS_API_KEY", ""))
+    census_api_key: str = Field(
+        default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
+    )
     # dataset names used locally
     datasets: List[str] = ["acs1", "acs5"]
     # curated table IDs (can expand later)
     curated_tables: List[str] = [
         # https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/documentation/
-
         # Core population, age, children, and household composition
         "B01001",  # Sex by age
         "B01002",  # Median age by sex; _001 is the overall median age
@@ -25,28 +26,24 @@ class AcsConfig(BaseModel):
         "B11003",  # Families by presence/age of the householder's own children under 18
         "B11005",  # All households by presence of people under 18; preferred for household-with-children share
         "B12001",  # Marital status by sex for the population age 15+
-
         # Race, ethnicity, nativity, birthplace, and language
         "B02001",  # Race
         "B03002",  # Hispanic or Latino by race
         "B05002",  # Place of birth by nativity and citizenship; includes native and foreign-born totals
         "B05006",  # Detailed place of birth for the foreign-born population
         "C16001",  # Language spoken at home and English ability for the population age 5+
-
         # Mobility and transportation
         "B07001",  # Geographic mobility in the past year by age
         "B07003",  # Geographic mobility in the past year by sex
         "B08201",  # Household size by vehicles available
         "B08301",  # Means of transportation to work
         "B08303",  # Travel time to work; universe excludes people who worked from home
-
         # Education, disability, veterans, poverty, and labor force
         "B15003",  # Educational attainment
         "C18108",  # Age by number of disabilities; supports any-disability shares by broad age group
         "B21001",  # Veteran status by sex and age for the civilian population age 18+
         "B17001",  # Poverty status by sex and age; _002 / _001 is the overall poverty rate
         "B23025",  # Employment status for the population age 16+
-
         # Income and earnings
         "B19001",  # Household income distribution
         "B19013",  # Median household income
@@ -54,13 +51,11 @@ class AcsConfig(BaseModel):
         "B19301",  # Per-capita income in the vintage year's inflation-adjusted dollars
         "B20001",  # Earnings distribution by sex for people age 16+ with earnings
         "B20002",  # Median earnings by sex; separate from the B20001 distribution
-
         # Industry and occupation
         "B24040",  # Sex by industry for the full-time, year-round civilian employed population
         "B24010",  # Sex by occupation for the civilian employed population
         "B24114",  # Detailed occupation for the civilian employed population
         "B24134",  # Detailed industry for the civilian employed population
-
         # Housing supply, occupancy, structure, tenure, cost, and affordability
         "B25001",  # Total housing units
         "B25002",  # Occupancy status; _003 / _001 is the vacancy rate
@@ -75,11 +70,9 @@ class AcsConfig(BaseModel):
         "B25091",  # Owner costs as a percent of household income by mortgage status
         "B25104",  # Monthly housing costs
         "B25108",  # Aggregate value by year structure built
-
         # Health coverage and digital access
         "B27010",  # Health insurance by age
         "B28002",  # Internet access; _004 is broadband of any type, _002 is any subscription
-
         # Cross-tabulation
         "C24050",  # Industry by occupation for the civilian employed population age 16+
     ]
@@ -88,7 +81,7 @@ class AcsConfig(BaseModel):
     # Airflow connection ID to Postgres
     postgres_conn_id: str = "public_data"
 
-    #configuration for rate limiting
+    # configuration for rate limiting
     census_api_global_concurrency: int = 2
     census_api_min_spacing_seconds: float = 0.25
 

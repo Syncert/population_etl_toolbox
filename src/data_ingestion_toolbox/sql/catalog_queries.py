@@ -45,6 +45,7 @@ SOURCES_QUERY_GLOSSARY: TextClause = text(
 # Helper: build WHERE clause for metric catalog queries
 # ---------------------------------------------------------------------------
 
+
 def _build_metric_where(
     source_code: Optional[str],
     active_only: Optional[bool],
@@ -83,7 +84,9 @@ def build_metrics_queries(
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, dashboard_suitability, q, params)
+    where = _build_metric_where(
+        source_code, active_only, dashboard_suitability, q, params
+    )
     view = "gold.dim_metric"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -101,7 +104,9 @@ def build_metrics_queries_legacy(
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, dashboard_suitability, q, params)
+    where = _build_metric_where(
+        source_code, active_only, dashboard_suitability, q, params
+    )
     view = "gold.dim_metric_catalog"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -124,7 +129,9 @@ def build_metrics_queries_glossary(
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, dashboard_suitability, q, params)
+    where = _build_metric_where(
+        source_code, active_only, dashboard_suitability, q, params
+    )
     view = "gold_glossary.dim_metric"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -142,7 +149,9 @@ def build_metrics_queries_glossary_legacy(
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(source_code, active_only, dashboard_suitability, q, params)
+    where = _build_metric_where(
+        source_code, active_only, dashboard_suitability, q, params
+    )
     view = "gold_glossary.dim_metric_catalog"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"

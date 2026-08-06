@@ -23,9 +23,7 @@ class BlsConfig(BaseModel):
     - Do NOT force QCEW into a fake "series_id" abstraction
     """
 
-    bls_api_key: str = Field(
-        default_factory=lambda: os.environ.get("BLS_API_KEY", "")
-    )
+    bls_api_key: str = Field(default_factory=lambda: os.environ.get("BLS_API_KEY", ""))
 
     # ------------------------------------------------------------------
     # Enabled BLS programs.
@@ -71,7 +69,6 @@ class BlsConfig(BaseModel):
     # bucket as level-based labor statistics.
     # ------------------------------------------------------------------
     curated_by_program: Dict[str, List[str]] = {
-
         # --------------------------------------------------------------
         # LAUS — Local Area Unemployment Statistics (la)
         #
@@ -89,7 +86,6 @@ class BlsConfig(BaseModel):
             "08",  # Labor force participation rate (% of population)
             "09",  # Civilian noninstitutional population
         ],
-
         # --------------------------------------------------------------
         # CPS/LN — Current Population Survey (Household Survey) (ln)
         #
@@ -116,7 +112,6 @@ class BlsConfig(BaseModel):
             "LNS14000009",  # Unemployment rate, Hispanic or Latino
             "LNS14032183",  # Unemployment rate, Asian
         ],
-
         # --------------------------------------------------------------
         # CES — Current Employment Statistics (Payroll Survey) (ce)
         #
@@ -143,7 +138,6 @@ class BlsConfig(BaseModel):
             "CES8000000001",  # Other services employment
             "CES9000000001",  # Government employment
         ],
-
         # --------------------------------------------------------------
         # CPI — Consumer Price Index - All Urban Consumers (cu)
         #
@@ -151,17 +145,16 @@ class BlsConfig(BaseModel):
         # Used for inflation, real-wage adjustments, and COLA analysis.
         # --------------------------------------------------------------
         "cu": [
-            "CUUR0000SA0",    # CPI-U, all items, U.S. city average
-            "CUUR0000SA0L1E", # CPI-U, all items less food and energy (core CPI)
-            "CWUR0000SA0",    # CPI-W, all items, U.S. city average
-            "CUUR0000SAF1",   # CPI-U, food
-            "CUUR0000SA0E",   # CPI-U, energy
-            "CUUR0000SAH1",   # CPI-U, shelter
-            "CUUR0000SEHA",   # CPI-U, rent of primary residence
-            "CUUR0000SEHC",   # CPI-U, owners' equivalent rent
-            "CUUR0000SAM",    # CPI-U, medical care
+            "CUUR0000SA0",  # CPI-U, all items, U.S. city average
+            "CUUR0000SA0L1E",  # CPI-U, all items less food and energy (core CPI)
+            "CWUR0000SA0",  # CPI-W, all items, U.S. city average
+            "CUUR0000SAF1",  # CPI-U, food
+            "CUUR0000SA0E",  # CPI-U, energy
+            "CUUR0000SAH1",  # CPI-U, shelter
+            "CUUR0000SEHA",  # CPI-U, rent of primary residence
+            "CUUR0000SEHC",  # CPI-U, owners' equivalent rent
+            "CUUR0000SAM",  # CPI-U, medical care
         ],
-
         # --------------------------------------------------------------
         # JOLTS — Job Openings and Labor Turnover Survey (jt)_
         #
@@ -206,6 +199,7 @@ class BlsConfig(BaseModel):
     def has_api_key(self) -> bool:
         return bool(self.bls_api_key)
 
+
 CONFIG = BlsConfig()
 
 # ---------------------------------------------------------------------------
@@ -221,11 +215,39 @@ BLS_PROGRAM_LABELS: Dict[str, str] = {
 }
 
 LAUS_MEASURE_META: Dict[str, Dict[str, str]] = {
-    "03": {"name": "Unemployment Rate", "unit": "Percent", "semantics": "Percent of labor force that is unemployed"},
-    "04": {"name": "Unemployment Level", "unit": "Persons", "semantics": "Count of unemployed persons"},
-    "05": {"name": "Employment Level", "unit": "Persons", "semantics": "Count of employed persons"},
-    "06": {"name": "Labor Force Level", "unit": "Persons", "semantics": "Count of persons in labor force"},
-    "07": {"name": "Employment-Population Ratio", "unit": "Percent", "semantics": "Employed as percent of civilian noninstitutional population"},
-    "08": {"name": "Labor Force Participation Rate", "unit": "Percent", "semantics": "Labor force as percent of civilian noninstitutional population"},
-    "09": {"name": "Civilian Noninstitutional Population", "unit": "Persons", "semantics": "Count of civilian noninstitutional population"},
+    "03": {
+        "name": "Unemployment Rate",
+        "unit": "Percent",
+        "semantics": "Percent of labor force that is unemployed",
+    },
+    "04": {
+        "name": "Unemployment Level",
+        "unit": "Persons",
+        "semantics": "Count of unemployed persons",
+    },
+    "05": {
+        "name": "Employment Level",
+        "unit": "Persons",
+        "semantics": "Count of employed persons",
+    },
+    "06": {
+        "name": "Labor Force Level",
+        "unit": "Persons",
+        "semantics": "Count of persons in labor force",
+    },
+    "07": {
+        "name": "Employment-Population Ratio",
+        "unit": "Percent",
+        "semantics": "Employed as percent of civilian noninstitutional population",
+    },
+    "08": {
+        "name": "Labor Force Participation Rate",
+        "unit": "Percent",
+        "semantics": "Labor force as percent of civilian noninstitutional population",
+    },
+    "09": {
+        "name": "Civilian Noninstitutional Population",
+        "unit": "Persons",
+        "semantics": "Count of civilian noninstitutional population",
+    },
 }

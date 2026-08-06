@@ -3,6 +3,7 @@ Gold analytics layer for the ``gold_bls`` schema.
 
 Bootstraps source-specific objects and refreshes BLS metadata from silver.
 """
+
 from __future__ import annotations
 
 import logging

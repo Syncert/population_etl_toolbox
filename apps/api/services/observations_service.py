@@ -47,7 +47,9 @@ def _relation_exists(db: Session, relation_name: str) -> bool:
     return bool(exists)
 
 
-def _relation_has_columns(db: Session, relation_name: str, column_names: list[str]) -> bool:
+def _relation_has_columns(
+    db: Session, relation_name: str, column_names: list[str]
+) -> bool:
     if not hasattr(db, "bind"):
         return True
 
@@ -64,14 +66,18 @@ def _relation_has_columns(db: Session, relation_name: str, column_names: list[st
           AND column_name = ANY(:column_names)
         """
     )
-    rows = db.execute(
-        columns_query,
-        {
-            "schema_name": schema_name,
-            "table_name": table_name,
-            "column_names": column_names,
-        },
-    ).scalars().all()
+    rows = (
+        db.execute(
+            columns_query,
+            {
+                "schema_name": schema_name,
+                "table_name": table_name,
+                "column_names": column_names,
+            },
+        )
+        .scalars()
+        .all()
+    )
     return set(rows) == set(column_names)
 
 
@@ -90,12 +96,32 @@ def _relation_is_mvp_observation_contract(db: Session, relation_name: str) -> bo
 
 def _source_select_sql(source: str) -> str:
     normalized = source.lower()
-    seasonal_expr = "seasonal_adjustment_status" if normalized in {"bls", "fred"} else "NULL::TEXT AS seasonal_adjustment_status"
-    dataset_expr = "dataset_code" if normalized == "census" else "NULL::TEXT AS dataset_code"
-    vintage_year_expr = "vintage_year" if normalized == "census" else "NULL::INT AS vintage_year"
-    vintage_expr = "vintage_year::TEXT AS vintage" if normalized == "census" else "NULL::TEXT AS vintage"
-    moe_expr = "margin_of_error" if normalized == "census" else "NULL::NUMERIC AS margin_of_error"
-    moe_pct_expr = "margin_of_error_pct" if normalized == "census" else "NULL::NUMERIC AS margin_of_error_pct"
+    seasonal_expr = (
+        "seasonal_adjustment_status"
+        if normalized in {"bls", "fred"}
+        else "NULL::TEXT AS seasonal_adjustment_status"
+    )
+    dataset_expr = (
+        "dataset_code" if normalized == "census" else "NULL::TEXT AS dataset_code"
+    )
+    vintage_year_expr = (
+        "vintage_year" if normalized == "census" else "NULL::INT AS vintage_year"
+    )
+    vintage_expr = (
+        "vintage_year::TEXT AS vintage"
+        if normalized == "census"
+        else "NULL::TEXT AS vintage"
+    )
+    moe_expr = (
+        "margin_of_error"
+        if normalized == "census"
+        else "NULL::NUMERIC AS margin_of_error"
+    )
+    moe_pct_expr = (
+        "margin_of_error_pct"
+        if normalized == "census"
+        else "NULL::NUMERIC AS margin_of_error_pct"
+    )
 
     return f"""
         source_code,
@@ -126,7 +152,7 @@ def _source_select_sql(source: str) -> str:
         units AS unit,
         {seasonal_expr},
         {dataset_expr},
-        {dataset_expr.split(' AS ')[0]} AS dataset,
+        {dataset_expr.split(" AS ")[0]} AS dataset,
         {vintage_year_expr},
         {vintage_expr},
         {moe_expr},
@@ -263,7 +289,9 @@ def list_latest_observations(
 
     if mv_total == 0:
         latest_fallback_builder = build_latest_rpt_fallback_queries
-        if not _relation_is_mvp_observation_contract(db, "gold.v_metric_timeseries_by_geo"):
+        if not _relation_is_mvp_observation_contract(
+            db, "gold.v_metric_timeseries_by_geo"
+        ):
             latest_fallback_builder = build_latest_rpt_fallback_queries_legacy
 
         rpt_list_query, rpt_count_query, rpt_params = latest_fallback_builder(
@@ -360,13 +388,15 @@ def list_latest_observations_for_source(
     total = mv_total
 
     if mv_total == 0:
-        rpt_list_query, rpt_count_query, rpt_params = build_latest_rpt_fallback_queries_for_schema(
-            schema=schema,
-            metric_code=metric_code,
-            geo_level=geo_level,
-            state_fips=state_fips,
-            limit=limit,
-            offset=offset,
+        rpt_list_query, rpt_count_query, rpt_params = (
+            build_latest_rpt_fallback_queries_for_schema(
+                schema=schema,
+                metric_code=metric_code,
+                geo_level=geo_level,
+                state_fips=state_fips,
+                limit=limit,
+                offset=offset,
+            )
         )
         total = int(db.execute(rpt_count_query, rpt_params).scalar() or 0)
         rows = db.execute(rpt_list_query, rpt_params).mappings().all()

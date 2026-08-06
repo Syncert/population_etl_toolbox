@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package-api:
     name: Package build and install smoke (Python 3.11)
@@ -30,15 +34,26 @@ jobs:
             ${{ runner.os }}-pip-build-${{ hashFiles('pyproject.toml') }}
 
       - name: Install build tools
-        run: pip install build
+        run: python -m pip install build==1.2.2.post1
 
       - name: Build wheel and sdist
         run: python -m build --outdir dist/
 
       - name: Install wheel into clean environment
         run: |
-          pip install dist/*.whl
-          pip check
+          python -m venv .package-smoke
+          WHEEL="$(find dist -name '*.whl' -print -quit)"
+          .package-smoke/bin/python -m pip install --upgrade pip
+          .package-smoke/bin/python -m pip install "${WHEEL}[api]"
+          .package-smoke/bin/python -m pip check
 
       - name: Import smoke test
-        run: python -c "import data_ingestion_toolbox; print('import ok')"
+        run: >-
+          .package-smoke/bin/python -c
+          "import data_ingestion_toolbox; import apps.api.main; print('import ok')"
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/

@@ -98,7 +98,9 @@ class _LatestFallbackSession:
             return _FakeResult(scalar_value=3)
 
         if "with ranked" in sql:
-            return _FakeResult(rows=[_observation_row(metric_code="UNEMP", geo_id="06001")])
+            return _FakeResult(
+                rows=[_observation_row(metric_code="UNEMP", geo_id="06001")]
+            )
 
         return _FakeResult(rows=[])
 
@@ -115,7 +117,9 @@ class _TimeseriesSession:
             return _FakeResult(scalar_value=9)
 
         if "from gold.v_metric_timeseries_by_geo" in sql:
-            return _FakeResult(rows=[_observation_row(metric_code="UNEMP", geo_id="06001")])
+            return _FakeResult(
+                rows=[_observation_row(metric_code="UNEMP", geo_id="06001")]
+            )
 
         return _FakeResult(rows=[])
 
@@ -191,6 +195,7 @@ def test_latest_falls_back_to_rpt_when_mv_empty() -> None:
 @pytest.mark.api
 def test_timeseries_uses_count_total() -> None:
     """API-006: total from independent count query."""
+
     def _override_db():
         yield _TimeseriesSession()
 
@@ -215,6 +220,7 @@ def test_timeseries_uses_count_total() -> None:
 @pytest.mark.api
 def test_timeseries_rejects_invalid_date_range() -> None:
     """API-007: start_date > end_date returns 422."""
+
     def _override_db():
         yield _TimeseriesSession()
 
@@ -234,7 +240,9 @@ def test_timeseries_rejects_invalid_date_range() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "start_date must be less than or equal to end_date"
+    assert (
+        response.json()["detail"] == "start_date must be less than or equal to end_date"
+    )
 
 
 @pytest.mark.unit
@@ -316,6 +324,7 @@ def test_timeseries_accepts_metric_id_alias() -> None:
 @pytest.mark.api
 def test_latest_requires_metric_code_or_metric_id() -> None:
     """API-003: missing both metric_code and metric_id returns 422."""
+
     def _override_db():
         yield _LatestForwardingSession()
 
@@ -337,6 +346,7 @@ def test_latest_requires_metric_code_or_metric_id() -> None:
 @pytest.mark.api
 def test_timeseries_requires_metric_code_or_metric_id() -> None:
     """API-003: timeseries missing both metric identifiers returns 422."""
+
     def _override_db():
         yield _TimeseriesSession()
 

@@ -81,7 +81,9 @@ def validate_bls() -> dict[str, Any]:
         payload=request_payload,
     )
     if payload.get("status") != "REQUEST_SUCCEEDED":
-        raise ValueError(f"BLS request failed: {payload.get('message') or payload.get('status')}")
+        raise ValueError(
+            f"BLS request failed: {payload.get('message') or payload.get('status')}"
+        )
     series = payload.get("Results", {}).get("series", [])
     observations = series[0].get("data", []) if series else []
     usable = [item for item in observations if item.get("value") not in {None, "", "-"}]
@@ -114,7 +116,8 @@ def validate_fred() -> dict[str, Any]:
         },
     )
     observations = [
-        item for item in payload.get("observations", [])
+        item
+        for item in payload.get("observations", [])
         if item.get("value") not in {None, "", "."}
     ]
     if not observations:
@@ -138,7 +141,14 @@ def main() -> int:
     ):
         try:
             results[name] = validator()
-        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError) as exc:
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as exc:
             failed = True
             results[name] = {
                 "status": "failed",

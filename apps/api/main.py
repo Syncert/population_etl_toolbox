@@ -1,7 +1,17 @@
 from fastapi import FastAPI
 
 from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMiddleware
-from apps.api.routers import bls, catalog, census, comparison, distribution, fred, health, models, observations
+from apps.api.routers import (
+    bls,
+    catalog,
+    census,
+    comparison,
+    distribution,
+    fred,
+    health,
+    models,
+    observations,
+)
 from data_ingestion_toolbox.config import get_settings
 
 settings = get_settings()

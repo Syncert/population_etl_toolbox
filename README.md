@@ -174,11 +174,8 @@ pip install -e .[api]
 # Lint/test tooling only
 pip install -e .[dev]
 
-# ETL orchestration only; use only in an Airflow-specific environment
-pip install -e .[airflow]
-
-# Airflow plus test tooling; use only in an Airflow-specific environment
-pip install -e .[airflow-dev]
+# Airflow installs require Python 3.11 and the official constraints.
+# Use the exact two-step sequence in the Testing section below.
 ```
 
 ### API MVP (Vertical Slice)
@@ -654,9 +651,10 @@ ORDER BY date DESC LIMIT 30;
 
 ### Testing
 
-All tests live under `tests/`.  Two separate Python environments are required
-because the API and Airflow layers have conflicting SQLAlchemy version
-requirements.
+All automated tests and test-owned assets live under `tests/`. Two separate
+Python 3.11 environments are required because the API and Airflow layers have
+conflicting SQLAlchemy requirements. Plain `pytest` is deterministic and does
+not collect the Airflow, integration, external, E2E, or performance tiers.
 
 #### API + ETL unit tests (Python 3.11, `.[api,dev]`)
 
@@ -664,14 +662,18 @@ requirements.
 # Install
 pip install -e ".[api,dev]"
 
-# Run all unit tests (default: excludes database, redis, external, e2e, performance, slow)
-pytest tests/unit/
+# Run all deterministic unit tests
+make test-unit
+# Windows equivalent
+./scripts/test.ps1 unit
 
 # ETL unit tests only (Census, BLS, FRED, shared)
-pytest -m "unit and not api" tests/unit/
+make test-etl
+# Windows equivalent: ./scripts/test.ps1 etl
 
 # API unit tests only
-pytest -m "unit and api" tests/unit/
+make test-api
+# Windows equivalent: ./scripts/test.ps1 api
 
 # Full unit suite with coverage
 pytest --cov=src --cov=apps --cov-report=term-missing tests/unit/
@@ -680,12 +682,19 @@ pytest --cov=src --cov=apps --cov-report=term-missing tests/unit/
 #### DAG structural tests (Python 3.11, `.[airflow-dev]`)
 
 ```bash
-pip install -e ".[airflow-dev]" \
-  apache-airflow==2.9.3 \
+pip install apache-airflow==2.9.3 \
+  apache-airflow-providers-postgres==5.11.2 \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
+pip install -e ".[airflow-dev]"
 
-pytest -m dag tests/dags/
+make test-dags
+# Windows equivalent: ./scripts/test.ps1 dags
 ```
+
+The remaining tier commands are `make test-integration`, `make test-external`,
+`make test-e2e`, and `make test-performance`; pass the same tier name to
+`./scripts/test.ps1` on Windows. Infrastructure tiers remain opt-in and require
+their disposable services and environment flags.
 
 #### Marker reference
 

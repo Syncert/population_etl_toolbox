@@ -34,7 +34,9 @@ class _FakeResult:
         return iter(self._rows)
 
 
-def _observation_row(metric_code: str = "BLS:LAU:UNEMP_RATE", geo_id: str = "state:06") -> dict:
+def _observation_row(
+    metric_code: str = "BLS:LAU:UNEMP_RATE", geo_id: str = "state:06"
+) -> dict:
     return {
         "source_code": "BLS",
         "source": "BLS",
@@ -85,14 +87,25 @@ class _SourceSchemaSession:
 
         if "information_schema.columns" in sql:
             return _FakeResult(
-                rows=["dataset_code", "vintage_year", "margin_of_error", "margin_of_error_pct"]
+                rows=[
+                    "dataset_code",
+                    "vintage_year",
+                    "margin_of_error",
+                    "margin_of_error_pct",
+                ]
             )
 
         schema = self._schema.lower()
         source_tables = {
             "gold_bls": ("gold_bls.mv_bls_latest", "gold_bls.rpt_bls_observations"),
-            "gold_census": ("gold_census.mv_acs_latest", "gold_census.rpt_acs_observations"),
-            "gold_fred": ("gold_fred.mv_fred_latest", "gold_fred.rpt_fred_observations"),
+            "gold_census": (
+                "gold_census.mv_acs_latest",
+                "gold_census.rpt_acs_observations",
+            ),
+            "gold_fred": (
+                "gold_fred.mv_fred_latest",
+                "gold_fred.rpt_fred_observations",
+            ),
         }
         latest_table, timeseries_table = source_tables[schema]
         latest_relations = (f"{schema}.v_metric_latest_by_geo", latest_table)
@@ -101,19 +114,13 @@ class _SourceSchemaSession:
             timeseries_table,
         )
 
-        if (
-            any(f"from {r}" in sql for r in latest_relations)
-            and "count(*)" in sql
-        ):
+        if any(f"from {r}" in sql for r in latest_relations) and "count(*)" in sql:
             return _FakeResult(scalar_value=len(self._rows))
 
         if any(f"from {r}" in sql for r in latest_relations):
             return _FakeResult(rows=self._rows)
 
-        if (
-            any(f"from {r}" in sql for r in timeseries_relations)
-            and "count(*)" in sql
-        ):
+        if any(f"from {r}" in sql for r in timeseries_relations) and "count(*)" in sql:
             return _FakeResult(scalar_value=len(self._rows))
 
         if any(f"from {r}" in sql for r in timeseries_relations):
@@ -126,6 +133,7 @@ class _SourceSchemaSession:
 @pytest.mark.api
 def test_bls_latest_observations_returns_data() -> None:
     """API-013: BLS route returns BLS-source rows only."""
+
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [_observation_row()])
 
@@ -134,7 +142,11 @@ def test_bls_latest_observations_returns_data() -> None:
         client = TestClient(app)
         response = client.get(
             "/api/bls/observations/latest",
-            params={"metric_code": "BLS:LAU:UNEMP_RATE", "geo_level": "STATE", "limit": 10},
+            params={
+                "metric_code": "BLS:LAU:UNEMP_RATE",
+                "geo_level": "STATE",
+                "limit": 10,
+            },
         )
     finally:
         app.dependency_overrides.clear()
@@ -149,6 +161,7 @@ def test_bls_latest_observations_returns_data() -> None:
 @pytest.mark.api
 def test_bls_latest_requires_metric_code() -> None:
     """API-003: BLS route requires metric identifier."""
+
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [])
 
@@ -167,6 +180,7 @@ def test_bls_latest_requires_metric_code() -> None:
 @pytest.mark.api
 def test_bls_timeseries_rejects_invalid_date_range() -> None:
     """API-007: BLS timeseries rejects start_date > end_date."""
+
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [])
 
@@ -186,7 +200,9 @@ def test_bls_timeseries_rejects_invalid_date_range() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "start_date must be less than or equal to end_date"
+    assert (
+        response.json()["detail"] == "start_date must be less than or equal to end_date"
+    )
 
 
 @pytest.mark.unit
@@ -273,3 +289,41 @@ def test_fred_latest_accepts_metric_id_alias() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+
+
+@pytest.mark.unit
+@pytest.mark.api
+@pytest.mark.parametrize(
+    ("source_path", "source_schema", "metric_code", "source_code"),
+    [
+        ("bls", "gold_bls", "BLS:LAU:UNEMP_RATE", "BLS"),
+        ("census", "gold_census", "ACS:acs5:B01003_001", "CENSUS_ACS"),
+        ("fred", "gold_fred", "FRED:UNRATE", "FRED"),
+    ],
+)
+def test_source_timeseries_routes_preserve_source_contract(
+    source_path: str,
+    source_schema: str,
+    metric_code: str,
+    source_code: str,
+) -> None:
+    """API-013: all source-specific history routes return only their source."""
+    row = _observation_row(metric_code=metric_code)
+    row.update(source_code=source_code, source=source_code)
+
+    def _override_db():
+        yield _SourceSchemaSession(source_schema, [row])
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        response = TestClient(app).get(
+            f"/api/{source_path}/observations/timeseries",
+            params={"metric_code": metric_code, "geo_id": row["geo_id"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert {item["source"] for item in payload["items"]} == {source_code}

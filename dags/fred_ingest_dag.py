@@ -40,7 +40,10 @@ from data_ingestion_toolbox.fred.metadata import (
     sync_fred_series_metadata,
     sync_fred_datasets_table,
 )
-from data_ingestion_toolbox.fred.ingest import ingest_slice, get_curated_series_for_domain
+from data_ingestion_toolbox.fred.ingest import (
+    ingest_slice,
+    get_curated_series_for_domain,
+)
 from data_ingestion_toolbox.fred.domain_coverage import (
     assert_configured_domain_coverage,
 )
@@ -78,13 +81,13 @@ def _silver_ddl_path() -> Path:
 def _series_fingerprint(domain: str) -> tuple[str, int]:
     """
     Compute a stable fingerprint of the curated series list for a domain.
-    
+
     Returns: (hash_digest, series_count)
     """
     series_list = get_curated_series_for_domain(domain)
     if not series_list:
         return "", 0
-    
+
     series_sorted = sorted(series_list)
     payload = "|".join(series_sorted).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -98,13 +101,13 @@ def _configured_series_by_domain() -> dict[str, list[str]]:
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
     """Split list into chunks."""
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def _run_one_work_unit(work_unit: dict) -> int:
     """
     Execute one ingestion work unit with ledger updates.
-    
+
     work_unit structure:
         {
             "domain": str,
@@ -115,22 +118,22 @@ def _run_one_work_unit(work_unit: dict) -> int:
         }
     """
     hook = _get_postgres_hook()
-    
+
     domain = work_unit["domain"]
     date_start = work_unit["date_start"]
     date_end = work_unit["date_end"]
     series_hash = work_unit.get("series_hash")
     series_count = int(work_unit.get("series_count", 0))
-    
+
     started = datetime.now(timezone.utc)
-    
+
     # Parse dates for ledger
     try:
         date_start_obj = datetime.fromisoformat(date_start).date()
         date_end_obj = datetime.fromisoformat(date_end).date()
     except ValueError:
         raise ValueError(f"Invalid date format: {date_start} or {date_end}")
-    
+
     # Update ledger to 'running'
     sql_running_update = """
         UPDATE raw_fred.fred_ingestion_slices
@@ -146,7 +149,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
           AND date_start = %s
           AND date_end = %s;
     """
-    
+
     sql_running_insert = """
         INSERT INTO raw_fred.fred_ingestion_slices (
             domain, date_start, date_end,
@@ -160,23 +163,37 @@ def _run_one_work_unit(work_unit: dict) -> int:
                 %s, %s, %s)
         ON CONFLICT DO NOTHING;
     """
-    
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             sql_running_update,
-            (started, series_hash, series_count, started,
-             domain, date_start_obj, date_end_obj),
+            (
+                started,
+                series_hash,
+                series_count,
+                started,
+                domain,
+                date_start_obj,
+                date_end_obj,
+            ),
         )
-        
+
         if cur.rowcount == 0:
             cur.execute(
                 sql_running_insert,
-                (domain, date_start_obj, date_end_obj,
-                 started, series_hash, series_count, started),
+                (
+                    domain,
+                    date_start_obj,
+                    date_end_obj,
+                    started,
+                    series_hash,
+                    series_count,
+                    started,
+                ),
             )
-        
+
         conn.commit()
-    
+
     try:
         # Call ingest_slice
         rows_loaded = ingest_slice(
@@ -184,10 +201,10 @@ def _run_one_work_unit(work_unit: dict) -> int:
             date_start=date_start,
             date_end=date_end,
         )
-        
+
         finished = datetime.now(timezone.utc)
         final_status = "empty" if rows_loaded == 0 else "success"
-        
+
         sql_done = """
             UPDATE raw_fred.fred_ingestion_slices
             SET status = %s,
@@ -201,21 +218,30 @@ def _run_one_work_unit(work_unit: dict) -> int:
               AND date_start = %s
               AND date_end = %s;
         """
-        
+
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_done,
-                (final_status, int(rows_loaded), finished, started, series_hash, series_count,
-                 domain, date_start_obj, date_end_obj),
+                (
+                    final_status,
+                    int(rows_loaded),
+                    finished,
+                    started,
+                    series_hash,
+                    series_count,
+                    domain,
+                    date_start_obj,
+                    date_end_obj,
+                ),
             )
             conn.commit()
-        
+
         return int(rows_loaded)
-    
+
     except Exception as e:
         finished = datetime.now(timezone.utc)
         err_txt = str(e)[:4000]
-        
+
         sql_failed = """
             UPDATE raw_fred.fred_ingestion_slices
             SET status = 'failed',
@@ -226,14 +252,14 @@ def _run_one_work_unit(work_unit: dict) -> int:
               AND date_start = %s
               AND date_end = %s;
         """
-        
+
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_failed,
                 (finished, started, err_txt, domain, date_start_obj, date_end_obj),
             )
             conn.commit()
-        
+
         raise
 
 
@@ -249,13 +275,13 @@ def _run_one_work_unit(work_unit: dict) -> int:
 def fred_ingest():
     """
     FRED raw data ingestion DAG for raw_fred.
-    
+
     - Sync metadata (series + datasets)
     - Build ingestion plan for each domain
     - Skip completed slices unless series set changed (hash mismatch)
     - Track progress in raw_fred.fred_ingestion_slices
     """
-    
+
     # -----------------------------
     # Task 1: Metadata sync
     # -----------------------------
@@ -263,13 +289,13 @@ def fred_ingest():
     def sync_datasets() -> None:
         """Sync fred_datasets table."""
         sync_fred_datasets_table()
-    
+
     @task
     def sync_metadata() -> int:
         """Sync series metadata for all curated series."""
         count = sync_fred_series_metadata()
         return count
-    
+
     # -----------------------------
     # Task 2: Build ingestion plan
     # -----------------------------
@@ -306,11 +332,11 @@ def fred_ingest():
 
         # Historical band: lock in once complete
         hist_start = "1970-01-01"
-        hist_end   = f"{current_year - 3}-12-31"   # e.g. in 2026 → 2023-12-31
+        hist_end = f"{current_year - 3}-12-31"  # e.g. in 2026 → 2023-12-31
 
         # Rolling window: always re-ingest for revisions / backfills
-        roll_start = f"{current_year - 2}-01-01"   # e.g. in 2026 → 2024-01-01
-        roll_end   = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # yesterday
+        roll_start = f"{current_year - 2}-01-01"  # e.g. in 2026 → 2024-01-01
+        roll_end = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # yesterday
 
         # Compute series fingerprints for each validated, single-owner domain.
         domain_meta = {}
@@ -329,12 +355,14 @@ def fred_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_completed)
             for domain, ds, de, series_hash in cur.fetchall():
-                completed.add((
-                    str(domain),
-                    ds.isoformat() if ds else None,
-                    de.isoformat() if de else None,
-                    series_hash,
-                ))
+                completed.add(
+                    (
+                        str(domain),
+                        ds.isoformat() if ds else None,
+                        de.isoformat() if de else None,
+                        series_hash,
+                    )
+                )
 
         def hist_is_done(domain: str, ds: str, de: str) -> bool:
             """True if the historical slice is complete for the current series hash."""
@@ -353,13 +381,15 @@ def fred_ingest():
             """Append a work unit if it should run (forced or not yet done)."""
             meta = domain_meta[domain]
             if force or not hist_is_done(domain, ds, de):
-                plan.append({
-                    "domain": domain,
-                    "date_start": ds,
-                    "date_end": de,
-                    "series_hash": meta["series_hash"],
-                    "series_count": meta["series_count"],
-                })
+                plan.append(
+                    {
+                        "domain": domain,
+                        "date_start": ds,
+                        "date_end": de,
+                        "series_hash": meta["series_hash"],
+                        "series_count": meta["series_count"],
+                    }
+                )
 
         # Build plan across both bands
         plan: list[dict] = []
@@ -376,7 +406,7 @@ def fred_ingest():
 
         batches = chunk_list(plan, chunk_size=5)
         return batches
-    
+
     # -----------------------------
     # Task 3: Mark slices planned
     # -----------------------------
@@ -385,10 +415,10 @@ def fred_ingest():
         """Upsert slice ledger rows as 'planned'."""
         if not batches:
             return
-        
+
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
-        
+
         sql_planned_update = """
             UPDATE raw_fred.fred_ingestion_slices
             SET status = CASE
@@ -411,7 +441,7 @@ def fred_ingest():
               AND date_start = %s
               AND date_end = %s;
         """
-        
+
         sql_planned_insert = """
             INSERT INTO raw_fred.fred_ingestion_slices (
                 domain, date_start, date_end,
@@ -425,7 +455,7 @@ def fred_ingest():
                     %s, %s, %s)
             ON CONFLICT DO NOTHING;
         """
-        
+
         with hook.get_conn() as conn, conn.cursor() as cur:
             for batch in batches:
                 for w in batch:
@@ -434,22 +464,29 @@ def fred_ingest():
                     date_end = datetime.fromisoformat(w["date_end"]).date()
                     shash = w.get("series_hash")
                     scount = int(w.get("series_count", 0))
-                    
+
                     cur.execute(
                         sql_planned_update,
-                        (shash, shash, shash, scount, now,
-                         domain, date_start, date_end),
+                        (
+                            shash,
+                            shash,
+                            shash,
+                            scount,
+                            now,
+                            domain,
+                            date_start,
+                            date_end,
+                        ),
                     )
-                    
+
                     if cur.rowcount == 0:
                         cur.execute(
                             sql_planned_insert,
-                            (domain, date_start, date_end,
-                             shash, scount, now),
+                            (domain, date_start, date_end, shash, scount, now),
                         )
-            
+
             conn.commit()
-    
+
     # -----------------------------
     # Task 4: Ingest batch (mapped)
     # -----------------------------
@@ -464,7 +501,7 @@ def fred_ingest():
     # -----------------------------
     # Task 5: Silver layer (full load)
     # -----------------------------
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule="none_failed")
     def ensure_silver_schema() -> None:
         """Ensure silver_fred schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -474,24 +511,26 @@ def fred_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='none_failed', max_active_tis_per_dag=CONFIG.silver_max_active_tis)
+    @task(
+        trigger_rule="none_failed", max_active_tis_per_dag=CONFIG.silver_max_active_tis
+    )
     def transform_to_silver_by_domain(domain: str) -> int:
         """Transform ALL raw FRED data to silver for one domain (full load)."""
         return transform_fred_to_silver(domain=domain)
-    
+
     # -----------------------------
     # DAG wiring
     # -----------------------------
     sync_ds = sync_datasets()
     sync_meta = sync_metadata()
-    
+
     plan = build_ingestion_plan(sync_meta)
-    
+
     sync_ds >> sync_meta >> plan
-    
+
     planned = mark_slices_planned(plan)
     plan >> planned
-    
+
     raw_ingest = ingest_batch.expand(batch=plan)
 
     silver_schema = ensure_silver_schema()
@@ -581,6 +620,7 @@ def fred_ingest():
         >> gold_fred_refresh
         >> domain_coverage
     )
+
 
 # Instantiate DAG
 fred_ingest_dag = fred_ingest()

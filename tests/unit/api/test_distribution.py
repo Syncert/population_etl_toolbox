@@ -39,10 +39,13 @@ class _DistributionSession:
             )
 
         if "width_bucket" in sql:
+            bin_count = int(_params["bin_count"])
+            if bin_count == 1:
+                return _FakeResult(rows=[{"bin_index": 1, "count": 3}])
             return _FakeResult(
                 rows=[
                     {"bin_index": 1, "count": 1},
-                    {"bin_index": 4, "count": 2},
+                    {"bin_index": bin_count, "count": 2},
                 ]
             )
 
@@ -53,6 +56,7 @@ class _DistributionSession:
 @pytest.mark.api
 def test_distribution_accepts_metric_id_alias() -> None:
     """API-014: distribution bins returned for valid metric alias."""
+
     def _override_db():
         yield _DistributionSession()
 
@@ -76,6 +80,7 @@ def test_distribution_accepts_metric_id_alias() -> None:
 @pytest.mark.api
 def test_distribution_requires_metric_code_or_metric_id() -> None:
     """API-003: missing metric identifier returns 422."""
+
     def _override_db():
         yield _DistributionSession()
 
@@ -88,3 +93,47 @@ def test_distribution_requires_metric_code_or_metric_id() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "metric_code or metric_id is required"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+@pytest.mark.parametrize("bin_count", [1, 20])
+def test_distribution_bin_boundaries_and_counts(bin_count: int) -> None:
+    """API-014: supported boundaries succeed and bin counts reconcile."""
+
+    def _override_db():
+        yield _DistributionSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        response = TestClient(app).get(
+            "/api/distribution/bins",
+            params={"metric_code": "POP_TOTAL", "bin_count": bin_count},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bin_count"] == bin_count
+    assert sum(item["count"] for item in payload["items"]) == payload["total"] == 3
+
+
+@pytest.mark.unit
+@pytest.mark.api
+@pytest.mark.parametrize("bin_count", [0, 21])
+def test_distribution_invalid_bin_counts_are_rejected(bin_count: int) -> None:
+    """API-014: values outside 1..20 fail before database work."""
+
+    def _override_db():
+        yield _DistributionSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        response = TestClient(app).get(
+            "/api/distribution/bins",
+            params={"metric_code": "POP_TOTAL", "bin_count": bin_count},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422

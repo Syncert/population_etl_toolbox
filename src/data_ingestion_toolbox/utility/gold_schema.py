@@ -1,4 +1,5 @@
 """Shared helpers for subject-scoped gold schema bootstrap."""
+
 from __future__ import annotations
 
 import hashlib
@@ -77,12 +78,16 @@ def _record_hash(cur: Any, component_name: str, ddl_hash: str) -> None:
     )
 
 
-def _is_bootstrapped(cur: Any, required_relations: tuple[str, ...], required_procedures: tuple[str, ...]) -> bool:
+def _is_bootstrapped(
+    cur: Any, required_relations: tuple[str, ...], required_procedures: tuple[str, ...]
+) -> bool:
     relation_checks = ",\n                ".join(
-        f"to_regclass('{relation_name}') IS NOT NULL" for relation_name in required_relations
+        f"to_regclass('{relation_name}') IS NOT NULL"
+        for relation_name in required_relations
     )
     procedure_checks = ",\n                ".join(
-        f"to_regprocedure('{procedure_name}') IS NOT NULL" for procedure_name in required_procedures
+        f"to_regprocedure('{procedure_name}') IS NOT NULL"
+        for procedure_name in required_procedures
     )
     sql = f"""
         SELECT
@@ -131,7 +136,11 @@ def ensure_gold_schema_from_files(
         _record_hash(cur, component_name, current_hash)
         conn.commit()
 
-    logger.info("Gold schema component %s ensured from %d DDL file(s)", component_name, len(ordered_files))
+    logger.info(
+        "Gold schema component %s ensured from %d DDL file(s)",
+        component_name,
+        len(ordered_files),
+    )
 
 
 def build_shard_list(
@@ -347,7 +356,9 @@ def refresh_serving_layer_in_year_chunks(
         try:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
-                cur.execute(f"SET LOCAL statement_timeout = '{config.statement_timeout}'")
+                cur.execute(
+                    f"SET LOCAL statement_timeout = '{config.statement_timeout}'"
+                )
                 cur.execute(
                     f"CALL {config.report_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),

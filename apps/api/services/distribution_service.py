@@ -107,14 +107,18 @@ def list_distribution_bins(
         """
     )
 
-    bins_rows = db.execute(
-        bins_query,
-        {
-            **params,
-            "min_value": min_value,
-            "max_value": max_value,
-        },
-    ).mappings().all()
+    bins_rows = (
+        db.execute(
+            bins_query,
+            {
+                **params,
+                "min_value": min_value,
+                "max_value": max_value,
+            },
+        )
+        .mappings()
+        .all()
+    )
 
     width = (max_value - min_value) / float(bin_count)
     items: list[DistributionBin] = []

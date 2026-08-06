@@ -25,7 +25,9 @@ class SecurityHeadersMiddleware:
     def __init__(self, app) -> None:
         self.app = app
 
-    async def __call__(self, scope: dict[str, Any], receive: Receive, send: Send) -> None:
+    async def __call__(
+        self, scope: dict[str, Any], receive: Receive, send: Send
+    ) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -37,7 +39,10 @@ class SecurityHeadersMiddleware:
                     [
                         (b"x-content-type-options", b"nosniff"),
                         (b"referrer-policy", b"strict-origin-when-cross-origin"),
-                        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+                        (
+                            b"permissions-policy",
+                            b"camera=(), microphone=(), geolocation=()",
+                        ),
                         (b"cross-origin-resource-policy", b"same-site"),
                     ]
                 )
@@ -79,7 +84,9 @@ class RedisResponseCacheMiddleware:
             )
         return self._client
 
-    async def __call__(self, scope: dict[str, Any], receive: Receive, send: Send) -> None:
+    async def __call__(
+        self, scope: dict[str, Any], receive: Receive, send: Send
+    ) -> None:
         if not self._is_cacheable(scope):
             await self.app(scope, receive, send)
             return
@@ -98,7 +105,10 @@ class RedisResponseCacheMiddleware:
                     "status": 200,
                     "headers": [
                         (b"content-type", b"application/json"),
-                        (b"cache-control", f"public, max-age={self.ttl_seconds}".encode()),
+                        (
+                            b"cache-control",
+                            f"public, max-age={self.ttl_seconds}".encode(),
+                        ),
                         (b"x-cache", b"HIT"),
                     ],
                 }
@@ -113,8 +123,19 @@ class RedisResponseCacheMiddleware:
 
         await self.app(scope, receive, capture)
 
-        status = next((item.get("status") for item in messages if item.get("type") == "http.response.start"), 500)
-        body = b"".join(item.get("body", b"") for item in messages if item.get("type") == "http.response.body")
+        status = next(
+            (
+                item.get("status")
+                for item in messages
+                if item.get("type") == "http.response.start"
+            ),
+            500,
+        )
+        body = b"".join(
+            item.get("body", b"")
+            for item in messages
+            if item.get("type") == "http.response.body"
+        )
         if status == 200 and 0 < len(body) <= MAX_CACHE_BODY_BYTES:
             try:
                 await client.setex(key, self.ttl_seconds, body)
@@ -126,7 +147,10 @@ class RedisResponseCacheMiddleware:
                 headers = list(message.get("headers", []))
                 headers.extend(
                     [
-                        (b"cache-control", f"public, max-age={self.ttl_seconds}".encode()),
+                        (
+                            b"cache-control",
+                            f"public, max-age={self.ttl_seconds}".encode(),
+                        ),
                         (b"x-cache", b"MISS"),
                     ]
                 )

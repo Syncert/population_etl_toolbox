@@ -8,6 +8,8 @@ import pytest
 
 from data_ingestion_toolbox.bls.geography import (
     build_laus_series_id,
+    get_laus_area_codes,
+    get_laus_series_ids,
     parse_laus_series_id,
 )
 
@@ -42,7 +44,6 @@ class TestParseLausSeries:
         sid = "LAUST060000000000004"
         result = parse_laus_series_id(sid)
         assert result["seasonal"] == "U"
-        sid_s = "LASS" + sid[4:]
         # Build a seasonally-adjusted series and parse it
         s_series = "LAS" + "S" + "T060000000000004"
         result_s = parse_laus_series_id(s_series)
@@ -130,3 +131,113 @@ class TestBuildLausSeries:
         area_code = "ST06" + "0" * 11
         with pytest.raises(ValueError, match="seasonal must be"):
             build_laus_series_id(area_code, "03", seasonal="X")
+
+
+class _Cursor:
+    def __init__(self, rows: list[tuple[str]]) -> None:
+        self.rows = rows
+        self.params = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def execute(self, sql, params) -> None:
+        self.params = params
+
+    def fetchall(self):
+        return self.rows
+
+
+class _Connection:
+    def __init__(self, rows: list[tuple[str]]) -> None:
+        self.cursor_value = _Cursor(rows)
+        self.closed = False
+
+    def cursor(self):
+        return self.cursor_value
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.unit
+class TestLausMetadataQueries:
+    @pytest.mark.parametrize(
+        ("level", "state_fips", "prefix"),
+        [
+            ("state", None, "ST%"),
+            ("county", "6", "CN06%"),
+            ("metro", None, "MT%"),
+            ("city", None, "CI%"),
+        ],
+    )
+    def test_area_code_queries_use_exact_prefix(
+        self, monkeypatch, level: str, state_fips: str | None, prefix: str
+    ) -> None:
+        connection = _Connection([("ST0600000000000",)])
+        monkeypatch.setattr(
+            "data_ingestion_toolbox.bls.geography._get_pg_connection",
+            lambda: connection,
+        )
+        assert get_laus_area_codes(level, state_fips) == ["ST0600000000000"]
+        assert connection.cursor_value.params == (prefix,)
+        assert connection.closed
+
+    @pytest.mark.parametrize(
+        ("level", "state_fips", "message"),
+        [
+            ("us", None, "CPS/LN"),
+            ("county", None, "state_fips"),
+            ("tract", None, "Unsupported"),
+        ],
+    )
+    def test_area_code_queries_reject_unsupported_scope(
+        self, level: str, state_fips: str | None, message: str
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            get_laus_area_codes(level, state_fips)
+
+    def test_state_series_query_filters_invalid_metadata(self, monkeypatch) -> None:
+        connection = _Connection([("LAUST060000000000003",), ("LAUMT123450000000003",)])
+        monkeypatch.setattr(
+            "data_ingestion_toolbox.bls.geography._get_pg_connection",
+            lambda: connection,
+        )
+        assert get_laus_series_ids(["03"], "state") == ["LAUST060000000000003"]
+        assert connection.cursor_value.params == ("ST%", "U", ["03"])
+
+    def test_county_series_query_keeps_requested_state(self, monkeypatch) -> None:
+        connection = _Connection([("LAUCN060010000000003",), ("LAUCN550010000000003",)])
+        monkeypatch.setattr(
+            "data_ingestion_toolbox.bls.geography._get_pg_connection",
+            lambda: connection,
+        )
+        assert get_laus_series_ids(["03"], "county", "06") == ["LAUCN060010000000003"]
+
+    @pytest.mark.parametrize(
+        ("measures", "level", "state_fips", "seasonal", "message"),
+        [
+            (["03"], "us", None, "U", "CPS/LN"),
+            (["03"], "county", None, "U", "state_fips"),
+            (["03"], "county", "XX", "U", "state_fips"),
+            (["03"], "metro", None, "U", "Unsupported"),
+            (["03"], "state", None, "X", "seasonal"),
+            (["3"], "state", None, "U", "measure codes"),
+        ],
+    )
+    def test_series_queries_validate_scope_before_database(
+        self,
+        measures: list[str],
+        level: str,
+        state_fips: str | None,
+        seasonal: str,
+        message: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            get_laus_series_ids(measures, level, state_fips, seasonal)
+
+    def test_empty_measure_list_does_not_query_database(self) -> None:
+        assert get_laus_series_ids([], "state") == []
