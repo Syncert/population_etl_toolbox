@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_bls_response_parsing_preserves_fields(source_fixture) -> None:
-    """ETL-011: monthly rows preserve series, period, value and metadata."""
+    """Covers: ETL-011 — monthly rows preserve fields and metadata."""
     frame = parse_bls_response(
         source_fixture("bls", "representative.json"),
         program="la",
@@ -38,7 +38,7 @@ def test_bls_response_parsing_preserves_fields(source_fixture) -> None:
 
 
 def test_bls_empty_response_is_typed() -> None:
-    """ETL-012: empty results map to BlsNoContent."""
+    """Covers: ETL-012 — empty results map to BlsNoContent."""
     with pytest.raises(BlsNoContent):
         parse_bls_response(
             {"status": "REQUEST_SUCCEEDED", "Results": {"series": []}},
@@ -48,7 +48,7 @@ def test_bls_empty_response_is_typed() -> None:
 
 
 def test_bls_error_response_is_typed() -> None:
-    """ETL-012: application-level errors cannot look like successful empties."""
+    """Covers: ETL-012 — source errors cannot look like successful empties."""
     with pytest.raises(BlsPayloadError, match="REQUEST_FAILED"):
         parse_bls_response(
             {"status": "REQUEST_FAILED", "Results": {}},
@@ -58,7 +58,7 @@ def test_bls_error_response_is_typed() -> None:
 
 
 def test_bls_daily_threshold_has_distinct_exception(monkeypatch) -> None:
-    """ETL-012: daily quota exhaustion maps to its non-Tenacity exception."""
+    """Covers: ETL-012 — quota exhaustion has a distinct exception."""
 
     class Response:
         status_code = 200
@@ -109,11 +109,13 @@ def test_bls_daily_threshold_has_distinct_exception(monkeypatch) -> None:
 def test_bls_malformed_shapes_have_source_specific_errors(
     payload: object, message: str
 ) -> None:
+    """Covers: RES-002 — malformed BLS schemas raise contextual errors."""
     with pytest.raises(BlsPayloadError, match=message):
         parse_bls_response(payload, "la", uuid.UUID(int=0))
 
 
 def test_bls_invalid_numeric_and_empty_observations_are_explicit() -> None:
+    """Covers: ETL-011, ETL-012 — invalid values and empty rows are explicit."""
     frame = parse_bls_response(
         {
             "Results": {
@@ -140,6 +142,8 @@ def test_bls_invalid_numeric_and_empty_observations_are_explicit() -> None:
 
 
 def test_bls_invalid_json_is_retryable(monkeypatch) -> None:
+    """Covers: RES-002 — invalid BLS JSON raises a typed retryable failure."""
+
     class Response:
         status_code = 200
 

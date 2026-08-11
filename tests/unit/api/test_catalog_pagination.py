@@ -63,7 +63,7 @@ def _override_db():
 @pytest.mark.unit
 @pytest.mark.api
 def test_catalog_metrics_total_comes_from_count_query() -> None:
-    """API-006: total is independent of page size."""
+    """Covers: API-006 — catalog total is independent of page size."""
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
         client = TestClient(app)

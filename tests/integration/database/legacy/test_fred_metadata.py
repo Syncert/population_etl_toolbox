@@ -39,7 +39,7 @@ def get_connection():
 
 
 def test_sync_fred_datasets_table():
-    """Test syncing FRED datasets table."""
+    """Covers: EXT-010 — FRED dataset metadata synchronizes."""
     print("\n=== Testing sync_fred_datasets_table ===")
 
     count = sync_fred_datasets_table()
@@ -72,7 +72,7 @@ def test_sync_fred_datasets_table():
 
 
 def test_sync_fred_series_metadata():
-    """Test syncing FRED series metadata."""
+    """Covers: EXT-010 — FRED series metadata synchronizes."""
     print("\n=== Testing sync_fred_series_metadata ===")
 
     # Test with a small subset first
@@ -125,7 +125,7 @@ def test_sync_fred_series_metadata():
 
 
 def test_sync_all_curated_series():
-    """Test syncing all curated FRED series metadata."""
+    """Covers: EXT-010 — all curated FRED metadata synchronizes."""
     print("\n=== Testing sync_all_curated_series ===")
 
     count = sync_fred_series_metadata()  # Uses CONFIG.curated_series_ids by default
@@ -166,7 +166,7 @@ def test_sync_all_curated_series():
 
 
 def test_series_metadata_fields():
-    """Verify that series metadata has expected fields populated."""
+    """Covers: EXT-010 — FRED series metadata populates required fields."""
     print("\n=== Testing Series Metadata Fields ===")
 
     conn = get_connection()

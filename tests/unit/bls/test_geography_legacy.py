@@ -47,6 +47,7 @@ def test_parse_official_laus_examples(
     county_fips: str | None,
     geo_id: str,
 ) -> None:
+    """Covers: ETL-009 — official LAUS examples parse to canonical fields."""
     parsed = parse_laus_series_id(series_id)
 
     assert parsed["program"] == "LA"
@@ -70,6 +71,7 @@ def test_parse_official_laus_examples(
     ],
 )
 def test_invalid_laus_ids_are_not_parsed(series_id: str) -> None:
+    """Covers: ETL-010 — malformed official-style IDs are rejected."""
     parsed = parse_laus_series_id(series_id)
 
     assert parsed["geo_level"] is None
@@ -86,6 +88,7 @@ def test_invalid_laus_ids_are_not_parsed(series_id: str) -> None:
     ],
 )
 def test_unsupported_laus_area_patterns_are_not_recognized(series_id: str) -> None:
+    """Covers: ETL-010 — unsupported LAUS areas are not canonicalized."""
     parsed = parse_laus_series_id(series_id)
 
     assert parsed["geo_level"] is None
@@ -100,6 +103,7 @@ def test_unsupported_laus_area_patterns_are_not_recognized(series_id: str) -> No
     ],
 )
 def test_builder_accepts_15_character_area_codes(area_code: str, expected: str) -> None:
+    """Covers: ETL-009 — supported 15-character areas build exact IDs."""
     series_id = build_laus_series_id(area_code, "03")
 
     assert series_id == expected
@@ -116,11 +120,13 @@ def test_builder_accepts_15_character_area_codes(area_code: str, expected: str) 
     ],
 )
 def test_builder_rejects_invalid_or_unsupported_areas(area_code: str) -> None:
+    """Covers: ETL-010 — the builder rejects invalid and unsupported areas."""
     with pytest.raises(ValueError):
         build_laus_series_id(area_code, "03")
 
 
 def test_raw_and_silver_use_identical_county_geography() -> None:
+    """Covers: ETL-009 — raw and silver derive the same county geography."""
     pl = pytest.importorskip("polars")
     from data_ingestion_toolbox.bls.ingest import enrich_with_geography
 
@@ -167,6 +173,7 @@ class _FakeConnection:
 def test_laus_requests_use_only_geography_specific_published_series(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-032 — requests use only published geography series."""
     # The catalog publishes county measure 03 but not requested measure 07.
     conn = _FakeConnection(
         [
@@ -190,5 +197,6 @@ def test_laus_requests_use_only_geography_specific_published_series(
 
 
 def test_national_laus_requests_are_rejected() -> None:
+    """Covers: ETL-010, ETL-033 — national LAUS requests are rejected."""
     with pytest.raises(ValueError, match="CPS/LN"):
         get_laus_series_ids(["03"], geo_level="us")

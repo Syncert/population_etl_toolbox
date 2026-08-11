@@ -21,6 +21,7 @@ def _config(**overrides) -> FredConfig:
 
 
 def test_configured_series_by_domain_returns_configured_order() -> None:
+    """Covers: ETL-015 — domain mapping preserves configured order."""
     config = _config()
 
     assert config.configured_series_by_domain() == {
@@ -30,6 +31,7 @@ def test_configured_series_by_domain_returns_configured_order() -> None:
 
 
 def test_default_configuration_has_one_owner_for_every_curated_series() -> None:
+    """Covers: ETL-015 — defaults give each curated series one owner."""
     classified = CONFIG.configured_series_by_domain()
 
     assert list(classified) == CONFIG.domains
@@ -39,6 +41,7 @@ def test_default_configuration_has_one_owner_for_every_curated_series() -> None:
 
 
 def test_recommended_platform_series_remain_curated() -> None:
+    """Covers: ETL-034 — recommended FRED series remain curated."""
     assert {
         "ICSA",
         "INDPRO",
@@ -57,6 +60,7 @@ def test_recommended_platform_series_remain_curated() -> None:
 
 
 def test_configured_series_by_domain_rejects_conflicting_owners() -> None:
+    """Covers: ETL-015, ETL-030 — conflicting owners are rejected."""
     config = _config(
         curated_by_domain={
             "labor": ["PAYEMS", "CPIAUCSL"],
@@ -95,5 +99,6 @@ def test_configured_series_by_domain_rejects_incomplete_classification(
     overrides: dict,
     message: str,
 ) -> None:
+    """Covers: ETL-015, ETL-030 — incomplete classification is rejected."""
     with pytest.raises(ValueError, match=message):
         _config(**overrides).configured_series_by_domain()

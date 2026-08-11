@@ -12,7 +12,7 @@ from pathlib import Path
 @pytest.mark.unit
 @pytest.mark.api
 def test_timeseries_contract_uses_durable_source_facts() -> None:
-    """API-012: cross-source history reads durable source reporting views."""
+    """Covers: API-012 — cross-source history reads durable source views."""
     root = Path(__file__).resolve().parents[3]
     contract_sql = (
         root / "sql" / "gold_contract" / "001_gold_contract_views.sql"

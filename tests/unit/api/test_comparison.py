@@ -59,7 +59,7 @@ class _ComparisonSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_comparison_accepts_metric_id_aliases() -> None:
-    """API-015: comparison returns paired values and total."""
+    """Covers: API-004, API-015 — comparison aliases return paired values."""
 
     def _override_db():
         yield _ComparisonSession()
@@ -88,7 +88,7 @@ def test_comparison_accepts_metric_id_aliases() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_comparison_requires_metric_a() -> None:
-    """API-003: missing metric_a returns 422."""
+    """Covers: API-003 — comparison requires its first metric."""
 
     def _override_db():
         yield _ComparisonSession()
@@ -107,7 +107,7 @@ def test_comparison_requires_metric_a() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_comparison_requires_metric_b() -> None:
-    """API-003: missing metric_b returns 422."""
+    """Covers: API-003 — comparison requires its second metric."""
 
     def _override_db():
         yield _ComparisonSession()
@@ -135,7 +135,7 @@ def test_comparison_requires_metric_b() -> None:
 def test_comparison_aligns_same_and_cross_source_metrics(
     metric_a: str, metric_b: str
 ) -> None:
-    """API-015: same- and cross-source metrics pair once by geography."""
+    """Covers: API-015 — metrics pair once by geography across sources."""
 
     def _override_db():
         yield _ComparisonSession()

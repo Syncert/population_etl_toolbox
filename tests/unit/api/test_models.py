@@ -29,6 +29,8 @@ class _ModelsSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_models_status_surface() -> None:
+    """Covers: API-026 — model status returns the availability contract."""
+
     def _override_db():
         yield _ModelsSession()
 

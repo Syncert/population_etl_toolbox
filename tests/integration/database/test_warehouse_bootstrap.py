@@ -141,6 +141,7 @@ def _warehouse_routine_definitions(
 def test_clean_bootstrap_creates_every_warehouse_layer(
     postgres_connection: connection,
 ) -> None:
+    """Covers: DB-001 — clean bootstrap creates all warehouse layers."""
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ANY(%s)",
@@ -169,6 +170,7 @@ def test_clean_bootstrap_creates_every_warehouse_layer(
 def test_complete_warehouse_ddl_rerun_preserves_objects(
     postgres_connection: connection,
 ) -> None:
+    """Covers: DB-002 — rerunning warehouse DDL preserves definitions."""
     relations_before = _warehouse_relations(postgres_connection)
     views_before = _warehouse_view_definitions(postgres_connection)
     routines_before = _warehouse_routine_definitions(postgres_connection)
@@ -183,6 +185,7 @@ def test_complete_warehouse_ddl_rerun_preserves_objects(
 def test_silver_fact_foreign_keys_reject_orphans_and_accept_dimensions(
     postgres_connection: connection,
 ) -> None:
+    """Covers: DB-004 — fact foreign keys reject orphans and accept dimensions."""
     insert_fact = """
         INSERT INTO silver_census.fact_demographics (
             time_sk, geo_sk, duration_start, duration_end, estimate_year,

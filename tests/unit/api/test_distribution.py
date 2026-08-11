@@ -55,7 +55,7 @@ class _DistributionSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_distribution_accepts_metric_id_alias() -> None:
-    """API-014: distribution bins returned for valid metric alias."""
+    """Covers: API-004, API-014 — a metric alias returns distribution bins."""
 
     def _override_db():
         yield _DistributionSession()
@@ -79,7 +79,7 @@ def test_distribution_accepts_metric_id_alias() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_distribution_requires_metric_code_or_metric_id() -> None:
-    """API-003: missing metric identifier returns 422."""
+    """Covers: API-003 — distribution requires a metric identifier."""
 
     def _override_db():
         yield _DistributionSession()
@@ -99,7 +99,7 @@ def test_distribution_requires_metric_code_or_metric_id() -> None:
 @pytest.mark.api
 @pytest.mark.parametrize("bin_count", [1, 20])
 def test_distribution_bin_boundaries_and_counts(bin_count: int) -> None:
-    """API-014: supported boundaries succeed and bin counts reconcile."""
+    """Covers: API-014 — supported bin boundaries reconcile counts."""
 
     def _override_db():
         yield _DistributionSession()
@@ -123,7 +123,7 @@ def test_distribution_bin_boundaries_and_counts(bin_count: int) -> None:
 @pytest.mark.api
 @pytest.mark.parametrize("bin_count", [0, 21])
 def test_distribution_invalid_bin_counts_are_rejected(bin_count: int) -> None:
-    """API-014: values outside 1..20 fail before database work."""
+    """Covers: API-014 — invalid bin counts fail before database work."""
 
     def _override_db():
         yield _DistributionSession()

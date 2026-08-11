@@ -28,7 +28,7 @@ pytestmark = pytest.mark.unit
 def test_census_geography_parameters_are_exact(
     level: str, state_fips: str | None, expected: dict[str, str]
 ) -> None:
-    """ETL-001: supported levels produce exact Census for/in parameters."""
+    """Covers: ETL-001 — supported levels produce exact request parameters."""
     assert build_geo_params(level, state_fips) == expected
 
 
@@ -36,7 +36,7 @@ def test_census_geography_parameters_are_exact(
 def test_census_geography_parameters_reject_invalid_scope(
     level: str, state_fips: str | None
 ) -> None:
-    """ETL-001: incomplete and unsupported request scopes are rejected."""
+    """Covers: ETL-001 — invalid request scopes are rejected."""
     with pytest.raises(ValueError):
         build_geo_params(level, state_fips)
 
@@ -53,7 +53,7 @@ def _convert(raw: list[list[str]]) -> pl.DataFrame:
 
 
 def test_census_response_conversion_preserves_contract(source_fixture) -> None:
-    """ETL-004: a reviewed payload becomes exact long-form observations."""
+    """Covers: ETL-004 — a reviewed payload becomes exact observations."""
     frame = _convert(source_fixture("census", "representative.json"))
     assert frame.height == 6
     assert set(frame["variable_name"]) == {
@@ -71,18 +71,19 @@ def test_census_response_conversion_preserves_contract(source_fixture) -> None:
 
 @pytest.mark.parametrize("raw", [[], [["B01003_001E", "state"]]])
 def test_census_empty_response_is_typed(raw: list[list[str]]) -> None:
-    """ETL-005: empty/header-only data raises CensusNoContent."""
+    """Covers: ETL-005 — empty or header-only data is typed no-content."""
     with pytest.raises(CensusNoContent):
         _convert(raw)
 
 
 def test_census_malformed_row_has_deterministic_error() -> None:
-    """ETL-005: shifted rows fail before constructing a corrupt frame."""
+    """Covers: ETL-005, RES-002 — shifted rows fail deterministically."""
     with pytest.raises(CensusPayloadError, match="row length"):
         _convert([["B01003_001E", "state", "county"], ["1", "55"]])
 
 
 def test_census_duplicate_and_missing_geography_headers_are_rejected() -> None:
+    """Covers: ETL-005, RES-002 — malformed Census headers are rejected."""
     with pytest.raises(CensusPayloadError, match="duplicate headers"):
         _convert(
             [
@@ -97,7 +98,7 @@ def test_census_duplicate_and_missing_geography_headers_are_rejected() -> None:
 def test_census_sentinels_become_null_but_negative_values_survive(
     source_fixture,
 ) -> None:
-    """ETL-006: source sentinels/blanks are null and valid negatives remain."""
+    """Covers: ETL-006 — sentinels are null and valid negatives remain."""
     frame = _convert(source_fixture("census", "representative.json"))
     sentinel = frame.filter(
         (pl.col("variable_name") == "B19013_001E") & (pl.col("county_fips") == "001")

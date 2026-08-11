@@ -48,6 +48,7 @@ def _read(path: Path) -> str:
 
 
 def test_shared_geography_refresh_is_not_held_by_source_rebuilds() -> None:
+    """Covers: ETL-037 — source rebuilds do not own shared geography refresh."""
     geography_definitions = [
         *(_read(source["gold"]) for source in SOURCE_FILES.values()),
         _read(GLOSSARY_CONTRACT),
@@ -59,6 +60,7 @@ def test_shared_geography_refresh_is_not_held_by_source_rebuilds() -> None:
 
 
 def test_source_refreshes_are_watermarked_and_affected_key_scoped() -> None:
+    """Covers: ETL-037 — serving refreshes use watermarks and affected keys."""
     for source in SOURCE_FILES.values():
         sql = _read(source["gold"])
         assert "gold_glossary.serving_refresh_state" in sql
@@ -70,6 +72,7 @@ def test_source_refreshes_are_watermarked_and_affected_key_scoped() -> None:
 
 
 def test_chunk_checkpoint_table_is_installed_everywhere() -> None:
+    """Covers: ETL-037 — every source installs durable chunk checkpoints."""
     definitions = [
         *(_read(source["gold"]) for source in SOURCE_FILES.values()),
         _read(GLOSSARY_CONTRACT),
@@ -81,6 +84,7 @@ def test_chunk_checkpoint_table_is_installed_everywhere() -> None:
 
 
 def test_dags_refresh_changed_history_in_annual_chunks() -> None:
+    """Covers: ETL-037 — DAGs refresh changed history in annual chunks."""
     for source in SOURCE_FILES.values():
         dag = _read(source["dag"])
         assert "get_gold_" not in dag or "_refresh_window" not in dag
@@ -93,6 +97,7 @@ def test_dags_refresh_changed_history_in_annual_chunks() -> None:
 
 
 def test_chunk_refreshes_emit_progress_and_row_count_logs() -> None:
+    """Covers: ETL-037 — chunk refreshes emit status and row-count progress."""
     utility = _read(REPO_ROOT / "src/data_ingestion_toolbox/utility/gold_schema.py")
     assert "status=STARTED" in utility
     assert "status=COMPLETE" in utility
@@ -108,6 +113,7 @@ def test_chunk_refreshes_emit_progress_and_row_count_logs() -> None:
 
 
 def test_silver_upserts_preserve_watermarks_for_unchanged_rows() -> None:
+    """Covers: ETL-037 — unchanged silver rows preserve their watermarks."""
     for source in SOURCE_FILES.values():
         transform = _read(source["silver"])
         assert "IS DISTINCT FROM" in transform

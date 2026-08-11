@@ -146,6 +146,7 @@ def test_census_raw_replay_replaces_only_the_loaded_geography(
     postgres_connection_factory: Callable[[], connection],
     raw_test_token: str,
 ) -> None:
+    """Covers: DB-006, DB-007 — Census replay replaces only its geography."""
     monkeypatch.setattr(
         census_ingest, "_get_pg_connection", postgres_connection_factory
     )
@@ -189,6 +190,7 @@ def test_bls_raw_replay_replaces_revised_natural_keys_once(
     postgres_connection_factory: Callable[[], connection],
     raw_test_token: str,
 ) -> None:
+    """Covers: DB-006, DB-007 — BLS replay stores one revised natural key."""
     monkeypatch.setattr(bls_ingest, "_get_pg_connection", postgres_connection_factory)
 
     assert bls_ingest.load_df_to_bls_long(_bls_frame(raw_test_token, 1), "la") == 2
@@ -220,6 +222,7 @@ def test_fred_raw_replay_replaces_revised_natural_keys_once(
     postgres_connection_factory: Callable[[], connection],
     raw_test_token: str,
 ) -> None:
+    """Covers: DB-006, DB-007 — FRED replay stores one revised natural key."""
     monkeypatch.setattr(fred_ingest, "_get_pg_connection", postgres_connection_factory)
 
     assert fred_ingest.load_df_to_fred_long(_fred_frame(raw_test_token, 1)) == 2
@@ -251,6 +254,7 @@ def test_bls_mid_batch_failure_rolls_back_deletes_and_partial_copies(
     postgres_connection_factory: Callable[[], connection],
     raw_test_token: str,
 ) -> None:
+    """Covers: DB-014 — a mid-batch failure leaves the prior BLS slice intact."""
     monkeypatch.setattr(bls_ingest, "_get_pg_connection", postgres_connection_factory)
     original_batch = _batch_id("bls", raw_test_token, 1)
     assert bls_ingest.load_df_to_bls_long(_bls_frame(raw_test_token, 1), "la") == 2

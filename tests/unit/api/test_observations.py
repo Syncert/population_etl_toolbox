@@ -127,7 +127,7 @@ class _TimeseriesSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_latest_forwards_filters_and_uses_count_total() -> None:
-    """API-006, API-010: filters forwarded; total from count query."""
+    """Covers: API-006, API-010 — filters forward and total comes from count."""
     fake = _LatestForwardingSession()
 
     def _override_db():
@@ -170,6 +170,8 @@ def test_latest_forwards_filters_and_uses_count_total() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_latest_falls_back_to_rpt_when_mv_empty() -> None:
+    """Covers: API-027 — latest falls back to durable reporting rows."""
+
     def _override_db():
         yield _LatestFallbackSession()
 
@@ -194,7 +196,7 @@ def test_latest_falls_back_to_rpt_when_mv_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_timeseries_uses_count_total() -> None:
-    """API-006: total from independent count query."""
+    """Covers: API-006 — timeseries total comes from an independent count."""
 
     def _override_db():
         yield _TimeseriesSession()
@@ -219,7 +221,7 @@ def test_timeseries_uses_count_total() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_timeseries_rejects_invalid_date_range() -> None:
-    """API-007: start_date > end_date returns 422."""
+    """Covers: API-007 — a reversed timeseries date range returns 422."""
 
     def _override_db():
         yield _TimeseriesSession()
@@ -248,7 +250,7 @@ def test_timeseries_rejects_invalid_date_range() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_latest_accepts_metric_id_alias() -> None:
-    """API-004: metric_id alias resolves to metric_code."""
+    """Covers: API-004 — metric_id resolves to metric_code for latest."""
     fake = _LatestForwardingSession()
 
     def _override_db():
@@ -277,7 +279,7 @@ def test_latest_accepts_metric_id_alias() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_latest_resolves_product_friendly_population_alias() -> None:
-    """API-004: product alias 'population' resolves to canonical metric."""
+    """Covers: API-004 — population resolves to its canonical metric."""
     fake = _LatestForwardingSession()
 
     def _override_db():
@@ -300,7 +302,7 @@ def test_latest_resolves_product_friendly_population_alias() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_timeseries_accepts_metric_id_alias() -> None:
-    """API-004: timeseries metric_id alias forwarded correctly."""
+    """Covers: API-004 — timeseries forwards the metric_id alias."""
     fake = _TimeseriesSession()
 
     def _override_db():
@@ -323,7 +325,7 @@ def test_timeseries_accepts_metric_id_alias() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_latest_requires_metric_code_or_metric_id() -> None:
-    """API-003: missing both metric_code and metric_id returns 422."""
+    """Covers: API-003 — latest requires one metric identifier."""
 
     def _override_db():
         yield _LatestForwardingSession()
@@ -345,7 +347,7 @@ def test_latest_requires_metric_code_or_metric_id() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_timeseries_requires_metric_code_or_metric_id() -> None:
-    """API-003: timeseries missing both metric identifiers returns 422."""
+    """Covers: API-003 — timeseries requires one metric identifier."""
 
     def _override_db():
         yield _TimeseriesSession()

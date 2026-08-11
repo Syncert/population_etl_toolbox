@@ -46,7 +46,7 @@ def get_connection():
 
 
 def test_single_series_ingestion():
-    """Test ingestion of a single FRED series."""
+    """Covers: EXT-008 — live single-series FRED ingestion loads raw rows."""
     print("\n=== Testing Single Series Ingestion (UNRATE) ===")
 
     # Ingest unemployment rate for recent 2 years
@@ -98,7 +98,7 @@ def test_single_series_ingestion():
 
 
 def test_labor_cycle_domain():
-    """Test ingestion of labor_cycle domain series."""
+    """Covers: EXT-008 — live labor-cycle domain ingestion loads raw rows."""
     print("\n=== Testing Labor Cycle Domain Ingestion ===")
 
     # Ingest recent 1 year for labor cycle series
@@ -156,7 +156,7 @@ def test_labor_cycle_domain():
 
 
 def test_housing_domain():
-    """Test ingestion of housing domain series."""
+    """Covers: EXT-008 — live housing-domain ingestion loads raw rows."""
     print("\n=== Testing Housing Domain Ingestion ===")
 
     # Ingest recent 1 year for housing series
@@ -202,7 +202,7 @@ def test_housing_domain():
 
 
 def test_macro_domain():
-    """Test ingestion of macro domain series."""
+    """Covers: EXT-008 — live macro-domain ingestion loads raw rows."""
     print("\n=== Testing Macro Domain Ingestion ===")
 
     # Ingest recent 2 years for macro series (GDP is quarterly, so needs longer range)
@@ -245,7 +245,7 @@ def test_macro_domain():
 
 
 def test_missing_data_handling():
-    """Verify that missing data (.) is properly handled."""
+    """Covers: EXT-008 — live FRED missing values remain explicit."""
     print("\n=== Testing Missing Data Handling ===")
 
     conn = get_connection()
@@ -301,7 +301,7 @@ def test_missing_data_handling():
 
 
 def test_all_curated_series():
-    """Test ingestion of all curated series (shorter time range)."""
+    """Covers: EXT-008 — live curated-series ingestion loads raw rows."""
     print("\n=== Testing All Curated Series Ingestion ===")
 
     # Ingest just 6 months for all series (to keep test fast)

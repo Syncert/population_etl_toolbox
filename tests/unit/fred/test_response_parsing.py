@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_fred_response_parsing_preserves_fields(source_fixture) -> None:
-    """ETL-016: reviewed observations produce exact normalized fields."""
+    """Covers: ETL-016 — reviewed observations preserve normalized fields."""
     frame = parse_fred_response(
         source_fixture("fred", "representative.json"),
         series_id="UNRATE",
@@ -41,7 +41,7 @@ def test_fred_response_parsing_preserves_fields(source_fixture) -> None:
 
 @pytest.mark.parametrize("value", [".", "", None, "not-a-number"])
 def test_fred_missing_and_malformed_values_are_explicit(value: object) -> None:
-    """ETL-017: non-numeric observations become marked missing facts."""
+    """Covers: ETL-017 — nonnumeric observations become explicit missing facts."""
     frame = parse_fred_response(
         {"observations": [{"date": "2024-01-01", "value": value}]},
         "UNRATE",
@@ -53,7 +53,7 @@ def test_fred_missing_and_malformed_values_are_explicit(value: object) -> None:
 
 
 def test_fred_empty_and_truncated_payloads_are_typed() -> None:
-    """ETL-017: empty and truncated entries raise source-specific errors."""
+    """Covers: ETL-017, RES-002 — empty and truncated entries are typed."""
     with pytest.raises(FredNoContent):
         parse_fred_response({"observations": []}, "UNRATE", None, uuid.UUID(int=0))
     with pytest.raises(FredPayloadError, match="missing date"):
@@ -77,11 +77,14 @@ def test_fred_empty_and_truncated_payloads_are_typed() -> None:
 def test_fred_malformed_shapes_have_source_specific_errors(
     payload: object, message: str
 ) -> None:
+    """Covers: RES-002 — malformed FRED schemas raise contextual errors."""
     with pytest.raises(FredPayloadError, match=message):
         parse_fred_response(payload, "UNRATE", None, uuid.UUID(int=0))
 
 
 def test_fred_invalid_json_is_retryable(monkeypatch) -> None:
+    """Covers: RES-002 — invalid FRED JSON raises a typed retryable failure."""
+
     class Response:
         status_code = 200
         headers: dict[str, str] = {}

@@ -58,6 +58,7 @@ def _middleware_for(
     ids=("non-get", "non-cacheable-route"),
 )
 def test_ineligible_request_bypasses_redis(method: str, path: str) -> None:
+    """Covers: API-022 — ineligible requests bypass Redis entirely."""
     middleware, fake_redis = _middleware_for(Response(b"eligible body"))
 
     with TestClient(middleware) as client:
@@ -78,6 +79,7 @@ def test_ineligible_request_bypasses_redis(method: str, path: str) -> None:
     ids=("error-response", "empty-body", "oversized-body"),
 )
 def test_ineligible_response_is_not_stored(response: Response) -> None:
+    """Covers: API-022 — ineligible responses are never stored."""
     middleware, fake_redis = _middleware_for(response)
 
     with TestClient(middleware) as client:

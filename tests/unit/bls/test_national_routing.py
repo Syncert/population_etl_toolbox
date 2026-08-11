@@ -9,13 +9,13 @@ pytestmark = pytest.mark.unit
 
 
 def test_laus_national_area_is_rejected() -> None:
-    """LAUS has no national area; callers must use CPS/LN."""
+    """Covers: ETL-033 — LAUS national area is rejected in favor of CPS."""
     with pytest.raises(ValueError, match=r"use CPS/LN"):
         get_laus_area_codes("us")
 
 
 def test_authoritative_national_cps_series_remain_curated() -> None:
-    """Core national household measures must continue to come from CPS."""
+    """Covers: ETL-033 — authoritative national measures remain in CPS."""
     cps_series = set(CONFIG.curated_by_program["ln"])
 
     assert {
@@ -29,6 +29,7 @@ def test_authoritative_national_cps_series_remain_curated() -> None:
 
 
 def test_recommended_national_series_remain_curated() -> None:
+    """Covers: ETL-034 — recommended national BLS series remain curated."""
     expected = {
         "ln": {
             "LNS12300060",

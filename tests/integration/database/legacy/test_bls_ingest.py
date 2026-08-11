@@ -46,7 +46,7 @@ def get_connection():
 
 
 def test_laus_state_level():
-    """Test LAUS ingestion at state level (all states)."""
+    """Covers: EXT-007 — live LAUS state ingestion loads all states."""
     print("\n=== Testing LAUS State-Level Ingestion (All States) ===")
 
     # Note: LAUS (Local Area Unemployment Statistics) does not provide national-level data.
@@ -112,7 +112,7 @@ def test_laus_state_level():
 
 
 def test_laus_county_level_extended():
-    """Test LAUS ingestion at county level (Wisconsin)."""
+    """Covers: EXT-007 — live LAUS county ingestion loads Wisconsin."""
     print("\n=== Testing LAUS County-Level Ingestion (Wisconsin) ===")
 
     year_start = 2022
@@ -176,7 +176,7 @@ def test_laus_county_level_extended():
 
 
 def test_old_laus_us_level():
-    """Test LAUS ingestion at US national level."""
+    """Covers: EXT-007 — legacy national LAUS behavior remains explicit."""
     print("\n=== SKIPPING: LAUS US-Level Test ===")
     print("Note: LAUS does not provide US national-level data.")
     print(
@@ -186,7 +186,7 @@ def test_old_laus_us_level():
 
 
 def test_laus_state_level_old():
-    """Test LAUS ingestion at state level (Wisconsin)."""
+    """Covers: EXT-007 — live LAUS ingestion loads one state."""
     print("\n=== Testing LAUS State-Level Ingestion (Wisconsin - OLD) ===")
 
     year_start = 2022
@@ -263,7 +263,7 @@ def test_laus_state_level_old():
 
 
 def test_laus_county_level():
-    """Test LAUS ingestion at county level (Wisconsin counties)."""
+    """Covers: EXT-007 — live LAUS ingestion loads state counties."""
     print("\n=== Testing LAUS County-Level Ingestion (Wisconsin) ===")
 
     year_start = 2022
@@ -342,7 +342,7 @@ def test_laus_county_level():
 
 
 def test_cps_ingestion():
-    """Test CPS/LN (Current Population Survey - National) ingestion."""
+    """Covers: EXT-007 — live CPS national ingestion loads raw rows."""
     print("\n=== Testing CPS/LN Ingestion ===")
 
     year_start = 2022
@@ -395,7 +395,7 @@ def test_cps_ingestion():
 
 
 def test_ces_ingestion():
-    """Test CES (Current Employment Statistics) ingestion."""
+    """Covers: EXT-007 — live CES ingestion loads raw rows."""
     print("\n=== Testing CES Ingestion ===")
 
     year_start = 2022
@@ -447,7 +447,7 @@ def test_ces_ingestion():
 
 
 def test_cpi_ingestion():
-    """Test CPI (Consumer Price Index) ingestion."""
+    """Covers: EXT-007 — live CPI ingestion loads raw rows."""
     print("\n=== Testing CPI Ingestion ===")
 
     year_start = 2022
@@ -499,7 +499,7 @@ def test_cpi_ingestion():
 
 
 def test_jolts_ingestion():
-    """Test JOLTS (Job Openings and Labor Turnover Survey) ingestion."""
+    """Covers: EXT-007 — live JOLTS ingestion loads raw rows."""
     print("\n=== Testing JOLTS Ingestion ===")
 
     year_start = 2022

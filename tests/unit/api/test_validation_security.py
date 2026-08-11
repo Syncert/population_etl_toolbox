@@ -73,7 +73,7 @@ def _client_for(session) -> Iterator[TestClient]:
 def test_pagination_out_of_bounds_is_rejected_before_database(
     path: str, params: dict
 ) -> None:
-    """API-005: invalid pagination cannot reach service or database work."""
+    """Covers: API-005 — invalid pagination cannot reach database work."""
     with _client_for(_NoExecuteSession()) as client:
         assert client.get(path, params=params).status_code == 422
 
@@ -88,13 +88,13 @@ def test_pagination_out_of_bounds_is_rejected_before_database(
     ],
 )
 def test_pagination_boundaries_succeed(path: str, params: dict) -> None:
-    """API-005: declared minimum and maximum boundaries are accepted."""
+    """Covers: API-005 — declared pagination boundaries are accepted."""
     with _client_for(_RecordingEmptySession()) as client:
         assert client.get(path, params=params).status_code == 200
 
 
 def test_empty_latest_results_have_stable_contract() -> None:
-    """API-008: empty results return 200, an empty list, and zero total."""
+    """Covers: API-008 — empty latest results return the stable contract."""
     with _client_for(_RecordingEmptySession()) as client:
         response = client.get(
             "/api/observations/latest", params={"metric_code": "UNKNOWN"}
@@ -105,7 +105,7 @@ def test_empty_latest_results_have_stable_contract() -> None:
 
 
 def test_unknown_metric_is_consistently_empty_for_latest_and_history() -> None:
-    """API-009: unknown metrics use the documented empty response consistently."""
+    """Covers: API-009 — unknown metrics return consistent empty responses."""
     session = _RecordingEmptySession()
     with _client_for(session) as client:
         latest = client.get(
@@ -121,7 +121,7 @@ def test_unknown_metric_is_consistently_empty_for_latest_and_history() -> None:
 
 
 def test_sql_metacharacters_remain_bound_parameters() -> None:
-    """API-017: injection text is data and never part of executable SQL."""
+    """Covers: API-017 — injection text remains bound parameter data."""
     attack = "POP'; DROP TABLE gold.metric_catalog; --"
     session = _RecordingEmptySession()
     with _client_for(session) as client:
@@ -136,7 +136,7 @@ def test_sql_metacharacters_remain_bound_parameters() -> None:
 
 
 def test_oversized_metric_is_rejected_before_database() -> None:
-    """API-018: endpoint query-string limits are enforced before service work."""
+    """Covers: API-018 — oversized metrics fail before database work."""
     with _client_for(_NoExecuteSession()) as client:
         response = client.get(
             "/api/observations/latest", params={"metric_code": "X" * 201}
@@ -155,7 +155,7 @@ def test_oversized_metric_is_rejected_before_database() -> None:
 def test_security_headers_are_present_on_success_and_error_responses(
     path: str, params: dict
 ) -> None:
-    """API-002: middleware headers cover both successful and rejected responses."""
+    """Covers: API-002 — security headers cover success and error responses."""
     with _client_for(_NoExecuteSession()) as client:
         response = client.get(path, params=params)
     assert response.headers["x-content-type-options"] == "nosniff"

@@ -21,6 +21,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 def test_warehouse_database_has_pinned_postgres_and_postgis(
     postgres_connection: connection,
 ) -> None:
+    """Covers: ENV-008 — database integration runs expected service versions."""
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
@@ -43,6 +44,7 @@ def test_warehouse_database_has_pinned_postgres_and_postgis(
 
 
 def test_raw_ddl_creates_every_source_table(postgres_connection: connection) -> None:
+    """Covers: DB-001 — raw DDL creates every required source table."""
     expected_tables = {
         "raw_census": {
             "acs_datasets",
@@ -87,6 +89,7 @@ def test_raw_ddl_creates_every_source_table(postgres_connection: connection) -> 
 
 
 def test_raw_ddl_can_be_applied_twice(postgres_connection: connection) -> None:
+    """Covers: DB-002 — raw DDL can be applied twice safely."""
     apply_sql_files(postgres_connection, RAW_DDL_FILES)
     apply_sql_files(postgres_connection, RAW_DDL_FILES)
 
@@ -153,6 +156,7 @@ def test_raw_natural_keys_reject_duplicate_observations(
     insert_sql: str,
     parameters: tuple[object, ...],
 ) -> None:
+    """Covers: DB-003 — every source rejects duplicate raw natural keys."""
     with postgres_connection.cursor() as cursor:
         cursor.execute(insert_sql, parameters)
         with pytest.raises(psycopg2.errors.UniqueViolation):
@@ -194,6 +198,7 @@ def test_slice_ledgers_reject_unknown_statuses(
     insert_sql: str,
     parameters: tuple[object, ...],
 ) -> None:
+    """Covers: DB-005 — source ledgers reject unknown statuses."""
     with postgres_connection.cursor() as cursor:
         with pytest.raises(psycopg2.errors.CheckViolation):
             cursor.execute(insert_sql, parameters)
@@ -254,6 +259,7 @@ def test_raw_domain_constraints_reject_invalid_values(
     postgres_connection: connection,
     insert_sql: str,
 ) -> None:
+    """Covers: DB-005 — raw domain constraints reject invalid values."""
     with postgres_connection.cursor() as cursor:
         with pytest.raises(psycopg2.errors.CheckViolation):
             cursor.execute(insert_sql)
@@ -262,6 +268,7 @@ def test_raw_domain_constraints_reject_invalid_values(
 def test_uncommitted_test_data_is_rolled_back(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
+    """Covers: DB-014 — uncommitted integration data rolls back cleanly."""
     series_id = "TEST_ROLLBACK_SENTINEL"
     writer = postgres_connection_factory()
     try:

@@ -58,7 +58,7 @@ EXPECTED_INGEST_POOLS = {
 
 @pytest.mark.dag
 def test_dagbag_has_no_import_errors(dagbag) -> None:
-    """DAG-001: DagBag loads the repository dag folder without import errors."""
+    """Covers: DAG-001 — DagBag loads the repository without import errors."""
     assert dagbag.import_errors == {}, f"DAG import errors: {dagbag.import_errors}"
 
 
@@ -69,7 +69,7 @@ def test_dagbag_has_no_import_errors(dagbag) -> None:
 
 @pytest.mark.dag
 def test_expected_dag_ids_are_present(dagbag) -> None:
-    """DAG-002: all expected DAG IDs and no unexpected ones."""
+    """Covers: DAG-002 — the exact expected DAG inventory is present."""
     assert set(dagbag.dag_ids) == EXPECTED_DAG_IDS, (
         f"DAG IDs differ: found={set(dagbag.dag_ids)!r}, expected={EXPECTED_DAG_IDS!r}"
     )
@@ -82,7 +82,7 @@ def test_expected_dag_ids_are_present(dagbag) -> None:
 
 @pytest.mark.dag
 def test_dag_ids_are_unique(dagbag) -> None:
-    """DAG-003: each expected ID maps to exactly one DAG object."""
+    """Covers: DAG-003 — each expected ID maps to one DAG object."""
     for dag_id in EXPECTED_DAG_IDS:
         assert dag_id in dagbag.dags
     assert len(dagbag.dags) == len(EXPECTED_DAG_IDS)
@@ -96,7 +96,7 @@ def test_dag_ids_are_unique(dagbag) -> None:
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_DAG_IDS))
 def test_dag_required_metadata(dagbag, dag_id: str) -> None:
-    """DAG-004: every DAG has owner data-eng, schedule, start_date, tags, catchup=False."""
+    """Covers: DAG-004 — every DAG has the required metadata."""
     dag = dagbag.dags[dag_id]
     assert dag.default_args.get("owner") == "data-eng"
     assert dag.schedule_interval is not None
@@ -113,7 +113,7 @@ def test_dag_required_metadata(dagbag, dag_id: str) -> None:
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id,expected_cron", sorted(EXPECTED_SCHEDULES.items()))
 def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str) -> None:
-    """DAG-005: each DAG schedule matches the declared cron contract."""
+    """Covers: DAG-005 — every DAG schedule matches its cron contract."""
     dag = dagbag.dags[dag_id]
     assert str(dag.schedule_interval) == expected_cron, (
         f"DAG {dag_id}: expected schedule {expected_cron!r}, "
@@ -129,7 +129,7 @@ def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str) -> None:
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_DAG_IDS))
 def test_task_ids_are_unique_within_dag(dagbag, dag_id: str) -> None:
-    """DAG-006: no duplicate task IDs within a DAG."""
+    """Covers: DAG-006 — task IDs are unique within each DAG."""
     dag = dagbag.dags[dag_id]
     task_ids = [t.task_id for t in dag.tasks]
     assert len(task_ids) == len(set(task_ids)), (
@@ -147,7 +147,7 @@ def test_task_ids_are_unique_within_dag(dagbag, dag_id: str) -> None:
 def test_ingest_batch_task_uses_correct_pool(
     dagbag, dag_id: str, expected_pool: str
 ) -> None:
-    """DAG-007: ingest_batch task uses the expected rate-limiting pool."""
+    """Covers: DAG-007 — ingest tasks use source rate-limit pools."""
     dag = dagbag.dags[dag_id]
     batch_tasks = [t for t in dag.tasks if "ingest_batch" in t.task_id]
     assert batch_tasks, f"DAG {dag_id} has no ingest_batch task"
@@ -168,7 +168,7 @@ def test_ingest_batch_task_uses_correct_pool(
     "dag_id,expected_retries", sorted(EXPECTED_DEFAULT_RETRIES.items())
 )
 def test_dag_default_retries(dagbag, dag_id: str, expected_retries: int) -> None:
-    """DAG-008: default retries match the declared contract."""
+    """Covers: DAG-008 — DAG default retries match the contract."""
     dag = dagbag.dags[dag_id]
     actual = dag.default_args.get("retries")
     assert actual == expected_retries, (
@@ -178,7 +178,7 @@ def test_dag_default_retries(dagbag, dag_id: str, expected_retries: int) -> None
 
 @pytest.mark.dag
 def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
-    """DAG-008: BLS ingest_batch has the intentional 10-retry override."""
+    """Covers: DAG-008 — BLS ingestion retains its 10-retry override."""
     dag = dagbag.dags["bls_ingest"]
     batch_tasks = [t for t in dag.tasks if "ingest_batch" in t.task_id]
     assert batch_tasks, "bls_ingest has no ingest_batch task"
@@ -195,7 +195,7 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
 
 @pytest.mark.dag
 def test_silver_ref_ensure_schema_upstream_of_both_dims(dagbag) -> None:
-    """DAG-009: ensure_schema is upstream of load_dim_geo and load_dim_time."""
+    """Covers: DAG-009 — schema creation precedes both dimensions."""
     dag = dagbag.dags["silver_ref"]
     task_ids = {t.task_id for t in dag.tasks}
     assert "ensure_schema" in task_ids
@@ -218,8 +218,7 @@ def test_silver_ref_ensure_schema_upstream_of_both_dims(dagbag) -> None:
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", ["acs_ingest", "bls_ingest", "fred_ingest"])
 def test_source_pipeline_order(dagbag, dag_id: str) -> None:
-    """DAG-010: metadata precedes ingestion; ingestion precedes silver;
-    silver precedes gold refresh."""
+    """Covers: DAG-010 — source pipeline stages retain required order."""
     dag = dagbag.dags[dag_id]
 
     def _task_ids_matching(keyword: str) -> list[str]:
@@ -269,7 +268,7 @@ def test_source_pipeline_order(dagbag, dag_id: str) -> None:
 
 @pytest.mark.dag
 def test_no_external_calls_at_import_time() -> None:
-    """DAG-011: loading DAGs makes zero HTTP, database, or Redis calls."""
+    """Covers: DAG-011 — DAG import makes no external calls."""
     call_log: list[str] = []
 
     def _mock_http(*args, **kwargs):  # noqa: ANN002
@@ -307,7 +306,7 @@ def test_no_external_calls_at_import_time() -> None:
 
 @pytest.mark.dag
 def test_each_dag_file_parses_within_2_seconds() -> None:
-    """DAG-012: each DAG file parses in under 2 seconds."""
+    """Covers: DAG-012, PERF-002 — each DAG parses in under two seconds."""
     from airflow.models import DagBag
 
     dag_folder = Path(_DAGS_FOLDER)
@@ -321,7 +320,7 @@ def test_each_dag_file_parses_within_2_seconds() -> None:
 
 @pytest.mark.dag
 def test_complete_dag_folder_parses_within_10_seconds() -> None:
-    """DAG-012: the complete dag folder parses in under 10 seconds."""
+    """Covers: DAG-012, PERF-002 — the DAG folder parses in under ten seconds."""
     from airflow.models import DagBag
 
     start = time.monotonic()

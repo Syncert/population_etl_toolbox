@@ -132,7 +132,7 @@ class _SourceSchemaSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_bls_latest_observations_returns_data() -> None:
-    """API-013: BLS route returns BLS-source rows only."""
+    """Covers: API-011, API-013 — BLS latest returns BLS contract rows."""
 
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [_observation_row()])
@@ -160,7 +160,7 @@ def test_bls_latest_observations_returns_data() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_bls_latest_requires_metric_code() -> None:
-    """API-003: BLS route requires metric identifier."""
+    """Covers: API-003 — BLS latest requires a metric identifier."""
 
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [])
@@ -179,7 +179,7 @@ def test_bls_latest_requires_metric_code() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_bls_timeseries_rejects_invalid_date_range() -> None:
-    """API-007: BLS timeseries rejects start_date > end_date."""
+    """Covers: API-007 — BLS history rejects a reversed date range."""
 
     def _override_db():
         yield _SourceSchemaSession("gold_bls", [])
@@ -208,7 +208,7 @@ def test_bls_timeseries_rejects_invalid_date_range() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_census_latest_observations_returns_data() -> None:
-    """API-013: Census route returns Census-source rows with ACS fields."""
+    """Covers: API-011, API-013 — Census latest returns ACS contract rows."""
     row = _observation_row(metric_code="ACS:acs5:B01003_001", geo_id="state:06")
     row.update(
         source_code="CENSUS_ACS",
@@ -245,7 +245,7 @@ def test_census_latest_observations_returns_data() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_fred_latest_observations_returns_data() -> None:
-    """API-013: FRED route returns FRED-source rows."""
+    """Covers: API-011, API-013 — FRED latest returns FRED contract rows."""
     row = _observation_row(metric_code="FRED:UNRATE", geo_id="us:1")
     row.update(source_code="FRED", source="FRED")
 
@@ -271,7 +271,7 @@ def test_fred_latest_observations_returns_data() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_fred_latest_accepts_metric_id_alias() -> None:
-    """API-004: FRED route accepts metric_id alias."""
+    """Covers: API-004 — FRED latest accepts the metric_id alias."""
     row = _observation_row(metric_code="FRED:UNRATE", geo_id="us:1")
     row.update(source_code="FRED", source="FRED")
 
@@ -307,7 +307,7 @@ def test_source_timeseries_routes_preserve_source_contract(
     metric_code: str,
     source_code: str,
 ) -> None:
-    """API-013: all source-specific history routes return only their source."""
+    """Covers: API-013 — source history routes return only their source."""
     row = _observation_row(metric_code=metric_code)
     row.update(source_code=source_code, source=source_code)
 

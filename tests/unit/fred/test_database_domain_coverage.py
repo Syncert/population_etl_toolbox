@@ -50,6 +50,7 @@ class _Hook:
 
 
 def test_domain_coverage_accepts_every_series_in_both_layers() -> None:
+    """Covers: ETL-015 — configured series exist in raw and gold layers."""
     series_by_domain = {
         "labor": ["PAYEMS"],
         "prices": ["CPIAUCSL"],
@@ -67,6 +68,7 @@ def test_domain_coverage_accepts_every_series_in_both_layers() -> None:
 
 
 def test_domain_coverage_reports_missing_series_by_layer() -> None:
+    """Covers: ETL-015 — missing series are reported by warehouse layer."""
     series_by_domain = {"labor": ["PAYEMS", "UNRATE"]}
     hook = _Hook(
         [

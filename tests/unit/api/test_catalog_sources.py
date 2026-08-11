@@ -45,6 +45,8 @@ class _FailingSession:
 @pytest.mark.unit
 @pytest.mark.api
 def test_catalog_sources_route_without_real_db() -> None:
+    """Covers: API-025 — catalog sources returns stable metadata with a fake DB."""
+
     def _override_db():
         yield _FakeSession()
 
@@ -64,7 +66,7 @@ def test_catalog_sources_route_without_real_db() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_catalog_sources_db_error_is_sanitized() -> None:
-    """API-016: SQLAlchemy error returns 503 with only the safe message."""
+    """Covers: API-016 — database errors return only the safe 503 detail."""
 
     def _failing_override_db():
         yield _FailingSession()

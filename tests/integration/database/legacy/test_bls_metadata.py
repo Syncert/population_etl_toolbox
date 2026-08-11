@@ -39,7 +39,7 @@ def get_connection():
 
 
 def test_sync_bls_datasets_table():
-    """Test syncing BLS datasets table."""
+    """Covers: EXT-009 — BLS dataset metadata synchronizes."""
     print("\n=== Testing sync_bls_datasets_table ===")
 
     count = sync_bls_datasets_table()
@@ -72,7 +72,7 @@ def test_sync_bls_datasets_table():
 
 
 def test_sync_bls_series_metadata():
-    """Test syncing BLS series metadata for each program."""
+    """Covers: EXT-009 — BLS series metadata synchronizes by program."""
     print("\n=== Testing sync_bls_series_metadata ===")
 
     for program in CONFIG.programs:
@@ -123,7 +123,7 @@ def test_sync_bls_series_metadata():
 
 
 def test_laus_area_code_variety():
-    """Verify LAUS metadata includes different geographic levels."""
+    """Covers: EXT-009 — LAUS metadata retains geography varieties."""
     print("\n=== Testing LAUS Area Code Variety ===")
 
     conn = get_connection()

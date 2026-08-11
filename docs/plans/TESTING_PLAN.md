@@ -230,6 +230,31 @@ Priority meanings:
 
 Unless a row says otherwise, any unmet pass condition is the failure condition and fails its owning CI job.
 
+### Implementation Status
+
+Last audited against the repository on 2026-08-11. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
+
+| Catalog area | Implemented | Awaiting implementation |
+|---|---|---|
+| Environment, collection, and package | ENV-001–ENV-010 | None |
+| Airflow DAGs | DAG-001–DAG-012 | DAG-013–DAG-014 |
+| ETL and shared units | ETL-001–ETL-025, ETL-031–ETL-037 | ETL-026–ETL-030 |
+| Database integration | DB-001–DB-006, DB-014 | DB-007–DB-013, DB-015–DB-018 |
+| API | API-001–API-008, API-011–API-015, API-017, API-019–API-023, API-025–API-027 | API-009–API-010, API-016, API-018, API-024 |
+| External source contracts | EXT-007–EXT-010 | EXT-001–EXT-006 |
+| End-to-end | None | E2E-001–E2E-006 |
+| Performance | PERF-001–PERF-002 | PERF-003–PERF-010 |
+| Resilience | None | RES-001–RES-008 |
+| **Total** | **89 of 140** | **51 of 140** |
+
+Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [database integration tests](../../tests/integration/database/), [Redis integration tests](../../tests/integration/redis/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
+
+Test docstrings use the following traceability labels:
+
+- `Covers: ID — behavior` means the test directly exercises part or all of that catalog item's pass metric. Multiple tests may collectively complete one catalog item, and one test may cover multiple items.
+
+Every test must have a `Covers:` label, and every referenced catalog ID must exist in this document. If a test protects behavior that does not fit an existing item, add a narrowly scoped catalog item instead of leaving the test unattributed. Catalog implementation status is determined from the complete set of covering tests and CI/configuration checks, not merely from the presence of an ID in one docstring.
+
 ### Environment, Collection, and Package Tests
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
@@ -241,6 +266,9 @@ Unless a row says otherwise, any unmet pass condition is the failure condition a
 | ENV-005 | P0 | Static | Package build | Wheel and sdist build successfully and install into a clean environment | Build, metadata, or clean-install failure |
 | ENV-006 | P0 | Static | Generated-file hygiene | `.venv*`, `.airflow`, `.pytest_cache`, `.ruff_cache`, `.coverage*`, `htmlcov`, and `*.egg-info` are ignored | A generated path is trackable or committed |
 | ENV-007 | P0 | Organization | Centralized test ownership | All tracked automated test modules, test SQL, fixtures, expected outputs, and load scenarios are under `tests/`; `pytest --collect-only` only collects from `tests/` | Test logic/assets exist outside `tests/` or collection includes another directory |
+| ENV-008 | P1 | Configuration | Service image pin consistency | PostgreSQL/PostGIS and Redis image versions in test support, documentation, and CI agree; live integration services report the expected major versions | Pin drift between configuration surfaces or unexpected runtime service version |
+| ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
+| ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring and every referenced ID exists in this catalog | Missing attribution or unknown catalog ID |
 
 ### Airflow DAG Tests
 
@@ -299,6 +327,13 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-028 | P1 | Unit / `unit` | Gold DDL hash behavior | Identical ordered DDL has a stable hash; content change changes the hash | Hash drift or unchanged hash after content change |
 | ETL-029 | P1 | Unit / `unit` | Data-quality checks | Valid source fixtures return zero violations; one deliberately bad row returns the exact expected violation count | False positive, false negative, or wrong source routing |
 | ETL-030 | P1 | Unit / `unit` | Configuration validation | Valid defaults load; missing connection ID, empty configured scope, duplicate ownership, and invalid batch sizes raise clear errors | Invalid configuration accepted or secret echoed |
+| ETL-031 | P1 | Unit / `unit` | ACS dataset-name handling | Unknown and empty names use the documented one-year fallback; ACS1 and ACS5 names are case-insensitive | Unexpected duration, crash, or case-sensitive known dataset |
+| ETL-032 | P1 | Unit / `unit` | BLS metadata query routing | State and county metadata queries use exact supported prefixes, retain requested geography, and reject unsupported scopes before database work | Wrong prefix/filter, cross-geography series, or invalid scope reaches database |
+| ETL-033 | P1 | Unit / `unit` | BLS national-series routing | National LAUS requests are rejected and curated national labor measures remain routed through their published CPS/LN series | Synthetic national LAUS key accepted or required CPS series removed |
+| ETL-034 | P1 | Unit / `unit` | Curated-series recommendation contract | Required recommended BLS and FRED platform series remain present in the curated configuration | Required recommended series disappears from configuration |
+| ETL-035 | P1 | Unit / `unit` | BLS unknown-period fallback | Empty, null, and unrecognized BLS period codes follow the documented annual fallback | Unknown period crashes or produces a non-annual duration |
+| ETL-036 | P1 | Unit / `unit` | FRED unknown-frequency fallback | Null and empty FRED frequency values follow the documented daily fallback | Unknown frequency crashes or produces a non-daily duration |
+| ETL-037 | P1 | Contract / `unit` | Incremental serving implementation contract | Source refreshes are watermarked and affected-key scoped; checkpoints, annual changed-history chunks, progress logs, and unchanged-row watermark preservation remain wired | A source returns to full rebuild behavior, loses checkpoints/progress, or rewrites unchanged watermarks |
 
 ### PostgreSQL Integration Tests
 
@@ -355,6 +390,9 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-022 | P1 | Cache / `unit api` | Cache bypass | Non-GET, non-cacheable route, error response, empty body, and body over 2 MB are not stored | Ineligible response is stored |
 | API-023 | P1 | Resilience / `integration api redis` | Redis unavailable | Cacheable endpoint still returns the application response and correct status within the fallback budget | Request fails, hangs, or returns Redis detail |
 | API-024 | P1 | Integration / `integration api database` | Real API/database contract | Seeded catalog, latest, timeseries, distribution, and comparison calls return exact fixture results | Route/service SQL differs from actual schema |
+| API-025 | P0 | Router / `unit api` | Catalog sources response | The catalog sources route returns the stable source metadata contract without real database access | Non-200 response, malformed source metadata, or real database access |
+| API-026 | P0 | Router / `unit api` | Model status response | The models status route returns the stable source-model availability contract | Non-200 response or model status contract drift |
+| API-027 | P0 | Service / `unit api` | Latest-view fallback | An empty latest materialized view falls back to the durable report relation while preserving pagination totals and schema | Empty result despite durable rows, wrong total, or response contract drift |
 
 ### External Source Contract Tests
 
@@ -368,6 +406,10 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-004 | P2 | Contract / `external slow` | Curated identifiers | A small representative set of configured ACS variables, BLS series, and FRED series still exists | Configured identifier is definitively unknown/removed |
 | EXT-005 | P2 | Observability / `external slow` | External result classification | Status, latency, source, and failure class are recorded; 429/5xx/timeout is reported as upstream-unavailable, not regression | Missing telemetry or transient outage reported as code failure |
 | EXT-006 | P2 | Secret handling / `external` | Missing credentials | Test skips with a clear reason where a key is optional for CI policy; logs contain no secret values | Ambiguous failure or secret exposure |
+| EXT-007 | P2 | Legacy smoke / `integration database external slow` | BLS live ingestion paths | Representative LAUS, CPS, CES, CPI, and JOLTS requests load non-empty source-appropriate raw rows into a disposable database | Live request or raw load fails, produces no rows, or violates source/geography expectations |
+| EXT-008 | P2 | Legacy smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests load expected raw observations, including explicit missing values, into a disposable database | Live request or raw load fails, produces no rows, or mishandles missing values |
+| EXT-009 | P2 | Legacy metadata / `integration database slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
+| EXT-010 | P2 | Legacy metadata / `integration database slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
 
 ### End-to-End Tests
 

@@ -51,6 +51,7 @@ def _cache_application(
 
 
 def test_redis_service_uses_expected_major_version(redis_client: Redis) -> None:
+    """Covers: ENV-008 — Redis integration runs the expected major version."""
     server_version = str(redis_client.info("server")["redis_version"])
     assert int(server_version.split(".", maxsplit=1)[0]) == EXPECTED_REDIS_MAJOR
 
@@ -58,6 +59,7 @@ def test_redis_service_uses_expected_major_version(redis_client: Redis) -> None:
 def test_cache_miss_then_hit_returns_identical_body(
     redis_test_config: RedisTestConfig,
 ) -> None:
+    """Covers: API-019 — a cache miss then hit returns an identical body."""
     application, state = _cache_application(redis_test_config.url)
 
     with TestClient(application) as client:
@@ -84,6 +86,7 @@ def test_cache_keys_separate_path_and_query_string(
     first_target: str,
     second_target: str,
 ) -> None:
+    """Covers: API-020 — cache keys separate paths and query strings."""
     application, state = _cache_application(redis_test_config.url)
 
     with TestClient(application) as client:
@@ -99,6 +102,7 @@ def test_cache_keys_separate_path_and_query_string(
 def test_cache_entry_expires_after_configured_ttl(
     redis_test_config: RedisTestConfig,
 ) -> None:
+    """Covers: API-021 — cache entries miss after their configured TTL."""
     application, state = _cache_application(redis_test_config.url, ttl_seconds=1)
 
     with TestClient(application) as client:
@@ -114,6 +118,7 @@ def test_cache_entry_expires_after_configured_ttl(
 
 
 def test_redis_unavailable_falls_back_within_budget() -> None:
+    """Covers: API-023 — Redis failure preserves response within budget."""
     application, state = _cache_application("redis://127.0.0.1:1/15")
 
     started = time.perf_counter()
