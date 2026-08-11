@@ -63,7 +63,7 @@ Every automated test must follow Arrange-Act-Assert, have a descriptive name, ow
 | HTTP fixture mocking | `respx` for `httpx`; `responses` only where `requests` remains | Deterministic upstream response and failure simulation |
 | API testing | FastAPI `TestClient` / `httpx.AsyncClient` | Router, middleware, schema, and response-contract tests |
 | DAG testing | Airflow 2.9.3 `airflow.models.DagBag` | Import, metadata, task, dependency, pool, and timing checks |
-| Database testing | `postgres:16-alpine` container, `psycopg2`, SQLAlchemy 2.x in the API environment | Real DDL, transactions, upserts, and query behavior |
+| Database testing | Pinned `postgis/postgis:16-3.5-alpine` container, `psycopg2`, SQLAlchemy 2.x in the API environment | Real spatial/non-spatial DDL, transactions, upserts, and query behavior |
 | Redis testing | A disposable Redis 7 service | Real cache hit, miss, expiry, and outage behavior |
 | Linting | `ruff` | Formatting and static lint checks |
 | Package validation | `build`, `pip check` | Wheel/sdist creation and dependency consistency |
@@ -97,15 +97,15 @@ This environment runs API unit, router, service, cache, contract, and API/Postgr
 
 The environments remain separate until Airflow and API SQLAlchemy requirements are demonstrably compatible. CI must create each environment from a fresh checkout.
 
-### PostgreSQL Test Dependency
+### PostGIS-enabled PostgreSQL Test Dependency
 
-The authoritative PostgreSQL dependency for the testing suite is the official `postgres:16-alpine` container image. All database integration, API integration, end-to-end, database performance, and database resilience tests must run against this image locally and in CI.
+The authoritative warehouse dependency for the testing suite is `postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd`. It provides PostgreSQL 16 and PostGIS 3.5 for the repository's spatial reference and gold DDL. All database integration, API integration, end-to-end, database performance, and database resilience tests must run against this exact image locally and in CI.
 
 - Do not substitute a different PostgreSQL major version in a required test job.
-- Do not use the floating `postgres:latest` tag.
+- Do not use a floating tag such as `postgis/postgis:latest` or omit the digest.
 - Container credentials and database names must be test-only values supplied through the test runner or CI environment.
 - Each CI job starts a fresh container without a reused data volume.
-- A future image or major-version change requires an explicit dependency update and a full clean-bootstrap, integration, end-to-end, and performance validation run.
+- Keep the readable tag and immutable manifest digest together. A future tag or digest change requires an explicit dependency update and a full clean-bootstrap, integration, end-to-end, and performance validation run.
 
 ## Test Organization and Markers
 
@@ -168,7 +168,7 @@ The project must be installed in editable mode in each test environment so tests
 | `dag` | Airflow DAG import and structure | Airflow metadata initialized locally; no source/database calls |
 | `api` | FastAPI router, service, schema, or middleware | Mocked by default |
 | `integration` | Multiple real application components | Only explicitly declared disposable services |
-| `database` | Real isolated PostgreSQL | Disposable `postgres:16-alpine` only |
+| `database` | Real isolated spatial PostgreSQL | Disposable pinned PostGIS 16 image only |
 | `redis` | Real isolated Redis | Disposable Redis only |
 | `external` | Live source contract | Network and CI-managed credentials |
 | `e2e` | Raw-to-API deterministic flow | Disposable PostgreSQL and optionally Redis |
@@ -210,7 +210,7 @@ Plain `pytest` will be configured to exclude `database`, `redis`, `external`, `e
 - Time-sensitive behavior uses a fixed clock.
 - Randomized values use a recorded seed.
 - Unit tests replace HTTP clients, database factories, Airflow hooks, and Redis clients before the application action occurs.
-- A session-scoped `postgres:16-alpine` container may be shared for speed, but every test receives a unique database or schema and transaction boundary.
+- A session-scoped container using the pinned PostGIS 16 image may be shared for speed, but every test receives a unique database or schema and transaction boundary.
 - Integration cleanup is verified even after assertion or application failure.
 - CI jobs never reuse a database volume, Redis state, Airflow home, or ingestion ledger from another job.
 - External tests use environment variables or CI secret storage only.
@@ -298,7 +298,7 @@ All tests in this section use local fixtures and mocked boundaries.
 
 ### PostgreSQL Integration Tests
 
-PostgreSQL integration tests apply repository DDL to clean isolated state in a `postgres:16-alpine` container. They never point at a developer's default database unless an explicit test-only opt-in is set.
+PostgreSQL integration tests apply repository DDL to clean isolated state in the pinned PostGIS 16 container. They never point at a developer's default database unless an explicit test-only opt-in is set.
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
@@ -435,8 +435,8 @@ Jobs are independent and start from a fresh checkout.
 | `etl-unit` | Airflow/ETL Python 3.11 | Deterministic ETL/shared unit tests | Required | JUnit and coverage XML |
 | `dag-parse` | Airflow 2.9.3 Python 3.11 | DAG-001 through DAG-012 | Required | JUnit, import errors, parse timings |
 | `api-unit` | API Python 3.11 | Mocked API/router/service/middleware tests | Required | JUnit and coverage XML |
-| `postgres-integration` | Airflow/ETL Python 3.11 + fresh `postgres:16-alpine` | P1 database integration tests as implemented | Required once stable | JUnit and PostgreSQL diagnostics on failure |
-| `api-integration` | API Python 3.11 + fresh `postgres:16-alpine` + Redis 7 | API-019 through API-024 as implemented | Required once stable | JUnit and sanitized service logs |
+| `postgres-integration` | Airflow/ETL Python 3.11 + fresh pinned PostGIS 16 | P1 database integration tests as implemented | Required once stable | JUnit and PostgreSQL diagnostics on failure |
+| `api-integration` | API Python 3.11 + fresh pinned PostGIS 16 + Redis 7 | API-019 through API-024 as implemented | Required once stable | JUnit and sanitized service logs |
 | `coverage` | No service | Combine compatible application coverage reports and enforce gates | Required | HTML/XML coverage report |
 
 Jobs cache package downloads keyed by OS, Python version, dependency inputs, Airflow version, and constraints URL/hash. They do not cache virtual environments, database volumes, Redis state, `.airflow`, test results, or coverage data between runs.
@@ -486,7 +486,7 @@ Exit criteria: a fresh checkout can run deterministic tests and all four DAGs in
 
 ### Phase 1: Infrastructure and Deterministic Flow
 
-- Add isolated `postgres:16-alpine` and Redis fixtures.
+- Add isolated pinned PostGIS 16 and Redis fixtures.
 - Implement database constraints, idempotency, rollback, cleanup, API/database, and cache integration tests.
 - Add one deterministic end-to-end fixture for each source.
 - Add initial retry/failure-injection coverage.

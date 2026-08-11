@@ -10,6 +10,12 @@ import psycopg2
 from psycopg2.extensions import connection
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+WAREHOUSE_DATABASE_IMAGE = (
+    "postgis/postgis:16-3.5-alpine@"
+    "sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd"
+)
+EXPECTED_POSTGRES_MAJOR = 16
+EXPECTED_POSTGIS_MAJOR_MINOR = "3.5"
 RAW_DDL_FILES = (
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql",
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/bls/DDL/raw_bls.sql",

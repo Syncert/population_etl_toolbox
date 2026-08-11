@@ -698,11 +698,12 @@ their disposable services and environment flags.
 
 #### PostgreSQL integration tests
 
-The raw-schema integration suite requires a fresh `postgres:16-alpine`
-instance and refuses to connect unless all `TEST_POSTGRES_*` variables are set
-and the database name ends in `_test`. It bootstraps only the raw Census, BLS,
-and FRED schemas; the PostGIS-dependent silver/gold bootstrap will be added as
-a separate integration slice.
+The database integration suite requires the pinned
+`postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd`
+image and refuses to connect unless all `TEST_POSTGRES_*` variables are set and
+the database name ends in `_test`. The current tests bootstrap the raw Census,
+BLS, and FRED schemas. Reference, silver, gold, and contract DDL will use the
+same PostGIS-enabled fixture as those integration slices are added.
 
 ```bash
 export TEST_POSTGRES_HOST=127.0.0.1

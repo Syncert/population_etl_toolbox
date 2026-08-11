@@ -8,9 +8,38 @@ import psycopg2
 import pytest
 from psycopg2.extensions import connection
 
-from tests.support.postgres import RAW_DDL_FILES, apply_sql_files
+from tests.support.postgres import (
+    EXPECTED_POSTGIS_MAJOR_MINOR,
+    EXPECTED_POSTGRES_MAJOR,
+    RAW_DDL_FILES,
+    apply_sql_files,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
+
+
+def test_warehouse_database_has_pinned_postgres_and_postgis(
+    postgres_connection: connection,
+) -> None:
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                current_setting('server_version_num')::INTEGER,
+                extversion
+            FROM pg_extension
+            WHERE extname = 'postgis'
+            """
+        )
+        version_row = cursor.fetchone()
+        cursor.execute("SELECT ST_SRID(ST_GeomFromText('POINT(0 0)', 4326))")
+        spatial_reference_id = cursor.fetchone()[0]
+
+    assert version_row is not None, "The warehouse test database lacks PostGIS"
+    postgres_version, postgis_version = version_row
+    assert postgres_version // 10_000 == EXPECTED_POSTGRES_MAJOR
+    assert postgis_version.startswith(f"{EXPECTED_POSTGIS_MAJOR_MINOR}.")
+    assert spatial_reference_id == 4326
 
 
 def test_raw_ddl_creates_every_source_table(postgres_connection: connection) -> None:

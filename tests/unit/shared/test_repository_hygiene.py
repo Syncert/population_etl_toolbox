@@ -5,6 +5,8 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from tests.support.postgres import WAREHOUSE_DATABASE_IMAGE
+
 pytestmark = pytest.mark.unit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -71,3 +73,16 @@ def test_automated_test_assets_are_centralized() -> None:
             outside_tests.append(str(path))
 
     assert outside_tests == []
+
+
+def test_warehouse_database_image_pin_is_consistent() -> None:
+    assert "@sha256:" in WAREHOUSE_DATABASE_IMAGE
+    for relative_path in (
+        ".github/workflows/postgres-integration.yml",
+        "README.md",
+        "TESTING_PLAN.md",
+    ):
+        contents = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+        assert WAREHOUSE_DATABASE_IMAGE in contents, (
+            f"{relative_path} does not use the authoritative warehouse image pin"
+        )
