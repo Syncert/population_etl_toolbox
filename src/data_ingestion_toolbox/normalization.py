@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -16,6 +18,16 @@ class NumericParseError(ValueError):
 
 DEFAULT_NULL_TOKENS = frozenset({"", ".", "NA", "N/A", "NULL", "-"})
 RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503})
+
+
+def stable_records_hash(records: Iterable[object]) -> str:
+    """Return an order-independent SHA-256 fingerprint for JSON-like records."""
+    canonical_records = [
+        json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
+        for record in records
+    ]
+    payload = "\n".join(sorted(canonical_records)).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def parse_decimal(
@@ -156,8 +168,10 @@ def call_with_retry_budget(
     *,
     max_attempts: int,
     retryable: Callable[[BaseException], bool],
+    backoff_seconds: Callable[[int], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
 ) -> T:
-    """Run an operation with an exact, sleep-free retry budget."""
+    """Run an operation with an exact retry budget and injectable backoff."""
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")
     for attempt in range(1, max_attempts + 1):
@@ -166,4 +180,10 @@ def call_with_retry_budget(
         except BaseException as exc:
             if attempt == max_attempts or not retryable(exc):
                 raise
+            if backoff_seconds is not None:
+                delay = backoff_seconds(attempt)
+                if delay < 0:
+                    raise ValueError("Retry backoff cannot be negative")
+                if sleep is not None:
+                    sleep(delay)
     raise AssertionError("unreachable")

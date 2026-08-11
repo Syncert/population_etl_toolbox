@@ -1,0 +1,97 @@
+name: e2e-performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_million_row_profile:
+        description: Run the million-row memory/throughput profile
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "30 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+        env:
+          POSTGRES_USER: population_test
+          POSTGRES_PASSWORD: population_test
+          POSTGRES_DB: population_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U population_test -d population_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RUN_INTEGRATION_TESTS: "1"
+      RUN_E2E_TESTS: "1"
+      RUN_PERFORMANCE_TESTS: "1"
+      RUN_FULL_PERFORMANCE_TESTS: ${{ (github.event_name == 'schedule' || inputs.full_million_row_profile) && '1' || '0' }}
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install API, ETL, and test dependencies
+        run: |
+          python -m pip install -e ".[api,dev,performance]"
+          python -m pip check
+
+      - name: Run end-to-end and resilience contracts
+        run: >-
+          pytest tests/e2e tests/resilience
+          tests/integration/database/test_database_operability.py
+          tests/integration/api/test_connection_capacity.py
+          -m "(e2e or integration) and slow"
+          --tb=short -q --junitxml=junit-e2e-resilience.xml
+
+      - name: Run real API/database contract
+        run: >-
+          pytest tests/integration/api/test_real_database_contract.py
+          -m "integration and api and database"
+          --tb=short -q --junitxml=junit-api-database.xml
+
+      - name: Run performance contracts
+        run: >-
+          pytest tests/performance -m performance
+          --tb=short -q --junitxml=junit-performance.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-performance-results
+          path: junit-*.xml

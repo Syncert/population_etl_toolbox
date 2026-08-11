@@ -4,14 +4,17 @@ import logging
 import uuid
 from datetime import datetime, timezone, date
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import polars as pl
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.bls.config import CONFIG as RAW_CONFIG, LAUS_MEASURE_META
 from .geography_parser import parse_bls_geography
 from .time_utils import parse_bls_period_to_date
+
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +155,8 @@ class TransformMetrics:
 
 
 def _get_hook() -> PostgresHook:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
 
@@ -167,10 +172,11 @@ def _load_time_dim(
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
+    schema = {"time_sk": pl.Int64, "date_key": pl.Date}
     return (
-        pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"])
+        pl.DataFrame(rows, orient="row", schema=schema)
         if rows
-        else pl.DataFrame(schema=["time_sk", "date_key"])
+        else pl.DataFrame(schema=schema)
     )
 
 
@@ -313,7 +319,7 @@ def _upsert_silver_rows(
                 r.get("measure_name"),
                 r["seasonal_adjustment"] or "U",
                 "BLS",
-                load_batch_id,
+                str(load_batch_id),
                 ingested_at,
             )
         )

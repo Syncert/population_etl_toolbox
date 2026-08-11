@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pydantic import BaseModel, Field
 from typing import List
+
+import os
+from pydantic import BaseModel, Field, field_validator
 
 
 class AcsConfig(BaseModel):
@@ -91,6 +92,34 @@ class AcsConfig(BaseModel):
     @property
     def has_api_key(self) -> bool:
         return bool(self.census_api_key)
+
+    @field_validator("postgres_conn_id")
+    @classmethod
+    def validate_postgres_conn_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("postgres_conn_id must not be empty")
+        return value
+
+    @field_validator("datasets", "curated_tables", "geo_levels")
+    @classmethod
+    def validate_nonempty_scope(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("configured ingestion scope must not be empty")
+        return value
+
+    @field_validator("census_api_global_concurrency")
+    @classmethod
+    def validate_positive_concurrency(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("census_api_global_concurrency must be at least 1")
+        return value
+
+    @field_validator("census_api_min_spacing_seconds")
+    @classmethod
+    def validate_nonnegative_spacing(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("census_api_min_spacing_seconds must not be negative")
+        return value
 
 
 CONFIG = AcsConfig()

@@ -1,4 +1,5 @@
 name: dag-parse
+# Covers: ENV-002 — fresh Airflow/ETL install and dependency compatibility.
 
 on:
   pull_request:

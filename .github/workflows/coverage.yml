@@ -40,6 +40,7 @@ jobs:
           python -m pip check
 
       - name: Run deterministic unit coverage
+        # Covers: PERF-001 — deterministic unit tests must finish within 120 seconds.
         run: >-
           timeout 120s pytest tests/unit -q --tb=short
           --cov=apps --cov=data_ingestion_toolbox

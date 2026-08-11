@@ -5,12 +5,20 @@ from __future__ import annotations
 import os
 import socket
 import json
+import tempfile
 from pathlib import Path
 from typing import Iterator
 
 import pytest
 
 _FIXTURES = Path(__file__).parent / "fixtures"
+
+if os.environ.get("RUN_INTEGRATION_TESTS") == "1":
+    os.environ.setdefault(
+        "AIRFLOW_HOME",
+        str(Path(tempfile.gettempdir()) / "population-etl-airflow-integration"),
+    )
+    os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
 
 
 @pytest.fixture
@@ -30,6 +38,7 @@ collect_ignore: list[str] = []
 for _directory, _flag in {
     "dags": "RUN_DAG_TESTS",
     "integration": "RUN_INTEGRATION_TESTS",
+    "resilience": "RUN_INTEGRATION_TESTS",
     "external": "RUN_EXTERNAL_TESTS",
     "e2e": "RUN_E2E_TESTS",
     "performance": "RUN_PERFORMANCE_TESTS",

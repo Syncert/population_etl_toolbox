@@ -7,6 +7,7 @@ from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import DisconnectionError, OperationalError
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
@@ -43,6 +44,14 @@ class _RecordingEmptySession:
 class _NoExecuteSession:
     def execute(self, query, params=None):
         raise AssertionError(f"database was called: {query!s}, {params!r}")
+
+
+class _FailingSession:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def execute(self, _query, _params=None):
+        raise self.error
 
 
 @contextmanager
@@ -120,6 +129,22 @@ def test_unknown_metric_is_consistently_empty_for_latest_and_history() -> None:
     assert latest.json()["total"] == history.json()["total"] == 0
 
 
+def test_unknown_geography_is_consistently_empty_for_history() -> None:
+    """Covers: API-009 — an unknown geography returns the empty contract."""
+    with _client_for(_RecordingEmptySession()) as client:
+        common = client.get(
+            "/api/observations/timeseries",
+            params={"metric_code": "POP_TOTAL", "geo_id": "state:00"},
+        )
+        census = client.get(
+            "/api/census/observations/timeseries",
+            params={"metric_code": "POP_TOTAL", "geo_id": "state:00"},
+        )
+    assert common.status_code == census.status_code == 200
+    assert common.json()["items"] == census.json()["items"] == []
+    assert common.json()["total"] == census.json()["total"] == 0
+
+
 def test_sql_metacharacters_remain_bound_parameters() -> None:
     """Covers: API-017 — injection text remains bound parameter data."""
     attack = "POP'; DROP TABLE gold.metric_catalog; --"
@@ -142,6 +167,68 @@ def test_oversized_metric_is_rejected_before_database() -> None:
             "/api/observations/latest", params={"metric_code": "X" * 201}
         )
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        ("/api/observations/latest", {"metric_id": "X" * 201}),
+        (
+            "/api/observations/timeseries",
+            {"metric_code": "POP", "geo_id": "X" * 201},
+        ),
+        (
+            "/api/census/observations/latest",
+            {"metric_code": "POP", "geo_level": "X" * 51},
+        ),
+        (
+            "/api/bls/observations/latest",
+            {"metric_code": "UNEMP", "state_fips": "123"},
+        ),
+        ("/api/catalog/metrics", {"source_code": "X" * 51}),
+        ("/api/catalog/metrics", {"q": "X" * 201}),
+        (
+            "/api/comparison",
+            {
+                "metric_code_a": "A",
+                "metric_code_b": "B",
+                "geo_level": "X" * 51,
+            },
+        ),
+        (
+            "/api/distribution/bins",
+            {"metric_code": "POP", "state_fips": "123"},
+        ),
+    ],
+)
+def test_endpoint_specific_query_size_limits_precede_database(
+    path: str, params: dict
+) -> None:
+    """Covers: API-018 — endpoint query-size limits precede database work."""
+    with _client_for(_NoExecuteSession()) as client:
+        assert client.get(path, params=params).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError(
+            "SELECT secret FROM host",
+            {"password": "do-not-leak"},
+            TimeoutError("database.example.test timed out"),
+        ),
+        DisconnectionError("database.example.test disconnected"),
+    ],
+    ids=("timeout", "disconnect"),
+)
+def test_database_timeout_and_disconnect_are_sanitized(error: Exception) -> None:
+    """Covers: API-016 — timeout and disconnect return a sanitized 503."""
+    with _client_for(_FailingSession(error)) as client:
+        response = client.get("/api/catalog/sources")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database service is temporarily unavailable."}
+    assert "do-not-leak" not in response.text
+    assert "database.example.test" not in response.text
 
 
 @pytest.mark.parametrize(

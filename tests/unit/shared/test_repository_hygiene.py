@@ -143,3 +143,21 @@ def test_python_tests_reference_known_catalog_ids() -> None:
                 )
 
     assert failures == [], "\n".join(failures)
+
+
+def test_every_catalog_id_has_an_implementation_reference() -> None:
+    """Covers: ENV-010 — every catalog item maps to a test or CI/config check."""
+    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
+    known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
+
+    implementation_paths = list((REPOSITORY_ROOT / "tests").rglob("test_*.py"))
+    implementation_paths.extend((REPOSITORY_ROOT / ".github/workflows").glob("*.yml"))
+    implementation_paths.append(REPOSITORY_ROOT / "pyproject.toml")
+    referenced_ids: set[str] = set()
+    for path in implementation_paths:
+        referenced_ids.update(
+            re.findall(catalog_id_pattern, path.read_text(encoding="utf-8"))
+        )
+
+    assert known_ids - referenced_ids == set()

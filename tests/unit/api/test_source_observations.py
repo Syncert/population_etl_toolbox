@@ -6,7 +6,7 @@ Covers: API-013 (source-specific endpoints return only their source),
 """
 
 import pytest
-from datetime import datetime
+from datetime import date, datetime
 from fastapi.testclient import TestClient
 
 from apps.api.dependencies import get_db_session_dep
@@ -78,9 +78,11 @@ class _SourceSchemaSession:
     def __init__(self, source_schema: str, rows: list):
         self._schema = source_schema
         self._rows = rows
+        self.calls: list[tuple[str, dict]] = []
 
     def execute(self, query, params=None):
         sql = str(query).lower()
+        self.calls.append((sql, params or {}))
 
         if "to_regclass" in sql:
             return _FakeResult(scalar_value=True)
@@ -327,3 +329,97 @@ def test_source_timeseries_routes_preserve_source_contract(
     payload = response.json()
     assert payload["total"] == 1
     assert {item["source"] for item in payload["items"]} == {source_code}
+
+
+@pytest.mark.unit
+@pytest.mark.api
+@pytest.mark.parametrize(
+    ("source_path", "source_schema", "latest_table", "history_table"),
+    [
+        ("bls", "gold_bls", "gold_bls.mv_bls_latest", "gold_bls.rpt_bls_observations"),
+        (
+            "census",
+            "gold_census",
+            "gold_census.mv_acs_latest",
+            "gold_census.rpt_acs_observations",
+        ),
+        (
+            "fred",
+            "gold_fred",
+            "gold_fred.mv_fred_latest",
+            "gold_fred.rpt_fred_observations",
+        ),
+    ],
+)
+def test_source_filters_reach_exact_source_queries(
+    source_path: str,
+    source_schema: str,
+    latest_table: str,
+    history_table: str,
+) -> None:
+    """Covers: API-010 — all filters reach exact source-aware queries."""
+    session = _SourceSchemaSession(source_schema, [])
+
+    def _override_db():
+        yield session
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        latest = client.get(
+            f"/api/{source_path}/observations/latest",
+            params={
+                "metric_code": "METRIC",
+                "geo_level": "STATE",
+                "state_fips": "06",
+                "limit": 17,
+                "offset": 4,
+            },
+        )
+        history = client.get(
+            f"/api/{source_path}/observations/timeseries",
+            params={
+                "metric_code": "METRIC",
+                "geo_id": "state:06",
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "limit": 19,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert latest.status_code == history.status_code == 200
+    latest_calls = [
+        (sql, params)
+        for sql, params in session.calls
+        if f"from {latest_table}" in sql and "metric_code" in params
+    ]
+    history_calls = [
+        (sql, params)
+        for sql, params in session.calls
+        if f"from {history_table}" in sql and "metric_code" in params
+    ]
+    assert len(latest_calls) == len(history_calls) == 2
+    assert all(
+        params
+        == {
+            "metric_code": "METRIC",
+            "geo_level": "STATE",
+            "state_fips": "06",
+            "limit": 17,
+            "offset": 4,
+        }
+        for _, params in latest_calls
+    )
+    assert all(
+        params
+        == {
+            "metric_code": "METRIC",
+            "geo_id": "state:06",
+            "start_date": date(2024, 1, 1),
+            "end_date": date(2024, 12, 31),
+            "limit": 19,
+        }
+        for _, params in history_calls
+    )

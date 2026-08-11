@@ -92,7 +92,10 @@ def _get_postgres_hook() -> PostgresHook:
 
     Keeps the conn_id in one place, so changing it in CONFIG affects all tasks.
     """
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
+        raise RuntimeError("PostgreSQL connection ID is not configured")
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _silver_ddl_path() -> Path:

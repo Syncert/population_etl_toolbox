@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how testing will be introduced and expanded for the Population ETL Toolbox. The immediate goal of the `feat/testing_suite` branch is to establish the beginning of a reproducible, isolated test suite. It is not expected to implement every test in this plan at once.
+This document defines the reproducible, isolated test system for the Population ETL Toolbox. All catalog items now have checked-in automation; the implementation-status table records the current audit and the detailed catalog remains the source of truth for each pass metric.
 
 The finished testing system must cover the repository's independently testable surfaces:
 
@@ -237,17 +237,33 @@ Last audited against the repository on 2026-08-11. **Implemented** means that ch
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-010 | None |
-| Airflow DAGs | DAG-001–DAG-012 | DAG-013–DAG-014 |
-| ETL and shared units | ETL-001–ETL-025, ETL-031–ETL-037 | ETL-026–ETL-030 |
-| Database integration | DB-001–DB-006, DB-014 | DB-007–DB-013, DB-015–DB-018 |
-| API | API-001–API-008, API-011–API-015, API-017, API-019–API-023, API-025–API-027 | API-009–API-010, API-016, API-018, API-024 |
-| External source contracts | EXT-007–EXT-010 | EXT-001–EXT-006 |
-| End-to-end | None | E2E-001–E2E-006 |
-| Performance | PERF-001–PERF-002 | PERF-003–PERF-010 |
-| Resilience | None | RES-001–RES-008 |
-| **Total** | **89 of 140** | **51 of 140** |
+| Airflow DAGs | DAG-001–DAG-014 | None |
+| ETL and shared units | ETL-001–ETL-037 | None |
+| Database integration | DB-001–DB-018 | None |
+| API | API-001–API-027 | None |
+| External source contracts | EXT-001–EXT-010 | None |
+| End-to-end | E2E-001–E2E-006 | None |
+| Performance | PERF-001–PERF-010 | None |
+| Resilience | RES-001–RES-008 | None |
+| **Total** | **140 of 140** | **0 of 140** |
 
-Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [database integration tests](../../tests/integration/database/), [Redis integration tests](../../tests/integration/redis/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
+Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
+
+Latest implementation validation on 2026-08-11:
+
+| Validation tier | Result | Notes |
+|---|---:|---|
+| Default deterministic suite | 333 passed | No database, Redis, external network, or credentials required |
+| Host DAG suite | 36 passed | Airflow 2.9.3 DAG parsing and structure contracts |
+| Scheduler-image DAG suite | 35 passed, 1 skipped | Skip is the host-only workflow-file assertion; image dependencies also pass `pip check` |
+| PostgreSQL, Redis, and API integration | 46 passed, 4 skipped | Skips are controlled by declared environment guards |
+| Raw-to-silver-to-gold-to-API end-to-end | 3 passed | Census, BLS, and FRED deterministic fixture flows |
+| Bounded performance profiles | 7 passed, 1 skipped | Million-row PERF-006 profile remains opt-in and runs in scheduled CI |
+| Redis outage resilience | 1 passed | Database resilience cases are included in the integration result above |
+| External source contracts | Scheduled | Credential/network-gated EXT tests are implemented but were not invoked in the local validation |
+| Formatting, lint, and diff checks | Passed | `ruff format --check`, `ruff check`, and `git diff --check` |
+
+The traceability guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID lacks an implementation reference in tests, CI, or configuration.
 
 Test docstrings use the following traceability labels:
 

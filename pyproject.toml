@@ -38,8 +38,11 @@ dev = [
   "pytest-cov==5.0.0",
   "ruff==0.15.16",
 ]
+performance = [
+  "locust==2.32.6",
+]
 local = [
-  "data-ingestion-toolbox[api,dev]",
+  "data-ingestion-toolbox[api,dev,performance]",
 ]
 airflow-dev = [
   "data-ingestion-toolbox[airflow,dev]",
@@ -55,6 +58,7 @@ exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Covers: ENV-004 — unknown pytest markers fail collection.
 addopts = "--strict-markers -m 'not database and not redis and not external and not e2e and not performance and not slow'"
 filterwarnings = [
   "error::pytest.PytestUnhandledCoroutineWarning",

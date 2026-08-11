@@ -75,7 +75,10 @@ BLS_API_POOL = "bls_api"
 
 def _get_postgres_hook() -> PostgresHook:
     """Centralized PostgresHook factory."""
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
+        raise RuntimeError("PostgreSQL connection ID is not configured")
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _silver_ddl_path() -> Path:

@@ -1,0 +1,13 @@
+{
+  "api_cache_hit_p95_seconds": 0.2,
+  "api_cache_hit_p99_seconds": 0.5,
+  "api_cache_miss_p95_seconds": 0.75,
+  "api_cache_miss_p99_seconds": 1.5,
+  "high_cardinality_p95_seconds": 0.625,
+  "million_rows_per_second": 50000,
+  "million_peak_memory_mb": 750,
+  "many_slices_seconds": 5.0,
+  "database_pool_max": 8,
+  "refresh_api_p95_seconds": 0.5,
+  "critical_query_ms": 100
+}

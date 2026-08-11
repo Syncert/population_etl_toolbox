@@ -1,4 +1,5 @@
 name: package-api
+# Covers: ENV-001, ENV-005 — fresh API install and clean package build contracts.
 
 on:
   pull_request:

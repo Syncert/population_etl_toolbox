@@ -10,6 +10,7 @@ Run these tests in the dedicated airflow-dev venv:
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import time
 from pathlib import Path
@@ -328,3 +329,65 @@ def test_complete_dag_folder_parses_within_10_seconds() -> None:
     elapsed = time.monotonic() - start
     assert bag.import_errors == {}, bag.import_errors
     assert elapsed < 10.0, f"Complete DAG folder took {elapsed:.2f}s (limit: 10s)"
+
+
+@pytest.mark.dag
+def test_scheduler_image_workflow_runs_the_same_dag_suite() -> None:
+    """Covers: DAG-013 — the deployed scheduler image runs the DAG suite."""
+    repository_root = Path(__file__).resolve().parents[2]
+    workflow_path = repository_root / ".github/workflows/scheduler-image.yml"
+    if not workflow_path.exists():
+        pytest.skip("CI workflow metadata is intentionally excluded from the image")
+    workflow = workflow_path.read_text(encoding="utf-8")
+    dockerfile = (repository_root / "infra/airflow/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert "infra/airflow/Dockerfile" in workflow
+    assert "INSTALL_EXTRAS=airflow-dev" in workflow
+    assert "-m pytest -m dag tests/dags" in workflow
+    assert "ARG INSTALL_EXTRAS=airflow" in dockerfile
+    assert "FROM apache/airflow:2.9.3-python3.11" in dockerfile
+    assert (
+        'pip install --no-cache-dir -e "/opt/population_etl_toolbox[${INSTALL_EXTRAS}]"'
+        in dockerfile
+    )
+
+
+@pytest.mark.dag
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "dags.silver_ref_dag",
+        "dags.acs_ingest_dag",
+        "dags.bls_ingest_dag",
+        "dags.fred_ingest_dag",
+    ],
+)
+def test_missing_connection_fails_at_runtime_with_sanitized_error(
+    dagbag, monkeypatch: pytest.MonkeyPatch, module_name: str
+) -> None:
+    """Covers: DAG-014 — missing connections fail clearly after DAG parsing."""
+    assert dagbag.import_errors == {}
+    module = importlib.import_module(module_name)
+    monkeypatch.setattr(module.CONFIG, "postgres_conn_id", "")
+
+    with pytest.raises(
+        RuntimeError, match=r"^PostgreSQL connection ID is not configured$"
+    ) as caught:
+        module._get_postgres_hook()
+
+    assert "password" not in str(caught.value).lower()
+    assert "postgresql://" not in str(caught.value).lower()
+
+
+@pytest.mark.dag
+def test_missing_fred_key_fails_at_runtime_not_import(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: DAG-014 — a missing required API key fails only at runtime."""
+    assert dagbag.import_errors == {}
+    from data_ingestion_toolbox.fred import ingest
+
+    monkeypatch.setattr(ingest.CONFIG, "fred_api_key", "")
+    with pytest.raises(ValueError, match=r"^FRED_API_KEY required for FRED ingestion$"):
+        ingest.fetch_fred_observations.__wrapped__("UNRATE", "2024-01-01", "2024-01-31")

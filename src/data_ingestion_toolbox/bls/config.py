@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pydantic import BaseModel, Field
 from typing import List, Dict
+
+import os
+from pydantic import BaseModel, Field, field_validator
 
 
 class BlsConfig(BaseModel):
@@ -198,6 +199,48 @@ class BlsConfig(BaseModel):
     @property
     def has_api_key(self) -> bool:
         return bool(self.bls_api_key)
+
+    @field_validator("postgres_conn_id")
+    @classmethod
+    def validate_postgres_conn_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("postgres_conn_id must not be empty")
+        return value
+
+    @field_validator("programs")
+    @classmethod
+    def validate_program_scope(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("configured BLS program scope must not be empty")
+        return value
+
+    @field_validator("curated_by_program")
+    @classmethod
+    def validate_curated_scope(
+        cls, value: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        if not value or any(not series for series in value.values()):
+            raise ValueError("configured BLS series scope must not be empty")
+        return value
+
+    @field_validator(
+        "bls_api_global_concurrency",
+        "bls_api_series_chunk_size",
+        "bls_api_year_chunk_size",
+        "silver_max_active_tis",
+    )
+    @classmethod
+    def validate_positive_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("BLS concurrency and batch sizes must be at least 1")
+        return value
+
+    @field_validator("bls_api_min_spacing_seconds")
+    @classmethod
+    def validate_nonnegative_spacing(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("bls_api_min_spacing_seconds must not be negative")
+        return value
 
 
 CONFIG = BlsConfig()

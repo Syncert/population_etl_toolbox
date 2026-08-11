@@ -113,14 +113,14 @@ def _source_select_sql(source: str) -> str:
         else "NULL::TEXT AS vintage"
     )
     moe_expr = (
-        "margin_of_error"
+        "margin_of_error::TEXT AS margin_of_error"
         if normalized == "census"
-        else "NULL::NUMERIC AS margin_of_error"
+        else "NULL::TEXT AS margin_of_error"
     )
     moe_pct_expr = (
-        "margin_of_error_pct"
+        "margin_of_error_pct::TEXT AS margin_of_error_pct"
         if normalized == "census"
-        else "NULL::NUMERIC AS margin_of_error_pct"
+        else "NULL::TEXT AS margin_of_error_pct"
     )
 
     return f"""
@@ -146,7 +146,7 @@ def _source_select_sql(source: str) -> str:
         metric_code,
         metric_display_name,
         dashboard_suitability,
-        value,
+        value::TEXT AS value,
         value_type,
         units,
         units AS unit,

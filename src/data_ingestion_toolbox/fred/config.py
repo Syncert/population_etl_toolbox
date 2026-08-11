@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pydantic import BaseModel, Field
 from typing import List, Dict
+
+import os
+from pydantic import BaseModel, Field, field_validator
 
 
 class FredConfig(BaseModel):
@@ -200,6 +201,47 @@ class FredConfig(BaseModel):
             )
 
         return {domain: list(self.curated_by_domain[domain]) for domain in self.domains}
+
+    @field_validator("postgres_conn_id")
+    @classmethod
+    def validate_postgres_conn_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("postgres_conn_id must not be empty")
+        return value
+
+    @field_validator("domains", "curated_series_ids")
+    @classmethod
+    def validate_nonempty_scope(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("configured FRED scope must not be empty")
+        return value
+
+    @field_validator("curated_by_domain")
+    @classmethod
+    def validate_nonempty_domain_map(
+        cls, value: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        if not value or any(not series for series in value.values()):
+            raise ValueError("configured FRED domain scope must not be empty")
+        return value
+
+    @field_validator(
+        "fred_api_global_concurrency",
+        "fred_api_series_chunk_size",
+        "silver_max_active_tis",
+    )
+    @classmethod
+    def validate_positive_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("FRED concurrency and batch sizes must be at least 1")
+        return value
+
+    @field_validator("fred_api_min_spacing_seconds")
+    @classmethod
+    def validate_nonnegative_spacing(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("fred_api_min_spacing_seconds must not be negative")
+        return value
 
 
 CONFIG = FredConfig()

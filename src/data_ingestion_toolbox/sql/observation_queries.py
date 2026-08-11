@@ -47,7 +47,7 @@ _MVP_SELECT = """
     metric_code,
     metric_display_name,
     dashboard_suitability,
-    value,
+    value::TEXT AS value,
     value_type,
     units,
     units AS unit,
@@ -56,8 +56,8 @@ _MVP_SELECT = """
     dataset_code AS dataset,
     vintage_year,
     vintage_year::TEXT AS vintage,
-    margin_of_error,
-    margin_of_error_pct
+    margin_of_error::TEXT AS margin_of_error,
+    margin_of_error_pct::TEXT AS margin_of_error_pct
 """
 
 # Legacy select (pre-MVP views) – narrower column set, NULLed extensions
@@ -84,7 +84,7 @@ _LEGACY_SELECT = """
     metric_code,
     metric_display_name,
     dashboard_suitability,
-    value,
+    value::TEXT AS value,
     value_type,
     units,
     units AS unit,
@@ -93,8 +93,8 @@ _LEGACY_SELECT = """
     NULL::TEXT AS dataset,
     NULL::INT AS vintage_year,
     NULL::TEXT AS vintage,
-    NULL::NUMERIC AS margin_of_error,
-    NULL::NUMERIC AS margin_of_error_pct
+    NULL::TEXT AS margin_of_error,
+    NULL::TEXT AS margin_of_error_pct
 """
 
 

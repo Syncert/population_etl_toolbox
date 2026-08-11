@@ -1,0 +1,44 @@
+name: external-contract
+
+on:
+  schedule:
+    - cron: "23 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contracts:
+    name: Census, BLS, and FRED live contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    env:
+      RUN_EXTERNAL_TESTS: "1"
+      CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+      BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install source contract dependencies
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pip check
+
+      - name: Run external source contracts
+        run: >-
+          pytest tests/external -m external --tb=short -q
+          --junitxml=junit-external.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: external-contract-results
+          path: junit-external.xml

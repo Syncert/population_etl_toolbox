@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import psycopg2
 from psycopg2.extensions import connection
@@ -110,3 +111,35 @@ def apply_sql_files(database_connection: connection, paths=WAREHOUSE_DDL_FILES) 
     with database_connection.cursor() as cursor:
         for path in paths:
             cursor.execute(path.read_text(encoding="utf-8"))
+
+
+class ClosingConnection:
+    """Connection context that always closes the underlying test connection."""
+
+    def __init__(self, database_connection: connection) -> None:
+        self._connection = database_connection
+
+    def __enter__(self) -> connection:
+        return self._connection
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        try:
+            if exc_type is None:
+                self._connection.commit()
+            else:
+                self._connection.rollback()
+        finally:
+            self._connection.close()
+
+
+class PostgresHookStub:
+    """Minimal Airflow PostgresHook surface backed by disposable connections."""
+
+    def __init__(self, connection_factory: Callable[[], connection]) -> None:
+        self._connection_factory = connection_factory
+
+    def get_conn(self) -> ClosingConnection:
+        return ClosingConnection(self._connection_factory())
