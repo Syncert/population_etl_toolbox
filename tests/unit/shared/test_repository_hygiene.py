@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from tests.support.postgres import WAREHOUSE_DATABASE_IMAGE
+from tests.support.redis import API_CACHE_REDIS_IMAGE
 
 pytestmark = pytest.mark.unit
 
@@ -80,9 +81,22 @@ def test_warehouse_database_image_pin_is_consistent() -> None:
     for relative_path in (
         ".github/workflows/postgres-integration.yml",
         "README.md",
-        "TESTING_PLAN.md",
+        "docs/plans/TESTING_PLAN.md",
     ):
         contents = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
         assert WAREHOUSE_DATABASE_IMAGE in contents, (
             f"{relative_path} does not use the authoritative warehouse image pin"
+        )
+
+
+def test_redis_image_pin_is_consistent() -> None:
+    assert "@sha256:" in API_CACHE_REDIS_IMAGE
+    for relative_path in (
+        ".github/workflows/redis-integration.yml",
+        "README.md",
+        "docs/plans/TESTING_PLAN.md",
+    ):
+        contents = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+        assert API_CACHE_REDIS_IMAGE in contents, (
+            f"{relative_path} does not use the authoritative Redis image pin"
         )

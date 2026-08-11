@@ -87,6 +87,24 @@ class RedisResponseCacheMiddleware:
     async def __call__(
         self, scope: dict[str, Any], receive: Receive, send: Send
     ) -> None:
+        if scope.get("type") == "lifespan":
+
+            async def close_client_on_shutdown(message: Message) -> None:
+                if (
+                    message.get("type") == "lifespan.shutdown.complete"
+                    and self._client is not None
+                ):
+                    try:
+                        await self._client.aclose()
+                    except RedisError:
+                        pass
+                    finally:
+                        self._client = None
+                await send(message)
+
+            await self.app(scope, receive, close_client_on_shutdown)
+            return
+
         if not self._is_cacheable(scope):
             await self.app(scope, receive, send)
             return

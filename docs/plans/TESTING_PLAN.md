@@ -64,7 +64,7 @@ Every automated test must follow Arrange-Act-Assert, have a descriptive name, ow
 | API testing | FastAPI `TestClient` / `httpx.AsyncClient` | Router, middleware, schema, and response-contract tests |
 | DAG testing | Airflow 2.9.3 `airflow.models.DagBag` | Import, metadata, task, dependency, pool, and timing checks |
 | Database testing | Pinned `postgis/postgis:16-3.5-alpine` container, `psycopg2`, SQLAlchemy 2.x in the API environment | Real spatial/non-spatial DDL, transactions, upserts, and query behavior |
-| Redis testing | A disposable Redis 7 service | Real cache hit, miss, expiry, and outage behavior |
+| Redis testing | Pinned `redis:7.4.9-alpine` container | Real cache hit, miss, expiry, and outage behavior |
 | Linting | `ruff` | Formatting and static lint checks |
 | Package validation | `build`, `pip check` | Wheel/sdist creation and dependency consistency |
 | HTTP load testing | `Locust` | Version-controlled API load scenarios and latency percentiles |
@@ -106,6 +106,10 @@ The authoritative warehouse dependency for the testing suite is `postgis/postgis
 - Container credentials and database names must be test-only values supplied through the test runner or CI environment.
 - Each CI job starts a fresh container without a reused data volume.
 - Keep the readable tag and immutable manifest digest together. A future tag or digest change requires an explicit dependency update and a full clean-bootstrap, integration, end-to-end, and performance validation run.
+
+### Redis Test Dependency
+
+The authoritative cache dependency for the testing suite is `redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99`. Redis integration tests use database 15 on this disposable service, clear it before and after every test, and refuse non-loopback `TEST_REDIS_URL` values or URLs containing credentials.
 
 ## Test Organization and Markers
 

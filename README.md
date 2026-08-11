@@ -720,6 +720,24 @@ The `postgres-integration` workflow provisions the disposable service and
 validates clean bootstrap, DDL reruns, raw natural keys, ledger checks, and
 transaction rollback automatically.
 
+#### Redis integration tests
+
+The API cache integration suite requires the pinned
+`redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99`
+image. It accepts only an explicit loopback `TEST_REDIS_URL` using disposable
+database 15, without credentials, and clears that database around every test.
+
+```bash
+export TEST_REDIS_URL=redis://127.0.0.1:6379/15
+
+make test-integration
+# Windows equivalent: ./scripts/test.ps1 integration
+```
+
+The `redis-integration` workflow validates cache miss/hit behavior, cache-key
+separation, TTL expiry, response bypass rules, Redis 7 compatibility, cleanup,
+and graceful fallback when Redis is unavailable.
+
 #### Marker reference
 
 | Marker        | Description                                              |
