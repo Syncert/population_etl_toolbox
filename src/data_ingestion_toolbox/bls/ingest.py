@@ -373,7 +373,7 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
             }
         )
 
-        df = pl.concat([df, geo_info], how="horizontal")
+        df = df.hstack(geo_info)
     else:
         # For non-LAUS programs, add null geography columns
         df = df.with_columns(

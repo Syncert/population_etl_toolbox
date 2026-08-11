@@ -696,6 +696,29 @@ The remaining tier commands are `make test-integration`, `make test-external`,
 `./scripts/test.ps1` on Windows. Infrastructure tiers remain opt-in and require
 their disposable services and environment flags.
 
+#### PostgreSQL integration tests
+
+The raw-schema integration suite requires a fresh `postgres:16-alpine`
+instance and refuses to connect unless all `TEST_POSTGRES_*` variables are set
+and the database name ends in `_test`. It bootstraps only the raw Census, BLS,
+and FRED schemas; the PostGIS-dependent silver/gold bootstrap will be added as
+a separate integration slice.
+
+```bash
+export TEST_POSTGRES_HOST=127.0.0.1
+export TEST_POSTGRES_PORT=5432
+export TEST_POSTGRES_USER=population_test
+export TEST_POSTGRES_PASSWORD=population_test
+export TEST_POSTGRES_DATABASE=population_etl_test
+
+make test-integration
+# Windows equivalent: ./scripts/test.ps1 integration
+```
+
+The `postgres-integration` workflow provisions the disposable service and
+validates clean bootstrap, DDL reruns, raw natural keys, ledger checks, and
+transaction rollback automatically.
+
 #### Marker reference
 
 | Marker        | Description                                              |
