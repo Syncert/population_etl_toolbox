@@ -25,7 +25,7 @@ def postgres_test_config() -> PostgresTestConfig:
 def bootstrapped_postgres(
     postgres_test_config: PostgresTestConfig,
 ) -> PostgresTestConfig:
-    """Apply raw schemas once to the fresh service database."""
+    """Apply the complete warehouse DDL once to the fresh service database."""
     database_connection = postgres_test_config.connect()
     try:
         apply_sql_files(database_connection)

@@ -199,6 +199,66 @@ def test_slice_ledgers_reject_unknown_statuses(
             cursor.execute(insert_sql, parameters)
 
 
+@pytest.mark.parametrize(
+    "insert_sql",
+    [
+        """
+        INSERT INTO raw_census.acs_long (
+            dataset, year, geo_level, geo_id, table_id, variable_name,
+            measure_type, value, load_batch_id
+        ) VALUES (
+            'acs5', 2024, 'state', 'state:55', 'B01001',
+            'B01001_001X', 'X', 100,
+            '00000000-0000-0000-0000-000000000020'
+        )
+        """,
+        """
+        INSERT INTO raw_census.acs_ingestion_slices (
+            dataset, year, geo_level, status, rows_loaded
+        ) VALUES ('acs5', 1999, 'state', 'planned', 0)
+        """,
+        """
+        INSERT INTO raw_bls.bls_long (
+            program, series_id, year, period, value, load_batch_id
+        ) VALUES (
+            'la', 'TEST_INVALID_PERIOD', 2024, 'monthly', 3.2,
+            '00000000-0000-0000-0000-000000000021'
+        )
+        """,
+        """
+        INSERT INTO raw_bls.bls_ingestion_slices (
+            program, year_start, year_end, status, rows_loaded
+        ) VALUES ('la', 2024, 2023, 'planned', 0)
+        """,
+        """
+        INSERT INTO raw_fred.fred_ingestion_slices (
+            domain, date_start, date_end, status, rows_loaded
+        ) VALUES ('labor_cycle', '2024-12-31', '2024-01-01', 'planned', 0)
+        """,
+        """
+        INSERT INTO raw_census.acs_ingestion_slices (
+            dataset, year, geo_level, status, rows_loaded
+        ) VALUES ('acs5', 2024, 'state', 'planned', -1)
+        """,
+    ],
+    ids=(
+        "census-measure-type",
+        "census-year",
+        "bls-period",
+        "bls-year-range",
+        "fred-date-range",
+        "negative-row-count",
+    ),
+)
+def test_raw_domain_constraints_reject_invalid_values(
+    postgres_connection: connection,
+    insert_sql: str,
+) -> None:
+    with postgres_connection.cursor() as cursor:
+        with pytest.raises(psycopg2.errors.CheckViolation):
+            cursor.execute(insert_sql)
+
+
 def test_uncommitted_test_data_is_rolled_back(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:

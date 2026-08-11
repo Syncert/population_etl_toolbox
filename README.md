@@ -701,9 +701,9 @@ their disposable services and environment flags.
 The database integration suite requires the pinned
 `postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd`
 image and refuses to connect unless all `TEST_POSTGRES_*` variables are set and
-the database name ends in `_test`. The current tests bootstrap the raw Census,
-BLS, and FRED schemas. Reference, silver, gold, and contract DDL will use the
-same PostGIS-enabled fixture as those integration slices are added.
+the database name ends in `_test`. The suite bootstraps reference, raw, silver,
+source-specific gold, shared glossary, and API contract schemas in dependency
+order, then verifies that the complete DDL is safely rerunnable.
 
 ```bash
 export TEST_POSTGRES_HOST=127.0.0.1
@@ -718,7 +718,8 @@ make test-integration
 
 The `postgres-integration` workflow provisions the disposable service and
 validates clean bootstrap, DDL reruns, raw natural keys, ledger checks, and
-transaction rollback automatically.
+transaction rollback automatically. It also exercises representative silver
+foreign keys and raw status, range, measure, period, and row-count constraints.
 
 #### Redis integration tests
 

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "src/data_ingestion_toolbox/**/DDL/**"
+      - "sql/gold_contract/**"
       - "tests/integration/database/**"
       - "tests/support/postgres.py"
       - "pyproject.toml"
@@ -66,9 +67,10 @@ jobs:
           python -m pip install -e ".[dev]"
           python -m pip check
 
-      - name: Run raw schema integration tests
+      - name: Run warehouse database integration tests
         run: >-
           pytest tests/integration/database/test_raw_schema.py
+          tests/integration/database/test_warehouse_bootstrap.py
           -m "integration and database"
           --tb=short -q --junitxml=junit-postgres.xml
 

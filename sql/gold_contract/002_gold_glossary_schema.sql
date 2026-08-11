@@ -246,5 +246,6 @@ SELECT
     county_name,
     latitude,
     longitude,
-    refreshed_at
+    refreshed_at,
+    COALESCE(county_name, state_name, geo_id) AS geo_name
 FROM gold_glossary.dim_geo_latest;
