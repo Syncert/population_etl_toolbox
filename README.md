@@ -719,7 +719,8 @@ make test-integration
 The `postgres-integration` workflow provisions the disposable service and
 validates clean bootstrap, DDL reruns, raw natural keys, ledger checks, and
 transaction rollback automatically. It also exercises representative silver
-foreign keys and raw status, range, measure, period, and row-count constraints.
+foreign keys; raw status, range, measure, period, and row-count constraints;
+and real Census, BLS, and FRED raw-loader replay and revision replacement.
 
 #### Redis integration tests
 

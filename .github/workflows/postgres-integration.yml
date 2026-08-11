@@ -69,9 +69,8 @@ jobs:
 
       - name: Run warehouse database integration tests
         run: >-
-          pytest tests/integration/database/test_raw_schema.py
-          tests/integration/database/test_warehouse_bootstrap.py
-          -m "integration and database"
+          pytest tests/integration/database
+          -m "integration and database and not slow"
           --tb=short -q --junitxml=junit-postgres.xml
 
       - name: Upload test results
