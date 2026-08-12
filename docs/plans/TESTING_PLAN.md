@@ -263,14 +263,14 @@ Last audited against the repository on 2026-08-11. **Implemented** means that ch
 | ETL and shared units | ETL-001–ETL-037 | None |
 | Database integration | DB-001–DB-018 | None |
 | API | API-001–API-027 | None |
-| Martin vector tiles | None | MARTIN-001–MARTIN-010 |
+| Martin vector tiles | MARTIN-001–MARTIN-005 | MARTIN-006–MARTIN-010 |
 | External source contracts | EXT-001–EXT-010 | None |
 | End-to-end | E2E-001–E2E-006 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| **Total** | **140 of 150** | **10 of 150** |
+| **Total** | **145 of 150** | **5 of 150** |
 
-Awaiting implementation IDs: MARTIN-001, MARTIN-002, MARTIN-003, MARTIN-004, MARTIN-005, MARTIN-006, MARTIN-007, MARTIN-008, MARTIN-009, MARTIN-010.
+Awaiting implementation IDs: MARTIN-006, MARTIN-007, MARTIN-008, MARTIN-009, MARTIN-010.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
 
@@ -286,7 +286,8 @@ Latest implementation validation on 2026-08-11:
 | Bounded performance profiles | 7 passed, 1 skipped | Million-row PERF-006 profile remains opt-in and runs in scheduled CI |
 | Redis outage resilience | 1 passed | Database resilience cases are included in the integration result above |
 | External source contracts | Scheduled | Credential/network-gated EXT tests are implemented but were not invoked in the local validation |
-| Martin vector-tile contracts | Awaiting implementation | No pytest/CI-owned Martin unit or disposable service tests are included in this validation |
+| Martin deterministic contracts | 33 passed | Configuration, TileJSON, URL normalization, canonical `geo_id`, and exact reconciliation; no services required |
+| Martin service contracts | Awaiting implementation | Disposable Martin/PostGIS, decoded MVT, API join, proxy, and runtime-security tests are not yet implemented |
 | Formatting, lint, and diff checks | Passed | `ruff format --check`, `ruff check`, and `git diff --check` |
 
 The traceability guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID has neither an implementation reference in tests/CI/configuration nor an explicit entry in the awaiting-implementation ID list. An awaiting entry is not implementation evidence.
@@ -519,6 +520,7 @@ The suite is considered healthy when:
 - Every DAG parses in under 2 seconds and the complete folder in under 10 seconds.
 - Replaying deterministic fixtures produces zero duplicate facts.
 - Database and Redis integration tests leave no state or connection leaks.
+- Martin TileJSON and decoded MVT features reconcile exactly with seeded PostGIS geometry and applicable API `geo_id` values.
 - Changed application-owned Python lines have at least 80% coverage.
 - Critical pure transformation, geography, time, retry, and source-parsing modules target at least 90% line coverage.
 - Overall coverage is recorded on the first stable P0 run and may not fall by more than 1 percentage point. The minimum is ratcheted upward as P1 tests land.
@@ -540,8 +542,10 @@ Jobs are independent and start from a fresh checkout.
 | `etl-unit` | Airflow/ETL Python 3.11 | Deterministic ETL/shared unit tests | Required | JUnit and coverage XML |
 | `dag-parse` | Airflow 2.9.3 Python 3.11 | DAG-001 through DAG-012 | Required | JUnit, import errors, parse timings |
 | `api-unit` | API Python 3.11 | Mocked API/router/service/middleware tests | Required | JUnit and coverage XML |
+| `martin-unit` | API or ETL Python 3.11 | MARTIN-001 through MARTIN-005 deterministic contracts | Required | JUnit |
 | `postgres-integration` | Airflow/ETL Python 3.11 + fresh pinned PostGIS 16 | P1 database integration tests as implemented | Required once stable | JUnit and PostgreSQL diagnostics on failure |
 | `api-integration` | API Python 3.11 + fresh pinned PostGIS 16 + Redis 7 | API-019 through API-024 as implemented | Required once stable | JUnit and sanitized service logs |
+| `martin-integration` | Python 3.11 + pinned Martin + fresh pinned PostGIS 16 | MARTIN-006, MARTIN-007, and MARTIN-010 | Required once stable | JUnit, TileJSON, decoded-feature summary, sanitized service logs |
 | `coverage` | No service | Combine compatible application coverage reports and enforce gates | Required | HTML/XML coverage report |
 
 Jobs cache package downloads keyed by OS, Python version, dependency inputs, Airflow version, and constraints URL/hash. They do not cache virtual environments, database volumes, Redis state, `.airflow`, test results, or coverage data between runs.
@@ -565,6 +569,7 @@ CI cancellation groups stop superseded runs on the same branch. Required jobs us
 - Changes under `apps/api/` require API unit tests and applicable API integration tests.
 - Changes to DDL require clean-bootstrap, rerun, constraint, and relevant E2E tests.
 - Changes to cache middleware require API cache unit and Redis integration tests.
+- Changes to Martin config/helpers, geography DDL/views, Compose, or tile proxies require Martin unit tests and, once stable, Martin integration compatibility.
 - Changes to fixtures or expected contracts require review of the approved expected-output file; snapshots are never updated blindly.
 
 No deployment proceeds if a required job is failing, cancelled, or missing. External-source availability alone does not block a deployment.
@@ -592,12 +597,13 @@ Exit criteria: a fresh checkout can run deterministic tests and all four DAGs in
 ### Phase 1: Infrastructure and Deterministic Flow
 
 - Add isolated pinned PostGIS 16 and Redis fixtures.
+- Pin Martin and add disposable Martin/PostGIS TileJSON and decoded-MVT fixtures.
 - Implement database constraints, idempotency, rollback, cleanup, API/database, and cache integration tests.
 - Add one deterministic end-to-end fixture for each source.
 - Add initial retry/failure-injection coverage.
 - Make stable integration jobs required.
 
-Exit criteria: fixture data can travel from raw ingestion through the API and replay without duplication or manual cleanup.
+Exit criteria: fixture data can travel from raw ingestion through the API and replay without duplication or manual cleanup; applicable county data joins exactly to a decoded Martin tile.
 
 ### Phase 2: Performance, Resilience, and External Contracts
 

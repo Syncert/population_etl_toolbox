@@ -16,13 +16,19 @@ import os
 import sys
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import psycopg2
 import requests
 
-
-JOIN_KEYS = ("geo_id", "geoid", "GEOID", "county_fips", "state_fips")
+from data_ingestion_toolbox.martin_contract import (
+    choose_join_key,
+    extract_vector_layer,
+    field_names,
+    normalize_base_url,
+    sample_tile_url,
+    tile_layer_url,
+)
 
 
 @dataclass
@@ -133,91 +139,6 @@ def _get_json(url: str, timeout: int = 30) -> Any:
     return response.json()
 
 
-def _normalize_base_url(url: str) -> str:
-    return url.rstrip("/") + "/"
-
-
-def _tile_layer_url(tiles_base_url: str, layer_id: str) -> str:
-    return urljoin(_normalize_base_url(tiles_base_url), layer_id)
-
-
-def _extract_vector_layer(tilejson: Any, layer_id: str) -> dict[str, Any]:
-    vector_layers = []
-    if isinstance(tilejson, dict):
-        vector_layers = tilejson.get("vector_layers") or []
-
-    if not isinstance(vector_layers, list) or not vector_layers:
-        return {}
-
-    for layer in vector_layers:
-        if isinstance(layer, dict) and layer.get("id") == layer_id:
-            return layer
-
-    return vector_layers[0] if isinstance(vector_layers[0], dict) else {}
-
-
-def _field_names(vector_layer: dict[str, Any]) -> set[str]:
-    fields = vector_layer.get("fields") if isinstance(vector_layer, dict) else {}
-    if isinstance(fields, dict):
-        return set(str(key) for key in fields)
-    if isinstance(fields, list):
-        return set(str(item) for item in fields)
-    return set()
-
-
-def _choose_join_key(field_names: set[str]) -> str | None:
-    lowered = {field.lower(): field for field in field_names}
-    for key in JOIN_KEYS:
-        found = lowered.get(key.lower())
-        if found:
-            return found
-    return None
-
-
-def _normalize_tile_template(template: str, tiles_base_url: str) -> str:
-    base = _normalize_base_url(tiles_base_url)
-    value = str(template or "").strip()
-    if not value:
-        return urljoin(base, "")
-
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        value = parsed.path
-
-    base_path = urlparse(base).path.rstrip("/")
-    if value.startswith("/") and base_path and value.startswith(base_path + "/"):
-        value = value[len(base_path) + 1 :]
-    elif value.startswith("/"):
-        value = value.lstrip("/")
-
-    return urljoin(base, value)
-
-
-def _sample_tile_url(tilejson: Any, tiles_base_url: str, layer_id: str) -> str:
-    if isinstance(tilejson, dict):
-        tiles = tilejson.get("tiles")
-        if isinstance(tiles, list) and tiles:
-            template = _normalize_tile_template(str(tiles[0]), tiles_base_url)
-        else:
-            template = urljoin(
-                _normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}"
-            )
-    else:
-        template = urljoin(
-            _normalize_base_url(tiles_base_url), f"{layer_id}/{{z}}/{{x}}/{{y}}"
-        )
-
-    return (
-        template.replace("{z}", "0")
-        .replace("{x}", "0")
-        .replace("{y}", "0")
-        .replace(
-            "{bbox-epsg-3857}",
-            "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
-        )
-    )
-
-
 def check_db_geometry(conn) -> tuple[CheckResult, dict[str, int]]:
     sql = """
         SELECT
@@ -277,7 +198,7 @@ def _discover_metric_code(
         return None
 
     catalog_url = urljoin(
-        _normalize_base_url(api_base_url), "catalog/metrics?q=population&limit=250"
+        normalize_base_url(api_base_url), "catalog/metrics?q=population&limit=250"
     )
     payload = _get_json(catalog_url)
     items = payload.get("items", []) if isinstance(payload, dict) else []
@@ -317,7 +238,7 @@ def _fetch_observations(
     api_base_url: str, metric_code: str, geo_level: str, limit: int
 ) -> tuple[str, list[dict[str, Any]]]:
     url = urljoin(
-        _normalize_base_url(api_base_url),
+        normalize_base_url(api_base_url),
         f"observations/latest?metric_code={metric_code}&geo_level={geo_level}&limit={limit}",
     )
     payload = _get_json(url)
@@ -377,13 +298,13 @@ def check_api_observations(
 def check_martin_tiles(
     tiles_base_url: str, layer_id: str
 ) -> tuple[CheckResult, str | None]:
-    tilejson_url = _tile_layer_url(tiles_base_url, layer_id)
+    tilejson_url = tile_layer_url(tiles_base_url, layer_id)
     tilejson = _get_json(tilejson_url)
-    vector_layer = _extract_vector_layer(tilejson, layer_id)
-    fields = _field_names(vector_layer)
-    join_key = _choose_join_key(fields)
+    vector_layer = extract_vector_layer(tilejson, layer_id)
+    fields = field_names(vector_layer)
+    join_key = choose_join_key(fields)
 
-    sample_url = _sample_tile_url(tilejson, tiles_base_url, layer_id)
+    sample_url = sample_tile_url(tilejson, tiles_base_url, layer_id)
     response = requests.get(sample_url, timeout=30)
     response.raise_for_status()
     content_type = response.headers.get("content-type", "")

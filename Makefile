@@ -1,4 +1,4 @@
-.PHONY: test-unit test-etl test-api test-dags test-integration test-external test-e2e test-performance
+.PHONY: test-unit test-etl test-api test-dags test-integration test-external test-e2e test-martin-unit test-performance
 
 test-unit:
 	pytest tests/unit
@@ -20,6 +20,9 @@ test-external:
 
 test-e2e:
 	RUN_E2E_TESTS=1 pytest -m e2e tests/e2e
+
+test-martin-unit:
+	pytest -m unit tests/unit/martin
 
 test-performance:
 	RUN_PERFORMANCE_TESTS=1 pytest -m performance tests/performance

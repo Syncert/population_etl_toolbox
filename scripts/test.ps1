@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("unit", "etl", "api", "dags", "integration", "external", "e2e", "performance")]
+    [ValidateSet("unit", "etl", "api", "dags", "integration", "external", "e2e", "martin-unit", "performance")]
     [string]$Tier = "unit"
 )
 
@@ -47,6 +47,9 @@ switch ($Tier) {
         $env:RUN_E2E_TESTS = "1"
         try { Invoke-Pytest -Arguments @("-m", "e2e", "tests/e2e") }
         finally { Remove-Item Env:RUN_E2E_TESTS -ErrorAction SilentlyContinue }
+    }
+    "martin-unit" {
+        Invoke-Pytest -Arguments @("-m", "unit", "tests/unit/martin")
     }
     "performance" {
         $env:RUN_PERFORMANCE_TESTS = "1"

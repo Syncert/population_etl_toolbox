@@ -34,6 +34,7 @@ api = [
 ]
 dev = [
   "build==1.2.2.post1",
+  "PyYAML==6.0.3",
   "pytest==8.3.4",
   "pytest-cov==5.0.0",
   "ruff==0.15.16",
@@ -59,7 +60,7 @@ exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Covers: ENV-004 — unknown pytest markers fail collection.
-addopts = "--strict-markers -m 'not database and not redis and not external and not e2e and not performance and not slow'"
+addopts = "--strict-markers -m 'not database and not redis and not martin and not external and not e2e and not performance and not slow'"
 filterwarnings = [
   "error::pytest.PytestUnhandledCoroutineWarning",
   "error::ResourceWarning",
@@ -74,6 +75,7 @@ markers = [
   "integration: tests that exercise multiple real application components",
   "database: requires the pinned disposable PostGIS 16 container",
   "redis: requires a disposable Redis 7 service",
+  "martin: requires a disposable Martin vector-tile service",
   "external: live external-source contract tests; scheduled only",
   "e2e: raw-to-API deterministic end-to-end fixture flow",
   "performance: load, volume, or benchmark scenarios",

@@ -692,9 +692,14 @@ make test-dags
 ```
 
 The remaining tier commands are `make test-integration`, `make test-external`,
-`make test-e2e`, and `make test-performance`; pass the same tier name to
+`make test-e2e`, `make test-martin-unit`, and `make test-performance`; pass the same tier name to
 `./scripts/test.ps1` on Windows. Infrastructure tiers remain opt-in and require
 their disposable services and environment flags.
+
+The deterministic Martin configuration, TileJSON, routing, and geography-join
+contracts run with `make test-martin-unit` or `./scripts/test.ps1 martin-unit`.
+Disposable Martin/PostGIS integration coverage is tracked in the testing plan
+and correction checklist and is not yet implemented.
 
 #### PostgreSQL integration tests
 

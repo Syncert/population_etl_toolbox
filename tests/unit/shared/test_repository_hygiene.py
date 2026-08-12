@@ -150,6 +150,14 @@ def test_every_catalog_id_has_an_implementation_reference() -> None:
     plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
     catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
     known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
+    awaiting_match = re.search(
+        r"^Awaiting implementation IDs: (?P<ids>.+)$", plan, re.MULTILINE
+    )
+    awaiting_ids = (
+        set(re.findall(catalog_id_pattern, awaiting_match.group("ids")))
+        if awaiting_match
+        else set()
+    )
 
     implementation_paths = list((REPOSITORY_ROOT / "tests").rglob("test_*.py"))
     implementation_paths.extend((REPOSITORY_ROOT / ".github/workflows").glob("*.yml"))
@@ -160,4 +168,5 @@ def test_every_catalog_id_has_an_implementation_reference() -> None:
             re.findall(catalog_id_pattern, path.read_text(encoding="utf-8"))
         )
 
-    assert known_ids - referenced_ids == set()
+    assert awaiting_ids <= known_ids
+    assert known_ids - referenced_ids - awaiting_ids == set()

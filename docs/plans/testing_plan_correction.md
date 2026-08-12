@@ -68,7 +68,7 @@ Add the following catalog rows to `TESTING_PLAN.md` as `MARTIN-001` through
 
 ### Deterministic Martin Unit Contracts
 
-- [ ] **MARTIN-001 — Configuration mapping.** Add
+- [x] **MARTIN-001 — Configuration mapping.** Add
   `tests/unit/martin/test_martin_config.py`. Parse `infra/martin/martin.yml` and
   assert:
   - `base_path` is `/tiles`;
@@ -79,21 +79,21 @@ Add the following catalog rows to `TESTING_PLAN.md` as `MARTIN-001` through
   - zoom and world bounds are intentional; and
   - `geo_id`, `geo_level`, state/county FIPS, names, latitude, and longitude are
     published with the expected Martin types.
-- [ ] **MARTIN-002 — Configuration drift.** Assert that the Martin config,
+- [x] **MARTIN-002 — Configuration drift.** Assert that the Martin config,
   Compose mounts, Next.js rewrite, nginx proxy, infrastructure README, and
   deployment documentation agree on the layer ID, base path, port, and source
   relation. Explicitly resolve the current `gold.dim_geo_latest` versus
   `gold_glossary.dim_geo_latest` documentation/configuration distinction.
-- [ ] **MARTIN-003 — TileJSON parsing.** Move reusable TileJSON contract logic
+- [x] **MARTIN-003 — TileJSON parsing.** Move reusable TileJSON contract logic
   from `scripts/check_mvp_geo_tile_join.py` into an importable application or
   test-support module. Unit-test exact layer selection, field formats expressed
   as dictionaries or lists, missing/malformed `vector_layers`, and rejection of
   a layer without a usable geography key.
-- [ ] **MARTIN-004 — Tile URL construction.** Unit-test absolute and relative
+- [x] **MARTIN-004 — Tile URL construction.** Unit-test absolute and relative
   tile templates, the `/tiles` base path, templates already containing the base
   path, fallback templates, and placeholder substitution for `z`, `x`, `y`, and
   `bbox-epsg-3857`.
-- [ ] **MARTIN-005 — Join-key contract.** Require `geo_id` as the canonical
+- [x] **MARTIN-005 — Join-key contract.** Require `geo_id` as the canonical
   application join key. Test case handling and reject fallback-only metadata
   when `geo_id` is absent. Verify representative Census/API county IDs retain
   zero padding and match the tile property exactly.
@@ -122,7 +122,7 @@ Add the following catalog rows to `TESTING_PLAN.md` as `MARTIN-001` through
   clear and sanitized; and ensure Martin cannot mutate warehouse relations.
 - [ ] Add `test-martin-unit` and `test-martin-integration` local commands with
   PowerShell equivalents.
-- [ ] Add a Martin CI job triggered by changes to Martin config, Compose, gold
+- [x] Add a Martin unit CI job triggered by changes to Martin config, Compose, gold
   geography DDL/views, geography synchronization, proxy configuration, or
   Martin tests.
 - [ ] Migrate the Martin assertions in `smoke_external_mvp.ps1` and
