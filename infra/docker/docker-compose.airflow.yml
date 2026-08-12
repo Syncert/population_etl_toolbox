@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgis/postgis:15-3.4
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -48,7 +48,7 @@ services:
       - airflow-init
     command: airflow webserver
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${AIRFLOW_HOST_PORT:-8080}:8080"
 
   airflow-scheduler:
     <<: *airflow-common

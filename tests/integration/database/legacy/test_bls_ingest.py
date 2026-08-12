@@ -1,27 +1,13 @@
-# tests/bls_2_ingest_test.py
+"""Bounded live BLS ingestion contracts using the disposable database."""
 
-"""
-BLS Ingestion Test
+from __future__ import annotations
 
-This test script verifies that BLS data can be ingested from the BLS API
-into the raw_bls.bls_long table.
+from collections.abc import Callable
 
-Run this AFTER running bls_1_metadata_test.py.
-
-This test will make real API calls to the BLS API, so ensure you have:
-1. BLS_API_KEY environment variable set
-2. Database connection configured
-3. Metadata tables populated (run bls_1_metadata_test.py first)
-"""
-
-import os
-
-import psycopg2
 import pytest
+from psycopg2.extensions import connection
 
-from data_ingestion_toolbox.bls.config import CONFIG
-from data_ingestion_toolbox.bls.ingest import ingest_slice
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
+from data_ingestion_toolbox.bls import geography, ingest, metadata
 
 pytestmark = [
     pytest.mark.integration,
@@ -29,565 +15,114 @@ pytestmark = [
     pytest.mark.external,
     pytest.mark.slow,
 ]
-if os.environ.get("RUN_LEGACY_DATABASE_TESTS") != "1":
-    pytest.skip(
-        "legacy live ingestion check requires explicit opt-in", allow_module_level=True
-    )
 
 
-def get_connection():
-    """Get database connection."""
-    details = PostgresConnectionFactory.auto(
-        conn_id=CONFIG.postgres_conn_id,
-        prefix="POSTGRES_",
-        database="public_data",
-    )
-    return psycopg2.connect(**details.psycopg_kwargs())
+def _seed_published_laus_state_series(
+    postgres_connection_factory: Callable[[], connection],
+) -> str:
+    """Seed one currently published Wisconsin LAUS series as test metadata."""
+    frame = metadata.read_bls_tsv(f"{metadata.BASE_URL}la/la.series")
+    candidates = [
+        record
+        for record in metadata.process_series_data(frame, "la")
+        if str(record.get("area_code", "")).strip().startswith("ST55")
+        and str(record.get("seasonal", "")).strip() == "U"
+        and str(record.get("measure_code", "")).strip()
+        in ingest.CONFIG.curated_by_program["la"]
+    ]
+    assert candidates, "live BLS LAUS metadata has no curated Wisconsin state series"
+    candidate = candidates[0]
+    series_id = str(candidate["series_id"]).strip()
 
-
-def test_laus_state_level():
-    """Covers: EXT-007 — live LAUS state ingestion loads all states."""
-    print("\n=== Testing LAUS State-Level Ingestion (All States) ===")
-
-    # Note: LAUS (Local Area Unemployment Statistics) does not provide national-level data.
-    # National unemployment data comes from CPS (Current Population Survey) series like LNS14000000.
-    # LAUS covers states, counties, metros, and cities.
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(
-        program="la",
-        start_year=year_start,
-        end_year=year_end,
-        geo_level="state",
-        state_fips=None,  # Get all states
-    )
-
-    print(f"Ingested {rows} rows for LAUS state-level ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
+    writer = postgres_connection_factory()
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        with writer.cursor() as cursor:
+            cursor.execute(
                 """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'state'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
+                INSERT INTO raw_bls.bls_series (
+                    program, series_id, title, seasonal, measure,
+                    area_code, area_text, raw_metadata
+                ) VALUES ('la', %s, %s, 'U', %s, %s, %s, '{}'::JSONB)
+                ON CONFLICT (program, series_id) DO NOTHING
+                """,
+                (
+                    series_id,
+                    str(candidate.get("series_title", "")).strip(),
+                    str(candidate.get("measure_code", "")).strip(),
+                    str(candidate.get("area_code", "")).strip(),
+                    str(candidate.get("area_text", "")).strip(),
+                ),
             )
+        writer.commit()
+    finally:
+        writer.close()
+    return series_id
 
-            db_count = cur.fetchone()[0]
-            print(f"Found {db_count} LAUS state-level rows in database")
 
-            # Show sample data
-            cur.execute(
-                """
-                SELECT series_id, year, period, value, geo_level, state_fips
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'state'
-                  AND year BETWEEN %s AND %s
-                ORDER BY year DESC, period DESC
-                LIMIT 10;
-            """,
-                (year_start, year_end),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample state-level LAUS data:")
-            for row in rows_sample:
-                print(
-                    f"  {row[0]} | {row[1]}/{row[2]} | {row[3]} | {row[4]} | State:{row[5]}"
+@pytest.mark.parametrize(
+    ("program", "geo_level", "state_fips"),
+    [
+        ("la", "state", "55"),
+        ("ln", None, None),
+        ("ce", None, None),
+        ("cu", None, None),
+        ("jt", None, None),
+    ],
+)
+def test_bounded_live_bls_program_loads_source_appropriate_rows(
+    program: str,
+    geo_level: str | None,
+    state_fips: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: EXT-007 — each promised BLS program reaches production raw storage."""
+    monkeypatch.setattr(ingest, "_get_pg_connection", postgres_connection_factory)
+    monkeypatch.setattr(geography, "_get_pg_connection", postgres_connection_factory)
+    laus_series_id = (
+        _seed_published_laus_state_series(postgres_connection_factory)
+        if program == "la"
+        else None
+    )
+    try:
+        loaded = ingest.ingest_slice(
+            program=program,
+            start_year=2023,
+            end_year=2023,
+            geo_level=geo_level,
+            state_fips=state_fips,
+        )
+        assert loaded > 0
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*), COUNT(DISTINCT series_id),
+                           BOOL_AND(year = 2023), BOOL_AND(value IS NOT NULL)
+                    FROM raw_bls.bls_long WHERE program = %s AND year = 2023
+                    """,
+                    (program,),
                 )
+                count, series_count, year_ok, values_ok = cursor.fetchone()
+                assert count == loaded
+                assert series_count > 0 and year_ok and values_ok
+        finally:
+            reader.close()
     finally:
-        conn.close()
-
-    assert db_count > 0, "No state-level LAUS data found in database"
-    print("[PASS] Test passed: LAUS state-level ingestion successful")
-
-
-def test_laus_county_level_extended():
-    """Covers: EXT-007 — live LAUS county ingestion loads Wisconsin."""
-    print("\n=== Testing LAUS County-Level Ingestion (Wisconsin) ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(
-        program="la",
-        start_year=year_start,
-        end_year=year_end,
-        geo_level="county",
-        state_fips="55",  # Wisconsin
-    )
-
-    print(f"Ingested {rows} rows for LAUS Wisconsin counties ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'county'
-                  AND state_fips = '55'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            db_count = cur.fetchone()[0]
-            print(f"Found {db_count} LAUS county-level rows in database for Wisconsin")
-
-            # Show sample data
-            cur.execute(
-                """
-                SELECT series_id, year, period, value, geo_level, state_fips, county_fips
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'county'
-                  AND state_fips = '55'
-                  AND year BETWEEN %s AND %s
-                ORDER BY year DESC, period DESC, county_fips
-                LIMIT 10;
-            """,
-                (year_start, year_end),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample Wisconsin county LAUS data:")
-            for row in rows_sample:
-                print(
-                    f"  {row[0]} | {row[1]}/{row[2]} | {row[3]} | {row[4]} | State:{row[5]} County:{row[6]}"
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM raw_bls.bls_long WHERE program = %s AND year = 2023",
+                    (program,),
                 )
-    finally:
-        conn.close()
-
-    assert db_count > 0, "No county-level LAUS data found in database"
-    print("[PASS] Test passed: LAUS county-level ingestion successful")
-
-
-def test_old_laus_us_level():
-    """Covers: EXT-007 — legacy national LAUS behavior remains explicit."""
-    print("\n=== SKIPPING: LAUS US-Level Test ===")
-    print("Note: LAUS does not provide US national-level data.")
-    print(
-        "Use CPS (Current Population Survey) series like LNS14000000 for national unemployment."
-    )
-    print("Test skipped (expected)")
-
-
-def test_laus_state_level_old():
-    """Covers: EXT-007 — live LAUS ingestion loads one state."""
-    print("\n=== Testing LAUS State-Level Ingestion (Wisconsin - OLD) ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(
-        program="la",
-        start_year=year_start,
-        end_year=year_end,
-        geo_level="state",
-        state_fips=None,  # Get all states
-    )
-
-    print(f"Ingested {rows} rows for LAUS state-level ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            # Check for Wisconsin specifically
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'state'
-                  AND state_fips = '55'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            wi_count = cur.fetchone()[0]
-            print(f"Found {wi_count} Wisconsin state-level rows in database")
-
-            # Check total states
-            cur.execute(
-                """
-                SELECT COUNT(DISTINCT state_fips)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'state'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            state_count = cur.fetchone()[0]
-            print(f"Found data for {state_count} distinct states")
-
-            # Show sample Wisconsin data
-            cur.execute(
-                """
-                SELECT series_id, year, period, value, geo_level, state_fips
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND state_fips = '55'
-                  AND year = %s
-                ORDER BY period DESC
-                LIMIT 10;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample Wisconsin state-level data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]} | State:{row[5]}")
-    finally:
-        conn.close()
-
-    assert wi_count > 0, "No Wisconsin state-level data found"
-    print("[PASS] Test passed: LAUS state-level ingestion successful")
-
-
-def test_laus_county_level():
-    """Covers: EXT-007 — live LAUS ingestion loads state counties."""
-    print("\n=== Testing LAUS County-Level Ingestion (Wisconsin) ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(
-        program="la",
-        start_year=year_start,
-        end_year=year_end,
-        geo_level="county",
-        state_fips="55",  # Wisconsin
-    )
-
-    print(f"Ingested {rows} rows for Wisconsin county-level ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'county'
-                  AND state_fips = '55'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} Wisconsin county rows in database")
-
-            # Count distinct counties
-            cur.execute(
-                """
-                SELECT COUNT(DISTINCT county_fips)
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'county'
-                  AND state_fips = '55'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            county_count = cur.fetchone()[0]
-            print(f"Found data for {county_count} distinct Wisconsin counties")
-
-            # Show sample county data
-            cur.execute(
-                """
-                SELECT series_id, year, period, value, county_fips
-                FROM raw_bls.bls_long
-                WHERE program = 'la'
-                  AND geo_level = 'county'
-                  AND state_fips = '55'
-                  AND year = %s
-                ORDER BY county_fips, period DESC
-                LIMIT 10;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample Wisconsin county data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]} | County:{row[4]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No Wisconsin county data found"
-    assert county_count > 0, "No distinct counties found"
-    print("[PASS] Test passed: LAUS county-level ingestion successful")
-
-
-def test_cps_ingestion():
-    """Covers: EXT-007 — live CPS national ingestion loads raw rows."""
-    print("\n=== Testing CPS/LN Ingestion ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(program="ln", start_year=year_start, end_year=year_end)
-
-    print(f"Ingested {rows} rows for CPS/LN ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'ln'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} CPS/LN rows in database")
-
-            # Show sample including LNS14000000 (unemployment rate)
-            cur.execute(
-                """
-                SELECT series_id, year, period, value
-                FROM raw_bls.bls_long
-                WHERE program = 'ln'
-                  AND year = %s
-                  AND series_id = 'LNS14000000'
-                ORDER BY period DESC
-                LIMIT 12;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample CPS/LN data (LNS14000000 - Unemployment Rate):")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]}%")
-    finally:
-        conn.close()
-
-    assert count > 0, "No CPS/LN data found"
-    print("[PASS] Test passed: CPS/LN ingestion successful")
-
-
-def test_ces_ingestion():
-    """Covers: EXT-007 — live CES ingestion loads raw rows."""
-    print("\n=== Testing CES Ingestion ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(program="ce", start_year=year_start, end_year=year_end)
-
-    print(f"Ingested {rows} rows for CES ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'ce'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} CES rows in database")
-
-            # Show sample
-            cur.execute(
-                """
-                SELECT series_id, year, period, value
-                FROM raw_bls.bls_long
-                WHERE program = 'ce'
-                  AND year = %s
-                ORDER BY period DESC
-                LIMIT 10;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample CES data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No CES data found"
-    print("[PASS] Test passed: CES ingestion successful")
-
-
-def test_cpi_ingestion():
-    """Covers: EXT-007 — live CPI ingestion loads raw rows."""
-    print("\n=== Testing CPI Ingestion ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(program="cu", start_year=year_start, end_year=year_end)
-
-    print(f"Ingested {rows} rows for CPI ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'cu'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} CPI rows in database")
-
-            # Show sample
-            cur.execute(
-                """
-                SELECT series_id, year, period, value
-                FROM raw_bls.bls_long
-                WHERE program = 'cu'
-                  AND year = %s
-                ORDER BY period DESC
-                LIMIT 10;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample CPI data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No CPI data found"
-    print("[PASS] Test passed: CPI ingestion successful")
-
-
-def test_jolts_ingestion():
-    """Covers: EXT-007 — live JOLTS ingestion loads raw rows."""
-    print("\n=== Testing JOLTS Ingestion ===")
-
-    year_start = 2022
-    year_end = 2023
-
-    rows = ingest_slice(program="jt", start_year=year_start, end_year=year_end)
-
-    print(f"Ingested {rows} rows for JOLTS ({year_start}-{year_end})")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM raw_bls.bls_long
-                WHERE program = 'jt'
-                  AND year BETWEEN %s AND %s;
-            """,
-                (year_start, year_end),
-            )
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} JOLTS rows in database")
-
-            # Show sample
-            cur.execute(
-                """
-                SELECT series_id, year, period, value
-                FROM raw_bls.bls_long
-                WHERE program = 'jt'
-                  AND year = %s
-                ORDER BY period DESC
-                LIMIT 10;
-            """,
-                (year_end,),
-            )
-
-            rows_sample = cur.fetchall()
-            print("\nSample JOLTS data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]}/{row[2]} | {row[3]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No JOLTS data found"
-    print("[PASS] Test passed: JOLTS ingestion successful")
-
-
-def main():
-    """Run all ingestion tests."""
-    print("=" * 70)
-    print("BLS INGESTION TESTS")
-    print("=" * 70)
-
-    if not CONFIG.has_api_key:
-        print("\n[FAIL] ERROR: BLS_API_KEY not set!")
-        print("Please set the BLS_API_KEY environment variable to run ingestion tests.")
-        return
-
-    try:
-        # LAUS tests (geographic hierarchy)
-        # Skip US-level as LAUS doesn't provide national data
-        test_old_laus_us_level()  # This just prints a skip message
-        test_laus_state_level()
-        test_laus_county_level()
-
-        # Other program tests
-        test_cps_ingestion()  # National unemployment/employment (LN series)
-        test_ces_ingestion()
-        test_cpi_ingestion()
-        test_jolts_ingestion()
-
-        print("\n" + "=" * 70)
-        print("ALL TESTS PASSED [PASS]")
-        print("=" * 70)
-
-    except AssertionError as e:
-        print(f"\n[FAIL] TEST FAILED: {e}")
-        raise
-    except Exception as e:
-        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
-
-
-if __name__ == "__main__":
-    main()
+                if laus_series_id:
+                    cursor.execute(
+                        "DELETE FROM raw_bls.bls_series "
+                        "WHERE program = 'la' AND series_id = %s",
+                        (laus_series_id,),
+                    )
+            cleanup.commit()
+        finally:
+            cleanup.close()

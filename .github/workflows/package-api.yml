@@ -40,6 +40,12 @@ jobs:
       - name: Build wheel and sdist
         run: python -m build --outdir dist/
 
+      - name: Validate distribution contents
+        run: >-
+          python -m tests.support.package_artifacts
+          --wheel "$(find dist -name '*.whl' -print -quit)"
+          --sdist "$(find dist -name '*.tar.gz' -print -quit)"
+
       - name: Install wheel into clean environment
         run: |
           python -m venv .package-smoke

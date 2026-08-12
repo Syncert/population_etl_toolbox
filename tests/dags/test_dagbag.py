@@ -346,7 +346,11 @@ def test_scheduler_image_workflow_runs_the_same_dag_suite() -> None:
     assert "INSTALL_EXTRAS=airflow-dev" in workflow
     assert "-m pytest -m dag tests/dags" in workflow
     assert "ARG INSTALL_EXTRAS=airflow" in dockerfile
-    assert "FROM apache/airflow:2.9.3-python3.11" in dockerfile
+    assert (
+        "FROM apache/airflow:2.9.3-python3.11@"
+        "sha256:cc5fcb91e93e4dfe4fd8b1b53a9155dfa2670fb829891a9658a0f36ac55f67ef"
+        in dockerfile
+    )
     assert (
         'pip install --no-cache-dir -e "/opt/population_etl_toolbox[${INSTALL_EXTRAS}]"'
         in dockerfile
@@ -391,3 +395,18 @@ def test_missing_fred_key_fails_at_runtime_not_import(
     monkeypatch.setattr(ingest.CONFIG, "fred_api_key", "")
     with pytest.raises(ValueError, match=r"^FRED_API_KEY required for FRED ingestion$"):
         ingest.fetch_fred_observations.__wrapped__("UNRATE", "2024-01-01", "2024-01-31")
+
+
+@pytest.mark.dag
+def test_missing_census_key_fails_at_runtime_not_import(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: DAG-014 — a missing Census key fails before any HTTP request."""
+    assert dagbag.import_errors == {}
+    from data_ingestion_toolbox.census_acs import ingest
+
+    monkeypatch.setattr(ingest.CONFIG, "census_api_key", "")
+    with pytest.raises(
+        ValueError, match=r"^CENSUS_API_KEY required for Census API requests$"
+    ):
+        ingest.fetch_acs_api.__wrapped__(2024, "acs5", ["B01003_001E"], "state")

@@ -26,6 +26,9 @@ class BlsConfig(BaseModel):
 
     bls_api_key: str = Field(default_factory=lambda: os.environ.get("BLS_API_KEY", ""))
 
+    # One raw load is one bounded transaction; planners split larger payloads.
+    raw_load_max_rows: int = 10_000
+
     # ------------------------------------------------------------------
     # Enabled BLS programs.
     #
@@ -227,6 +230,7 @@ class BlsConfig(BaseModel):
         "bls_api_global_concurrency",
         "bls_api_series_chunk_size",
         "bls_api_year_chunk_size",
+        "raw_load_max_rows",
         "silver_max_active_tis",
     )
     @classmethod

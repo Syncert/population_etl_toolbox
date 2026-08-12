@@ -47,8 +47,13 @@ jobs:
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
           --cov-report=json:coverage.json
-          --cov-fail-under=33
           --junitxml=junit-coverage.xml
+
+      - name: Enforce checked-in overall coverage ratchet
+        run: >-
+          python -m tests.support.coverage_ratchet
+          --coverage coverage.json
+          --baseline tests/coverage/baseline.json
 
       - name: Enforce changed-line coverage
         env:
@@ -57,7 +62,7 @@ jobs:
           if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
             BASE_REF="HEAD^"
           fi
-          python scripts/check_changed_coverage.py \
+          python -m tests.support.changed_coverage \
             --coverage coverage.json --base-ref "$BASE_REF" --minimum 80
 
       - name: Enforce critical pure-module coverage

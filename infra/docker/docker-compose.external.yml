@@ -1,6 +1,6 @@
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
 
   api:
@@ -23,9 +23,14 @@ services:
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   martin:
-    image: maplibre/martin:latest
+    image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b
     command: --config /etc/martin/martin.yml
     environment:
       MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER:?Set ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD:?Set ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST:?Set ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT:?Set ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME:?Set ANALYTICS_DB_NAME}
@@ -33,6 +38,11 @@ services:
       - "127.0.0.1:${MARTIN_HOST_PORT:-3000}:3000"
     volumes:
       - ../martin/martin.yml:/etc/martin/martin.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   web:
     build:
@@ -45,7 +55,12 @@ services:
       - api
       - martin
     ports:
-      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_HOST_PORT:-3001}:3100"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3001}:3100"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   airflow-common: &airflow-common
     build:

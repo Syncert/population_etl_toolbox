@@ -433,6 +433,8 @@ apps/web/out/
 apps/web/.vercel/
 apps/web/coverage/
 apps/web/.eslintcache
+apps/web/playwright-report/
+apps/web/test-results/
 
 # Python generated files and virtual environments (ENV-006)
 .venv*/

@@ -90,8 +90,39 @@ jobs:
           pytest tests/performance -m performance
           --tb=short -q --junitxml=junit-performance.xml
 
+      - name: Run controlled Locust production-app scenario
+        env:
+          DATABASE_URL: postgresql+psycopg2://population_test:population_test@127.0.0.1:5432/population_etl_test
+          REDIS_URL: redis://127.0.0.1:6379/15
+          API_CACHE_TTL_SECONDS: "60"
+        run: |
+          mkdir -p performance-artifacts
+          python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 >performance-artifacts/uvicorn.log 2>&1 &
+          API_PID=$!
+          trap 'kill "$API_PID" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null
+          locust -f tests/performance/locustfile.py --headless \
+            --users 16 --spawn-rate 8 --run-time 30s \
+            --host http://127.0.0.1:8000 --fail-ratio 0.01 \
+            --csv performance-artifacts/locust --csv-full-history
+          printf '%s\n' \
+            'runner=github-hosted ubuntu-latest' \
+            'python=3.11' \
+            'users=16' \
+            'spawn_rate=8' \
+            'run_time=30s' \
+            'postgres=postgis-16-3.5-alpine' \
+            'redis=7.4.9-alpine' \
+            > performance-artifacts/runner-metadata.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-performance-results
-          path: junit-*.xml
+          path: |
+            junit-*.xml
+            performance-artifacts/

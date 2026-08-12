@@ -8,7 +8,7 @@ on:
       - "infra/web/nginx.conf"
       - "apps/web/next.config.mjs"
       - "src/data_ingestion_toolbox/martin_contract.py"
-      - "scripts/check_mvp_geo_tile_join.py"
+      - "tests/support/martin.py"
       - "tests/unit/martin/**"
       - "pyproject.toml"
       - ".github/workflows/martin-unit.yml"

@@ -171,3 +171,208 @@ def test_real_catalog_latest_timeseries_distribution_and_comparison(
             "ratio": 4.0,
         }
     ]
+
+
+@pytest.fixture
+def census_bls_api_fixture(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[tuple[TestClient, str, str]]:
+    """Seed matching Census and BLS source rows in the actual serving relations."""
+    token = uuid4().hex[:10].upper()
+    census_metric = f"ACS:acs5:TEST_{token}"
+    bls_metric = f"BLS:TEST_{token}"
+    census_variable = f"TEST_{token}E"
+    bls_series = f"LAUTEST{token}"
+    geo_id = f"state:55|county:{token[:3]}"
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO gold_glossary.dim_metric_catalog (
+                    metric_code, metric_display_name, source_code,
+                    source_object_type, valid_geo_grains, valid_time_grains,
+                    dashboard_suitability, do_not_compare_with,
+                    recommended_aggregation, owner_team, is_active
+                ) VALUES
+                    (%s, 'Census API fixture', 'CENSUS_ACS', 'ACS_VARIABLE',
+                     ARRAY['COUNTY'], ARRAY['ANNUAL'], 'PUBLIC_SAFE',
+                     ARRAY[]::TEXT[], 'LAST', 'test', TRUE),
+                    (%s, 'BLS API fixture', 'BLS', 'BLS_SERIES',
+                     ARRAY['COUNTY'], ARRAY['MONTHLY'], 'PUBLIC_SAFE',
+                     ARRAY[]::TEXT[], 'LAST', 'test', TRUE)
+                """,
+                (census_metric, bls_metric),
+            )
+            cursor.execute(
+                """
+                INSERT INTO gold_census.rpt_acs_observations (
+                    observation_date, duration_start, duration_end, time_sk,
+                    as_of_date, updated_at, geo_id, geo_level, state_fips,
+                    county_fips, state_name, county_name, value, dataset_code,
+                    vintage_year, table_id, variable_code, estimate_value,
+                    units, metric_code, metric_display_name, dashboard_suitability
+                ) VALUES
+                    ('2096-01-01', '2092-01-01', '2096-12-31', 20960101,
+                     '2097-01-01', NOW(), %s, 'COUNTY', '55', %s,
+                     'Wisconsin', 'API County', 100, 'acs5', 2096, 'TEST', %s,
+                     100, 'people', %s, 'Census API fixture', 'PUBLIC_SAFE'),
+                    ('2097-01-01', '2093-01-01', '2097-12-31', 20970101,
+                     '2098-01-01', NOW(), %s, 'COUNTY', '55', %s,
+                     'Wisconsin', 'API County', 110, 'acs5', 2097, 'TEST', %s,
+                     110, 'people', %s, 'Census API fixture', 'PUBLIC_SAFE')
+                """,
+                (
+                    geo_id,
+                    token[:3],
+                    census_variable,
+                    census_metric,
+                    geo_id,
+                    token[:3],
+                    census_variable,
+                    census_metric,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO gold_census.mv_acs_latest
+                SELECT * FROM gold_census.rpt_acs_observations
+                WHERE metric_code = %s AND observation_date = '2097-01-01'
+                """,
+                (census_metric,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO gold_bls.rpt_bls_observations (
+                    observation_date, duration_start, duration_end, time_sk,
+                    as_of_date, updated_at, geo_id, geo_level, state_fips,
+                    county_fips, state_name, county_name, series_id, program_code,
+                    value, value_type, units, metric_code, metric_display_name,
+                    dashboard_suitability
+                ) VALUES
+                    ('2097-01-01', '2097-01-01', '2097-01-31', 20970101,
+                     '2097-02-01', NOW(), %s, 'COUNTY', '55', %s,
+                     'Wisconsin', 'API County', %s, 'LA', 4, 'RATE', 'percent',
+                     %s, 'BLS API fixture', 'PUBLIC_SAFE'),
+                    ('2097-02-01', '2097-02-01', '2097-02-28', 20970201,
+                     '2097-03-01', NOW(), %s, 'COUNTY', '55', %s,
+                     'Wisconsin', 'API County', %s, 'LA', 5, 'RATE', 'percent',
+                     %s, 'BLS API fixture', 'PUBLIC_SAFE')
+                """,
+                (
+                    geo_id,
+                    token[:3],
+                    bls_series,
+                    bls_metric,
+                    geo_id,
+                    token[:3],
+                    bls_series,
+                    bls_metric,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO gold_bls.mv_bls_latest
+                SELECT * FROM gold_bls.rpt_bls_observations
+                WHERE metric_code = %s AND observation_date = '2097-02-01'
+                """,
+                (bls_metric,),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    settings = PostgresTestConfig.from_environment()
+    assert settings is not None
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        connect_args={
+            "host": settings.host,
+            "port": settings.port,
+            "user": settings.user,
+            "password": settings.password,
+            "dbname": settings.database,
+        },
+        pool_pre_ping=True,
+    )
+
+    def override_db() -> Iterator[Session]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_db_session_dep] = override_db
+    try:
+        yield TestClient(app), census_metric, bls_metric
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for relation in (
+                    "gold_census.mv_acs_latest",
+                    "gold_census.rpt_acs_observations",
+                    "gold_bls.mv_bls_latest",
+                    "gold_bls.rpt_bls_observations",
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {relation} WHERE metric_code IN (%s, %s)",
+                        (census_metric, bls_metric),
+                    )
+                cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code IN (%s, %s)",
+                    (census_metric, bls_metric),
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_real_database_contract_spans_census_bls_and_cross_source_views(
+    census_bls_api_fixture: tuple[TestClient, str, str],
+) -> None:
+    """Covers: API-024 — all source routers and shared views use the real schema."""
+    client, census_metric, bls_metric = census_bls_api_fixture
+
+    for source, metric, expected in (
+        ("census", census_metric, ["100", "110"]),
+        ("bls", bls_metric, ["4", "5"]),
+    ):
+        catalog = client.get("/api/catalog/metrics", params={"q": metric, "limit": 10})
+        assert catalog.status_code == 200
+        assert [row["metric_code"] for row in catalog.json()["items"]] == [metric]
+
+        latest = client.get(
+            f"/api/{source}/observations/latest", params={"metric_code": metric}
+        )
+        assert latest.status_code == 200
+        assert latest.json()["total"] == 1
+        assert latest.json()["items"][0]["source"] in {"CENSUS_ACS", "BLS"}
+
+        history = client.get(
+            f"/api/{source}/observations/timeseries",
+            params={
+                "metric_code": metric,
+                "geo_id": latest.json()["items"][0]["geo_id"],
+            },
+        )
+        assert history.status_code == 200
+        assert [row["value"] for row in history.json()["items"]] == expected
+
+        common = client.get("/api/observations/latest", params={"metric_code": metric})
+        assert common.status_code == 200
+        assert common.json()["total"] == 1
+
+        distribution = client.get(
+            "/api/distribution/bins",
+            params={"metric_code": metric, "bin_count": 1},
+        )
+        assert distribution.status_code == 200
+        assert distribution.json()["total"] == 1
+
+    comparison = client.get(
+        "/api/comparison",
+        params={"metric_code_a": census_metric, "metric_code_b": bls_metric},
+    )
+    assert comparison.status_code == 200
+    assert comparison.json()["items"][0]["difference"] == 105.0

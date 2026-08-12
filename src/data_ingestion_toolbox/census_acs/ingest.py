@@ -16,6 +16,7 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
+from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -136,7 +137,6 @@ def build_geo_params(
             CensusRetryableHTTP,
             httpx.TimeoutException,
             httpx.NetworkError,
-            httpx.HTTPError,
         )
     ),
 )
@@ -155,11 +155,9 @@ def fetch_acs_api(
 
     params: Dict[str, str] = {
         "get": ",".join(variables),
+        "key": CONFIG.require_api_key(),
     }
     params.update(build_geo_params(geo_level, state_fips))
-
-    if CONFIG.has_api_key:
-        params["key"] = CONFIG.census_api_key
 
     # Small jitter even under lock to avoid rhythmic bursts on retries
     time.sleep(0.2 + random.random() * 0.4)
@@ -351,6 +349,7 @@ def rows_to_polars(
     return long_df
 
 
+@retry_database_transaction
 def load_df_to_acs_long(
     df: pl.DataFrame, dataset: str, year: int, geo_level: str
 ) -> int:
@@ -362,6 +361,11 @@ def load_df_to_acs_long(
     """
     if df.is_empty():
         return 0
+    if df.height > CONFIG.raw_load_max_rows:
+        raise ValueError(
+            f"Census raw batch has {df.height} rows; configured maximum is "
+            f"{CONFIG.raw_load_max_rows}"
+        )
 
     conn = _get_pg_connection()
     try:
@@ -369,6 +373,11 @@ def load_df_to_acs_long(
         cur = conn.cursor()
 
         geo_ids = df.select("geo_id").unique().to_series().to_list()
+        for geo_id in sorted(geo_ids):
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"raw_census.acs_long:{dataset}:{year}:{geo_level}:{geo_id}",),
+            )
 
         # Delete existing rows for this slice
         cur.execute(

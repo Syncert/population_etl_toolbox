@@ -86,12 +86,22 @@ class AcsConfig(BaseModel):
     census_api_global_concurrency: int = 2
     census_api_min_spacing_seconds: float = 0.25
 
+    # One raw load is one bounded transaction; planners split larger payloads.
+    raw_load_max_rows: int = 10_000
+
     # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
     # prevent Postgres connection exhaustion.
 
     @property
     def has_api_key(self) -> bool:
         return bool(self.census_api_key)
+
+    def require_api_key(self) -> str:
+        """Return the Census key required by all Data API queries since May 2026."""
+        key = self.census_api_key.strip()
+        if not key:
+            raise ValueError("CENSUS_API_KEY required for Census API requests")
+        return key
 
     @field_validator("postgres_conn_id")
     @classmethod
@@ -107,7 +117,7 @@ class AcsConfig(BaseModel):
             raise ValueError("configured ingestion scope must not be empty")
         return value
 
-    @field_validator("census_api_global_concurrency")
+    @field_validator("census_api_global_concurrency", "raw_load_max_rows")
     @classmethod
     def validate_positive_concurrency(cls, value: int) -> int:
         if value < 1:

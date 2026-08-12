@@ -230,12 +230,12 @@ Override targets in `apps/web/.env.local`:
 - `NEXT_PUBLIC_API_ORIGIN`
 - `NEXT_PUBLIC_TILES_ORIGIN`
 
-### API-to-Map Contract Smoke (External MVP)
+### API-to-Map and Compose Contract Smoke
 
-Run the first contract checks end-to-end:
+Run the centralized disposable service checks end-to-end:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
+powershell -ExecutionPolicy Bypass -File tests/run.ps1 compose-smoke
 ```
 
 ```bash
@@ -377,14 +377,16 @@ Optional helper script for internal/external stack lifecycle:
 # External mode examples
 ./scripts/deploy_stack.ps1 -Mode external -Action init
 ./scripts/deploy_stack.ps1 -Mode external -Action up
-./scripts/deploy_stack.ps1 -Mode external -Action smoke
 ./scripts/deploy_stack.ps1 -Mode external -Action down
 
 # Optional: include local Airflow services in external mode
 ./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action init
 ./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action up
-./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action smoke
 ```
+
+Deployment verification is owned by the cataloged test suite; run
+`./tests/run.ps1 compose-smoke` rather than embedding assertions in the
+lifecycle script.
 
 In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:
 
@@ -655,6 +657,8 @@ All automated tests and test-owned assets live under `tests/`. Two separate
 Python 3.11 environments are required because the API and Airflow layers have
 conflicting SQLAlchemy requirements. Plain `pytest` is deterministic and does
 not collect the Airflow, integration, external, E2E, or performance tiers.
+See the concise [test-suite user guide](docs/user-guides/RUNNING_TESTS.md) for
+setup, tier commands, disposable services, credentials, and result handling.
 
 #### API + ETL unit tests (Python 3.11, `.[api,dev]`)
 
@@ -665,15 +669,15 @@ pip install -e ".[api,dev]"
 # Run all deterministic unit tests
 make test-unit
 # Windows equivalent
-./scripts/test.ps1 unit
+./tests/run.ps1 unit
 
 # ETL unit tests only (Census, BLS, FRED, shared)
 make test-etl
-# Windows equivalent: ./scripts/test.ps1 etl
+# Windows equivalent: ./tests/run.ps1 etl
 
 # API unit tests only
 make test-api
-# Windows equivalent: ./scripts/test.ps1 api
+# Windows equivalent: ./tests/run.ps1 api
 
 # Full unit suite with coverage
 pytest --cov=src --cov=apps --cov-report=term-missing tests/unit/
@@ -688,18 +692,26 @@ pip install apache-airflow==2.9.3 \
 pip install -e ".[airflow-dev]"
 
 make test-dags
-# Windows equivalent: ./scripts/test.ps1 dags
+# Windows equivalent: ./tests/run.ps1 dags
 ```
 
 The remaining tier commands are `make test-integration`, `make test-external`,
-`make test-e2e`, `make test-martin-unit`, and `make test-performance`; pass the same tier name to
-`./scripts/test.ps1` on Windows. Infrastructure tiers remain opt-in and require
-their disposable services and environment flags.
+`make test-e2e`, `make test-martin-unit`, `make test-martin-integration`,
+`make test-performance`, `make test-resilience`, `make test-web-unit`,
+`make test-web-browser`, `make test-web-build`, and `make test-compose-smoke`;
+pass the same tier name to `./tests/run.ps1` on Windows. Infrastructure tiers
+remain opt-in and use disposable services and explicit environment guards.
 
-The deterministic Martin configuration, TileJSON, routing, and geography-join
-contracts run with `make test-martin-unit` or `./scripts/test.ps1 martin-unit`.
-Disposable Martin/PostGIS integration coverage is tracked in the testing plan
-and correction checklist and is not yet implemented.
+The deterministic Martin contracts run with `make test-martin-unit`. The live
+TileJSON, decoded MVT, read-only role, proxy, failure-mode, and API join suite
+runs through `make test-martin-integration`; its runner always removes the
+disposable Compose project and volumes. Install the decoder only in the
+API/Martin environment with `pip install -e ".[api,dev,martin-test]"`; it is
+intentionally excluded from `airflow-dev` because the two environments require
+incompatible protobuf versions.
+
+Frontend lint/build/unit/browser checks use the `test-web-*` targets. Frontend
+test code and reviewed browser MVT fixture live under `tests/frontend/`.
 
 #### PostgreSQL integration tests
 
@@ -718,7 +730,7 @@ export TEST_POSTGRES_PASSWORD=population_test
 export TEST_POSTGRES_DATABASE=population_etl_test
 
 make test-integration
-# Windows equivalent: ./scripts/test.ps1 integration
+# Windows equivalent: ./tests/run.ps1 integration
 ```
 
 The `postgres-integration` workflow provisions the disposable service and
@@ -738,12 +750,20 @@ database 15, without credentials, and clears that database around every test.
 export TEST_REDIS_URL=redis://127.0.0.1:6379/15
 
 make test-integration
-# Windows equivalent: ./scripts/test.ps1 integration
+# Windows equivalent: ./tests/run.ps1 integration
 ```
 
 The `redis-integration` workflow validates cache miss/hit behavior, cache-key
 separation, TTL expiry, response bypass rules, Redis 7 compatibility, cleanup,
 and graceful fallback when Redis is unavailable.
+
+The external runner includes both the small source contracts and EXT-007 through
+EXT-010 legacy ingestion/metadata contracts. It therefore requires the same
+disposable `TEST_POSTGRES_*` settings plus explicit network access. Census and
+FRED Data API calls require their respective keys; those secrets are optional
+for a partial local run, where missing-key skips are named. The scheduled
+workflow reports every skip separately. BLS continues to support its bounded
+anonymous contract, with a registration key used when configured.
 
 #### Marker reference
 
@@ -759,6 +779,8 @@ and graceful fallback when Redis is unavailable.
 | `e2e`         | Raw-to-API deterministic end-to-end fixture flow         |
 | `performance` | Load, volume, or benchmark scenarios                     |
 | `slow`        | Expected duration exceeds 30 seconds                     |
+| `frontend`    | JavaScript unit, component, and browser contracts        |
+| `deployment`  | Container, proxy, and composed-service contracts         |
 
 ### Project Structure
 ```
@@ -776,7 +798,7 @@ data_ingestion_toolbox/
 │       └── models.py, db.py, config.py
 ├── dags/                 — Airflow DAGs
 ├── documentation/        — Architecture and operational docs
-├── scripts/              — Tooling and validation scripts
+├── scripts/              — Deployment, provisioning, and production diagnostics
 ├── infra/
 │   ├── airflow/
 │   ├── docker/

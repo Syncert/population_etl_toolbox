@@ -15,6 +15,18 @@ from typing import Any, Generator
 
 import pytest
 
+from tests.integration.database.conftest import (
+    bootstrapped_postgres,
+    postgres_connection_factory,
+    postgres_test_config,
+)
+
+__all__ = [
+    "bootstrapped_postgres",
+    "postgres_connection_factory",
+    "postgres_test_config",
+]
+
 _DAGS_FOLDER = str(Path(__file__).resolve().parents[2] / "dags")
 
 # ---------------------------------------------------------------------------

@@ -23,9 +23,10 @@ TIMEOUT_SECONDS = 15.0
 
 
 def _census_payload(variable: str = "B01003_001E") -> list[list[str]]:
+    api_key = require_external_key("CENSUS_API_KEY", ACS_CONFIG.census_api_key)
     response = httpx.get(
         "https://api.census.gov/data/2023/acs/acs5",
-        params={"get": f"NAME,{variable}", "for": "us:1"},
+        params={"get": f"NAME,{variable}", "for": "us:1", "key": api_key},
         timeout=TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -140,11 +141,12 @@ def test_external_result_classification_and_telemetry(
     assert secret not in caplog.text
 
 
+@pytest.mark.parametrize("key_name", ["CENSUS_API_KEY", "FRED_API_KEY"])
 def test_missing_credentials_skip_clearly_without_secret_leak(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    key_name: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Covers: EXT-006 — missing credentials skip clearly without leaking."""
-    monkeypatch.delenv("FRED_API_KEY", raising=False)
-    with pytest.raises(pytest.skip.Exception, match="FRED_API_KEY is not configured"):
-        require_external_key("FRED_API_KEY", os.environ.get("FRED_API_KEY"))
+    monkeypatch.delenv(key_name, raising=False)
+    with pytest.raises(pytest.skip.Exception, match=rf"{key_name} is not configured"):
+        require_external_key(key_name, os.environ.get(key_name))
     assert "external-secret-do-not-log" not in caplog.text

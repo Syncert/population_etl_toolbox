@@ -77,8 +77,7 @@ def read_bls_tsv(url: str) -> pl.DataFrame:
         BytesIO(r.content),
         separator="\t",
         has_header=True,
-        infer_schema_length=0,  # Read all as strings
-        dtypes={},
+        infer_schema=False,  # Published identifiers must remain exact strings.
     )
 
 

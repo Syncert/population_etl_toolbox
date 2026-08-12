@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
+from data_ingestion_toolbox.fred import ingest as fred_ingest
 from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
 from data_ingestion_toolbox.fred.silver_fred import transform as silver_transform
 from tests.integration.database.test_fred_silver_flow import _seed_time
@@ -25,6 +28,8 @@ pytestmark = [
     pytest.mark.database,
     pytest.mark.slow,
 ]
+
+FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures/fred"
 
 
 @contextmanager
@@ -78,7 +83,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
     """Covers: E2E-003 — FRED fixture flows raw through the API exactly.
 
     Covers: E2E-004 — replay preserves fact counts and API JSON.
-    Covers: E2E-005 — a revision updates latest while retaining prior dates.
+        Covers: E2E-005, ETL-023 — the latest source revision wins deterministically.
     Covers: E2E-006 — dimension misses reconcile without corrupt serving data.
     """
     token = uuid4().hex[:12].upper()
@@ -101,38 +106,55 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 """,
                 (series_id, missing_series),
             )
-            cursor.execute(
-                """
-                INSERT INTO raw_fred.fred_long (
-                    domain, series_id, obs_date, value, is_missing,
-                    realtime_start, realtime_end, load_batch_id
-                ) VALUES
-                    (%s, %s, '2096-01-01', 10, FALSE, '2096-03-01', '2096-03-01', %s),
-                    (%s, %s, '2096-02-01', 20, FALSE, '2096-03-01', '2096-03-01', %s),
-                    (%s, %s, '2196-01-01', 99, FALSE, '2196-02-01', '2196-02-01', %s)
-                """,
-                (
-                    domain,
-                    series_id,
-                    str(uuid4()),
-                    domain,
-                    series_id,
-                    str(uuid4()),
-                    domain,
-                    missing_series,
-                    str(uuid4()),
-                ),
-            )
         writer.commit()
     finally:
         writer.close()
 
+    monkeypatch.setattr(fred_ingest, "_get_pg_connection", postgres_connection_factory)
     monkeypatch.setattr(
         silver_transform,
         "_get_hook",
         lambda: PostgresHookStub(postgres_connection_factory),
     )
     try:
+        invalid_payload = json.loads(
+            (FIXTURE_ROOT / "e2e_invalid.json").read_text(encoding="utf-8")
+        )
+        with pytest.raises(fred_ingest.FredPayloadError):
+            fred_ingest.parse_fred_response(invalid_payload, series_id, domain, uuid4())
+
+        payload = json.loads(
+            (FIXTURE_ROOT / "e2e_pipeline.json").read_text(encoding="utf-8")
+        )
+        missing_payload = json.loads(
+            (FIXTURE_ROOT / "e2e_dimension_miss.json").read_text(encoding="utf-8")
+        )
+        assert (
+            fred_ingest.load_df_to_fred_long(
+                fred_ingest.parse_fred_response(payload, series_id, domain, uuid4())
+            )
+            == 2
+        )
+        assert (
+            fred_ingest.load_df_to_fred_long(
+                fred_ingest.parse_fred_response(
+                    missing_payload, missing_series, domain, uuid4()
+                )
+            )
+            == 1
+        )
+
+        raw_reader = postgres_connection_factory()
+        try:
+            with raw_reader.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM raw_fred.fred_long WHERE series_id IN (%s, %s)",
+                    (series_id, missing_series),
+                )
+                assert cursor.fetchone() == (3,)
+        finally:
+            raw_reader.close()
+
         with caplog.at_level(logging.WARNING):
             assert silver_transform.transform_fred_to_silver(domain) == 2
         assert "Dropped 1 FRED rows with missing time_sk" in caplog.text
@@ -147,8 +169,8 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 "/api/observations/latest", params={"metric_code": metric_code}
             )
         assert first.status_code == common.status_code == 200
-        assert [item["value"] for item in first.json()["items"]] == ["10", "20"]
-        assert common.json()["items"][0]["value"] == "20"
+        assert [item["value"] for item in first.json()["items"]] == ["10.0", "20.0"]
+        assert common.json()["items"][0]["value"] == "20.0"
 
         assert silver_transform.transform_fred_to_silver(domain) == 2
         _refresh_gold(postgres_connection_factory, "2096-01-01", "2096-02-28")
@@ -182,7 +204,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 "/api/fred/observations/timeseries",
                 params={"metric_code": metric_code, "geo_id": "us:1"},
             )
-        assert [item["value"] for item in revised.json()["items"]] == ["10", "25"]
+        assert [item["value"] for item in revised.json()["items"]] == ["10.0", "25.0"]
 
         reader = postgres_connection_factory()
         try:

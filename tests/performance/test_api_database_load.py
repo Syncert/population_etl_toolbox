@@ -11,8 +11,11 @@ import pytest
 from psycopg2.extras import execute_values
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
 from tests.e2e.test_fred_pipeline import _real_client
+from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.performance.support import BASELINES, percentile
+from tests.support.postgres import PostgresHookStub
 
 pytestmark = [pytest.mark.performance, pytest.mark.database, pytest.mark.slow]
 
@@ -97,48 +100,62 @@ def test_api_traffic_during_atomic_gold_refresh_stays_consistent(
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
+            _seed_time(cursor, 20950101, "2095-01-01")
             cursor.execute(
                 """
-                INSERT INTO gold_fred.mv_fred_latest (
-                    source_code, observation_date, duration_start, duration_end,
-                    time_sk, as_of_date, updated_at, geo_id, geo_level,
-                    series_id, series_title, value, units, frequency,
-                    metric_code, metric_display_name, dashboard_suitability
+                INSERT INTO silver_fred.fact_economic_indicators (
+                    time_sk, duration_start, duration_end, observation_date,
+                    series_id, domain, value, is_missing, series_title,
+                    unit_of_measure, frequency, seasonal_adjustment,
+                    source_system, load_batch_id, ingested_at
                 ) VALUES (
-                    'FRED', '2093-01-01', '2093-01-01', '2093-01-31',
-                    20930101, '2093-02-01', NOW(), 'us:1', 'NATIONAL',
-                    %s, 'Refresh fixture', 10, 'Index', 'Monthly',
-                    %s, 'Refresh fixture', 'EXPERIMENTAL'
+                    20950101, '2095-01-01', '2095-01-31', '2095-01-01',
+                    %s, 'performance', 10, FALSE, 'Refresh fixture',
+                    'Index', 'Monthly', 'Not Adjusted', 'FRED', %s, NOW()
                 )
                 """,
-                (series_id, metric_code),
+                (series_id, str(uuid4())),
             )
         writer.commit()
     finally:
         writer.close()
 
+    hook = PostgresHookStub(postgres_connection_factory)
+    gold_transform.refresh_fred_elements(hook)
+    initial_refresh = postgres_connection_factory()
+    try:
+        with initial_refresh.cursor() as cursor:
+            cursor.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                ("2095-01-01", "2095-01-31"),
+            )
+        initial_refresh.commit()
+    finally:
+        initial_refresh.close()
+
     stop = threading.Event()
     errors: list[BaseException] = []
 
     def refresh_values() -> None:
-        value = 10
         try:
-            for _ in range(40):
-                candidate = postgres_connection_factory()
-                try:
-                    value = 20 if value == 10 else 10
-                    with candidate.cursor() as cursor:
-                        cursor.execute(
-                            """
-                            UPDATE gold_fred.mv_fred_latest
-                            SET value = %s, updated_at = clock_timestamp()
-                            WHERE series_id = %s
-                            """,
-                            (value, series_id),
-                        )
-                    candidate.commit()
-                finally:
-                    candidate.close()
+            candidate = postgres_connection_factory()
+            try:
+                with candidate.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE silver_fred.fact_economic_indicators
+                        SET value = 20, ingested_at = clock_timestamp()
+                        WHERE series_id = %s
+                        """,
+                        (series_id,),
+                    )
+                    cursor.execute(
+                        "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                        ("2095-01-01", "2095-01-31"),
+                    )
+                candidate.commit()
+            finally:
+                candidate.close()
         except (
             BaseException
         ) as exc:  # pragma: no cover - assertion reports thread error
@@ -179,6 +196,33 @@ def test_api_traffic_during_atomic_gold_refresh_stays_consistent(
                 cursor.execute(
                     "DELETE FROM gold_fred.mv_fred_latest WHERE series_id = %s",
                     (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM gold_fred.rpt_fred_observations WHERE series_id = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM gold_glossary.bridge_metric_fred_series b
+                    USING gold_fred.dim_fred_series s
+                    WHERE b.fred_series_sk = s.fred_series_sk AND s.series_id = %s
+                    """,
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code = %s",
+                    (metric_code,),
+                )
+                cursor.execute(
+                    "DELETE FROM gold_fred.dim_fred_series WHERE series_id = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_fred.fact_economic_indicators WHERE series_id = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_time WHERE time_sk = 20950101"
                 )
             cleanup.commit()
         finally:

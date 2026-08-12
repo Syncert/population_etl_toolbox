@@ -1,0 +1,9 @@
+prune apps/web
+prune tests
+prune .github
+prune docs
+prune infra
+prune scripts
+prune sql
+global-exclude *.py[cod]
+global-exclude __pycache__

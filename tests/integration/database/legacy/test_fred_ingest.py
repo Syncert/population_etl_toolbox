@@ -1,27 +1,14 @@
-# tests/fred_2_ingest_test.py
+"""Bounded live FRED ingestion contract using the disposable database."""
 
-"""
-FRED Ingestion Test
+from __future__ import annotations
 
-This test script verifies that FRED data can be ingested from the FRED API
-into the raw_fred.fred_long table.
+from collections.abc import Callable
 
-Run this AFTER running fred_1_metadata_test.py.
-
-This test will make real API calls to the FRED API, so ensure you have:
-1. FRED_API_KEY environment variable set
-2. Database connection configured
-3. Metadata tables populated (run fred_1_metadata_test.py first)
-"""
-
-import os
-
-import psycopg2
 import pytest
+from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.fred import ingest
 from data_ingestion_toolbox.fred.config import CONFIG
-from data_ingestion_toolbox.fred.ingest import ingest_slice
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
 
 pytestmark = [
     pytest.mark.integration,
@@ -29,365 +16,50 @@ pytestmark = [
     pytest.mark.external,
     pytest.mark.slow,
 ]
-if os.environ.get("RUN_LEGACY_DATABASE_TESTS") != "1":
-    pytest.skip(
-        "legacy live ingestion check requires explicit opt-in", allow_module_level=True
-    )
 
 
-def get_connection():
-    """Get database connection."""
-    details = PostgresConnectionFactory.auto(
-        conn_id=CONFIG.postgres_conn_id,
-        prefix="POSTGRES_",
-        database="public_data",
-    )
-    return psycopg2.connect(**details.psycopg_kwargs())
-
-
-def test_single_series_ingestion():
-    """Covers: EXT-008 — live single-series FRED ingestion loads raw rows."""
-    print("\n=== Testing Single Series Ingestion (UNRATE) ===")
-
-    # Ingest unemployment rate for recent 2 years
-    rows = ingest_slice(
-        domain="labor_cycle",
-        series_ids=["UNRATE"],
-        date_start="2022-01-01",
-        date_end="2023-12-31",
-    )
-
-    print(f"Ingested {rows} rows for UNRATE (2022-2023)")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE series_id = 'UNRATE'
-                  AND obs_date BETWEEN '2022-01-01' AND '2023-12-31';
-            """)
-
-            db_count = cur.fetchone()[0]
-            print(f"Found {db_count} UNRATE observations in database")
-
-            # Show sample data
-            cur.execute("""
-                SELECT series_id, obs_date, value, is_missing
-                FROM raw_fred.fred_long
-                WHERE series_id = 'UNRATE'
-                  AND obs_date BETWEEN '2022-01-01' AND '2023-12-31'
-                ORDER BY obs_date DESC
-                LIMIT 12;
-            """)
-
-            rows_sample = cur.fetchall()
-            print("\nSample UNRATE data (most recent 12 months):")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]} | {row[2]} | Missing: {row[3]}")
-    finally:
-        conn.close()
-
-    assert db_count > 0, "No UNRATE data found in database"
-    assert db_count >= 24, (
-        f"Expected at least 24 monthly observations, found {db_count}"
-    )
-    print("[PASS] Test passed: single series ingestion successful")
-
-
-def test_labor_cycle_domain():
-    """Covers: EXT-008 — live labor-cycle domain ingestion loads raw rows."""
-    print("\n=== Testing Labor Cycle Domain Ingestion ===")
-
-    # Ingest recent 1 year for labor cycle series
-    rows = ingest_slice(
-        domain="labor_cycle", date_start="2023-01-01", date_end="2023-12-31"
-    )
-
-    print(f"Ingested {rows} rows for labor_cycle domain (2023)")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE domain = 'labor_cycle'
-                  AND obs_date BETWEEN '2023-01-01' AND '2023-12-31';
-            """)
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} labor_cycle observations in database")
-
-            # Count distinct series
-            cur.execute("""
-                SELECT COUNT(DISTINCT series_id)
-                FROM raw_fred.fred_long
-                WHERE domain = 'labor_cycle'
-                  AND obs_date BETWEEN '2023-01-01' AND '2023-12-31';
-            """)
-
-            series_count = cur.fetchone()[0]
-            print(f"Found data for {series_count} distinct series")
-
-            # Show series breakdown
-            cur.execute("""
-                SELECT series_id, COUNT(*) as obs_count
-                FROM raw_fred.fred_long
-                WHERE domain = 'labor_cycle'
-                  AND obs_date BETWEEN '2023-01-01' AND '2023-12-31'
-                GROUP BY series_id
-                ORDER BY series_id;
-            """)
-
-            rows_sample = cur.fetchall()
-            print("\nSeries observation counts:")
-            for row in rows_sample:
-                print(f"  {row[0]}: {row[1]} observations")
-    finally:
-        conn.close()
-
-    assert count > 0, "No labor_cycle data found"
-    assert series_count > 0, "No distinct series found"
-    print("[PASS] Test passed: labor_cycle domain ingestion successful")
-
-
-def test_housing_domain():
-    """Covers: EXT-008 — live housing-domain ingestion loads raw rows."""
-    print("\n=== Testing Housing Domain Ingestion ===")
-
-    # Ingest recent 1 year for housing series
-    rows = ingest_slice(
-        domain="housing", date_start="2023-01-01", date_end="2023-12-31"
-    )
-
-    print(f"Ingested {rows} rows for housing domain (2023)")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE domain = 'housing'
-                  AND obs_date BETWEEN '2023-01-01' AND '2023-12-31';
-            """)
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} housing observations in database")
-
-            # Show sample
-            cur.execute("""
-                SELECT series_id, obs_date, value
-                FROM raw_fred.fred_long
-                WHERE domain = 'housing'
-                  AND obs_date BETWEEN '2023-01-01' AND '2023-12-31'
-                ORDER BY series_id, obs_date DESC
-                LIMIT 10;
-            """)
-
-            rows_sample = cur.fetchall()
-            print("\nSample housing data:")
-            for row in rows_sample:
-                print(f"  {row[0]} | {row[1]} | {row[2]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No housing data found"
-    print("[PASS] Test passed: housing domain ingestion successful")
-
-
-def test_macro_domain():
-    """Covers: EXT-008 — live macro-domain ingestion loads raw rows."""
-    print("\n=== Testing Macro Domain Ingestion ===")
-
-    # Ingest recent 2 years for macro series (GDP is quarterly, so needs longer range)
-    rows = ingest_slice(domain="macro", date_start="2022-01-01", date_end="2023-12-31")
-
-    print(f"Ingested {rows} rows for macro domain (2022-2023)")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE domain = 'macro'
-                  AND obs_date BETWEEN '2022-01-01' AND '2023-12-31';
-            """)
-
-            count = cur.fetchone()[0]
-            print(f"Found {count} macro observations in database")
-
-            # Show GDP data specifically
-            cur.execute("""
-                SELECT series_id, obs_date, value
-                FROM raw_fred.fred_long
-                WHERE series_id = 'GDPC1'
-                  AND obs_date BETWEEN '2022-01-01' AND '2023-12-31'
-                ORDER BY obs_date DESC;
-            """)
-
-            gdp_rows = cur.fetchall()
-            print("\nGDP (GDPC1) quarterly data:")
-            for row in gdp_rows:
-                print(f"  {row[1]} | {row[2]}")
-    finally:
-        conn.close()
-
-    assert count > 0, "No macro data found"
-    print("[PASS] Test passed: macro domain ingestion successful")
-
-
-def test_missing_data_handling():
-    """Covers: EXT-008 — live FRED missing values remain explicit."""
-    print("\n=== Testing Missing Data Handling ===")
-
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            # Check if we have any missing data flagged
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE is_missing = TRUE;
-            """)
-
-            missing_count = cur.fetchone()[0]
-            print(f"Found {missing_count} observations flagged as missing")
-
-            # Show examples if any
-            if missing_count > 0:
-                cur.execute("""
-                    SELECT series_id, obs_date, value, is_missing
-                    FROM raw_fred.fred_long
-                    WHERE is_missing = TRUE
-                    LIMIT 5;
-                """)
-
-                rows = cur.fetchall()
-                print("\nSample missing data records:")
-                for row in rows:
-                    print(
-                        f"  {row[0]} | {row[1]} | Value: {row[2]} | Missing: {row[3]}"
-                    )
-
-            # Also check for NULL values (should have is_missing=TRUE)
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM raw_fred.fred_long
-                WHERE value IS NULL AND is_missing = FALSE;
-            """)
-
-            incorrect_missing = cur.fetchone()[0]
-
-            if incorrect_missing > 0:
-                print(
-                    f"\n⚠ Warning: {incorrect_missing} NULL values not flagged as missing"
-                )
-
-            assert incorrect_missing == 0, (
-                f"Found {incorrect_missing} NULL values not properly flagged as missing"
-            )
-    finally:
-        conn.close()
-
-    print("[PASS] Test passed: missing data handling is correct")
-
-
-def test_all_curated_series():
-    """Covers: EXT-008 — live curated-series ingestion loads raw rows."""
-    print("\n=== Testing All Curated Series Ingestion ===")
-
-    # Ingest just 6 months for all series (to keep test fast)
-    rows = ingest_slice(
-        domain=None,  # All domains
-        series_ids=CONFIG.curated_series_ids,
-        date_start="2023-07-01",
-        date_end="2023-12-31",
-    )
-
-    print(f"Ingested {rows} rows for all curated series (Jul-Dec 2023)")
-
-    # Verify data in database
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            # Count distinct series
-            cur.execute("""
-                SELECT COUNT(DISTINCT series_id)
-                FROM raw_fred.fred_long
-                WHERE obs_date BETWEEN '2023-07-01' AND '2023-12-31';
-            """)
-
-            series_count = cur.fetchone()[0]
-            print(f"Found data for {series_count} distinct series")
-
-            # Show coverage
-            cur.execute("""
-                SELECT series_id, COUNT(*) as obs_count
-                FROM raw_fred.fred_long
-                WHERE obs_date BETWEEN '2023-07-01' AND '2023-12-31'
-                GROUP BY series_id
-                ORDER BY series_id;
-            """)
-
-            rows_sample = cur.fetchall()
-            print("\nSeries coverage (Jul-Dec 2023):")
-            for row in rows_sample:
-                print(f"  {row[0]}: {row[1]} observations")
-    finally:
-        conn.close()
-
-    assert series_count > 0, "No series data found"
-    print("[PASS] Test passed: all curated series ingestion successful")
-
-
-def main():
-    """Run all ingestion tests."""
-    print("=" * 70)
-    print("FRED INGESTION TESTS")
-    print("=" * 70)
-
+def test_bounded_live_fred_slice_loads_values_and_missing_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: EXT-008 — one live FRED series reaches production raw storage."""
     if not CONFIG.has_api_key:
-        print("\n[FAIL] ERROR: FRED_API_KEY not set!")
-        print(
-            "Please set the FRED_API_KEY environment variable to run ingestion tests."
+        pytest.skip(
+            "FRED_API_KEY is optional; scheduled credentialed job reports this skip"
         )
-        return
-
+    domain = "external_contract_fred"
+    monkeypatch.setattr(ingest, "_get_pg_connection", postgres_connection_factory)
     try:
-        # Test individual series and domains
-        test_single_series_ingestion()
-        test_labor_cycle_domain()
-        test_housing_domain()
-        test_macro_domain()
-
-        # Test data quality
-        test_missing_data_handling()
-
-        # Test comprehensive ingestion
-        test_all_curated_series()
-
-        print("\n" + "=" * 70)
-        print("ALL TESTS PASSED [PASS]")
-        print("=" * 70)
-
-    except AssertionError as e:
-        print(f"\n[FAIL] TEST FAILED: {e}")
-        raise
-    except Exception as e:
-        print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
-
-
-if __name__ == "__main__":
-    main()
+        loaded = ingest.ingest_slice(
+            domain=domain,
+            series_ids=["UNRATE"],
+            date_start="2023-01-01",
+            date_end="2023-03-31",
+        )
+        assert loaded == 3
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*), COUNT(*) FILTER (WHERE value IS NOT NULL),
+                           BOOL_AND(is_missing = (value IS NULL))
+                    FROM raw_fred.fred_long
+                    WHERE domain = %s AND series_id = 'UNRATE'
+                      AND obs_date BETWEEN '2023-01-01' AND '2023-03-31'
+                    """,
+                    (domain,),
+                )
+                assert cursor.fetchone() == (3, 3, True)
+        finally:
+            reader.close()
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM raw_fred.fred_long WHERE domain = %s", (domain,)
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()

@@ -12,30 +12,36 @@ from apps.api.routers import (
     models,
     observations,
 )
-from data_ingestion_toolbox.config import get_settings
+from data_ingestion_toolbox.config import Settings, get_settings
 
-settings = get_settings()
 
-app = FastAPI(
-    title=settings.api_title,
-    version=settings.api_version,
-    description=settings.api_description,
-)
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the production application with one explicit runtime configuration."""
+    configured = settings or get_settings()
+    application = FastAPI(
+        title=configured.api_title,
+        version=configured.api_version,
+        description=configured.api_description,
+    )
 
-app.add_middleware(
-    RedisResponseCacheMiddleware,
-    redis_url=settings.redis_url,
-    ttl_seconds=settings.api_cache_ttl_seconds,
-)
-app.add_middleware(SecurityHeadersMiddleware)
+    application.add_middleware(
+        RedisResponseCacheMiddleware,
+        redis_url=configured.redis_url,
+        ttl_seconds=configured.api_cache_ttl_seconds,
+    )
+    application.add_middleware(SecurityHeadersMiddleware)
 
-app.include_router(health.router)
-app.include_router(catalog.router)
-app.include_router(observations.router)
-app.include_router(distribution.router)
-app.include_router(comparison.router)
-app.include_router(models.router)
-# Per-source gold schema routers
-app.include_router(bls.router)
-app.include_router(census.router)
-app.include_router(fred.router)
+    application.include_router(health.router)
+    application.include_router(catalog.router)
+    application.include_router(observations.router)
+    application.include_router(distribution.router)
+    application.include_router(comparison.router)
+    application.include_router(models.router)
+    # Per-source gold schema routers
+    application.include_router(bls.router)
+    application.include_router(census.router)
+    application.include_router(fred.router)
+    return application
+
+
+app = create_app()

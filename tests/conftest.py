@@ -13,12 +13,13 @@ import pytest
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
-if os.environ.get("RUN_INTEGRATION_TESTS") == "1":
-    os.environ.setdefault(
-        "AIRFLOW_HOME",
-        str(Path(tempfile.gettempdir()) / "population-etl-airflow-integration"),
-    )
-    os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
+# Some production ETL modules import Airflow hooks even in deterministic unit
+# tests. Keep every test import isolated from the developer's Airflow home.
+os.environ.setdefault(
+    "AIRFLOW_HOME",
+    str(Path(tempfile.gettempdir()) / "population-etl-airflow-tests"),
+)
+os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
 
 
 @pytest.fixture
@@ -45,6 +46,9 @@ for _directory, _flag in {
 }.items():
     if os.environ.get(_flag) != "1":
         collect_ignore.append(_directory)
+
+if os.environ.get("RUN_MARTIN_TESTS") != "1":
+    collect_ignore.extend(["integration/martin", "e2e/test_martin_api_join.py"])
 
 
 def _network_error(target: object) -> RuntimeError:

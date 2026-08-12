@@ -11,6 +11,10 @@ from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.fred.silver_fred import transform
 from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
+from data_ingestion_toolbox.utility.gold_schema import (
+    ServingRefreshChunkConfig,
+    refresh_serving_layer_in_year_chunks,
+)
 from tests.support.postgres import PostgresHookStub
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -65,7 +69,16 @@ def fred_silver_token(
                     (f"TEST_FRED_SILVER_{token}%",),
                 )
                 cursor.execute(
-                    "DELETE FROM silver_ref.dim_time WHERE time_sk IN (20990101, 20990201)"
+                    "DELETE FROM gold_glossary.serving_refresh_chunk_state "
+                    "WHERE source_code = 'FRED'"
+                )
+                cursor.execute(
+                    "DELETE FROM gold_glossary.serving_refresh_state "
+                    "WHERE source_code = 'FRED'"
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_time "
+                    "WHERE time_sk IN (20980101, 20990101, 20990201)"
                 )
             cleanup.commit()
         finally:
@@ -133,6 +146,7 @@ def test_fred_raw_rows_transform_to_exact_silver_durations(
     assert transform.transform_fred_to_silver(domain) == 2
 
     reader = postgres_connection_factory()
+    first_watermarks: list = []
     try:
         with reader.cursor() as cursor:
             cursor.execute(
@@ -149,8 +163,33 @@ def test_fred_raw_rows_transform_to_exact_silver_durations(
                 (20990101, "2099-01-01", "2099-01-01", "2099-01-31", 10.5, "Monthly"),
                 (20990201, "2099-02-01", "2099-02-01", "2099-02-28", 11.5, "Monthly"),
             ]
+            cursor.execute(
+                """
+                SELECT ingested_at FROM silver_fred.fact_economic_indicators
+                WHERE series_id = %s ORDER BY observation_date
+                """,
+                (series_id,),
+            )
+            first_watermarks = [row[0] for row in cursor.fetchall()]
     finally:
         reader.close()
+
+    # The transform's public return value is rows processed, while the SQL
+    # conflict predicate decides whether an existing row is materially changed.
+    assert transform.transform_fred_to_silver(domain) == 2
+    replay_reader = postgres_connection_factory()
+    try:
+        with replay_reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT ingested_at FROM silver_fred.fact_economic_indicators
+                WHERE series_id = %s ORDER BY observation_date
+                """,
+                (series_id,),
+            )
+            assert [row[0] for row in cursor.fetchall()] == first_watermarks
+    finally:
+        replay_reader.close()
 
 
 def test_fred_missing_time_dimension_is_counted_and_not_inserted(
@@ -349,5 +388,144 @@ def test_fred_revision_refreshes_latest_without_losing_prior_date(
                 (series_id,),
             )
             assert cursor.fetchone() == (25,)
+    finally:
+        reader.close()
+
+
+def _fred_chunk_config(*, latest_procedure: str) -> ServingRefreshChunkConfig:
+    return ServingRefreshChunkConfig(
+        source_code="FRED",
+        log_label="FRED",
+        report_table="gold_fred.rpt_fred_observations",
+        report_date_column="observation_date",
+        changed_chunks_sql="""
+            SELECT
+                MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 1, 1),
+                MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 12, 31),
+                MAX(s.ingested_at)
+            FROM silver_fred.fact_economic_indicators s
+            WHERE s.is_missing = FALSE AND s.ingested_at > %s
+            GROUP BY EXTRACT(YEAR FROM s.observation_date)
+            ORDER BY EXTRACT(YEAR FROM s.observation_date)
+        """,
+        report_procedure="gold_fred.refresh_rpt_fred_observations",
+        latest_procedure=latest_procedure,
+        statement_timeout="30min",
+    )
+
+
+@pytest.mark.slow
+def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
+    postgres_connection_factory: Callable[[], connection],
+    fred_silver_token: str,
+) -> None:
+    """Covers: ETL-037 — real watermarks, chunks, failure, and replay reconcile."""
+    series_id = f"TEST_FRED_SILVER_{fred_silver_token}_CHUNKS"
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20980101, "2098-01-01")
+            _seed_time(cursor, 20990101, "2099-01-01")
+            cursor.execute(
+                """
+                INSERT INTO silver_fred.fact_economic_indicators (
+                    time_sk, duration_start, duration_end, observation_date,
+                    series_id, domain, value, is_missing, series_title,
+                    unit_of_measure, frequency, seasonal_adjustment,
+                    source_system, load_batch_id, ingested_at
+                ) VALUES
+                    (20980101, '2098-01-01', '2098-01-31', '2098-01-01',
+                     %s, 'fixture', 31, FALSE, 'Chunk fixture', 'Index',
+                     'Monthly', 'Not Adjusted', 'FRED', %s, NOW()),
+                    (20990101, '2099-01-01', '2099-01-31', '2099-01-01',
+                     %s, 'fixture', 32, FALSE, 'Chunk fixture', 'Index',
+                     'Monthly', 'Not Adjusted', 'FRED', %s, NOW())
+                """,
+                (series_id, str(uuid4()), series_id, str(uuid4())),
+            )
+            cursor.execute(
+                "DELETE FROM gold_glossary.serving_refresh_chunk_state "
+                "WHERE source_code = 'FRED'"
+            )
+            cursor.execute(
+                "DELETE FROM gold_glossary.serving_refresh_state "
+                "WHERE source_code = 'FRED'"
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    hook = PostgresHookStub(postgres_connection_factory)
+    gold_transform.refresh_fred_elements(hook)
+    with pytest.raises(Exception, match="procedure|does not exist"):
+        refresh_serving_layer_in_year_chunks(
+            hook=hook,
+            config=_fred_chunk_config(
+                latest_procedure="gold_fred.missing_latest_procedure"
+            ),
+        )
+
+    failed_reader = postgres_connection_factory()
+    try:
+        with failed_reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT status, attempt_count FROM
+                    gold_glossary.serving_refresh_chunk_state
+                WHERE source_code = 'FRED' ORDER BY chunk_start
+                """
+            )
+            assert cursor.fetchall() == [("FAILED", 1), ("PENDING", 0)]
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_fred.rpt_fred_observations "
+                "WHERE series_id = %s",
+                (series_id,),
+            )
+            assert cursor.fetchone() == (0,)
+    finally:
+        failed_reader.close()
+
+    recovered = refresh_serving_layer_in_year_chunks(
+        hook=hook,
+        config=_fred_chunk_config(latest_procedure="gold_fred.refresh_mv_fred_latest"),
+    )
+    assert recovered == {"planned": 2, "completed": 2, "skipped": 0}
+    assert refresh_serving_layer_in_year_chunks(
+        hook=hook,
+        config=_fred_chunk_config(latest_procedure="gold_fred.refresh_mv_fred_latest"),
+    ) == {"planned": 0, "completed": 0, "skipped": 0}
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT status, attempt_count,
+                       completed_silver_ingested_at >= target_silver_ingested_at
+                FROM gold_glossary.serving_refresh_chunk_state
+                WHERE source_code = 'FRED' ORDER BY chunk_start
+                """
+            )
+            assert cursor.fetchall() == [
+                ("COMPLETE", 2, True),
+                ("COMPLETE", 1, True),
+            ]
+            cursor.execute(
+                """
+                SELECT last_window_start::TEXT, last_window_end::TEXT
+                FROM gold_glossary.serving_refresh_state
+                WHERE source_code = 'FRED'
+                """
+            )
+            assert cursor.fetchone() == ("2098-01-01", "2099-12-31")
+            cursor.execute(
+                """
+                SELECT observation_date::TEXT, value
+                FROM gold_fred.rpt_fred_observations
+                WHERE series_id = %s ORDER BY observation_date
+                """,
+                (series_id,),
+            )
+            assert cursor.fetchall() == [("2098-01-01", 31), ("2099-01-01", 32)]
     finally:
         reader.close()

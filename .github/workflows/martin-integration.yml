@@ -1,0 +1,91 @@
+name: martin-integration
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/next.config.mjs"
+      - "infra/martin/**"
+      - "infra/web/nginx.conf"
+      - "infra/docker/docker-compose.test.yml"
+      - "src/data_ingestion_toolbox/**/DDL/**"
+      - "src/data_ingestion_toolbox/martin_contract.py"
+      - "sql/gold_contract/**"
+      - "tests/e2e/test_martin_api_join.py"
+      - "tests/integration/martin/**"
+      - "tests/support/martin.py"
+      - "tests/sql/martin_seed.sql"
+      - "pyproject.toml"
+      - ".github/workflows/martin-integration.yml"
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  martin-postgis:
+    name: Martin/PostGIS/API/proxy contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUN_INTEGRATION_TESTS: "1"
+      RUN_E2E_TESTS: "1"
+      RUN_MARTIN_TESTS: "1"
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "55432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
+      TEST_MARTIN_URL: http://127.0.0.1:33000
+      TEST_MARTIN_PROXY_URL: http://127.0.0.1:33001/tiles
+      TEST_MARTIN_CONTAINER_NAME: population-testing-martin-1
+      TEST_MARTIN_DOCKER_NETWORK: population-testing_default
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install API, ETL, MVT, and test dependencies
+        run: |
+          python -m pip install -e ".[api,dev,martin-test]"
+          python -m pip check
+
+      - name: Start pinned disposable stack
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml
+          up --detach --wait postgres martin proxy
+
+      - name: Run live Martin and API-to-tile contracts
+        run: >-
+          pytest -m martin tests/integration/martin
+          tests/e2e/test_martin_api_join.py
+          --tb=short -q --junitxml=junit-martin-integration.xml
+
+      - name: Capture service logs
+        if: always()
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml logs --no-color
+          > martin-compose.log
+
+      - name: Stop disposable stack
+        if: always()
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml
+          down --volumes --remove-orphans
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: martin-integration-results
+          path: |
+            junit-martin-integration.xml
+            martin-compose.log

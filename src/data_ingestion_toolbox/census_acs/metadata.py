@@ -58,7 +58,7 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
     Uses regex to match flexible title patterns.
     """
     with httpx.Client(timeout=30.0) as client:
-        resp = client.get(DATA_JSON_URL)
+        resp = client.get(DATA_JSON_URL, params={"key": CONFIG.require_api_key()})
         resp.raise_for_status()
         data = resp.json()
 
@@ -185,7 +185,7 @@ def fetch_variables_json(year: int, dataset: str) -> Dict:
 
     url = f"https://api.census.gov/data/{year}/acs/{dataset}/variables.json"
     with httpx.Client(timeout=60.0) as client:
-        resp = client.get(url)
+        resp = client.get(url, params={"key": CONFIG.require_api_key()})
         resp.raise_for_status()
         return resp.json()
 

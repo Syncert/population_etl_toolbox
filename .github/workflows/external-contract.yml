@@ -12,10 +12,29 @@ jobs:
   source-contracts:
     name: Census, BLS, and FRED live contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: true
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+        env:
+          POSTGRES_USER: population_test
+          POSTGRES_PASSWORD: population_test
+          POSTGRES_DB: population_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U population_test -d population_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       RUN_EXTERNAL_TESTS: "1"
+      RUN_INTEGRATION_TESTS: "1"
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
       CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
       BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -34,7 +53,8 @@ jobs:
 
       - name: Run external source contracts
         run: >-
-          pytest tests/external -m external --tb=short -q
+          pytest tests/external tests/integration/database/legacy
+          -m external --tb=short -q -ra
           --junitxml=junit-external.xml
 
       - uses: actions/upload-artifact@v4

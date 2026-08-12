@@ -42,3 +42,12 @@ jobs:
 
       - name: ruff lint check
         run: ruff check .
+
+      - name: Render exact behavioral evidence register
+        run: python -m tests.support.catalog_evidence --output catalog-evidence.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catalog-evidence
+          path: catalog-evidence.md

@@ -3,7 +3,7 @@ name: postgres-integration
 on:
   pull_request:
     paths:
-      - "src/data_ingestion_toolbox/**/DDL/**"
+      - "src/data_ingestion_toolbox/**"
       - "sql/gold_contract/**"
       - "tests/integration/database/**"
       - "tests/support/postgres.py"

@@ -67,7 +67,7 @@ Every automated test must follow Arrange-Act-Assert, have a descriptive name, ow
 | DAG testing | Airflow 2.9.3 `airflow.models.DagBag` | Import, metadata, task, dependency, pool, and timing checks |
 | Database testing | Pinned `postgis/postgis:16-3.5-alpine` container, `psycopg2`, SQLAlchemy 2.x in the API environment | Real spatial/non-spatial DDL, transactions, upserts, and query behavior |
 | Redis testing | Pinned `redis:7.4.9-alpine` container | Real cache hit, miss, expiry, and outage behavior |
-| Vector-tile testing | Immutable Martin container plus an MVT decoder | Live TileJSON, decoded geometry/properties, proxy, and API-to-tile joins |
+| Vector-tile testing | Immutable Martin container plus the isolated `martin-test` MVT decoder extra | Live TileJSON, decoded geometry/properties, proxy, and API-to-tile joins without introducing protobuf conflicts into Airflow |
 | Linting | `ruff` | Formatting and static lint checks |
 | Package validation | `build`, `pip check` | Wheel/sdist creation and dependency consistency |
 | HTTP load testing | `Locust` | Version-controlled API load scenarios and latency percentiles |
@@ -116,7 +116,7 @@ The authoritative cache dependency for the testing suite is `redis:7.4.9-alpine@
 
 ### Martin Vector-Tile Test Dependency
 
-Martin integration tests run against an immutable Martin image connected only to the pinned disposable PostGIS service. The current floating `maplibre/martin:latest` Compose reference must be replaced by a readable version and manifest digest before MARTIN-006 through MARTIN-010 can be implemented.
+Martin integration tests run against `ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b`, connected only to the pinned disposable PostGIS service. The MVT decoder is isolated in the `martin-test` dependency extra so it cannot introduce protobuf conflicts into the Airflow environment.
 
 - The test publishes only the explicitly configured `counties` layer; auto-publication remains disabled.
 - The test database is seeded with small valid and invalid county geometry fixtures and no production data.
@@ -128,6 +128,14 @@ Martin integration tests run against an immutable Martin image connected only to
 ## Test Organization and Markers
 
 The root `tests/` directory is the single authoritative home for all automated test cases and test-owned assets. This includes Python tests, test SQL, fixtures, expected outputs, Locust scenarios, test factories, and test-only helper modules. Tests must not live beside production code under `src/`, `apps/`, `dags/`, or `scripts/`.
+
+Test entry points and gates are centralized with their owned assets:
+`tests/run.ps1` is the Windows tier runner and
+`tests/support/changed_coverage.py` is the changed-line coverage gate. The
+`scripts/` directory is restricted to three operational utilities:
+`deploy_stack.ps1`, `provision_api_readonly.py`, and
+`diagnose_geo_missing.py`. These perform lifecycle, provisioning, or incident
+diagnostics and contain no automated test assertions.
 
 The target layout is:
 
@@ -165,7 +173,7 @@ The following files remain outside `tests/` because they configure or invoke tes
 
 - `.github/workflows/*` CI definitions
 - `pyproject.toml` pytest, coverage, and dependency configuration
-- `Makefile` and PowerShell command wrappers
+- `Makefile` and the `tests/run.ps1` PowerShell tier runner
 - environment/container configuration used by both tests and development
 - production DDL and migration files exercised by tests
 - operational diagnostic scripts with no test assertions
@@ -212,18 +220,21 @@ make test-martin-integration
 make test-performance
 ```
 
-Equivalent checked-in PowerShell entry points will be provided. Until those helpers exist, the underlying commands are:
+Equivalent checked-in PowerShell entry points are available through `tests/run.ps1`. The runner invokes these underlying scopes:
+
+The concise operator-facing setup and command reference is
+[`docs/user-guides/RUNNING_TESTS.md`](../user-guides/RUNNING_TESTS.md).
 
 ```bash
-pytest -m "unit and not external"
-pytest -m dag
-pytest -m "api and not integration"
-pytest -m "integration and not e2e"
-pytest -m external
-pytest -m e2e
-pytest -m unit tests/unit/martin
-pytest -m "integration and martin" tests/integration/martin
-pytest -m performance
+python -m pytest -m "unit and not external"
+RUN_DAG_TESTS=1 python -m pytest -m dag tests/dags
+python -m pytest -m "unit and api" tests/unit/api
+RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and not e2e" tests/integration
+RUN_EXTERNAL_TESTS=1 RUN_INTEGRATION_TESTS=1 python -m pytest -m external tests/external tests/integration/database/legacy
+RUN_E2E_TESTS=1 python -m pytest -m e2e tests/e2e
+python -m pytest -m unit tests/unit/martin
+RUN_INTEGRATION_TESTS=1 RUN_MARTIN_TESTS=1 python -m pytest -m martin tests/integration/martin
+RUN_PERFORMANCE_TESTS=1 python -m pytest -m performance tests/performance
 ```
 
 Plain `pytest` will be configured to exclude `database`, `redis`, `martin`, `external`, `e2e`, `performance`, and `slow` tests. Deterministic Martin configuration/helper tests remain in the default unit tier without the infrastructure marker. DAG and API suites are invoked in their compatible environments rather than accidentally collected in the wrong environment.
@@ -254,7 +265,7 @@ Unless a row says otherwise, any unmet pass condition is the failure condition a
 
 ### Implementation Status
 
-Last audited against the repository on 2026-08-11. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
+Last audited against the repository on 2026-08-12. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
@@ -263,34 +274,44 @@ Last audited against the repository on 2026-08-11. **Implemented** means that ch
 | ETL and shared units | ETL-001–ETL-037 | None |
 | Database integration | DB-001–DB-018 | None |
 | API | API-001–API-027 | None |
-| Martin vector tiles | MARTIN-001–MARTIN-005 | MARTIN-006–MARTIN-010 |
+| Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-010 | None |
 | End-to-end | E2E-001–E2E-006 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| **Total** | **145 of 150** | **5 of 150** |
+| Frontend | WEB-001–WEB-008 | None |
+| Deployment | DEPLOY-001–DEPLOY-005 | None |
+| **Total** | **163 of 163** | **0 of 163** |
 
-Awaiting implementation IDs: MARTIN-006, MARTIN-007, MARTIN-008, MARTIN-009, MARTIN-010.
+Awaiting implementation IDs: None.
 
-Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
+Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-Latest implementation validation on 2026-08-11:
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 163-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+
+Latest implementation validation on 2026-08-12:
 
 | Validation tier | Result | Notes |
 |---|---:|---|
-| Default deterministic suite | 333 passed | No database, Redis, external network, or credentials required |
-| Host DAG suite | 36 passed | Airflow 2.9.3 DAG parsing and structure contracts |
-| Scheduler-image DAG suite | 35 passed, 1 skipped | Skip is the host-only workflow-file assertion; image dependencies also pass `pip check` |
-| PostgreSQL, Redis, and API integration | 46 passed, 4 skipped | Skips are controlled by declared environment guards |
-| Raw-to-silver-to-gold-to-API end-to-end | 3 passed | Census, BLS, and FRED deterministic fixture flows |
-| Bounded performance profiles | 7 passed, 1 skipped | Million-row PERF-006 profile remains opt-in and runs in scheduled CI |
-| Redis outage resilience | 1 passed | Database resilience cases are included in the integration result above |
-| External source contracts | Scheduled | Credential/network-gated EXT tests are implemented but were not invoked in the local validation |
-| Martin deterministic contracts | 33 passed | Configuration, TileJSON, URL normalization, canonical `geo_id`, and exact reconciliation; no services required |
-| Martin service contracts | Awaiting implementation | Disposable Martin/PostGIS, decoded MVT, API join, proxy, and runtime-security tests are not yet implemented |
-| Formatting, lint, and diff checks | Passed | `ruff format --check`, `ruff check`, and `git diff --check` |
+| Default deterministic suite | 399 passed | 2.77 s; no database, Redis, external network, Docker, or credentials required; zero skips/xfails |
+| Host DAG and task-runtime suite | 61 passed | Airflow parsing, callables, real retry/failure observation, disposable-database execution, worker replay, and Census/FRED runtime credential failures |
+| Scheduler-image DAG suite | 58 passed, 3 expected skips | Python 3.11/Airflow 2.9.3 image; workflow metadata and two disposable-database cases are intentionally host/CI-service-only; `pip check` passed |
+| PostgreSQL, Redis, Martin, proxy, API, and deployment integration | 59 passed | One combined disposable-stack run; 8 external tests deselected, not skipped |
+| Raw-to-silver-to-gold-to-API/Martin end-to-end | 4 passed | Reviewed Census, BLS, and FRED response fixtures plus one decoded county-tile/API join |
+| Bounded performance profiles | 7 passed, 1 expected skip | PERF-006 million-row profile is explicitly opt-in and enabled by scheduled/manual CI |
+| Resilience | 5 passed | Production retries, transaction recovery, worker replay, Redis outage/recovery under load, and connection-pool recovery |
+| External source contracts | 17 passed | 9 live Census/BLS/FRED contracts and 8 disposable-database ingestion/metadata contracts; zero skips with configured credentials |
+| Martin deterministic contracts | 33 passed | Configuration, TileJSON, URL normalization, canonical `geo_id`, and exact reconciliation |
+| Frontend | 10 unit and 2 Chromium passed | ESLint and production Next.js build passed; production dependency audit found 0 vulnerabilities |
+| Deployment and image/package reproducibility | Passed | 3 static container contracts, 1 Compose smoke, clean teardown, all four Compose configs, clean wheel/sdist contents, and fresh scheduler/API/web image builds; Python images passed `pip check` |
+| Coverage | 44.62% overall; 98% critical modules | 399-test run; checked-in 44.60% baseline with one-point tolerance requires 43.60%; DAG coverage is emitted separately by `dag-parse` |
+| Formatting, syntax, and diff checks | Passed | Ruff format/lint, PowerShell parsing, workflow YAML parsing, behavioral register, and `git diff --check` |
 
-The traceability guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID has neither an implementation reference in tests/CI/configuration nor an explicit entry in the awaiting-implementation ID list. An awaiting entry is not implementation evidence.
+The latest local validation used the supported Python 3.11 scheduler/API images for clean build and dependency compatibility and a Windows Python 3.13 host as a supplementary fast runner for the complete local matrix. The checked-in CI jobs own the authoritative Python 3.11 executions. No GitHub Actions run URL is available from this local workspace; the exact workflow commands and syntax were validated, but remote job execution must occur after the branch is pushed.
+
+Expected skips are limited to the named PERF-006 million-row opt-in locally and three scheduler-image context guards. The same DAG database nodes pass in the host/service run. There were zero unexpected skips and zero xfails. Host-only warnings came from the unsupported native-Windows Airflow installation, the transitional Starlette `TestClient` package, and an unwritable pre-existing local pytest cache; application-owned deprecation/resource warnings remain errors by configuration.
+
+The attribution guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID has neither an implementation reference in tests/CI/configuration nor an explicit entry in the awaiting-implementation ID list. This guard checks attribution only; it cannot mark an item implemented. The separate behavioral evidence register and manual complete-pass-metric review own implementation status. An awaiting entry is not implementation evidence.
 
 Test docstrings use the following traceability labels:
 
@@ -308,10 +329,10 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-004 | P0 | Collection | Marker validity | Every collected test uses registered markers; pytest has zero unknown-marker warnings | Unknown or missing required infrastructure marker |
 | ENV-005 | P0 | Static | Package build | Wheel and sdist build successfully and install into a clean environment | Build, metadata, or clean-install failure |
 | ENV-006 | P0 | Static | Generated-file hygiene | `.venv*`, `.airflow`, `.pytest_cache`, `.ruff_cache`, `.coverage*`, `htmlcov`, and `*.egg-info` are ignored | A generated path is trackable or committed |
-| ENV-007 | P0 | Organization | Centralized test ownership | All tracked automated test modules, test SQL, fixtures, expected outputs, and load scenarios are under `tests/`; `pytest --collect-only` only collects from `tests/` | Test logic/assets exist outside `tests/` or collection includes another directory |
+| ENV-007 | P0 | Organization | Centralized test ownership | All automated test modules, runners, test SQL, fixtures, expected outputs, coverage gates, and load scenarios are under `tests/`; `pytest --collect-only` only collects from `tests/`; `scripts/` contains only the allowlisted deployment, provisioning, and production-diagnostic utilities | Test logic/assets exist outside `tests/`, collection includes another directory, or a non-operational script is added |
 | ENV-008 | P1 | Configuration | Service image pin consistency | PostgreSQL/PostGIS and Redis image versions in test support, documentation, and CI agree; live integration services report the expected major versions | Pin drift between configuration surfaces or unexpected runtime service version |
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
-| ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring and every referenced ID exists in this catalog | Missing attribution or unknown catalog ID |
+| ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
 
 ### Airflow DAG Tests
 
@@ -437,6 +458,29 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-026 | P0 | Router / `unit api` | Model status response | The models status route returns the stable source-model availability contract | Non-200 response or model status contract drift |
 | API-027 | P0 | Service / `unit api` | Latest-view fallback | An empty latest materialized view falls back to the durable report relation while preserving pagination totals and schema | Empty result despite durable rows, wrong total, or response contract drift |
 
+### Frontend Tests
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| WEB-001 | P0 | Unit / `frontend` | Formatting and saved charts | Metric labels, empty values, replacement, cap, and corrupt local storage have exact deterministic outcomes | Display drift, lost replacement, uncapped storage, or crash |
+| WEB-002 | P0 | Unit / `frontend` | Explorer view models | Metric/dataset choice, geography grain, observation join, pinned filter, distribution bins, legend counts, and no-data colors reconcile exactly | Wrong metric, selection, coloring, count, or implicit no-data state |
+| WEB-003 | P0 | Component / `frontend` | History and source context | History is ordered and accessible; no-history and source/caveat/error context remain explicit | Inaccessible chart, hidden caveat, or ambiguous empty state |
+| WEB-004 | P0 | Browser / `frontend` | Initial catalog/data/tile flow | Intercepted production UI requests load catalog and observations, decode a reviewed MVT, color the map, and show reconciled API distribution | Missing request, unhealthy tile, zero colored values, or legend mismatch |
+| WEB-005 | P0 | Browser / `frontend` | Selection and keyboard flow | State/county selection pins the exact geography, loads history, and Enter/Escape selection controls work | Wrong geography/history or inaccessible keyboard interaction |
+| WEB-006 | P0 | Browser / `frontend` | Partial, no-data, and failure states | ACS1 partial coverage, zero rows, and API 503 remain visible without stale observation counts | Silent fallback, stale data, or hidden failure state |
+| WEB-007 | P0 | Static | Frontend dependency/build gate | `npm ci`, production audit, lint, unit tests, and production Next.js build all exit zero with exact lockfile versions | Audit, lint, test, or build failure |
+| WEB-008 | P0 | CI | Frontend browser gate | Chromium installs and the browser suite runs from a fresh checkout with artifacts retained on failure | Missing runner, browser failure, or unavailable diagnostic artifact |
+
+### Deployment Tests
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| DEPLOY-001 | P0 | Static / `unit deployment` | API and tile proxy contracts | Next.js and nginx route only `/api` to API and `/tiles` to Martin while preserving public host headers | Missing route, incorrect path rewrite, or internal origin leak |
+| DEPLOY-002 | P0 | Integration / `integration deployment` | Composed dependency health | Pinned PostGIS 16/PostGIS 3.5, Redis, API proxy, Martin direct catalog, and proxied catalog are healthy and agree | Failed dependency, version drift, or proxy/direct mismatch |
+| DEPLOY-003 | P0 | CI / `deployment` | Controlled shutdown | The disposable stack is always stopped with volumes/orphans removed and Compose reports no remaining project containers | Leaked container, volume-backed test state, or skipped teardown |
+| DEPLOY-004 | P0 | Static / `unit deployment` | Immutable images and users | Every explicit Compose/Docker base image has a digest and API, web, and Airflow final users are non-root | Mutable image or root application runtime |
+| DEPLOY-005 | P0 | Static / `unit deployment` | Runtime hardening | Application services are read-only with no-new-privileges and every published port binds loopback by default | Writable runtime, privilege escalation, or unbounded host port |
+
 ### Martin Vector-Tile Tests
 
 Martin unit tests are deterministic and require no service. Integration tests use only an immutable disposable Martin service and the pinned disposable PostGIS database. The canonical application/tile join key is `geo_id`; fallback keys are diagnostic aids and do not satisfy the serving contract.
@@ -456,7 +500,7 @@ Martin unit tests are deterministic and require no service. Integration tests us
 
 ### External Source Contract Tests
 
-These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions.
+These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions. Census Data API queries require `CENSUS_API_KEY` under the Census Bureau's [May 2026 authentication policy](https://www.census.gov/library/video/2026/adrm/requesting-a-census-data-api-key.html); FRED queries require `FRED_API_KEY`; BLS uses `BLS_API_KEY` when configured. Missing required live-test credentials are named skips only in runners that explicitly permit and report them.
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
@@ -468,8 +512,8 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-006 | P2 | Secret handling / `external` | Missing credentials | Test skips with a clear reason where a key is optional for CI policy; logs contain no secret values | Ambiguous failure or secret exposure |
 | EXT-007 | P2 | Legacy smoke / `integration database external slow` | BLS live ingestion paths | Representative LAUS, CPS, CES, CPI, and JOLTS requests load non-empty source-appropriate raw rows into a disposable database | Live request or raw load fails, produces no rows, or violates source/geography expectations |
 | EXT-008 | P2 | Legacy smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests load expected raw observations, including explicit missing values, into a disposable database | Live request or raw load fails, produces no rows, or mishandles missing values |
-| EXT-009 | P2 | Legacy metadata / `integration database slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
-| EXT-010 | P2 | Legacy metadata / `integration database slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
+| EXT-009 | P2 | Legacy metadata / `integration database external slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
+| EXT-010 | P2 | Legacy metadata / `integration database external slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
 
 ### End-to-End Tests
 
@@ -538,15 +582,19 @@ Jobs are independent and start from a fresh checkout.
 | Job | Environment/services | Command/scope | Gate | Artifacts |
 |---|---|---|---|---|
 | `lint` | Python 3.11 | `ruff format --check` and `ruff check` | Required | Ruff output |
-| `package-api` | API Python 3.11 | Build wheel/sdist, clean install, `pip check`, import smoke | Required | Distribution files and install log |
+| `package-api` | API Python 3.11 | Build wheel/sdist, validate artifact contents, clean install, `pip check`, import smoke | Required | Distribution files and install log |
 | `etl-unit` | Airflow/ETL Python 3.11 | Deterministic ETL/shared unit tests | Required | JUnit and coverage XML |
 | `dag-parse` | Airflow 2.9.3 Python 3.11 | DAG-001 through DAG-012 | Required | JUnit, import errors, parse timings |
 | `api-unit` | API Python 3.11 | Mocked API/router/service/middleware tests | Required | JUnit and coverage XML |
 | `martin-unit` | API or ETL Python 3.11 | MARTIN-001 through MARTIN-005 deterministic contracts | Required | JUnit |
-| `postgres-integration` | Airflow/ETL Python 3.11 + fresh pinned PostGIS 16 | P1 database integration tests as implemented | Required once stable | JUnit and PostgreSQL diagnostics on failure |
-| `api-integration` | API Python 3.11 + fresh pinned PostGIS 16 + Redis 7 | API-019 through API-024 as implemented | Required once stable | JUnit and sanitized service logs |
-| `martin-integration` | Python 3.11 + pinned Martin + fresh pinned PostGIS 16 | MARTIN-006, MARTIN-007, and MARTIN-010 | Required once stable | JUnit, TileJSON, decoded-feature summary, sanitized service logs |
-| `coverage` | No service | Combine compatible application coverage reports and enforce gates | Required | HTML/XML coverage report |
+| `postgres-integration` | Airflow/ETL Python 3.11 + fresh pinned PostGIS 16 | Complete database integration tier; triggers on all ingestion/transformation/reference/database utility changes | Required | JUnit and PostgreSQL diagnostics on failure |
+| `redis-integration` | API Python 3.11 + fresh pinned Redis 7 | API-019 through API-023 cache contracts | Required | JUnit and sanitized service logs |
+| `martin-integration` | Python 3.11 + isolated `martin-test` extra, pinned Martin, and fresh pinned PostGIS 16 | MARTIN-006 through MARTIN-010 and API-to-tile E2E | Required | JUnit, TileJSON, decoded-feature summary, sanitized service logs |
+| `frontend` | Node 20 + Chromium | Audit, lint, unit/component, production build, and browser contracts | Required | Playwright report and traces on failure |
+| `deployment-smoke` | Python 3.11 + pinned PostGIS/Redis/Martin/nginx | Static image/proxy contracts, composed health/dependency smoke, and verified teardown | Required | Sanitized Compose logs on failure |
+| `coverage` | API Python 3.11 | Application-owned Python coverage, `tests/support/changed_coverage.py` changed-line gate, critical-module gate, and overall ratchet | Required | XML/JSON/JUnit coverage report |
+
+Coverage is reported explicitly by compatible environment rather than combining incompatible runtimes: `coverage` owns API/ETL application coverage, `api-unit` and `etl-unit` emit their scoped XML files, and `dag-parse` emits `coverage-dags.xml` for DAG code.
 
 Jobs cache package downloads keyed by OS, Python version, dependency inputs, Airflow version, and constraints URL/hash. They do not cache virtual environments, database volumes, Redis state, `.airflow`, test results, or coverage data between runs.
 
@@ -557,9 +605,7 @@ CI cancellation groups stop superseded runs on the same branch. Required jobs us
 | Job | Trigger | Gate/notification policy |
 |---|---|---|
 | `external-contract` | Daily schedule and manual dispatch | Does not block pull requests; contract regressions alert maintainers, while transient upstream outages are reported separately |
-| `e2e-fixtures` | Nightly and manual dispatch | Must pass; failure opens/alerts as an application regression |
-| `performance-smoke` | Nightly or weekly and manual dispatch | Compares against accepted baseline; confirms regression before alerting |
-| `large-volume` | Weekly and manual dispatch | Long-running capacity validation; never uses production data or services |
+| `e2e-performance` | Weekly schedule and manual dispatch | Runs E2E, resilience, API/database, bounded performance, Locust, and the million-row profile on schedule; publishes JUnit/load artifacts |
 | `scheduler-image` | Airflow image or dependency change | Required for relevant changes; runs DAG compatibility tests in the built image |
 
 ### Change-Based Expectations

@@ -56,6 +56,7 @@ from data_ingestion_toolbox.utility.gold_schema import (
     ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +305,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         # ingest_batch has retries=10, covering up to 10 consecutive days of
         # quota exhaustion — adequate for extensive backfills.
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
         sql_planned = """
             UPDATE raw_bls.bls_ingestion_slices
             SET status = 'planned',
@@ -355,7 +356,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     except Exception as e:
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
 
         # Transient HTTP errors (429 / 5xx): mark 'planned', suppress so the
         # rest of the batch continues.  These will be retried on the next run.
@@ -396,7 +397,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                 state_fips,
                 err_txt,
             )
-            return 0
+            raise
 
         else:
             # Unexpected errors: mark as 'failed' and propagate.

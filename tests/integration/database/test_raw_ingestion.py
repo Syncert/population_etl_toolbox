@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -286,4 +287,111 @@ def test_bls_mid_batch_failure_rolls_back_deletes_and_partial_copies(
             ]
     finally:
         reader.rollback()
+        reader.close()
+
+
+@pytest.mark.slow
+def test_concurrent_production_upserts_serialize_one_complete_raw_slice(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+    raw_test_token: str,
+) -> None:
+    """Covers: DB-016 — concurrent production loads keep one complete winner."""
+    monkeypatch.setattr(
+        census_ingest, "_get_pg_connection", postgres_connection_factory
+    )
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def write(revision: int) -> None:
+        try:
+            barrier.wait(timeout=5)
+            census_ingest.load_df_to_acs_long(
+                _census_frame(raw_test_token, revision), "acs5", 2024, "state"
+            )
+        except BaseException as exc:  # pragma: no cover - reported by assertion
+            errors.append(exc)
+
+    threads = [threading.Thread(target=write, args=(revision,)) for revision in (1, 2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+
+    assert not errors
+    assert all(not thread.is_alive() for thread in threads)
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT load_batch_id),
+                       ARRAY_AGG(value ORDER BY variable_name)
+                FROM raw_census.acs_long WHERE geo_id = %s
+                """,
+                (f"test-state:{raw_test_token}",),
+            )
+            count, batch_count, values = cursor.fetchone()
+        assert count == 2
+        assert batch_count == 1
+        assert values in ([101, 6], [102, 7])
+    finally:
+        reader.close()
+
+
+@pytest.mark.slow
+def test_configured_maximum_production_batch_commits_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+    raw_test_token: str,
+) -> None:
+    """Covers: DB-017, DB-018 — maximum COPY commits or rolls back whole."""
+    monkeypatch.setattr(
+        census_ingest, "_get_pg_connection", postgres_connection_factory
+    )
+    size = census_ingest.CONFIG.raw_load_max_rows
+    batch_id = _batch_id("census-max", raw_test_token, 1)
+    geo_id = f"test-state:{raw_test_token}"
+    frame = pl.DataFrame(
+        {
+            "dataset": ["acs5"] * size,
+            "year": [2024] * size,
+            "geo_level": ["state"] * size,
+            "geo_id": [geo_id] * size,
+            "state_fips": ["55"] * size,
+            "county_fips": [None] * size,
+            "table_id": ["BMAX"] * size,
+            "variable_name": [f"BMAX_{index:05d}E" for index in range(size)],
+            "measure_type": ["E"] * size,
+            "value": list(range(size)),
+            "load_batch_id": [batch_id] * size,
+            "ingested_at": [datetime(2024, 1, 1, tzinfo=timezone.utc)] * size,
+        }
+    )
+
+    assert census_ingest.load_df_to_acs_long(frame, "acs5", 2024, "state") == size
+    invalid = frame.with_columns(
+        pl.when(pl.col("variable_name") == f"BMAX_{size - 1:05d}E")
+        .then(pl.lit("X"))
+        .otherwise(pl.col("measure_type"))
+        .alias("measure_type")
+    )
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        census_ingest.load_df_to_acs_long(invalid, "acs5", 2024, "state")
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT variable_name),
+                       MIN(load_batch_id::TEXT), MAX(load_batch_id::TEXT)
+                FROM raw_census.acs_long WHERE geo_id = %s
+                """,
+                (geo_id,),
+            )
+            count, distinct_count, minimum_batch, maximum_batch = cursor.fetchone()
+        assert (count, distinct_count) == (size, size)
+        assert minimum_batch == maximum_batch == batch_id
+    finally:
         reader.close()

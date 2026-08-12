@@ -128,6 +128,10 @@ class FredConfig(BaseModel):
     # Chunking for large backfills
     fred_api_series_chunk_size: int = 50
 
+    # Maximum number of normalized observations accepted by one atomic raw
+    # loader transaction. Larger source responses must be split by the planner.
+    raw_load_max_rows: int = 10_000
+
     # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
     # prevent Postgres connection exhaustion.
     silver_max_active_tis: int = 4
@@ -228,6 +232,7 @@ class FredConfig(BaseModel):
     @field_validator(
         "fred_api_global_concurrency",
         "fred_api_series_chunk_size",
+        "raw_load_max_rows",
         "silver_max_active_tis",
     )
     @classmethod

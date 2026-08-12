@@ -22,6 +22,11 @@ GENERATED_PROBES = (
     "htmlcov/index.html",
     "generated.egg-info/PKG-INFO",
 )
+OPERATIONAL_SCRIPTS = {
+    "deploy_stack.ps1",
+    "diagnose_geo_missing.py",
+    "provision_api_readonly.py",
+}
 
 
 def _tracked_existing_files() -> list[PurePosixPath]:
@@ -79,6 +84,34 @@ def test_automated_test_assets_are_centralized() -> None:
             outside_tests.append(str(path))
 
     assert outside_tests == []
+
+
+def test_scripts_directory_contains_only_operational_tools() -> None:
+    """Covers: ENV-007 — scripts cannot regain test runners or assertions."""
+    actual = {
+        path.name for path in (REPOSITORY_ROOT / "scripts").iterdir() if path.is_file()
+    }
+
+    assert actual == OPERATIONAL_SCRIPTS
+
+
+def test_centralized_test_entry_points_are_documented() -> None:
+    """Covers: ENV-007 — test runners and gates stay under tests and documented."""
+    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    user_guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
+        encoding="utf-8"
+    )
+    coverage_workflow = (REPOSITORY_ROOT / ".github/workflows/coverage.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert (REPOSITORY_ROOT / "tests/run.ps1").is_file()
+    assert (REPOSITORY_ROOT / "tests/support/changed_coverage.py").is_file()
+    assert "tests/run.ps1" in plan and "tests/run.ps1" in readme
+    assert "tests/run.ps1" in user_guide
+    assert "tests/support/changed_coverage.py" in plan
+    assert "python -m tests.support.changed_coverage" in coverage_workflow
 
 
 def test_warehouse_database_image_pin_is_consistent() -> None:
@@ -145,6 +178,38 @@ def test_python_tests_reference_known_catalog_ids() -> None:
     assert failures == [], "\n".join(failures)
 
 
+def test_environment_tiers_declare_every_required_marker() -> None:
+    """Covers: ENV-004 — tier tests cannot omit their required markers."""
+    required_by_directory = {
+        "unit": {"unit"},
+        "dags": {"dag"},
+        "external": {"external"},
+        "e2e": {"e2e"},
+        "performance": {"performance"},
+    }
+    failures: list[str] = []
+    for path in sorted((REPOSITORY_ROOT / "tests").rglob("test_*.py")):
+        relative = path.relative_to(REPOSITORY_ROOT)
+        parts = relative.parts
+        required = set(required_by_directory.get(parts[1], set()))
+        if parts[1:3] == ("integration", "database"):
+            required.update({"integration", "database"})
+        if parts[1:3] == ("integration", "redis"):
+            required.update({"integration", "redis"})
+        if "martin" in parts and parts[1] in {"integration", "e2e"}:
+            required.add("martin")
+        if "legacy" in parts:
+            required.add("external")
+
+        source = path.read_text(encoding="utf-8")
+        declared = set(re.findall(r"pytest\.mark\.([a-z][a-z0-9_]*)", source))
+        missing = required - declared
+        if missing:
+            failures.append(f"{relative} missing required markers {sorted(missing)}")
+
+    assert failures == [], "\n".join(failures)
+
+
 def test_every_catalog_id_has_an_implementation_reference() -> None:
     """Covers: ENV-010 — every catalog item maps to a test or CI/config check."""
     plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
@@ -159,7 +224,11 @@ def test_every_catalog_id_has_an_implementation_reference() -> None:
         else set()
     )
 
-    implementation_paths = list((REPOSITORY_ROOT / "tests").rglob("test_*.py"))
+    implementation_paths = [
+        path
+        for path in (REPOSITORY_ROOT / "tests").rglob("*")
+        if path.is_file() and path.suffix in {".py", ".js", ".jsx"}
+    ]
     implementation_paths.extend((REPOSITORY_ROOT / ".github/workflows").glob("*.yml"))
     implementation_paths.append(REPOSITORY_ROOT / "pyproject.toml")
     referenced_ids: set[str] = set()

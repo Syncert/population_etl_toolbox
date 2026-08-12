@@ -25,6 +25,7 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
+from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 from .config import CONFIG
 
@@ -388,6 +389,7 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
     return df
 
 
+@retry_database_transaction
 def load_df_to_bls_long(df: pl.DataFrame, program: str) -> int:
     """
     Bulk load a Polars DataFrame into raw_bls.bls_long using COPY.
@@ -397,11 +399,22 @@ def load_df_to_bls_long(df: pl.DataFrame, program: str) -> int:
     """
     if df.is_empty():
         return 0
+    if df.height > CONFIG.raw_load_max_rows:
+        raise ValueError(
+            f"BLS raw batch has {df.height} rows; configured maximum is "
+            f"{CONFIG.raw_load_max_rows}"
+        )
 
     conn = _get_pg_connection()
     try:
         conn.autocommit = False
         cur = conn.cursor()
+
+        for series_id in sorted(df.get_column("series_id").unique().to_list()):
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"raw_bls.bls_long:{program}:{series_id}",),
+            )
 
         # Get unique (series_id, year, period) tuples for deletion
         delete_keys = df.select(["series_id", "year", "period"]).unique()

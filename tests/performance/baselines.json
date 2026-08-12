@@ -6,8 +6,17 @@
   "high_cardinality_p95_seconds": 0.625,
   "million_rows_per_second": 50000,
   "million_peak_memory_mb": 750,
-  "many_slices_seconds": 5.0,
+  "many_slices_seconds": 10.0,
   "database_pool_max": 8,
   "refresh_api_p95_seconds": 0.5,
-  "critical_query_ms": 100
+  "critical_query_ms": 100,
+  "calibration": {
+    "runner": "github-hosted ubuntu-latest, 2 vCPU / 7 GB minimum",
+    "python": "3.11",
+    "postgres": "PostGIS 16-3.5 Alpine, tmpfs",
+    "redis": "Redis 7.4.9 Alpine",
+    "small_slice_count": 100,
+    "plan_row_count": 20000,
+    "policy": "fail above the committed baseline plus the catalog tolerance"
+  }
 }

@@ -25,6 +25,7 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
+from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 from .config import CONFIG
 
@@ -291,6 +292,7 @@ def parse_fred_response(
     return df
 
 
+@retry_database_transaction
 def load_df_to_fred_long(df: pl.DataFrame) -> int:
     """
     Bulk load a Polars DataFrame into raw_fred.fred_long using COPY.
@@ -300,11 +302,25 @@ def load_df_to_fred_long(df: pl.DataFrame) -> int:
     """
     if df.is_empty():
         return 0
+    if df.height > CONFIG.raw_load_max_rows:
+        raise ValueError(
+            f"FRED raw batch has {df.height} rows; configured maximum is "
+            f"{CONFIG.raw_load_max_rows}"
+        )
 
     conn = _get_pg_connection()
     try:
         conn.autocommit = False
         cur = conn.cursor()
+
+        # Overlapping mapped tasks may replace the same natural key. Serialize
+        # only writers for the same series so delete+COPY remains atomic while
+        # unrelated series can still load concurrently.
+        for series_id in sorted(df.get_column("series_id").unique().to_list()):
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"raw_fred.fred_long:{series_id}",),
+            )
 
         # Get unique (series_id, obs_date, realtime_start, realtime_end) tuples for deletion
         delete_keys = df.select(
@@ -437,10 +453,6 @@ def ingest_slice(
 
         except FredNoContent:
             logger.info(f"No content for series {series_id}")
-            continue
-        except Exception as e:
-            logger.error(f"Error ingesting series {series_id}: {e}")
-            # Continue to next series rather than failing entire slice
             continue
 
         # Rate limiting between series

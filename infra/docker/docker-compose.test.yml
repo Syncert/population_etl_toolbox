@@ -1,0 +1,107 @@
+name: population-testing
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+    environment:
+      POSTGRES_USER: population_test
+      POSTGRES_PASSWORD: population_test
+      POSTGRES_DB: population_etl_test
+    ports:
+      - "127.0.0.1:${TEST_POSTGRES_HOST_PORT:-55432}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ../../src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql:/docker-entrypoint-initdb.d/001_silver_ref.sql:ro
+      - ../../src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql:/docker-entrypoint-initdb.d/010_raw_census.sql:ro
+      - ../../src/data_ingestion_toolbox/bls/DDL/raw_bls.sql:/docker-entrypoint-initdb.d/011_raw_bls.sql:ro
+      - ../../src/data_ingestion_toolbox/fred/DDL/raw_fred.sql:/docker-entrypoint-initdb.d/012_raw_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql:/docker-entrypoint-initdb.d/020_silver_census.sql:ro
+      - ../../src/data_ingestion_toolbox/bls/DDL/silver_bls.sql:/docker-entrypoint-initdb.d/021_silver_bls.sql:ro
+      - ../../src/data_ingestion_toolbox/fred/DDL/silver_fred.sql:/docker-entrypoint-initdb.d/022_silver_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/030_gold_census.sql:ro
+      - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/031_gold_bls.sql:ro
+      - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/032_gold_fred.sql:ro
+      - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/040_gold_glossary.sql:ro
+      - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/041_gold_contract.sql:ro
+      - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U population_test -d population_etl_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  martin:
+    image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: --config /etc/martin/martin.yml
+    environment:
+      MARTIN_DATABASE_URL: postgres://martin_test:martin-test-readonly@postgres:5432/population_etl_test
+    ports:
+      - "127.0.0.1:${TEST_MARTIN_HOST_PORT:-33000}:3000"
+    volumes:
+      - ../martin/martin.yml:/etc/martin/martin.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "martin", "--version"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  api:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    volumes:
+      - ../../tests/fixtures/martin/api_stub.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  proxy:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    depends_on:
+      api:
+        condition: service_started
+      martin:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TEST_MARTIN_PROXY_HOST_PORT:-33001}:80"
+    volumes:
+      - ../web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/tiles/health >/dev/null"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${TEST_REDIS_HOST_PORT:-56379}:6379"
+    tmpfs:
+      - /data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

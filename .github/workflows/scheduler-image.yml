@@ -44,4 +44,9 @@ jobs:
           --env RUN_DAG_TESTS=1
           --env AIRFLOW__CORE__LOAD_EXAMPLES=False
           population-airflow-scheduler:test
-          -m pytest -m dag tests/dags --tb=short -q
+          -m pytest -m dag tests/dags --tb=short -q -ra
+
+      - name: Verify scheduler dependency consistency
+        run: >-
+          docker run --rm --entrypoint python
+          population-airflow-scheduler:test -m pip check

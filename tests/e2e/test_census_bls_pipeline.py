@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import copy
+import json
 from collections.abc import Callable
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.bls.gold_bls import transform as bls_gold
+from data_ingestion_toolbox.bls import ingest as bls_ingest
 from data_ingestion_toolbox.bls.silver_bls import transform as bls_silver
+from data_ingestion_toolbox.census_acs import ingest as census_ingest
 from data_ingestion_toolbox.census_acs.gold_census import transform as census_gold
 from data_ingestion_toolbox.census_acs.silver_census import transform as census_silver
 from tests.e2e.test_fred_pipeline import _real_client
@@ -17,6 +22,8 @@ from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
 
 pytestmark = [pytest.mark.e2e, pytest.mark.database, pytest.mark.slow]
+
+FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _call_refresh(
@@ -63,21 +70,22 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                 """,
                 (series_id,),
             )
-            cursor.execute(
-                """
-                INSERT INTO raw_bls.bls_long (
-                    program, series_id, year, period, period_name, value, load_batch_id
-                ) VALUES ('la', %s, 2095, 'M01', 'January', 4.5, %s)
-                """,
-                (series_id, str(uuid4())),
-            )
         writer.commit()
     finally:
         writer.close()
 
     hook = PostgresHookStub(postgres_connection_factory)
+    payload = json.loads(
+        (FIXTURE_ROOT / "bls/e2e_pipeline.json").read_text(encoding="utf-8")
+    )
+    monkeypatch.setattr(bls_ingest, "_get_pg_connection", postgres_connection_factory)
     monkeypatch.setattr(bls_silver, "_get_hook", lambda: hook)
     try:
+        raw_frame = bls_ingest.enrich_with_geography(
+            bls_ingest.parse_bls_response(payload, "la", uuid4()),
+            "la",
+        )
+        assert bls_ingest.load_df_to_bls_long(raw_frame, "la") == 1
         responses = []
         for _ in range(2):
             assert bls_silver.transform_bls_to_silver("la") == 1
@@ -101,6 +109,28 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
             assert source.json()["items"][0]["value"] == "4.5"
             responses.append(source.json())
         assert responses[0] == responses[1]
+
+        revised_payload = copy.deepcopy(payload)
+        revised_payload["Results"]["series"][0]["data"][0]["value"] = "5.25"
+        revised_frame = bls_ingest.enrich_with_geography(
+            bls_ingest.parse_bls_response(revised_payload, "la", uuid4()),
+            "la",
+        )
+        assert bls_ingest.load_df_to_bls_long(revised_frame, "la") == 1
+        assert bls_silver.transform_bls_to_silver("la") == 1
+        bls_gold.refresh_bls_elements(hook)
+        _call_refresh(
+            postgres_connection_factory,
+            "gold_bls.refresh_dashboard_serving_layer_bls",
+            "2095-01-01",
+            "2095-01-31",
+        )
+        with _real_client() as client:
+            revised = client.get(
+                "/api/bls/observations/latest", params={"metric_code": metric_code}
+            )
+        assert revised.status_code == 200
+        assert revised.json()["items"][0]["value"] == "5.25"
     finally:
         cleanup = postgres_connection_factory()
         try:
@@ -185,25 +215,24 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
                 """,
                 (f"{variable}E", f"{variable}M"),
             )
-            cursor.execute(
-                """
-                INSERT INTO raw_census.acs_long (
-                    dataset, year, geo_level, geo_id, state_fips, table_id,
-                    variable_name, measure_type, value, load_batch_id
-                ) VALUES
-                    ('acs5', 2094, 'state', 'raw', '96', 'B99998', %s, 'E', 500, %s),
-                    ('acs5', 2094, 'state', 'raw', '96', 'B99998', %s, 'M', 5, %s)
-                """,
-                (f"{variable}E", str(uuid4()), f"{variable}M", str(uuid4())),
-            )
         writer.commit()
     finally:
         writer.close()
 
     hook = PostgresHookStub(postgres_connection_factory)
+    payload = json.loads(
+        (FIXTURE_ROOT / "census/e2e_pipeline.json").read_text(encoding="utf-8")
+    )
+    monkeypatch.setattr(
+        census_ingest, "_get_pg_connection", postgres_connection_factory
+    )
     monkeypatch.setattr(census_silver, "_get_hook", lambda: hook)
     monkeypatch.setattr(census_silver, "_get_approx_row_count", lambda _: 2)
     try:
+        raw_frame = census_ingest.rows_to_polars(
+            payload, "acs5", 2094, "state", None, uuid4()
+        )
+        assert census_ingest.load_df_to_acs_long(raw_frame, "acs5", 2094, "state") == 2
         responses = []
         for expected_inserted in (1, 0):
             assert census_silver.transform_census_to_silver() == expected_inserted
@@ -228,6 +257,31 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
             assert source.json()["items"][0]["margin_of_error"] == "5.0"
             responses.append(source.json())
         assert responses[0] == responses[1]
+
+        revised_payload = copy.deepcopy(payload)
+        revised_payload[1][0] = "525"
+        revised_payload[1][1] = "6"
+        revised_frame = census_ingest.rows_to_polars(
+            revised_payload, "acs5", 2094, "state", None, uuid4()
+        )
+        assert (
+            census_ingest.load_df_to_acs_long(revised_frame, "acs5", 2094, "state") == 2
+        )
+        assert census_silver.transform_census_to_silver() == 1
+        census_gold.refresh_acs_elements(hook)
+        _call_refresh(
+            postgres_connection_factory,
+            "gold_census.refresh_dashboard_serving_layer_acs",
+            "2090-01-01",
+            "2094-12-31",
+        )
+        with _real_client() as client:
+            revised = client.get(
+                "/api/census/observations/latest", params={"metric_code": metric_code}
+            )
+        assert revised.status_code == 200
+        assert revised.json()["items"][0]["value"] == "525.0"
+        assert revised.json()["items"][0]["margin_of_error"] == "6.0"
     finally:
         cleanup = postgres_connection_factory()
         try:

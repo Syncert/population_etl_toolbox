@@ -11,10 +11,7 @@ import pytest
 from data_ingestion_toolbox.bls.ingest import BlsPayloadError, parse_bls_response
 from data_ingestion_toolbox.census_acs.ingest import CensusPayloadError, rows_to_polars
 from data_ingestion_toolbox.fred.ingest import FredPayloadError, parse_fred_response
-from data_ingestion_toolbox.normalization import (
-    call_with_retry_budget,
-    stable_records_hash,
-)
+from data_ingestion_toolbox.normalization import stable_records_hash
 from data_ingestion_toolbox.utility.gold_quality import run_quality_checks
 from data_ingestion_toolbox.utility.gold_schema import (
     DateShard,
@@ -125,48 +122,6 @@ def test_quality_checks_report_exact_bad_row_count(source: str) -> None:
     """Covers: ETL-029 — one bad source row reports one violation."""
     with pytest.raises(ValueError, match=r"1 semantic violations"):
         run_quality_checks(date(2024, 1, 1), source, _ScalarHook([0, 1]))
-
-
-def test_retry_sequence_uses_bounded_backoff_then_succeeds() -> None:
-    """Covers: RES-001 — retryable failures back off and eventually succeed."""
-    attempts = 0
-    sleeps: list[float] = []
-
-    def operation() -> str:
-        nonlocal attempts
-        attempts += 1
-        if attempts < 3:
-            raise TimeoutError("temporary")
-        return "ok"
-
-    result = call_with_retry_budget(
-        operation,
-        max_attempts=3,
-        retryable=lambda exc: isinstance(exc, TimeoutError),
-        backoff_seconds=lambda attempt: float(2 ** (attempt - 1)),
-        sleep=sleeps.append,
-    )
-    assert result == "ok"
-    assert attempts == 3
-    assert sleeps == [1.0, 2.0]
-
-
-def test_retry_sequence_stops_with_final_typed_failure() -> None:
-    """Covers: RES-001 — exhausted retries expose the final typed failure."""
-    failures = [TimeoutError("first"), TimeoutError("second"), TimeoutError("final")]
-
-    def operation() -> None:
-        raise failures.pop(0)
-
-    with pytest.raises(TimeoutError, match="final"):
-        call_with_retry_budget(
-            operation,
-            max_attempts=3,
-            retryable=lambda exc: isinstance(exc, TimeoutError),
-            backoff_seconds=lambda attempt: 0,
-            sleep=lambda _delay: None,
-        )
-    assert failures == []
 
 
 def test_malformed_source_errors_do_not_echo_payload_or_secret() -> None:

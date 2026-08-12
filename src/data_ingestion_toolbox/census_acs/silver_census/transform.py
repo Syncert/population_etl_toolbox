@@ -924,14 +924,7 @@ def _upsert_silver_rows(
     load_batch_id: uuid.UUID,
     ingested_at: datetime,
 ) -> int:
-    """Upsert Census silver rows to fact table using efficient TEMP table strategy.
-
-    .. deprecated::
-        Retained for manual correction / forced-reload edge cases only.
-        Normal pipeline execution uses _direct_insert_silver_rows after an
-        anti-join against existing keys.  ACS data is immutable once published,
-        so upsert overhead is unnecessary for standard loads.
-    """
+    """Upsert Census rows and return the exact inserted-or-revised row count."""
     if df.is_empty():
         return 0
 
@@ -1078,46 +1071,32 @@ def _upsert_silver_rows(
         );
     """
 
+    affected_rows = 0
     try:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(create_temp_sql)
             execute_values(cur, insert_temp_sql, records, page_size=10000)
             cur.execute(merge_sql)
+            affected_rows = cur.rowcount
             conn.commit()
     except Exception:
         logger.exception("Failed to upsert Census silver rows")
         raise
 
-    return len(records)
+    return affected_rows
 
 
 def transform_census_to_silver() -> int:
     """Transform ALL Census ACS raw data to silver layer.
 
-    Processes ``raw_census.acs_long`` in memory-safe year chunks and inserts
-    only rows that do not already exist in ``silver_census.fact_demographics``.
-
-    ACS estimates are immutable once published by the Census Bureau, so an
-    insert-only strategy is used.  Each year chunk is anti-joined against
-    the existing natural keys ``(dataset, table_id, variable_code, geo_id,
-    estimate_year)`` to determine net-new rows.
+    Processes ``raw_census.acs_long`` in memory-safe year chunks and upserts
+    ``silver_census.fact_demographics``. Census errata on an existing natural
+    key propagate, while equivalent replays report zero changed rows.
 
     Partial-load resilience
     -----------------------
-    If a prior run was interrupted mid-year, the next run will detect the
-    partially-loaded year, skip the rows already present, and insert only
-    the remaining rows.
-
-    Forced reload
-    -------------
-    If a year needs to be reloaded (e.g. Census errata), manually delete
-    the affected rows first::
-
-        DELETE FROM silver_census.fact_demographics
-        WHERE source_system = 'CENSUS_ACS' AND estimate_year = <YEAR>;
-
-    Then re-run the DAG.  The year will be detected as missing and
-    re-inserted.
+    If a prior run was interrupted mid-year, replay inserts missing rows,
+    updates revised rows, and leaves equivalent rows unchanged.
     """
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name="CENSUS_ACS")
@@ -1182,9 +1161,6 @@ def transform_census_to_silver() -> int:
     time_df = _load_time_dim(hook, date(earliest_year, 1, 1), date(latest_year, 12, 31))
     logger.info("[CENSUS_ACS] Loaded %s time dimension rows", f"{time_df.height:,}")
 
-    # ── natural key columns used for anti-join ────────────────────────
-    key_cols = ["dataset", "table_id", "variable_code", "geo_id", "estimate_year"]
-
     # ── process each year ─────────────────────────────────────────────
     for y in years:
         rows = _fetch_raw_rows(hook, year=y)
@@ -1206,67 +1182,20 @@ def transform_census_to_silver() -> int:
 
         transformed_count = df_silver.height
 
-        # ── granular existence check ──────────────────────────────────
-        existing_keys = _get_existing_keys_for_year(hook, y)
-        existing_count = existing_keys.height
+        # Upsert every transformed row so source errata propagate while an
+        # identical replay remains a zero-change operation.
+        insert_start = datetime.now(timezone.utc)
+        changed = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
+        insert_duration = (datetime.now(timezone.utc) - insert_start).total_seconds()
 
-        if existing_count > 0:
-            # Anti-join: keep only rows whose natural key is NOT in silver
-            df_net_new = df_silver.join(
-                existing_keys,
-                on=key_cols,
-                how="anti",
-            )
-            already_existed = transformed_count - df_net_new.height
-            net_new = df_net_new.height
-
-            # Detect partial loads
-            if 0 < already_existed < transformed_count:
-                logger.warning(
-                    "[%s] Year=%s is partially loaded: %s of %s expected rows "
-                    "exist in silver — inserting %s remaining rows",
-                    metrics.dataset_name,
-                    y,
-                    f"{already_existed:,}",
-                    f"{transformed_count:,}",
-                    f"{net_new:,}",
-                )
-            elif already_existed == transformed_count:
-                logger.info(
-                    "[%s CHUNK] Year=%s: all %s rows already exist in silver — skipping",
-                    metrics.dataset_name,
-                    y,
-                    f"{transformed_count:,}",
-                )
-                metrics.rows_already_existed += already_existed
-                metrics.chunk_output_rows = transformed_count
-                metrics.rows_net_new += 0
-                metrics.log_chunk_complete(y)
-                metrics.total_processed += len(rows)
-                continue
-        else:
-            df_net_new = df_silver
-            already_existed = 0
-            net_new = transformed_count
-
+        already_existed = transformed_count - changed
         metrics.rows_already_existed += already_existed
-        metrics.rows_net_new += net_new
+        metrics.rows_net_new += changed
         metrics.chunk_output_rows = transformed_count
         metrics.log_chunk_complete(y)
-
-        # ── insert only net-new rows ──────────────────────────────────
-        if net_new > 0:
-            insert_start = datetime.now(timezone.utc)
-            inserted = _direct_insert_silver_rows(
-                hook, df_net_new, load_batch_id, ingested_at
-            )
-            insert_duration = (
-                datetime.now(timezone.utc) - insert_start
-            ).total_seconds()
-
-            metrics.log_insert_complete(inserted, insert_duration)
-            inserted_total += inserted
-            metrics.total_inserted += inserted
+        metrics.log_insert_complete(changed, insert_duration)
+        inserted_total += changed
+        metrics.total_inserted += changed
 
         metrics.total_processed += len(rows)
 

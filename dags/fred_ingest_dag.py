@@ -52,6 +52,7 @@ from data_ingestion_toolbox.utility.gold_schema import (
     ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     except Exception as e:
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
 
         sql_failed = """
             UPDATE raw_fred.fred_ingestion_slices

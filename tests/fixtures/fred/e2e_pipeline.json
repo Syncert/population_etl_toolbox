@@ -1,0 +1,16 @@
+{
+  "observations": [
+    {
+      "realtime_start": "2096-03-01",
+      "realtime_end": "2096-03-01",
+      "date": "2096-01-01",
+      "value": "10"
+    },
+    {
+      "realtime_start": "2096-03-01",
+      "realtime_end": "2096-03-01",
+      "date": "2096-02-01",
+      "value": "20"
+    }
+  ]
+}
