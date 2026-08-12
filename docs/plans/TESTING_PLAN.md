@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the reproducible, isolated test system for the Population ETL Toolbox. The implementation-status table distinguishes catalog items with complete checked-in automation from items awaiting alignment, and the detailed catalog remains the source of truth for each pass metric. [`testing_plan_correction.md`](testing_plan_correction.md) tracks the audit and correction work required before an item is marked implemented.
+This document defines the reproducible, isolated test system and testing contract for the Population ETL Toolbox. The implementation-status table distinguishes catalog items with complete checked-in automation from items awaiting alignment, and the detailed catalog remains the source of truth for each pass metric.
 
 The finished testing system must cover the repository's independently testable surfaces:
 
@@ -293,7 +293,7 @@ Latest implementation validation on 2026-08-12:
 
 | Validation tier | Result | Notes |
 |---|---:|---|
-| Default deterministic suite | 399 passed | 2.77 s; no database, Redis, external network, Docker, or credentials required; zero skips/xfails |
+| Default deterministic suite | 399 passed | 3.87 s; no database, Redis, external network, Docker, or credentials required; zero skips/xfails |
 | Host DAG and task-runtime suite | 61 passed | Airflow parsing, callables, real retry/failure observation, disposable-database execution, worker replay, and Census/FRED runtime credential failures |
 | Scheduler-image DAG suite | 58 passed, 3 expected skips | Python 3.11/Airflow 2.9.3 image; workflow metadata and two disposable-database cases are intentionally host/CI-service-only; `pip check` passed |
 | PostgreSQL, Redis, Martin, proxy, API, and deployment integration | 59 passed | One combined disposable-stack run; 8 external tests deselected, not skipped |
@@ -620,7 +620,9 @@ CI cancellation groups stop superseded runs on the same branch. Required jobs us
 
 No deployment proceeds if a required job is failing, cancelled, or missing. External-source availability alone does not block a deployment.
 
-## Delivery Phases
+## Completed Delivery Phases
+
+All three phases reached their exit criteria by the 2026-08-12 completion audit. They remain documented as implementation history and as a guide when materially expanding the test system.
 
 ### Phase 0: Testing Foundation - This Feature Branch
 
@@ -668,12 +670,16 @@ A new test is complete only when:
 - Its name states the behavior and expected outcome.
 - Its type and environmental markers are correct.
 - Its pass criterion is a specific assertion or threshold.
+- It exercises the named production path or an explicitly justified public contract and satisfies the complete catalog pass metric; a `Covers:` reference, source-text assertion, or synthetic stand-in is not sufficient.
 - It is deterministic for its tier and owns/cleans its state.
 - It fails when the protected behavior is deliberately broken.
+- It runs in the correct supported environment with no unexpected skip, xfail, network access, or undeclared infrastructure dependency.
 - It runs in the documented local command and CI job.
 - It produces a useful failure message without secrets.
 - Required fixtures are small, reviewed, and committed.
 - The test and application code satisfy the applicable coverage and timing gates.
+
+Catalog maintenance is part of the same change as the protected behavior. New or changed behavior must update the catalog pass metric, implementation-status table, behavioral evidence register, local runner ownership, CI ownership, and latest validation record as applicable. A catalog item is marked implemented only after review against its complete pass metric.
 
 ## Out of Scope
 
