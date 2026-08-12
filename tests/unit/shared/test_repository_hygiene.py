@@ -142,6 +142,34 @@ def test_redis_image_pin_is_consistent() -> None:
         )
 
 
+def test_ci_and_frontend_use_node_24() -> None:
+    """Covers: ENV-008 — JavaScript action and application runtimes use Node 24."""
+    workflow_contents = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((REPOSITORY_ROOT / ".github/workflows").glob("*.yml"))
+    )
+    frontend_workflow = (
+        REPOSITORY_ROOT / ".github/workflows/frontend.yml"
+    ).read_text(encoding="utf-8")
+    package = (REPOSITORY_ROOT / "apps/web/package.json").read_text(encoding="utf-8")
+    dockerfile = (REPOSITORY_ROOT / "infra/docker/Dockerfile.web").read_text(
+        encoding="utf-8"
+    )
+
+    for legacy_action in (
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/setup-node@v4",
+        "actions/cache@v4",
+        "actions/upload-artifact@v4",
+    ):
+        assert legacy_action not in workflow_contents
+    assert "actions/setup-node@v6" in frontend_workflow
+    assert 'node-version: "24"' in frontend_workflow
+    assert '"node": ">=24 <25"' in package
+    assert dockerfile.count("FROM node:24-alpine@sha256:") == 3
+
+
 def test_python_tests_reference_known_catalog_ids() -> None:
     """Covers: ENV-010 — every Python test references a known catalog ID."""
     plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")

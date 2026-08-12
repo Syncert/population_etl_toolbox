@@ -590,7 +590,7 @@ Jobs are independent and start from a fresh checkout.
 | `postgres-integration` | Airflow/ETL Python 3.11 + fresh pinned PostGIS 16 | Complete database integration tier; triggers on all ingestion/transformation/reference/database utility changes | Required | JUnit and PostgreSQL diagnostics on failure |
 | `redis-integration` | API Python 3.11 + fresh pinned Redis 7 | API-019 through API-023 cache contracts | Required | JUnit and sanitized service logs |
 | `martin-integration` | Python 3.11 + isolated `martin-test` extra, pinned Martin, and fresh pinned PostGIS 16 | MARTIN-006 through MARTIN-010 and API-to-tile E2E | Required | JUnit, TileJSON, decoded-feature summary, sanitized service logs |
-| `frontend` | Node 20 + Chromium | Audit, lint, unit/component, production build, and browser contracts | Required | Playwright report and traces on failure |
+| `frontend` | Node 24 + Chromium | Audit, lint, unit/component, production build, and browser contracts | Required | Playwright report and traces on failure |
 | `deployment-smoke` | Python 3.11 + pinned PostGIS/Redis/Martin/nginx | Static image/proxy contracts, composed health/dependency smoke, and verified teardown | Required | Sanitized Compose logs on failure |
 | `coverage` | API Python 3.11 | Application-owned Python coverage, `tests/support/changed_coverage.py` changed-line gate, critical-module gate, and overall ratchet | Required | XML/JSON/JUnit coverage report |
 
