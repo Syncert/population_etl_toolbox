@@ -49,10 +49,10 @@ jobs:
       TEST_POSTGRES_DATABASE: population_etl_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: "3.11"
 
@@ -74,7 +74,7 @@ jobs:
           --tb=short -q --junitxml=junit-postgres.xml
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.0
         if: always()
         with:
           name: junit-postgres

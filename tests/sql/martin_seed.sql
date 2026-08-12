@@ -13,7 +13,9 @@ REVOKE CREATE ON SCHEMA public FROM martin_test;
 REVOKE ALL ON ALL TABLES IN SCHEMA gold, gold_glossary FROM martin_test;
 GRANT CONNECT ON DATABASE population_etl_test TO martin_test;
 GRANT USAGE ON SCHEMA gold, gold_glossary TO martin_test;
+-- Grant access to view and underlying table
 GRANT SELECT ON gold.dim_geo_latest TO martin_test;
+GRANT SELECT ON gold_glossary.dim_geo_latest TO martin_test;
 
 INSERT INTO gold_glossary.dim_geo_latest (
     geo_id, geo_level, state_fips, county_fips, state_name, county_name,
