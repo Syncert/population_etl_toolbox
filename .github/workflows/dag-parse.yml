@@ -44,10 +44,10 @@ jobs:
       TEST_POSTGRES_DATABASE: population_etl_test
 
     steps:
-      - uses: actions/checkout@v4.2.0
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5.1.0
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -79,7 +79,7 @@ jobs:
           --junitxml=junit-dags.xml
 
       - name: Upload DAG test results
-        uses: actions/upload-artifact@v4.4.0
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: junit-dags

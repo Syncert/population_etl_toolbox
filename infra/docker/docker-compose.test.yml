@@ -26,7 +26,12 @@ services:
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/041_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U population_test -d population_etl_test"]
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD=martin-test-readonly psql -h 127.0.0.1
+          -U martin_test -d population_etl_test -tAc
+          'SELECT 1 FROM gold.dim_geo_latest LIMIT 1' | grep -qx 1
       interval: 2s
       timeout: 5s
       retries: 30

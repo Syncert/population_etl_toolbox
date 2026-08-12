@@ -48,9 +48,9 @@ jobs:
       TEST_MARTIN_DOCKER_NETWORK: population-testing_default
 
     steps:
-      - uses: actions/checkout@v4.2.0
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5.1.0
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -82,7 +82,7 @@ jobs:
           docker compose -f infra/docker/docker-compose.test.yml
           down --volumes --remove-orphans
 
-      - uses: actions/upload-artifact@v4.4.0
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: martin-integration-results

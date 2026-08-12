@@ -34,8 +34,8 @@ jobs:
       TEST_POSTGRES_DATABASE: population_etl_test
       TEST_REDIS_URL: redis://127.0.0.1:56379/15
     steps:
-      - uses: actions/checkout@v4.2.0
-      - uses: actions/setup-python@v5.1.0
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - run: python -m pip install -e ".[api,dev]"
@@ -63,7 +63,7 @@ jobs:
       - name: Verify clean shutdown
         if: always()
         run: test -z "$(docker compose -f infra/docker/docker-compose.test.yml ps -q)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: deployment-smoke-logs

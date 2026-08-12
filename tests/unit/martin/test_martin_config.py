@@ -102,3 +102,19 @@ def test_martin_configuration_has_no_implicit_table_publication() -> None:
     postgres = _martin_config()["postgres"]
     assert postgres["auto_publish"] is False
     assert list(postgres["tables"]) == ["counties"]
+
+
+def test_disposable_postgres_healthcheck_waits_for_martin_contract() -> None:
+    """Covers: MARTIN-006 — readiness includes seed, role, and published view."""
+    compose = yaml.safe_load(
+        (REPOSITORY_ROOT / "infra/docker/docker-compose.test.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    healthcheck = compose["services"]["postgres"]["healthcheck"]["test"]
+
+    assert healthcheck[0] == "CMD-SHELL"
+    readiness_command = healthcheck[1]
+    assert "-h 127.0.0.1" in readiness_command
+    assert "-U martin_test" in readiness_command
+    assert "SELECT 1 FROM gold.dim_geo_latest LIMIT 1" in readiness_command

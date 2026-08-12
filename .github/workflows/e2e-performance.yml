@@ -60,9 +60,9 @@ jobs:
       TEST_REDIS_URL: redis://127.0.0.1:6379/15
 
     steps:
-      - uses: actions/checkout@v4.2.0
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5.1.0
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -119,7 +119,7 @@ jobs:
             'redis=7.4.9-alpine' \
             > performance-artifacts/runner-metadata.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: e2e-performance-results
