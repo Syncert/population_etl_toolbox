@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the reproducible, isolated test system for the Population ETL Toolbox. All catalog items now have checked-in automation; the implementation-status table records the current audit and the detailed catalog remains the source of truth for each pass metric.
+This document defines the reproducible, isolated test system for the Population ETL Toolbox. The implementation-status table distinguishes catalog items with complete checked-in automation from items awaiting alignment, and the detailed catalog remains the source of truth for each pass metric. [`testing_plan_correction.md`](testing_plan_correction.md) tracks the audit and correction work required before an item is marked implemented.
 
 The finished testing system must cover the repository's independently testable surfaces:
 
@@ -13,11 +13,12 @@ The finished testing system must cover the repository's independently testable s
 - Shared time and geography dimensions
 - FastAPI routes, services, response contracts, and security behavior
 - Redis response caching
+- Martin vector-tile configuration, serving, proxying, and API geography joins
 - Data-quality and domain-coverage rules
 - End-to-end data flow
 - External-source contracts, performance, concurrency, and resilience
 
-Production databases, production Redis instances, and large live-source ingestions are never test targets.
+Production databases, production Redis or Martin instances, and large live-source ingestions are never test targets.
 
 ## Current Baseline and Known Gaps
 
@@ -46,8 +47,9 @@ Tests follow a layered strategy. A failure should be caught in the cheapest and 
 4. API tests exercise routers and services without real infrastructure.
 5. Integration tests exercise real PostgreSQL or Redis instances with isolated state.
 6. End-to-end tests pass deterministic fixtures through raw, silver, gold, and API layers.
-7. External contract tests make small calls to Census, BLS, and FRED on a schedule.
-8. Performance and resilience tests establish baselines and inject controlled failures.
+7. Martin unit tests validate configuration, TileJSON, URL, and join-key contracts; Martin integration tests decode real vector tiles served from disposable PostGIS.
+8. External contract tests make small calls to Census, BLS, and FRED on a schedule.
+9. Performance and resilience tests establish baselines and inject controlled failures.
 
 The default developer test command must be deterministic, must not access the network, and must not require PostgreSQL, Redis, credentials, Docker, or a populated warehouse. Network access is denied in unit tests so an unmocked request fails immediately.
 
@@ -65,6 +67,7 @@ Every automated test must follow Arrange-Act-Assert, have a descriptive name, ow
 | DAG testing | Airflow 2.9.3 `airflow.models.DagBag` | Import, metadata, task, dependency, pool, and timing checks |
 | Database testing | Pinned `postgis/postgis:16-3.5-alpine` container, `psycopg2`, SQLAlchemy 2.x in the API environment | Real spatial/non-spatial DDL, transactions, upserts, and query behavior |
 | Redis testing | Pinned `redis:7.4.9-alpine` container | Real cache hit, miss, expiry, and outage behavior |
+| Vector-tile testing | Immutable Martin container plus an MVT decoder | Live TileJSON, decoded geometry/properties, proxy, and API-to-tile joins |
 | Linting | `ruff` | Formatting and static lint checks |
 | Package validation | `build`, `pip check` | Wheel/sdist creation and dependency consistency |
 | HTTP load testing | `Locust` | Version-controlled API load scenarios and latency percentiles |
@@ -111,6 +114,17 @@ The authoritative warehouse dependency for the testing suite is `postgis/postgis
 
 The authoritative cache dependency for the testing suite is `redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99`. Redis integration tests use database 15 on this disposable service, clear it before and after every test, and refuse non-loopback `TEST_REDIS_URL` values or URLs containing credentials.
 
+### Martin Vector-Tile Test Dependency
+
+Martin integration tests run against an immutable Martin image connected only to the pinned disposable PostGIS service. The current floating `maplibre/martin:latest` Compose reference must be replaced by a readable version and manifest digest before MARTIN-006 through MARTIN-010 can be implemented.
+
+- The test publishes only the explicitly configured `counties` layer; auto-publication remains disabled.
+- The test database is seeded with small valid and invalid county geometry fixtures and no production data.
+- Martin connects with a test-only read-only role and cannot mutate warehouse relations.
+- Tests request TileJSON and MVT over a loopback-bound service endpoint.
+- MVT assertions decode the protobuf and inspect layer, feature, property, and geometry content. A non-empty response body alone is not sufficient.
+- Proxy tests start only the minimum disposable Martin, PostGIS, and web/proxy services required for the contract.
+
 ## Test Organization and Markers
 
 The root `tests/` directory is the single authoritative home for all automated test cases and test-owned assets. This includes Python tests, test SQL, fixtures, expected outputs, Locust scenarios, test factories, and test-only helper modules. Tests must not live beside production code under `src/`, `apps/`, `dags/`, or `scripts/`.
@@ -125,11 +139,13 @@ tests/
     census/
     bls/
     fred/
+    martin/
     shared/
   dags/
   integration/
     database/
     api/
+    martin/
     redis/
   e2e/
   external/
@@ -174,6 +190,7 @@ The project must be installed in editable mode in each test environment so tests
 | `integration` | Multiple real application components | Only explicitly declared disposable services |
 | `database` | Real isolated spatial PostgreSQL | Disposable pinned PostGIS 16 image only |
 | `redis` | Real isolated Redis | Disposable Redis only |
+| `martin` | Live vector-tile service contract | Disposable pinned Martin and PostGIS services only |
 | `external` | Live source contract | Network and CI-managed credentials |
 | `e2e` | Raw-to-API deterministic flow | Disposable PostgreSQL and optionally Redis |
 | `performance` | Load, volume, or benchmark scenario | Explicitly provisioned test services |
@@ -190,6 +207,8 @@ make test-api
 make test-integration
 make test-external
 make test-e2e
+make test-martin-unit
+make test-martin-integration
 make test-performance
 ```
 
@@ -202,10 +221,12 @@ pytest -m "api and not integration"
 pytest -m "integration and not e2e"
 pytest -m external
 pytest -m e2e
+pytest -m unit tests/unit/martin
+pytest -m "integration and martin" tests/integration/martin
 pytest -m performance
 ```
 
-Plain `pytest` will be configured to exclude `database`, `redis`, `external`, `e2e`, `performance`, and `slow` tests. DAG and API suites are invoked in their compatible environments rather than accidentally collected in the wrong environment.
+Plain `pytest` will be configured to exclude `database`, `redis`, `martin`, `external`, `e2e`, `performance`, and `slow` tests. Deterministic Martin configuration/helper tests remain in the default unit tier without the infrastructure marker. DAG and API suites are invoked in their compatible environments rather than accidentally collected in the wrong environment.
 
 ## Fixture and Isolation Rules
 
@@ -217,6 +238,7 @@ Plain `pytest` will be configured to exclude `database`, `redis`, `external`, `e
 - A session-scoped container using the pinned PostGIS 16 image may be shared for speed, but every test receives a unique database or schema and transaction boundary.
 - Integration cleanup is verified even after assertion or application failure.
 - CI jobs never reuse a database volume, Redis state, Airflow home, or ingestion ledger from another job.
+- Martin integration tests use a fresh service, a test-only read-only role, and reviewed geometry fixtures; decoded features must reconcile exactly to their seed rows.
 - External tests use environment variables or CI secret storage only.
 - Test output must not print credentials, connection strings, raw SQL parameters containing secrets, or API keys.
 
@@ -241,11 +263,14 @@ Last audited against the repository on 2026-08-11. **Implemented** means that ch
 | ETL and shared units | ETL-001–ETL-037 | None |
 | Database integration | DB-001–DB-018 | None |
 | API | API-001–API-027 | None |
+| Martin vector tiles | None | MARTIN-001–MARTIN-010 |
 | External source contracts | EXT-001–EXT-010 | None |
 | End-to-end | E2E-001–E2E-006 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| **Total** | **140 of 140** | **0 of 140** |
+| **Total** | **140 of 150** | **10 of 150** |
+
+Awaiting implementation IDs: MARTIN-001, MARTIN-002, MARTIN-003, MARTIN-004, MARTIN-005, MARTIN-006, MARTIN-007, MARTIN-008, MARTIN-009, MARTIN-010.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's full pass metric.
 
@@ -261,9 +286,10 @@ Latest implementation validation on 2026-08-11:
 | Bounded performance profiles | 7 passed, 1 skipped | Million-row PERF-006 profile remains opt-in and runs in scheduled CI |
 | Redis outage resilience | 1 passed | Database resilience cases are included in the integration result above |
 | External source contracts | Scheduled | Credential/network-gated EXT tests are implemented but were not invoked in the local validation |
+| Martin vector-tile contracts | Awaiting implementation | No pytest/CI-owned Martin unit or disposable service tests are included in this validation |
 | Formatting, lint, and diff checks | Passed | `ruff format --check`, `ruff check`, and `git diff --check` |
 
-The traceability guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID lacks an implementation reference in tests, CI, or configuration.
+The traceability guard fails if a Python test lacks a `Covers:` docstring, references an unknown ID, or if any catalog ID has neither an implementation reference in tests/CI/configuration nor an explicit entry in the awaiting-implementation ID list. An awaiting entry is not implementation evidence.
 
 Test docstrings use the following traceability labels:
 
@@ -409,6 +435,23 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-025 | P0 | Router / `unit api` | Catalog sources response | The catalog sources route returns the stable source metadata contract without real database access | Non-200 response, malformed source metadata, or real database access |
 | API-026 | P0 | Router / `unit api` | Model status response | The models status route returns the stable source-model availability contract | Non-200 response or model status contract drift |
 | API-027 | P0 | Service / `unit api` | Latest-view fallback | An empty latest materialized view falls back to the durable report relation while preserving pagination totals and schema | Empty result despite durable rows, wrong total, or response contract drift |
+
+### Martin Vector-Tile Tests
+
+Martin unit tests are deterministic and require no service. Integration tests use only an immutable disposable Martin service and the pinned disposable PostGIS database. The canonical application/tile join key is `geo_id`; fallback keys are diagnostic aids and do not satisfy the serving contract.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| MARTIN-001 | P1 | Configuration / `unit` | Martin layer configuration | `martin.yml` parses and publishes exactly the `counties` layer from the authoritative geography relation with `geo_geom`, SRID 4326, intentional zoom/bounds, auto-publication disabled, and the complete declared property types | Invalid config, wrong relation/geometry/SRID, unexpected auto-publication, or property drift |
+| MARTIN-002 | P1 | Configuration / `unit` | Cross-surface configuration consistency | Martin config, Compose mounts, Next.js rewrite, nginx proxy, and infrastructure documentation agree on layer ID, base path, port, source relation, and read-only connection intent | Config/documentation drift or a proxy path that cannot address the configured layer |
+| MARTIN-003 | P1 | Contract / `unit` | TileJSON layer and field parsing | Dictionary/list field formats select the exact `counties` vector layer; malformed or missing `vector_layers`, fields, or canonical `geo_id` fail deterministically | Wrong layer selected, malformed metadata accepted, or missing `geo_id` treated as valid |
+| MARTIN-004 | P1 | Routing / `unit` | Tile URL normalization | Absolute, relative, already-prefixed, fallback, and `bbox-epsg-3857` templates resolve to the exact same-origin `/tiles` request without duplicate or missing path segments | Internal hostname leak, broken template, duplicate prefix, or unresolved placeholder |
+| MARTIN-005 | P1 | Contract / `unit` | Canonical geography join key | Representative county `geo_id` values preserve state/county zero padding and match API observation and tile-property values exactly; fallback-only keys are rejected | Padding loss, case/key drift, ambiguous join, or acceptance without `geo_id` |
+| MARTIN-006 | P1 | Integration / `integration database martin` | Live TileJSON from disposable services | Pinned Martin starts with a read-only role against seeded PostGIS and the `counties` endpoint reports the exact layer, bounds, zooms, and property schema within 5 seconds | Startup failure, unavailable layer, metadata drift, timeout, or write-capable role |
+| MARTIN-007 | P1 | Integration / `integration database martin` | Decoded vector-tile contents | A requested tile is valid decodable MVT and contains exactly the seeded county feature with non-empty polygon geometry and exact `geo_id`, FIPS, name, and coordinate properties | Undecodable/empty tile, wrong layer/count, missing geometry, or property mismatch |
+| MARTIN-008 | P1 | E2E / `e2e database martin slow` | API observation to tile join | A real seeded county observation flows through the API and joins one-to-one by `geo_id` to the decoded Martin feature; a deliberate mismatched ID fails reconciliation | Missing/duplicate tile match, wrong observation join, or mismatch accepted |
+| MARTIN-009 | P1 | Integration / `integration martin slow` | Same-origin proxy behavior | `/tiles/health`, layer TileJSON, and every sampled tile URL returned by TileJSON succeed through the actual Next.js or nginx proxy without internal host disclosure or `/tiles` prefix loss | Proxy 4xx/5xx, unusable returned URL, internal hostname leak, or path rewrite error |
+| MARTIN-010 | P1 | Security / `integration database martin` | Runtime pin, failure, and read-only behavior | Compose/test support use one immutable Martin version; runtime matches it; missing relation/geometry errors are sanitized; SELECT succeeds and mutation through the Martin role is denied | Floating/version-drifted image, secret/DSN leak, ambiguous failure, or warehouse mutation permitted |
 
 ### External Source Contract Tests
 
