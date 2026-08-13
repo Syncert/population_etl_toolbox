@@ -1,0 +1,52 @@
+name: frontend
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "tests/frontend/**"
+      - "infra/docker/Dockerfile.web"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    # Covers: WEB-007, WEB-008 — audit, lint, unit, build, and browser CI.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Audit production dependency graph
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run build
+      - name: Install Chromium runtime
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: frontend-browser-results
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: ignore

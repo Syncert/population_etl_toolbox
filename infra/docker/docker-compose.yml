@@ -1,6 +1,6 @@
 services:
   analytics_postgres:
-    image: postgis/postgis:15-3.4
+    image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
     environment:
       POSTGRES_USER: analytics
       POSTGRES_PASSWORD: analytics
@@ -12,7 +12,7 @@ services:
       - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/001_api_readonly.sql:ro
 
   service_postgres:
-    image: postgres:15
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -23,7 +23,7 @@ services:
       - service_postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
 
   api:
@@ -47,9 +47,14 @@ services:
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   martin:
-    image: maplibre/martin:latest
+    image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b
     depends_on:
       - analytics_postgres
     command: --config /etc/martin/martin.yml
@@ -59,6 +64,11 @@ services:
       - "127.0.0.1:${MARTIN_HOST_PORT:-3000}:3000"
     volumes:
       - ../martin/martin.yml:/etc/martin/martin.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   web:
     build:
@@ -71,7 +81,12 @@ services:
       - api
       - martin
     ports:
-      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_HOST_PORT:-3001}:3100"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3001}:3100"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   airflow-common: &airflow-common
     build:

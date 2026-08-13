@@ -49,6 +49,5 @@ def assert_configured_domain_coverage(
 
     if missing_by_layer:
         raise ValueError(
-            "Configured FRED domain coverage is incomplete: "
-            f"{missing_by_layer}"
+            f"Configured FRED domain coverage is incomplete: {missing_by_layer}"
         )

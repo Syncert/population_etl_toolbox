@@ -8,7 +8,7 @@ postgres:
   tables:
     counties:
       layer_id: counties
-      schema: gold_glossary
+      schema: gold
       table: dim_geo_latest
       geometry_column: geo_geom
       id_column: ~

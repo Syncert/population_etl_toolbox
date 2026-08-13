@@ -16,7 +16,7 @@ export default function BuilderPage() {
     setSavedCharts(readSavedCharts());
     try {
       const draft = JSON.parse(window.localStorage.getItem(BUILDER_DRAFT_KEY) || "null");
-      if (draft) { setTitle(draft.title || title); setBlocks(Array.isArray(draft.blocks) ? draft.blocks : starterBlocks); }
+      if (draft) { setTitle(draft.title || "Untitled analysis"); setBlocks(Array.isArray(draft.blocks) ? draft.blocks : starterBlocks); }
     } catch { /* Keep starter draft. */ }
   }, []);
 

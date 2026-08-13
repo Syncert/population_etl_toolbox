@@ -3,15 +3,18 @@ Gold analytics layer for the ``gold_bls`` schema.
 
 Bootstraps source-specific objects and refreshes BLS metadata from silver.
 """
+
 from __future__ import annotations
 
 import logging
 import pathlib
-
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.bls.config import CONFIG
 from data_ingestion_toolbox.utility.gold_schema import ensure_gold_schema_from_files
+
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,8 @@ _REQUIRED_PROCEDURES = (
 
 
 def _get_hook() -> PostgresHook:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 

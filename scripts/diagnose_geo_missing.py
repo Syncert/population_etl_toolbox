@@ -8,22 +8,21 @@ due to missing geo_sk values.
 Run this after a failed transform to diagnose issues.
 """
 
-from datetime import date
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import logging
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
+def diagnose_bls_missing_geos(postgres_conn_id: str = "public_data"):
     """Diagnose missing BLS geographies."""
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
-    
+
     logger.info("=" * 80)
     logger.info("BLS GEOGRAPHY DIAGNOSTIC")
     logger.info("=" * 80)
-    
+
     # 1. Count total unique geographies in raw BLS data
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -31,9 +30,9 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             FROM raw_bls.bls_long;
         """)
         total_bls = cur.fetchone()[0]
-    
+
     logger.info(f"Total BLS data records: {total_bls:,}")
-    
+
     # 2. Check what geographic levels are in BLS data
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -52,7 +51,7 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
         logger.info("\nBLS geographic distribution:")
         for geo_type, count in cur.fetchall():
             logger.info(f"  {geo_type}: {count:,}")
-    
+
     # 3. Check what's in dim_geo
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -66,7 +65,7 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
         logger.info("\nsilver_ref.dim_geo contents:")
         for geo_level, count in cur.fetchall():
             logger.info(f"  {geo_level}: {count:,}")
-    
+
     # 4. Find counties in BLS data but not in dim_geo
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -101,20 +100,22 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             GROUP BY bls.geo_level, bls.geo_id, dg.geo_sk
             ORDER BY status DESC, bls.geo_level, bls.geo_id;
         """)
-        
+
         missing_count = 0
         ok_count = 0
         missing_geo_list = []
-        
+
         logger.info("\nGeography lookup status:")
         for geo_level, geo_id, record_count, status in cur.fetchall():
-            if status == 'MISSING':
+            if status == "MISSING":
                 missing_count += 1
                 missing_geo_list.append((geo_level, geo_id, record_count))
-                logger.warning(f"  {status} - {geo_level:10} {geo_id:40} ({record_count:,} records)")
+                logger.warning(
+                    f"  {status} - {geo_level:10} {geo_id:40} ({record_count:,} records)"
+                )
             else:
                 ok_count += 1
-        
+
         if missing_geo_list:
             logger.error(f"\nFound {missing_count} missing geographic combinations!")
             logger.error("These would cause row drops during transform:")
@@ -124,14 +125,14 @@ def diagnose_bls_missing_geos(postgres_conn_id: str = 'public_data'):
             logger.info(f"\nAll {ok_count} BLS geographies are present in dim_geo ✓")
 
 
-def diagnose_census_missing_geos(postgres_conn_id: str = 'public_data'):
+def diagnose_census_missing_geos(postgres_conn_id: str = "public_data"):
     """Diagnose missing Census geographies."""
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
-    
+
     logger.info("\n" + "=" * 80)
     logger.info("CENSUS ACS GEOGRAPHY DIAGNOSTIC")
     logger.info("=" * 80)
-    
+
     # 1. Count total unique geographies in Census data
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -139,9 +140,9 @@ def diagnose_census_missing_geos(postgres_conn_id: str = 'public_data'):
             FROM raw_census.acs_long;
         """)
         total_census = cur.fetchone()[0]
-    
+
     logger.info(f"Total Census ACS records: {total_census:,}")
-    
+
     # 2. Check what geographic levels are in Census data
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -155,8 +156,10 @@ def diagnose_census_missing_geos(postgres_conn_id: str = 'public_data'):
         """)
         logger.info("\nCensus geographic distribution:")
         for geo_level, unique_geos, count in cur.fetchall():
-            logger.info(f"  {geo_level}: {unique_geos:,} unique geographies, {count:,} records")
-    
+            logger.info(
+                f"  {geo_level}: {unique_geos:,} unique geographies, {count:,} records"
+            )
+
     # 3. Find missing geographies
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -188,29 +191,34 @@ def diagnose_census_missing_geos(postgres_conn_id: str = 'public_data'):
                    END
             ORDER BY status DESC, cg.geo_level;
         """)
-        
+
         missing_count = 0
         logger.info("\nGeography lookup status:")
-        for geo_level, state_fips, county_fips, expected_geo_id, status in cur.fetchall():
-            geo_display = f"{geo_level}:{state_fips or 'NULL'}:{county_fips or 'NULL'}"
-            if status == 'MISSING':
+        for (
+            geo_level,
+            state_fips,
+            county_fips,
+            expected_geo_id,
+            status,
+        ) in cur.fetchall():
+            if status == "MISSING":
                 missing_count += 1
                 logger.warning(f"  {status} - {expected_geo_id}")
-            
+
         if missing_count > 0:
             logger.error(f"\nFound {missing_count} missing geographic combinations!")
         else:
             logger.info("\nAll Census geographies are present in dim_geo ✓")
 
 
-def check_dimension_sync_status(postgres_conn_id: str = 'public_data'):
+def check_dimension_sync_status(postgres_conn_id: str = "public_data"):
     """Check when dimensions were last synced."""
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
-    
+
     logger.info("\n" + "=" * 80)
     logger.info("DIMENSION SYNC STATUS")
     logger.info("=" * 80)
-    
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         # Check dim_geo last update
         cur.execute("""
@@ -218,14 +226,14 @@ def check_dimension_sync_status(postgres_conn_id: str = 'public_data'):
         """)
         last_geo_sync = cur.fetchone()[0]
         logger.info(f"dim_geo last synced: {last_geo_sync}")
-        
+
         # Check dim_time last update
         cur.execute("""
             SELECT MAX(ingested_at) as last_sync from data_ingestion_toolbox.silver_ref.dim_time;
         """)
         last_time_sync = cur.fetchone()[0]
         logger.info(f"dim_time last synced: {last_time_sync}")
-        
+
         # Check date range coverage
         cur.execute("""
             SELECT MIN(date_key) as earliest, MAX(date_key) as latest 
@@ -235,16 +243,16 @@ def check_dimension_sync_status(postgres_conn_id: str = 'public_data'):
         logger.info(f"dim_time coverage: {earliest} to {latest}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logger.info("Starting geography diagnostics...\n")
-    
-    postgres_conn_id = 'public_data'  # Default Airflow connection ID
-    
+
+    postgres_conn_id = "public_data"  # Default Airflow connection ID
+
     try:
         diagnose_bls_missing_geos(postgres_conn_id)
         diagnose_census_missing_geos(postgres_conn_id)
         check_dimension_sync_status(postgres_conn_id)
-        
+
         logger.info("\n" + "=" * 80)
         logger.info("DIAGNOSTIC COMPLETE")
         logger.info("=" * 80)

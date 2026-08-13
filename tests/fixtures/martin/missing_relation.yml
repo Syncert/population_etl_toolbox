@@ -1,0 +1,15 @@
+listen_addresses: "0.0.0.0:3000"
+base_path: /tiles
+
+postgres:
+  connection_string: ${MARTIN_DATABASE_URL}
+  auto_publish: false
+  tables:
+    missing_counties:
+      layer_id: missing_counties
+      schema: gold
+      table: relation_that_does_not_exist
+      geometry_column: geo_geom
+      srid: 4326
+      properties:
+        geo_id: text

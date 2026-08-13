@@ -1,9 +1,15 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
 
 WORKDIR /opt/data_ingestion_toolbox
 
 COPY . /opt/data_ingestion_toolbox
 
 RUN pip install --no-cache-dir -e .[api]
+
+RUN groupadd --system --gid 10001 api \
+    && useradd --system --uid 10001 --gid api --home-dir /nonexistent api \
+    && chown -R api:api /opt/data_ingestion_toolbox
+
+USER api
 
 CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

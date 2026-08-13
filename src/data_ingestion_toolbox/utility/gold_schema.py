@@ -1,4 +1,5 @@
 """Shared helpers for subject-scoped gold schema bootstrap."""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,10 +7,11 @@ import logging
 import pathlib
 import time
 from dataclasses import dataclass
-from datetime import date
-from typing import Any
+from datetime import date, timedelta
+from typing import TYPE_CHECKING, Any
 
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,14 @@ class ServingRefreshChunkConfig:
     statement_timeout: str
 
 
+@dataclass(frozen=True, order=True)
+class DateShard:
+    """Inclusive date range used by a deterministic gold refresh shard."""
+
+    start: date
+    end: date
+
+
 def _compute_ddl_hash(ddl_files: list[pathlib.Path]) -> str:
     digest = hashlib.sha256()
     for ddl_file in ddl_files:
@@ -36,6 +46,25 @@ def _compute_ddl_hash(ddl_files: list[pathlib.Path]) -> str:
         digest.update(ddl_file.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def build_month_shards(window_start: date, window_end: date) -> list[DateShard]:
+    """Partition an inclusive date window into ordered calendar-month shards."""
+    if window_start > window_end:
+        raise ValueError("window_start must be less than or equal to window_end")
+
+    shards: list[DateShard] = []
+    cursor = window_start
+    while cursor <= window_end:
+        next_month = (
+            date(cursor.year + 1, 1, 1)
+            if cursor.month == 12
+            else date(cursor.year, cursor.month + 1, 1)
+        )
+        shard_end = min(window_end, next_month - timedelta(days=1))
+        shards.append(DateShard(start=cursor, end=shard_end))
+        cursor = shard_end + timedelta(days=1)
+    return shards
 
 
 def _ensure_schema_state_table(cur: Any) -> None:
@@ -77,12 +106,16 @@ def _record_hash(cur: Any, component_name: str, ddl_hash: str) -> None:
     )
 
 
-def _is_bootstrapped(cur: Any, required_relations: tuple[str, ...], required_procedures: tuple[str, ...]) -> bool:
+def _is_bootstrapped(
+    cur: Any, required_relations: tuple[str, ...], required_procedures: tuple[str, ...]
+) -> bool:
     relation_checks = ",\n                ".join(
-        f"to_regclass('{relation_name}') IS NOT NULL" for relation_name in required_relations
+        f"to_regclass('{relation_name}') IS NOT NULL"
+        for relation_name in required_relations
     )
     procedure_checks = ",\n                ".join(
-        f"to_regprocedure('{procedure_name}') IS NOT NULL" for procedure_name in required_procedures
+        f"to_regprocedure('{procedure_name}') IS NOT NULL"
+        for procedure_name in required_procedures
     )
     sql = f"""
         SELECT
@@ -131,7 +164,11 @@ def ensure_gold_schema_from_files(
         _record_hash(cur, component_name, current_hash)
         conn.commit()
 
-    logger.info("Gold schema component %s ensured from %d DDL file(s)", component_name, len(ordered_files))
+    logger.info(
+        "Gold schema component %s ensured from %d DDL file(s)",
+        component_name,
+        len(ordered_files),
+    )
 
 
 def build_shard_list(
@@ -347,7 +384,9 @@ def refresh_serving_layer_in_year_chunks(
         try:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
-                cur.execute(f"SET LOCAL statement_timeout = '{config.statement_timeout}'")
+                cur.execute(
+                    f"SET LOCAL statement_timeout = '{config.statement_timeout}'"
+                )
                 cur.execute(
                     f"CALL {config.report_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),

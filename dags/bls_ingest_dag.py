@@ -56,6 +56,7 @@ from data_ingestion_toolbox.utility.gold_schema import (
     ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,10 @@ BLS_API_POOL = "bls_api"
 
 def _get_postgres_hook() -> PostgresHook:
     """Centralized PostgresHook factory."""
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
+        raise RuntimeError("PostgreSQL connection ID is not configured")
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _silver_ddl_path() -> Path:
@@ -85,11 +89,11 @@ def _silver_ddl_path() -> Path:
 def _series_fingerprint(program: str) -> tuple[str, int]:
     """
     Compute a stable fingerprint of the series eligible for ingestion.
-    
+
     For LAUS: fingerprints complete published state/county series IDs matching
     the curated measure filters.
     For others: fingerprints full series IDs.
-    
+
     Returns: (hash_digest, series_count)
     """
     series_list = get_curated_series_for_program(program)
@@ -117,7 +121,7 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
             series_list = [row[0] for row in cur.fetchall()]
         if not series_list:
             return "", 0
-    
+
     series_sorted = sorted(series_list)
     payload = "|".join(series_sorted).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -126,7 +130,7 @@ def _series_fingerprint(program: str) -> tuple[str, int]:
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
     """Split list into chunks."""
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 _EST = ZoneInfo("America/New_York")
@@ -148,7 +152,7 @@ def _compute_delay_until_1am_est() -> timedelta:
 def _run_one_work_unit(work_unit: dict) -> int:
     """
     Execute one ingestion work unit with ledger updates.
-    
+
     work_unit structure:
         {
             "program": str,
@@ -161,7 +165,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         }
     """
     hook = _get_postgres_hook()
-    
+
     program = work_unit["program"]
     start_year = int(work_unit["start_year"])
     end_year = int(work_unit["end_year"])
@@ -169,9 +173,9 @@ def _run_one_work_unit(work_unit: dict) -> int:
     state_fips = work_unit.get("state_fips")
     series_hash = work_unit.get("series_hash")
     series_count = int(work_unit.get("series_count", 0))
-    
+
     started = datetime.now(timezone.utc)
-    
+
     # Update ledger to 'running'
     sql_running_update = """
         UPDATE raw_bls.bls_ingestion_slices
@@ -189,7 +193,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
           AND geo_level IS NOT DISTINCT FROM %s
           AND state_fips IS NOT DISTINCT FROM %s;
     """
-    
+
     sql_running_insert = """
         INSERT INTO raw_bls.bls_ingestion_slices (
             program, year_start, year_end, geo_level, state_fips,
@@ -203,23 +207,41 @@ def _run_one_work_unit(work_unit: dict) -> int:
                 %s, %s, %s)
         ON CONFLICT DO NOTHING;
     """
-    
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             sql_running_update,
-            (started, series_hash, series_count, started,
-             program, start_year, end_year, geo_level, state_fips),
+            (
+                started,
+                series_hash,
+                series_count,
+                started,
+                program,
+                start_year,
+                end_year,
+                geo_level,
+                state_fips,
+            ),
         )
-        
+
         if cur.rowcount == 0:
             cur.execute(
                 sql_running_insert,
-                (program, start_year, end_year, geo_level, state_fips,
-                 started, series_hash, series_count, started),
+                (
+                    program,
+                    start_year,
+                    end_year,
+                    geo_level,
+                    state_fips,
+                    started,
+                    series_hash,
+                    series_count,
+                    started,
+                ),
             )
-        
+
         conn.commit()
-    
+
     try:
         # Call ingest_slice
         rows_loaded = ingest_slice(
@@ -229,10 +251,10 @@ def _run_one_work_unit(work_unit: dict) -> int:
             geo_level=geo_level,
             state_fips=state_fips,
         )
-        
+
         finished = datetime.now(timezone.utc)
         final_status = "empty" if rows_loaded == 0 else "success"
-        
+
         sql_done = """
             UPDATE raw_bls.bls_ingestion_slices
             SET status = %s,
@@ -248,17 +270,28 @@ def _run_one_work_unit(work_unit: dict) -> int:
               AND geo_level IS NOT DISTINCT FROM %s
               AND state_fips IS NOT DISTINCT FROM %s;
         """
-        
+
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_done,
-                (final_status, int(rows_loaded), started, finished, series_hash, series_count,
-                 program, start_year, end_year, geo_level, state_fips),
+                (
+                    final_status,
+                    int(rows_loaded),
+                    started,
+                    finished,
+                    series_hash,
+                    series_count,
+                    program,
+                    start_year,
+                    end_year,
+                    geo_level,
+                    state_fips,
+                ),
             )
             conn.commit()
-        
+
         return int(rows_loaded)
-    
+
     except BlsDailyThresholdExceeded as e:
         # BLS daily API quota exhausted.  Mark slice 'planned' so the Airflow
         # retry picks it up, then re-raise so Airflow records the task as
@@ -272,7 +305,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         # ingest_batch has retries=10, covering up to 10 consecutive days of
         # quota exhaustion — adequate for extensive backfills.
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
         sql_planned = """
             UPDATE raw_bls.bls_ingestion_slices
             SET status = 'planned',
@@ -288,7 +321,16 @@ def _run_one_work_unit(work_unit: dict) -> int:
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 sql_planned,
-                (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                (
+                    started,
+                    finished,
+                    err_txt,
+                    program,
+                    start_year,
+                    end_year,
+                    geo_level,
+                    state_fips,
+                ),
             )
             conn.commit()
 
@@ -303,13 +345,18 @@ def _run_one_work_unit(work_unit: dict) -> int:
         logger.warning(
             "[BLS] Daily API threshold exceeded for %s %s-%s (geo=%s, state=%s) — "
             "Airflow will retry at %s.",
-            program, start_year, end_year, geo_level, state_fips, retry_at_str,
+            program,
+            start_year,
+            end_year,
+            geo_level,
+            state_fips,
+            retry_at_str,
         )
         raise
 
     except Exception as e:
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
 
         # Transient HTTP errors (429 / 5xx): mark 'planned', suppress so the
         # rest of the batch continues.  These will be retried on the next run.
@@ -329,14 +376,28 @@ def _run_one_work_unit(work_unit: dict) -> int:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     sql_planned,
-                    (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                    (
+                        started,
+                        finished,
+                        err_txt,
+                        program,
+                        start_year,
+                        end_year,
+                        geo_level,
+                        state_fips,
+                    ),
                 )
                 conn.commit()
             logger.warning(
                 "[Retryable Error] %s %s-%s (geo=%s, state=%s): %s",
-                program, start_year, end_year, geo_level, state_fips, err_txt,
+                program,
+                start_year,
+                end_year,
+                geo_level,
+                state_fips,
+                err_txt,
             )
-            return 0
+            raise
 
         else:
             # Unexpected errors: mark as 'failed' and propagate.
@@ -355,7 +416,16 @@ def _run_one_work_unit(work_unit: dict) -> int:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     sql_failed,
-                    (started, finished, err_txt, program, start_year, end_year, geo_level, state_fips),
+                    (
+                        started,
+                        finished,
+                        err_txt,
+                        program,
+                        start_year,
+                        end_year,
+                        geo_level,
+                        state_fips,
+                    ),
                 )
                 conn.commit()
             raise
@@ -410,7 +480,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 def bls_ingest():
     """
     BLS raw data ingestion DAG for raw_bls.
-    
+
     - Sync metadata (series + datasets)
     - Build ingestion plan for each program
     - For LAUS: expand by subnational geography (state/county)
@@ -418,7 +488,7 @@ def bls_ingest():
     - Skip completed slices unless series set changed (hash mismatch)
     - Track progress in raw_bls.bls_ingestion_slices
     """
-    
+
     # -----------------------------
     # Task 1: Metadata sync
     # -----------------------------
@@ -426,7 +496,7 @@ def bls_ingest():
     def sync_datasets() -> None:
         """Sync bls_datasets table."""
         sync_bls_datasets_table()
-    
+
     @task
     def sync_metadata() -> list[str]:
         """Sync series metadata for all configured programs."""
@@ -439,7 +509,7 @@ def bls_ingest():
                 # Log but don't fail entire DAG
                 print(f"Warning: failed to sync metadata for {program}: {e}")
         return synced_programs
-    
+
     # -----------------------------
     # Task 2: Build ingestion plan
     # -----------------------------
@@ -475,15 +545,16 @@ def bls_ingest():
 
         # Historical band: lock in once complete
         hist_start = 1990
-        hist_end   = current_year - 3   # e.g. in 2026 → 1990–2023
+        hist_end = current_year - 3  # e.g. in 2026 → 1990–2023
 
         # Rolling window: always re-ingest for revisions / backfills
-        roll_start = current_year - 2   # e.g. in 2026 → 2024
-        roll_end   = current_year   # e.g. in 2026 → 2026
-        
+        roll_start = current_year - 2  # e.g. in 2026 → 2024
+        roll_end = current_year  # e.g. in 2026 → 2026
+
         # For LAUS county-level, we need state FIPS codes
         state_fips_list = [
-            f"{i:02d}" for i in range(1, 57)
+            f"{i:02d}"
+            for i in range(1, 57)
             if i not in (3, 7, 14, 43)  # Skip territories
         ]
 
@@ -503,12 +574,16 @@ def bls_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_completed)
             for program, sy, ey, geo_level, state_fips, series_hash in cur.fetchall():
-                completed.add((
-                    str(program), int(sy), int(ey),
-                    geo_level if geo_level is not None else None,
-                    state_fips if state_fips is not None else None,
-                    series_hash,
-                ))
+                completed.add(
+                    (
+                        str(program),
+                        int(sy),
+                        int(ey),
+                        geo_level if geo_level is not None else None,
+                        state_fips if state_fips is not None else None,
+                        series_hash,
+                    )
+                )
 
         # Load planned slices (retry these)
         planned_to_retry = set()
@@ -520,23 +595,33 @@ def bls_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql_planned)
             for program, sy, ey, geo_level, state_fips in cur.fetchall():
-                planned_to_retry.add((
-                    str(program), int(sy), int(ey),
-                    geo_level if geo_level is not None else None,
-                    state_fips if state_fips is not None else None,
-                ))
+                planned_to_retry.add(
+                    (
+                        str(program),
+                        int(sy),
+                        int(ey),
+                        geo_level if geo_level is not None else None,
+                        state_fips if state_fips is not None else None,
+                    )
+                )
 
         def hist_is_done(
-            program: str, sy: int, ey: int,
-            geo_level: Optional[str], state_fips: Optional[str],
+            program: str,
+            sy: int,
+            ey: int,
+            geo_level: Optional[str],
+            state_fips: Optional[str],
         ) -> bool:
             """True if the historical slice is complete for the current series hash."""
             current_hash = series_meta[program]["series_hash"]
             return (program, sy, ey, geo_level, state_fips, current_hash) in completed
 
         def needs_retry(
-            program: str, sy: int, ey: int,
-            geo_level: Optional[str], state_fips: Optional[str],
+            program: str,
+            sy: int,
+            ey: int,
+            geo_level: Optional[str],
+            state_fips: Optional[str],
         ) -> bool:
             """True if a previously-planned slice needs a retry."""
             return (program, sy, ey, geo_level, state_fips) in planned_to_retry
@@ -552,42 +637,60 @@ def bls_ingest():
         ) -> None:
             """Append a work unit if it should run (forced or not yet done)."""
             meta = series_meta[program]
-            if force or not hist_is_done(program, sy, ey, geo_level, state_fips) \
-                    or needs_retry(program, sy, ey, geo_level, state_fips):
-                plan.append({
-                    "program": program,
-                    "start_year": sy,
-                    "end_year": ey,
-                    "geo_level": geo_level,
-                    "state_fips": state_fips,
-                    "series_hash": meta["series_hash"],
-                    "series_count": meta["series_count"],
-                })
+            if (
+                force
+                or not hist_is_done(program, sy, ey, geo_level, state_fips)
+                or needs_retry(program, sy, ey, geo_level, state_fips)
+            ):
+                plan.append(
+                    {
+                        "program": program,
+                        "start_year": sy,
+                        "end_year": ey,
+                        "geo_level": geo_level,
+                        "state_fips": state_fips,
+                        "series_hash": meta["series_hash"],
+                        "series_count": meta["series_count"],
+                    }
+                )
 
         # Build plan across both bands
         plan: list[dict] = []
 
         for program in synced_programs:
             if program == "la":
-                geos: list[tuple[str, Optional[str]]] = (
-                    [("state", None)]
-                    + [("county", sf) for sf in state_fips_list]
-                )
+                geos: list[tuple[str, Optional[str]]] = [("state", None)] + [
+                    ("county", sf) for sf in state_fips_list
+                ]
                 for geo_level, state_fips in geos:
                     # Historical band — skip if already done
                     if hist_end >= hist_start:
-                        add_slices(plan, program, hist_start, hist_end,
-                                   geo_level, state_fips, force=False)
+                        add_slices(
+                            plan,
+                            program,
+                            hist_start,
+                            hist_end,
+                            geo_level,
+                            state_fips,
+                            force=False,
+                        )
                     # Rolling window — always re-ingest to catch revisions
-                    add_slices(plan, program, roll_start, roll_end,
-                               geo_level, state_fips, force=True)
+                    add_slices(
+                        plan,
+                        program,
+                        roll_start,
+                        roll_end,
+                        geo_level,
+                        state_fips,
+                        force=True,
+                    )
             else:
                 # Non-LAUS: national series only
                 if hist_end >= hist_start:
-                    add_slices(plan, program, hist_start, hist_end,
-                               None, None, force=False)
-                add_slices(plan, program, roll_start, roll_end,
-                           None, None, force=True)
+                    add_slices(
+                        plan, program, hist_start, hist_end, None, None, force=False
+                    )
+                add_slices(plan, program, roll_start, roll_end, None, None, force=True)
 
         # Batch for mapping.
         # IMPORTANT: return at least one batch so mapped-task retries remain stable.
@@ -598,7 +701,7 @@ def bls_ingest():
 
         batches = chunk_list(plan, chunk_size=20)
         return batches
-    
+
     # -----------------------------
     # Task 3: Mark slices planned
     # -----------------------------
@@ -607,10 +710,10 @@ def bls_ingest():
         """Upsert slice ledger rows as 'planned'."""
         if not batches:
             return
-        
+
         hook = _get_postgres_hook()
         now = datetime.now(timezone.utc)
-        
+
         sql_planned_update = """
             UPDATE raw_bls.bls_ingestion_slices
             SET status = CASE
@@ -635,7 +738,7 @@ def bls_ingest():
               AND geo_level IS NOT DISTINCT FROM %s
               AND state_fips IS NOT DISTINCT FROM %s;
         """
-        
+
         sql_planned_insert = """
             INSERT INTO raw_bls.bls_ingestion_slices (
                 program, year_start, year_end, geo_level, state_fips,
@@ -649,7 +752,7 @@ def bls_ingest():
                     %s, %s, %s)
             ON CONFLICT DO NOTHING;
         """
-        
+
         with hook.get_conn() as conn, conn.cursor() as cur:
             for batch in batches:
                 for w in batch:
@@ -660,22 +763,40 @@ def bls_ingest():
                     state_fips = w.get("state_fips")
                     shash = w.get("series_hash")
                     scount = int(w.get("series_count", 0))
-                    
+
                     cur.execute(
                         sql_planned_update,
-                        (shash, shash, shash, scount, now,
-                         program, start_year, end_year, geo_level, state_fips),
+                        (
+                            shash,
+                            shash,
+                            shash,
+                            scount,
+                            now,
+                            program,
+                            start_year,
+                            end_year,
+                            geo_level,
+                            state_fips,
+                        ),
                     )
-                    
+
                     if cur.rowcount == 0:
                         cur.execute(
                             sql_planned_insert,
-                            (program, start_year, end_year, geo_level, state_fips,
-                             shash, scount, now),
+                            (
+                                program,
+                                start_year,
+                                end_year,
+                                geo_level,
+                                state_fips,
+                                shash,
+                                scount,
+                                now,
+                            ),
                         )
-            
+
             conn.commit()
-    
+
     # -----------------------------
     # Task 4: Ingest batch (mapped)
     # -----------------------------
@@ -715,7 +836,7 @@ def bls_ingest():
     # -----------------------------
     # Task 5: Silver layer (full load)
     # -----------------------------
-    @task(trigger_rule='all_success')
+    @task(trigger_rule="all_success")
     def ensure_silver_schema() -> None:
         """Ensure silver_bls schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -725,24 +846,26 @@ def bls_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='all_success', max_active_tis_per_dag=CONFIG.silver_max_active_tis)
+    @task(
+        trigger_rule="all_success", max_active_tis_per_dag=CONFIG.silver_max_active_tis
+    )
     def transform_to_silver_by_program(program: str) -> int:
         """Transform ALL raw BLS data to silver for one program (full load)."""
         return transform_bls_to_silver(program=program)
-    
+
     # -----------------------------
     # DAG wiring
     # -----------------------------
     sync_ds = sync_datasets()
     sync_meta = sync_metadata()
-    
+
     plan = build_ingestion_plan(sync_meta)
-    
+
     sync_ds >> sync_meta >> plan
-    
+
     planned = mark_slices_planned(plan)
     plan >> planned
-    
+
     raw_ingest = ingest_batch.expand(batch=plan)
 
     silver_schema = ensure_silver_schema()
@@ -823,6 +946,7 @@ def bls_ingest():
         >> gold_bls_elements
         >> gold_bls_refresh
     )
+
 
 # Instantiate DAG
 bls_ingest_dag = bls_ingest()

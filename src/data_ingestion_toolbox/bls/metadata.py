@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 import psycopg2
@@ -25,6 +24,7 @@ _TARGET_DATABASE = "public_data"
 # connection. In local dev (no Airflow), this will be None and the factory
 # will fall back to POSTGRES_* env vars.
 _AIRFLOW_CONN_ID: Optional[str] = getattr(CONFIG, "postgres_conn_id", None)
+
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
     """
@@ -54,14 +54,16 @@ BASE_URL = "https://download.bls.gov/pub/time.series/"
 # List of programs from config
 programs = CONFIG.programs
 
-#HELPER, download.bls.gov will occasionally answer 403 forbidden to bot-looking clients despite the url working well in a browser.
+# HELPER, download.bls.gov will occasionally answer 403 forbidden to bot-looking clients despite the url working well in a browser.
 UA = "population_toolbox/1.0 (contact: your_email@example.com)"
+
 
 def _safe_str(value) -> str:
     """Safely convert a value to string and strip whitespace."""
     if value is None:
         return ""
     return str(value).strip()
+
 
 def read_bls_tsv(url: str) -> pl.DataFrame:
     r = requests.get(
@@ -72,26 +74,28 @@ def read_bls_tsv(url: str) -> pl.DataFrame:
     r.raise_for_status()
     # Read all columns as strings to avoid type inference issues
     return pl.read_csv(
-        BytesIO(r.content), 
-        separator="\t", 
-        has_header=True, 
-        infer_schema_length=0,  # Read all as strings
-        dtypes={}
+        BytesIO(r.content),
+        separator="\t",
+        has_header=True,
+        infer_schema=False,  # Published identifiers must remain exact strings.
     )
+
 
 def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
     """
     Fetch metadata for a given BLS program.
-    
+
     Returns:
         Tuple of (series_data, dataset_data)
     """
     # Build URLs for the program
     series_url = f"{BASE_URL}{program}/{program}.series"
-    area_type_url = f"{BASE_URL}{program}/{program}.area_type" if program == "la" else None
+    area_type_url = (
+        f"{BASE_URL}{program}/{program}.area_type" if program == "la" else None
+    )
     area_url = f"{BASE_URL}{program}/{program}.area" if program == "la" else None
-    
-    #LOGGING
+
+    # LOGGING
     print(series_url)
     print(area_type_url)
     print(area_url)
@@ -101,44 +105,43 @@ def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
         series_df = read_bls_tsv(series_url)
 
         series_data = process_series_data(series_df, program)
-        
+
         # For LAUS, also get area and area_type data
         dataset_data = {}
         if program == "la":
             # Process area type data
             area_type_df = read_bls_tsv(area_type_url)
             area_type_data = process_area_type_data(area_type_df)
-            
-            # Process area data  
+
+            # Process area data
             area_df = read_bls_tsv(area_url)
             area_data = process_area_data(area_df)
-            
-            dataset_data = {
-                "area_types": area_type_data,
-                "areas": area_data
-            }
-        
+
+            dataset_data = {"area_types": area_type_data, "areas": area_data}
+
         return series_data, dataset_data
-        
+
     except Exception as e:
         print(f"Error fetching metadata for {program}: {e}")
         return {}, {}
 
+
 def process_series_data(df: pl.DataFrame, program: str) -> List[Dict]:
     """
     Process the series data from BLS metadata TSV files.
-    
+
     BLS metadata files have headers, so we don't need column_0/column_1 aliasing.
     This function normalizes the schema across different programs.
     """
     # Normalize column names (strip whitespace)
     df = df.rename({col: col.strip() for col in df.columns})
-    
+
     # Convert to list of dicts for easier processing
     records = df.to_dicts()
-    
+
     # Return the records with normalized structure
     return records
+
 
 def process_area_type_data(df: pl.DataFrame) -> List[Dict]:
     """
@@ -148,6 +151,7 @@ def process_area_type_data(df: pl.DataFrame) -> List[Dict]:
     df = df.rename({col: col.strip() for col in df.columns})
     return df.to_dicts()
 
+
 def process_area_data(df: pl.DataFrame) -> List[Dict]:
     """
     Process LAUS area data (US, states, counties, metros, cities).
@@ -156,42 +160,51 @@ def process_area_data(df: pl.DataFrame) -> List[Dict]:
     df = df.rename({col: col.strip() for col in df.columns})
     return df.to_dicts()
 
+
 def sync_bls_series_metadata(program: str) -> int:
     """
     Fetch and sync series metadata from BLS download.bls.gov to raw_bls.bls_series.
-    
+
     Returns the number of series records synced.
-    
+
     This populates the series catalog that geography.py and ingest.py will reference
     when building LAUS series IDs or looking up series attributes.
     """
     print(f"Syncing series metadata for program: {program}")
-    
+
     series_data, dataset_data = fetch_bls_metadata(program)
-    
+
     if not series_data:
         print(f"No series data found for {program}")
         return 0
-    
+
     conn = _get_pg_connection()
     count = 0
-    
+
     try:
         with conn.cursor() as cur:
             for record in series_data:
                 series_id = _safe_str(record.get("series_id", ""))
                 if not series_id:
                     continue
-                
+
                 title = _safe_str(record.get("series_title") or record.get("title", ""))
-                seasonal = _safe_str(record.get("seasonal", "")) if program == "la" else None
-                measure = _safe_str(record.get("measure_code") or record.get("data_type_code", ""))
-                area_code = _safe_str(record.get("area_code", "")) if program == "la" else None
-                area_text = _safe_str(record.get("area_text", "")) if program == "la" else None
-                
+                seasonal = (
+                    _safe_str(record.get("seasonal", "")) if program == "la" else None
+                )
+                measure = _safe_str(
+                    record.get("measure_code") or record.get("data_type_code", "")
+                )
+                area_code = (
+                    _safe_str(record.get("area_code", "")) if program == "la" else None
+                )
+                area_text = (
+                    _safe_str(record.get("area_text", "")) if program == "la" else None
+                )
+
                 # Store full record as JSONB
                 raw_metadata = json.dumps(record)
-                
+
                 sql = """
                     INSERT INTO raw_bls.bls_series (
                         program, series_id, title, seasonal, measure,
@@ -208,70 +221,57 @@ def sync_bls_series_metadata(program: str) -> int:
                         raw_metadata = EXCLUDED.raw_metadata,
                         last_checked_at = EXCLUDED.last_checked_at;
                 """
-                
+
                 now = datetime.now(timezone.utc)
-                cur.execute(sql, (
-                    program, series_id, title, seasonal, measure,
-                    area_code, area_text, raw_metadata,
-                    now, now
-                ))
+                cur.execute(
+                    sql,
+                    (
+                        program,
+                        series_id,
+                        title,
+                        seasonal,
+                        measure,
+                        area_code,
+                        area_text,
+                        raw_metadata,
+                        now,
+                        now,
+                    ),
+                )
                 count += 1
-            
+
             conn.commit()
             print(f"Synced {count} series for program {program}")
-    
+
     except Exception as e:
         conn.rollback()
         print(f"Error syncing series metadata for {program}: {e}")
         raise
     finally:
         conn.close()
-    
+
     # Also sync area metadata if LAUS
     if program == "la" and dataset_data:
         _sync_laus_area_metadata(dataset_data)
-    
+
     return count
 
 
 def _sync_laus_area_metadata(dataset_data: Dict):
     """
     Internal helper: sync LAUS area and area_type metadata.
-    
+
     This creates lookup tables for geography.py to use when generating
     series IDs for different geographic levels.
     """
     conn = _get_pg_connection()
-    
+
     try:
-        with conn.cursor() as cur:
-            # Ensure we have a table for areas (can reuse bls_series or create a separate one)
-            # For simplicity, we'll store in a separate metadata structure or use raw JSONB
-            
-            # Store area_types
-            if "area_types" in dataset_data:
-                for rec in dataset_data["area_types"]:
-                    area_type_code = _safe_str(rec.get("area_type_code", ""))
-                    area_type_text = _safe_str(rec.get("areatype_text") or rec.get("area_type_text", ""))
-                    
-                    # We can store this in a separate table or as program-specific metadata
-                    # For now, log it (you may want to create raw_bls.laus_area_types table)
-                    pass
-            
-            # Store areas (counties, states, metros, etc.)
-            if "areas" in dataset_data:
-                area_count = 0
-                for rec in dataset_data["areas"]:
-                    area_code = _safe_str(rec.get("area_code", ""))
-                    area_text = _safe_str(rec.get("area_text", ""))
-                    
-                    # Store as metadata - you could create raw_bls.laus_areas table
-                    # or store in bls_series with a special pattern
-                    # For now, this data is in the series metadata we already synced
-                    area_count += 1
-                
-                print(f"Found {area_count} LAUS areas in metadata")
-        
+        # Area rows are already represented by the synchronized series metadata.
+        # Keep this diagnostic count until dedicated lookup tables are introduced.
+        area_count = len(dataset_data.get("areas", []))
+        print(f"Found {area_count} LAUS areas in metadata")
+
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -283,25 +283,25 @@ def _sync_laus_area_metadata(dataset_data: Dict):
 def sync_bls_datasets_table() -> int:
     """
     Populate raw_bls.bls_datasets with available program/year combinations.
-    
+
     BLS doesn't version datasets by year the same way Census does.
     Instead, we track which programs are available and their time ranges.
-    
+
     This function creates records in bls_datasets to track metadata sync status.
     """
     conn = _get_pg_connection()
     count = 0
-    
+
     try:
         with conn.cursor() as cur:
             now = datetime.now(timezone.utc)
-            
+
             for program in CONFIG.programs:
                 # For each program, create a record indicating availability
                 # Use a nominal "year" (e.g., current year) to match schema
                 year = datetime.now(timezone.utc).year
                 title = f"BLS {program.upper()} Program"
-                
+
                 sql = """
                     INSERT INTO raw_bls.bls_datasets (
                         program, year, title, is_available,
@@ -313,32 +313,30 @@ def sync_bls_datasets_table() -> int:
                         is_available = EXCLUDED.is_available,
                         last_checked_at = EXCLUDED.last_checked_at;
                 """
-                
+
                 cur.execute(sql, (program, year, title, True, now, now))
                 count += 1
-            
+
             conn.commit()
             print(f"Synced {count} dataset records to raw_bls.bls_datasets")
-    
+
     except Exception as e:
         conn.rollback()
         print(f"Error syncing bls_datasets: {e}")
         raise
     finally:
         conn.close()
-    
+
     return count
 
 
 # Example usage / CLI interface
 if __name__ == "__main__":
-    import sys
-    
     print("=== BLS Metadata Sync ===\n")
-    
+
     # Sync datasets table first
     sync_bls_datasets_table()
-    
+
     # Then sync series metadata for each program
     for prog in CONFIG.programs:
         try:
@@ -346,5 +344,5 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Failed to sync {prog}: {e}")
             continue
-    
+
     print("\n=== BLS Metadata Sync Complete ===")

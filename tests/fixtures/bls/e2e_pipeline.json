@@ -1,0 +1,20 @@
+{
+  "status": "REQUEST_SUCCEEDED",
+  "Results": {
+    "series": [
+      {
+        "seriesID": "LAUST970000000000003",
+        "data": [
+          {
+            "year": "2095",
+            "period": "M01",
+            "periodName": "January",
+            "value": "4.5",
+            "footnotes": [],
+            "latest": "true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "overall_percent": 44.6,
+  "maximum_drop_points": 1.0,
+  "absolute_floor_percent": 33.0,
+  "recorded_environment": "Deterministic API+ETL unit coverage (4071 statements)",
+  "recorded_on": "2026-08-12"
+}

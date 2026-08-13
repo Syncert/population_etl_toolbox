@@ -1,6 +1,12 @@
 .git
 .github
 .conda
+.venv*
+build
+*.egg-info
+**/.ruff_cache
+**/.coverage*
+**/htmlcov
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

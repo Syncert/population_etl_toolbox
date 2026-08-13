@@ -14,7 +14,6 @@ import zipfile
 import httpx
 import polars as pl
 import shapefile as pyshp
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from data_ingestion_toolbox.silver_ref.config import CONFIG
 
@@ -38,7 +37,15 @@ def _counties_url(year: int) -> str:
     return f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_counties_national.zip"
 
 
-def _get_hook() -> PostgresHook:
+def _get_hook():
+    """Create the Airflow hook only when a database load is requested.
+
+    Airflow is an optional runtime dependency.  Keeping this import local lets
+    the parsing and transformation helpers be imported in the base/dev
+    environment used by the deterministic unit-test and coverage tiers.
+    """
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 
@@ -124,7 +131,7 @@ def _fetch_zipped_tsv(url: str, retries: int = 3) -> pl.DataFrame:
                 exc,
             )
             if attempt < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
     else:
         raise RuntimeError(
@@ -182,7 +189,7 @@ def _fetch_zipped_text(url: str, retries: int = 3) -> str:
                 exc,
             )
             if attempt < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
     raise RuntimeError(
         f"Failed to fetch Gazetteer zip from {url} after {retries} attempts"
@@ -320,7 +327,10 @@ def _fetch_boundary_features(url: str, retries: int = 3) -> list[dict]:
             mb = len(resp.content) / 1_048_576
             logger.info(
                 "Fetched shapefile: %s (%d features, %.1f MB, attempt %d)",
-                url, len(features), mb, attempt,
+                url,
+                len(features),
+                mb,
+                attempt,
             )
             return features
 
@@ -328,10 +338,13 @@ def _fetch_boundary_features(url: str, retries: int = 3) -> list[dict]:
             last_exc = exc
             logger.warning(
                 "Shapefile fetch attempt %d/%d failed for %s: %s",
-                attempt, retries, url, exc,
+                attempt,
+                retries,
+                url,
+                exc,
             )
             if attempt < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
     raise RuntimeError(
         f"Failed to fetch shapefile from {url} after {retries} attempts"
@@ -433,12 +446,11 @@ def _load_polygon_lookup(
             countyfp = props.get("COUNTYFP")
             if statefp and countyfp and geometry:
                 fips5 = f"{str(statefp).zfill(2)}{str(countyfp).zfill(3)}"
-                county_polygons[fips5] = json.dumps(
-                    geometry, separators=(",", ":")
-                )
+                county_polygons[fips5] = json.dumps(geometry, separators=(",", ":"))
         logger.info(
             "Loaded %d county polygons from GENZ %d",
-            len(county_polygons), genz_year,
+            len(county_polygons),
+            genz_year,
         )
     except Exception as exc:
         logger.warning("County polygon load failed for GENZ %d: %s", genz_year, exc)
@@ -447,7 +459,8 @@ def _load_polygon_lookup(
         logger.error(
             "NO polygons loaded for GENZ year %d. dim_geo.geom will remain NULL. "
             "Check network access to %s",
-            genz_year, GENZ_ROOT,
+            genz_year,
+            GENZ_ROOT,
         )
 
     return state_polygons, county_polygons
@@ -469,7 +482,7 @@ def sync_geo_dim(
     latest_year = source_year or resolve_latest_gazetteer_year(min_year=min_year)
     years = []
     years_checked = []
-    
+
     for y in range(latest_year, min_year - 1, -1):
         years_checked.append(y)
         # Counties file is required; states file is optional (Census stopped publishing in 2023+)
@@ -536,40 +549,45 @@ def sync_geo_dim(
         states_url = _states_url(y)
         counties_url = _counties_url(y)
 
-        us_df = pl.DataFrame([
-            {
-                "geo_level": "us",
-                "geo_id": "us:1",
-                "state_fips": None,
-                "county_fips": None,
-                "name": "United States",
-                "state_name": None,
-                "county_name": None,
-                "latitude": None,
-                "longitude": None,
-                "geom_geojson": None,
-                "is_active": True,
-                "source": "census_gazetteer",
-                "source_year": y,
-                "ingested_at": now,
-            }
-        ])
+        us_df = pl.DataFrame(
+            [
+                {
+                    "geo_level": "us",
+                    "geo_id": "us:1",
+                    "state_fips": None,
+                    "county_fips": None,
+                    "name": "United States",
+                    "state_name": None,
+                    "county_name": None,
+                    "latitude": None,
+                    "longitude": None,
+                    "geom_geojson": None,
+                    "is_active": True,
+                    "source": "census_gazetteer",
+                    "source_year": y,
+                    "ingested_at": now,
+                }
+            ]
+        )
 
         # States file is optional (Census stopped publishing it in 2023+)
         st_df = None
         if _url_exists(states_url):
             try:
                 st = _fetch_zipped_tsv(states_url)
-                st_df = (
-                    st.select([
+                st_df = st.select(
+                    [
                         pl.col("GEOID").cast(pl.Utf8).str.zfill(2).alias("state_fips"),
                         pl.col("NAME").cast(pl.Utf8).alias("state_name"),
                         _coord_expr(st, "INTPTLAT", "latitude"),
                         _coord_expr(st, "INTPTLONG", "longitude"),
-                    ])
-                    .with_columns([
+                    ]
+                ).with_columns(
+                    [
                         pl.lit("state").alias("geo_level"),
-                        pl.concat_str([pl.lit("state:"), pl.col("state_fips")]).alias("geo_id"),
+                        pl.concat_str([pl.lit("state:"), pl.col("state_fips")]).alias(
+                            "geo_id"
+                        ),
                         pl.lit(None, dtype=pl.Utf8).alias("county_fips"),
                         pl.col("state_name").alias("name"),
                         pl.lit(None, dtype=pl.Utf8).alias("county_name"),
@@ -577,7 +595,7 @@ def sync_geo_dim(
                         pl.lit("census_gazetteer").alias("source"),
                         pl.lit(y).alias("source_year"),
                         pl.lit(now).alias("ingested_at"),
-                    ])
+                    ]
                 )
                 if state_poly_df.height > 0:
                     st_df = st_df.join(state_poly_df, on="state_fips", how="left")
@@ -585,45 +603,59 @@ def sync_geo_dim(
                     st_df = st_df.with_columns(
                         pl.lit(None, dtype=pl.Utf8).alias("geom_geojson")
                     )
-                st_df = st_df.with_columns([
-                    pl.col("state_fips").cast(pl.Utf8),
-                    pl.col("county_fips").cast(pl.Utf8),
-                    pl.col("is_active").cast(pl.Boolean),
-                    pl.col("source_year").cast(pl.Int32),
-                ])
+                st_df = st_df.with_columns(
+                    [
+                        pl.col("state_fips").cast(pl.Utf8),
+                        pl.col("county_fips").cast(pl.Utf8),
+                        pl.col("is_active").cast(pl.Boolean),
+                        pl.col("source_year").cast(pl.Int32),
+                    ]
+                )
                 yearly_frames.append(st_df)
             except Exception as e:
                 logger.warning("Failed to load states for year=%s: %s", y, e)
         else:
-            logger.debug("States file not available for year=%s (expected for 2023+)", y)
+            logger.debug(
+                "States file not available for year=%s (expected for 2023+)", y
+            )
 
         # Counties file is required
         co = _fetch_counties_gazetteer(y, counties_url)
 
         co_df = (
-            co.select([
-                pl.col("GEOID").cast(pl.Utf8).str.zfill(5).alias("geoid5"),
-                pl.col("NAME").cast(pl.Utf8).alias("county_name"),
-                _coord_expr(co, "INTPTLAT", "latitude"),
-                _coord_expr(co, "INTPTLONG", "longitude"),
-            ])
-            .with_columns([
-                pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
-                pl.col("geoid5").str.slice(2, 3).alias("county_fips"),
-            ])
-            .with_columns([
-                pl.lit("county").alias("geo_level"),
-                pl.concat_str([
-                    pl.lit("state:"), pl.col("state_fips"),
-                    pl.lit("|county:"), pl.col("county_fips"),
-                ]).alias("geo_id"),
-                pl.col("county_name").alias("county_name"),
-                pl.col("county_name").alias("name"),
-                pl.lit(True).alias("is_active"),
-                pl.lit("census_gazetteer").alias("source"),
-                pl.lit(y).alias("source_year"),
-                pl.lit(now).alias("ingested_at"),
-            ])
+            co.select(
+                [
+                    pl.col("GEOID").cast(pl.Utf8).str.zfill(5).alias("geoid5"),
+                    pl.col("NAME").cast(pl.Utf8).alias("county_name"),
+                    _coord_expr(co, "INTPTLAT", "latitude"),
+                    _coord_expr(co, "INTPTLONG", "longitude"),
+                ]
+            )
+            .with_columns(
+                [
+                    pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
+                    pl.col("geoid5").str.slice(2, 3).alias("county_fips"),
+                ]
+            )
+            .with_columns(
+                [
+                    pl.lit("county").alias("geo_level"),
+                    pl.concat_str(
+                        [
+                            pl.lit("state:"),
+                            pl.col("state_fips"),
+                            pl.lit("|county:"),
+                            pl.col("county_fips"),
+                        ]
+                    ).alias("geo_id"),
+                    pl.col("county_name").alias("county_name"),
+                    pl.col("county_name").alias("name"),
+                    pl.lit(True).alias("is_active"),
+                    pl.lit("census_gazetteer").alias("source"),
+                    pl.lit(y).alias("source_year"),
+                    pl.lit(now).alias("ingested_at"),
+                ]
+            )
         )
         if county_poly_df.height > 0:
             co_df = co_df.join(county_poly_df, on="geoid5", how="left")
@@ -633,12 +665,14 @@ def sync_geo_dim(
             )
         co_df = co_df.drop("geoid5")
 
-        co_df = co_df.with_columns([
-            pl.col("state_fips").cast(pl.Utf8),
-            pl.col("county_fips").cast(pl.Utf8),
-            pl.col("is_active").cast(pl.Boolean),
-            pl.col("source_year").cast(pl.Int32),
-        ])
+        co_df = co_df.with_columns(
+            [
+                pl.col("state_fips").cast(pl.Utf8),
+                pl.col("county_fips").cast(pl.Utf8),
+                pl.col("is_active").cast(pl.Boolean),
+                pl.col("source_year").cast(pl.Int32),
+            ]
+        )
 
         # Optionally attach state_name if state_df exists
         if st_df is not None:
@@ -676,22 +710,24 @@ def sync_geo_dim(
     df_all = pl.concat(yearly_frames, how="vertical_relaxed")
 
     df_all = df_all.sort(["geo_level", "geo_id", "source_year"])
-    df = df_all.group_by(["geo_level", "geo_id"]).agg([
-        pl.col("state_fips").last().alias("state_fips"),
-        pl.col("county_fips").last().alias("county_fips"),
-        pl.col("name").last().alias("name"),
-        pl.col("state_name").last().alias("state_name"),
-        pl.col("county_name").last().alias("county_name"),
-        pl.col("latitude").last().alias("latitude"),
-        pl.col("longitude").last().alias("longitude"),
-        pl.col("geom_geojson").last().alias("geom_geojson"),
-        pl.col("is_active").last().alias("is_active"),
-        pl.col("source").last().alias("source"),
-        pl.col("source_year").last().alias("source_year"),
-        pl.col("source_year").min().alias("first_seen_year"),
-        pl.col("source_year").max().alias("last_seen_year"),
-        pl.col("ingested_at").max().alias("ingested_at"),
-    ])
+    df = df_all.group_by(["geo_level", "geo_id"]).agg(
+        [
+            pl.col("state_fips").last().alias("state_fips"),
+            pl.col("county_fips").last().alias("county_fips"),
+            pl.col("name").last().alias("name"),
+            pl.col("state_name").last().alias("state_name"),
+            pl.col("county_name").last().alias("county_name"),
+            pl.col("latitude").last().alias("latitude"),
+            pl.col("longitude").last().alias("longitude"),
+            pl.col("geom_geojson").last().alias("geom_geojson"),
+            pl.col("is_active").last().alias("is_active"),
+            pl.col("source").last().alias("source"),
+            pl.col("source_year").last().alias("source_year"),
+            pl.col("source_year").min().alias("first_seen_year"),
+            pl.col("source_year").max().alias("last_seen_year"),
+            pl.col("ingested_at").max().alias("ingested_at"),
+        ]
+    )
 
     # Backfill county/state-equivalent state_name from canonical state rows.
     # This avoids null state_name when some years have counties but no states file.

@@ -10,7 +10,9 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 
 @router.get("/status", response_model=ModelSurfaceStatusResponse)
-def get_models_status(db: Session = Depends(get_db_session_dep)) -> ModelSurfaceStatusResponse:
+def get_models_status(
+    db: Session = Depends(get_db_session_dep),
+) -> ModelSurfaceStatusResponse:
     try:
         return get_models_surface_status(db)
     except SQLAlchemyError as exc:

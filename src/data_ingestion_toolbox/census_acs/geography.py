@@ -24,6 +24,7 @@ GAZ_ROOT = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer"
 def _states_url(year: int) -> str:
     return f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_state_national.zip"
 
+
 def _counties_url(year: int) -> str:
     return f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_counties_national.zip"
 
@@ -121,30 +122,35 @@ def sync_geo_dim(source_year: Optional[int] = None, min_year: int = 2010) -> Non
     counties_url = _counties_url(y)
 
     # 1) US row
-    us_df = pl.DataFrame([{
-        "geo_level": "us",
-        "geo_id": "us:1",
-        "state_fips": None,
-        "county_fips": None,
-        "name": "United States",
-        "state_name": None,
-        "county_name": None,
-        "is_active": True,
-        "source": "census_gazetteer",
-        "source_year": y,
-        "ingested_at": now,
-    }])
+    us_df = pl.DataFrame(
+        [
+            {
+                "geo_level": "us",
+                "geo_id": "us:1",
+                "state_fips": None,
+                "county_fips": None,
+                "name": "United States",
+                "state_name": None,
+                "county_name": None,
+                "is_active": True,
+                "source": "census_gazetteer",
+                "source_year": y,
+                "ingested_at": now,
+            }
+        ]
+    )
 
     # 2) States
     st = _fetch_zipped_tsv(states_url)
 
     # Gazetteer state file includes GEOID + NAME
-    st_df = (
-        st.select([
+    st_df = st.select(
+        [
             pl.col("GEOID").cast(pl.Utf8).alias("state_fips"),
             pl.col("NAME").cast(pl.Utf8).alias("state_name"),
-        ])
-        .with_columns([
+        ]
+    ).with_columns(
+        [
             pl.lit("state").alias("geo_level"),
             pl.concat_str([pl.lit("state:"), pl.col("state_fips")]).alias("geo_id"),
             pl.lit(None, dtype=pl.Utf8).alias("county_fips"),
@@ -154,52 +160,69 @@ def sync_geo_dim(source_year: Optional[int] = None, min_year: int = 2010) -> Non
             pl.lit("census_gazetteer").alias("source"),
             pl.lit(y).alias("source_year"),
             pl.lit(now).alias("ingested_at"),
-        ])
+        ]
     )
 
     # Ensure proper Typing
-    st_df = st_df.with_columns([
-        pl.col("state_fips").cast(pl.Utf8),
-        pl.col("county_fips").cast(pl.Utf8),
-        pl.col("is_active").cast(pl.Boolean),
-        pl.col("source_year").cast(pl.Int32),
-    ])
+    st_df = st_df.with_columns(
+        [
+            pl.col("state_fips").cast(pl.Utf8),
+            pl.col("county_fips").cast(pl.Utf8),
+            pl.col("is_active").cast(pl.Boolean),
+            pl.col("source_year").cast(pl.Int32),
+        ]
+    )
 
     # 3) Counties
     co = _fetch_zipped_tsv(counties_url)
 
     co_df = (
-        co.select([
-            pl.col("GEOID").cast(pl.Utf8).str.zfill(5).alias("geoid5"), # Guarantees length of 5 digits and 0 padded 
-            pl.col("NAME").cast(pl.Utf8).alias("county_name"),
-        ])
-        .with_columns([
-            pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
-            pl.col("geoid5").str.slice(2, 3).alias("county_fips"),
-        ])
-        .with_columns([
-            pl.lit("county").alias("geo_level"),
-            pl.concat_str([
-                pl.lit("state:"), pl.col("state_fips"),
-                pl.lit("|county:"), pl.col("county_fips"),
-            ]).alias("geo_id"),
-            pl.col("county_name").alias("county_name"),
-            pl.col("county_name").alias("name"),
-            pl.lit(True).alias("is_active"),
-            pl.lit("census_gazetteer").alias("source"),
-            pl.lit(y).alias("source_year"),
-            pl.lit(now).alias("ingested_at"),
-        ])
+        co.select(
+            [
+                pl.col("GEOID")
+                .cast(pl.Utf8)
+                .str.zfill(5)
+                .alias("geoid5"),  # Guarantees length of 5 digits and 0 padded
+                pl.col("NAME").cast(pl.Utf8).alias("county_name"),
+            ]
+        )
+        .with_columns(
+            [
+                pl.col("geoid5").str.slice(0, 2).alias("state_fips"),
+                pl.col("geoid5").str.slice(2, 3).alias("county_fips"),
+            ]
+        )
+        .with_columns(
+            [
+                pl.lit("county").alias("geo_level"),
+                pl.concat_str(
+                    [
+                        pl.lit("state:"),
+                        pl.col("state_fips"),
+                        pl.lit("|county:"),
+                        pl.col("county_fips"),
+                    ]
+                ).alias("geo_id"),
+                pl.col("county_name").alias("county_name"),
+                pl.col("county_name").alias("name"),
+                pl.lit(True).alias("is_active"),
+                pl.lit("census_gazetteer").alias("source"),
+                pl.lit(y).alias("source_year"),
+                pl.lit(now).alias("ingested_at"),
+            ]
+        )
         .drop("geoid5")
     )
-    
+
     # Ensure proper Typing
-    co_df = co_df.with_columns([
-        pl.col("state_fips").cast(pl.Utf8),
-        pl.col("county_fips").cast(pl.Utf8),
-        pl.col("is_active").cast(pl.Boolean),
-        pl.col("source_year").cast(pl.Int32),
-    ])
+    co_df = co_df.with_columns(
+        [
+            pl.col("state_fips").cast(pl.Utf8),
+            pl.col("county_fips").cast(pl.Utf8),
+            pl.col("is_active").cast(pl.Boolean),
+            pl.col("source_year").cast(pl.Int32),
+        ]
+    )
 
     # Attach state_name onto county rows (nice for display)
     df_states = st_df.select(["state_fips", "state_name"])
@@ -263,4 +286,6 @@ def sync_geo_dim(source_year: Optional[int] = None, min_year: int = 2010) -> Non
             cur.execute(sql, r)
         conn.commit()
 
-    logger.info("geo_dim sync complete: %s rows upserted using Gazetteer year=%s", len(rows), y)
+    logger.info(
+        "geo_dim sync complete: %s rows upserted using Gazetteer year=%s", len(rows), y
+    )

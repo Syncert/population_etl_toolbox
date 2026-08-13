@@ -78,22 +78,20 @@ curl http://localhost:3001/tiles/
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml --profile airflow-local exec airflow-webserver airflow dags list
 ```
 
-One-command smoke (starts service-only external MVP stack by default):
+One-command disposable Compose smoke:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/smoke_external_mvp.ps1 -StartServices
+powershell -ExecutionPolicy Bypass -File tests/run.ps1 compose-smoke
 ```
 
 `ANALYTICS_DB_*` credentials remain the ETL/owner connection. The public API and Martin use the separate `ANALYTICS_API_DB_*` role. `provision_api_readonly.py` creates that role, grants `SELECT` across `gold`, removes write/schema privileges, enables read-only transactions by default, and stores a generated password in the local gitignored env file.
 
-The smoke script also runs `scripts/check_mvp_geo_tile_join.py`, which verifies:
-- county geometry exists in `gold.dim_geo_latest.geo_geom`
-- API/Martin credentials connect as a read-only role with no mutation privileges
-- Martin exposes the `counties` vector layer with a usable geography join key
-- sampled API observation `geo_id` values join back to county geometry rows
-
-The suite also checks every Analytics MVP route, security headers, a real Redis cache hit, and a browser-rendered MapLibre view with healthy tiles, loaded observations, and API-backed distribution bins.
-It also seeds a county from the latest endpoint and requires the historical endpoint to return multiple distinct periods.
+Assertions live under `tests/`: Compose health/dependency contracts are in
+`tests/integration/deployment/`, Martin runtime and MVT checks are in
+`tests/integration/martin/`, the API/tile join is in `tests/e2e/`, and browser
+MapLibre/catalog/observation/failure flows are in `tests/frontend/`, and the
+PowerShell tier runner is `tests/run.ps1`. The `scripts/` directory contains
+only deployment, provisioning, and production-diagnostic utilities.
 
 ## API-to-Map Contract Smoke
 
@@ -118,15 +116,13 @@ Next.js MVP app:
 
 Expected alignment key:
 - `geo_id` from API observation rows should align with geographic identifiers used by Martin-exposed map layers.
+- The explicitly published Martin layer is `counties`, sourced from
+  `gold.dim_geo_latest.geo_geom`; automatic table publication is disabled.
 
-Direct API-to-map contract check:
+Centralized API-to-map contract check (with the disposable services running):
 
 ```bash
-python scripts/check_mvp_geo_tile_join.py `
-  --env-file infra/docker/stack.external.env `
-  --api-base-url http://localhost:3001/api/ `
-  --tiles-base-url http://localhost:3001/tiles/ `
-  --metric-code population
+powershell -ExecutionPolicy Bypass -File tests/run.ps1 martin-integration
 ```
 
 The product-friendly `metric_code=population` alias resolves centrally to canonical county-capable metric `ACS:acs5:B01003_001`; returned rows retain the canonical source code for traceability.
@@ -135,3 +131,4 @@ Security reminder:
 - Keep real credentials in local untracked env files (for example `infra/docker/stack.external.env`), not in tracked examples.
 - Only the Next.js gateway binds broadly by default. API, Martin, Postgres, Redis, and Airflow are internal or loopback-bound.
 - Public analytical GET responses use Redis with a bounded TTL and fall back to the database if Redis is unavailable.
+- Production base and service images use readable tags plus immutable manifest digests. Martin is pinned to version 1.11.0, and application/Martin containers run with read-only root filesystems and `no-new-privileges`.
