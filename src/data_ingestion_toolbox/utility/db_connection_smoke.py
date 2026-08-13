@@ -1,12 +1,13 @@
 from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
 from sqlalchemy import create_engine, text
 
+
 def main():
     try:
         # Use env vars with prefix POSTGRES_ and override the DB if you want
         details = PostgresConnectionFactory.auto(
-            conn_id=None,          # no Airflow in local dev
-            prefix="POSTGRES_",    # matches your from_env expectations
+            conn_id=None,  # no Airflow in local dev
+            prefix="POSTGRES_",  # matches your from_env expectations
             database="public_data",  # or None to use POSTGRES_DB
         )
 

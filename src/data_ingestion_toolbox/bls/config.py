@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pydantic import BaseModel, Field
 from typing import List, Dict
+
+import os
+from pydantic import BaseModel, Field, field_validator
 
 
 class BlsConfig(BaseModel):
@@ -23,9 +24,10 @@ class BlsConfig(BaseModel):
     - Do NOT force QCEW into a fake "series_id" abstraction
     """
 
-    bls_api_key: str = Field(
-        default_factory=lambda: os.environ.get("BLS_API_KEY", "")
-    )
+    bls_api_key: str = Field(default_factory=lambda: os.environ.get("BLS_API_KEY", ""))
+
+    # One raw load is one bounded transaction; planners split larger payloads.
+    raw_load_max_rows: int = 10_000
 
     # ------------------------------------------------------------------
     # Enabled BLS programs.
@@ -71,7 +73,6 @@ class BlsConfig(BaseModel):
     # bucket as level-based labor statistics.
     # ------------------------------------------------------------------
     curated_by_program: Dict[str, List[str]] = {
-
         # --------------------------------------------------------------
         # LAUS — Local Area Unemployment Statistics (la)
         #
@@ -89,7 +90,6 @@ class BlsConfig(BaseModel):
             "08",  # Labor force participation rate (% of population)
             "09",  # Civilian noninstitutional population
         ],
-
         # --------------------------------------------------------------
         # CPS/LN — Current Population Survey (Household Survey) (ln)
         #
@@ -116,7 +116,6 @@ class BlsConfig(BaseModel):
             "LNS14000009",  # Unemployment rate, Hispanic or Latino
             "LNS14032183",  # Unemployment rate, Asian
         ],
-
         # --------------------------------------------------------------
         # CES — Current Employment Statistics (Payroll Survey) (ce)
         #
@@ -143,7 +142,6 @@ class BlsConfig(BaseModel):
             "CES8000000001",  # Other services employment
             "CES9000000001",  # Government employment
         ],
-
         # --------------------------------------------------------------
         # CPI — Consumer Price Index - All Urban Consumers (cu)
         #
@@ -151,17 +149,16 @@ class BlsConfig(BaseModel):
         # Used for inflation, real-wage adjustments, and COLA analysis.
         # --------------------------------------------------------------
         "cu": [
-            "CUUR0000SA0",    # CPI-U, all items, U.S. city average
-            "CUUR0000SA0L1E", # CPI-U, all items less food and energy (core CPI)
-            "CWUR0000SA0",    # CPI-W, all items, U.S. city average
-            "CUUR0000SAF1",   # CPI-U, food
-            "CUUR0000SA0E",   # CPI-U, energy
-            "CUUR0000SAH1",   # CPI-U, shelter
-            "CUUR0000SEHA",   # CPI-U, rent of primary residence
-            "CUUR0000SEHC",   # CPI-U, owners' equivalent rent
-            "CUUR0000SAM",    # CPI-U, medical care
+            "CUUR0000SA0",  # CPI-U, all items, U.S. city average
+            "CUUR0000SA0L1E",  # CPI-U, all items less food and energy (core CPI)
+            "CWUR0000SA0",  # CPI-W, all items, U.S. city average
+            "CUUR0000SAF1",  # CPI-U, food
+            "CUUR0000SA0E",  # CPI-U, energy
+            "CUUR0000SAH1",  # CPI-U, shelter
+            "CUUR0000SEHA",  # CPI-U, rent of primary residence
+            "CUUR0000SEHC",  # CPI-U, owners' equivalent rent
+            "CUUR0000SAM",  # CPI-U, medical care
         ],
-
         # --------------------------------------------------------------
         # JOLTS — Job Openings and Labor Turnover Survey (jt)_
         #
@@ -206,6 +203,50 @@ class BlsConfig(BaseModel):
     def has_api_key(self) -> bool:
         return bool(self.bls_api_key)
 
+    @field_validator("postgres_conn_id")
+    @classmethod
+    def validate_postgres_conn_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("postgres_conn_id must not be empty")
+        return value
+
+    @field_validator("programs")
+    @classmethod
+    def validate_program_scope(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("configured BLS program scope must not be empty")
+        return value
+
+    @field_validator("curated_by_program")
+    @classmethod
+    def validate_curated_scope(
+        cls, value: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        if not value or any(not series for series in value.values()):
+            raise ValueError("configured BLS series scope must not be empty")
+        return value
+
+    @field_validator(
+        "bls_api_global_concurrency",
+        "bls_api_series_chunk_size",
+        "bls_api_year_chunk_size",
+        "raw_load_max_rows",
+        "silver_max_active_tis",
+    )
+    @classmethod
+    def validate_positive_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("BLS concurrency and batch sizes must be at least 1")
+        return value
+
+    @field_validator("bls_api_min_spacing_seconds")
+    @classmethod
+    def validate_nonnegative_spacing(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("bls_api_min_spacing_seconds must not be negative")
+        return value
+
+
 CONFIG = BlsConfig()
 
 # ---------------------------------------------------------------------------
@@ -221,11 +262,39 @@ BLS_PROGRAM_LABELS: Dict[str, str] = {
 }
 
 LAUS_MEASURE_META: Dict[str, Dict[str, str]] = {
-    "03": {"name": "Unemployment Rate", "unit": "Percent", "semantics": "Percent of labor force that is unemployed"},
-    "04": {"name": "Unemployment Level", "unit": "Persons", "semantics": "Count of unemployed persons"},
-    "05": {"name": "Employment Level", "unit": "Persons", "semantics": "Count of employed persons"},
-    "06": {"name": "Labor Force Level", "unit": "Persons", "semantics": "Count of persons in labor force"},
-    "07": {"name": "Employment-Population Ratio", "unit": "Percent", "semantics": "Employed as percent of civilian noninstitutional population"},
-    "08": {"name": "Labor Force Participation Rate", "unit": "Percent", "semantics": "Labor force as percent of civilian noninstitutional population"},
-    "09": {"name": "Civilian Noninstitutional Population", "unit": "Persons", "semantics": "Count of civilian noninstitutional population"},
+    "03": {
+        "name": "Unemployment Rate",
+        "unit": "Percent",
+        "semantics": "Percent of labor force that is unemployed",
+    },
+    "04": {
+        "name": "Unemployment Level",
+        "unit": "Persons",
+        "semantics": "Count of unemployed persons",
+    },
+    "05": {
+        "name": "Employment Level",
+        "unit": "Persons",
+        "semantics": "Count of employed persons",
+    },
+    "06": {
+        "name": "Labor Force Level",
+        "unit": "Persons",
+        "semantics": "Count of persons in labor force",
+    },
+    "07": {
+        "name": "Employment-Population Ratio",
+        "unit": "Percent",
+        "semantics": "Employed as percent of civilian noninstitutional population",
+    },
+    "08": {
+        "name": "Labor Force Participation Rate",
+        "unit": "Percent",
+        "semantics": "Labor force as percent of civilian noninstitutional population",
+    },
+    "09": {
+        "name": "Civilian Noninstitutional Population",
+        "unit": "Persons",
+        "semantics": "Count of civilian noninstitutional population",
+    },
 }

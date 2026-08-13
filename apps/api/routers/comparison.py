@@ -14,12 +14,12 @@ router = APIRouter(prefix="/api", tags=["comparison"])
 
 @router.get("/comparison", response_model=ComparisonResponse)
 def get_metric_comparison(
-    metric_code_a: Optional[str] = None,
-    metric_id_a: Optional[str] = None,
-    metric_code_b: Optional[str] = None,
-    metric_id_b: Optional[str] = None,
-    geo_level: Optional[str] = None,
-    state_fips: Optional[str] = None,
+    metric_code_a: Optional[str] = Query(None, max_length=200),
+    metric_id_a: Optional[str] = Query(None, max_length=200),
+    metric_code_b: Optional[str] = Query(None, max_length=200),
+    metric_id_b: Optional[str] = Query(None, max_length=200),
+    geo_level: Optional[str] = Query(None, max_length=50),
+    state_fips: Optional[str] = Query(None, max_length=2),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_session_dep),

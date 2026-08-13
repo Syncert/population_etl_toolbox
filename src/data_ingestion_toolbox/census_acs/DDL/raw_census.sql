@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS geo_dim_state_idx ON raw_census.geo_dim(state_fips);
 CREATE INDEX IF NOT EXISTS geo_dim_county_idx ON raw_census.geo_dim(state_fips, county_fips);
 
 -- Control table that tracks slice completion status for each dataset/year/geo_level combo
-CREATE TABLE raw_census.acs_ingestion_slices (
+CREATE TABLE IF NOT EXISTS raw_census.acs_ingestion_slices (
   -- Optional surrogate id (handy for debugging / joins / admin UI)
   id BIGSERIAL PRIMARY KEY,
 
@@ -134,6 +134,17 @@ CREATE TABLE raw_census.acs_ingestion_slices (
 
   last_error   TEXT
 );
+
+-- Recreate named checks so this DDL can be rerun after an interrupted or
+-- partially applied bootstrap without raising duplicate-object errors.
+ALTER TABLE raw_census.acs_ingestion_slices
+  DROP CONSTRAINT IF EXISTS chk_dataset,
+  DROP CONSTRAINT IF EXISTS chk_geo_level,
+  DROP CONSTRAINT IF EXISTS chk_status,
+  DROP CONSTRAINT IF EXISTS chk_year,
+  DROP CONSTRAINT IF EXISTS chk_rows_loaded_non_negative,
+  DROP CONSTRAINT IF EXISTS chk_started_before_finished,
+  DROP CONSTRAINT IF EXISTS chk_state_fips_by_geo_level;
 
 -- Domain checks
 ALTER TABLE raw_census.acs_ingestion_slices
@@ -158,17 +169,17 @@ ALTER TABLE raw_census.acs_ingestion_slices
   );
 
 -- Uniqueness (your intended design)
-CREATE UNIQUE INDEX acs_ingestion_slices_uniq_nostate
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_nostate
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level)
 WHERE state_fips IS NULL;
 
-CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state
+CREATE UNIQUE INDEX IF NOT EXISTS acs_ingestion_slices_uniq_state
 ON raw_census.acs_ingestion_slices (dataset, year, geo_level, state_fips)
 WHERE state_fips IS NOT NULL;
 
 -- Optional: speed up lookups used by the DAG
-CREATE INDEX acs_ingestion_slices_status_idx
+CREATE INDEX IF NOT EXISTS acs_ingestion_slices_status_idx
 ON raw_census.acs_ingestion_slices (status);
 
-CREATE INDEX acs_ingestion_slices_hash_idx
+CREATE INDEX IF NOT EXISTS acs_ingestion_slices_hash_idx
 ON raw_census.acs_ingestion_slices (variables_hash);

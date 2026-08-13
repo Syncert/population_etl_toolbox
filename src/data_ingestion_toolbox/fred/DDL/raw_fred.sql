@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS raw_fred.fred_ingestion_slices (
     last_error     TEXT
 );
 
+-- Recreate named checks so repeated bootstraps remain safe.
+ALTER TABLE raw_fred.fred_ingestion_slices
+  DROP CONSTRAINT IF EXISTS chk_fred_status,
+  DROP CONSTRAINT IF EXISTS chk_fred_dates,
+  DROP CONSTRAINT IF EXISTS chk_fred_rows_loaded_non_negative,
+  DROP CONSTRAINT IF EXISTS chk_fred_started_before_finished;
+
 ALTER TABLE raw_fred.fred_ingestion_slices
   ADD CONSTRAINT chk_fred_status CHECK (status IN ('planned','running','success','empty','failed')),
   ADD CONSTRAINT chk_fred_dates CHECK (date_end >= date_start),

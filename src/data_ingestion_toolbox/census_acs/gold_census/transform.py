@@ -3,15 +3,18 @@ Gold analytics layer for the ``gold_census`` schema.
 
 Bootstraps source-specific objects and refreshes ACS metadata from silver.
 """
+
 from __future__ import annotations
 
 import logging
 import pathlib
-
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.census_acs.config import CONFIG
 from data_ingestion_toolbox.utility.gold_schema import ensure_gold_schema_from_files
+
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,8 @@ _REQUIRED_RELATIONS = (
     "gold_glossary.dim_source_system",
     "gold_glossary.dim_metric_catalog",
     "gold_glossary.dim_geo_latest",
+    "gold_glossary.serving_refresh_state",
+    "gold_glossary.serving_refresh_chunk_state",
     "gold_glossary.bridge_metric_acs_variable",
     "gold_census.dim_acs_table",
     "gold_census.dim_acs_variable",
@@ -34,11 +39,13 @@ _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
     "gold_census.refresh_rpt_acs_observations(date,date)",
     "gold_census.refresh_mv_acs_latest(date,date)",
-    "gold_census.refresh_dashboard_serving_layer_acs(date,date)",
+    "gold_census.refresh_dashboard_serving_layer_acs(date,date,boolean)",
 )
 
 
 def _get_hook() -> PostgresHook:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 

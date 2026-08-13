@@ -4,14 +4,17 @@ import logging
 import uuid
 from datetime import datetime, timezone, date
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import polars as pl
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.bls.config import CONFIG as RAW_CONFIG, LAUS_MEASURE_META
 from .geography_parser import parse_bls_geography
 from .time_utils import parse_bls_period_to_date
+
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +27,13 @@ LARGE_PROGRAM_ROW_THRESHOLD = 500_000
 @dataclass
 class TransformMetrics:
     """Track and log BLS silver transform metrics."""
+
     dataset_name: str
-    
+
     # Pre-transform
     raw_rows_by_program: dict[str, int] = field(default_factory=dict)
     schema_issues: list[str] = field(default_factory=list)
-    
+
     # Per-chunk
     chunk_input_rows: int = 0
     chunk_output_rows: int = 0
@@ -41,17 +45,17 @@ class TransformMetrics:
     geo_dim_hits: int = 0
     geo_dim_misses: int = 0
     null_counts: dict[str, int] = field(default_factory=dict)
-    
+
     # Upsert
     upsert_duration_sec: float = 0.0
     upsert_inserted: int = 0
     upsert_total: int = 0
-    
+
     # Post-transform
     total_processed: int = 0
     total_inserted: int = 0
     errors_encountered: list[str] = field(default_factory=list)
-    
+
     def log_pre_transform(self) -> None:
         """Log pre-transform diagnostics."""
         if self.raw_rows_by_program:
@@ -65,14 +69,14 @@ class TransformMetrics:
                 programs_summary,
                 sum(self.raw_rows_by_program.values()),
             )
-        
+
         if self.schema_issues:
             logger.warning(
                 "[%s PRE-TRANSFORM] Schema validation issues: %s",
                 self.dataset_name,
                 "; ".join(self.schema_issues),
             )
-    
+
     def log_chunk_start(self, program: str, input_rows: int) -> None:
         """Log start of chunk processing."""
         self.chunk_input_rows = input_rows
@@ -82,7 +86,7 @@ class TransformMetrics:
             program,
             input_rows,
         )
-    
+
     def log_chunk_complete(self, program: str) -> None:
         """Log chunk processing results."""
         pct_output = (
@@ -98,7 +102,7 @@ class TransformMetrics:
             self.chunk_output_rows,
             pct_output,
         )
-        
+
         if self.rows_missing_time or self.rows_missing_geo:
             logger.warning(
                 "[%s CHUNK] Rows filtered: missing_time=%s, missing_geo=%s",
@@ -106,25 +110,24 @@ class TransformMetrics:
                 self.rows_missing_time,
                 self.rows_missing_geo,
             )
-        
+
         if self.rows_deduplicated:
             logger.info(
                 "[%s CHUNK] Deduplicated %s rows",
                 self.dataset_name,
                 self.rows_deduplicated,
             )
-        
+
         if self.null_counts:
             null_summary = "; ".join(
-                f"{col}={count:,}"
-                for col, count in sorted(self.null_counts.items())
+                f"{col}={count:,}" for col, count in sorted(self.null_counts.items())
             )
             logger.info(
                 "[%s CHUNK] Null counts by column: %s",
                 self.dataset_name,
                 null_summary,
             )
-    
+
     def log_upsert_complete(self, upserted: int, duration_sec: float) -> None:
         """Log upsert results."""
         self.upsert_total += upserted
@@ -135,7 +138,7 @@ class TransformMetrics:
             duration_sec,
             upserted,
         )
-    
+
     def log_transform_summary(self) -> None:
         """Log final transform summary."""
         logger.info(
@@ -145,18 +148,21 @@ class TransformMetrics:
             self.total_inserted,
             len(self.errors_encountered),
         )
-        
+
         if self.errors_encountered:
             for err in self.errors_encountered:
                 logger.error("[%s SUMMARY] Error: %s", self.dataset_name, err)
 
 
-
 def _get_hook() -> PostgresHook:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=RAW_CONFIG.postgres_conn_id)
 
 
-def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.DataFrame:
+def _load_time_dim(
+    hook: PostgresHook, start_date: date, end_date: date
+) -> pl.DataFrame:
     sql = """
         SELECT time_sk, date_key
         FROM silver_ref.dim_time
@@ -166,8 +172,11 @@ def _load_time_dim(hook: PostgresHook, start_date: date, end_date: date) -> pl.D
         cur.execute(sql, (start_date, end_date))
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["time_sk", "date_key"]) if rows else pl.DataFrame(
-        schema=["time_sk", "date_key"]
+    schema = {"time_sk": pl.Int64, "date_key": pl.Date}
+    return (
+        pl.DataFrame(rows, orient="row", schema=schema)
+        if rows
+        else pl.DataFrame(schema=schema)
     )
 
 
@@ -180,8 +189,10 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
         cur.execute(sql)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
-        schema=["geo_sk", "geo_level", "geo_id"]
+    return (
+        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        if rows
+        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
     )
 
 
@@ -214,12 +225,16 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
         execute_values(cur, sql, geo_tuples, page_size=5000)
         rows = cur.fetchall()
 
-    return pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"]) if rows else pl.DataFrame(
-        schema=["geo_sk", "geo_level", "geo_id"]
+    return (
+        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        if rows
+        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
     )
 
 
-def _extract_measure_code(series_id: str, program: str, fallback: str | None) -> str | None:
+def _extract_measure_code(
+    series_id: str, program: str, fallback: str | None
+) -> str | None:
     if (program or "").lower() == "la" and series_id and series_id[-2:].isdigit():
         return series_id[-2:]
     return fallback
@@ -241,7 +256,9 @@ def _get_program_years(hook: PostgresHook, program: str) -> list[int]:
     return [int(r[0]) for r in rows]
 
 
-def _fetch_raw_rows(hook: PostgresHook, program: str, year: int | None = None) -> list[tuple]:
+def _fetch_raw_rows(
+    hook: PostgresHook, program: str, year: int | None = None
+) -> list[tuple]:
     sql = """
         SELECT
             bl.series_id,
@@ -270,7 +287,12 @@ def _fetch_raw_rows(hook: PostgresHook, program: str, year: int | None = None) -
         return cur.fetchall()
 
 
-def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uuid.UUID, ingested_at: datetime) -> int:
+def _upsert_silver_rows(
+    hook: PostgresHook,
+    df: pl.DataFrame,
+    load_batch_id: uuid.UUID,
+    ingested_at: datetime,
+) -> int:
     if df.is_empty():
         return 0
 
@@ -297,7 +319,7 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
                 r.get("measure_name"),
                 r["seasonal_adjustment"] or "U",
                 "BLS",
-                load_batch_id,
+                str(load_batch_id),
                 ingested_at,
             )
         )
@@ -331,7 +353,44 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
-            ingested_at = EXCLUDED.ingested_at;
+            ingested_at = EXCLUDED.ingested_at
+        WHERE (
+            silver_bls.fact_labor_statistics.time_sk,
+            silver_bls.fact_labor_statistics.geo_sk,
+            silver_bls.fact_labor_statistics.duration_start,
+            silver_bls.fact_labor_statistics.duration_end,
+            silver_bls.fact_labor_statistics.program,
+            silver_bls.fact_labor_statistics.geo_level,
+            silver_bls.fact_labor_statistics.geo_id,
+            silver_bls.fact_labor_statistics.state_fips,
+            silver_bls.fact_labor_statistics.county_fips,
+            silver_bls.fact_labor_statistics.value,
+            silver_bls.fact_labor_statistics.year,
+            silver_bls.fact_labor_statistics.period,
+            silver_bls.fact_labor_statistics.period_name,
+            silver_bls.fact_labor_statistics.measure_code,
+            silver_bls.fact_labor_statistics.measure_name,
+            silver_bls.fact_labor_statistics.seasonal_adjustment,
+            silver_bls.fact_labor_statistics.source_system
+        ) IS DISTINCT FROM (
+            EXCLUDED.time_sk,
+            EXCLUDED.geo_sk,
+            EXCLUDED.duration_start,
+            EXCLUDED.duration_end,
+            EXCLUDED.program,
+            EXCLUDED.geo_level,
+            EXCLUDED.geo_id,
+            EXCLUDED.state_fips,
+            EXCLUDED.county_fips,
+            EXCLUDED.value,
+            EXCLUDED.year,
+            EXCLUDED.period,
+            EXCLUDED.period_name,
+            EXCLUDED.measure_code,
+            EXCLUDED.measure_name,
+            EXCLUDED.seasonal_adjustment,
+            EXCLUDED.source_system
+        );
     """
 
     try:
@@ -345,7 +404,9 @@ def _upsert_silver_rows(hook: PostgresHook, df: pl.DataFrame, load_batch_id: uui
     return len(records)
 
 
-def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None) -> pl.DataFrame:
+def _transform_rows_to_silver_df(
+    hook: PostgresHook, rows: list[tuple], metrics: TransformMetrics | None = None
+) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame()
 
@@ -370,7 +431,9 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
     series_ids = df.get_column("series_id").to_list()
     program = str(df.get_column("program")[0]) if df.height else ""
 
-    period_results = [parse_bls_period_to_date(int(y), p) for y, p in zip(years, periods)]
+    period_results = [
+        parse_bls_period_to_date(int(y), p) for y, p in zip(years, periods)
+    ]
     period_date = [p[0] for p in period_results]
     duration_start = [p[1] for p in period_results]
     duration_end = [p[2] for p in period_results]
@@ -382,7 +445,9 @@ def _transform_rows_to_silver_df(hook: PostgresHook, rows: list[tuple], metrics:
     county_fips = [g["county_fips"] for g in geo_results]
 
     if program.lower() == "la":
-        measure_code = [sid[-2:] if (sid and sid[-2:].isdigit()) else None for sid in series_ids]
+        measure_code = [
+            sid[-2:] if (sid and sid[-2:].isdigit()) else None for sid in series_ids
+        ]
     else:
         measure_fallback = df.get_column("measure_code").to_list()
         measure_code = [
@@ -506,7 +571,9 @@ def transform_bls_to_silver(program: str) -> int:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(sql, (program, y))
                 row = cur.fetchone()
-                metrics.raw_rows_by_program[f"{program}_{y}"] = int(row[0]) if row else 0
+                metrics.raw_rows_by_program[f"{program}_{y}"] = (
+                    int(row[0]) if row else 0
+                )
         metrics.log_pre_transform()
 
     upserted_total = 0
@@ -516,18 +583,22 @@ def transform_bls_to_silver(program: str) -> int:
             rows = _fetch_raw_rows(hook, program, year=y)
             if not rows:
                 continue
-            
+
             metrics.log_chunk_start(f"{program}_year={y}", len(rows))
-            
+
             df_silver = _transform_rows_to_silver_df(hook, rows, metrics)
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(f"{program}_year={y}")
-                
+
                 upsert_start = datetime.now(timezone.utc)
-                upserted = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
-                
+                upserted = _upsert_silver_rows(
+                    hook, df_silver, load_batch_id, ingested_at
+                )
+                upsert_duration = (
+                    datetime.now(timezone.utc) - upsert_start
+                ).total_seconds()
+
                 metrics.log_upsert_complete(upserted, upsert_duration)
                 upserted_total += upserted
                 metrics.total_processed += len(rows)
@@ -540,11 +611,15 @@ def transform_bls_to_silver(program: str) -> int:
             if not df_silver.is_empty():
                 metrics.chunk_output_rows = df_silver.height
                 metrics.log_chunk_complete(program)
-                
+
                 upsert_start = datetime.now(timezone.utc)
-                upserted_total = _upsert_silver_rows(hook, df_silver, load_batch_id, ingested_at)
-                upsert_duration = (datetime.now(timezone.utc) - upsert_start).total_seconds()
-                
+                upserted_total = _upsert_silver_rows(
+                    hook, df_silver, load_batch_id, ingested_at
+                )
+                upsert_duration = (
+                    datetime.now(timezone.utc) - upsert_start
+                ).total_seconds()
+
                 metrics.log_upsert_complete(upserted_total, upsert_duration)
                 metrics.total_processed = len(rows)
                 metrics.total_inserted = upserted_total

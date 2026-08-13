@@ -6,12 +6,13 @@ import calendar
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from airflow.providers.postgres.hooks.postgres import PostgresHook
-
 from data_ingestion_toolbox.silver_ref.config import CONFIG
 
 
-def _get_hook() -> PostgresHook:
+def _get_hook():
+    """Create the Airflow hook only when a database load is requested."""
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 

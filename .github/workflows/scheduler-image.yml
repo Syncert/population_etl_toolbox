@@ -1,0 +1,52 @@
+name: scheduler-image
+
+on:
+  pull_request:
+    paths:
+      - "dags/**"
+      - "src/**"
+      - "tests/dags/**"
+      - "infra/airflow/Dockerfile"
+      - "pyproject.toml"
+      - ".github/workflows/scheduler-image.yml"
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dag-compatibility:
+    name: DAG suite in scheduler image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build scheduler test image
+        run: >-
+          docker build
+          --file infra/airflow/Dockerfile
+          --build-arg INSTALL_EXTRAS=airflow-dev
+          --tag population-airflow-scheduler:test
+          .
+
+      - name: Run the DagBag suite in the scheduler image
+        run: >-
+          docker run --rm
+          --entrypoint python
+          --env RUN_DAG_TESTS=1
+          --env AIRFLOW__CORE__LOAD_EXAMPLES=False
+          population-airflow-scheduler:test
+          -m pytest -m dag tests/dags --tb=short -q -ra
+
+      - name: Verify scheduler dependency consistency
+        run: >-
+          docker run --rm --entrypoint python
+          population-airflow-scheduler:test -m pip check

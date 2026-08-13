@@ -27,11 +27,21 @@ def parse_bls_geography(series_id: str, program: str) -> Dict[str, Optional[str]
         }
 
     if series_id.startswith("LNS"):
-        return {"geo_level": "us", "geo_id": "us:1", "state_fips": None, "county_fips": None}
+        return {
+            "geo_level": "us",
+            "geo_id": "us:1",
+            "state_fips": None,
+            "county_fips": None,
+        }
 
     # Default national geography for non-LAUS programs.
     if program in {"ln", "ce", "cu", "jt"}:
-        return {"geo_level": "us", "geo_id": "us:1", "state_fips": None, "county_fips": None}
+        return {
+            "geo_level": "us",
+            "geo_id": "us:1",
+            "state_fips": None,
+            "county_fips": None,
+        }
 
     logger.warning(
         "Unrecognized BLS series_id '%s' for program '%s'. See %s",

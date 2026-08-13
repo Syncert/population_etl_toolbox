@@ -1,0 +1,61 @@
+name: etl-unit
+
+on:
+  pull_request:
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  etl-unit:
+    name: ETL unit tests (Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: >-
+            ${{ runner.os }}-pip-etl-py311-airflow293-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install package + Airflow/ETL test dependencies
+        run: |
+          python -m pip install \
+            apache-airflow==2.9.3 \
+            apache-airflow-providers-postgres==5.11.2 \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt"
+          python -m pip install -e ".[airflow-dev]"
+          python -m pip check
+          python -c "import airflow; assert airflow.__version__ == '2.9.3'"
+          python -c "from importlib.metadata import version; assert version('apache-airflow-providers-postgres') == '5.11.2'"
+
+      - name: Run ETL unit tests
+        run: >-
+          pytest -m "unit and not api"
+          tests/unit/census tests/unit/bls tests/unit/fred tests/unit/shared
+          --tb=short -q --cov=src --cov-report=xml:coverage-etl.xml
+          --junitxml=junit-etl.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: coverage-etl
+          path: |
+            coverage-etl.xml
+            junit-etl.xml

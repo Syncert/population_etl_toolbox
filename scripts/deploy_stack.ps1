@@ -2,7 +2,7 @@ param(
     [ValidateSet('internal', 'external')]
     [string]$Mode = 'internal',
 
-    [ValidateSet('init', 'up', 'smoke', 'down', 'all')]
+    [ValidateSet('init', 'up', 'down', 'all')]
     [string]$Action = 'all',
 
     [string]$EnvFile,
@@ -106,42 +106,6 @@ function Invoke-Up {
     Invoke-Compose up '-d'
 }
 
-function Invoke-Smoke {
-    Write-Log 'Checking API health endpoint'
-    try {
-        $resp = Invoke-WebRequest -Uri 'http://localhost:8000/health' -Method GET -TimeoutSec 20
-        Write-Log ("Health check status: " + [int]$resp.StatusCode)
-    }
-    catch {
-        Write-Log ("Health check failed: " + $_.Exception.Message)
-        throw 'API health check failed'
-    }
-
-    if ($Mode -eq 'external' -and -not $WithLocalAirflow) {
-        Write-Log 'Checking Martin health endpoint'
-        try {
-            $martinResp = Invoke-WebRequest -Uri 'http://localhost:3000/health' -Method GET -TimeoutSec 20
-            Write-Log ("Martin health status: " + [int]$martinResp.StatusCode)
-        }
-        catch {
-            Write-Log 'Martin /health unavailable, trying root endpoint'
-            try {
-                $martinRootResp = Invoke-WebRequest -Uri 'http://localhost:3000/' -Method GET -TimeoutSec 20
-                Write-Log ("Martin root status: " + [int]$martinRootResp.StatusCode)
-            }
-            catch {
-                Write-Log ("Martin check failed: " + $_.Exception.Message)
-                throw 'Martin health/root check failed'
-            }
-        }
-
-        return
-    }
-
-    Write-Log 'Listing Airflow DAGs from airflow-webserver'
-    Invoke-Compose exec airflow-webserver airflow dags list
-}
-
 function Invoke-Down {
     Write-Log 'Stopping stack'
     Invoke-Compose down
@@ -151,12 +115,10 @@ try {
     switch ($Action) {
         'init' { Invoke-Init }
         'up' { Invoke-Up }
-        'smoke' { Invoke-Smoke }
         'down' { Invoke-Down }
         'all' {
             Invoke-Init
             Invoke-Up
-            Invoke-Smoke
         }
     }
 

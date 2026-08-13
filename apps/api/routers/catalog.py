@@ -10,7 +10,11 @@ from apps.api.services.catalog_service import (
     list_metrics,
     list_sources,
 )
-from data_ingestion_toolbox.models import GeographyListResponse, MetricListResponse, SourceSystem
+from data_ingestion_toolbox.models import (
+    GeographyListResponse,
+    MetricListResponse,
+    SourceSystem,
+)
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
@@ -25,10 +29,10 @@ def get_sources(db: Session = Depends(get_db_session_dep)) -> list[SourceSystem]
 
 @router.get("/metrics", response_model=MetricListResponse)
 def get_metrics(
-    source_code: Optional[str] = None,
+    source_code: Optional[str] = Query(None, max_length=50),
     active_only: Optional[bool] = None,
-    dashboard_suitability: Optional[str] = None,
-    q: Optional[str] = None,
+    dashboard_suitability: Optional[str] = Query(None, max_length=50),
+    q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_session_dep),
@@ -49,9 +53,9 @@ def get_metrics(
 
 @router.get("/geographies", response_model=GeographyListResponse)
 def get_geographies(
-    geo_level: Optional[str] = None,
-    state_fips: Optional[str] = None,
-    q: Optional[str] = None,
+    geo_level: Optional[str] = Query(None, max_length=50),
+    state_fips: Optional[str] = Query(None, max_length=2),
+    q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_session_dep),

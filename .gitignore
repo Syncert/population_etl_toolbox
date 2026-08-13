@@ -433,3 +433,35 @@ apps/web/out/
 apps/web/.vercel/
 apps/web/coverage/
 apps/web/.eslintcache
+apps/web/playwright-report/
+apps/web/test-results/
+
+# Python generated files and virtual environments (ENV-006)
+.venv*/
+.venv
+venv/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# Airflow state
+.airflow/
+airflow.db
+airflow.cfg
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage*.json
+coverage*.info
+
+# Ruff cache
+.ruff_cache/
+
+# Build artifacts
+dist/
+build/

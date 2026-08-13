@@ -14,14 +14,16 @@ router = APIRouter(prefix="/api/distribution", tags=["distribution"])
 
 @router.get("/bins", response_model=DistributionBinsResponse)
 def get_distribution_bins(
-    metric_code: Optional[str] = None,
-    metric_id: Optional[str] = None,
-    geo_level: Optional[str] = None,
-    state_fips: Optional[str] = None,
+    metric_code: Optional[str] = Query(None, max_length=200),
+    metric_id: Optional[str] = Query(None, max_length=200),
+    geo_level: Optional[str] = Query(None, max_length=50),
+    state_fips: Optional[str] = Query(None, max_length=2),
     bin_count: int = Query(7, ge=1, le=20),
     db: Session = Depends(get_db_session_dep),
 ) -> DistributionBinsResponse:
-    resolved_metric_code = resolve_metric_code(metric_code=metric_code, metric_id=metric_id)
+    resolved_metric_code = resolve_metric_code(
+        metric_code=metric_code, metric_id=metric_id
+    )
 
     try:
         return list_distribution_bins(

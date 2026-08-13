@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 try:
     # These imports will only succeed inside an Airflow environment
     from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     _AIRFLOW_AVAILABLE = True
 except Exception:  # ImportError or airflow not installed
     PostgresHook = None  # type: ignore

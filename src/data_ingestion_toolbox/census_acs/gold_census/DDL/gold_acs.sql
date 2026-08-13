@@ -91,6 +91,38 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_state (
+    source_code                 TEXT PRIMARY KEY
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    last_silver_ingested_at     TIMESTAMPTZ NOT NULL DEFAULT '-infinity'::TIMESTAMPTZ,
+    last_refresh_started_at     TIMESTAMPTZ,
+    last_refresh_completed_at   TIMESTAMPTZ,
+    last_window_start           DATE,
+    last_window_end             DATE,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_chunk_state (
+    source_code                         TEXT NOT NULL
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    chunk_start                         DATE NOT NULL,
+    chunk_end                           DATE NOT NULL,
+    target_silver_ingested_at           TIMESTAMPTZ NOT NULL,
+    completed_silver_ingested_at        TIMESTAMPTZ,
+    status                              TEXT NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED')),
+    attempt_count                       INTEGER NOT NULL DEFAULT 0,
+    last_refresh_started_at             TIMESTAMPTZ,
+    last_refresh_completed_at           TIMESTAMPTZ,
+    last_error                          TEXT,
+    updated_at                          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (source_code, chunk_start, chunk_end),
+    CHECK (chunk_end >= chunk_start)
+);
+
+CREATE INDEX IF NOT EXISTS ix_serving_refresh_chunk_state_status
+    ON gold_glossary.serving_refresh_chunk_state (source_code, status, chunk_start);
+
 CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_acs_variable (
     metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
     acs_variable_sk   BIGINT NOT NULL,
@@ -130,7 +162,10 @@ CREATE OR REPLACE PROCEDURE gold_glossary.refresh_dim_geo_latest()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    TRUNCATE TABLE gold_glossary.dim_geo_latest;
+    -- Serialize only this short synchronization transaction.  The source
+    -- serving refreshes call this in a separate Airflow task, so the lock is
+    -- never held through a long report-table rebuild.
+    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_dim_geo_latest'));
 
     INSERT INTO gold_glossary.dim_geo_latest (
         geo_id,
@@ -162,7 +197,44 @@ BEGIN
         NOW()
     FROM gold_glossary.dim_geo g
     WHERE g.is_active = TRUE
-    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC;
+    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
+    ON CONFLICT (geo_id) DO UPDATE
+    SET geo_level = EXCLUDED.geo_level,
+        state_fips = EXCLUDED.state_fips,
+        county_fips = EXCLUDED.county_fips,
+        state_name = EXCLUDED.state_name,
+        county_name = EXCLUDED.county_name,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        geo_geom = EXCLUDED.geo_geom,
+        refreshed_at = NOW()
+    WHERE (
+        gold_glossary.dim_geo_latest.geo_level,
+        gold_glossary.dim_geo_latest.state_fips,
+        gold_glossary.dim_geo_latest.county_fips,
+        gold_glossary.dim_geo_latest.state_name,
+        gold_glossary.dim_geo_latest.county_name,
+        gold_glossary.dim_geo_latest.latitude,
+        gold_glossary.dim_geo_latest.longitude,
+        gold_glossary.dim_geo_latest.geo_geom
+    ) IS DISTINCT FROM (
+        EXCLUDED.geo_level,
+        EXCLUDED.state_fips,
+        EXCLUDED.county_fips,
+        EXCLUDED.state_name,
+        EXCLUDED.county_name,
+        EXCLUDED.latitude,
+        EXCLUDED.longitude,
+        EXCLUDED.geo_geom
+    );
+
+    DELETE FROM gold_glossary.dim_geo_latest d
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM gold_glossary.dim_geo g
+        WHERE g.is_active = TRUE
+          AND g.geo_id = d.geo_id
+    );
 END;
 $$;
 
@@ -306,6 +378,23 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_date
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_dataset_vintage
     ON gold_census.rpt_acs_observations (dataset_code, vintage_year);
 
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_geo_date
+    ON gold_census.rpt_acs_observations (metric_code, geo_id, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_updated_at
+    ON gold_census.rpt_acs_observations (updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_latest_selection
+    ON gold_census.rpt_acs_observations (
+        geo_id,
+        variable_code,
+        metric_code,
+        observation_date DESC,
+        updated_at DESC,
+        (CASE dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END),
+        vintage_year DESC
+    );
+
 -- ============================================================
 -- ACS MATERIALIZED VIEW (Per-source latest)
 -- ============================================================
@@ -328,6 +417,9 @@ CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_source_metric
 CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_vintage
     ON gold_census.mv_acs_latest (dataset_code, vintage_year);
 
+CREATE INDEX IF NOT EXISTS ix_mv_acs_latest_metric_geo
+    ON gold_census.mv_acs_latest (metric_code, geo_id);
+
 -- ============================================================
 -- ACS REFRESH PROCEDURES
 -- ============================================================
@@ -339,12 +431,35 @@ CREATE OR REPLACE PROCEDURE gold_census.refresh_rpt_acs_observations(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_started_at TIMESTAMPTZ := clock_timestamp();
+    v_deleted_rows BIGINT;
+    v_inserted_rows BIGINT;
+    v_affected_keys BIGINT;
 BEGIN
-    CALL gold_glossary.refresh_dim_geo_latest();
+    RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
-    -- For ACS, observations are annual, so date range is less critical
-    -- but we support it for consistency
-    DELETE FROM gold_census.rpt_acs_observations;
+    DROP TABLE IF EXISTS pg_temp.gold_acs_affected_keys;
+    CREATE TEMP TABLE gold_acs_affected_keys (
+        geo_id        TEXT NOT NULL,
+        variable_code TEXT NOT NULL,
+        metric_code   TEXT NOT NULL,
+        PRIMARY KEY (geo_id, variable_code, metric_code)
+    ) ON COMMIT DROP;
+
+    -- Capture old keys as well as new keys so a source-side deletion removes a
+    -- now-stale latest row.
+    INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+    SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
+    FROM gold_census.rpt_acs_observations d
+    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+    ON CONFLICT DO NOTHING;
+
+    DELETE FROM gold_census.rpt_acs_observations
+    WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR observation_date <= p_end_date);
+    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
     INSERT INTO gold_census.rpt_acs_observations (
         source_code,
@@ -436,9 +551,27 @@ BEGIN
     LEFT JOIN gold_glossary.bridge_metric_acs_variable bma ON bma.acs_variable_sk = ao.acs_variable_sk
     LEFT JOIN gold_glossary.dim_metric_catalog mc
         ON mc.metric_catalog_sk = bma.metric_catalog_sk
-       AND mc.is_active = TRUE;
+       AND mc.is_active = TRUE
+    WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR ao.observation_date <= p_end_date);
+    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
-    ANALYZE gold_census.rpt_acs_observations;
+    INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+    SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
+    FROM gold_census.rpt_acs_observations d
+    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+    ON CONFLICT DO NOTHING;
+
+    SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;
+    RAISE NOTICE
+        '[ACS RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        p_start_date,
+        p_end_date,
+        v_deleted_rows,
+        v_inserted_rows,
+        v_affected_keys,
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
 
@@ -449,14 +582,44 @@ CREATE OR REPLACE PROCEDURE gold_census.refresh_mv_acs_latest(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_started_at TIMESTAMPTZ := clock_timestamp();
+    v_deleted_rows BIGINT;
+    v_inserted_rows BIGINT;
 BEGIN
-    -- Rebuild ACS slice — bounded by N_variables × N_geos.
-    DELETE FROM gold_census.mv_acs_latest;
+    RAISE NOTICE '[ACS LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+
+    IF to_regclass('pg_temp.gold_acs_affected_keys') IS NULL THEN
+        CREATE TEMP TABLE gold_acs_affected_keys (
+            geo_id        TEXT NOT NULL,
+            variable_code TEXT NOT NULL,
+            metric_code   TEXT NOT NULL,
+            PRIMARY KEY (geo_id, variable_code, metric_code)
+        ) ON COMMIT DROP;
+
+        INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+        SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
+        FROM gold_census.rpt_acs_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+        ON CONFLICT DO NOTHING;
+    END IF;
+
+    DELETE FROM gold_census.mv_acs_latest m
+    USING gold_acs_affected_keys k
+    WHERE m.geo_id = k.geo_id
+      AND m.variable_code = k.variable_code
+      AND m.metric_code = k.metric_code;
+    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
     INSERT INTO gold_census.mv_acs_latest
     SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code)
         d.*
     FROM gold_census.rpt_acs_observations d
+    JOIN gold_acs_affected_keys k
+      ON k.geo_id = d.geo_id
+     AND k.variable_code = d.variable_code
+     AND k.metric_code = d.metric_code
     ORDER BY
         d.geo_id,
         d.variable_code,
@@ -465,37 +628,107 @@ BEGIN
         d.updated_at DESC,
         CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
         d.vintage_year DESC;
+    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
-    ANALYZE gold_census.mv_acs_latest;
+    RAISE NOTICE
+        '[ACS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
+        p_start_date,
+        p_end_date,
+        v_deleted_rows,
+        v_inserted_rows,
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
 
 DROP PROCEDURE IF EXISTS gold_census.refresh_dashboard_serving_layer_acs(DATE, DATE);
+DROP PROCEDURE IF EXISTS gold_census.refresh_dashboard_serving_layer_acs(DATE, DATE, BOOLEAN);
 CREATE OR REPLACE PROCEDURE gold_census.refresh_dashboard_serving_layer_acs(
     p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
+    p_end_date DATE DEFAULT NULL,
+    p_force_full BOOLEAN DEFAULT FALSE
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_step_started TIMESTAMPTZ;
+    v_watermark TIMESTAMPTZ;
+    v_high_watermark TIMESTAMPTZ;
+    v_effective_start DATE;
+    v_effective_end DATE;
 BEGIN
-    SET LOCAL statement_timeout = 0;
+    SET LOCAL statement_timeout = '90min';
+    SET LOCAL lock_timeout = '30s';
 
-    RAISE NOTICE '[ACS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
+    INSERT INTO gold_glossary.serving_refresh_state (
+        source_code,
+        last_silver_ingested_at,
+        last_refresh_completed_at
+    )
+    SELECT
+        'CENSUS_ACS',
+        COALESCE(MAX(r.updated_at), '-infinity'::TIMESTAMPTZ),
+        CASE WHEN COUNT(*) > 0 THEN NOW() ELSE NULL END
+    FROM gold_census.rpt_acs_observations r
+    ON CONFLICT (source_code) DO NOTHING;
+
+    SELECT last_silver_ingested_at
+      INTO v_watermark
+      FROM gold_glossary.serving_refresh_state
+     WHERE source_code = 'CENSUS_ACS'
+     FOR UPDATE;
+
+    UPDATE gold_glossary.serving_refresh_state
+       SET last_refresh_started_at = v_started_at,
+           updated_at = NOW()
+     WHERE source_code = 'CENSUS_ACS';
+
+    SELECT
+        MAX(s.ingested_at),
+        MIN(MAKE_DATE(s.estimate_year, 1, 1)),
+        MAX(MAKE_DATE(s.estimate_year, 1, 1))
+      INTO v_high_watermark, v_effective_start, v_effective_end
+      FROM silver_census.fact_demographics s
+     WHERE s.estimate_value IS NOT NULL
+       AND (p_start_date IS NULL OR MAKE_DATE(s.estimate_year, 1, 1) >= p_start_date)
+       AND (p_end_date IS NULL OR MAKE_DATE(s.estimate_year, 1, 1) <= p_end_date)
+       AND (p_force_full OR s.ingested_at > v_watermark);
+
+    IF v_effective_start IS NULL THEN
+        UPDATE gold_glossary.serving_refresh_state
+           SET last_refresh_completed_at = clock_timestamp(),
+               updated_at = NOW()
+         WHERE source_code = 'CENSUS_ACS';
+        RAISE NOTICE '[ACS DASHBOARD REFRESH] no changed silver rows after watermark=%', v_watermark;
+        RETURN;
+    END IF;
+
+    RAISE NOTICE '[ACS DASHBOARD REFRESH] start window_start=% window_end=% watermark=% force_full=%',
+        v_effective_start, v_effective_end, v_watermark, p_force_full;
 
     v_step_started := clock_timestamp();
-    CALL gold_census.refresh_rpt_acs_observations(p_start_date, p_end_date);
+    CALL gold_census.refresh_rpt_acs_observations(v_effective_start, v_effective_end);
     RAISE NOTICE
         '[ACS DASHBOARD REFRESH] step=refresh_rpt_acs_observations duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold_census.refresh_mv_acs_latest();
+    CALL gold_census.refresh_mv_acs_latest(v_effective_start, v_effective_end);
     RAISE NOTICE
         '[ACS DASHBOARD REFRESH] step=refresh_mv_acs_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
+
+    UPDATE gold_glossary.serving_refresh_state
+       SET last_silver_ingested_at = CASE
+               WHEN p_force_full AND (p_start_date IS NOT NULL OR p_end_date IS NOT NULL)
+                   THEN v_watermark
+               ELSE GREATEST(v_watermark, v_high_watermark)
+           END,
+           last_refresh_completed_at = clock_timestamp(),
+           last_window_start = v_effective_start,
+           last_window_end = v_effective_end,
+           updated_at = NOW()
+     WHERE source_code = 'CENSUS_ACS';
 
     RAISE NOTICE
         '[ACS DASHBOARD REFRESH] completed total_duration_ms=%',

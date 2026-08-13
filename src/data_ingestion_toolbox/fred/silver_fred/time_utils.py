@@ -36,7 +36,9 @@ def _frequency_code(frequency: str | None) -> str:
     return ""
 
 
-def compute_fred_duration(observation_date: date, frequency: str | None) -> tuple[date, date]:
+def compute_fred_duration(
+    observation_date: date, frequency: str | None
+) -> tuple[date, date]:
     """
     Compute duration window for a FRED observation date based on frequency.
     """
@@ -59,7 +61,9 @@ def compute_fred_duration(observation_date: date, frequency: str | None) -> tupl
         return observation_date - timedelta(days=13), observation_date
 
     if code == "M":
-        month_end = calendar.monthrange(observation_date.year, observation_date.month)[1]
+        month_end = calendar.monthrange(observation_date.year, observation_date.month)[
+            1
+        ]
         start = date(observation_date.year, observation_date.month, 1)
         end = date(observation_date.year, observation_date.month, month_end)
         return start, end

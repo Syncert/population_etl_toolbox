@@ -1,0 +1,27 @@
+{
+  "status": "REQUEST_SUCCEEDED",
+  "Results": {
+    "series": [
+      {
+        "seriesID": "LAUST060000000000003",
+        "data": [
+          {
+            "year": "2024",
+            "period": "M01",
+            "periodName": "January",
+            "value": "4.2",
+            "footnotes": [{"code": "P", "text": "Preliminary"}],
+            "latest": "true"
+          },
+          {
+            "year": "2024",
+            "period": "M02",
+            "periodName": "February",
+            "value": "-",
+            "footnotes": []
+          }
+        ]
+      }
+    ]
+  }
+}

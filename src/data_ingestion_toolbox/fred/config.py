@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pydantic import BaseModel, Field
 from typing import List, Dict
+
+import os
+from pydantic import BaseModel, Field, field_validator
 
 
 class FredConfig(BaseModel):
@@ -43,42 +44,39 @@ class FredConfig(BaseModel):
         # ------------------------------------------------------------------
         # LABOR MARKET / BUSINESS CYCLE (core national signals)
         # ------------------------------------------------------------------
-        "PAYEMS",     # Total nonfarm payroll employment (CES mirror)
-        "UNRATE",     # Unemployment rate
-        "CIVPART",    # Labor force participation rate
-        "JTSJOL",     # Job openings: total nonfarm (labor demand / tightness)
-        "ICSA",       # Initial unemployment insurance claims
-        "INDPRO",     # Industrial production index
-
+        "PAYEMS",  # Total nonfarm payroll employment (CES mirror)
+        "UNRATE",  # Unemployment rate
+        "CIVPART",  # Labor force participation rate
+        "JTSJOL",  # Job openings: total nonfarm (labor demand / tightness)
+        "ICSA",  # Initial unemployment insurance claims
+        "INDPRO",  # Industrial production index
         # ------------------------------------------------------------------
         # HOUSING SUPPLY & AFFORDABILITY (leading indicators)
         # ------------------------------------------------------------------
-        "PERMIT",         # New housing units authorized by permits
-        "HOUST",          # Housing starts
-        "MORTGAGE30US",   # 30-year fixed mortgage rate
-        "MSACSR",         # Monthly supply of new houses
-        "MSPUS",          # Median sales price of houses sold
-
+        "PERMIT",  # New housing units authorized by permits
+        "HOUST",  # Housing starts
+        "MORTGAGE30US",  # 30-year fixed mortgage rate
+        "MSACSR",  # Monthly supply of new houses
+        "MSPUS",  # Median sales price of houses sold
         # ------------------------------------------------------------------
         # PRICES / INFLATION (used to deflate nominal ACS & wage values)
         # ------------------------------------------------------------------
-        "CPIAUCSL",   # CPI-U, all items
-        "PCEPI",      # PCE price index, all items
-        "PCEPILFE",   # PCE price index excluding food and energy
-
+        "CPIAUCSL",  # CPI-U, all items
+        "PCEPI",  # PCE price index, all items
+        "PCEPILFE",  # PCE price index excluding food and energy
         # ------------------------------------------------------------------
         # MACRO / POLICY CONTEXT (scenario & regime modeling)
         # ------------------------------------------------------------------
-        "FEDFUNDS",   # Effective federal funds rate
-        "DGS10",      # 10-year Treasury yield
-        "T10Y2Y",     # 10-year minus 2-year Treasury spread
-        "T10YIE",     # 10-year breakeven inflation rate
-        "NFCI",       # Chicago Fed National Financial Conditions Index
-        "GDPC1",      # Real GDP
-        "PCEC96",     # Real personal consumption expenditures
-        "DSPIC96",    # Real disposable personal income
-        "PSAVERT",    # Personal saving rate
-        "RSAFS",      # Advance retail and food-services sales
+        "FEDFUNDS",  # Effective federal funds rate
+        "DGS10",  # 10-year Treasury yield
+        "T10Y2Y",  # 10-year minus 2-year Treasury spread
+        "T10YIE",  # 10-year breakeven inflation rate
+        "NFCI",  # Chicago Fed National Financial Conditions Index
+        "GDPC1",  # Real GDP
+        "PCEC96",  # Real personal consumption expenditures
+        "DSPIC96",  # Real disposable personal income
+        "PSAVERT",  # Personal saving rate
+        "RSAFS",  # Advance retail and food-services sales
     ]
 
     # Optional grouping by domain for readability, dashboards, or docs.
@@ -130,6 +128,10 @@ class FredConfig(BaseModel):
     # Chunking for large backfills
     fred_api_series_chunk_size: int = 50
 
+    # Maximum number of normalized observations accepted by one atomic raw
+    # loader transaction. Larger source responses must be split by the planner.
+    raw_load_max_rows: int = 10_000
+
     # Airflow max_active_tis_per_dag — caps concurrent mapped tasks to
     # prevent Postgres connection exhaustion.
     silver_max_active_tis: int = 4
@@ -146,9 +148,9 @@ class FredConfig(BaseModel):
         so assigning one series to multiple domains would make the final domain
         depend on ingestion order.
         """
-        duplicate_domains = sorted({
-            domain for domain in self.domains if self.domains.count(domain) > 1
-        })
+        duplicate_domains = sorted(
+            {domain for domain in self.domains if self.domains.count(domain) > 1}
+        )
         if duplicate_domains:
             raise ValueError(
                 f"FRED domains must be unique; duplicates: {duplicate_domains}"
@@ -159,9 +161,7 @@ class FredConfig(BaseModel):
         missing_domains = sorted(configured_domains - classified_domains)
         extra_domains = sorted(classified_domains - configured_domains)
         empty_domains = sorted(
-            domain
-            for domain in self.domains
-            if not self.curated_by_domain.get(domain)
+            domain for domain in self.domains if not self.curated_by_domain.get(domain)
         )
         if missing_domains or extra_domains or empty_domains:
             raise ValueError(
@@ -186,11 +186,13 @@ class FredConfig(BaseModel):
                 f"conflicts: {multiply_classified}"
             )
 
-        duplicate_curated = sorted({
-            series_id
-            for series_id in self.curated_series_ids
-            if self.curated_series_ids.count(series_id) > 1
-        })
+        duplicate_curated = sorted(
+            {
+                series_id
+                for series_id in self.curated_series_ids
+                if self.curated_series_ids.count(series_id) > 1
+            }
+        )
         classified_series = set(owners)
         curated_series = set(self.curated_series_ids)
         unclassified = sorted(curated_series - classified_series)
@@ -202,11 +204,49 @@ class FredConfig(BaseModel):
                 f"unclassified={unclassified}, uncurated={uncurated}"
             )
 
-        return {
-            domain: list(self.curated_by_domain[domain])
-            for domain in self.domains
-        }
+        return {domain: list(self.curated_by_domain[domain]) for domain in self.domains}
 
+    @field_validator("postgres_conn_id")
+    @classmethod
+    def validate_postgres_conn_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("postgres_conn_id must not be empty")
+        return value
+
+    @field_validator("domains", "curated_series_ids")
+    @classmethod
+    def validate_nonempty_scope(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("configured FRED scope must not be empty")
+        return value
+
+    @field_validator("curated_by_domain")
+    @classmethod
+    def validate_nonempty_domain_map(
+        cls, value: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        if not value or any(not series for series in value.values()):
+            raise ValueError("configured FRED domain scope must not be empty")
+        return value
+
+    @field_validator(
+        "fred_api_global_concurrency",
+        "fred_api_series_chunk_size",
+        "raw_load_max_rows",
+        "silver_max_active_tis",
+    )
+    @classmethod
+    def validate_positive_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("FRED concurrency and batch sizes must be at least 1")
+        return value
+
+    @field_validator("fred_api_min_spacing_seconds")
+    @classmethod
+    def validate_nonnegative_spacing(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("fred_api_min_spacing_seconds must not be negative")
+        return value
 
 
 CONFIG = FredConfig()

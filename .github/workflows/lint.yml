@@ -1,0 +1,53 @@
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pip check
+
+      - name: ruff format check
+        run: ruff format --check .
+
+      - name: ruff lint check
+        run: ruff check .
+
+      - name: Render exact behavioral evidence register
+        run: python -m tests.support.catalog_evidence --output catalog-evidence.md
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: catalog-evidence
+          path: catalog-evidence.md

@@ -57,7 +57,7 @@ function metricVariable(metricCode) {
   return parts.length >= 3 ? parts.slice(2).join(":") : "";
 }
 
-function pickPreferredMetric(metrics, dataset, preferredVariable = DEFAULT_POPULATION_VARIABLE) {
+export function pickPreferredMetric(metrics, dataset, preferredVariable = DEFAULT_POPULATION_VARIABLE) {
   if (!Array.isArray(metrics) || metrics.length === 0) {
     return "";
   }
@@ -76,7 +76,7 @@ function pickPreferredMetric(metrics, dataset, preferredVariable = DEFAULT_POPUL
   return (matchingVariable || canonicalPopulation || candidates[0]).metric_code;
 }
 
-function metricOptions(metrics) {
+export function metricOptions(metrics) {
   return (metrics || []).map((metric) => ({
     value: metric.metric_code,
     label: `${metric.metric_display_name.replaceAll("!!", " › ")} (${metric.metric_code})`,
@@ -100,7 +100,7 @@ function metricSupportedGeoLevels(metric) {
     .filter(Boolean);
 }
 
-function preferredGeoLevelForMetric(metric, fallbackGeoLevel = "COUNTY") {
+export function preferredGeoLevelForMetric(metric, fallbackGeoLevel = "COUNTY") {
   const supported = metricSupportedGeoLevels(metric);
   if (supported.length === 0) {
     return fallbackGeoLevel;
@@ -576,7 +576,7 @@ function colorForValue(value, minValue, maxValue) {
   return CHOROPLETH_PALETTE[index];
 }
 
-function distributionBins(payload) {
+export function distributionBins(payload) {
   const minValue = Number(payload?.min_value);
   const maxValue = Number(payload?.max_value);
   const binCount = Number(payload?.bin_count);
@@ -681,7 +681,7 @@ function marginOfErrorText(item) {
   return "Not provided";
 }
 
-function buildObservationIndex(observations, joinKey) {
+export function buildObservationIndex(observations, joinKey) {
   const index = new Map();
 
   for (const item of observations || []) {
@@ -694,7 +694,7 @@ function buildObservationIndex(observations, joinKey) {
   return index;
 }
 
-function buildSelectionFilter(joinValue, joinKey) {
+export function buildSelectionFilter(joinValue, joinKey) {
   return [
     "==",
     ["to-string", ["get", joinKey]],
@@ -760,7 +760,7 @@ function TimeSeriesChart({ items }) {
   );
 }
 
-function buildChoroplethModel(
+export function buildChoroplethModel(
   observations,
   joinKey,
   distribution = null,
@@ -773,6 +773,7 @@ function buildChoroplethModel(
       minValue: null,
       maxValue: null,
       usesDistribution: false,
+      valueCount: 0,
     };
   }
 
@@ -797,6 +798,7 @@ function buildChoroplethModel(
       minValue: null,
       maxValue: null,
       usesDistribution: false,
+      valueCount: 0,
     };
   }
 
@@ -857,10 +859,11 @@ function buildChoroplethModel(
     minValue,
     maxValue,
     usesDistribution,
+    valueCount: values.length,
   };
 }
 
-function buildChoroplethMatchExpression(
+export function buildChoroplethMatchExpression(
   observations,
   joinKey,
   distribution = null,
@@ -1080,7 +1083,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     return () => {
       cancelled = true;
     };
-  }, [sourceConfig.sourceCode, sourceConfig.supportsDataset]);
+  }, [sourceConfig.sourceCode, sourceConfig.supportsDataset, sourceConfig.dashboardSuitability]);
 
   useEffect(() => {
     setSelectedGeoId("");
@@ -1575,6 +1578,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     geographyIndex,
     distribution,
     missingValueLabel,
+    selectedGeoId,
   ]);
 
   useEffect(() => {
@@ -1781,6 +1785,32 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     URL.revokeObjectURL(link.href);
   }
 
+  function handleMapKeyDown(event) {
+    const selectable = (observations.length > 0 ? observations : allGeographies)
+      .filter((item) => item?.geo_id);
+    if (event.key === "Escape") {
+      setSelectedGeoId("");
+      return;
+    }
+    if (selectable.length === 0) {
+      return;
+    }
+
+    const current = selectable.findIndex((item) => item.geo_id === selectedGeoId);
+    let next = current;
+    if (event.key === "Enter" || event.key === " ") {
+      next = current >= 0 ? current : 0;
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      next = (current + 1 + selectable.length) % selectable.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      next = (current - 1 + selectable.length) % selectable.length;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    setSelectedGeoId(selectable[next].geo_id);
+  }
+
   return (
     <main
       className="dashboard"
@@ -1789,6 +1819,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       data-selected-metric={selectedMetric}
       data-metric-count={metrics.length}
       data-county-count={countyGeographies.length}
+      data-selected-geo-id={selectedGeoId}
+      data-observation-count={observations.length}
     >
       <header className="explorer-heading">
         <div>
@@ -2031,7 +2063,17 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           <h2>{selectedMetricMeta ? displayMetricName(selectedMetricMeta) : `${selectedGeoLevel.toLowerCase()} map`}</h2>
           <p className="subtle">Latest {selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.</p>
           <div className="map-shell">
-            <div className="map-canvas" data-testid="map-canvas" ref={mapContainerRef} />
+            <div
+              className="map-canvas"
+              data-testid="map-canvas"
+              data-map-ready={mapReady ? "true" : "false"}
+              data-colored-values={choroplethModel.valueCount}
+              ref={mapContainerRef}
+              role="region"
+              tabIndex={0}
+              aria-label="Interactive geography map; use arrow keys to move, Enter to select, and Escape to clear"
+              onKeyDown={handleMapKeyDown}
+            />
             {hoveredCounty ? (
               <div
                 className="county-tooltip"

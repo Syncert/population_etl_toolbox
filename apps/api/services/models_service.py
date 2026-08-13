@@ -23,7 +23,11 @@ def get_models_surface_status(db: Session) -> ModelSurfaceStatusResponse:
 
     if found_relations:
         details = "Model surfaces detected: " + ", ".join(found_relations)
-        return ModelSurfaceStatusResponse(status="ready", models_enabled=True, details=details)
+        return ModelSurfaceStatusResponse(
+            status="ready", models_enabled=True, details=details
+        )
 
     details = "No model surface relations found; model endpoints are planned."
-    return ModelSurfaceStatusResponse(status="planned", models_enabled=False, details=details)
+    return ModelSurfaceStatusResponse(
+        status="planned", models_enabled=False, details=details
+    )

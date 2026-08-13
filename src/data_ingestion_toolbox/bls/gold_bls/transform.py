@@ -3,15 +3,18 @@ Gold analytics layer for the ``gold_bls`` schema.
 
 Bootstraps source-specific objects and refreshes BLS metadata from silver.
 """
+
 from __future__ import annotations
 
 import logging
 import pathlib
-
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.bls.config import CONFIG
 from data_ingestion_toolbox.utility.gold_schema import ensure_gold_schema_from_files
+
+if TYPE_CHECKING:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,8 @@ _REQUIRED_RELATIONS = (
     "gold_glossary.dim_source_system",
     "gold_glossary.dim_metric_catalog",
     "gold_glossary.dim_geo_latest",
+    "gold_glossary.serving_refresh_state",
+    "gold_glossary.serving_refresh_chunk_state",
     "gold_glossary.bridge_metric_bls_series",
     "gold_bls.dim_bls_survey",
     "gold_bls.dim_bls_series",
@@ -33,11 +38,13 @@ _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
     "gold_bls.refresh_rpt_bls_observations(date,date)",
     "gold_bls.refresh_mv_bls_latest(date,date)",
-    "gold_bls.refresh_dashboard_serving_layer_bls(date,date)",
+    "gold_bls.refresh_dashboard_serving_layer_bls(date,date,boolean)",
 )
 
 
 def _get_hook() -> PostgresHook:
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 

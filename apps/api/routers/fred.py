@@ -28,10 +28,10 @@ def _resolve_metric_code(metric_code: Optional[str], metric_id: Optional[str]) -
 
 @router.get("/observations/latest", response_model=ObservationListResponse)
 def get_fred_latest_observations(
-    metric_code: Optional[str] = None,
-    metric_id: Optional[str] = None,
-    geo_level: Optional[str] = None,
-    state_fips: Optional[str] = None,
+    metric_code: Optional[str] = Query(None, max_length=200),
+    metric_id: Optional[str] = Query(None, max_length=200),
+    geo_level: Optional[str] = Query(None, max_length=50),
+    state_fips: Optional[str] = Query(None, max_length=2),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_session_dep),
@@ -54,9 +54,9 @@ def get_fred_latest_observations(
 
 @router.get("/observations/timeseries", response_model=ObservationListResponse)
 def get_fred_timeseries_observations(
-    geo_id: str,
-    metric_code: Optional[str] = None,
-    metric_id: Optional[str] = None,
+    geo_id: str = Query(..., max_length=200),
+    metric_code: Optional[str] = Query(None, max_length=200),
+    metric_id: Optional[str] = Query(None, max_length=200),
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(1000, ge=1, le=5000),
@@ -64,7 +64,9 @@ def get_fred_timeseries_observations(
 ) -> ObservationListResponse:
     """Return FRED time-series observations from the gold_fred schema."""
     if start_date and end_date and start_date > end_date:
-        raise HTTPException(status_code=422, detail="start_date must be less than or equal to end_date")
+        raise HTTPException(
+            status_code=422, detail="start_date must be less than or equal to end_date"
+        )
     resolved = _resolve_metric_code(metric_code=metric_code, metric_id=metric_id)
     try:
         return list_timeseries_observations_for_source(

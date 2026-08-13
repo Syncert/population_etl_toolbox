@@ -27,7 +27,10 @@ DEFAULT_ARGS = {
 
 
 def _get_postgres_hook() -> PostgresHook:
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
+        raise RuntimeError("PostgreSQL connection ID is not configured")
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _ddl_path() -> Path:

@@ -69,6 +69,38 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_state (
+    source_code                 TEXT PRIMARY KEY
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    last_silver_ingested_at     TIMESTAMPTZ NOT NULL DEFAULT '-infinity'::TIMESTAMPTZ,
+    last_refresh_started_at     TIMESTAMPTZ,
+    last_refresh_completed_at   TIMESTAMPTZ,
+    last_window_start           DATE,
+    last_window_end             DATE,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_chunk_state (
+    source_code                         TEXT NOT NULL
+        REFERENCES gold_glossary.dim_source_system(source_code),
+    chunk_start                         DATE NOT NULL,
+    chunk_end                           DATE NOT NULL,
+    target_silver_ingested_at           TIMESTAMPTZ NOT NULL,
+    completed_silver_ingested_at        TIMESTAMPTZ,
+    status                              TEXT NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED')),
+    attempt_count                       INTEGER NOT NULL DEFAULT 0,
+    last_refresh_started_at             TIMESTAMPTZ,
+    last_refresh_completed_at           TIMESTAMPTZ,
+    last_error                          TEXT,
+    updated_at                          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (source_code, chunk_start, chunk_end),
+    CHECK (chunk_end >= chunk_start)
+);
+
+CREATE INDEX IF NOT EXISTS ix_serving_refresh_chunk_state_status
+    ON gold_glossary.serving_refresh_chunk_state (source_code, status, chunk_start);
+
 CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_bls_series (
     metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
     bls_series_sk     BIGINT NOT NULL,
@@ -88,12 +120,15 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS ix_dim_geo_latest_geo_geom
+    ON gold_glossary.dim_geo_latest USING GIST (geo_geom);
+
 DROP PROCEDURE IF EXISTS gold_glossary.refresh_dim_geo_latest();
 CREATE OR REPLACE PROCEDURE gold_glossary.refresh_dim_geo_latest()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    TRUNCATE TABLE gold_glossary.dim_geo_latest;
+    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_dim_geo_latest'));
 
     INSERT INTO gold_glossary.dim_geo_latest (
         geo_id,
@@ -125,7 +160,44 @@ BEGIN
         NOW()
     FROM gold_glossary.dim_geo g
     WHERE g.is_active = TRUE
-    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC;
+    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
+    ON CONFLICT (geo_id) DO UPDATE
+    SET geo_level = EXCLUDED.geo_level,
+        state_fips = EXCLUDED.state_fips,
+        county_fips = EXCLUDED.county_fips,
+        state_name = EXCLUDED.state_name,
+        county_name = EXCLUDED.county_name,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        geo_geom = EXCLUDED.geo_geom,
+        refreshed_at = NOW()
+    WHERE (
+        gold_glossary.dim_geo_latest.geo_level,
+        gold_glossary.dim_geo_latest.state_fips,
+        gold_glossary.dim_geo_latest.county_fips,
+        gold_glossary.dim_geo_latest.state_name,
+        gold_glossary.dim_geo_latest.county_name,
+        gold_glossary.dim_geo_latest.latitude,
+        gold_glossary.dim_geo_latest.longitude,
+        gold_glossary.dim_geo_latest.geo_geom
+    ) IS DISTINCT FROM (
+        EXCLUDED.geo_level,
+        EXCLUDED.state_fips,
+        EXCLUDED.county_fips,
+        EXCLUDED.state_name,
+        EXCLUDED.county_name,
+        EXCLUDED.latitude,
+        EXCLUDED.longitude,
+        EXCLUDED.geo_geom
+    );
+
+    DELETE FROM gold_glossary.dim_geo_latest d
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM gold_glossary.dim_geo g
+        WHERE g.is_active = TRUE
+          AND g.geo_id = d.geo_id
+    );
 END;
 $$;
 
@@ -267,6 +339,21 @@ CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_metric_date
 CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_obs_brin
     ON gold_bls.rpt_bls_observations USING BRIN (observation_date);
 
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_metric_geo_date
+    ON gold_bls.rpt_bls_observations (metric_code, geo_id, observation_date);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_observations_updated_at
+    ON gold_bls.rpt_bls_observations (updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS ix_rpt_bls_latest_selection
+    ON gold_bls.rpt_bls_observations (
+        geo_id,
+        series_id,
+        metric_code,
+        observation_date DESC,
+        updated_at DESC
+    );
+
 -- ============================================================
 -- BLS MATERIALIZED VIEW (Per-source latest)
 -- ============================================================
@@ -287,6 +374,9 @@ CREATE INDEX IF NOT EXISTS ix_mv_bls_latest_source_metric
 CREATE INDEX IF NOT EXISTS ix_mv_bls_latest_observation_date
     ON gold_bls.mv_bls_latest (observation_date);
 
+CREATE INDEX IF NOT EXISTS ix_mv_bls_latest_metric_geo
+    ON gold_bls.mv_bls_latest (metric_code, geo_id);
+
 -- ============================================================
 -- BLS REFRESH PROCEDURES (Updated to populate per-source table)
 -- ============================================================
@@ -298,15 +388,33 @@ CREATE OR REPLACE PROCEDURE gold_bls.refresh_rpt_bls_observations(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_started_at TIMESTAMPTZ := clock_timestamp();
+    v_deleted_rows BIGINT;
+    v_inserted_rows BIGINT;
+    v_affected_keys BIGINT;
 BEGIN
-    CALL gold_glossary.refresh_dim_geo_latest();
+    RAISE NOTICE '[BLS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
-    IF p_start_date IS NULL OR p_end_date IS NULL THEN
-        DELETE FROM gold_bls.rpt_bls_observations;
-    ELSE
-        DELETE FROM gold_bls.rpt_bls_observations
-        WHERE observation_date BETWEEN p_start_date AND p_end_date;
-    END IF;
+    DROP TABLE IF EXISTS pg_temp.gold_bls_affected_keys;
+    CREATE TEMP TABLE gold_bls_affected_keys (
+        geo_id      TEXT NOT NULL,
+        series_id   TEXT NOT NULL,
+        metric_code TEXT NOT NULL,
+        PRIMARY KEY (geo_id, series_id, metric_code)
+    ) ON COMMIT DROP;
+
+    INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
+    SELECT DISTINCT d.geo_id, d.series_id, d.metric_code
+    FROM gold_bls.rpt_bls_observations d
+    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+    ON CONFLICT DO NOTHING;
+
+    DELETE FROM gold_bls.rpt_bls_observations
+    WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR observation_date <= p_end_date);
+    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
     INSERT INTO gold_bls.rpt_bls_observations (
         source_code,
@@ -393,10 +501,26 @@ BEGIN
     LEFT JOIN gold_glossary.dim_metric_catalog mc
         ON mc.metric_catalog_sk = bms.metric_catalog_sk
        AND mc.is_active = TRUE
-    WHERE (p_start_date IS NULL OR p_end_date IS NULL
-           OR b.period_date BETWEEN p_start_date AND p_end_date);
+    WHERE (p_start_date IS NULL OR b.period_date >= p_start_date)
+      AND (p_end_date IS NULL OR b.period_date <= p_end_date);
+    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
-    ANALYZE gold_bls.rpt_bls_observations;
+    INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
+    SELECT DISTINCT d.geo_id, d.series_id, d.metric_code
+    FROM gold_bls.rpt_bls_observations d
+    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+    ON CONFLICT DO NOTHING;
+
+    SELECT COUNT(*) INTO v_affected_keys FROM gold_bls_affected_keys;
+    RAISE NOTICE
+        '[BLS RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        p_start_date,
+        p_end_date,
+        v_deleted_rows,
+        v_inserted_rows,
+        v_affected_keys,
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
 $$;
 
@@ -407,51 +531,150 @@ CREATE OR REPLACE PROCEDURE gold_bls.refresh_mv_bls_latest(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_started_at TIMESTAMPTZ := clock_timestamp();
+    v_deleted_rows BIGINT;
+    v_inserted_rows BIGINT;
 BEGIN
+    RAISE NOTICE '[BLS LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+
     -- Always rebuild the BLS slice — bounded by N_series × N_geos, not N_observations.
-    DELETE FROM gold_bls.mv_bls_latest;
+    IF to_regclass('pg_temp.gold_bls_affected_keys') IS NULL THEN
+        CREATE TEMP TABLE gold_bls_affected_keys (
+            geo_id      TEXT NOT NULL,
+            series_id   TEXT NOT NULL,
+            metric_code TEXT NOT NULL,
+            PRIMARY KEY (geo_id, series_id, metric_code)
+        ) ON COMMIT DROP;
+
+        INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
+        SELECT DISTINCT d.geo_id, d.series_id, d.metric_code
+        FROM gold_bls.rpt_bls_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+        ON CONFLICT DO NOTHING;
+    END IF;
+
+    DELETE FROM gold_bls.mv_bls_latest m
+    USING gold_bls_affected_keys k
+    WHERE m.geo_id = k.geo_id
+      AND m.series_id = k.series_id
+      AND m.metric_code = k.metric_code;
+    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
     INSERT INTO gold_bls.mv_bls_latest
     SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
         d.*
     FROM gold_bls.rpt_bls_observations d
+    JOIN gold_bls_affected_keys k
+      ON k.geo_id = d.geo_id
+     AND k.series_id = d.series_id
+     AND k.metric_code = d.metric_code
     ORDER BY
         d.geo_id,
         d.series_id,
         d.metric_code,
         d.observation_date DESC,
         d.updated_at DESC;
+    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
-    ANALYZE gold_bls.mv_bls_latest;
+    RAISE NOTICE
+        '[BLS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
+        p_start_date,
+        p_end_date,
+        v_deleted_rows,
+        v_inserted_rows,
+        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
+
 END;
 $$;
 
 DROP PROCEDURE IF EXISTS gold_bls.refresh_dashboard_serving_layer_bls(DATE, DATE);
+DROP PROCEDURE IF EXISTS gold_bls.refresh_dashboard_serving_layer_bls(DATE, DATE, BOOLEAN);
 CREATE OR REPLACE PROCEDURE gold_bls.refresh_dashboard_serving_layer_bls(
     p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
+    p_end_date DATE DEFAULT NULL,
+    p_force_full BOOLEAN DEFAULT FALSE
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_step_started TIMESTAMPTZ;
+    v_watermark TIMESTAMPTZ;
+    v_high_watermark TIMESTAMPTZ;
+    v_effective_start DATE;
+    v_effective_end DATE;
 BEGIN
-    SET LOCAL statement_timeout = 0;
+    SET LOCAL statement_timeout = '60min';
+    SET LOCAL lock_timeout = '30s';
 
-    RAISE NOTICE '[BLS DASHBOARD REFRESH] start window_start=% window_end=%', p_start_date, p_end_date;
+    INSERT INTO gold_glossary.serving_refresh_state (
+        source_code,
+        last_silver_ingested_at,
+        last_refresh_completed_at
+    )
+    SELECT
+        'BLS',
+        COALESCE(MAX(r.updated_at), '-infinity'::TIMESTAMPTZ),
+        CASE WHEN COUNT(*) > 0 THEN NOW() ELSE NULL END
+    FROM gold_bls.rpt_bls_observations r
+    ON CONFLICT (source_code) DO NOTHING;
+
+    SELECT last_silver_ingested_at
+      INTO v_watermark
+      FROM gold_glossary.serving_refresh_state
+     WHERE source_code = 'BLS'
+     FOR UPDATE;
+
+    UPDATE gold_glossary.serving_refresh_state
+       SET last_refresh_started_at = v_started_at,
+           updated_at = NOW()
+     WHERE source_code = 'BLS';
+
+    SELECT MAX(s.ingested_at), MIN(s.period_date), MAX(s.period_date)
+      INTO v_high_watermark, v_effective_start, v_effective_end
+      FROM silver_bls.fact_labor_statistics s
+     WHERE s.value IS NOT NULL
+       AND (p_start_date IS NULL OR s.period_date >= p_start_date)
+       AND (p_end_date IS NULL OR s.period_date <= p_end_date)
+       AND (p_force_full OR s.ingested_at > v_watermark);
+
+    IF v_effective_start IS NULL THEN
+        UPDATE gold_glossary.serving_refresh_state
+           SET last_refresh_completed_at = clock_timestamp(),
+               updated_at = NOW()
+         WHERE source_code = 'BLS';
+        RAISE NOTICE '[BLS DASHBOARD REFRESH] no changed silver rows after watermark=%', v_watermark;
+        RETURN;
+    END IF;
+
+    RAISE NOTICE '[BLS DASHBOARD REFRESH] start window_start=% window_end=% watermark=% force_full=%',
+        v_effective_start, v_effective_end, v_watermark, p_force_full;
 
     v_step_started := clock_timestamp();
-    CALL gold_bls.refresh_rpt_bls_observations(p_start_date, p_end_date);
+    CALL gold_bls.refresh_rpt_bls_observations(v_effective_start, v_effective_end);
     RAISE NOTICE
         '[BLS DASHBOARD REFRESH] step=refresh_rpt_bls_observations duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
     v_step_started := clock_timestamp();
-    CALL gold_bls.refresh_mv_bls_latest();
+    CALL gold_bls.refresh_mv_bls_latest(v_effective_start, v_effective_end);
     RAISE NOTICE
         '[BLS DASHBOARD REFRESH] step=refresh_mv_bls_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
+
+    UPDATE gold_glossary.serving_refresh_state
+       SET last_silver_ingested_at = CASE
+               WHEN p_force_full AND (p_start_date IS NOT NULL OR p_end_date IS NOT NULL)
+                   THEN v_watermark
+               ELSE GREATEST(v_watermark, v_high_watermark)
+           END,
+           last_refresh_completed_at = clock_timestamp(),
+           last_window_start = v_effective_start,
+           last_window_end = v_effective_end,
+           updated_at = NOW()
+     WHERE source_code = 'BLS';
 
     RAISE NOTICE
         '[BLS DASHBOARD REFRESH] completed total_duration_ms=%',

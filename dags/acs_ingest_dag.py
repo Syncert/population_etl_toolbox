@@ -63,6 +63,11 @@ from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
 )
+from data_ingestion_toolbox.utility.gold_schema import (
+    ServingRefreshChunkConfig,
+    refresh_serving_layer_in_year_chunks,
+)
+from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +93,16 @@ def _get_postgres_hook() -> PostgresHook:
 
     Keeps the conn_id in one place, so changing it in CONFIG affects all tasks.
     """
-    return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
+        raise RuntimeError("PostgreSQL connection ID is not configured")
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _silver_ddl_path() -> Path:
-    return Path(census_acs_package.__file__).resolve().parent / "DDL" / "silver_census.sql"
+    return (
+        Path(census_acs_package.__file__).resolve().parent / "DDL" / "silver_census.sql"
+    )
 
 
 def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
@@ -118,7 +128,7 @@ def _variables_fingerprint(year: int, dataset: str) -> tuple[str, int]:
 
 
 def chunk_list(items: list, chunk_size: int) -> list[list]:
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def _run_one_work_unit(work_unit: dict) -> int:
@@ -168,7 +178,6 @@ def _run_one_work_unit(work_unit: dict) -> int:
         ON CONFLICT DO NOTHING;
     """
 
-
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             sql_running_update,
@@ -176,7 +185,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                 started,
                 variables_hash,
                 variables_count,
-                started,          # variables_hash_seen_at
+                started,  # variables_hash_seen_at
                 dataset,
                 year,
                 geo_level,
@@ -202,7 +211,9 @@ def _run_one_work_unit(work_unit: dict) -> int:
         conn.commit()
 
     try:
-        rows_loaded = ingest_slice(year=year, dataset=dataset, geo_level=geo_level, state_fips=state_fips)
+        rows_loaded = ingest_slice(
+            year=year, dataset=dataset, geo_level=geo_level, state_fips=state_fips
+        )
 
         finished = datetime.now(timezone.utc)
         final_status = "empty" if rows_loaded == 0 else "success"
@@ -241,7 +252,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     except Exception as e:
         finished = datetime.now(timezone.utc)
-        err_txt = str(e)[:4000]
+        err_txt = sanitize_error_message(e)
 
         sql_failed = """
             UPDATE raw_census.acs_ingestion_slices
@@ -254,11 +265,12 @@ def _run_one_work_unit(work_unit: dict) -> int:
               AND state_fips IS NOT DISTINCT FROM %s;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql_failed, (finished, err_txt, dataset, year, geo_level, state_fips))
+            cur.execute(
+                sql_failed, (finished, err_txt, dataset, year, geo_level, state_fips)
+            )
             conn.commit()
 
         raise
-
 
 
 @dag(
@@ -296,7 +308,6 @@ def acs_ingest():
     def sync_geographies() -> None:
         # Auto-pick latest available Gazetteer year
         sync_geo_dim(source_year=None, min_year=2010)
-
 
     # -----------------------------
     # Task 2: Decide what year(s) to ingest
@@ -356,10 +367,7 @@ def acs_ingest():
 
         # County tasks are expanded by state FIPS.
         # Keep this simple to start; you can extend to territories later.
-        state_fips_list = [
-            f"{i:02d}" for i in range(1, 57)
-            if i not in (3, 7, 14, 43)
-        ]
+        state_fips_list = [f"{i:02d}" for i in range(1, 57) if i not in (3, 7, 14, 43)]
 
         # Compute current variable set hash/count for each target (dataset, year).
         varset_meta: dict[tuple[str, int], dict] = {}
@@ -372,7 +380,10 @@ def acs_ingest():
             sync_variable_metadata_for_year(year, dataset)
 
             vhash, vcount = _variables_fingerprint(year, dataset)
-            varset_meta[(dataset, year)] = {"variables_hash": vhash, "variables_count": vcount}
+            varset_meta[(dataset, year)] = {
+                "variables_hash": vhash,
+                "variables_count": vcount,
+            }
 
         # Load all slices that are already done (success/empty) along with their variables_hash.
         # We'll only skip if the stored hash matches the current hash.
@@ -387,12 +398,18 @@ def acs_ingest():
             cur.execute(sql_completed)
             for dataset, year, geo_level, state_fips, variables_hash in cur.fetchall():
                 completed.add(
-                    (str(dataset), int(year), str(geo_level),
-                     state_fips if state_fips is not None else None,
-                     variables_hash)
+                    (
+                        str(dataset),
+                        int(year),
+                        str(geo_level),
+                        state_fips if state_fips is not None else None,
+                        variables_hash,
+                    )
                 )
 
-        def is_done_for_current_varset(dataset: str, year: int, geo_level: str, state_fips: Optional[str]) -> bool:
+        def is_done_for_current_varset(
+            dataset: str, year: int, geo_level: str, state_fips: Optional[str]
+        ) -> bool:
             """
             True if this slice is already completed for the current variable set.
             """
@@ -404,38 +421,44 @@ def acs_ingest():
         for (dataset, year), meta in varset_meta.items():
             # US slice
             if not is_done_for_current_varset(dataset, year, "us", None):
-                plan.append({
-                    "dataset": dataset,
-                    "year": year,
-                    "geo_level": "us",
-                    "state_fips": None,
-                    "variables_hash": meta["variables_hash"],
-                    "variables_count": meta["variables_count"],
-                })
+                plan.append(
+                    {
+                        "dataset": dataset,
+                        "year": year,
+                        "geo_level": "us",
+                        "state_fips": None,
+                        "variables_hash": meta["variables_hash"],
+                        "variables_count": meta["variables_count"],
+                    }
+                )
 
             # STATE slice (all states in one call)
             if not is_done_for_current_varset(dataset, year, "state", None):
-                plan.append({
-                    "dataset": dataset,
-                    "year": year,
-                    "geo_level": "state",
-                    "state_fips": None,
-                    "variables_hash": meta["variables_hash"],
-                    "variables_count": meta["variables_count"],
-                })
+                plan.append(
+                    {
+                        "dataset": dataset,
+                        "year": year,
+                        "geo_level": "state",
+                        "state_fips": None,
+                        "variables_hash": meta["variables_hash"],
+                        "variables_count": meta["variables_count"],
+                    }
+                )
 
             # COUNTY slices (by state)
             for sf in state_fips_list:
                 if is_done_for_current_varset(dataset, year, "county", sf):
                     continue
-                plan.append({
-                    "dataset": dataset,
-                    "year": year,
-                    "geo_level": "county",
-                    "state_fips": sf,
-                    "variables_hash": meta["variables_hash"],
-                    "variables_count": meta["variables_count"],
-                })
+                plan.append(
+                    {
+                        "dataset": dataset,
+                        "year": year,
+                        "geo_level": "county",
+                        "state_fips": sf,
+                        "variables_hash": meta["variables_hash"],
+                        "variables_count": meta["variables_count"],
+                    }
+                )
 
         # Keep mapping sane: ~50–150 mapped tasks is a happy place.
         # IMPORTANT: return at least one batch so mapped-task retries remain stable.
@@ -542,7 +565,6 @@ def acs_ingest():
 
             conn.commit()
 
-
     # -----------------------------
     # Task 5: Ingest one slice (mapped), with ledger updates
     # -----------------------------
@@ -563,7 +585,7 @@ def acs_ingest():
     # -----------------------------
     # Task 6: Silver layer (full load)
     # -----------------------------
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule="none_failed")
     def ensure_silver_schema() -> None:
         """Ensure silver_census schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -573,11 +595,10 @@ def acs_ingest():
             cur.execute(sql)
             conn.commit()
 
-    @task(trigger_rule='none_failed')
+    @task(trigger_rule="none_failed")
     def transform_to_silver() -> int:
         """Transform ALL raw Census data to silver (full load)."""
         return transform_census_to_silver()
-
 
     # -----------------------------
     # DAG wiring
@@ -618,6 +639,16 @@ def acs_ingest():
         ensure_acs_gold_schema()
 
     @task(trigger_rule="none_failed")
+    def refresh_gold_geography() -> None:
+        """Synchronize the shared current-geography table in a short transaction."""
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET lock_timeout = '30s'")
+            cur.execute("SET statement_timeout = '10min'")
+            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            conn.commit()
+
+    @task(trigger_rule="none_failed")
     def refresh_gold_census_elements() -> int:
         """Refresh ACS dimensions and metric mappings in gold_census."""
         from data_ingestion_toolbox.census_acs.gold_census.transform import (
@@ -627,56 +658,46 @@ def acs_ingest():
         return refresh_acs_elements()
 
     @task(trigger_rule="none_failed")
-    def get_gold_census_refresh_window() -> dict[str, str] | None:
-        """Return the complete ACS date range currently available in silver."""
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    MIN(MAKE_DATE(estimate_year, 1, 1))::date,
-                    MAX(MAKE_DATE(estimate_year, 1, 1))::date
-                FROM silver_census.fact_demographics
-                WHERE estimate_value IS NOT NULL
-                """
-            )
-            row = cur.fetchone()
-
-        if not row or row[0] is None:
-            logger.warning("[gold_census] No silver data available; skipping serving refresh.")
-            return None
-
-        return {"start_date": row[0].isoformat(), "end_date": row[1].isoformat()}
-
-    @task(trigger_rule="none_failed")
-    def refresh_gold_census_serving_layer(
-        refresh_window: dict[str, str] | None,
-    ) -> None:
-        """Refresh persisted ACS serving tables in gold_census."""
-        if refresh_window is None:
-            return
-
-        hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0")
-            cur.execute(
-                "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s)",
-                (refresh_window["start_date"], refresh_window["end_date"]),
-            )
-            conn.commit()
+    def refresh_gold_census_serving_layer() -> dict[str, int]:
+        """Refresh changed ACS vintages as independently committed annual chunks."""
+        return refresh_serving_layer_in_year_chunks(
+            hook=_get_postgres_hook(),
+            config=ServingRefreshChunkConfig(
+                source_code="CENSUS_ACS",
+                log_label="ACS",
+                report_table="gold_census.rpt_acs_observations",
+                report_date_column="observation_date",
+                changed_chunks_sql="""
+                    SELECT
+                        MAKE_DATE(s.estimate_year, 1, 1) AS chunk_start,
+                        MAKE_DATE(s.estimate_year, 12, 31) AS chunk_end,
+                        MAX(s.ingested_at) AS target_watermark
+                    FROM silver_census.fact_demographics s
+                    WHERE s.estimate_value IS NOT NULL
+                      AND s.ingested_at > %s
+                    GROUP BY s.estimate_year
+                    ORDER BY s.estimate_year
+                """,
+                report_procedure="gold_census.refresh_rpt_acs_observations",
+                latest_procedure="gold_census.refresh_mv_acs_latest",
+                statement_timeout="90min",
+            ),
+            task_logger=logger,
+        )
 
     gold_census_schema = ensure_gold_census_schema()
+    gold_geography = refresh_gold_geography()
     gold_census_elements = refresh_gold_census_elements()
-    gold_census_window = get_gold_census_refresh_window()
-    gold_census_refresh = refresh_gold_census_serving_layer(gold_census_window)
+    gold_census_refresh = refresh_gold_census_serving_layer()
 
     (
         silver_transform
         >> gold_census_schema
+        >> gold_geography
         >> gold_census_elements
-        >> gold_census_window
         >> gold_census_refresh
     )
+
 
 # Instantiate DAG
 acs_ingest_dag = acs_ingest()
