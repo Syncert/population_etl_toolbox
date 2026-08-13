@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -270,6 +271,11 @@ def test_source_pipeline_order(dagbag, dag_id: str) -> None:
 @pytest.mark.dag
 def test_no_external_calls_at_import_time() -> None:
     """Covers: DAG-011 — DAG import makes no external calls."""
+    # Airflow may initialize its own metadata engine while importing models.
+    # This contract starts after that framework initialization and guards the
+    # repository DAG modules loaded by DagBag.
+    from airflow.models import DagBag
+
     call_log: list[str] = []
 
     def _mock_http(*args, **kwargs):  # noqa: ANN002
@@ -284,15 +290,18 @@ def test_no_external_calls_at_import_time() -> None:
         call_log.append(f"Redis: {args!r}")
         raise RuntimeError("Redis call blocked during import")
 
-    with (
+    external_call_patches = (
         patch("httpx.Client.get", _mock_http),
         patch("httpx.Client.post", _mock_http),
         patch("requests.get", _mock_http),
         patch("psycopg2.connect", _mock_db),
         patch("sqlalchemy.create_engine", _mock_db),
-        patch("redis.Redis.from_url", _mock_redis),
-    ):
-        from airflow.models import DagBag
+    )
+    with ExitStack() as stack:
+        for external_call_patch in external_call_patches:
+            stack.enter_context(external_call_patch)
+        if importlib.util.find_spec("redis") is not None:
+            stack.enter_context(patch("redis.Redis.from_url", _mock_redis))
 
         bag = DagBag(dag_folder=_DAGS_FOLDER, include_examples=False)
 
