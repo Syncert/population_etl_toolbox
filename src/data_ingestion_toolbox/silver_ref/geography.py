@@ -14,7 +14,6 @@ import zipfile
 import httpx
 import polars as pl
 import shapefile as pyshp
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from data_ingestion_toolbox.silver_ref.config import CONFIG
 
@@ -38,7 +37,15 @@ def _counties_url(year: int) -> str:
     return f"{GAZ_ROOT}/{year}_Gazetteer/{year}_Gaz_counties_national.zip"
 
 
-def _get_hook() -> PostgresHook:
+def _get_hook():
+    """Create the Airflow hook only when a database load is requested.
+
+    Airflow is an optional runtime dependency.  Keeping this import local lets
+    the parsing and transformation helpers be imported in the base/dev
+    environment used by the deterministic unit-test and coverage tiers.
+    """
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     return PostgresHook(postgres_conn_id=CONFIG.postgres_conn_id)
 
 

@@ -948,7 +948,9 @@ def _upsert_silver_rows(
         "variable_concept",
         "universe",
     ]
-    suffix = ("CENSUS_ACS", load_batch_id, ingested_at)
+    # psycopg2 does not register a UUID adapter in every supported runtime.
+    # PostgreSQL accepts the canonical string representation for UUID columns.
+    suffix = ("CENSUS_ACS", str(load_batch_id), ingested_at)
     records = [row + suffix for row in df.select(upsert_cols).rows()]
 
     # Use TEMP table strategy for better performance on large upserts

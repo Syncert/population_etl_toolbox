@@ -148,9 +148,9 @@ def test_ci_and_frontend_use_node_24() -> None:
         path.read_text(encoding="utf-8")
         for path in sorted((REPOSITORY_ROOT / ".github/workflows").glob("*.yml"))
     )
-    frontend_workflow = (
-        REPOSITORY_ROOT / ".github/workflows/frontend.yml"
-    ).read_text(encoding="utf-8")
+    frontend_workflow = (REPOSITORY_ROOT / ".github/workflows/frontend.yml").read_text(
+        encoding="utf-8"
+    )
     package = (REPOSITORY_ROOT / "apps/web/package.json").read_text(encoding="utf-8")
     dockerfile = (REPOSITORY_ROOT / "infra/docker/Dockerfile.web").read_text(
         encoding="utf-8"

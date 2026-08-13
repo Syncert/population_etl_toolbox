@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import sys
 import zipfile
 from datetime import date
+from types import ModuleType
 
 import httpx
 import pytest
@@ -45,6 +47,37 @@ class _RecordingConnection:
 
     def commit(self) -> None:
         self.commits += 1
+
+
+def test_reference_loaders_resolve_optional_airflow_hook_lazily(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-024, ETL-025 — base installs can import pure helpers."""
+    created_with: list[str] = []
+
+    class PostgresHook:
+        def __init__(self, postgres_conn_id: str) -> None:
+            created_with.append(postgres_conn_id)
+
+    module_names = (
+        "airflow",
+        "airflow.providers",
+        "airflow.providers.postgres",
+        "airflow.providers.postgres.hooks",
+        "airflow.providers.postgres.hooks.postgres",
+    )
+    for module_name in module_names:
+        module = ModuleType(module_name)
+        module.__path__ = []  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, module_name, module)
+    sys.modules[module_names[-1]].PostgresHook = PostgresHook  # type: ignore[attr-defined]
+
+    assert isinstance(geography._get_hook(), PostgresHook)
+    assert isinstance(time_dim._get_hook(), PostgresHook)
+    assert created_with == [
+        geography.CONFIG.postgres_conn_id,
+        time_dim.CONFIG.postgres_conn_id,
+    ]
 
 
 def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(
