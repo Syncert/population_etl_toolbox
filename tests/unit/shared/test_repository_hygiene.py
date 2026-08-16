@@ -97,7 +97,9 @@ def test_scripts_directory_contains_only_operational_tools() -> None:
 
 def test_centralized_test_entry_points_are_documented() -> None:
     """Covers: ENV-007 — test runners and gates stay under tests and documented."""
-    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
+        encoding="utf-8"
+    )
     readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
     user_guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
         encoding="utf-8"
@@ -120,7 +122,7 @@ def test_warehouse_database_image_pin_is_consistent() -> None:
     for relative_path in (
         ".github/workflows/postgres-integration.yml",
         "README.md",
-        "docs/plans/TESTING_PLAN.md",
+        "docs/reference/TESTING_CONTRACT.md",
     ):
         contents = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
         assert WAREHOUSE_DATABASE_IMAGE in contents, (
@@ -134,7 +136,7 @@ def test_redis_image_pin_is_consistent() -> None:
     for relative_path in (
         ".github/workflows/redis-integration.yml",
         "README.md",
-        "docs/plans/TESTING_PLAN.md",
+        "docs/reference/TESTING_CONTRACT.md",
     ):
         contents = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
         assert API_CACHE_REDIS_IMAGE in contents, (
@@ -172,7 +174,9 @@ def test_ci_and_frontend_use_node_24() -> None:
 
 def test_python_tests_reference_known_catalog_ids() -> None:
     """Covers: ENV-010 — every Python test references a known catalog ID."""
-    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
+        encoding="utf-8"
+    )
     catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
     known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
     failures: list[str] = []
@@ -240,7 +244,9 @@ def test_environment_tiers_declare_every_required_marker() -> None:
 
 def test_every_catalog_id_has_an_implementation_reference() -> None:
     """Covers: ENV-010 — every catalog item maps to a test or CI/config check."""
-    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
+        encoding="utf-8"
+    )
     catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
     known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
     awaiting_match = re.search(

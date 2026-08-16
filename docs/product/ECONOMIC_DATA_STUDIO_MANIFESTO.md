@@ -1,12 +1,24 @@
 # Economic Data Studio Interface Manifesto
 
-**A build manifesto for a dynamic BLS/FRED/Census web analytics platform**
+This is a product-design reference rather than an implementation plan. The MVP
+routes, live catalog/explorer/profile/article/builder surfaces, browser-local
+saved views, CSV export, source notes, and core responsive/error states are
+implemented. Remaining product work includes durable server-side persistence,
+accounts and permissions, reviewed publishing workflows, cross-product search,
+advanced analytical visualizations and transformations, collaboration, version
+history, embeds, and scheduled notifications.
+
+The packaged Census PEP, CDC disease and illness, FBI crime, and agricultural
+products described below are product intent and are not yet implemented data
+sources. Census ACS, FRED, and BLS are the currently implemented source families.
+
+**A build manifesto for a source-transparent public-data analytics platform**
 
 ---
 
 ## 1. Product Thesis
 
-This product is not merely a dashboard website. It is a **data publishing platform** for public economic, labor, inflation, and population data.
+This product is not merely a dashboard website. It is a **data publishing platform** for packaged public demographic, economic, labor, health, public-safety, and agricultural data.
 
 The platform should combine:
 
@@ -21,6 +33,28 @@ The guiding product idea is:
 > Build a web platform where users can explore public economic datasets, save chart configurations, and publish data-rich analytical articles or dashboards with live embedded charts.
 
 The system should serve analysts, local economic development users, public-sector researchers, journalists, students, and technically curious users who want to move from raw public data to understandable insight.
+
+### 1.1 Packaged Data Product Portfolio
+
+The platform should present sources as understandable, source-native data products rather than as warehouse tables or API endpoints. The intended portfolio is:
+
+| Packaged product | Primary value | Natural organization and required context |
+| --- | --- | --- |
+| Census ACS | Detailed demographic, social, housing, and economic characteristics | Survey product/vintage → table/group → variable → geography; estimates, margins of error, universe, and ACS 1-year/5-year coverage remain visible |
+| Census Population Estimates Program (PEP) | Annual population levels, change, and demographic components between decennial censuses | Estimate vintage → population/component measure → geography → year; estimate basis, revision vintage, and geographic-boundary context remain visible |
+| FRED | Discoverable macroeconomic and financial time series, including republished series | Category/release → series → observation/vintage; original publisher, units, frequency, seasonal adjustment, transformation, and revision context remain visible |
+| BLS | Labor-market, employment, wage, price, and workplace series | Program/survey → series → geography/industry → period; survey basis, seasonal adjustment, units, and revisions remain visible |
+| CDC Disease and Illness | Public disease, illness, mortality, hospitalization, and surveillance measures where source data permits | Dataset/surveillance system → condition/outcome → population/geography → period; case definition, denominator, age adjustment, suppression, provisional status, and reporting coverage remain visible |
+| FBI Crime Data | Reported crime, offense, arrest, and agency-participation measures | Program → offense/measure → agency/geography → period; counts versus rates, reporting coverage, definition changes, and known non-reporting remain visible |
+| Agricultural Data | Agricultural production, acreage, yield, inventories, prices, farm characteristics, and related rural measures | USDA program/dataset → commodity/measure → geography → period; unit, estimate/survey basis, suppression, revision, and coverage remain visible |
+
+“Packaged” does not mean erasing source identity or manufacturing a universal score. Each product supplies curated navigation, stable identifiers, consistent provenance, useful defaults, source documentation, and reusable visualization entry points while preserving the source's natural structure and limitations.
+
+All packages should expose a common product envelope—source, dataset/program, stable metric identifier, geography, period, value, unit, release/vintage, refresh time, lineage, and data-quality state—without forcing their internal entities into one physical warehouse model.
+
+Automatically harvested facts come from the independent glossary process. Reviewed business definitions and analytical guidance come from the separate semantic-documentation workflow. User preferences remain outside the data warehouse. The application combines these failure-isolated concerns so users can work without querying database schemas directly.
+
+The cross-source value propositions and recommended delivery sequence are detailed in [Top 20 Packaged Public-Data Use Cases](TOP_20_DATA_PRODUCT_USE_CASES.md).
 
 ---
 
@@ -53,7 +87,7 @@ Every chart, map, table, stat card, and published article must be traceable back
 
 Every visualization should expose:
 
-- Source: BLS, FRED, Census, or derived/internal.
+- Source and publisher: Census, FRED and any original publisher, BLS, CDC, FBI, USDA, or derived/internal.
 - Dataset or program name.
 - Metric or variable code.
 - Geography level.
@@ -98,7 +132,7 @@ A chart created once should be usable everywhere.
 
 ### 3.4 Natural Source Shape Matters
 
-BLS, FRED, and Census data should not be forced into one generic interface.
+BLS, FRED, Census, CDC, FBI, and agricultural data should not be forced into one generic interface.
 
 Each source has a natural data shape:
 
@@ -106,7 +140,11 @@ Each source has a natural data shape:
 |---|---|---|
 | BLS | Program → Series → Geography → Time | Program/series explorer |
 | FRED | Series-first, metadata-heavy, macro indicators | Searchable series catalog with transformations |
-| Census | Dataset → Table → Variable → Geography → Year | Dataset/table/variable/geography browser |
+| Census ACS | Survey product/vintage → Table → Variable → Geography | Survey/table/variable browser with uncertainty context |
+| Census PEP | Estimate vintage → Measure/component → Geography → Year | Population-change and components explorer with revision context |
+| CDC | Surveillance dataset → Condition/outcome → Population/geography → Period | Health-measure explorer with denominator, suppression, and provisional-status context |
+| FBI | Program → Offense/measure → Agency/geography → Period | Crime explorer with reporting-participation and definition context |
+| Agricultural | Program/dataset → Commodity/measure → Geography → Period | Commodity and rural-data explorer with units, suppression, and survey context |
 
 The site should normalize data enough to compare across sources, but preserve source-native browsing for trust and transparency.
 
@@ -457,12 +495,12 @@ The catalog should let users browse and understand available data by:
 
 | Dimension | Examples |
 |---|---|
-| Source | BLS, FRED, Census |
-| Topic | Labor, inflation, population, housing, income |
+| Source | Census ACS, Census PEP, FRED, BLS, CDC, FBI, USDA |
+| Topic | Demographics, population, labor, inflation, housing, income, health, crime, agriculture |
 | Geography | US, region, state, county, metro |
-| Frequency | Monthly, quarterly, annual |
-| Dataset | LAUS, CPS, ACS 1-year, ACS 5-year, FRED series |
-| Metric type | Rate, count, index, percent change |
+| Frequency | Daily, weekly, monthly, quarterly, annual, periodic survey |
+| Dataset | ACS 1-year/5-year, PEP, FRED releases, LAUS/CPS/CES, CDC surveillance datasets, FBI programs, USDA programs |
+| Metric type | Estimate, rate, count, index, percent change, incidence, mortality, acreage, yield, price |
 | Last updated | Recently refreshed data |
 
 ### 8.4 Dataset Card Requirements
@@ -488,6 +526,17 @@ The catalog is complete only when a user can discover what data exists, understa
 ## 9. Source-Native Page Manifesto
 
 Each individual source must have a page that respects its natural structure.
+
+### 9.1 Portfolio Expansion Requirements
+
+In addition to the detailed BLS, FRED, and Census ACS examples below, the product requires source-native entry points for Census PEP, CDC disease and illness, FBI crime, and agricultural data. These pages must not be generic skins over a metric dropdown.
+
+- Census PEP should foreground population change, estimate vintages, components of change, and revision history.
+- CDC should foreground condition/outcome definitions, denominators, age adjustment, suppression, provisional data, and surveillance coverage.
+- FBI should foreground program and offense definitions, agency participation/reporting coverage, counts versus rates, and breaks in comparability.
+- Agricultural pages should foreground program, commodity, unit, production/acreage/yield/price distinctions, suppression, and survey or estimate basis.
+
+Every packaged-product page must lead into the common Explorer, allow source inspection, and emit reusable saved configurations without discarding its specialized context.
 
 ---
 
@@ -1208,8 +1257,12 @@ The product should explain issues like:
 
 - ACS 1-year vs ACS 5-year usage.
 - Margin of error.
+- Census ACS survey estimates versus Census PEP population estimates and vintages.
 - Seasonally adjusted vs not seasonally adjusted BLS data.
 - FRED series units and transformations.
+- CDC case definitions, denominators, age adjustment, provisional values, and suppression.
+- FBI counts versus rates, agency participation, non-reporting, and definition changes.
+- Agricultural production versus acreage, yield, inventory, and price measures; survey coverage and suppression.
 - County-level availability.
 - Missing data.
 - Suppressed data.
@@ -1232,6 +1285,10 @@ Users should be able to search for:
 - FRED series.
 - BLS programs.
 - Census variables.
+- Census PEP estimates and components of change.
+- CDC conditions, outcomes, and surveillance datasets.
+- FBI offenses, measures, programs, and reporting geographies.
+- Agricultural commodities, measures, and programs.
 - Geographies.
 - Articles.
 - Saved charts.
@@ -1246,6 +1303,10 @@ Users should be able to search for:
 | Dataset | BLS LAUS |
 | Series | FRED CPI Shelter |
 | Variable | Census B01003 Total Population |
+| Population estimate | County annual population change from Census PEP |
+| Health measure | CDC condition incidence or mortality measure |
+| Crime measure | FBI reported violent-crime rate and reporting coverage |
+| Agricultural measure | USDA county crop yield or production estimate |
 | Article | Population Growth Is Concentrating |
 | Saved Chart | Wisconsin Unemployment Rate Trend |
 
@@ -1396,7 +1457,7 @@ The buildout is not done when the UI displays charts. It is done when the platfo
 
 The platform is done when a user can:
 
-1. Browse BLS, FRED, and Census data.
+1. Browse the packaged Census ACS, Census PEP, FRED, BLS, CDC disease and illness, FBI crime, and agricultural data products.
 2. Inspect datasets in their natural source structure.
 3. Create charts from source data.
 4. Transform those charts meaningfully.
@@ -1450,7 +1511,7 @@ Ask:
 - What user motion does this support: catalog, explore, compose, or publish?
 - Is this feature reusable across articles, dashboards, and profiles?
 - Does it preserve source metadata?
-- Does it respect the natural shape of BLS, FRED, or Census?
+- Does it respect the natural shape of its packaged Census, FRED, BLS, CDC, FBI, or agricultural source?
 - Is this necessary for the MVP, or is it advanced polish?
 
 ### 30.2 While Building a Feature
@@ -1482,7 +1543,7 @@ Do not:
 - Build one-off dashboard pages that cannot reuse chart configs.
 - Hide source information.
 - Treat ACS estimates as exact values without uncertainty context.
-- Force BLS, FRED, and Census into one generic data browser.
+- Force unlike Census, FRED, BLS, CDC, FBI, and agricultural products into one generic data browser.
 - Prioritize flashy visuals over trust.
 - Build the page builder before saved chart configs are stable.
 - Treat custom articles as static markdown with screenshots.
@@ -1503,7 +1564,7 @@ The north star is not “a dashboard with public data.”
 
 The north star is:
 
-> A credible economic data studio where users can discover BLS/FRED/Census data, explore it analytically, save reusable visualizations, and publish polished data stories or dashboards that remain source-transparent from end to end.
+> A credible public-data studio where users can discover packaged Census ACS, Census PEP, FRED, BLS, CDC disease and illness, FBI crime, and agricultural data; explore it analytically; save reusable visualizations; and publish polished data stories or dashboards that remain source-transparent from end to end.
 
 Every design, data model, and interface decision should be judged against that sentence.
 

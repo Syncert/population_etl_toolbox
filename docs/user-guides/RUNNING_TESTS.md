@@ -2,7 +2,7 @@
 
 Run commands from the repository root. The authoritative catalog, current
 results, markers, and CI ownership are in
-[`docs/plans/TESTING_PLAN.md`](../plans/TESTING_PLAN.md).
+[`docs/reference/TESTING_CONTRACT.md`](../reference/TESTING_CONTRACT.md).
 
 ## Quick Start
 

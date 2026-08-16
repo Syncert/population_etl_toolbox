@@ -1,4 +1,9 @@
-# Testing Plan
+# Testing Contract and Behavioral Catalog
+
+This is a live repository contract, not an implementation plan. Its catalog IDs,
+pass metrics, environment pins, and execution ownership are consumed by automated
+repository-hygiene and evidence-register tests. Historical delivery phases are
+retained as audit context.
 
 ## Purpose
 

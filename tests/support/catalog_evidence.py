@@ -56,7 +56,9 @@ EXECUTION_PROFILES = {
 
 
 def _catalog_rows() -> dict[str, tuple[str, str]]:
-    plan = (REPOSITORY_ROOT / "docs/plans/TESTING_PLAN.md").read_text(encoding="utf-8")
+    plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
+        encoding="utf-8"
+    )
     rows: dict[str, tuple[str, str]] = {}
     for line in plan.splitlines():
         columns = [
