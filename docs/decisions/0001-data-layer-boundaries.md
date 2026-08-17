@@ -1,7 +1,8 @@
 # ADR-0001: Data-layer ownership boundaries
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-17
+- **Accepted:** 2026-08-17
 - **Decision owners:** Data engineering and data-product maintainers
 - **Related work:** ARCH-001 through ARCH-007 in the [data-layer remediation plan](../plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
 
@@ -43,6 +44,8 @@ A successful response must be committed to raw storage before source-specific pa
 Until ARCH-004 through ARCH-007 migrate the pipelines, `raw_census.acs_long`, `raw_bls.bls_long`, and `raw_fred.fred_long` are treated as legacy parsed staging relations rather than immutable raw capture. Their `*_ingestion_slices` relations are legacy control-plane tables. Compatibility may be retained during migration, but new adapters may not copy this layout.
 
 Until ARCH-002 and ARCH-003 complete, the three existing source gold DDL files are an explicit legacy exception for shared glossary definitions and policy columns. Contract tests freeze that exception to those files; they reject expansion to a fourth source or a new policy-bearing gold DDL.
+
+This repository is currently a beta prototype with no external end users. A full warehouse reset and source re-ingestion is an acceptable and preferred cutover when it is simpler than preserving legacy staging data or compatibility objects. Append-only means capture rows are not mutated during normal operation; it does not prohibit intentionally destroying and rebuilding a beta environment.
 
 ## Exception process
 

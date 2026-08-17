@@ -5,6 +5,7 @@ on:
     paths:
       - "src/data_ingestion_toolbox/**"
       - "sql/gold_contract/**"
+      - "sql/migrations/**"
       - "tests/integration/database/**"
       - "tests/support/postgres.py"
       - "pyproject.toml"

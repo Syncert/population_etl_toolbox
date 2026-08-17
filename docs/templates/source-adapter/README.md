@@ -50,7 +50,7 @@ Shared raw-capture and control-plane objects should come from ARCH-004 rather th
 - [ ] Gold publishes deterministic source facts without dashboard or governance policy.
 - [ ] The glossary publisher contract exposes stable keys, source labels, units/grains, lineage, schema version, and watermark.
 - [ ] The DAG emits publisher-ready state without waiting for glossary harvest.
-- [ ] Migration bootstrap, rerun, validation, grants, and rollback/no-rollback behavior are tested.
+- [ ] Fresh bootstrap, rerun, validation, and full reset/re-ingestion behavior are tested.
 
 ## Agent handoff block
 

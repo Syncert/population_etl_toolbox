@@ -413,6 +413,9 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-035 | P1 | Unit / `unit` | BLS unknown-period fallback | Empty, null, and unrecognized BLS period codes follow the documented annual fallback | Unknown period crashes or produces a non-annual duration |
 | ETL-036 | P1 | Unit / `unit` | FRED unknown-frequency fallback | Null and empty FRED frequency values follow the documented daily fallback | Unknown frequency crashes or produces a non-daily duration |
 | ETL-037 | P1 | Contract / `unit` | Incremental serving implementation contract | Source refreshes are watermarked and affected-key scoped; checkpoints, annual changed-history chunks, progress logs, and unchanged-row watermark preservation remain wired | A source returns to full rebuild behavior, loses checkpoints/progress, or rewrites unchanged watermarks |
+| ETL-038 | P0 | Unit / `unit` | Request fingerprint safety | Canonical source/endpoint/parameters produce a stable fingerprint and secret-bearing fields are rejected | Equivalent requests drift or credentials enter fingerprint inputs |
+| ETL-039 | P0 | Unit / `unit` | Dedicated capture commit | Payload plus envelope commit on their own connection; envelope failure rolls back both and closes the connection | Parser transaction can own capture commit or partial capture persists |
+| ETL-040 | P0 | Unit / `unit` | Offline capture loading | Replay returns stored bytes only after checksum verification and performs no network work | Missing checksum verification, changed bytes, or network dependency |
 
 ### PostgreSQL Integration Tests
 
@@ -438,6 +441,11 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-016 | P2 | Concurrency / `integration database slow` | Concurrent same-key upsert | Final natural-key count is one, value follows the declared conflict rule, and no deadlock escapes retry handling | Duplicate, corruption, or unhandled deadlock |
 | DB-017 | P2 | Volume / `integration database slow` | Maximum supported batch | Configured maximum batch completes without PostgreSQL parameter-limit or memory error | Limit, OOM, timeout, or partial write |
 | DB-018 | P1 | Isolation / `integration database` | Test cleanup | Unique test schema/database is removed after pass and injected failure | Residual schema, rows, or cross-test contamination |
+| DB-019 | P0 | Integration / `integration database` | Capture/control foundation | Ordered migration creates only the declared immutable capture and mutable control relations | Missing, extra, or incorrectly owned foundation relation |
+| DB-020 | P0 | Integration / `integration database` | Lossless payload round trip | Fixture bytes, checksum, request identity, media type, and source revision round-trip exactly | Payload or capture-envelope field changes after retrieval |
+| DB-021 | P0 | Integration / `integration database` | Append-only capture enforcement | Update, delete, and truncate against capture relations fail with the declared mutation error | Captured evidence can be changed or erased by normal DML |
+| DB-022 | P0 | Integration / `integration database` | Changed-response retention | Two payloads for one request fingerprint retain distinct checksums and ordered retrieval events | Revised response overwrites or hides an earlier capture |
+| DB-023 | P0 | Integration / `integration database` | Parser quarantine lineage | Sanitized parser failure state references a still-queryable immutable capture | Failure loses payload lineage or stores no replay target |
 
 ### API and Redis Tests
 

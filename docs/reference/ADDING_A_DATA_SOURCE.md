@@ -18,7 +18,7 @@ Begin with the [source-adapter starter](../templates/source-adapter/README.md), 
 - [ ] Publish only deterministic, data-derived facts in gold.
 - [ ] Expose the versioned glossary publisher contract without creating, altering, dropping, or seeding `gold_glossary` objects.
 - [ ] Keep definitions, approvals, dashboard defaults, ownership commentary, aliases, and user/team preferences outside source ETL and gold data-product tables.
-- [ ] Add ordered forward migration SQL, safe rollback or an explicit no-rollback rationale, grants, validation queries, and migration-state recording.
+- [ ] Add checked-in fresh-bootstrap SQL, constraints, validation queries, and reset/re-ingestion instructions for any discarded beta data.
 - [ ] Add unit, contract, integration, replay, malformed-payload/quarantine, bootstrap, rerun, and reconciliation tests.
 - [ ] Update the testing catalog, operations documentation, and compatibility/deprecation notes.
 

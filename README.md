@@ -287,6 +287,9 @@ CREATE SCHEMA IF NOT EXISTS silver_fred;
 #### Run DDL
 Execute all DDL scripts in order:
 ```bash
+# Shared raw-capture and control foundation
+psql -v ON_ERROR_STOP=1 -U postgres -d population_etl < sql/migrations/001_raw_capture_control_foundation.sql
+
 # Reference dimensions (required first)
 psql -U postgres -d population_etl < src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql
 

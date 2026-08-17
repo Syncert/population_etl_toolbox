@@ -11,6 +11,8 @@ from tests.support.postgres import WAREHOUSE_DDL_FILES, apply_sql_files
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 WAREHOUSE_SCHEMAS = {
+    "control",
+    "raw_capture",
     "raw_census",
     "raw_bls",
     "raw_fred",
@@ -26,6 +28,11 @@ WAREHOUSE_SCHEMAS = {
 }
 
 REQUIRED_RELATIONS = {
+    ("control", "ingestion_run", "r"),
+    ("control", "ingestion_request", "r"),
+    ("control", "capture_quarantine", "r"),
+    ("raw_capture", "payload_blob", "r"),
+    ("raw_capture", "response_capture", "r"),
     ("silver_ref", "dim_geo", "r"),
     ("silver_ref", "dim_time", "r"),
     ("silver_census", "fact_demographics", "r"),

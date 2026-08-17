@@ -40,7 +40,11 @@ CONTRACT_DDL_FILES = (
     REPOSITORY_ROOT / "sql/gold_contract/002_gold_glossary_schema.sql",
     REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql",
 )
+MIGRATION_DDL_FILES = (
+    REPOSITORY_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql",
+)
 WAREHOUSE_DDL_FILES = (
+    *MIGRATION_DDL_FILES,
     *REFERENCE_DDL_FILES,
     *RAW_DDL_FILES,
     *SILVER_DDL_FILES,

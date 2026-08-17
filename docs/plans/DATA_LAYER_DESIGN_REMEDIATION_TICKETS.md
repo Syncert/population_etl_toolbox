@@ -4,9 +4,9 @@
 
 **Last updated:** 2026-08-17
 
-**Current ticket:** ARCH-001 — in progress
+**Current ticket:** ARCH-004 — in progress
 
-**Next pickup:** Review/approve ADR-0001, then begin ARCH-004's ordered raw-capture/control-plane foundation migration. ARCH-002 and ARCH-003 may proceed independently after approval.
+**Next pickup:** Run the five ARCH-004 database contracts in disposable PostgreSQL, then cut over FRED first under ARCH-007 and re-ingest its configured history.
 
 ### Completed in the current slice
 
@@ -17,15 +17,34 @@
 - [x] Added the contract-driven [new-source checklist](../reference/ADDING_A_DATA_SOURCE.md) and the expansion-gate warning.
 - [x] Added a reusable [source-adapter starter](../templates/source-adapter/README.md) covering package layout, `config.py`, API-key handling, implementation milestones, and agent handoff state.
 - [x] Added CI-discovered static contracts `ARC-001` through `ARC-003` for shared glossary ownership, lossless raw capture, and gold policy boundaries.
-- [x] Verified the full shared unit suite: 76 tests passed on 2026-08-17.
+- [x] Verified the full shared unit suite: 80 tests passed on 2026-08-17.
+- [x] Verified the complete ETL unit selection: 311 tests passed on 2026-08-17.
+- [x] Accepted ADR-0001 with the explicit beta reset/re-ingestion strategy.
+- [x] Added the lean ARCH-004 `raw_capture` and `control` fresh-bootstrap DDL plus focused database contracts.
+- [x] Added reusable secret-safe request fingerprinting, dedicated committed capture writing, allowlisted response headers, checksum verification, and offline payload loading.
 
-### Remaining before ARCH-001 is complete
+### Remaining in ARCH-004
 
-- [ ] Obtain maintainer approval and change ADR-0001 from `Proposed` to `Accepted`.
-- [ ] Confirm whether the documented exception approver should be a named team/role before approval.
-- [ ] Remove the narrow legacy allowlists as ARCH-002 through ARCH-007 eliminate each violation; they are transition guards, not permanent exceptions.
+- [ ] Run the new database contracts against disposable PostgreSQL; the local Docker service was stopped at this checkpoint.
+- [ ] Cut over and re-ingest FRED first to prove the pattern end to end; its response shape and missing-value sentinel make it the smallest useful proof.
+- [ ] Remove the narrow legacy allowlists as each old source/glossary violation disappears.
 
 The local `.venv` was recreated with uv using managed Python 3.11.16 and the documented two-step Airflow constraints plus `airflow-dev` installation. The shared suite was revalidated in that environment; CI remains authoritative.
+
+## Beta delivery assumption
+
+This repository is a beta prototype with no external end users or production data-preservation obligation. During these tickets, a clean database rebuild and source re-ingestion is allowed and is preferred when it is simpler than an in-place compatibility migration.
+
+Consequently:
+
+- existing normalized `raw_*` history does not need to be backfilled into lossless captures;
+- source codes, surrogate keys, and API shapes may change in one coordinated repository cutover when all checked-in consumers and tests change with them;
+- compatibility views, deprecation windows, dual writes, elaborate rollback SQL, and preservation of prototype control state are not required;
+- schema work still uses checked-in SQL so a fresh environment is deterministic;
+- representative offline replay, malformed-payload quarantine, layer-boundary tests, and fresh-bootstrap tests remain required because they validate the new design rather than migration ceremony; and
+- raw captures are append-only during normal operation, but an intentional beta environment reset may delete the database and re-ingest from providers.
+
+Before external users or irreplaceable production history exist, this assumption must be revisited and production retention, access, deployment, rollback, and compatibility requirements must be defined.
 
 ## Decision summary
 
@@ -183,7 +202,7 @@ Harvest state is maintained per publisher, not as one global glossary watermark.
 - A source-gold DAG never depends on or waits for the glossary. The one-way availability flow is `gold_* publication -> glossary harvest -> catalog consumers`; glossary failure cannot change the successful status or availability of source gold.
 - An ACS-only publication triggers or is reconciled by an ACS-only harvest without rewriting BLS or FRED catalog rows. The same behavior applies to every registered publisher.
 - Duplicate and out-of-order publisher-ready events do not regress a source's harvested watermark, and concurrent events for different sources cannot roll back one another.
-- Existing source codes and metric identifiers remain stable, or a compatibility migration and rollback plan is included.
+- Checked-in consumers and tests move atomically with any source-code or metric-identifier change; beta data may be rebuilt.
 
 **Non-goals**
 
@@ -208,7 +227,7 @@ Harvest state is maintained per publisher, not as one global glossary watermark.
 - Create a separate, version-controlled analytics documentation area and publishing workflow for definitions, comparison guidance, dashboard recommendations, and ownership. Documents may link to stable catalog identifiers but are not inputs to raw, silver, gold, or glossary refreshes.
 - If an application needs those definitions at runtime, publish a documentation/semantic API or cache as a separately deployable, failure-isolated concern. Data APIs must continue serving source-derived results when that optional enrichment is unavailable.
 - Stop copying mutable policy fields into per-observation report tables. Join them at the serving boundary or expose a versioned serving view.
-- Preserve API compatibility during migration, then update API models, query builders, frontend filters, and tests to use the new serving contract.
+- Update API models, query builders, frontend filters, and tests in the same beta cutover; a compatibility window is optional.
 
 **Acceptance criteria**
 
@@ -219,7 +238,7 @@ Harvest state is maintained per publisher, not as one global glossary watermark.
 - Automated tests cover source-backed aggregation characteristics, unknown characteristics, and optional documentation enrichment failure.
 - The application can display, propose, review, and publish a definition without granting the user warehouse or Git access.
 - Personal and team preferences are stored outside both the warehouse and the versioned global-definition registry.
-- API responses remain backward compatible for a documented deprecation window, or the breaking version is explicitly released and documented.
+- API responses and checked-in consumers agree after the cutover; breaking beta changes are documented but need no deprecation window.
 - Analytical documentation has review ownership and change history, while its publication or availability cannot fail a data-layer job.
 
 **Non-goals**
@@ -301,7 +320,7 @@ There is no durable, lossless observation-response boundary. Corrected parsers r
   - payload schema/media type and optional source revision markers.
 - Persist a successful response before parsing it into silver.
 - Make captures append-only. Define idempotency using request fingerprint plus payload checksum without erasing distinct revisions or retrieval events required for audit.
-- Move or logically separate ingestion slices, run status, retries, watermarks, hashes, and errors into a control schema. Provide compatibility views while DAGs migrate.
+- Move or recreate ingestion slices, run status, retries, watermarks, hashes, and errors in a control schema; legacy ledgers may be discarded during the coordinated reset.
 - Define quarantine behavior for payloads that were captured successfully but fail validation/transformation.
 - Provide reusable capture, replay, and lineage utilities for new source adapters.
 
@@ -328,7 +347,7 @@ For example, suppose FRED returns value `"3.1"` for January on Monday and revise
 
 As a failure example, suppose BLS returns valid JSON but changes an observation field to an unexpected shape. The response is still committed to raw capture. Parsing then fails, a sanitized control/quarantine record points to the capture ID, and the prior silver/gold publication remains available. After the parser is fixed, an operator replays that capture; no provider request is required.
 
-The current `raw_*.{source}_long` tables are therefore not the target immutable raw boundary: they contain already parsed, typed, long-form rows and behave like staging/silver data. During migration they may remain behind compatibility views, but new adapters must distinguish capture storage from mutable ingestion ledgers such as `*_ingestion_slices`.
+The current `raw_*.{source}_long` tables are therefore not the target immutable raw boundary: they contain already parsed, typed, long-form rows and behave like staging/silver data. They may be discarded during beta cutover; new adapters must distinguish capture storage from mutable ingestion ledgers such as `*_ingestion_slices`.
 
 **Acceptance criteria**
 
@@ -358,14 +377,14 @@ The current `raw_*.{source}_long` tables are therefore not the target immutable 
 - Move wide-to-long reshaping, null-sentinel interpretation, numeric typing, `geo_id` construction, and `table_id`/`measure_type` derivation into the Census silver transform.
 - Preserve source strings and distinguish absent, blank, Census sentinel, and invalid numeric values through validation/quarantine evidence.
 - Repoint gold and metadata flows to the migrated silver contract.
-- Backfill captures where original payloads exist; explicitly label legacy normalized rows that cannot be reconstructed as lossless raw.
+- Re-ingest the configured historical range into the new capture path; do not manufacture captures from legacy normalized rows.
 
 **Acceptance criteria**
 
 - Representative and malformed Census fixtures replay from raw capture to the same intended silver business keys and values.
 - Tests prove raw capture retains the original header order, value strings, and null sentinels.
 - No Census raw-capture write path performs unpivoting, numeric conversion, or derived geography/table parsing.
-- Cutover includes row-count, key, null/sentinel, and value reconciliation plus a rollback procedure.
+- Fresh rebuild validation includes row-count, key, null/sentinel, and value reconciliation against representative fixtures and source totals.
 
 ### ARCH-006 — Migrate BLS normalization from raw ingestion to silver
 
@@ -379,7 +398,7 @@ The current `raw_*.{source}_long` tables are therefore not the target immutable 
 - Move year/value/boolean coercion, footnote normalization, and LAUS geography parsing into the BLS silver transform.
 - Retain the source `value`, `latest`, footnotes, and series payload representations for replay and future parser changes.
 - Select current revisions in silver without deleting raw history.
-- Backfill and label legacy limitations as in ARCH-005.
+- Re-ingest the configured historical range through the new capture path.
 
 **Acceptance criteria**
 
@@ -400,7 +419,7 @@ The current `raw_*.{source}_long` tables are therefore not the target immutable 
 - Move date parsing, numeric conversion, missing-sentinel interpretation, and current-vintage selection into the FRED silver transform.
 - Retain exact `value`, `realtime_start`, and `realtime_end` source representations.
 - Preserve all vintages/revisions and make silver's revision-selection rule explicit.
-- Backfill and label legacy limitations as in ARCH-005.
+- Re-ingest the configured historical range through the new capture path.
 
 **Acceptance criteria**
 
@@ -417,36 +436,31 @@ The current `raw_*.{source}_long` tables are therefore not the target immutable 
 4. Do not implement the next three sources until ARCH-002 through ARCH-004 are complete and at least one existing source migration has proven the adapter pattern end to end.
 5. Require every new source to use the shared migration owner, raw capture/replay contract, silver normalization boundary, and separate serving-policy contract. Do not permit a “temporary” legacy path that would create a fourth migration later.
 
-## Required migration SQL deliverables
+## Required schema SQL deliverables during beta
 
-Implementation must be performed through checked-in, ordered migration SQL rather than manual database edits. Each schema-changing ticket delivers a forward migration under `sql/migrations/` and, where rollback is safe, a companion rollback script. Expected artifacts are:
+Schema changes remain checked in under `sql/migrations/` so a fresh environment is reproducible. These files are forward bootstrap/cutover steps; they do not need production-grade in-place upgrade machinery or companion rollback scripts while a full database reset is acceptable. Expected artifacts are:
 
 - `{sequence}_gold_glossary_decoupling.sql` for ARCH-002;
 - `{sequence}_semantic_policy_extraction.sql` for ARCH-003;
 - `{sequence}_raw_capture_control_foundation.sql` for ARCH-004;
 - one source cutover migration for each of ARCH-005 through ARCH-007.
 
-Each forward migration must include or coordinate:
+Each beta schema step must include or coordinate:
 
-- explicit precondition checks and the expected starting schema version;
-- additive creation of replacement objects before consumer cutover;
-- deterministic backfill with stable identifier preservation;
-- row-count, key-uniqueness, null/sentinel, and relationship validation queries;
-- compatibility views or a documented versioned API transition where needed;
-- grants for ETL, glossary-harvest, API-readonly, and migration roles;
-- migration-state recording and idempotent rerun behavior;
-- deferred destructive cleanup in a later migration after the compatibility window;
-- a rollback procedure or an explicit explanation when rollback would lose newly captured history.
+- deterministic fresh creation and safe rerun on an empty/bootstrap database;
+- constraints for identity, append-only capture behavior, and required relationships;
+- representative row-count, key-uniqueness, null/sentinel, and relationship checks;
+- updates to every checked-in producer and consumer affected by a breaking change; and
+- explicit reset/re-ingestion instructions when the step discards prototype data.
 
-ARCH-003 additionally requires a validated export of existing locally authored definitions before its SQL removes them from the active warehouse contract. The export becomes versioned semantic documentation; it is not re-imported as a runtime warehouse dependency. No production migration may rely on an operator copying ad hoc SQL from this plan into a console.
+Do not add compatibility views, dual writes, schema-version ledgers, role choreography, backfill of reconstructable prototype state, or rollback scripts solely to simulate a production migration. Add those only when they solve a present beta need. ARCH-003 should export any authored definitions worth keeping before reset, but disposable placeholder policy can be dropped. No environment change relies on ad hoc console SQL that is absent from the repository.
 
 ## Suggested completion checks
 
 - Static architecture tests pass.
 - Unit and integration suites pass for the migrated source.
 - Offline raw-to-silver replay is demonstrated from repository fixtures.
-- Old and new silver outputs reconcile for a representative window, with explained differences for corrected behavior.
-- API contract tests pass through the policy split and compatibility period.
-- Fresh bootstrap and upgrade-from-current-schema paths are both tested.
-- Forward and rollback migration SQL are exercised against a copy of the current schema, including an interrupted/rerun scenario.
+- Rebuilt silver outputs match representative fixtures and source totals, with explained differences for corrected behavior.
+- API and frontend contract tests pass after the coordinated policy split.
+- A fresh bootstrap and complete reset/re-ingestion path are tested; upgrade-from-current and rollback paths are deferred.
 - Documentation no longer describes operational control tables as immutable source data.
