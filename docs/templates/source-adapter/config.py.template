@@ -1,0 +1,58 @@
+"""Configuration starter for a contract-driven source adapter."""
+
+from __future__ import annotations
+
+import os
+from typing import ClassVar
+
+from pydantic import BaseModel, Field, SecretStr, field_validator
+
+
+class NewSourceConfig(BaseModel):
+    """Static adapter settings; construction performs no I/O."""
+
+    api_key_environment_variable: ClassVar[str] = "NEW_SOURCE_API_KEY"
+
+    source_code: str = "NEW_SOURCE"
+    api_base_url: str = "https://api.example.gov"
+    api_key: SecretStr = Field(
+        default_factory=lambda: SecretStr(os.environ.get("NEW_SOURCE_API_KEY", ""))
+    )
+    postgres_conn_id: str = "public_data"
+    airflow_pool: str = "new_source_api"
+    request_timeout_seconds: float = 30.0
+    max_concurrency: int = 2
+
+    def require_api_key(self) -> str:
+        """Validate credentials at request execution, never during DAG import."""
+        value = self.api_key.get_secret_value().strip()
+        if not value:
+            raise ValueError(
+                f"{self.api_key_environment_variable} is required for source requests"
+            )
+        return value
+
+    @field_validator("source_code", "api_base_url", "postgres_conn_id", "airflow_pool")
+    @classmethod
+    def validate_nonempty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("adapter configuration values must not be empty")
+        return value
+
+    @field_validator("request_timeout_seconds")
+    @classmethod
+    def validate_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
+        return value
+
+    @field_validator("max_concurrency")
+    @classmethod
+    def validate_concurrency(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_concurrency must be at least 1")
+        return value
+
+
+CONFIG = NewSourceConfig()

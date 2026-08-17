@@ -1,5 +1,32 @@
 # Data-layer design investigation and remediation tickets
 
+## Implementation checkpoint
+
+**Last updated:** 2026-08-17
+
+**Current ticket:** ARCH-001 — in progress
+
+**Next pickup:** Review/approve ADR-0001, then begin ARCH-004's ordered raw-capture/control-plane foundation migration. ARCH-002 and ARCH-003 may proceed independently after approval.
+
+### Completed in the current slice
+
+- [x] Added proposed [ADR-0001](../decisions/0001-data-layer-boundaries.md) with explicit raw, control, silver, gold, semantic/governance, and serving contracts.
+- [x] Added the required ACS/BLS/FRED field-classification matrix and raw-capture metadata rules.
+- [x] Documented the deterministic-decoding exception and review process.
+- [x] Corrected README claims: today's `raw_*.{source}_long` and ingestion-slice relations are now identified as legacy parsed staging/control tables rather than immutable, unmodified raw data.
+- [x] Added the contract-driven [new-source checklist](../reference/ADDING_A_DATA_SOURCE.md) and the expansion-gate warning.
+- [x] Added a reusable [source-adapter starter](../templates/source-adapter/README.md) covering package layout, `config.py`, API-key handling, implementation milestones, and agent handoff state.
+- [x] Added CI-discovered static contracts `ARC-001` through `ARC-003` for shared glossary ownership, lossless raw capture, and gold policy boundaries.
+- [x] Verified the full shared unit suite: 76 tests passed on 2026-08-17.
+
+### Remaining before ARCH-001 is complete
+
+- [ ] Obtain maintainer approval and change ADR-0001 from `Proposed` to `Accepted`.
+- [ ] Confirm whether the documented exception approver should be a named team/role before approval.
+- [ ] Remove the narrow legacy allowlists as ARCH-002 through ARCH-007 eliminate each violation; they are transition guards, not permanent exceptions.
+
+The local `.venv` was recreated with uv using managed Python 3.11.16 and the documented two-step Airflow constraints plus `airflow-dev` installation. The shared suite was revalidated in that environment; CI remains authoritative.
+
 ## Decision summary
 
 The investigation confirms two design defects and one boundary decision that should be made explicit before another source is added.

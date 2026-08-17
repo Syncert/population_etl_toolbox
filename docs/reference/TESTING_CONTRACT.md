@@ -339,6 +339,16 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
 | ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
 
+### Data-layer Architecture Boundary Tests
+
+These static tests enforce [ADR-0001](../decisions/0001-data-layer-boundaries.md) while narrowly inventorying the legacy violations scheduled for removal by ARCH-002 through ARCH-007.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| ARC-001 | P0 | Static / `unit` | Shared glossary ownership boundary | Source-specific SQL contains exactly the frozen ACS, BLS, and FRED legacy shared-object definitions and no new shared `gold_glossary` DDL | A new source owns a shared object or the legacy exception expands |
+| ARC-002 | P0 | Static / `unit` | Lossless raw capture boundary | Every non-legacy source raw DDL declares capture identity, request fingerprint, retrieval time, checksum, media type, and payload, with no capture update/delete path | A new source persists only parsed observations or mutates captures |
+| ARC-003 | P0 | Static / `unit` | Gold policy boundary | Policy-column declarations remain exactly at the frozen legacy inventory and no new source gold DDL declares them | A new dashboard, aggregation, definition, comparison, or ownership policy column appears in gold |
+
 ### Airflow DAG Tests
 
 All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temporary `AIRFLOW_HOME`, and mocked application boundaries.

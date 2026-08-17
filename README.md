@@ -17,10 +17,12 @@ The implemented test contract and longer-term product design live under
 - **BLS** (Bureau of Labor Statistics): labor statistics including employment, unemployment, and wage data
 - **FRED** (Federal Reserve Economic Data): macroeconomic time series (employment, inflation, interest rates, etc.)
 
-**Architecture:** Three-layer medallion pattern:
-1. **Raw Layer** (`raw_*` schemas): Unmodified data from source APIs, with ingestion ledgers for replay and idempotency
-2. **Silver Layer** (`silver_*` schemas): Dimension-matched, deduplicated, and validated fact tables with comprehensive data quality logging
-3. **Analytical Layer** (future): Aggregated star schemas and domain-specific views for reporting and dashboards
+**Target architecture:** The layer contract is defined by
+[`ADR-0001`](docs/decisions/0001-data-layer-boundaries.md): immutable lossless raw
+captures, separate mutable control state, conformed silver data, deterministic
+data-derived gold products, and independently owned semantic/serving policy.
+The current source pipelines predate that decision and are being migrated under
+the linked remediation tickets.
 
 ## Current State (May 2026)
 
@@ -48,8 +50,11 @@ The implemented test contract and longer-term product design live under
 
 ### Data Models
 
-#### Raw Layer Tables
-All raw schemas contain immutable source data plus an ingestion ledger for tracking:
+#### Legacy Parsed Staging and Control Tables
+
+The following current relations are parsed, typed, and replaceable; they are not
+the target immutable raw boundary. The ingestion ledgers are legacy control-plane
+state that will move or be exposed through compatibility views under ARCH-004.
 
 | Dataset | Raw Fact Table | Series Metadata | Ingestion Ledger |
 |---------|----------------|-----------------|------------------|
@@ -811,11 +816,10 @@ data_ingestion_toolbox/
 
 ### Adding a New Data Source
 
-1. Create `new_source/` directory with `config.py`, `metadata.py`, `ingest.py`
-2. Create `new_source/DDL/raw_new_source.sql` and `silver_new_source/DDL/silver_new_source.sql`
-3. Implement ingestion functions following BLS/FRED/Census patterns
-4. Create `dags/new_source_ingest_dag.py` following existing DAG structure
-5. Define transformation logic in `new_source/silver_new_source/transform.py` using `TransformMetrics` class
+New source onboarding is gated until the shared glossary, policy separation, and
+raw-capture foundation are ready. Use the contract-driven
+[`Adding a data source` checklist](docs/reference/ADDING_A_DATA_SOURCE.md); do not
+copy the current sources' legacy raw or shared-gold ownership patterns.
 
 ---
 
