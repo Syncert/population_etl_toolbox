@@ -58,19 +58,6 @@ The schema names are less important than enforcing these ownership boundaries. I
 - BLS and FRED metadata sometimes retain `raw_metadata`; observation responses do not. Census observation and metadata paths do not provide an equivalent complete response archive.
 - This contradicts the README contract that raw is both unmodified and immutable.
 
-## Plans-directory implementation sweep
-
-Audited against the repository on 2026-08-16:
-
-| Former plan | Classification | Disposition and evidence |
-| --- | --- | --- |
-| `MVP_ALIGNMENT_TRACKER.md` | Implemented | Removed. All eleven tracked steps were marked complete and their routes, contracts, deployment files, and tests are present. |
-| `SCHEMA_REFACTORING_GUIDE.md` | Implemented/superseded | Removed. Source-specific gold report/latest tables, refresh procedures, DAG refreshes, source routing, and compatibility views are implemented. Its remaining cleanup instructions referenced obsolete/nonexistent `_v2` files and conflict with this remediation. |
-| `IMPLEMENTATION_CHECKLIST.md` | Implemented/superseded | Removed for the same reason; it was a one-time migration checklist rather than an active contract. Outstanding glossary and compatibility concerns are represented by ARCH-002 and ARCH-003 below. |
-| `data_ingestion_toolbox_proposed_architecture.md` | Implemented MVP and outdated design assumptions | Removed. Its vertical slice, API, frontend, Compose, Martin, packaging, and security deliverables exist. Its gold-layer guidance conflicts with the newer data-boundary decision. Current architecture is documented in the README and this active remediation. |
-| `TESTING_PLAN.md` | Implementation complete; live contract remains | Moved to `docs/reference/TESTING_CONTRACT.md`. The plan phases are complete, but automated tests parse its 163-row behavioral catalog, environment pins, and pass metrics. It is executable reference material, not an active plan. |
-| `economic_data_studio_manifesto_webpage_design.md` | Partially implemented product reference | Moved to `docs/product/ECONOMIC_DATA_STUDIO_MANIFESTO.md`. MVP pages and local saved-view workflows exist; durable persistence, accounts, publishing, global search, collaboration, advanced analytics, version history, embeds, and notifications remain future product work. |
-| `DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md` | Not implemented | Retained as the sole active plan. |
 
 ## Proposed tickets
 
@@ -127,7 +114,8 @@ Shared glossary DDL and source registry seeds are duplicated across source packa
 - Make ordered migrations under one shared component the only owner of `gold_glossary` objects.
 - Remove `CREATE`, `ALTER`, `DROP`, procedure replacement, and cross-provider seed statements for shared objects from source-specific DDL.
 - Remove all source-pipeline writes to `gold_glossary`; source jobs must finish successfully without the glossary being present or current.
-- Create a separate glossary DAG/job, deployment component, migration state, service account, and operational state. It runs downstream of successful source-gold publication and on a periodic reconciliation schedule.
+- Create a separate glossary DAG/job, deployment component, migration state, service account, and operational state. Each successful source-gold publication emits a publisher-ready event that triggers a harvest for that source only; the source job does not wait for, retry, or roll back because of the glossary run. Also run a periodic all-publisher reconciliation to recover missed events and detect staleness.
+- Include `source_code`, publisher contract version, source-gold watermark, source run ID, and publication time in the trigger. The glossary must compare that watermark with its last successfully harvested watermark and treat duplicate or out-of-order triggers as idempotent no-ops.
 - Define one versioned publisher contract that every `gold_*` source exposes, such as a standard catalog export view with stable keys, source-backed labels, units, grains, lineage, schema version, and source update watermark.
 - Let the glossary job discover registered publishers and harvest their export contracts. Database introspection may supplement the contract for physical schema/lineage facts, but must not infer business meaning from names.
 - Validate each publisher independently. A malformed or unavailable source export is quarantined/marked stale without rolling back other catalog updates or any source-gold pipeline.
@@ -136,6 +124,24 @@ Shared glossary DDL and source registry seeds are duplicated across source packa
 - Derive source registry entries from the validated publisher contract. Do not make a source seed itself or every other source into the glossary.
 - Keep source-specific bridge tables only where they are genuinely required. Prefer a generic source-object mapping if it preserves referential integrity without provider-specific schema changes.
 - Add contract and integration tests for arbitrary fourth-source discovery, independent/idempotent source bootstraps, partial glossary failure, staleness, and eventual reconciliation.
+
+**Refresh and scheduling model**
+
+The glossary is not a monthly batch that waits for every provider. It is an independently operated projection of the latest successfully published contract from each source:
+
+```text
+ACS gold succeeds  ---- event(source=ACS,  watermark=A17) ---> harvest ACS only
+BLS gold succeeds  ---- event(source=BLS,  watermark=B42) ---> harvest BLS only
+FRED gold succeeds ---- event(source=FRED, watermark=F09) ---> harvest FRED only
+
+periodic reconciliation ------------------------------------> inspect all publishers
+```
+
+For the repository's current Airflow 2.9 deployment, prefer a durable provider-neutral outbox in the control plane over a DAG definition that statically enumerates ACS, BLS, and FRED datasets. The final gold publication transaction appends a publisher-ready event; a frequently scheduled glossary DAG claims pending events and harvests only the named publishers. It marks an event processed only after that publisher's harvest commits. This lets a fourth registered publisher use the same path without changing the glossary DAG schedule. Dataset-aware scheduling or an external event bus may replace the polling trigger later without changing the publisher or harvest contracts.
+
+This is orchestration coupling only: the event communicates that a new publisher version is available, but source gold is committed and available before the glossary processes it. Glossary retries and failures have their own status and never change the completed source publication. The periodic all-publisher reconciliation remains necessary as a backstop for operational repair and freshness checks; it is not the primary refresh path.
+
+Harvest state is maintained per publisher, not as one global glossary watermark. Concurrent triggers for different sources may run independently. Runs for the same source must be serialized or protected by a source-scoped advisory lock, and each source's catalog changes must commit in its own transaction. Consequently, the glossary may legitimately show ACS harvested at 06:45, BLS at 08:10, and FRED from the prior run. Consumers see those per-source timestamps and freshness states rather than a misleading claim that the whole glossary is one atomic snapshot. If a consumer needs a coordinated cross-source release, that is a separate serving-snapshot concern and is not imposed on ingestion or glossary refresh.
 
 **Acceptance criteria**
 
@@ -147,7 +153,9 @@ Shared glossary DDL and source registry seeds are duplicated across source packa
 - Every harvested entity exposes publisher schema version, source watermark, harvest time, provenance, and freshness/staleness state.
 - One unavailable or invalid publisher does not prevent valid publishers from refreshing and never affects source-gold availability.
 - Re-running a harvest with unchanged publishers is idempotent; changed and retired entities reconcile deterministically.
-- There is no dependency edge from a source-gold DAG to the glossary DAG. The dependency is strictly `gold_* -> glossary -> catalog consumers`.
+- A source-gold DAG never depends on or waits for the glossary. The one-way availability flow is `gold_* publication -> glossary harvest -> catalog consumers`; glossary failure cannot change the successful status or availability of source gold.
+- An ACS-only publication triggers or is reconciled by an ACS-only harvest without rewriting BLS or FRED catalog rows. The same behavior applies to every registered publisher.
+- Duplicate and out-of-order publisher-ready events do not regress a source's harvested watermark, and concurrent events for different sources cannot roll back one another.
 - Existing source codes and metric identifiers remain stable, or a compatibility migration and rollback plan is included.
 
 **Non-goals**
@@ -270,6 +278,31 @@ There is no durable, lossless observation-response boundary. Corrected parsers r
 - Define quarantine behavior for payloads that were captured successfully but fail validation/transformation.
 - Provide reusable capture, replay, and lineage utilities for new source adapters.
 
+**Concrete model and examples**
+
+This ticket separates three records that are currently mixed together:
+
+| Record | Example | Mutability and purpose |
+| --- | --- | --- |
+| Raw capture | Exact FRED HTTP response body plus request URL/parameters, headers, retrieval time, checksum, and run ID | Append-only evidence of what the provider returned |
+| Silver data | Parsed observation date, numeric value, missing-value interpretation, and selected revision | Rebuildable when parser or normalization rules change |
+| Control state | Slice status, attempt count, retry time, watermark, error summary, and quarantine status | Mutable orchestration state; not source data |
+
+Today, a FRED response is parsed before persistence, `.` is interpreted, dates and numbers are coerced, and existing `raw_fred.fred_long` rows can be deleted and replaced. Under ARCH-004, the flow becomes:
+
+```text
+HTTP response
+    -> append and commit capture envelope + untouched payload
+    -> parse that capture into silver
+    -> publish gold
+```
+
+For example, suppose FRED returns value `"3.1"` for January on Monday and revises it to `"3.2"` on Friday. Both response captures remain available with distinct checksums and retrieval times. Silver's documented revision rule selects Friday's value as current, while a replay can reproduce either historical interpretation. If a later code fix changes how missing value `"."` is handled, silver can be rebuilt from the captures without calling FRED again.
+
+As a failure example, suppose BLS returns valid JSON but changes an observation field to an unexpected shape. The response is still committed to raw capture. Parsing then fails, a sanitized control/quarantine record points to the capture ID, and the prior silver/gold publication remains available. After the parser is fixed, an operator replays that capture; no provider request is required.
+
+The current `raw_*.{source}_long` tables are therefore not the target immutable raw boundary: they contain already parsed, typed, long-form rows and behave like staging/silver data. During migration they may remain behind compatibility views, but new adapters must distinguish capture storage from mutable ingestion ledgers such as `*_ingestion_slices`.
+
 **Acceptance criteria**
 
 - An integration test captures a fixture response, disables network access, and rebuilds its silver output solely from the capture.
@@ -277,6 +310,8 @@ There is no durable, lossless observation-response boundary. Corrected parsers r
 - Re-ingesting a changed response retains both versions and permits deterministic selection of a current revision in silver.
 - Raw capture DML has no update/delete path in normal application roles.
 - A parser failure retains the payload and records a sanitized quarantine/control event.
+- A successful HTTP response is durably committed before source-specific parsing begins; a parser transaction cannot roll back its capture.
+- Run/retry/watermark updates occur in the control plane and cannot mutate raw payload bytes or logical JSON content.
 - Capture retention, access control, payload-size limits, and sensitive-data handling are documented before use by a new source.
 
 **Non-goals**
