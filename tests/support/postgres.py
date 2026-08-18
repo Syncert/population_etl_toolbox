@@ -43,10 +43,13 @@ PUBLISHER_DDL_FILES = (
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql",
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql",
 )
-CONTRACT_DDL_FILES = (
+GLOSSARY_SCHEMA_DDL_FILES = (
     REPOSITORY_ROOT / "sql/gold_contract/002_gold_glossary_schema.sql",
+)
+CONTRACT_VIEW_DDL_FILES = (
     REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql",
 )
+CONTRACT_DDL_FILES = (*GLOSSARY_SCHEMA_DDL_FILES, *CONTRACT_VIEW_DDL_FILES)
 FOUNDATION_MIGRATION_DDL_FILES = (
     REPOSITORY_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql",
 )
@@ -67,7 +70,8 @@ WAREHOUSE_DDL_FILES = (
     *SOURCE_CUTOVER_DDL_FILES,
     *GOLD_DDL_FILES,
     *PUBLISHER_DDL_FILES,
-    *CONTRACT_DDL_FILES,
+    *GLOSSARY_SCHEMA_DDL_FILES,
+    *CONTRACT_VIEW_DDL_FILES,
 )
 
 

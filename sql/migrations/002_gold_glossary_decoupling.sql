@@ -15,15 +15,18 @@ CREATE TABLE IF NOT EXISTS gold_glossary.publisher_registry (
 );
 
 CREATE TABLE IF NOT EXISTS gold_glossary.dim_source_system (
-    source_code        TEXT PRIMARY KEY,
+    source_system_sk   BIGSERIAL PRIMARY KEY,
+    source_code        TEXT NOT NULL UNIQUE,
     source_name        TEXT NOT NULL,
     source_type        TEXT NOT NULL,
     reference_url      TEXT,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     first_harvested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_harvested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE gold_glossary.dim_source_system
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS first_harvested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS last_harvested_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -36,23 +39,32 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     source_code                TEXT NOT NULL
         REFERENCES gold_glossary.dim_source_system(source_code),
     source_object_type         TEXT NOT NULL,
-    source_object_key          TEXT NOT NULL,
+    source_object_key          TEXT,
     metric_display_name        TEXT NOT NULL,
+    business_definition        TEXT,
+    caveats                    TEXT,
     units                      TEXT,
     measure_kind               TEXT,
     valid_geo_grains           TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     valid_time_grains          TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     aggregation_characteristic TEXT,
     physical_lineage           JSONB NOT NULL DEFAULT '{}'::JSONB,
-    publisher_contract_version TEXT NOT NULL,
-    source_watermark           TEXT NOT NULL,
+    publisher_contract_version TEXT,
+    source_watermark           TEXT,
     source_run_id              UUID,
-    publication_time           TIMESTAMPTZ NOT NULL,
+    publication_time           TIMESTAMPTZ,
     harvested_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     freshness_state            TEXT NOT NULL DEFAULT 'current'
         CHECK (freshness_state IN ('current', 'stale', 'retired')),
     missing_harvest_count      INTEGER NOT NULL DEFAULT 0
         CHECK (missing_harvest_count >= 0),
+    dashboard_suitability      TEXT NOT NULL DEFAULT 'PUBLIC_SAFE',
+    comparability_group        TEXT,
+    do_not_compare_with        TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    recommended_aggregation    TEXT,
+    owner_team                 TEXT,
+    is_active                  BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (source_code, source_object_type, source_object_key)
 );
 
@@ -69,6 +81,21 @@ ALTER TABLE gold_glossary.dim_metric_catalog
     ADD COLUMN IF NOT EXISTS harvested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS freshness_state TEXT NOT NULL DEFAULT 'current',
     ADD COLUMN IF NOT EXISTS missing_harvest_count INTEGER NOT NULL DEFAULT 0;
+
+-- Transitional compatibility only. ARCH-003 removes these authored-policy
+-- columns after report/API consumers stop reading them. They are declared here
+-- so an empty-database bootstrap does not depend on legacy source DDL running
+-- before the independently owned glossary migration.
+ALTER TABLE gold_glossary.dim_metric_catalog
+    ADD COLUMN IF NOT EXISTS business_definition TEXT,
+    ADD COLUMN IF NOT EXISTS caveats TEXT,
+    ADD COLUMN IF NOT EXISTS dashboard_suitability TEXT NOT NULL DEFAULT 'PUBLIC_SAFE',
+    ADD COLUMN IF NOT EXISTS comparability_group TEXT,
+    ADD COLUMN IF NOT EXISTS do_not_compare_with TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    ADD COLUMN IF NOT EXISTS recommended_aggregation TEXT,
+    ADD COLUMN IF NOT EXISTS owner_team TEXT,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 ALTER TABLE gold_glossary.dim_metric_catalog
     DROP CONSTRAINT IF EXISTS dim_metric_catalog_source_object_type_check;

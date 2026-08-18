@@ -13,7 +13,8 @@ services:
       - /var/lib/postgresql/data
     volumes:
       - ../../sql/migrations/001_raw_capture_control_foundation.sql:/docker-entrypoint-initdb.d/000_raw_capture_control.sql:ro
-      - ../../src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql:/docker-entrypoint-initdb.d/001_silver_ref.sql:ro
+      - ../../sql/migrations/002_gold_glossary_decoupling.sql:/docker-entrypoint-initdb.d/001_gold_glossary_decoupling.sql:ro
+      - ../../src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql:/docker-entrypoint-initdb.d/002_silver_ref.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql:/docker-entrypoint-initdb.d/010_raw_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/DDL/raw_bls.sql:/docker-entrypoint-initdb.d/011_raw_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/DDL/raw_fred.sql:/docker-entrypoint-initdb.d/012_raw_fred.sql:ro

@@ -1,5 +1,7 @@
 # Data-layer design investigation and remediation tickets
 
+> **Required parallel work:** This remediation plan must be worked alongside the [CI/CD GitHub Actions migration plan](./CICD_GITHUB_ACTIONS_MIGRATION_PLAN.md), not completed first with CI/CD deferred as a later cleanup. Every ARCH implementation slice must update and validate its corresponding workflow, packaging, coverage, bootstrap, or release-evidence contract in the same change set. Neither plan is complete until the target data-layer contracts pass the authoritative push, scheduled, and release evidence defined there.
+
 ## Implementation checkpoint
 
 **Last updated:** 2026-08-18
@@ -30,6 +32,7 @@
 - [x] Added a repository-owned semantic-definition schema so authored analytics policy has a destination outside the gold data contract.
 - [x] Verified 315 ETL unit tests and 52 non-external disposable-PostgreSQL database tests on 2026-08-18.
 - [x] Remediated the Linux warehouse-integration failure by making UUID SQL binds adapter-independent and ordering glossary migration DDL before compatibility views; the exact CI selection passed 46 tests with 14 deselected.
+- [x] Aligned local Docker and GitHub Actions bootstrap order and made migration `002` provide transitional legacy columns until ARCH-003 removes their consumers, eliminating the clean-CI `dim_source_system.updated_at` failure.
 
 ### Remaining
 
@@ -439,6 +442,8 @@ The current `raw_*.{source}_long` tables are therefore not the target immutable 
 - No FRED raw-capture write path parses observation dates or numeric values.
 
 ## Delivery order and expansion gate
+
+The delivery steps below are executed in parallel with the matching CI tickets. An ARCH ticket cannot move to complete while its required GitHub Actions evidence is disabled, waived without an approved expiry, or still validates the superseded architecture. Conversely, a CI ticket cannot be considered complete merely because a legacy assertion is green; it must enforce the target contract from this plan.
 
 1. Complete ARCH-001 first so later migrations implement one agreed contract.
 2. ARCH-002, ARCH-003, and ARCH-004 can then proceed independently, with ARCH-002 and ARCH-003 coordinating the removal of policy fields from the current catalog/API contract.
