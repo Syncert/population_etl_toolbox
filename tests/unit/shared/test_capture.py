@@ -125,6 +125,11 @@ def test_capture_writer_commits_dedicated_transaction_and_sanitizes_headers() ->
     assert database_connection.closed is True
     assert len(database_connection.executions) == 2
     response_parameters = database_connection.executions[1][1]
+    assert response_parameters[0:3] == (
+        str(capture.capture_id),
+        str(capture.request_id),
+        str(capture.run_id),
+    )
     assert "set-cookie" not in str(response_parameters).lower()
     assert "must-not-persist" not in str(response_parameters)
 
@@ -136,6 +141,7 @@ def test_offline_replay_verifies_payload_checksum() -> None:
     valid_connection = _Connection(row=(memoryview(payload), checksum))
 
     assert load_captured_payload(lambda: valid_connection, uuid.UUID(int=1)) == payload
+    assert valid_connection.executions[0][1] == (str(uuid.UUID(int=1)),)
     assert valid_connection.closed is True
 
     corrupt_connection = _Connection(row=(memoryview(payload), "0" * 64))

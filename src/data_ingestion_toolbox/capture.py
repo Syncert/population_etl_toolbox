@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
+from uuid import uuid4
+
+from data_ingestion_toolbox.normalization import sanitize_error_message
 
 SENSITIVE_NAMES = {
     "api_key",
@@ -117,6 +120,150 @@ class CaptureReceipt:
     payload_checksum: str
 
 
+@dataclass(frozen=True)
+class ControlRequest:
+    request_id: UUID
+    request_fingerprint: str
+
+
+class CaptureControl:
+    """Provider-neutral committed run/request/quarantine transitions."""
+
+    def __init__(
+        self,
+        connection_factory: Callable[[], Any],
+        *,
+        source_code: str,
+    ) -> None:
+        self.connection_factory = connection_factory
+        self.source_code = source_code.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]*", self.source_code):
+            raise ValueError("invalid capture source code")
+
+    def _execute(self, statement: str, parameters: tuple[object, ...]) -> None:
+        database_connection = self.connection_factory()
+        try:
+            with database_connection.cursor() as cursor:
+                cursor.execute(statement, parameters)
+            database_connection.commit()
+        except BaseException:
+            database_connection.rollback()
+            raise
+        finally:
+            database_connection.close()
+
+    def start_run(self, *, watermark: Mapping[str, object] | None = None) -> UUID:
+        run_id = uuid4()
+        self._execute(
+            """
+            INSERT INTO control.ingestion_run (
+                run_id, source_code, status, started_at, source_watermark
+            ) VALUES (%s, %s, 'running', NOW(), %s::JSONB)
+            """,
+            (
+                str(run_id),
+                self.source_code,
+                json.dumps(watermark) if watermark is not None else None,
+            ),
+        )
+        return run_id
+
+    def finish_run(
+        self,
+        run_id: UUID,
+        *,
+        status: str,
+        error: BaseException | str | None = None,
+    ) -> None:
+        summary = sanitize_error_message(error) if error is not None else None
+        self._execute(
+            """
+            UPDATE control.ingestion_run
+               SET status = %s, finished_at = NOW(), error_summary = %s,
+                   updated_at = NOW()
+             WHERE run_id = %s AND source_code = %s
+            """,
+            (status, summary, str(run_id), self.source_code),
+        )
+
+    def start_request(
+        self,
+        *,
+        run_id: UUID,
+        endpoint: str,
+        parameters: Mapping[str, object],
+        max_attempts: int = 1,
+    ) -> ControlRequest:
+        fingerprint = request_fingerprint(self.source_code, endpoint, parameters)
+        request_id = uuid4()
+        self._execute(
+            """
+            INSERT INTO control.ingestion_request (
+                request_id, run_id, source_code, endpoint,
+                request_parameters, request_fingerprint, status,
+                attempt_count, max_attempts, started_at
+            ) VALUES (%s, %s, %s, %s, %s::JSONB, %s,
+                      'running', 1, %s, NOW())
+            """,
+            (
+                str(request_id),
+                str(run_id),
+                self.source_code,
+                endpoint.strip(),
+                json.dumps(parameters, sort_keys=True),
+                fingerprint,
+                max_attempts,
+            ),
+        )
+        return ControlRequest(request_id, fingerprint)
+
+    def finish_request(
+        self,
+        request_id: UUID,
+        *,
+        status: str,
+        error: BaseException | str | None = None,
+    ) -> None:
+        summary = sanitize_error_message(error) if error is not None else None
+        self._execute(
+            """
+            UPDATE control.ingestion_request
+               SET status = %s, finished_at = NOW(), last_error = %s,
+                   updated_at = NOW()
+             WHERE request_id = %s AND source_code = %s
+            """,
+            (status, summary, str(request_id), self.source_code),
+        )
+
+    def quarantine(
+        self,
+        *,
+        capture_id: UUID,
+        run_id: UUID,
+        parser_version: str,
+        error_code: str,
+        error: BaseException | str,
+    ) -> None:
+        self._execute(
+            """
+            INSERT INTO control.capture_quarantine (
+                quarantine_id, capture_id, run_id, source_code,
+                parser_version, error_code, error_summary
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (capture_id, parser_version, error_code) DO NOTHING
+            """,
+            (
+                str(uuid4()),
+                str(capture_id),
+                str(run_id),
+                self.source_code,
+                parser_version,
+                error_code,
+                sanitize_error_message(error),
+            ),
+        )
+
+
 def persist_response_capture(
     connection_factory: Callable[[], Any],
     capture: ResponseCapture,
@@ -154,9 +301,9 @@ def persist_response_capture(
                 )
                 """,
                 (
-                    capture.capture_id,
-                    capture.request_id,
-                    capture.run_id,
+                    str(capture.capture_id),
+                    str(capture.request_id),
+                    str(capture.run_id),
                     capture.source_code.strip().upper(),
                     capture.endpoint.strip(),
                     json.dumps(capture.request_parameters, sort_keys=True),
@@ -194,7 +341,7 @@ def load_captured_payload(
                 JOIN raw_capture.payload_blob AS blob USING (payload_checksum)
                 WHERE capture.capture_id = %s
                 """,
-                (capture_id,),
+                (str(capture_id),),
             )
             row = cursor.fetchone()
         if row is None:

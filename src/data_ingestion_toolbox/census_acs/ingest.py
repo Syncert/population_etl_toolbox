@@ -26,6 +26,14 @@ from tenacity import (
 import json
 import logging
 
+from data_ingestion_toolbox.capture import (
+    CaptureControl,
+    ResponseCapture,
+    persist_response_capture,
+)
+from data_ingestion_toolbox.census_acs.silver_census.replay import (
+    replay_census_capture,
+)
 from .config import CONFIG
 
 CENSUS_NULL_SENTINELS = {
@@ -53,6 +61,16 @@ class CensusRetryableHTTP(Exception):
 
 class CensusPayloadError(ValueError):
     """The Census payload shape cannot be normalized safely."""
+
+
+class CensusFetchedResponse(list):
+    """Decoded Census array accompanied by exact successful response bytes."""
+
+    def __init__(self, document: list, *, response: httpx.Response) -> None:
+        super().__init__(document)
+        self.payload = response.content
+        self.response_headers = dict(response.headers)
+        self.http_status = response.status_code
 
 
 # initialize logger
@@ -179,14 +197,14 @@ def fetch_acs_api(
                 variables[:5],
                 str(resp.url),
             )
-            return []
+            return CensusFetchedResponse([], response=resp)
 
         # Sometimes APIs return 200 but still give an empty body (rare, but safe to handle)
         if resp.status_code == 200 and not resp.content:
             logger.info(
                 "Census 200 but empty body (treat empty): url=%s", str(resp.url)
             )
-            return []
+            return CensusFetchedResponse([], response=resp)
 
         # 429 = rate limited -> retryable
         if resp.status_code == 429:
@@ -211,7 +229,7 @@ def fetch_acs_api(
 
         # At this point we expect JSON. If parsing fails, treat it as retryable once in case of transient weirdness.
         try:
-            return resp.json()
+            return CensusFetchedResponse(resp.json(), response=resp)
         except json.JSONDecodeError as e:
             # This is typically "empty body" or HTML error page. Make it retryable.
             raise CensusRetryableHTTP(f"Bad JSON response from Census API: {e}") from e
@@ -459,39 +477,129 @@ def ingest_slice(
         return 0
 
     # We can also add 'NAME' if we want; here we keep purely numeric variables.
-    batch_id = uuid.uuid4()
-
-    frames: List[pl.DataFrame] = []
-
-    for chunk in chunked(variables, 50):  # API limit
-        raw = fetch_acs_api(
-            year=year,
-            dataset=dataset,
-            variables=chunk,
-            geo_level=geo_level,
-            state_fips=state_fips,
-        )
-
-        if not raw:
-            continue
-
-        time.sleep(0.2 + random.random() * 0.3)  # 0.2–0.5s
-
-        df = rows_to_polars(
-            raw=raw,
-            dataset=dataset,
-            year=year,
-            geo_level=geo_level,
-            state_fips=state_fips,
-            load_batch_id=batch_id,
-        )
-        if not df.is_empty():
-            frames.append(df)
-
-    if not frames:
-        return 0
-
-    combined = pl.concat(frames, how="vertical_relaxed")
-    return load_df_to_acs_long(
-        combined, dataset=dataset, year=year, geo_level=geo_level
+    control = CaptureControl(_get_pg_connection, source_code="CENSUS_ACS")
+    run_id = control.start_run(
+        watermark={
+            "dataset": dataset,
+            "year": year,
+            "geo_level": geo_level,
+            "state_fips": state_fips,
+        }
     )
+    endpoint = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    total_rows = 0
+
+    return _ingest_capture_chunks(
+        variables=variables,
+        year=year,
+        dataset=dataset,
+        geo_level=geo_level,
+        state_fips=state_fips,
+        control=control,
+        run_id=run_id,
+        endpoint=endpoint,
+        total_rows=total_rows,
+    )
+
+def _ingest_capture_chunks(
+    *,
+    variables: List[str],
+    year: int,
+    dataset: str,
+    geo_level: str,
+    state_fips: str | None,
+    control: CaptureControl,
+    run_id: uuid.UUID,
+    endpoint: str,
+    total_rows: int,
+) -> int:
+    try:
+        for variable_chunk in chunked(variables, 50):
+            parameters: dict[str, object] = {
+                "get": ",".join(variable_chunk),
+                "dataset": dataset,
+                "year": year,
+                "geo_level": geo_level,
+            }
+            parameters.update(build_geo_params(geo_level, state_fips))
+            request = control.start_request(
+                run_id=run_id,
+                endpoint=endpoint,
+                parameters=parameters,
+                max_attempts=8,
+            )
+            try:
+                raw = fetch_acs_api(
+                    year=year,
+                    dataset=dataset,
+                    variables=variable_chunk,
+                    geo_level=geo_level,
+                    state_fips=state_fips,
+                )
+                payload = getattr(raw, "payload", None)
+                if payload is None:
+                    payload = json.dumps(
+                        raw,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                capture_id = uuid.uuid4()
+                persist_response_capture(
+                    _get_pg_connection,
+                    ResponseCapture(
+                        capture_id=capture_id,
+                        request_id=request.request_id,
+                        run_id=run_id,
+                        source_code="CENSUS_ACS",
+                        endpoint=endpoint,
+                        request_parameters=parameters,
+                        retrieved_at=datetime.now(timezone.utc),
+                        http_status=getattr(raw, "http_status", 200),
+                        response_headers=getattr(raw, "response_headers", {}),
+                        media_type="application/json",
+                        payload=payload,
+                        payload_schema_version="census-acs-array-v1",
+                        source_revision=str(year),
+                    ),
+                )
+            except BaseException as error:
+                control.finish_request(
+                    request.request_id, status="failed", error=error
+                )
+                raise
+
+            if not raw:
+                control.finish_request(request.request_id, status="empty")
+                continue
+            try:
+                rows = replay_census_capture(
+                    _get_pg_connection,
+                    capture_id=capture_id,
+                    dataset=dataset,
+                    year=year,
+                    geo_level=geo_level,
+                )
+            except BaseException as error:
+                control.quarantine(
+                    capture_id=capture_id,
+                    run_id=run_id,
+                    parser_version="census-acs-array-v1",
+                    error_code="INVALID_CENSUS_ACS_ARRAY",
+                    error=error,
+                )
+                control.finish_request(
+                    request.request_id, status="quarantined", error=error
+                )
+                raise
+            control.finish_request(
+                request.request_id,
+                status="captured" if rows else "empty",
+            )
+            total_rows += rows
+            time.sleep(0.2 + random.random() * 0.3)
+    except BaseException as error:
+        control.finish_run(run_id, status="failed", error=error)
+        raise
+
+    control.finish_run(run_id, status="success")
+    return total_rows

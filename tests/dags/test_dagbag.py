@@ -27,7 +27,14 @@ pytestmark = pytest.mark.dag
 # --------------------------------------------------------------------------
 # Expected DAG inventory
 # --------------------------------------------------------------------------
-EXPECTED_DAG_IDS = {"silver_ref", "acs_ingest", "bls_ingest", "fred_ingest"}
+EXPECTED_DAG_IDS = {
+    "silver_ref",
+    "acs_ingest",
+    "bls_ingest",
+    "fred_ingest",
+    "glossary_harvest",
+    "glossary_reconciliation",
+}
 
 # Declared schedule contracts (cron expressions)
 EXPECTED_SCHEDULES = {
@@ -35,6 +42,8 @@ EXPECTED_SCHEDULES = {
     "acs_ingest": "0 6 1 * *",
     "bls_ingest": "0 7 1 * *",
     "fred_ingest": "0 8 1 * *",
+    "glossary_harvest": "*/10 * * * *",
+    "glossary_reconciliation": "0 3 * * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -43,6 +52,8 @@ EXPECTED_DEFAULT_RETRIES = {
     "acs_ingest": 3,
     "bls_ingest": 3,
     "fred_ingest": 3,
+    "glossary_harvest": 2,
+    "glossary_reconciliation": 1,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks

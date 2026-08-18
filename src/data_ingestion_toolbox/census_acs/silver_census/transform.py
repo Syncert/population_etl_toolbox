@@ -351,11 +351,13 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
     without a full sequential scan.
     """
     sql = """
-        SELECT COALESCE(c.reltuples, 0)::bigint
+        SELECT COALESCE(SUM(c.reltuples), 0)::bigint
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'raw_census'
-          AND c.relname = 'acs_long';
+        WHERE (n.nspname, c.relname) IN (
+            ('raw_census', 'acs_long'),
+            ('silver_census', 'observation_revision')
+        );
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -365,6 +367,48 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
 
 def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
     sql = """
+        WITH captured_ranked AS (
+            SELECT
+                observation.dataset,
+                observation.year,
+                observation.geo_level,
+                observation.state_fips_source AS state_fips,
+                observation.county_fips_source AS county_fips,
+                observation.table_id,
+                observation.variable_name,
+                observation.measure_type,
+                observation.value,
+                ROW_NUMBER() OVER (
+                    PARTITION BY observation.dataset, observation.year,
+                                 observation.geo_level,
+                                 observation.state_fips_source,
+                                 observation.county_fips_source,
+                                 observation.variable_name
+                    ORDER BY capture.retrieved_at DESC,
+                             observation.capture_id DESC
+                ) AS revision_rank
+            FROM silver_census.observation_revision AS observation
+            JOIN raw_capture.response_capture AS capture USING (capture_id)
+        ),
+        observations AS (
+            SELECT dataset, year, geo_level, state_fips, county_fips,
+                   table_id, variable_name, measure_type, value
+            FROM captured_ranked
+            WHERE revision_rank = 1
+
+            UNION ALL
+
+            SELECT legacy.dataset, legacy.year, legacy.geo_level,
+                   legacy.state_fips, legacy.county_fips, legacy.table_id,
+                   legacy.variable_name, legacy.measure_type, legacy.value
+            FROM raw_census.acs_long AS legacy
+            WHERE NOT EXISTS (
+                SELECT 1 FROM silver_census.observation_revision captured
+                WHERE captured.dataset = legacy.dataset
+                  AND captured.year = legacy.year
+                  AND captured.geo_level = legacy.geo_level
+            )
+        )
         SELECT
             dataset,
             year,
@@ -375,7 +419,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
             variable_name,
             measure_type,
             value
-        FROM raw_census.acs_long
+        FROM observations
     """
     params: list[object] = []
     if year is not None:
@@ -1117,7 +1161,21 @@ def transform_census_to_silver() -> int:
 
     # ── year-level counts ─────────────────────────────────────────────
     logger.info("[CENSUS_ACS] Gathering per-year row counts...")
-    sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
+    sql = """
+        SELECT year, COUNT(*)
+        FROM (
+            SELECT year FROM silver_census.observation_revision
+            UNION ALL
+            SELECT legacy.year FROM raw_census.acs_long legacy
+            WHERE NOT EXISTS (
+                SELECT 1 FROM silver_census.observation_revision captured
+                WHERE captured.dataset = legacy.dataset
+                  AND captured.year = legacy.year
+                  AND captured.geo_level = legacy.geo_level
+            )
+        ) observations
+        GROUP BY year ORDER BY year;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         for row in cur.fetchall():

@@ -26,7 +26,13 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionFactory,
 )
 from data_ingestion_toolbox.utility.retry import retry_database_transaction
+from data_ingestion_toolbox.capture import (
+    CaptureControl,
+    ResponseCapture,
+    persist_response_capture,
+)
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
+from data_ingestion_toolbox.bls.silver_bls.replay import replay_bls_capture
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)
@@ -64,6 +70,16 @@ class BlsDailyThresholdExceeded(Exception):
 
 class BlsPayloadError(ValueError):
     """The BLS payload shape cannot be normalized safely."""
+
+
+class BlsFetchedResponse(dict):
+    """Decoded BLS document accompanied by exact successful response bytes."""
+
+    def __init__(self, document: Dict, *, response: httpx.Response) -> None:
+        super().__init__(document)
+        self.payload = response.content
+        self.response_headers = dict(response.headers)
+        self.http_status = response.status_code
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
@@ -232,7 +248,7 @@ def fetch_bls_api(
             # All other non-success statuses are transient (treat as retryable by tenacity)
             raise BlsRetryableHTTP(f"BLS API error: {status} - {message}")
 
-        return data
+        return BlsFetchedResponse(data, response=resp)
 
 
 def parse_bls_response(
@@ -550,54 +566,114 @@ def ingest_slice(
 
     logger.info(f"Processing {len(series_ids)} series IDs for {program}")
 
-    batch_id = uuid.uuid4()
-    frames: List[pl.DataFrame] = []
+    control = CaptureControl(_get_pg_connection, source_code="BLS")
+    run_id = control.start_run(
+        watermark={"program": program, "start_year": start_year, "end_year": end_year}
+    )
+    total_rows = 0
+    endpoint = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
     # Chunk by series (50 per request) and years (20 years per request)
     series_chunks = chunked(series_ids, CONFIG.bls_api_series_chunk_size)
 
-    for series_chunk in series_chunks:
-        # Also chunk by years if needed
-        year_ranges = []
-        current_start = start_year
-        while current_start <= end_year:
-            current_end = min(
-                current_start + CONFIG.bls_api_year_chunk_size - 1, end_year
-            )
-            year_ranges.append((current_start, current_end))
-            current_start = current_end + 1
-
-        for yr_start, yr_end in year_ranges:
-            try:
-                response_data = fetch_bls_api(
-                    series_ids=series_chunk,
-                    start_year=yr_start,
-                    end_year=yr_end,
+    try:
+        for series_chunk in series_chunks:
+            year_ranges = []
+            current_start = start_year
+            while current_start <= end_year:
+                current_end = min(
+                    current_start + CONFIG.bls_api_year_chunk_size - 1, end_year
                 )
+                year_ranges.append((current_start, current_end))
+                current_start = current_end + 1
 
-                df = parse_bls_response(
-                    response_data=response_data,
-                    program=program,
-                    load_batch_id=batch_id,
+            for yr_start, yr_end in year_ranges:
+                parameters: dict[str, object] = {
+                    "seriesid": series_chunk,
+                    "startyear": str(yr_start),
+                    "endyear": str(yr_end),
+                    "program": program,
+                }
+                request = control.start_request(
+                    run_id=run_id,
+                    endpoint=endpoint,
+                    parameters=parameters,
+                    max_attempts=8,
                 )
+                try:
+                    response_data = fetch_bls_api(
+                        series_ids=series_chunk,
+                        start_year=yr_start,
+                        end_year=yr_end,
+                    )
+                    payload = getattr(response_data, "payload", None)
+                    if payload is None:
+                        payload = json.dumps(
+                            response_data,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ).encode("utf-8")
+                    capture_id = uuid.uuid4()
+                    persist_response_capture(
+                        _get_pg_connection,
+                        ResponseCapture(
+                            capture_id=capture_id,
+                            request_id=request.request_id,
+                            run_id=run_id,
+                            source_code="BLS",
+                            endpoint=endpoint,
+                            request_parameters=parameters,
+                            retrieved_at=datetime.now(timezone.utc),
+                            http_status=getattr(response_data, "http_status", 200),
+                            response_headers=getattr(
+                                response_data, "response_headers", {}
+                            ),
+                            media_type="application/json",
+                            payload=payload,
+                            payload_schema_version="bls-timeseries-v2",
+                            source_revision=str(yr_end),
+                        ),
+                    )
+                except BlsNoContent:
+                    control.finish_request(request.request_id, status="empty")
+                    continue
+                except BaseException as error:
+                    control.finish_request(
+                        request.request_id, status="failed", error=error
+                    )
+                    raise
 
-                if not df.is_empty():
-                    # Enrich with geography parsing
-                    df = enrich_with_geography(df, program)
-                    frames.append(df)
-
-            except BlsNoContent:
-                logger.info(
-                    f"No content for {program}, series chunk, years {yr_start}-{yr_end}"
+                try:
+                    rows = replay_bls_capture(
+                        _get_pg_connection,
+                        capture_id=capture_id,
+                        program=program,
+                    )
+                except BaseException as error:
+                    control.quarantine(
+                        capture_id=capture_id,
+                        run_id=run_id,
+                        parser_version="bls-timeseries-v1",
+                        error_code="INVALID_BLS_TIMESERIES",
+                        error=error,
+                    )
+                    control.finish_request(
+                        request.request_id, status="quarantined", error=error
+                    )
+                    raise
+                control.finish_request(
+                    request.request_id,
+                    status="captured" if rows else "empty",
                 )
-                continue
+                total_rows += rows
+                time.sleep(
+                    CONFIG.bls_api_min_spacing_seconds + random.random() * 0.2
+                )
+    except BaseException as error:
+        control.finish_run(run_id, status="failed", error=error)
+        raise
 
-            # Rate limiting
-            time.sleep(CONFIG.bls_api_min_spacing_seconds + random.random() * 0.2)
-
-    if not frames:
-        logger.info(f"No data retrieved for {program} slice")
-        return 0
-
-    combined = pl.concat(frames, how="vertical_relaxed")
-    return load_df_to_bls_long(combined, program=program)
+    control.finish_run(run_id, status="success")
+    if not total_rows:
+        logger.info("No data retrieved for %s slice", program)
+    return total_rows

@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.fred.silver_fred import transform
+from data_ingestion_toolbox.capture import (
+    ResponseCapture,
+    persist_response_capture,
+    request_fingerprint,
+)
+from data_ingestion_toolbox.fred.silver_fred.replay import replay_fred_capture
+from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
 from data_ingestion_toolbox.utility.gold_schema import (
     ServingRefreshChunkConfig,
@@ -102,6 +111,132 @@ def _seed_time(cursor, time_sk: int, value: str) -> None:
         """,
         (time_sk, value, value, value, value, value, value),
     )
+
+
+def test_fred_capture_replay_retains_revisions_and_selects_latest_silver(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+    fred_silver_token: str,
+) -> None:
+    """Covers: DB-010, DB-020, DB-022 — FRED replays offline by revision."""
+    run_id = uuid4()
+    request_id = uuid4()
+    series_id = f"TEST_FRED_SILVER_{fred_silver_token}_CAPTURE"
+    domain = f"test_{fred_silver_token.lower()}_capture"
+    endpoint = "https://api.stlouisfed.org/fred/series/observations"
+    parameters = {
+        "series_id": series_id,
+        "domain": domain,
+        "observation_start": "2099-01-01",
+        "observation_end": "2099-01-31",
+        "file_type": "json",
+    }
+    fingerprint = request_fingerprint("FRED", endpoint, parameters)
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20990101, "2099-01-01")
+            cursor.execute(
+                """
+                INSERT INTO raw_fred.fred_series (
+                    series_id, title, units, frequency, seasonal_adjustment
+                ) VALUES (%s, 'Captured series', 'Index', 'Monthly', 'Not Adjusted')
+                """,
+                (series_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO control.ingestion_run (
+                    run_id, source_code, status, started_at
+                ) VALUES (%s, 'FRED', 'running', NOW())
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO control.ingestion_request (
+                    request_id, run_id, source_code, endpoint,
+                    request_parameters, request_fingerprint, status,
+                    attempt_count, max_attempts, started_at
+                ) VALUES (%s, %s, 'FRED', %s, %s::JSONB, %s,
+                          'running', 1, 3, NOW())
+                """,
+                (request_id, run_id, endpoint, "{}", fingerprint),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    captures = []
+    for day, value in ((1, "3.1"), (2, "3.2")):
+        capture_id = uuid4()
+        payload = (
+            '{"observations":[{"realtime_start":"2099-02-0%d",'
+            '"realtime_end":"2099-02-0%d","date":"2099-01-01",'
+            '"value":"%s"},{"date":"2099-01-02","value":"."}]}'
+            % (day, day, value)
+        ).encode()
+        persist_response_capture(
+            postgres_connection_factory,
+            ResponseCapture(
+                capture_id=capture_id,
+                request_id=request_id,
+                run_id=run_id,
+                source_code="FRED",
+                endpoint=endpoint,
+                request_parameters=parameters,
+                retrieved_at=datetime(2099, 2, day, tzinfo=UTC),
+                http_status=200,
+                response_headers={"content-type": "application/json"},
+                media_type="application/json",
+                payload=payload,
+                source_revision=f"2099-02-0{day}",
+            ),
+        )
+        assert replay_fred_capture(
+            postgres_connection_factory,
+            capture_id=capture_id,
+            series_id=series_id,
+            domain=domain,
+        ) == 2
+        captures.append(capture_id)
+
+    monkeypatch.setattr(
+        transform, "_get_hook", lambda: PostgresHookStub(postgres_connection_factory)
+    )
+    assert transform.transform_fred_to_silver(domain) == 1
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT capture_id, value_source, value_status
+                FROM silver_fred.observation_revision
+                WHERE series_id = %s
+                ORDER BY capture_id, observation_index
+                """,
+                (series_id,),
+            )
+            revisions = cursor.fetchall()
+            assert len(revisions) == 4
+            assert sum(row[2] == "missing" and row[1] == "." for row in revisions) == 2
+            cursor.execute(
+                """
+                SELECT value, source_value, realtime_start, capture_id
+                FROM silver_fred.fact_economic_indicators
+                WHERE series_id = %s
+                """,
+                (series_id,),
+            )
+            assert cursor.fetchone() == (
+                Decimal("3.2"),
+                "3.2",
+                datetime(2099, 2, 2).date(),
+                captures[1],
+            )
+    finally:
+        reader.close()
 
 
 def test_fred_raw_rows_transform_to_exact_silver_durations(
@@ -275,6 +410,9 @@ def test_fred_silver_to_gold_refresh_populates_catalog_bridge_and_serving(
 
     hook = PostgresHookStub(postgres_connection_factory)
     assert gold_transform.refresh_fred_elements(hook) >= 1
+    assert harvest_publisher(
+        postgres_connection_factory, Publisher("gold_fred")
+    ) >= 1
     refresher = postgres_connection_factory()
     try:
         with refresher.cursor() as cursor:
@@ -293,10 +431,10 @@ def test_fred_silver_to_gold_refresh_populates_catalog_bridge_and_serving(
                 """
                 SELECT s.series_id, c.metric_code, r.geo_id, r.value, m.value
                 FROM gold_fred.dim_fred_series s
-                JOIN gold_glossary.bridge_metric_fred_series b
-                  ON b.fred_series_sk = s.fred_series_sk
                 JOIN gold_glossary.dim_metric_catalog c
-                  ON c.metric_catalog_sk = b.metric_catalog_sk
+                  ON c.source_code = 'FRED'
+                 AND c.source_object_type = 'series'
+                 AND c.source_object_key = s.series_id
                 JOIN gold_fred.rpt_fred_observations r
                   ON r.series_id = s.series_id AND r.metric_code = c.metric_code
                 JOIN gold_fred.mv_fred_latest m

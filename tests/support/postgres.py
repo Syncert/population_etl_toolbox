@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import psycopg2
+from psycopg2.extras import register_uuid
 from psycopg2.extensions import connection
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -36,19 +37,36 @@ GOLD_DDL_FILES = (
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql",
     REPOSITORY_ROOT / "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql",
 )
+PUBLISHER_DDL_FILES = (
+    REPOSITORY_ROOT
+    / "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql",
+    REPOSITORY_ROOT / "src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql",
+    REPOSITORY_ROOT / "src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql",
+)
 CONTRACT_DDL_FILES = (
     REPOSITORY_ROOT / "sql/gold_contract/002_gold_glossary_schema.sql",
     REPOSITORY_ROOT / "sql/gold_contract/001_gold_contract_views.sql",
 )
-MIGRATION_DDL_FILES = (
+FOUNDATION_MIGRATION_DDL_FILES = (
     REPOSITORY_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql",
 )
+GLOSSARY_MIGRATION_DDL_FILES = (
+    REPOSITORY_ROOT / "sql/migrations/002_gold_glossary_decoupling.sql",
+)
+SOURCE_CUTOVER_DDL_FILES = (
+    REPOSITORY_ROOT / "sql/migrations/004_fred_capture_cutover.sql",
+    REPOSITORY_ROOT / "sql/migrations/005_census_acs_capture_cutover.sql",
+    REPOSITORY_ROOT / "sql/migrations/006_bls_capture_cutover.sql",
+)
 WAREHOUSE_DDL_FILES = (
-    *MIGRATION_DDL_FILES,
+    *FOUNDATION_MIGRATION_DDL_FILES,
+    *GLOSSARY_MIGRATION_DDL_FILES,
     *REFERENCE_DDL_FILES,
     *RAW_DDL_FILES,
     *SILVER_DDL_FILES,
+    *SOURCE_CUTOVER_DDL_FILES,
     *GOLD_DDL_FILES,
+    *PUBLISHER_DDL_FILES,
     *CONTRACT_DDL_FILES,
 )
 
@@ -99,7 +117,7 @@ class PostgresTestConfig:
 
     def connect(self) -> connection:
         """Open a short-timeout connection without exposing a DSN in test output."""
-        return psycopg2.connect(
+        database_connection = psycopg2.connect(
             host=self.host,
             port=self.port,
             user=self.user,
@@ -108,6 +126,8 @@ class PostgresTestConfig:
             connect_timeout=5,
             application_name="population_etl_integration_tests",
         )
+        register_uuid(conn_or_curs=database_connection)
+        return database_connection
 
 
 def apply_sql_files(database_connection: connection, paths=WAREHOUSE_DDL_FILES) -> None:

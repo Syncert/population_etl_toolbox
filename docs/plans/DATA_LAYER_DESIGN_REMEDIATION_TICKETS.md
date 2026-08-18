@@ -2,11 +2,11 @@
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-08-18
 
-**Current ticket:** ARCH-004 — in progress
+**Current ticket:** ARCH-002 / ARCH-003 — in progress after completing the capture-first source cutovers
 
-**Next pickup:** Run the five ARCH-004 database contracts in disposable PostgreSQL, then cut over FRED first under ARCH-007 and re-ingest its configured history.
+**Next pickup:** Remove the remaining source-owned glossary DDL and authored policy fields from source reports and checked-in consumers, then make migration `003_semantic_policy_extraction.sql` part of the normal bootstrap path.
 
 ### Completed in the current slice
 
@@ -22,12 +22,22 @@
 - [x] Accepted ADR-0001 with the explicit beta reset/re-ingestion strategy.
 - [x] Added the lean ARCH-004 `raw_capture` and `control` fresh-bootstrap DDL plus focused database contracts.
 - [x] Added reusable secret-safe request fingerprinting, dedicated committed capture writing, allowlisted response headers, checksum verification, and offline payload loading.
+- [x] Passed the ARCH-004 database contracts in disposable PostgreSQL.
+- [x] Cut over FRED, Census ACS, and BLS production ingestion to commit exact HTTP response bytes before parsing and replay those captures into source-shaped silver revision tables.
+- [x] Added deterministic replay coverage for missing, blank, sentinel, malformed, and revised provider values while retaining source text and capture lineage.
+- [x] Added provider-neutral metric publisher contracts, registry/state DDL, a discovery-based glossary harvester, durable publisher-ready events, and periodic reconciliation.
+- [x] Added an arbitrary fourth-source integration contract proving that glossary harvesting does not require provider-specific shared-schema DDL.
+- [x] Added a repository-owned semantic-definition schema so authored analytics policy has a destination outside the gold data contract.
+- [x] Verified 315 ETL unit tests and 52 non-external disposable-PostgreSQL database tests on 2026-08-18.
+- [x] Remediated the Linux warehouse-integration failure by making UUID SQL binds adapter-independent and ordering glossary migration DDL before compatibility views; the exact CI selection passed 46 tests with 14 deselected.
 
-### Remaining in ARCH-004
+### Remaining
 
-- [ ] Run the new database contracts against disposable PostgreSQL; the local Docker service was stopped at this checkpoint.
-- [ ] Cut over and re-ingest FRED first to prove the pattern end to end; its response shape and missing-value sentinel make it the smallest useful proof.
-- [ ] Remove the narrow legacy allowlists as each old source/glossary violation disappears.
+- [ ] Remove duplicated `gold_glossary` DDL and dead direct-catalog seed functions from the three source packages, leaving shared-object ownership in `sql/gold_contract` and the harvester only.
+- [ ] Remove authored dashboard/aggregation policy from source report tables, models, queries, and frontend consumers; then enable migration `003_semantic_policy_extraction.sql` in fresh bootstrap.
+- [ ] Move the remaining source slice ledgers into `control`, remove legacy parsed-raw loaders/tables after the beta reset, and delete the temporary architecture-test allowlists.
+- [ ] Run the DAG suite in the authoritative Linux Airflow environment; native Windows collection currently fails during Airflow logging initialization.
+- [ ] Reset the beta database and re-ingest configured history through the capture-first paths.
 
 The local `.venv` was recreated with uv using managed Python 3.11.16 and the documented two-step Airflow constraints plus `airflow-dev` installation. The shared suite was revalidated in that environment; CI remains authoritative.
 

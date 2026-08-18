@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import json
 
 import polars as pl
 import pytest
@@ -12,6 +13,9 @@ from data_ingestion_toolbox.census_acs.ingest import (
     CensusPayloadError,
     build_geo_params,
     rows_to_polars,
+)
+from data_ingestion_toolbox.census_acs.silver_census.replay import (
+    parse_captured_values,
 )
 
 pytestmark = pytest.mark.unit
@@ -112,3 +116,26 @@ def test_census_sentinels_become_null_but_negative_values_survive(
     assert sentinel["value"][0] is None
     assert blank["value"][0] is None
     assert negative["value"][0] == -12.5
+
+
+def test_census_capture_parser_retains_header_order_strings_and_null_kinds(
+    source_fixture,
+) -> None:
+    """Covers: ETL-004, ETL-006 — capture replay retains source evidence."""
+    values = parse_captured_values(
+        json.dumps(source_fixture("census", "representative.json")).encode(),
+        dataset="acs5",
+        year=2024,
+        geo_level="county",
+    )
+
+    assert len(values) == 6
+    first = values[0]
+    assert first["source_column_index"] == 0
+    assert first["source_header"] == "B01003_001E"
+    assert first["value_source"] == "1000"
+    assert {item["value_status"] for item in values} >= {
+        "valid",
+        "blank",
+        "sentinel",
+    }

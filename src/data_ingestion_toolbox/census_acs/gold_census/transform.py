@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_acs.sql"
+_PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
 _SCHEMA_COMPONENT = "gold_ddl_acs"
 _REQUIRED_RELATIONS = (
     "gold_glossary.dim_geo",
@@ -34,6 +35,7 @@ _REQUIRED_RELATIONS = (
     "gold_census.fact_acs_observation",
     "gold_census.rpt_acs_observations",
     "gold_census.mv_acs_latest",
+    "gold_census.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
@@ -54,7 +56,7 @@ def ensure_acs_gold_schema(hook: PostgresHook | None = None) -> None:
         hook = _get_hook()
 
     ensure_gold_schema_from_files(
-        ddl_files=[_DDL_PATH],
+        ddl_files=[_DDL_PATH, _PUBLISHER_DDL_PATH],
         component_name=_SCHEMA_COMPONENT,
         required_relations=_REQUIRED_RELATIONS,
         required_procedures=_REQUIRED_PROCEDURES,
@@ -289,12 +291,7 @@ def refresh_acs_elements(hook: PostgresHook | None = None) -> int:
             """
         )
         row_count = cur.fetchone()[0]
-        catalog_count = _seed_acs_metric_catalog(cur)
         conn.commit()
 
-    logger.info(
-        "refresh_acs_elements: dim_acs_variable row_count=%d, acs_metric_catalog_count=%d",
-        row_count,
-        catalog_count,
-    )
+    logger.info("refresh_acs_elements: dim_acs_variable row_count=%d", row_count)
     return row_count

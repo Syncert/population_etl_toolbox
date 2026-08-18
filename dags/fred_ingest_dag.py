@@ -610,11 +610,20 @@ def fred_ingest():
         """Confirm every configured FRED series reached silver and served gold."""
         assert_configured_domain_coverage(_get_postgres_hook())
 
+    @task(trigger_rule="none_failed")
+    def emit_fred_publisher_ready() -> None:
+        """Append a durable outbox event without waiting for glossary harvest."""
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        hook = _get_postgres_hook()
+        emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_fred")
+
     gold_fred_schema = ensure_gold_fred_schema()
     gold_geography = refresh_gold_geography()
     gold_fred_elements = refresh_gold_fred_elements()
     gold_fred_refresh = refresh_gold_fred_serving_layer()
     domain_coverage = confirm_configured_domain_coverage()
+    publisher_ready = emit_fred_publisher_ready()
 
     (
         silver_transforms
@@ -623,6 +632,7 @@ def fred_ingest():
         >> gold_fred_elements
         >> gold_fred_refresh
         >> domain_coverage
+        >> publisher_ready
     )
 
 

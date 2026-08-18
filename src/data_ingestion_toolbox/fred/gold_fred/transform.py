@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_fred.sql"
+_PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
 _SCHEMA_COMPONENT = "gold_ddl_fred"
 _REQUIRED_RELATIONS = (
     "gold_glossary.dim_geo",
@@ -32,6 +33,7 @@ _REQUIRED_RELATIONS = (
     "gold_fred.fact_fred_observation",
     "gold_fred.rpt_fred_observations",
     "gold_fred.mv_fred_latest",
+    "gold_fred.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
@@ -52,7 +54,7 @@ def ensure_fred_gold_schema(hook: PostgresHook | None = None) -> None:
         hook = _get_hook()
 
     ensure_gold_schema_from_files(
-        ddl_files=[_DDL_PATH],
+        ddl_files=[_DDL_PATH, _PUBLISHER_DDL_PATH],
         component_name=_SCHEMA_COMPONENT,
         required_relations=_REQUIRED_RELATIONS,
         required_procedures=_REQUIRED_PROCEDURES,
@@ -232,12 +234,7 @@ def refresh_fred_elements(hook: PostgresHook | None = None) -> int:
 
         cur.execute("SELECT COUNT(*) FROM gold_fred.dim_fred_series")
         row_count = cur.fetchone()[0]
-        catalog_count = _seed_fred_metric_catalog(cur)
         conn.commit()
 
-    logger.info(
-        "refresh_fred_elements: dim_fred_series row_count=%d, fred_metric_catalog_count=%d",
-        row_count,
-        catalog_count,
-    )
+    logger.info("refresh_fred_elements: dim_fred_series row_count=%d", row_count)
     return row_count

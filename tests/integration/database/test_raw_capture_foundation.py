@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+
 import psycopg2
 import pytest
 from psycopg2.extensions import connection
@@ -15,9 +16,9 @@ def _insert_request(
     database_connection: connection,
     *,
     source_code: str = "FIXTURE",
-) -> tuple[uuid.UUID, uuid.UUID, str]:
-    run_id = uuid.uuid4()
-    request_id = uuid.uuid4()
+) -> tuple[str, str, str]:
+    run_id = str(uuid.uuid4())
+    request_id = str(uuid.uuid4())
     request_fingerprint = hashlib.sha256(b"fixture-request").hexdigest()
     with database_connection.cursor() as cursor:
         cursor.execute(
@@ -47,15 +48,15 @@ def _insert_request(
 def _insert_capture(
     database_connection: connection,
     *,
-    run_id: uuid.UUID,
-    request_id: uuid.UUID,
+    run_id: str,
+    request_id: str,
     request_fingerprint: str,
     payload: bytes,
     retrieved_at: str,
     source_revision: str,
     source_code: str = "FIXTURE",
-) -> tuple[uuid.UUID, str]:
-    capture_id = uuid.uuid4()
+) -> tuple[str, str]:
+    capture_id = str(uuid.uuid4())
     checksum = hashlib.sha256(payload).hexdigest()
     with database_connection.cursor() as cursor:
         cursor.execute(
@@ -105,6 +106,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "ingestion_run"),
         ("control", "ingestion_request"),
         ("control", "capture_quarantine"),
+        ("control", "publisher_ready_event"),
     }
     with postgres_connection.cursor() as cursor:
         cursor.execute(
@@ -177,19 +179,27 @@ def test_capture_relations_reject_update_and_delete(
         (
             "UPDATE raw_capture.response_capture SET http_status = 201 WHERE capture_id = %s",
             (capture_id,),
+            {"55000"},
         ),
         (
             "DELETE FROM raw_capture.payload_blob WHERE payload_checksum = %s",
             (checksum,),
+            {"55000"},
         ),
-        ("TRUNCATE raw_capture.response_capture", None),
+        (
+            "TRUNCATE raw_capture.response_capture",
+            None,
+            # PostgreSQL may reject the referencing quarantine FK before the
+            # append-only trigger runs; either error prevents truncation.
+            {"55000", "0A000"},
+        ),
     )
     with postgres_connection.cursor() as cursor:
-        for statement, parameters in statements:
+        for statement, parameters, expected_codes in statements:
             cursor.execute("SAVEPOINT before_forbidden_mutation")
             with pytest.raises(psycopg2.DatabaseError) as error:
                 cursor.execute(statement, parameters)
-            assert error.value.pgcode == "55000"
+            assert error.value.pgcode in expected_codes
             cursor.execute("ROLLBACK TO SAVEPOINT before_forbidden_mutation")
 
 
@@ -220,7 +230,7 @@ def test_changed_response_retains_both_retrieval_events(
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT capture_id, payload_checksum, source_revision
+            SELECT capture_id::TEXT, payload_checksum, source_revision
             FROM raw_capture.response_capture
             WHERE request_id = %s
             ORDER BY retrieved_at
@@ -250,7 +260,7 @@ def test_parser_failure_is_quarantined_without_losing_capture(
         retrieved_at="2026-08-17T12:00:00Z",
         source_revision="revision-bad",
     )
-    quarantine_id = uuid.uuid4()
+    quarantine_id = str(uuid.uuid4())
 
     with postgres_connection.cursor() as cursor:
         cursor.execute(

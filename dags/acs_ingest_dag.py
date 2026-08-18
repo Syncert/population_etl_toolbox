@@ -685,10 +685,19 @@ def acs_ingest():
             task_logger=logger,
         )
 
+    @task(trigger_rule="none_failed")
+    def emit_census_publisher_ready() -> None:
+        """Append a durable outbox event without waiting for glossary harvest."""
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        hook = _get_postgres_hook()
+        emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_census")
+
     gold_census_schema = ensure_gold_census_schema()
     gold_geography = refresh_gold_geography()
     gold_census_elements = refresh_gold_census_elements()
     gold_census_refresh = refresh_gold_census_serving_layer()
+    publisher_ready = emit_census_publisher_ready()
 
     (
         silver_transform
@@ -696,6 +705,7 @@ def acs_ingest():
         >> gold_geography
         >> gold_census_elements
         >> gold_census_refresh
+        >> publisher_ready
     )
 
 

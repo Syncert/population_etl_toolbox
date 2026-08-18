@@ -241,17 +241,40 @@ def _extract_measure_code(
 
 
 def _get_program_row_count(hook: PostgresHook, program: str) -> int:
-    sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s;"
+    sql = """
+        SELECT COUNT(*) FROM (
+            SELECT series_id, year, period
+            FROM silver_bls.observation_revision
+            WHERE program = %s
+            UNION
+            SELECT series_id, year, period
+            FROM raw_bls.bls_long legacy
+            WHERE program = %s
+              AND NOT EXISTS (
+                  SELECT 1 FROM silver_bls.observation_revision captured
+                  WHERE captured.program = legacy.program
+                    AND captured.series_id = legacy.series_id
+              )
+        ) observations;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (program,))
+        cur.execute(sql, (program, program))
         row = cur.fetchone()
     return int(row[0]) if row else 0
 
 
 def _get_program_years(hook: PostgresHook, program: str) -> list[int]:
-    sql = "SELECT DISTINCT year FROM raw_bls.bls_long WHERE program = %s ORDER BY year;"
+    sql = """
+        SELECT DISTINCT year
+        FROM (
+            SELECT year FROM silver_bls.observation_revision WHERE program = %s
+            UNION ALL
+            SELECT year FROM raw_bls.bls_long WHERE program = %s
+        ) observations
+        ORDER BY year;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (program,))
+        cur.execute(sql, (program, program))
         rows = cur.fetchall()
     return [int(r[0]) for r in rows]
 
@@ -260,23 +283,55 @@ def _fetch_raw_rows(
     hook: PostgresHook, program: str, year: int | None = None
 ) -> list[tuple]:
     sql = """
+        WITH captured_ranked AS (
+            SELECT
+                observation.series_id,
+                observation.program,
+                observation.year,
+                observation.period,
+                observation.period_name,
+                observation.value,
+                ROW_NUMBER() OVER (
+                    PARTITION BY observation.program, observation.series_id,
+                                 observation.year, observation.period
+                    ORDER BY observation.is_latest DESC,
+                             capture.retrieved_at DESC,
+                             observation.capture_id DESC
+                ) AS revision_rank
+            FROM silver_bls.observation_revision AS observation
+            JOIN raw_capture.response_capture AS capture USING (capture_id)
+            WHERE observation.program = %s
+        ),
+        observations AS (
+            SELECT series_id, program, year, period, period_name, value
+            FROM captured_ranked
+            WHERE revision_rank = 1
+
+            UNION ALL
+
+            SELECT legacy.series_id, legacy.program, legacy.year,
+                   legacy.period, legacy.period_name, legacy.value
+            FROM raw_bls.bls_long AS legacy
+            WHERE legacy.program = %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM silver_bls.observation_revision AS captured
+                  WHERE captured.program = legacy.program
+                    AND captured.series_id = legacy.series_id
+              )
+        )
         SELECT
-            bl.series_id,
-            bl.program,
-            bl.year,
-            bl.period,
-            bl.period_name,
-            bl.value,
+            bl.series_id, bl.program, bl.year, bl.period, bl.period_name, bl.value,
             bs.measure AS measure_code,
             bs.seasonal AS seasonal_adjustment,
             bs.title
-        FROM raw_bls.bls_long bl
+        FROM observations bl
         LEFT JOIN raw_bls.bls_series bs
             ON bl.series_id = bs.series_id
             AND bl.program = bs.program
         WHERE bl.program = %s
     """
-    params: list[object] = [program]
+    params: list[object] = [program, program, program]
     if year is not None:
         sql += " AND bl.year = %s"
         params.append(int(year))

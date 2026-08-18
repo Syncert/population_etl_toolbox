@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_bls.sql"
+_PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
 _SCHEMA_COMPONENT = "gold_ddl_bls"
 _REQUIRED_RELATIONS = (
     "gold_glossary.dim_geo",
@@ -33,6 +34,7 @@ _REQUIRED_RELATIONS = (
     "gold_bls.fact_bls_observation",
     "gold_bls.rpt_bls_observations",
     "gold_bls.mv_bls_latest",
+    "gold_bls.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
     "gold_glossary.refresh_dim_geo_latest()",
@@ -53,7 +55,7 @@ def ensure_bls_gold_schema(hook: PostgresHook | None = None) -> None:
         hook = _get_hook()
 
     ensure_gold_schema_from_files(
-        ddl_files=[_DDL_PATH],
+        ddl_files=[_DDL_PATH, _PUBLISHER_DDL_PATH],
         component_name=_SCHEMA_COMPONENT,
         required_relations=_REQUIRED_RELATIONS,
         required_procedures=_REQUIRED_PROCEDURES,
@@ -360,12 +362,7 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
 
         cur.execute("SELECT COUNT(*) FROM gold_bls.dim_bls_series")
         row_count = cur.fetchone()[0]
-        catalog_count = _seed_bls_metric_catalog(cur)
         conn.commit()
 
-    logger.info(
-        "refresh_bls_elements: dim_bls_series row_count=%d, bls_metric_catalog_count=%d",
-        row_count,
-        catalog_count,
-    )
+    logger.info("refresh_bls_elements: dim_bls_series row_count=%d", row_count)
     return row_count

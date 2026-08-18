@@ -934,10 +934,19 @@ def bls_ingest():
             task_logger=logger,
         )
 
+    @task(trigger_rule="all_success")
+    def emit_bls_publisher_ready() -> None:
+        """Append a durable outbox event without waiting for glossary harvest."""
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        hook = _get_postgres_hook()
+        emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_bls")
+
     gold_bls_schema = ensure_gold_bls_schema()
     gold_geography = refresh_gold_geography()
     gold_bls_elements = refresh_gold_bls_elements()
     gold_bls_refresh = refresh_gold_bls_serving_layer()
+    publisher_ready = emit_bls_publisher_ready()
 
     (
         silver_transforms
@@ -945,6 +954,7 @@ def bls_ingest():
         >> gold_geography
         >> gold_bls_elements
         >> gold_bls_refresh
+        >> publisher_ready
     )
 
 
