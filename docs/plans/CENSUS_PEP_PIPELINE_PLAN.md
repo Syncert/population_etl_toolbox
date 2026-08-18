@@ -3,10 +3,33 @@
 ## Plan status
 
 - **Status:** Proposed; PEP is described in product documents but no adapter is currently implemented
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-18
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+
+## Implementation checkpoint
+
+**Last updated:** 2026-08-18
+
+**Current milestone:** Planning complete; implementation has not started
+
+**Next pickup:** Complete PEP-001 by registering the first totals/components datasets and freezing their vintage and geography contracts.
+
+### Completed in the current slice
+
+- [x] Defined the initial national/state, county, and incorporated-place product sequence.
+- [x] Defined separate observation-year, release-vintage, revision, and geography-basis contracts.
+- [x] Split delivery into acceptance-tested registry, capture/replay, silver, publication, and follow-on demographic phases.
+
+### Remaining
+
+- [ ] PEP-001 — Implement the dataset/vintage registry and prove release discovery.
+- [ ] PEP-002 — Implement lossless API/bulk capture, completeness checks, and offline replay.
+- [ ] PEP-003 — Implement national/state and county totals/components silver data.
+- [ ] PEP-004 — Implement incorporated-place totals and geography reconciliation.
+- [ ] PEP-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
+- [ ] PEP-006 — Add demographic-characteristics datasets after the totals contract is proven.
 
 ## Objective
 

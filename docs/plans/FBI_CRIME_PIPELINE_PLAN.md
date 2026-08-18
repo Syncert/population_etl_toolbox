@@ -3,10 +3,32 @@
 ## Plan status
 
 - **Status:** Proposed; no FBI adapter is currently implemented
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-18
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** National, state, county, and city-facing results; agency is a required source-native geography
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+
+## Implementation checkpoint
+
+**Last updated:** 2026-08-18
+
+**Current milestone:** Planning complete; implementation has not started
+
+**Next pickup:** Complete FBI-001 by inventorying official downloadable/API products and freezing the first UCR source contract.
+
+### Completed in the current slice
+
+- [x] Defined the source-native agency model and qualified national/state/county/city-facing publication boundaries.
+- [x] Defined participation, coverage, revision, and effective-dated agency/geography bridge requirements.
+- [x] Split delivery into acceptance-tested discovery, capture/replay, reference, fact, and publication phases.
+
+### Remaining
+
+- [ ] FBI-001 — Freeze official source, program, offense, participation, revision, and suppression semantics.
+- [ ] FBI-002 — Implement lossless capture, completeness checks, quarantine, and offline replay.
+- [ ] FBI-003 — Implement agency identity and effective-dated geography relationships.
+- [ ] FBI-004 — Implement crime and reporting-participation silver facts.
+- [ ] FBI-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
 
 ## Objective
 

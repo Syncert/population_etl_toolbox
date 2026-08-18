@@ -3,10 +3,33 @@
 ## Plan status
 
 - **Status:** Proposed
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-18
 - **Primary owner:** Shared reference-data pipeline
 - **Depends on:** ARCH-004 raw capture/control foundation and the new-source expansion gate in [DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md](./DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
 - **Enables:** Census PEP, CDC, FBI, USDA NASS, broader ACS geography, cross-source maps, and stable geographic joins
+
+## Implementation checkpoint
+
+**Last updated:** 2026-08-18
+
+**Current milestone:** Target design complete; implementation has not started
+
+**Next pickup:** Complete GEO-001 by freezing the canonical geography identifiers and adding nation/state/county/place contract tests.
+
+### Completed in the current slice
+
+- [x] Audited the existing `silver_ref` runtime, table grain, refresh behavior, and ownership limitations.
+- [x] Chose an independent shared geography pipeline with stable identities and versioned attributes, geometry, and relationships.
+- [x] Defined source-resolution, replay, cutover, rollback, validation, and provider-enablement contracts.
+
+### Remaining
+
+- [ ] GEO-001 — Freeze and test canonical nation/state/county/place identifiers.
+- [ ] GEO-002 — Implement lossless reference-file capture, quarantine, and offline replay.
+- [ ] GEO-003 — Implement versioned geography identity and attribute dimensions.
+- [ ] GEO-004 — Implement versioned geometry and cross-boundary relationships.
+- [ ] GEO-005 — Cut ACS and BLS over to the shared geography contract and reconcile existing observations.
+- [ ] GEO-006 — Enable exact-code resolution for PEP, CDC, USDA NASS, and FBI.
 
 ## Decision
 

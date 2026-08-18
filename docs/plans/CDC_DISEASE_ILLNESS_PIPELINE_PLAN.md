@@ -3,11 +3,33 @@
 ## Plan status
 
 - **Status:** Proposed; no CDC adapter is currently implemented
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-18
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+
+## Implementation checkpoint
+
+**Last updated:** 2026-08-18
+
+**Current milestone:** Planning complete; implementation has not started
+
+**Next pickup:** Complete CDC-001 by freezing the CDI and PLACES county asset IDs and their versioned source contracts.
+
+### Completed in the current slice
+
+- [x] Defined the initial CDI national/state and PLACES county product boundary.
+- [x] Defined the source-transparent geography, release, measure, stratum, uncertainty, and suppression contracts.
+- [x] Split delivery into acceptance-tested discovery, capture/replay, silver, and publication phases.
+
+### Remaining
+
+- [ ] CDC-001 — Freeze source asset, schema, paging, release, and methodology contracts.
+- [ ] CDC-002 — Implement lossless capture, deterministic paging, quarantine, and offline replay.
+- [ ] CDC-003 — Implement and reconcile CDI national/state silver data.
+- [ ] CDC-004 — Implement and reconcile PLACES county silver data.
+- [ ] CDC-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
 
 ## Objective
 

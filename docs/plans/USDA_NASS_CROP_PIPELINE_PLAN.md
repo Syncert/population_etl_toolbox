@@ -3,11 +3,33 @@
 ## Plan status
 
 - **Status:** Proposed; no agricultural adapter is currently implemented
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-18
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+
+## Implementation checkpoint
+
+**Last updated:** 2026-08-18
+
+**Current milestone:** Planning complete; implementation has not started
+
+**Next pickup:** Complete NASS-001 by registering the first bounded crop basket and freezing its Quick Stats query contracts.
+
+### Completed in the current slice
+
+- [x] Defined the crop-focused Quick Stats scope and national/state/county geography boundary.
+- [x] Defined registry-driven slicing, full classification identity, suppression, quality, revision, and aggregation contracts.
+- [x] Split delivery into acceptance-tested discovery, capture/replay, silver, publication, and historical-bootstrap phases.
+
+### Remaining
+
+- [ ] NASS-001 — Freeze the initial product registry, bounded queries, source semantics, and fixtures.
+- [ ] NASS-002 — Implement count-aware capture, deterministic slicing, quarantine, and offline replay.
+- [ ] NASS-003 — Implement commodity/statistic/domain dimensions and crop observation silver data.
+- [ ] NASS-004 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
+- [ ] NASS-005 — Backfill a bounded history and implement operational reconciliation.
 
 ## Objective
 
