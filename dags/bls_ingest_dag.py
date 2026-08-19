@@ -40,7 +40,7 @@ from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox import bls as bls_package
-from data_ingestion_toolbox.bls.config import CONFIG
+from data_ingestion_toolbox.bls.config import CONFIG, LAUS_COUNTY_PARENT_FIPS
 from data_ingestion_toolbox.bls.metadata import (
     sync_bls_series_metadata,
     sync_bls_datasets_table,
@@ -513,21 +513,27 @@ def bls_ingest():
             )
 
     @task
-    def sync_datasets() -> None:
+    def sync_datasets() -> int:
         """Sync bls_datasets table."""
-        sync_bls_datasets_table()
+        count = sync_bls_datasets_table()
+        if count != len(CONFIG.programs):
+            raise RuntimeError(
+                "BLS dataset synchronization was incomplete: "
+                f"expected={len(CONFIG.programs)}, synchronized={count}"
+            )
+        return count
 
     @task
     def sync_metadata() -> list[str]:
         """Sync series metadata for all configured programs."""
         synced_programs = []
         for program in CONFIG.programs:
-            try:
-                sync_bls_series_metadata(program)
-                synced_programs.append(program)
-            except Exception as e:
-                # Log but don't fail entire DAG
-                print(f"Warning: failed to sync metadata for {program}: {e}")
+            count = sync_bls_series_metadata(program)
+            if count <= 0:
+                raise RuntimeError(
+                    f"BLS metadata synchronization returned no series for {program!r}"
+                )
+            synced_programs.append(program)
         return synced_programs
 
     # -----------------------------
@@ -561,6 +567,12 @@ def bls_ingest():
         """
         hook = _get_postgres_hook()
 
+        if set(synced_programs) != set(CONFIG.programs):
+            raise RuntimeError(
+                "BLS metadata synchronization did not cover every configured program: "
+                f"expected={sorted(CONFIG.programs)}, synchronized={sorted(synced_programs)}"
+            )
+
         current_year = datetime.now(timezone.utc).year
 
         # Historical band: lock in once complete
@@ -571,17 +583,17 @@ def bls_ingest():
         roll_start = current_year - 2  # e.g. in 2026 → 2024
         roll_end = current_year  # e.g. in 2026 → 2026
 
-        # For LAUS county-level, we need state FIPS codes
-        state_fips_list = [
-            f"{i:02d}"
-            for i in range(1, 57)
-            if i not in (3, 7, 14, 43)  # Skip territories
-        ]
+        # LAUS county/county-equivalent coverage includes Puerto Rico.
+        state_fips_list = LAUS_COUNTY_PARENT_FIPS
 
         # Compute series fingerprints for each program
         series_meta = {}
         for program in synced_programs:
             shash, scount = _series_fingerprint(program)
+            if not shash or scount <= 0:
+                raise RuntimeError(
+                    f"BLS configured series fingerprint is empty for {program!r}"
+                )
             series_meta[program] = {"series_hash": shash, "series_count": scount}
 
         # Load completed historical slices so we can skip them
@@ -717,7 +729,7 @@ def bls_ingest():
         # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
         # TI already exists and a retry re-renders this task against an empty list.
         if not plan:
-            return [[]]
+            raise RuntimeError("BLS planner produced no ingestion work")
 
         batches = chunk_list(plan, chunk_size=20)
         return batches

@@ -290,14 +290,27 @@ def fred_ingest():
     # Task 1: Metadata sync
     # -----------------------------
     @task
-    def sync_datasets() -> None:
+    def sync_datasets() -> int:
         """Sync fred_datasets table."""
-        sync_fred_datasets_table()
+        count = sync_fred_datasets_table()
+        expected = sum(len(series) for series in CONFIG.curated_by_domain.values())
+        if count != expected:
+            raise RuntimeError(
+                "FRED dataset synchronization was incomplete: "
+                f"expected={expected}, synchronized={count}"
+            )
+        return count
 
     @task
     def sync_metadata() -> int:
         """Sync series metadata for all curated series."""
         count = sync_fred_series_metadata()
+        expected = len(CONFIG.curated_series_ids)
+        if count != expected:
+            raise RuntimeError(
+                "FRED series metadata synchronization was incomplete: "
+                f"expected={expected}, synchronized={count}"
+            )
         return count
 
     # -----------------------------
@@ -331,6 +344,13 @@ def fred_ingest():
         """
         hook = _get_postgres_hook()
 
+        expected_metadata_count = len(CONFIG.curated_series_ids)
+        if metadata_count != expected_metadata_count:
+            raise RuntimeError(
+                "FRED planner received incomplete metadata: "
+                f"expected={expected_metadata_count}, synchronized={metadata_count}"
+            )
+
         today = datetime.now(timezone.utc)
         current_year = today.year
 
@@ -346,8 +366,11 @@ def fred_ingest():
         domain_meta = {}
         for domain in _configured_series_by_domain():
             shash, scount = _series_fingerprint(domain)
-            if scount > 0:
-                domain_meta[domain] = {"series_hash": shash, "series_count": scount}
+            if not shash or scount <= 0:
+                raise RuntimeError(
+                    f"FRED configured series fingerprint is empty for {domain!r}"
+                )
+            domain_meta[domain] = {"series_hash": shash, "series_count": scount}
 
         # Load completed slices so we can skip historical ones
         completed = set()
@@ -406,7 +429,7 @@ def fred_ingest():
 
         # IMPORTANT: return at least one batch so mapped task retries remain stable.
         if not plan:
-            return [[]]
+            raise RuntimeError("FRED planner produced no ingestion work")
 
         batches = chunk_list(plan, chunk_size=5)
         return batches

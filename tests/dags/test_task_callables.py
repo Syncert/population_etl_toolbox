@@ -495,3 +495,20 @@ def test_acs_target_selection_rejects_empty_metadata(
 
     with pytest.raises(RuntimeError, match="empty ACS ingestion plan"):
         callable_()
+
+
+@pytest.mark.parametrize(
+    ("dag_id", "planning_input", "message"),
+    [
+        ("bls_ingest", [], "every configured program"),
+        ("fred_ingest", 0, "incomplete metadata"),
+    ],
+)
+def test_source_planners_reject_incomplete_metadata(
+    dagbag, dag_id: str, planning_input: Any, message: str
+) -> None:
+    """Covers: DAG-010 — rolling planners cannot silently produce no work."""
+    callable_ = _callable(dagbag, dag_id, "build_ingestion_plan")
+
+    with pytest.raises(RuntimeError, match=message):
+        callable_(planning_input)
