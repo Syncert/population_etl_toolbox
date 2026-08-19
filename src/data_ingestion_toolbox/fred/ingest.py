@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import random
@@ -25,7 +24,6 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
-from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
@@ -40,6 +38,10 @@ from data_ingestion_toolbox.fred.silver_fred.replay import replay_fred_capture
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)
+# FRED authenticates with a query parameter. httpx's INFO access log renders the
+# complete request URL, so keep that third-party logger above INFO to prevent
+# credentials from reaching scheduler, CI, or application logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Target database
 _TARGET_DATABASE = "public_data"
@@ -318,102 +320,6 @@ def parse_fred_response(
     return df
 
 
-@retry_database_transaction
-def load_df_to_fred_long(df: pl.DataFrame) -> int:
-    """
-    Bulk load a Polars DataFrame into raw_fred.fred_long using COPY.
-
-    We delete existing rows for (series_id, obs_date, realtime_start, realtime_end)
-    combinations present in this batch (idempotent upsert).
-    """
-    if df.is_empty():
-        return 0
-    if df.height > CONFIG.raw_load_max_rows:
-        raise ValueError(
-            f"FRED raw batch has {df.height} rows; configured maximum is "
-            f"{CONFIG.raw_load_max_rows}"
-        )
-
-    conn = _get_pg_connection()
-    try:
-        conn.autocommit = False
-        cur = conn.cursor()
-
-        # Overlapping mapped tasks may replace the same natural key. Serialize
-        # only writers for the same series so delete+COPY remains atomic while
-        # unrelated series can still load concurrently.
-        for series_id in sorted(df.get_column("series_id").unique().to_list()):
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (f"raw_fred.fred_long:{series_id}",),
-            )
-
-        # Get unique (series_id, obs_date, realtime_start, realtime_end) tuples for deletion
-        delete_keys = df.select(
-            ["series_id", "obs_date", "realtime_start", "realtime_end"]
-        ).unique()
-
-        for row in delete_keys.iter_rows():
-            series_id, obs_date, realtime_start, realtime_end = row
-            cur.execute(
-                """
-                DELETE FROM raw_fred.fred_long
-                WHERE series_id = %s
-                  AND obs_date = %s
-                  AND realtime_start IS NOT DISTINCT FROM %s
-                  AND realtime_end IS NOT DISTINCT FROM %s;
-                """,
-                (series_id, obs_date, realtime_start, realtime_end),
-            )
-
-        # Prepare CSV in-memory
-        output = io.StringIO()
-        df.select(
-            [
-                "domain",
-                "series_id",
-                "obs_date",
-                "value",
-                "is_missing",
-                "realtime_start",
-                "realtime_end",
-                "load_batch_id",
-                "ingested_at",
-            ]
-        ).write_csv(output, include_header=False)
-        output.seek(0)
-
-        # Copy into Postgres
-        cur.copy_expert(
-            """
-            COPY raw_fred.fred_long (
-                domain, series_id, obs_date, value, is_missing,
-                realtime_start, realtime_end,
-                load_batch_id, ingested_at
-            )
-            FROM STDIN WITH (FORMAT csv);
-            """,
-            output,
-        )
-
-        rowcount = cur.rowcount
-        conn.commit()
-
-        logger.info(f"Loaded {rowcount} rows to raw_fred.fred_long")
-        return rowcount
-
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error loading to fred_long: {e}")
-        raise
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
 def _execute_control(statement: str, parameters: tuple[object, ...]) -> None:
     """Commit one control-plane transition independently of capture parsing."""
     connection = _get_pg_connection()
@@ -439,7 +345,9 @@ def _start_capture_run(run_id: uuid.UUID) -> None:
     )
 
 
-def _finish_capture_run(run_id: uuid.UUID, *, status: str, error: str | None = None) -> None:
+def _finish_capture_run(
+    run_id: uuid.UUID, *, status: str, error: str | None = None
+) -> None:
     _execute_control(
         """
         UPDATE control.ingestion_run
@@ -578,9 +486,7 @@ def ingest_slice(
                 request_parameters["realtime_start"] = realtime_start
             if realtime_end:
                 request_parameters["realtime_end"] = realtime_end
-            fingerprint = request_fingerprint(
-                "FRED", endpoint, request_parameters
-            )
+            fingerprint = request_fingerprint("FRED", endpoint, request_parameters)
             _start_capture_request(
                 request_id=request_id,
                 run_id=run_id,
@@ -616,9 +522,7 @@ def ingest_slice(
                     request_parameters=request_parameters,
                     retrieved_at=datetime.now(timezone.utc),
                     http_status=getattr(response_data, "http_status", 200),
-                    response_headers=getattr(
-                        response_data, "response_headers", {}
-                    ),
+                    response_headers=getattr(response_data, "response_headers", {}),
                     media_type="application/json",
                     payload=payload,
                     payload_schema_version="fred-series-observations-v1",
@@ -658,9 +562,7 @@ def ingest_slice(
             )
             total_rows += rows
 
-            time.sleep(
-                CONFIG.fred_api_min_spacing_seconds + random.random() * 0.2
-            )
+            time.sleep(CONFIG.fred_api_min_spacing_seconds + random.random() * 0.2)
     except BaseException as error:
         _finish_capture_run(
             run_id,

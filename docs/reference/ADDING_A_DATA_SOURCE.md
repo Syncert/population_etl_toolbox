@@ -13,7 +13,7 @@ Begin with the [source-adapter starter](../templates/source-adapter/README.md), 
 - [ ] Define the endpoint, request fingerprint, media type, schema/version identifier, and sensitive-data handling.
 - [ ] Persist and commit an append-only, lossless response capture before parsing; include checksum, retrieval time, HTTP metadata, and run lineage.
 - [ ] Put attempts, slices, retries, watermarks, errors, and quarantine status in the control plane, not the raw schema.
-- [ ] Implement offline raw-to-silver replay from a checked-in representative fixture.
+- [ ] Implement offline capture-to-silver-revision replay from a checked-in representative fixture.
 - [ ] Perform parsing, typing, null interpretation, reshaping, deduplication/revision selection, validation, and derived identifiers in silver.
 - [ ] Publish only deterministic, data-derived facts in gold.
 - [ ] Expose the versioned glossary publisher contract without creating, altering, dropping, or seeding `gold_glossary` objects.

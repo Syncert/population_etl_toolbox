@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import uuid
 import random
 import time
@@ -16,7 +15,6 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
-from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -367,96 +365,6 @@ def rows_to_polars(
     return long_df
 
 
-@retry_database_transaction
-def load_df_to_acs_long(
-    df: pl.DataFrame, dataset: str, year: int, geo_level: str
-) -> int:
-    """
-    Bulk load a Polars DataFrame into raw_census.acs_long using COPY.
-
-    We first delete existing rows for (dataset, year, geo_level) for the
-    subset of geo_ids present in this batch (idempotent per partition).
-    """
-    if df.is_empty():
-        return 0
-    if df.height > CONFIG.raw_load_max_rows:
-        raise ValueError(
-            f"Census raw batch has {df.height} rows; configured maximum is "
-            f"{CONFIG.raw_load_max_rows}"
-        )
-
-    conn = _get_pg_connection()
-    try:
-        conn.autocommit = False
-        cur = conn.cursor()
-
-        geo_ids = df.select("geo_id").unique().to_series().to_list()
-        for geo_id in sorted(geo_ids):
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (f"raw_census.acs_long:{dataset}:{year}:{geo_level}:{geo_id}",),
-            )
-
-        # Delete existing rows for this slice
-        cur.execute(
-            """
-            DELETE FROM raw_census.acs_long
-            WHERE dataset = %s
-              AND year = %s
-              AND geo_level = %s
-              AND geo_id = ANY(%s);
-            """,
-            (dataset, year, geo_level, geo_ids),
-        )
-
-        # Prepare CSV in-memory
-        output = io.StringIO()
-        df.select(
-            [
-                "dataset",
-                "year",
-                "geo_level",
-                "geo_id",
-                "state_fips",
-                "county_fips",
-                "table_id",
-                "variable_name",
-                "measure_type",
-                "value",
-                "load_batch_id",
-                "ingested_at",
-            ]
-        ).write_csv(output, include_header=False)
-        output.seek(0)
-
-        # Copy into Postgres
-        cur.copy_expert(
-            """
-            COPY raw_census.acs_long (
-                dataset, year, geo_level, geo_id,
-                state_fips, county_fips, table_id,
-                variable_name, measure_type,
-                value, load_batch_id, ingested_at
-            )
-            FROM STDIN WITH (FORMAT csv);
-            """,
-            output,
-        )
-
-        rowcount = cur.rowcount  # COPY's rowcount is a bit weird, but good enough
-
-        conn.commit()
-        return rowcount
-
-    finally:
-        # Make sure we actually close this stuff even on error
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
 def ingest_slice(
     year: int,
     dataset: str,
@@ -500,6 +408,7 @@ def ingest_slice(
         endpoint=endpoint,
         total_rows=total_rows,
     )
+
 
 def _ingest_capture_chunks(
     *,
@@ -563,9 +472,7 @@ def _ingest_capture_chunks(
                     ),
                 )
             except BaseException as error:
-                control.finish_request(
-                    request.request_id, status="failed", error=error
-                )
+                control.finish_request(request.request_id, status="failed", error=error)
                 raise
 
             if not raw:

@@ -22,7 +22,9 @@ def test_census_ingest_captures_array_and_bypasses_legacy_raw(
     token = uuid4().hex[:8].upper()
     variable = f"B{token[:5]}_001E"
     payload = [[variable, "state", "county"], ["123", "55", "001"]]
-    monkeypatch.setattr(census_ingest, "_get_pg_connection", postgres_connection_factory)
+    monkeypatch.setattr(
+        census_ingest, "_get_pg_connection", postgres_connection_factory
+    )
     monkeypatch.setattr(
         census_ingest, "get_curated_variables", lambda _year, _dataset: [variable]
     )
@@ -44,11 +46,8 @@ def test_census_ingest_captures_array_and_bypasses_legacy_raw(
                 (variable,),
             )
             assert cursor.fetchone() == ("123", "valid", "55", "001")
-            cursor.execute(
-                "SELECT COUNT(*) FROM raw_census.acs_long WHERE variable_name = %s",
-                (variable,),
-            )
-            assert cursor.fetchone() == (0,)
+            cursor.execute("SELECT to_regclass('raw_census.acs_long')")
+            assert cursor.fetchone() == (None,)
     finally:
         reader.close()
 
@@ -104,10 +103,7 @@ def test_bls_ingest_captures_complete_response_and_bypasses_legacy_raw(
             row = cursor.fetchone()
             assert row[:4] == ("2099", "4.20", "true", "valid")
             assert "Preliminary" in row[4]
-            cursor.execute(
-                "SELECT COUNT(*) FROM raw_bls.bls_long WHERE series_id = %s",
-                (series_id,),
-            )
-            assert cursor.fetchone() == (0,)
+            cursor.execute("SELECT to_regclass('raw_bls.bls_long')")
+            assert cursor.fetchone() == (None,)
     finally:
         reader.close()

@@ -189,8 +189,7 @@ def _load_time_dim(
 
 def transform_fred_to_silver(domain: str) -> int:
     """
-    Transform ALL FRED raw data to silver layer for specified domain.
-    Processes entire raw_fred.fred_long table for this domain.
+    Transform captured FRED observation revisions for the specified domain.
 
     Reference: https://fred.stlouisfed.org/docs/api/fred/series_observations.html
     """
@@ -210,44 +209,18 @@ def transform_fred_to_silver(domain: str) -> int:
                 revision.realtime_end,
                 revision.capture_id,
                 revision.domain,
-                capture.retrieved_at AS revision_loaded_at,
-                1 AS source_priority
+                capture.retrieved_at AS revision_loaded_at
             FROM silver_fred.observation_revision AS revision
             JOIN raw_capture.response_capture AS capture
               ON capture.capture_id = revision.capture_id
             WHERE revision.domain = %s
-
-            UNION ALL
-
-            SELECT
-                series_id,
-                obs_date,
-                value,
-                is_missing,
-                NULL::TEXT AS value_source,
-                CASE WHEN is_missing THEN 'missing' ELSE 'valid' END AS value_status,
-                realtime_start,
-                realtime_end,
-                NULL::UUID AS capture_id,
-                domain,
-                ingested_at AS revision_loaded_at,
-                0 AS source_priority
-            FROM raw_fred.fred_long
-            WHERE domain = %s
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM silver_fred.observation_revision captured
-                  WHERE captured.domain = %s
-                    AND captured.series_id = raw_fred.fred_long.series_id
-              )
         ),
         latest_revisions AS (
             SELECT
                 *,
                 ROW_NUMBER() OVER (
                     PARTITION BY series_id, obs_date
-                    ORDER BY source_priority DESC,
-                             realtime_start DESC NULLS LAST,
+                    ORDER BY realtime_start DESC NULLS LAST,
                              revision_loaded_at DESC,
                              capture_id DESC NULLS LAST
                 ) as rn
@@ -276,7 +249,7 @@ def transform_fred_to_silver(domain: str) -> int:
     """
 
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (domain, domain, domain))
+        cur.execute(sql, (domain,))
         rows = cur.fetchall()
 
     if not rows:

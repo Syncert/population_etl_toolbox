@@ -1,0 +1,25 @@
+# CI evidence map
+
+This register assigns each delivery contract to one authoritative GitHub Actions job. Required pull-request checks use the stable job names below; scheduled checks are release-freshness evidence and do not masquerade as commit checks.
+
+| Contract | Authoritative workflow / job | Trigger tier | Owning paths |
+| --- | --- | --- | --- |
+| Formatting and repository evidence | `lint` / `Lint (ruff)` | Required PR/push | Python, tests, SQL manifests, docs contracts |
+| ETL pure behavior and layer boundaries | `etl-unit` / `ETL unit tests (Python 3.11)` | Required PR/push | `src`, ETL tests, migrations |
+| API models and query behavior | `api-unit` / `API unit tests (Python 3.11)` | Required PR/push | API, models, SQL query builders |
+| Overall and changed executable coverage | `coverage` / `Unit + database coverage gates (Python 3.11)` | Required PR/push | Application Python and database replay tests |
+| Runtime package contents and clean install | `package-api` / `Package build and install smoke (Python 3.11)` | Required PR/push | package metadata, runtime SQL, manifests |
+| Ordered empty warehouse bootstrap, rerun, replay | `postgres-integration` / `Warehouse integration (PostGIS 16 + Python 3.11)` | Required PR/push | source DDL, migrations, bootstrap manifest, database tests |
+| Airflow parsing and task topology | `dag-parse` / `DAG parse tests (Airflow 2.9.3 + Python 3.11)` | Required PR/push | DAGs, orchestration code, bootstrap manifest |
+| Linux scheduler compatibility | `scheduler-image` / `DAG suite in scheduler image` | Required PR/push | scheduler image, DAGs, ETL package, SQL |
+| Browser consumer contract | `frontend` / `Frontend lint, unit, build, and browser` | Required PR/push | web, API models, gold contracts, semantic migrations |
+| Redis cache isolation | `redis-integration` / `API cache integration (Redis 7 + Python 3.11)` | Required PR/push | API/cache behavior |
+| Spatial configuration | `martin-unit` / `Martin deterministic contracts (Python 3.11)` | Required PR/push | Martin configuration and contracts |
+| Spatial database/proxy behavior | `martin-integration` / `Martin/PostGIS/API/proxy contracts` | Required PR/push | geography, gold serving, Martin, proxy |
+| Deployment startup/readiness/teardown | `deployment-smoke` / `Deployment compose smoke` | Required PR/push | application, SQL, Docker, deployment config |
+| Live provider compatibility | `external-contract` / `Census, BLS, and FRED live contracts` | Scheduled/manual; fresh within 7 days for release | source adapters and provider fixtures |
+| Bounded E2E and performance | `e2e-performance` / `Bounded E2E and performance evidence` | Scheduled/manual; fresh within 7 days for release | full source-to-serving behavior |
+
+Branch protection should require the thirteen PR/push jobs above by their displayed job names. A release candidate additionally records successful live-provider and bounded E2E runs no older than seven days. The million-row profile remains opt-in and is required only when a release changes bulk loading, chunking, or serving-query plans.
+
+The executable mirror is `tests/support/ci_evidence_manifest.json`; unit validation fails when a named workflow/job disappears or an architecture-sensitive owning path loses its trigger.

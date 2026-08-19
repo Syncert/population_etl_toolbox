@@ -22,13 +22,8 @@ _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_fred.sql"
 _PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
 _SCHEMA_COMPONENT = "gold_ddl_fred"
 _REQUIRED_RELATIONS = (
-    "gold_glossary.dim_geo",
-    "gold_glossary.dim_source_system",
-    "gold_glossary.dim_metric_catalog",
-    "gold_glossary.dim_geo_latest",
-    "gold_glossary.serving_refresh_state",
-    "gold_glossary.serving_refresh_chunk_state",
-    "gold_glossary.bridge_metric_fred_series",
+    "control.serving_refresh_state",
+    "control.serving_refresh_chunk_state",
     "gold_fred.dim_fred_series",
     "gold_fred.fact_fred_observation",
     "gold_fred.rpt_fred_observations",
@@ -36,7 +31,6 @@ _REQUIRED_RELATIONS = (
     "gold_fred.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
-    "gold_glossary.refresh_dim_geo_latest()",
     "gold_fred.refresh_rpt_fred_observations(date,date)",
     "gold_fred.refresh_mv_fred_latest(date,date)",
     "gold_fred.refresh_dashboard_serving_layer_fred(date,date,boolean)",
@@ -60,115 +54,6 @@ def ensure_fred_gold_schema(hook: PostgresHook | None = None) -> None:
         required_procedures=_REQUIRED_PROCEDURES,
         hook=hook,
     )
-
-
-def _seed_fred_metric_catalog(cur) -> int:
-    """Populate dim_metric_catalog and bridge_metric_fred_series from dim_fred_series."""
-    cur.execute(
-        """
-        WITH series_domain AS (
-            SELECT DISTINCT ON (f.series_id)
-                f.series_id,
-                COALESCE(NULLIF(f.domain, ''), 'macro') AS domain
-            FROM silver_fred.fact_economic_indicators f
-            WHERE f.series_id IS NOT NULL
-              AND f.series_id <> ''
-            ORDER BY f.series_id, f.observation_date DESC
-        )
-        INSERT INTO gold_glossary.dim_metric_catalog (
-            metric_code,
-            metric_display_name,
-            source_code,
-            source_object_type,
-            business_definition,
-            caveats,
-            valid_geo_grains,
-            valid_time_grains,
-            dashboard_suitability,
-            comparability_group,
-            do_not_compare_with,
-            recommended_aggregation,
-            owner_team,
-            is_active
-        )
-        SELECT
-            'FRED:' || s.series_id AS metric_code,
-            COALESCE(NULLIF(s.series_title, ''), s.series_id) AS metric_display_name,
-            'FRED' AS source_code,
-            'FRED_SERIES' AS source_object_type,
-            CONCAT_WS(
-                ' ',
-                COALESCE(NULLIF(s.lineage_notes, ''), 'FRED curated macro series.'),
-                CASE
-                    WHEN sd.domain IS NOT NULL THEN 'Domain: ' || sd.domain || '.'
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN NULLIF(s.frequency, '') IS NOT NULL THEN 'Frequency: ' || s.frequency || '.'
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN NULLIF(s.units, '') IS NOT NULL THEN 'Units: ' || s.units || '.'
-                    ELSE NULL
-                END
-            ) AS business_definition,
-            CASE
-                WHEN s.is_republished_series = TRUE THEN 'FRED republishes upstream source series; confirm the original publisher before making primary-source comparability claims.'
-                ELSE NULL
-            END AS caveats,
-            ARRAY['NATIONAL']::TEXT[] AS valid_geo_grains,
-            CASE
-                WHEN LOWER(COALESCE(s.frequency, '')) LIKE '%daily%' THEN ARRAY['DAILY']::TEXT[]
-                WHEN LOWER(COALESCE(s.frequency, '')) LIKE '%weekly%' THEN ARRAY['WEEKLY']::TEXT[]
-                WHEN LOWER(COALESCE(s.frequency, '')) LIKE '%quarter%' THEN ARRAY['QUARTERLY']::TEXT[]
-                WHEN LOWER(COALESCE(s.frequency, '')) LIKE '%annual%' THEN ARRAY['ANNUAL']::TEXT[]
-                ELSE ARRAY['MONTHLY']::TEXT[]
-            END AS valid_time_grains,
-            'PUBLIC_SAFE' AS dashboard_suitability,
-            'FRED:' || UPPER(COALESCE(sd.domain, 'macro')) AS comparability_group,
-            ARRAY[]::TEXT[] AS do_not_compare_with,
-            'LAST' AS recommended_aggregation,
-            'data-eng' AS owner_team,
-            TRUE AS is_active
-        FROM gold_fred.dim_fred_series s
-        LEFT JOIN series_domain sd
-          ON sd.series_id = s.series_id
-        ON CONFLICT (metric_code)
-        DO UPDATE SET
-            metric_display_name = EXCLUDED.metric_display_name,
-            business_definition = EXCLUDED.business_definition,
-            caveats = EXCLUDED.caveats,
-            valid_geo_grains = EXCLUDED.valid_geo_grains,
-            valid_time_grains = EXCLUDED.valid_time_grains,
-            dashboard_suitability = EXCLUDED.dashboard_suitability,
-            comparability_group = EXCLUDED.comparability_group,
-            do_not_compare_with = EXCLUDED.do_not_compare_with,
-            recommended_aggregation = EXCLUDED.recommended_aggregation,
-            owner_team = EXCLUDED.owner_team,
-            is_active = EXCLUDED.is_active,
-            updated_at = NOW();
-        """
-    )
-
-    cur.execute(
-        """
-        INSERT INTO gold_glossary.bridge_metric_fred_series (metric_catalog_sk, fred_series_sk)
-        SELECT c.metric_catalog_sk, s.fred_series_sk
-        FROM gold_glossary.dim_metric_catalog c
-        JOIN gold_fred.dim_fred_series s
-          ON c.metric_code = 'FRED:' || s.series_id
-        ON CONFLICT (metric_catalog_sk, fred_series_sk) DO NOTHING;
-        """
-    )
-
-    cur.execute(
-        """
-        SELECT COUNT(*)
-        FROM gold_glossary.dim_metric_catalog
-        WHERE source_code = 'FRED'
-        """
-    )
-    return cur.fetchone()[0]
 
 
 def refresh_fred_elements(hook: PostgresHook | None = None) -> int:

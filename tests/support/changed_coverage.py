@@ -22,7 +22,7 @@ def _changed_lines(base_ref: str) -> dict[str, set[int]]:
             "--ignore-all-space",
             "--unified=0",
             "--no-color",
-            f"{base_ref}...HEAD",
+            base_ref,
             "--",
             "*.py",
         ],

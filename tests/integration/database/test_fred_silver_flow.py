@@ -1,4 +1,4 @@
-"""FRED raw-to-silver integration and dimension-miss contracts."""
+"""FRED revision-to-silver integration and dimension-miss contracts."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import seed_capture
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -49,15 +50,6 @@ def fred_silver_token(
                     (f"TEST_FRED_SILVER_{token}%",),
                 )
                 cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_fred_series b
-                    USING gold_fred.dim_fred_series s
-                    WHERE b.fred_series_sk = s.fred_series_sk
-                      AND s.series_id LIKE %s
-                    """,
-                    (f"TEST_FRED_SILVER_{token}%",),
-                )
-                cursor.execute(
                     "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code LIKE %s",
                     (f"FRED:TEST_FRED_SILVER_{token}%",),
                 )
@@ -70,24 +62,16 @@ def fred_silver_token(
                     (f"TEST_FRED_SILVER_{token}%",),
                 )
                 cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE series_id LIKE %s",
-                    (f"TEST_FRED_SILVER_{token}%",),
-                )
-                cursor.execute(
                     "DELETE FROM raw_fred.fred_series WHERE series_id LIKE %s",
                     (f"TEST_FRED_SILVER_{token}%",),
                 )
                 cursor.execute(
-                    "DELETE FROM gold_glossary.serving_refresh_chunk_state "
+                    "DELETE FROM control.serving_refresh_chunk_state "
                     "WHERE source_code = 'FRED'"
                 )
                 cursor.execute(
-                    "DELETE FROM gold_glossary.serving_refresh_state "
+                    "DELETE FROM control.serving_refresh_state "
                     "WHERE source_code = 'FRED'"
-                )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_time "
-                    "WHERE time_sk IN (20980101, 20990101, 20990201)"
                 )
             cleanup.commit()
         finally:
@@ -173,8 +157,7 @@ def test_fred_capture_replay_retains_revisions_and_selects_latest_silver(
         payload = (
             '{"observations":[{"realtime_start":"2099-02-0%d",'
             '"realtime_end":"2099-02-0%d","date":"2099-01-01",'
-            '"value":"%s"},{"date":"2099-01-02","value":"."}]}'
-            % (day, day, value)
+            '"value":"%s"},{"date":"2099-01-02","value":"."}]}' % (day, day, value)
         ).encode()
         persist_response_capture(
             postgres_connection_factory,
@@ -193,12 +176,15 @@ def test_fred_capture_replay_retains_revisions_and_selects_latest_silver(
                 source_revision=f"2099-02-0{day}",
             ),
         )
-        assert replay_fred_capture(
-            postgres_connection_factory,
-            capture_id=capture_id,
-            series_id=series_id,
-            domain=domain,
-        ) == 2
+        assert (
+            replay_fred_capture(
+                postgres_connection_factory,
+                capture_id=capture_id,
+                series_id=series_id,
+                domain=domain,
+            )
+            == 2
+        )
         captures.append(capture_id)
 
     monkeypatch.setattr(
@@ -244,7 +230,7 @@ def test_fred_raw_rows_transform_to_exact_silver_durations(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
 ) -> None:
-    """Covers: DB-010 — FRED raw rows produce exact silver keys and durations."""
+    """Covers: DB-010 — FRED revisions produce exact silver keys and durations."""
     series_id = f"TEST_FRED_SILVER_{fred_silver_token}"
     domain = f"test_{fred_silver_token.lower()}"
     writer = postgres_connection_factory()
@@ -260,16 +246,19 @@ def test_fred_raw_rows_transform_to_exact_silver_durations(
                 """,
                 (series_id,),
             )
+            capture_id = seed_capture(cursor, "FRED")
             cursor.execute(
-                """
-                INSERT INTO raw_fred.fred_long (
-                    domain, series_id, obs_date, value, is_missing,
-                    realtime_start, realtime_end, load_batch_id
+                """INSERT INTO silver_fred.observation_revision (
+                    capture_id, observation_index, domain, series_id,
+                    observation_date_source, value_source, realtime_start_source,
+                    realtime_end_source, observation_date, value, value_status,
+                    realtime_start, realtime_end
                 ) VALUES
-                    (%s, %s, '2099-01-01', 10.5, FALSE, '2099-03-01', '2099-03-01', %s),
-                    (%s, %s, '2099-02-01', 11.5, FALSE, '2099-03-01', '2099-03-01', %s)
-                """,
-                (domain, series_id, str(uuid4()), domain, series_id, str(uuid4())),
+                    (%s, 0, %s, %s, '2099-01-01', '10.5', '2099-03-01',
+                     '2099-03-01', '2099-01-01', 10.5, 'valid', '2099-03-01', '2099-03-01'),
+                    (%s, 1, %s, %s, '2099-02-01', '11.5', '2099-03-01',
+                     '2099-03-01', '2099-02-01', 11.5, 'valid', '2099-03-01', '2099-03-01')""",
+                (capture_id, domain, series_id, capture_id, domain, series_id),
             )
         writer.commit()
     finally:
@@ -347,14 +336,17 @@ def test_fred_missing_time_dimension_is_counted_and_not_inserted(
                 """,
                 (series_id,),
             )
+            capture_id = seed_capture(cursor, "FRED")
             cursor.execute(
-                """
-                INSERT INTO raw_fred.fred_long (
-                    domain, series_id, obs_date, value, is_missing,
-                    realtime_start, realtime_end, load_batch_id
-                ) VALUES (%s, %s, '2199-01-01', 1, FALSE, '2199-02-01', '2199-02-01', %s)
-                """,
-                (domain, series_id, str(uuid4())),
+                """INSERT INTO silver_fred.observation_revision (
+                    capture_id, observation_index, domain, series_id,
+                    observation_date_source, value_source, realtime_start_source,
+                    realtime_end_source, observation_date, value, value_status,
+                    realtime_start, realtime_end
+                ) VALUES (%s, 0, %s, %s, '2199-01-01', '1', '2199-02-01',
+                          '2199-02-01', '2199-01-01', 1, 'valid',
+                          '2199-02-01', '2199-02-01')""",
+                (capture_id, domain, series_id),
             )
         writer.commit()
     finally:
@@ -379,11 +371,11 @@ def test_fred_missing_time_dimension_is_counted_and_not_inserted(
         reader.close()
 
 
-def test_fred_silver_to_gold_refresh_populates_catalog_bridge_and_serving(
+def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
 ) -> None:
-    """Covers: DB-012 — silver-to-gold refresh creates exact serving relationships."""
+    """Covers: DB-012 — independent harvest links source facts to serving rows."""
     series_id = f"TEST_FRED_SILVER_{fred_silver_token}_GOLD"
     writer = postgres_connection_factory()
     try:
@@ -410,9 +402,7 @@ def test_fred_silver_to_gold_refresh_populates_catalog_bridge_and_serving(
 
     hook = PostgresHookStub(postgres_connection_factory)
     assert gold_transform.refresh_fred_elements(hook) >= 1
-    assert harvest_publisher(
-        postgres_connection_factory, Publisher("gold_fred")
-    ) >= 1
+    assert harvest_publisher(postgres_connection_factory, Publisher("gold_fred")) >= 1
     refresher = postgres_connection_factory()
     try:
         with refresher.cursor() as cursor:
@@ -582,12 +572,11 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
                 (series_id, str(uuid4()), series_id, str(uuid4())),
             )
             cursor.execute(
-                "DELETE FROM gold_glossary.serving_refresh_chunk_state "
+                "DELETE FROM control.serving_refresh_chunk_state "
                 "WHERE source_code = 'FRED'"
             )
             cursor.execute(
-                "DELETE FROM gold_glossary.serving_refresh_state "
-                "WHERE source_code = 'FRED'"
+                "DELETE FROM control.serving_refresh_state WHERE source_code = 'FRED'"
             )
         writer.commit()
     finally:
@@ -609,7 +598,7 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
             cursor.execute(
                 """
                 SELECT status, attempt_count FROM
-                    gold_glossary.serving_refresh_chunk_state
+                    control.serving_refresh_chunk_state
                 WHERE source_code = 'FRED' ORDER BY chunk_start
                 """
             )
@@ -640,7 +629,7 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
                 """
                 SELECT status, attempt_count,
                        completed_silver_ingested_at >= target_silver_ingested_at
-                FROM gold_glossary.serving_refresh_chunk_state
+                FROM control.serving_refresh_chunk_state
                 WHERE source_code = 'FRED' ORDER BY chunk_start
                 """
             )
@@ -651,7 +640,7 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
             cursor.execute(
                 """
                 SELECT last_window_start::TEXT, last_window_end::TEXT
-                FROM gold_glossary.serving_refresh_state
+                FROM control.serving_refresh_state
                 WHERE source_code = 'FRED'
                 """
             )

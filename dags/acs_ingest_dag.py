@@ -10,12 +10,12 @@
 #    - If you change the curated variable list in config.py, variables_hash changes
 #    - Any previously completed slices with an old hash become "stale" and are re-run
 # 5) Uses a Pool ("census_api") to limit concurrency and respect Census API limits
-# 6) Tracks status/rows/errors in raw_census.acs_ingestion_slices
+# 6) Tracks status/rows/errors in control.acs_ingestion_slices
 #
 # REQUIRED DB TABLES:
 # - raw_census.acs_datasets          (filtered to base Detailed Tables only)
-# - raw_census.acs_ingestion_slices  (ledger)
-# - raw_census.acs_long              (fact table)
+# - control.acs_ingestion_slices  (ledger)
+# - raw_capture.response_capture -> silver_census.observation_revision
 #
 # REQUIRED AIRFLOW POOLS:
 # - Create a pool named "census_api" in Airflow UI and set its size conservatively (start with 4).
@@ -149,7 +149,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     started = datetime.now(timezone.utc)
 
     sql_running_update = """
-        UPDATE raw_census.acs_ingestion_slices
+        UPDATE control.acs_ingestion_slices
         SET status = 'running',
             rows_loaded = 0,
             started_at = %s,
@@ -165,7 +165,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     """
 
     sql_running_insert = """
-        INSERT INTO raw_census.acs_ingestion_slices (
+        INSERT INTO control.acs_ingestion_slices (
             dataset, year, geo_level, state_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
@@ -219,7 +219,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         final_status = "empty" if rows_loaded == 0 else "success"
 
         sql_done = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
                 finished_at = %s,
@@ -255,7 +255,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         err_txt = sanitize_error_message(e)
 
         sql_failed = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = 'failed',
                 finished_at = %s,
                 last_error = %s
@@ -291,7 +291,7 @@ def acs_ingest():
     - Build plan (us/state + county per state)
     - Skip completed slices *unless* variable set changed (hash mismatch)
     - Ingest remaining slices with dynamic task mapping and pool throttling
-    - Record progress in raw_census.acs_ingestion_slices
+    - Record progress in control.acs_ingestion_slices
     """
 
     # -----------------------------
@@ -391,7 +391,7 @@ def acs_ingest():
 
         sql_completed = """
             SELECT dataset, year, geo_level, state_fips, variables_hash
-            FROM raw_census.acs_ingestion_slices
+            FROM control.acs_ingestion_slices
             WHERE status IN ('success','empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -487,17 +487,17 @@ def acs_ingest():
         now = datetime.now(timezone.utc)
 
         sql_planned_update = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.status
+                    WHEN control.acs_ingestion_slices.status IN ('success','empty')
+                        AND control.acs_ingestion_slices.variables_hash = %s
+                    THEN control.acs_ingestion_slices.status
                     ELSE 'planned'
                 END,
                 rows_loaded = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.rows_loaded
+                    WHEN control.acs_ingestion_slices.status IN ('success','empty')
+                        AND control.acs_ingestion_slices.variables_hash = %s
+                    THEN control.acs_ingestion_slices.rows_loaded
                     ELSE 0
                 END,
                 variables_hash = %s,
@@ -511,7 +511,7 @@ def acs_ingest():
         """
 
         sql_planned_insert = """
-            INSERT INTO raw_census.acs_ingestion_slices (
+            INSERT INTO control.acs_ingestion_slices (
                 dataset, year, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
@@ -645,7 +645,6 @@ def acs_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET lock_timeout = '30s'")
             cur.execute("SET statement_timeout = '10min'")
-            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             conn.commit()
 
     @task(trigger_rule="none_failed")

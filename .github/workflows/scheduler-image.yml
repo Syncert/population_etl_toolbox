@@ -5,7 +5,9 @@ on:
     paths:
       - "dags/**"
       - "src/**"
+      - "sql/**"
       - "tests/dags/**"
+      - "tests/support/**"
       - "infra/airflow/Dockerfile"
       - "pyproject.toml"
       - ".github/workflows/scheduler-image.yml"

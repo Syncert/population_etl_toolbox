@@ -107,6 +107,12 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "ingestion_request"),
         ("control", "capture_quarantine"),
         ("control", "publisher_ready_event"),
+        ("control", "schema_migration_state"),
+        ("control", "serving_refresh_state"),
+        ("control", "serving_refresh_chunk_state"),
+        ("control", "acs_ingestion_slices"),
+        ("control", "bls_ingestion_slices"),
+        ("control", "fred_ingestion_slices"),
     }
     with postgres_connection.cursor() as cursor:
         cursor.execute(

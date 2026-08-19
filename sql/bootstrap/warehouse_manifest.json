@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "assets": [
+    {"id": "migration-001", "phase": "foundation", "path": "sql/migrations/001_raw_capture_control_foundation.sql"},
+    {"id": "migration-002", "phase": "glossary-migration", "path": "sql/migrations/002_gold_glossary_decoupling.sql"},
+    {"id": "reference", "phase": "reference", "path": "src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql"},
+    {"id": "raw-census", "phase": "raw", "path": "src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql"},
+    {"id": "raw-bls", "phase": "raw", "path": "src/data_ingestion_toolbox/bls/DDL/raw_bls.sql"},
+    {"id": "raw-fred", "phase": "raw", "path": "src/data_ingestion_toolbox/fred/DDL/raw_fred.sql"},
+    {"id": "silver-census", "phase": "silver", "path": "src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql"},
+    {"id": "silver-bls", "phase": "silver", "path": "src/data_ingestion_toolbox/bls/DDL/silver_bls.sql"},
+    {"id": "silver-fred", "phase": "silver", "path": "src/data_ingestion_toolbox/fred/DDL/silver_fred.sql"},
+    {"id": "migration-004", "phase": "source-cutover", "path": "sql/migrations/004_fred_capture_cutover.sql"},
+    {"id": "migration-005", "phase": "source-cutover", "path": "sql/migrations/005_census_acs_capture_cutover.sql"},
+    {"id": "migration-006", "phase": "source-cutover", "path": "sql/migrations/006_bls_capture_cutover.sql"},
+    {"id": "migration-007", "phase": "source-cutover", "path": "sql/migrations/007_remove_legacy_parsed_raw.sql"},
+    {"id": "gold-census", "phase": "gold", "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"},
+    {"id": "gold-bls", "phase": "gold", "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"},
+    {"id": "gold-fred", "phase": "gold", "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql"},
+    {"id": "publisher-census", "phase": "publisher", "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"},
+    {"id": "publisher-bls", "phase": "publisher", "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql"},
+    {"id": "publisher-fred", "phase": "publisher", "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql"},
+    {"id": "glossary-schema", "phase": "glossary", "path": "sql/gold_contract/002_gold_glossary_schema.sql"},
+    {"id": "migration-003", "phase": "semantic-cutover", "path": "sql/migrations/003_semantic_policy_extraction.sql"},
+    {"id": "contract-views", "phase": "contract", "path": "sql/gold_contract/001_gold_contract_views.sql"}
+  ]
+}

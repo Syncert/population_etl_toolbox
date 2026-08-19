@@ -354,10 +354,8 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
         SELECT COALESCE(SUM(c.reltuples), 0)::bigint
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE (n.nspname, c.relname) IN (
-            ('raw_census', 'acs_long'),
-            ('silver_census', 'observation_revision')
-        );
+        WHERE n.nspname = 'silver_census'
+          AND c.relname = 'observation_revision';
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -395,19 +393,6 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
                    table_id, variable_name, measure_type, value
             FROM captured_ranked
             WHERE revision_rank = 1
-
-            UNION ALL
-
-            SELECT legacy.dataset, legacy.year, legacy.geo_level,
-                   legacy.state_fips, legacy.county_fips, legacy.table_id,
-                   legacy.variable_name, legacy.measure_type, legacy.value
-            FROM raw_census.acs_long AS legacy
-            WHERE NOT EXISTS (
-                SELECT 1 FROM silver_census.observation_revision captured
-                WHERE captured.dataset = legacy.dataset
-                  AND captured.year = legacy.year
-                  AND captured.geo_level = legacy.geo_level
-            )
         )
         SELECT
             dataset,
@@ -1135,7 +1120,7 @@ def _upsert_silver_rows(
 def transform_census_to_silver() -> int:
     """Transform ALL Census ACS raw data to silver layer.
 
-    Processes ``raw_census.acs_long`` in memory-safe year chunks and upserts
+    Processes captured observation revisions in memory-safe year chunks and upserts
     ``silver_census.fact_demographics``. Census errata on an existing natural
     key propagate, while equivalent replays report zero changed rows.
 
@@ -1163,17 +1148,7 @@ def transform_census_to_silver() -> int:
     logger.info("[CENSUS_ACS] Gathering per-year row counts...")
     sql = """
         SELECT year, COUNT(*)
-        FROM (
-            SELECT year FROM silver_census.observation_revision
-            UNION ALL
-            SELECT legacy.year FROM raw_census.acs_long legacy
-            WHERE NOT EXISTS (
-                SELECT 1 FROM silver_census.observation_revision captured
-                WHERE captured.dataset = legacy.dataset
-                  AND captured.year = legacy.year
-                  AND captured.geo_level = legacy.geo_level
-            )
-        ) observations
+        FROM silver_census.observation_revision
         GROUP BY year ORDER BY year;
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

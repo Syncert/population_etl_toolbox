@@ -68,10 +68,10 @@ def build_month_shards(window_start: date, window_end: date) -> list[DateShard]:
 
 
 def _ensure_schema_state_table(cur: Any) -> None:
-    cur.execute("CREATE SCHEMA IF NOT EXISTS gold_glossary")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS control")
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS gold_glossary.schema_migration_state (
+        CREATE TABLE IF NOT EXISTS control.schema_migration_state (
             component_name TEXT PRIMARY KEY,
             ddl_hash       TEXT NOT NULL,
             applied_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -84,7 +84,7 @@ def _get_recorded_hash(cur: Any, component_name: str) -> str | None:
     cur.execute(
         """
         SELECT ddl_hash
-        FROM gold_glossary.schema_migration_state
+        FROM control.schema_migration_state
         WHERE component_name = %s
         """,
         (component_name,),
@@ -96,7 +96,7 @@ def _get_recorded_hash(cur: Any, component_name: str) -> str | None:
 def _record_hash(cur: Any, component_name: str, ddl_hash: str) -> None:
     cur.execute(
         """
-        INSERT INTO gold_glossary.schema_migration_state (component_name, ddl_hash, applied_at)
+        INSERT INTO control.schema_migration_state (component_name, ddl_hash, applied_at)
         VALUES (%s, %s, NOW())
         ON CONFLICT (component_name) DO UPDATE
         SET ddl_hash = EXCLUDED.ddl_hash,
@@ -211,7 +211,7 @@ def refresh_serving_layer_in_year_chunks(
         cur.execute("SET LOCAL statement_timeout = '10min'")
         cur.execute(
             f"""
-            INSERT INTO gold_glossary.serving_refresh_state (
+            INSERT INTO control.serving_refresh_state (
                 source_code,
                 last_silver_ingested_at,
                 last_refresh_completed_at
@@ -228,7 +228,7 @@ def refresh_serving_layer_in_year_chunks(
         cur.execute(
             """
             SELECT last_silver_ingested_at
-            FROM gold_glossary.serving_refresh_state
+            FROM control.serving_refresh_state
             WHERE source_code = %s
             FOR UPDATE
             """,
@@ -237,7 +237,7 @@ def refresh_serving_layer_in_year_chunks(
         watermark = cur.fetchone()[0]
         cur.execute(
             """
-            UPDATE gold_glossary.serving_refresh_state
+            UPDATE control.serving_refresh_state
             SET last_refresh_started_at = clock_timestamp(),
                 updated_at = NOW()
             WHERE source_code = %s
@@ -251,7 +251,7 @@ def refresh_serving_layer_in_year_chunks(
         for chunk_start, chunk_end, target_watermark in changed_chunks:
             cur.execute(
                 """
-                INSERT INTO gold_glossary.serving_refresh_chunk_state (
+                INSERT INTO control.serving_refresh_chunk_state (
                     source_code,
                     chunk_start,
                     chunk_end,
@@ -262,25 +262,25 @@ def refresh_serving_layer_in_year_chunks(
                 VALUES (%s, %s, %s, %s, 'PENDING', NOW())
                 ON CONFLICT (source_code, chunk_start, chunk_end) DO UPDATE
                 SET target_silver_ingested_at = GREATEST(
-                        gold_glossary.serving_refresh_chunk_state.target_silver_ingested_at,
+                        control.serving_refresh_chunk_state.target_silver_ingested_at,
                         EXCLUDED.target_silver_ingested_at
                     ),
                     status = CASE
                         WHEN COALESCE(
-                            gold_glossary.serving_refresh_chunk_state.completed_silver_ingested_at,
+                            control.serving_refresh_chunk_state.completed_silver_ingested_at,
                             '-infinity'::TIMESTAMPTZ
                         ) >= GREATEST(
-                            gold_glossary.serving_refresh_chunk_state.target_silver_ingested_at,
+                            control.serving_refresh_chunk_state.target_silver_ingested_at,
                             EXCLUDED.target_silver_ingested_at
                         ) THEN 'COMPLETE'
                         ELSE 'PENDING'
                     END,
                     last_error = CASE
                         WHEN COALESCE(
-                            gold_glossary.serving_refresh_chunk_state.completed_silver_ingested_at,
+                            control.serving_refresh_chunk_state.completed_silver_ingested_at,
                             '-infinity'::TIMESTAMPTZ
                         ) >= EXCLUDED.target_silver_ingested_at
-                        THEN gold_glossary.serving_refresh_chunk_state.last_error
+                        THEN control.serving_refresh_chunk_state.last_error
                         ELSE NULL
                     END,
                     updated_at = NOW()
@@ -312,7 +312,7 @@ def refresh_serving_layer_in_year_chunks(
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE gold_glossary.serving_refresh_state
+                UPDATE control.serving_refresh_state
                 SET last_refresh_completed_at = clock_timestamp(),
                     updated_at = NOW()
                 WHERE source_code = %s
@@ -357,7 +357,7 @@ def refresh_serving_layer_in_year_chunks(
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE gold_glossary.serving_refresh_chunk_state
+                UPDATE control.serving_refresh_chunk_state
                 SET status = 'RUNNING',
                     attempt_count = attempt_count + 1,
                     last_refresh_started_at = clock_timestamp(),
@@ -407,7 +407,7 @@ def refresh_serving_layer_in_year_chunks(
                 report_rows = int(cur.fetchone()[0])
                 cur.execute(
                     """
-                    UPDATE gold_glossary.serving_refresh_chunk_state
+                    UPDATE control.serving_refresh_chunk_state
                     SET completed_silver_ingested_at = %s,
                         status = 'COMPLETE',
                         last_refresh_completed_at = clock_timestamp(),
@@ -430,7 +430,7 @@ def refresh_serving_layer_in_year_chunks(
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE gold_glossary.serving_refresh_chunk_state
+                    UPDATE control.serving_refresh_chunk_state
                     SET status = 'FAILED',
                         last_error = %s,
                         updated_at = NOW()
@@ -476,7 +476,7 @@ def refresh_serving_layer_in_year_chunks(
         cur.execute(
             """
             SELECT COUNT(*)
-            FROM gold_glossary.serving_refresh_chunk_state c
+            FROM control.serving_refresh_chunk_state c
             WHERE c.source_code = %s
               AND (c.chunk_start, c.chunk_end) IN (
                   SELECT * FROM UNNEST(%s::DATE[], %s::DATE[])
@@ -500,7 +500,7 @@ def refresh_serving_layer_in_year_chunks(
             )
         cur.execute(
             """
-            UPDATE gold_glossary.serving_refresh_state
+            UPDATE control.serving_refresh_state
             SET last_silver_ingested_at = GREATEST(
                     last_silver_ingested_at,
                     %s

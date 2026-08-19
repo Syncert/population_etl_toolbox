@@ -35,9 +35,8 @@ def test_high_cardinality_catalog_filter_stays_within_regression_budget(
                 """
                 INSERT INTO gold_glossary.dim_metric_catalog (
                     metric_code, metric_display_name, source_code,
-                    source_object_type, valid_geo_grains, valid_time_grains,
-                    dashboard_suitability, do_not_compare_with,
-                    recommended_aggregation, owner_team, is_active
+                    source_object_type, source_object_key,
+                    valid_geo_grains, valid_time_grains
                 ) VALUES %s
                 """,
                 [
@@ -46,13 +45,9 @@ def test_high_cardinality_catalog_filter_stays_within_regression_budget(
                         f"High cardinality fixture {index:04d}",
                         "FRED",
                         "FRED_SERIES",
+                        f"PERF_{token}_{index:04d}",
                         ["NATIONAL"],
                         ["MONTHLY"],
-                        "EXPERIMENTAL",
-                        [],
-                        "LAST",
-                        "test",
-                        True,
                     )
                     for index in range(metric_count)
                 ],
@@ -199,14 +194,6 @@ def test_api_traffic_during_atomic_gold_refresh_stays_consistent(
                 )
                 cursor.execute(
                     "DELETE FROM gold_fred.rpt_fred_observations WHERE series_id = %s",
-                    (series_id,),
-                )
-                cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_fred_series b
-                    USING gold_fred.dim_fred_series s
-                    WHERE b.fred_series_sk = s.fred_series_sk AND s.series_id = %s
-                    """,
                     (series_id,),
                 )
                 cursor.execute(

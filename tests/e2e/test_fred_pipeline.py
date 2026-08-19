@@ -80,7 +80,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
     postgres_connection_factory: Callable[[], connection],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Covers: E2E-003 — FRED fixture flows raw through the API exactly.
+    """Covers: E2E-003 — FRED fixture flows capture-first through the API exactly.
 
     Covers: E2E-004 — replay preserves fact counts and API JSON.
         Covers: E2E-005, ETL-023 — the latest source revision wins deterministically.
@@ -129,26 +129,24 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
         missing_payload = json.loads(
             (FIXTURE_ROOT / "e2e_dimension_miss.json").read_text(encoding="utf-8")
         )
-        assert (
-            fred_ingest.load_df_to_fred_long(
-                fred_ingest.parse_fred_response(payload, series_id, domain, uuid4())
-            )
-            == 2
+        payloads = {series_id: payload, missing_series: missing_payload}
+        monkeypatch.setattr(
+            fred_ingest,
+            "fetch_fred_observations",
+            lambda series_id, **_kwargs: payloads[series_id],
         )
         assert (
-            fred_ingest.load_df_to_fred_long(
-                fred_ingest.parse_fred_response(
-                    missing_payload, missing_series, domain, uuid4()
-                )
+            fred_ingest.ingest_slice(
+                domain, [series_id, missing_series], "2096-01-01", "2199-12-31"
             )
-            == 1
+            == 3
         )
 
         raw_reader = postgres_connection_factory()
         try:
             with raw_reader.cursor() as cursor:
                 cursor.execute(
-                    "SELECT COUNT(*) FROM raw_fred.fred_long WHERE series_id IN (%s, %s)",
+                    "SELECT COUNT(*) FROM silver_fred.observation_revision WHERE series_id IN (%s, %s)",
                     (series_id, missing_series),
                 )
                 assert cursor.fetchone() == (3,)
@@ -169,8 +167,8 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 "/api/observations/latest", params={"metric_code": metric_code}
             )
         assert first.status_code == common.status_code == 200
-        assert [item["value"] for item in first.json()["items"]] == ["10.0", "20.0"]
-        assert common.json()["items"][0]["value"] == "20.0"
+        assert [item["value"] for item in first.json()["items"]] == ["10", "20"]
+        assert common.json()["items"][0]["value"] == "20"
 
         assert silver_transform.transform_fred_to_silver(domain) == 2
         _refresh_gold(postgres_connection_factory, "2096-01-01", "2096-02-28")
@@ -181,22 +179,15 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
             )
         assert replay.json() == first.json()
 
-        revision = postgres_connection_factory()
-        try:
-            with revision.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO raw_fred.fred_long (
-                        domain, series_id, obs_date, value, is_missing,
-                        realtime_start, realtime_end, load_batch_id
-                    ) VALUES (%s, %s, '2096-02-01', 25, FALSE,
-                              '2096-04-01', '2096-04-01', %s)
-                    """,
-                    (domain, series_id, str(uuid4())),
-                )
-            revision.commit()
-        finally:
-            revision.close()
+        revised_payload = json.loads(json.dumps(payload))
+        revised_payload["observations"][1]["value"] = "25"
+        revised_payload["observations"][1]["realtime_start"] = "2096-04-01"
+        revised_payload["observations"][1]["realtime_end"] = "2096-04-01"
+        payloads[series_id] = revised_payload
+        assert (
+            fred_ingest.ingest_slice(domain, [series_id], "2096-01-01", "2096-02-28")
+            == 2
+        )
         assert silver_transform.transform_fred_to_silver(domain) == 2
         _refresh_gold(postgres_connection_factory, "2096-01-01", "2096-02-28")
         with _real_client() as client:
@@ -204,7 +195,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 "/api/fred/observations/timeseries",
                 params={"metric_code": metric_code, "geo_id": "us:1"},
             )
-        assert [item["value"] for item in revised.json()["items"]] == ["10.0", "25.0"]
+        assert [item["value"] for item in revised.json()["items"]] == ["10", "25"]
 
         reader = postgres_connection_factory()
         try:
@@ -229,15 +220,6 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                     (series_id, missing_series),
                 )
                 cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_fred_series b
-                    USING gold_fred.dim_fred_series s
-                    WHERE b.fred_series_sk = s.fred_series_sk
-                      AND s.series_id IN (%s, %s)
-                    """,
-                    (series_id, missing_series),
-                )
-                cursor.execute(
                     "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code LIKE %s",
                     (f"FRED:TEST_E2E_FRED_{token}%",),
                 )
@@ -247,10 +229,6 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
                 )
                 cursor.execute(
                     "DELETE FROM silver_fred.fact_economic_indicators WHERE series_id IN (%s, %s)",
-                    (series_id, missing_series),
-                )
-                cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE series_id IN (%s, %s)",
                     (series_id, missing_series),
                 )
                 cursor.execute(

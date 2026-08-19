@@ -37,74 +37,29 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
     metric_code            TEXT NOT NULL UNIQUE,
     metric_display_name    TEXT NOT NULL,
     source_code            TEXT NOT NULL REFERENCES gold_glossary.dim_source_system(source_code),
-    source_object_type     TEXT NOT NULL CHECK (source_object_type IN ('ACS_VARIABLE', 'BLS_SERIES', 'FRED_SERIES', 'COMPOSITE_VIEW')),
-    business_definition    TEXT,
-    caveats                TEXT,
+    source_object_type     TEXT NOT NULL,
+    source_object_key      TEXT,
     valid_geo_grains       TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     valid_time_grains      TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    dashboard_suitability  TEXT NOT NULL DEFAULT 'PUBLIC_SAFE'
-        CHECK (dashboard_suitability IN ('PUBLIC_SAFE', 'INTERNAL_ONLY', 'EXPERIMENTAL')),
-    comparability_group    TEXT,
-    do_not_compare_with    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    recommended_aggregation TEXT,
-    owner_team             TEXT,
-    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    units                  TEXT,
+    measure_kind           TEXT,
+    aggregation_characteristic TEXT,
+    physical_lineage       JSONB NOT NULL DEFAULT '{}'::JSONB,
+    publisher_contract_version TEXT,
+    source_watermark       TEXT,
+    source_run_id          UUID,
+    publication_time       TIMESTAMPTZ,
+    harvested_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    freshness_state        TEXT NOT NULL DEFAULT 'current'
+        CHECK (freshness_state IN ('current', 'stale', 'retired')),
+    missing_harvest_count  INTEGER NOT NULL DEFAULT 0
+        CHECK (missing_harvest_count >= 0),
+    UNIQUE (source_code, source_object_type, source_object_key)
 );
-
-CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_state (
-    source_code                 TEXT PRIMARY KEY
-        REFERENCES gold_glossary.dim_source_system(source_code),
-    last_silver_ingested_at     TIMESTAMPTZ NOT NULL DEFAULT '-infinity'::TIMESTAMPTZ,
-    last_refresh_started_at     TIMESTAMPTZ,
-    last_refresh_completed_at   TIMESTAMPTZ,
-    last_window_start           DATE,
-    last_window_end             DATE,
-    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_chunk_state (
-    source_code                         TEXT NOT NULL
-        REFERENCES gold_glossary.dim_source_system(source_code),
-    chunk_start                         DATE NOT NULL,
-    chunk_end                           DATE NOT NULL,
-    target_silver_ingested_at           TIMESTAMPTZ NOT NULL,
-    completed_silver_ingested_at        TIMESTAMPTZ,
-    status                              TEXT NOT NULL DEFAULT 'PENDING'
-        CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED')),
-    attempt_count                       INTEGER NOT NULL DEFAULT 0,
-    last_refresh_started_at             TIMESTAMPTZ,
-    last_refresh_completed_at           TIMESTAMPTZ,
-    last_error                          TEXT,
-    updated_at                          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (source_code, chunk_start, chunk_end),
-    CHECK (chunk_end >= chunk_start)
-);
-
-CREATE INDEX IF NOT EXISTS ix_serving_refresh_chunk_state_status
-    ON gold_glossary.serving_refresh_chunk_state (source_code, status, chunk_start);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Bridge tables (metric ↔ source-specific series/variables)
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_bls_series (
-    metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
-    bls_series_sk     BIGINT NOT NULL,
-    PRIMARY KEY (metric_catalog_sk, bls_series_sk)
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_acs_variable (
-    metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
-    acs_variable_sk   BIGINT NOT NULL,
-    PRIMARY KEY (metric_catalog_sk, acs_variable_sk)
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_fred_series (
-    metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
-    fred_series_sk    BIGINT NOT NULL,
-    PRIMARY KEY (metric_catalog_sk, fred_series_sk)
-);
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Geography dimension (shared across all sources)
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -205,12 +160,6 @@ $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Schema migration state (shared, tracks DDL hash per component)
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS gold_glossary.schema_migration_state (
-    component_name TEXT PRIMARY KEY,
-    ddl_hash       TEXT NOT NULL,
-    applied_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Contract views exposed to the API
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -222,17 +171,20 @@ SELECT
     metric_display_name,
     source_code,
     source_object_type,
-    business_definition,
-    caveats,
+    source_object_key,
+    units,
+    measure_kind,
     valid_geo_grains,
     valid_time_grains,
-    dashboard_suitability,
-    comparability_group,
-    do_not_compare_with,
-    recommended_aggregation,
-    owner_team,
-    is_active,
-    updated_at
+    aggregation_characteristic,
+    physical_lineage,
+    publisher_contract_version,
+    source_watermark,
+    source_run_id,
+    publication_time,
+    harvested_at,
+    freshness_state,
+    freshness_state = 'current' AS is_active
 FROM gold_glossary.dim_metric_catalog;
 
 -- Geography catalog view

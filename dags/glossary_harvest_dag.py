@@ -58,7 +58,13 @@ def glossary_reconciliation():
     def reconcile_all_publishers() -> dict[str, int | str]:
         return harvest_all_publishers(_connection_factory)
 
-    reconcile_all_publishers()
+    @task
+    def refresh_shared_geography() -> None:
+        """Refresh the glossary-owned geography projection independently."""
+        hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        hook.run("CALL gold_glossary.refresh_dim_geo_latest()")
+
+    reconcile_all_publishers() >> refresh_shared_geography()
 
 
 glossary_harvest_dag = glossary_harvest()

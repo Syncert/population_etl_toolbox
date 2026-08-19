@@ -8,13 +8,13 @@
 # 3) Builds ingestion plan for configured domains and date ranges
 # 4) Skips slices already completed for the current series set (hash-based)
 # 5) Uses a Pool ("fred_api") to limit concurrency and respect FRED API limits
-# 6) Tracks status/rows/errors in raw_fred.fred_ingestion_slices
+# 6) Tracks status/rows/errors in control.fred_ingestion_slices
 #
 # REQUIRED DB TABLES:
 # - raw_fred.fred_datasets
 # - raw_fred.fred_series
-# - raw_fred.fred_ingestion_slices
-# - raw_fred.fred_long
+# - control.fred_ingestion_slices
+# - raw_capture.response_capture -> silver_fred.observation_revision
 #
 # REQUIRED AIRFLOW POOL:
 # - Create a pool named "fred_api" in Airflow UI and set its size conservatively (start with 4).
@@ -140,7 +140,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     # Update ledger to 'running'
     sql_running_update = """
-        UPDATE raw_fred.fred_ingestion_slices
+        UPDATE control.fred_ingestion_slices
         SET status = 'running',
             rows_loaded = 0,
             started_at = %s,
@@ -155,7 +155,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     """
 
     sql_running_insert = """
-        INSERT INTO raw_fred.fred_ingestion_slices (
+        INSERT INTO control.fred_ingestion_slices (
             domain, date_start, date_end,
             status, rows_loaded,
             started_at, finished_at, last_error,
@@ -210,7 +210,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         final_status = "empty" if rows_loaded == 0 else "success"
 
         sql_done = """
-            UPDATE raw_fred.fred_ingestion_slices
+            UPDATE control.fred_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
                 finished_at = %s,
@@ -247,7 +247,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         err_txt = sanitize_error_message(e)
 
         sql_failed = """
-            UPDATE raw_fred.fred_ingestion_slices
+            UPDATE control.fred_ingestion_slices
             SET status = 'failed',
                 finished_at = %s,
                 started_at = COALESCE(started_at, %s),
@@ -283,7 +283,7 @@ def fred_ingest():
     - Sync metadata (series + datasets)
     - Build ingestion plan for each domain
     - Skip completed slices unless series set changed (hash mismatch)
-    - Track progress in raw_fred.fred_ingestion_slices
+    - Track progress in control.fred_ingestion_slices
     """
 
     # -----------------------------
@@ -353,7 +353,7 @@ def fred_ingest():
         completed = set()
         sql_completed = """
             SELECT domain, date_start, date_end, series_hash
-            FROM raw_fred.fred_ingestion_slices
+            FROM control.fred_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -424,7 +424,7 @@ def fred_ingest():
         now = datetime.now(timezone.utc)
 
         sql_planned_update = """
-            UPDATE raw_fred.fred_ingestion_slices
+            UPDATE control.fred_ingestion_slices
             SET status = CASE
                     WHEN status IN ('success','empty')
                         AND series_hash = %s
@@ -447,7 +447,7 @@ def fred_ingest():
         """
 
         sql_planned_insert = """
-            INSERT INTO raw_fred.fred_ingestion_slices (
+            INSERT INTO control.fred_ingestion_slices (
                 domain, date_start, date_end,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
@@ -563,7 +563,6 @@ def fred_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET lock_timeout = '30s'")
             cur.execute("SET statement_timeout = '10min'")
-            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             conn.commit()
 
     @task(trigger_rule="none_failed")

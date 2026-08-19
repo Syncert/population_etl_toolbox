@@ -41,7 +41,7 @@ A successful response must be committed to raw storage before source-specific pa
 
 ## Legacy transition
 
-Until ARCH-004 through ARCH-007 migrate the pipelines, `raw_census.acs_long`, `raw_bls.bls_long`, and `raw_fred.fred_long` are treated as legacy parsed staging relations rather than immutable raw capture. Their `*_ingestion_slices` relations are legacy control-plane tables. Compatibility may be retained during migration, but new adapters may not copy this layout.
+`raw_census.acs_long`, `raw_bls.bls_long`, and `raw_fred.fred_long` are legacy parsed staging relations rather than immutable raw capture. Source execution ledgers are owned by the `control` schema; new adapters must use the shared capture/control foundation and may not copy the legacy parsed-raw layout.
 
 Until ARCH-002 and ARCH-003 complete, the three existing source gold DDL files are an explicit legacy exception for shared glossary definitions and policy columns. Contract tests freeze that exception to those files; they reject expansion to a fourth source or a new policy-bearing gold DDL.
 
@@ -64,4 +64,4 @@ Repository architecture tests reject new source-specific DDL that defines shared
 
 ## Consequences
 
-Replay and parser correction become possible without another provider request, source jobs stop owning shared catalog policy, and consumer semantics can evolve independently of ingestion. The transition temporarily requires compatibility views and explicit legacy inventories.
+Replay and parser correction are possible without another provider request, source jobs no longer own shared catalog policy, and consumer semantics can evolve independently of ingestion. The beta cutover removed parsed-raw compatibility relations after the explicit legacy inventory was exhausted.

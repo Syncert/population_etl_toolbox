@@ -52,7 +52,6 @@ def _observation_row(metric_code: str = "POP_TOTAL", geo_id: str = "US") -> dict
         "geo_longitude": -119.4179,
         "metric_code": metric_code,
         "metric_display_name": "Population Total",
-        "dashboard_suitability": "PRIMARY",
         "value": "100.0",
         "value_type": "level",
         "units": "people",

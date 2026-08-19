@@ -34,9 +34,7 @@ def _parse_date(value: object, *, field: str, required: bool) -> date | None:
     try:
         return date.fromisoformat(source_value)
     except ValueError as exc:
-        raise FredCapturePayloadError(
-            f"FRED observation has invalid {field}"
-        ) from exc
+        raise FredCapturePayloadError(f"FRED observation has invalid {field}") from exc
 
 
 def parse_captured_observations(payload: bytes) -> list[dict[str, object]]:

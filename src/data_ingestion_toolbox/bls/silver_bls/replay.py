@@ -57,7 +57,9 @@ def parse_captured_observations(payload: bytes) -> list[dict[str, object]]:
             try:
                 year = int(year_source)
             except ValueError as exc:
-                raise BlsCapturePayloadError("BLS observation has invalid year") from exc
+                raise BlsCapturePayloadError(
+                    "BLS observation has invalid year"
+                ) from exc
             if not period_source:
                 raise BlsCapturePayloadError("BLS observation is missing period")
             try:

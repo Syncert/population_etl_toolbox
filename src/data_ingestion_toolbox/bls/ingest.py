@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import random
@@ -25,7 +24,6 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
-from data_ingestion_toolbox.utility.retry import retry_database_transaction
 from data_ingestion_toolbox.capture import (
     CaptureControl,
     ResponseCapture,
@@ -405,103 +403,6 @@ def enrich_with_geography(df: pl.DataFrame, program: str) -> pl.DataFrame:
     return df
 
 
-@retry_database_transaction
-def load_df_to_bls_long(df: pl.DataFrame, program: str) -> int:
-    """
-    Bulk load a Polars DataFrame into raw_bls.bls_long using COPY.
-
-    We delete existing rows for (program, series_id, year, period) combinations
-    present in this batch (idempotent upsert).
-    """
-    if df.is_empty():
-        return 0
-    if df.height > CONFIG.raw_load_max_rows:
-        raise ValueError(
-            f"BLS raw batch has {df.height} rows; configured maximum is "
-            f"{CONFIG.raw_load_max_rows}"
-        )
-
-    conn = _get_pg_connection()
-    try:
-        conn.autocommit = False
-        cur = conn.cursor()
-
-        for series_id in sorted(df.get_column("series_id").unique().to_list()):
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (f"raw_bls.bls_long:{program}:{series_id}",),
-            )
-
-        # Get unique (series_id, year, period) tuples for deletion
-        delete_keys = df.select(["series_id", "year", "period"]).unique()
-
-        for row in delete_keys.iter_rows():
-            series_id, year, period = row
-            cur.execute(
-                """
-                DELETE FROM raw_bls.bls_long
-                WHERE program = %s
-                  AND series_id = %s
-                  AND year = %s
-                  AND period = %s;
-                """,
-                (program, series_id, year, period),
-            )
-
-        # Prepare CSV in-memory
-        output = io.StringIO()
-        df.select(
-            [
-                "program",
-                "series_id",
-                "year",
-                "period",
-                "period_name",
-                "value",
-                "footnotes",
-                "is_latest",
-                "geo_level",
-                "geo_id",
-                "state_fips",
-                "county_fips",
-                "load_batch_id",
-                "ingested_at",
-            ]
-        ).write_csv(output, include_header=False)
-        output.seek(0)
-
-        # Copy into Postgres
-        cur.copy_expert(
-            """
-            COPY raw_bls.bls_long (
-                program, series_id, year, period, period_name,
-                value, footnotes, is_latest,
-                geo_level, geo_id, state_fips, county_fips,
-                load_batch_id, ingested_at
-            )
-            FROM STDIN WITH (FORMAT csv);
-            """,
-            output,
-        )
-
-        rowcount = cur.rowcount
-        conn.commit()
-
-        logger.info(f"Loaded {rowcount} rows to raw_bls.bls_long for program {program}")
-        return rowcount
-
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error loading to bls_long: {e}")
-        raise
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
 def ingest_slice(
     program: str,
     start_year: int,
@@ -666,9 +567,7 @@ def ingest_slice(
                     status="captured" if rows else "empty",
                 )
                 total_rows += rows
-                time.sleep(
-                    CONFIG.bls_api_min_spacing_seconds + random.random() * 0.2
-                )
+                time.sleep(CONFIG.bls_api_min_spacing_seconds + random.random() * 0.2)
     except BaseException as error:
         control.finish_run(run_id, status="failed", error=error)
         raise

@@ -39,12 +39,13 @@ INSERT INTO gold_glossary.dim_geo_latest (
 
 INSERT INTO gold_glossary.dim_metric_catalog (
     metric_code, metric_display_name, source_code, source_object_type,
-    valid_geo_grains, valid_time_grains, dashboard_suitability,
-    do_not_compare_with, recommended_aggregation, owner_team, is_active
+    source_object_key, valid_geo_grains, valid_time_grains, units,
+    measure_kind, aggregation_characteristic, physical_lineage
 ) VALUES (
     'ACS:acs5:B01003_001_MARTIN_TEST', 'Martin county population fixture',
-    'CENSUS_ACS', 'ACS_VARIABLE', ARRAY['COUNTY'], ARRAY['ANNUAL'],
-    'PUBLIC_SAFE', ARRAY[]::TEXT[], 'LAST', 'test', TRUE
+    'CENSUS_ACS', 'ACS_VARIABLE', 'acs5:B01003_001_MARTIN_TEST',
+    ARRAY['COUNTY'], ARRAY['ANNUAL'], 'people', 'estimate', 'non-additive',
+    '{"relation":"silver_census.fact_demographics"}'::JSONB
 ) ON CONFLICT (metric_code) DO NOTHING;
 
 INSERT INTO gold_census.rpt_acs_observations (
@@ -52,14 +53,14 @@ INSERT INTO gold_census.rpt_acs_observations (
     as_of_date, updated_at, geo_id, geo_level, state_fips, county_fips,
     state_name, county_name, geo_latitude, geo_longitude, value,
     dataset_code, vintage_year, table_id, variable_code, estimate_value,
-    value_type, units, metric_code, metric_display_name, dashboard_suitability
+    value_type, units, metric_code, metric_display_name
 ) VALUES (
     'CENSUS_ACS', '2099-01-01', '2095-01-01', '2099-12-31', 20990101,
     '2099-12-31', NOW(), 'state:55|county:025', 'COUNTY', '55', '025',
     'Wisconsin', 'Dane County', 43.0667, -89.4000, 600000,
     'acs5', 2099, 'B01003', 'B01003_001', 600000,
     'ESTIMATE', 'people', 'ACS:acs5:B01003_001_MARTIN_TEST',
-    'Martin county population fixture', 'PUBLIC_SAFE'
+    'Martin county population fixture'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO gold_census.mv_acs_latest

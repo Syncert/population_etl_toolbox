@@ -3,18 +3,18 @@
 ## Plan status
 
 - **Status:** Active
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-19
 - **Primary owner:** Repository delivery and data platform
 - **Co-delivered with:** [Data-layer design remediation tickets](./DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
 - **Blocks:** Declaring the data-layer overhaul complete, enforcing the new-source expansion gate, and merging a release candidate with authoritative green checks
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-19
 
-**Current milestone:** CI-001 — establish an honest workflow baseline and restore required push checks
+**Current milestone:** CI-001 through CI-006 implemented and reproduced locally; immutable-SHA verification pending
 
-**Next pickup:** Format the repository, replace the package SQL-file count with a contract manifest, and redesign changed-line coverage so the data-layer integration suites contribute appropriate evidence.
+**Next pickup:** Push the candidate SHA, confirm protected checks, then record fresh credentialed external-contract and bounded release evidence.
 
 ### Completed in the current slice
 
@@ -23,17 +23,23 @@
 - [x] Preserved Postgres and DAG checks as required architectural evidence instead of treating them as obsolete during the overhaul.
 - [x] Reproduced the clean GitHub Actions PostGIS bootstrap and aligned local Docker initialization with the migration order.
 - [x] Remediated UUID binding and transitional glossary bootstrap failures locally; the exact non-slow warehouse selection passes 46 tests with 14 deselected.
+- [x] Replaced SQL artifact counts with versioned package and ordered warehouse manifests, including wheel/sdist parity and Docker-order drift checks.
+- [x] Merged bounded PostGIS execution into coverage; overall, changed-line, and critical-module ratchets pass without a waiver.
+- [x] Added a machine-validated workflow-to-contract evidence map with stable required/release job names and architecture path ownership.
+- [x] Aligned semantic migration, source cutovers, publisher DDL, and contract views across test helpers, Docker, Airflow, deployment smoke, and frontend triggers.
+- [x] Reproduced lint/format, package, unit, coverage, empty PostGIS bootstrap, Linux Airflow, frontend, Redis, deployment, Martin, E2E, and bounded performance gates locally.
+- [x] Ran the credentialed Census, BLS, and FRED contracts against the capture-first boundary: 17 passed on 2026-08-19; corrected stale legacy-raw assertions and suppressed credential-bearing HTTP access URLs.
 
 ### Remaining
 
 - [ ] CI-001 — Restore formatting, package, coverage, Postgres, and DAG push checks to green on a pushed commit.
-- [ ] CI-002 — Define one authoritative workflow-to-contract evidence map and branch-protection set.
-- [ ] CI-003 — Replace brittle artifact counts and duplicated setup logic with versioned manifests and reusable workflow components.
-- [ ] CI-004 — Make local, pull-request, push, scheduled, and release environments exercise equivalent bootstrap contracts.
-- [ ] CI-005 — Rework coverage attribution for unit, database replay, DAG, API, and frontend boundaries without weakening risk coverage.
-- [ ] CI-006 — Add explicit migration-order, empty-bootstrap, rerun, replay, and package-content gates for the completed data-layer design.
+- [x] CI-002 — Define one authoritative workflow-to-contract evidence map and branch-protection set.
+- [x] CI-003 — Replace brittle artifact counts and duplicated setup logic with versioned manifests and reusable workflow components.
+- [x] CI-004 — Make local, pull-request, push, scheduled, and release environments exercise equivalent bootstrap contracts.
+- [x] CI-005 — Rework coverage attribution for unit, database replay, DAG, API, and frontend boundaries without weakening risk coverage.
+- [x] CI-006 — Add explicit migration-order, empty-bootstrap, rerun, replay, and package-content gates for the completed data-layer design.
 - [ ] CI-007 — Validate scheduled external contracts and opt-in end-to-end/performance workflows before the remediation release cutover.
-- [ ] CI-008 — Remove temporary compatibility assertions and any approved waivers when ARCH-002 and ARCH-003 complete.
+- [x] CI-008 — Removed parsed-raw compatibility fixtures and assertions; CI evidence validates capture/revision-first database, DAG, E2E, resilience, and performance paths.
 
 ## Objective
 
@@ -253,4 +259,3 @@ Changed-line coverage may receive a time-bounded waiver while integration covera
 - Branch protection names match the evidence map.
 - Package, migration, bootstrap, replay, DAG, API, frontend, and deployment contracts validate the target data-layer design.
 - No disabled workflow, unexplained waiver, magic artifact count, or preloaded local schema can produce a false green result.
-

@@ -16,7 +16,7 @@ class BlsConfig(BaseModel):
     - One schema: raw_bls
     - One ingestion framework: supports multiple BLS programs
     - Curated definitions drive ingestion/backfill
-      (hash-based slice ledger in raw_bls)
+      (hash-based slice ledger in control)
 
     Philosophy:
     - LAUS requests are selected from published metadata by geography + measure

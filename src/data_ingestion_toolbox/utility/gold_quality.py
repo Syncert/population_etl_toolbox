@@ -149,15 +149,10 @@ def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
     sql = """
         SELECT COUNT(*)
         FROM gold_glossary.dim_metric_catalog c
-        WHERE c.is_active = TRUE
-          AND NOT EXISTS (
-                     SELECT 1 FROM gold_glossary.bridge_metric_acs_variable a WHERE a.metric_catalog_sk = c.metric_catalog_sk
-          )
-          AND NOT EXISTS (
-                     SELECT 1 FROM gold_glossary.bridge_metric_bls_series b WHERE b.metric_catalog_sk = c.metric_catalog_sk
-          )
-          AND NOT EXISTS (
-                     SELECT 1 FROM gold_glossary.bridge_metric_fred_series f WHERE f.metric_catalog_sk = c.metric_catalog_sk
+        WHERE c.freshness_state = 'current'
+          AND (
+              NULLIF(BTRIM(c.source_object_key), '') IS NULL
+              OR c.physical_lineage IS NULL
           )
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
@@ -166,7 +161,7 @@ def check_metric_catalog_fk_coverage(hook: PostgresHook) -> int:
 
     if violations > 0:
         raise ValueError(
-            f"check_metric_catalog_fk_coverage FAILED: {violations} active metric(s) without source mapping"
+            f"check_metric_catalog_fk_coverage FAILED: {violations} current metric(s) without publisher lineage"
         )
 
     return violations

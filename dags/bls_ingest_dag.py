@@ -10,13 +10,13 @@
 #    - For other programs (CES/CPI/JOLTS): ingests national series
 # 4) Skips slices already completed for the current series set (hash-based)
 # 5) Uses a Pool ("bls_api") to limit concurrency and respect BLS API limits
-# 6) Tracks status/rows/errors in raw_bls.bls_ingestion_slices
+# 6) Tracks status/rows/errors in control.bls_ingestion_slices
 #
 # REQUIRED DB TABLES:
 # - raw_bls.bls_datasets
 # - raw_bls.bls_series
-# - raw_bls.bls_ingestion_slices
-# - raw_bls.bls_long
+# - control.bls_ingestion_slices
+# - raw_capture.response_capture -> silver_bls.observation_revision
 #
 # REQUIRED AIRFLOW POOL:
 # - Create a pool named "bls_api" in Airflow UI and set its size conservatively (start with 4).
@@ -178,7 +178,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     # Update ledger to 'running'
     sql_running_update = """
-        UPDATE raw_bls.bls_ingestion_slices
+        UPDATE control.bls_ingestion_slices
         SET status = 'running',
             rows_loaded = 0,
             started_at = %s,
@@ -195,7 +195,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     """
 
     sql_running_insert = """
-        INSERT INTO raw_bls.bls_ingestion_slices (
+        INSERT INTO control.bls_ingestion_slices (
             program, year_start, year_end, geo_level, state_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
@@ -256,7 +256,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         final_status = "empty" if rows_loaded == 0 else "success"
 
         sql_done = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
                 started_at = COALESCE(started_at, %s),
@@ -307,7 +307,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         finished = datetime.now(timezone.utc)
         err_txt = sanitize_error_message(e)
         sql_planned = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = 'planned',
                 started_at = COALESCE(started_at, %s),
                 finished_at = %s,
@@ -362,7 +362,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         # rest of the batch continues.  These will be retried on the next run.
         if isinstance(e, BlsRetryableHTTP):
             sql_planned = """
-                UPDATE raw_bls.bls_ingestion_slices
+                UPDATE control.bls_ingestion_slices
                 SET status = 'planned',
                     started_at = COALESCE(started_at, %s),
                     finished_at = %s,
@@ -402,7 +402,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         else:
             # Unexpected errors: mark as 'failed' and propagate.
             sql_failed = """
-                UPDATE raw_bls.bls_ingestion_slices
+                UPDATE control.bls_ingestion_slices
                 SET status = 'failed',
                     started_at = COALESCE(started_at, %s),
                     finished_at = %s,
@@ -449,7 +449,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 
     sql = """
         SELECT status, series_hash
-        FROM raw_bls.bls_ingestion_slices
+        FROM control.bls_ingestion_slices
         WHERE program = %s
           AND year_start = %s
           AND year_end = %s
@@ -486,7 +486,7 @@ def bls_ingest():
     - For LAUS: expand by subnational geography (state/county)
     - For others: ingest national series
     - Skip completed slices unless series set changed (hash mismatch)
-    - Track progress in raw_bls.bls_ingestion_slices
+    - Track progress in control.bls_ingestion_slices
     """
 
     # -----------------------------
@@ -568,7 +568,7 @@ def bls_ingest():
         completed = set()
         sql_completed = """
             SELECT program, year_start, year_end, geo_level, state_fips, series_hash
-            FROM raw_bls.bls_ingestion_slices
+            FROM control.bls_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -589,7 +589,7 @@ def bls_ingest():
         planned_to_retry = set()
         sql_planned = """
             SELECT program, year_start, year_end, geo_level, state_fips
-            FROM raw_bls.bls_ingestion_slices
+            FROM control.bls_ingestion_slices
             WHERE status = 'planned';
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -715,7 +715,7 @@ def bls_ingest():
         now = datetime.now(timezone.utc)
 
         sql_planned_update = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = CASE
                     WHEN status IN ('success','empty')
                         AND series_hash = %s
@@ -740,7 +740,7 @@ def bls_ingest():
         """
 
         sql_planned_insert = """
-            INSERT INTO raw_bls.bls_ingestion_slices (
+            INSERT INTO control.bls_ingestion_slices (
                 program, year_start, year_end, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
@@ -894,7 +894,6 @@ def bls_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET lock_timeout = '30s'")
             cur.execute("SET statement_timeout = '10min'")
-            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             conn.commit()
 
     @task(trigger_rule="all_success")

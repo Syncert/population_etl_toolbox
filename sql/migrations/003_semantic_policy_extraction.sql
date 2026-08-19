@@ -1,6 +1,8 @@
 -- ARCH-003 beta migration: remove authored semantics and consumer policy.
 -- Export any non-placeholder authored content before applying this destructive beta cutover.
 
+CREATE SCHEMA IF NOT EXISTS gold;
+
 DROP VIEW IF EXISTS gold.dim_metric;
 DROP VIEW IF EXISTS gold.dim_metric_catalog;
 DROP VIEW IF EXISTS gold_glossary.dim_metric;

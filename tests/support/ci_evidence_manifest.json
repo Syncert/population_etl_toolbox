@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "required": [
+    {"workflow": "lint.yml", "job": "lint", "name": "Lint (ruff)"},
+    {"workflow": "etl-unit.yml", "job": "etl-unit", "name": "ETL unit tests (Python 3.11)"},
+    {"workflow": "api-unit.yml", "job": "api-unit", "name": "API unit tests (Python 3.11)"},
+    {"workflow": "coverage.yml", "job": "coverage", "name": "Unit + database coverage gates (Python 3.11)"},
+    {"workflow": "package-api.yml", "job": "package-api", "name": "Package build and install smoke (Python 3.11)"},
+    {"workflow": "postgres-integration.yml", "job": "warehouse-database", "name": "Warehouse integration (PostGIS 16 + Python 3.11)"},
+    {"workflow": "dag-parse.yml", "job": "dag-parse", "name": "DAG parse tests (Airflow 2.9.3 + Python 3.11)"},
+    {"workflow": "scheduler-image.yml", "job": "dag-compatibility", "name": "DAG suite in scheduler image"},
+    {"workflow": "frontend.yml", "job": "frontend", "name": "Frontend lint, unit, build, and browser"},
+    {"workflow": "redis-integration.yml", "job": "api-cache", "name": "API cache integration (Redis 7 + Python 3.11)"},
+    {"workflow": "martin-unit.yml", "job": "martin-unit", "name": "Martin deterministic contracts (Python 3.11)"},
+    {"workflow": "martin-integration.yml", "job": "martin-postgis", "name": "Martin/PostGIS/API/proxy contracts"},
+    {"workflow": "deployment-smoke.yml", "job": "compose", "name": "Deployment compose smoke"}
+  ],
+  "release_freshness_days": 7,
+  "release": [
+    {"workflow": "external-contract.yml", "job": "source-contracts", "name": "Census, BLS, and FRED live contracts"},
+    {"workflow": "e2e-performance.yml", "job": "e2e-performance", "name": "Bounded E2E and performance evidence"}
+  ],
+  "architecture_path_owners": {
+    "sql/migrations/**": ["postgres-integration.yml", "coverage.yml", "deployment-smoke.yml"],
+    "sql/bootstrap/**": ["postgres-integration.yml", "dag-parse.yml", "scheduler-image.yml"],
+    "src/data_ingestion_toolbox/**": ["etl-unit.yml", "postgres-integration.yml", "scheduler-image.yml"],
+    "dags/**": ["dag-parse.yml", "scheduler-image.yml"],
+    "tests/support/**": ["postgres-integration.yml", "dag-parse.yml", "scheduler-image.yml"],
+    "apps/api/**": ["api-unit.yml", "frontend.yml", "deployment-smoke.yml"],
+    "apps/web/**": ["frontend.yml", "deployment-smoke.yml"]
+  }
+}

@@ -4,11 +4,11 @@
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-19
 
-**Current ticket:** ARCH-002 / ARCH-003 — in progress after completing the capture-first source cutovers
+**Current ticket:** ARCH-002 / ARCH-003 / control-plane ownership implemented locally; release verification pending
 
-**Next pickup:** Remove the remaining source-owned glossary DDL and authored policy fields from source reports and checked-in consumers, then make migration `003_semantic_policy_extraction.sql` part of the normal bootstrap path.
+**Next pickup:** Release verification: push an immutable candidate, run credentialed external contracts, and perform the configured beta history re-ingestion.
 
 ### Completed in the current slice
 
@@ -33,13 +33,16 @@
 - [x] Verified 315 ETL unit tests and 52 non-external disposable-PostgreSQL database tests on 2026-08-18.
 - [x] Remediated the Linux warehouse-integration failure by making UUID SQL binds adapter-independent and ordering glossary migration DDL before compatibility views; the exact CI selection passed 46 tests with 14 deselected.
 - [x] Aligned local Docker and GitHub Actions bootstrap order and made migration `002` provide transitional legacy columns until ARCH-003 removes their consumers, eliminating the clean-CI `dim_source_system.updated_at` failure.
+- [x] Removed source-owned glossary DDL and direct catalog seeds; source gold now publishes provider-neutral contracts without depending on glossary refreshes.
+- [x] Removed authored dashboard/aggregation policy from gold reports, API models/queries, frontend consumers, fixtures, and serving contracts; migration `003` is in every authoritative bootstrap path.
+- [x] Moved ACS, BLS, and FRED slice ledgers into `control`, removed their source-raw DDL ownership, and added a static regression boundary.
+- [x] Made shared geography refresh a glossary-reconciliation responsibility rather than a source-DAG side effect.
+- [x] Validated all 68 DAG contracts in the pinned Linux scheduler image with disposable PostGIS task execution.
+- [x] Rebuilt from an empty database and passed the database, API, E2E, deployment, spatial, and bounded performance contracts.
 
 ### Remaining
 
-- [ ] Remove duplicated `gold_glossary` DDL and dead direct-catalog seed functions from the three source packages, leaving shared-object ownership in `sql/gold_contract` and the harvester only.
-- [ ] Remove authored dashboard/aggregation policy from source report tables, models, queries, and frontend consumers; then enable migration `003_semantic_policy_extraction.sql` in fresh bootstrap.
-- [ ] Move the remaining source slice ledgers into `control`, remove legacy parsed-raw loaders/tables after the beta reset, and delete the temporary architecture-test allowlists.
-- [ ] Run the DAG suite in the authoritative Linux Airflow environment; native Windows collection currently fails during Airflow logging initialization.
+- [x] Removed the legacy parsed-observation loaders/tables and silver fallbacks. Migration 007 drops beta-era relations, and database, DAG, E2E, resilience, and bounded performance fixtures exercise capture/revision-first paths.
 - [ ] Reset the beta database and re-ingest configured history through the capture-first paths.
 
 The local `.venv` was recreated with uv using managed Python 3.11.16 and the documented two-step Airflow constraints plus `airflow-dev` installation. The shared suite was revalidated in that environment; CI remains authoritative.
@@ -474,7 +477,7 @@ Do not add compatibility views, dual writes, schema-version ledgers, role choreo
 
 - Static architecture tests pass.
 - Unit and integration suites pass for the migrated source.
-- Offline raw-to-silver replay is demonstrated from repository fixtures.
+- Offline capture-to-silver replay is demonstrated from repository fixtures.
 - Rebuilt silver outputs match representative fixtures and source totals, with explained differences for corrected behavior.
 - API and frontend contract tests pass after the coordinated policy split.
 - A fresh bootstrap and complete reset/re-ingestion path are tested; upgrade-from-current and rollback paths are deferred.

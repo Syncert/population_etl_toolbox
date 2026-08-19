@@ -42,12 +42,18 @@ def parse_captured_values(
         raise CensusCapturePayloadError("Census response must be a non-empty array")
     header = document[0]
     records = document[1:]
-    if not isinstance(header, list) or not all(isinstance(item, str) for item in header):
+    if not isinstance(header, list) or not all(
+        isinstance(item, str) for item in header
+    ):
         raise CensusCapturePayloadError("Census header must be an array of strings")
     if len(set(header)) != len(header):
         raise CensusCapturePayloadError("Census response contains duplicate headers")
-    if any(not isinstance(record, list) or len(record) != len(header) for record in records):
-        raise CensusCapturePayloadError("Census response row length does not match header")
+    if any(
+        not isinstance(record, list) or len(record) != len(header) for record in records
+    ):
+        raise CensusCapturePayloadError(
+            "Census response row length does not match header"
+        )
     required_geographies = {
         "us": {"us"},
         "state": {"state"},

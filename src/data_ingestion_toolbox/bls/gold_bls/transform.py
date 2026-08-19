@@ -22,13 +22,8 @@ _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_bls.sql"
 _PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
 _SCHEMA_COMPONENT = "gold_ddl_bls"
 _REQUIRED_RELATIONS = (
-    "gold_glossary.dim_geo",
-    "gold_glossary.dim_source_system",
-    "gold_glossary.dim_metric_catalog",
-    "gold_glossary.dim_geo_latest",
-    "gold_glossary.serving_refresh_state",
-    "gold_glossary.serving_refresh_chunk_state",
-    "gold_glossary.bridge_metric_bls_series",
+    "control.serving_refresh_state",
+    "control.serving_refresh_chunk_state",
     "gold_bls.dim_bls_survey",
     "gold_bls.dim_bls_series",
     "gold_bls.fact_bls_observation",
@@ -37,7 +32,6 @@ _REQUIRED_RELATIONS = (
     "gold_bls.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
-    "gold_glossary.refresh_dim_geo_latest()",
     "gold_bls.refresh_rpt_bls_observations(date,date)",
     "gold_bls.refresh_mv_bls_latest(date,date)",
     "gold_bls.refresh_dashboard_serving_layer_bls(date,date,boolean)",
@@ -61,100 +55,6 @@ def ensure_bls_gold_schema(hook: PostgresHook | None = None) -> None:
         required_procedures=_REQUIRED_PROCEDURES,
         hook=hook,
     )
-
-
-def _seed_bls_metric_catalog(cur) -> int:
-    """Populate dim_metric_catalog and bridge_metric_bls_series from dim_bls_series."""
-    cur.execute(
-        """
-        INSERT INTO gold_glossary.dim_metric_catalog (
-            metric_code,
-            metric_display_name,
-            source_code,
-            source_object_type,
-            business_definition,
-            caveats,
-            valid_geo_grains,
-            valid_time_grains,
-            dashboard_suitability,
-            comparability_group,
-            do_not_compare_with,
-            recommended_aggregation,
-            owner_team,
-            is_active
-        )
-        SELECT
-            'BLS:' || s.series_id AS metric_code,
-            COALESCE(NULLIF(s.gold_metric_name, ''), NULLIF(s.series_title, ''), s.series_id) AS metric_display_name,
-            'BLS' AS source_code,
-            'BLS_SERIES' AS source_object_type,
-            COALESCE(
-                NULLIF(s.semantic_notes, ''),
-                'BLS curated metric sourced from ' || sv.survey_name || '.'
-            ) AS business_definition,
-            sv.comparison_warning AS caveats,
-            CASE
-                WHEN s.geographic_level = 'COUNTY' THEN ARRAY['COUNTY']::TEXT[]
-                WHEN s.geographic_level = 'STATE' THEN ARRAY['STATE']::TEXT[]
-                WHEN s.geographic_level IN ('US', 'NATIONAL') THEN ARRAY['NATIONAL']::TEXT[]
-                ELSE ARRAY['NATIONAL', 'STATE', 'COUNTY']::TEXT[]
-            END AS valid_geo_grains,
-            ARRAY['MONTHLY']::TEXT[] AS valid_time_grains,
-            CASE
-                WHEN s.analytic_role IN ('HEADLINE', 'LABOR_SLACK_CONTEXT', 'LABOR_INCOME_CONTEXT', 'INFLATION_CONTEXT', 'FLOW_CONTEXT')
-                    THEN 'PUBLIC_SAFE'
-                ELSE 'INTERNAL_ONLY'
-            END AS dashboard_suitability,
-            sv.program_code || ':' || s.measure_category AS comparability_group,
-            CASE
-                WHEN sv.program_code = 'LN' THEN ARRAY['BLS:CES0000000001', 'BLS:CES0500000001']::TEXT[]
-                WHEN sv.program_code = 'CE' AND s.measure_category = 'EMPLOYMENT' THEN ARRAY['BLS:LNS12000000', 'BLS:LNS14000000']::TEXT[]
-                WHEN sv.program_code = 'CU' THEN ARRAY['BLS:LNS14000000', 'BLS:CES0000000001']::TEXT[]
-                WHEN sv.program_code = 'JT' THEN ARRAY['BLS:CES0000000001', 'BLS:LNS12000000']::TEXT[]
-                ELSE ARRAY[]::TEXT[]
-            END AS do_not_compare_with,
-            'LAST' AS recommended_aggregation,
-            'data-eng' AS owner_team,
-            TRUE AS is_active
-        FROM gold_bls.dim_bls_series s
-        JOIN gold_bls.dim_bls_survey sv
-          ON sv.bls_survey_sk = s.bls_survey_sk
-        ON CONFLICT (metric_code)
-        DO UPDATE SET
-            metric_display_name = EXCLUDED.metric_display_name,
-            business_definition = EXCLUDED.business_definition,
-            caveats = EXCLUDED.caveats,
-            valid_geo_grains = EXCLUDED.valid_geo_grains,
-            valid_time_grains = EXCLUDED.valid_time_grains,
-            dashboard_suitability = EXCLUDED.dashboard_suitability,
-            comparability_group = EXCLUDED.comparability_group,
-            do_not_compare_with = EXCLUDED.do_not_compare_with,
-            recommended_aggregation = EXCLUDED.recommended_aggregation,
-            owner_team = EXCLUDED.owner_team,
-            is_active = EXCLUDED.is_active,
-            updated_at = NOW();
-        """
-    )
-
-    cur.execute(
-        """
-        INSERT INTO gold_glossary.bridge_metric_bls_series (metric_catalog_sk, bls_series_sk)
-        SELECT c.metric_catalog_sk, s.bls_series_sk
-        FROM gold_glossary.dim_metric_catalog c
-        JOIN gold_bls.dim_bls_series s
-          ON c.metric_code = 'BLS:' || s.series_id
-        ON CONFLICT (metric_catalog_sk, bls_series_sk) DO NOTHING;
-        """
-    )
-
-    cur.execute(
-        """
-        SELECT COUNT(*)
-        FROM gold_glossary.dim_metric_catalog
-        WHERE source_code = 'BLS'
-        """
-    )
-    return cur.fetchone()[0]
 
 
 def refresh_bls_elements(hook: PostgresHook | None = None) -> int:

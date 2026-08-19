@@ -1,10 +1,9 @@
-"""Census ACS raw-to-silver database integration contract."""
+"""Census ACS revision-to-silver database integration contract."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
-from uuid import uuid4
 
 import pytest
 from psycopg2.extensions import connection
@@ -12,6 +11,7 @@ from psycopg2.extensions import connection
 from data_ingestion_toolbox.census_acs.silver_census import transform
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import seed_capture
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -47,18 +47,25 @@ def test_census_raw_rows_transform_to_exact_silver_keys(
                 """,
                 (f"{variable}E", f"{variable}M"),
             )
+            capture_id = seed_capture(cursor, "CENSUS_ACS")
             cursor.execute(
-                """
-                INSERT INTO raw_census.acs_long (
-                    dataset, year, geo_level, geo_id, state_fips,
-                    table_id, variable_name, measure_type, value, load_batch_id
+                """INSERT INTO silver_census.observation_revision (
+                    capture_id, source_row_index, source_column_index, source_header,
+                    dataset, year, geo_level, state_fips_source, variable_name,
+                    table_id, measure_type, value_source, value, value_status
                 ) VALUES
-                    ('acs5', 2098, 'state', 'ignored-raw-id', '98',
-                     'B99999', %s, 'E', 1234, %s),
-                    ('acs5', 2098, 'state', 'ignored-raw-id', '98',
-                     'B99999', %s, 'M', 12, %s)
-                """,
-                (f"{variable}E", str(uuid4()), f"{variable}M", str(uuid4())),
+                    (%s, 0, 0, %s, 'acs5', 2098, 'state', '98', %s,
+                     'B99999', 'E', '1234', 1234, 'valid'),
+                    (%s, 0, 1, %s, 'acs5', 2098, 'state', '98', %s,
+                     'B99999', 'M', '12', 12, 'valid')""",
+                (
+                    capture_id,
+                    f"{variable}E",
+                    f"{variable}E",
+                    capture_id,
+                    f"{variable}M",
+                    f"{variable}M",
+                ),
             )
         writer.commit()
     finally:
@@ -108,9 +115,6 @@ def test_census_raw_rows_transform_to_exact_silver_keys(
                 cursor.execute(
                     "DELETE FROM silver_census.fact_demographics WHERE variable_code = %s",
                     (variable,),
-                )
-                cursor.execute(
-                    "DELETE FROM raw_census.acs_long WHERE table_id = 'B99999'"
                 )
                 cursor.execute(
                     "DELETE FROM raw_census.acs_variables WHERE table_id = 'B99999'"

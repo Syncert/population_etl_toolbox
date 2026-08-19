@@ -259,7 +259,9 @@ def harvest_publisher(
         database_connection.close()
 
 
-def harvest_all_publishers(connection_factory: Callable[[], Any]) -> dict[str, int | str]:
+def harvest_all_publishers(
+    connection_factory: Callable[[], Any],
+) -> dict[str, int | str]:
     """Refresh valid publishers independently; one failure cannot roll back another."""
     discovery_connection = connection_factory()
     try:
@@ -269,9 +271,7 @@ def harvest_all_publishers(connection_factory: Callable[[], Any]) -> dict[str, i
     results: dict[str, int | str] = {}
     for publisher in publishers:
         try:
-            results[publisher.schema] = harvest_publisher(
-                connection_factory, publisher
-            )
+            results[publisher.schema] = harvest_publisher(connection_factory, publisher)
         except BaseException as error:
             results[publisher.schema] = sanitize_error_message(error)
     return results

@@ -22,7 +22,6 @@ const SOURCE_CONFIG = {
     key: "census",
     title: "Census",
     sourceCode: "CENSUS_ACS",
-    dashboardSuitability: "PUBLIC_SAFE",
     latestPath: "/api/census/observations/latest",
     timeseriesPath: "/api/census/observations/timeseries",
     supportsDataset: true,
@@ -31,7 +30,6 @@ const SOURCE_CONFIG = {
     key: "fred",
     title: "FRED",
     sourceCode: "FRED",
-    dashboardSuitability: "PUBLIC_SAFE",
     latestPath: "/api/fred/observations/latest",
     timeseriesPath: "/api/fred/observations/timeseries",
     supportsDataset: false,
@@ -40,7 +38,6 @@ const SOURCE_CONFIG = {
     key: "bls",
     title: "BLS",
     sourceCode: "BLS",
-    dashboardSuitability: null,
     latestPath: "/api/bls/observations/latest",
     timeseriesPath: "/api/bls/observations/timeseries",
     supportsDataset: false,
@@ -1025,10 +1022,6 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           source_code: sourceConfig.sourceCode,
           active_only: "true",
         };
-        if (sourceConfig.dashboardSuitability) {
-          metricQuery.dashboard_suitability = sourceConfig.dashboardSuitability;
-        }
-
         const items = await fetchAllCatalogItems("/api/catalog/metrics", metricQuery);
 
         if (!cancelled) {
@@ -1083,7 +1076,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     return () => {
       cancelled = true;
     };
-  }, [sourceConfig.sourceCode, sourceConfig.supportsDataset, sourceConfig.dashboardSuitability]);
+  }, [sourceConfig.sourceCode, sourceConfig.supportsDataset]);
 
   useEffect(() => {
     setSelectedGeoId("");
@@ -1985,9 +1978,6 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               {` | Loaded catalog: ${metrics.length.toLocaleString()} metrics`}
             </p>
           ) : null}
-          {selectedMetricMeta?.business_definition ? (
-            <p className="coverage-note complete">{selectedMetricMeta.business_definition}</p>
-          ) : null}
           {sourceConfig.supportsDataset ? (
             <p className={`coverage-note ${selectedDataset === "acs1" ? "partial" : "complete"}`}>
               {selectedDataset === "acs1"
@@ -2167,7 +2157,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           </div>
         </article>
         <article className="card span-2 workspace-panel" data-active={activeTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} dataset={sourceConfig.supportsDataset ? selectedDataset.toUpperCase() : sourceConfig.title} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.updated_at} caveats={selectedMetricMeta?.caveats || (sourceConfig.supportsDataset && selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values.")} />
+          <SourceNote source={selectedMetricMeta?.source_code} dataset={sourceConfig.supportsDataset ? selectedDataset.toUpperCase() : sourceConfig.title} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={sourceConfig.supportsDataset && selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
         </article>
         <article className="card span-2 workspace-panel" data-active={activeTab === "api query"}>
           <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>

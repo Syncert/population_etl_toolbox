@@ -7,10 +7,9 @@ import threading
 import time
 import tracemalloc
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from uuid import uuid4
 
-import polars as pl
 import pytest
 from psycopg2.extensions import connection
 
@@ -18,35 +17,16 @@ from data_ingestion_toolbox.fred import ingest as fred_ingest
 from data_ingestion_toolbox.fred.silver_fred import transform as fred_transform
 from tests.performance.support import BASELINES
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import seed_capture
 
 pytestmark = [pytest.mark.performance, pytest.mark.database, pytest.mark.slow]
-
-
-def _fred_frame(
-    *, series_id: str, domain: str, start: date, row_count: int
-) -> pl.DataFrame:
-    now = datetime.now(timezone.utc)
-    batch_id = str(uuid4())
-    return pl.DataFrame(
-        {
-            "domain": [domain] * row_count,
-            "series_id": [series_id] * row_count,
-            "obs_date": [start + timedelta(days=index) for index in range(row_count)],
-            "value": [float(index) for index in range(row_count)],
-            "is_missing": [False] * row_count,
-            "realtime_start": [start] * row_count,
-            "realtime_end": [start] * row_count,
-            "load_batch_id": [batch_id] * row_count,
-            "ingested_at": [now] * row_count,
-        }
-    )
 
 
 def test_million_row_transform_window_reconciles_within_baseline(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: PERF-006 — production FRED raw-to-silver transforms one million rows."""
+    """Covers: PERF-006 — FRED revision-to-silver transforms one million rows."""
     if os.getenv("RUN_FULL_PERFORMANCE_TESTS") != "1":
         pytest.skip("set RUN_FULL_PERFORMANCE_TESTS=1 for the million-row profile")
 
@@ -91,19 +71,22 @@ def test_million_row_transform_window_reconciles_within_baseline(
                 """,
                 (prefix,),
             )
+            capture_id = seed_capture(cursor, "FRED")
             cursor.execute(
-                """
-                INSERT INTO raw_fred.fred_long (
-                    domain, series_id, obs_date, value, is_missing,
-                    realtime_start, realtime_end, load_batch_id
-                )
-                SELECT %s, %s || LPAD(series_no::TEXT, 4, '0'),
+                """INSERT INTO silver_fred.observation_revision (
+                    capture_id, observation_index, domain, series_id,
+                    observation_date_source, value_source, realtime_start_source,
+                    realtime_end_source, observation_date, value, value_status,
+                    realtime_start, realtime_end)
+                SELECT %s, series_no * 1000 + day_no, %s,
+                       %s || LPAD(series_no::TEXT, 4, '0'),
+                       (DATE '2020-01-01' + day_no)::TEXT,
+                       (series_no * 1000 + day_no)::TEXT, '2023-01-01', '2023-01-01',
                        DATE '2020-01-01' + day_no, series_no * 1000 + day_no,
-                       FALSE, DATE '2023-01-01', DATE '2023-01-01', %s
+                       'valid', DATE '2023-01-01', DATE '2023-01-01'
                 FROM GENERATE_SERIES(0, 999) series_no
-                CROSS JOIN GENERATE_SERIES(0, 999) day_no
-                """,
-                (domain, prefix, str(uuid4())),
+                CROSS JOIN GENERATE_SERIES(0, 999) day_no""",
+                (capture_id, domain, prefix),
             )
         writer.commit()
     finally:
@@ -147,9 +130,6 @@ def test_million_row_transform_window_reconciles_within_baseline(
                     (domain,),
                 )
                 cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE domain = %s", (domain,)
-                )
-                cursor.execute(
                     "DELETE FROM raw_fred.fred_series WHERE series_id LIKE %s",
                     (f"{prefix}%",),
                 )
@@ -168,6 +148,13 @@ def test_many_small_slices_finish_without_duplicate_keys(
     prefix = f"PERF7_{token}_"
     slice_count = int(os.getenv("PERF_SMALL_SLICE_COUNT", "100"))
     monkeypatch.setattr(fred_ingest, "_get_pg_connection", postgres_connection_factory)
+    monkeypatch.setattr(
+        fred_ingest,
+        "fetch_fred_observations",
+        lambda observation_start, **_kwargs: {
+            "observations": [{"date": observation_start, "value": "1"}]
+        },
+    )
 
     started = time.perf_counter()
     try:
@@ -179,7 +166,7 @@ def test_many_small_slices_finish_without_duplicate_keys(
                 with ledger.cursor() as cursor:
                     cursor.execute(
                         """
-                        INSERT INTO raw_fred.fred_ingestion_slices (
+                        INSERT INTO control.fred_ingestion_slices (
                             domain, date_start, date_end, series_hash,
                             series_count, status, rows_loaded, started_at
                         ) VALUES (%s, %s, %s, %s, 1, 'running', 0, NOW())
@@ -189,13 +176,11 @@ def test_many_small_slices_finish_without_duplicate_keys(
                 ledger.commit()
             finally:
                 ledger.close()
-            loaded = fred_ingest.load_df_to_fred_long(
-                _fred_frame(
-                    series_id=series_id,
-                    domain=domain,
-                    start=slice_date,
-                    row_count=1,
-                )
+            loaded = fred_ingest.ingest_slice(
+                domain,
+                [series_id],
+                slice_date.isoformat(),
+                slice_date.isoformat(),
             )
             assert loaded == 1
             ledger = postgres_connection_factory()
@@ -203,7 +188,7 @@ def test_many_small_slices_finish_without_duplicate_keys(
                 with ledger.cursor() as cursor:
                     cursor.execute(
                         """
-                        UPDATE raw_fred.fred_ingestion_slices
+                        UPDATE control.fred_ingestion_slices
                         SET status = 'success', rows_loaded = %s, finished_at = NOW()
                         WHERE domain = %s AND date_start = %s AND date_end = %s
                         """,
@@ -221,7 +206,7 @@ def test_many_small_slices_finish_without_duplicate_keys(
                     """
                     SELECT COUNT(*), COUNT(DISTINCT (domain, date_start, date_end)),
                            SUM(rows_loaded), BOOL_AND(status = 'success')
-                    FROM raw_fred.fred_ingestion_slices WHERE domain = %s
+                    FROM control.fred_ingestion_slices WHERE domain = %s
                     """,
                     (domain,),
                 )
@@ -233,9 +218,8 @@ def test_many_small_slices_finish_without_duplicate_keys(
                 )
                 cursor.execute(
                     """
-                    SELECT COUNT(*), COUNT(DISTINCT (series_id, obs_date,
-                           realtime_start, realtime_end))
-                    FROM raw_fred.fred_long WHERE domain = %s
+                    SELECT COUNT(*), COUNT(DISTINCT (series_id, observation_date))
+                    FROM silver_fred.observation_revision WHERE domain = %s
                     """,
                     (domain,),
                 )
@@ -248,10 +232,7 @@ def test_many_small_slices_finish_without_duplicate_keys(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE domain = %s", (domain,)
-                )
-                cursor.execute(
-                    "DELETE FROM raw_fred.fred_ingestion_slices WHERE domain = %s",
+                    "DELETE FROM control.fred_ingestion_slices WHERE domain = %s",
                     (domain,),
                 )
             cleanup.commit()
@@ -295,17 +276,28 @@ def test_concurrent_domain_tasks_stay_unique_and_within_pool_budget(
                     active -= 1
 
     monkeypatch.setattr(fred_ingest, "_get_pg_connection", TrackedConnection)
+    monkeypatch.setattr(
+        fred_ingest,
+        "fetch_fred_observations",
+        lambda **_kwargs: {
+            "observations": [
+                {
+                    "date": (date(2050, 1, 1) + timedelta(days=index)).isoformat(),
+                    "value": str(index),
+                }
+                for index in range(100)
+            ]
+        },
+    )
 
     def load_domain(index: int) -> None:
         try:
             barrier.wait(timeout=5)
-            loaded = fred_ingest.load_df_to_fred_long(
-                _fred_frame(
-                    series_id=f"{series_prefix}{index}",
-                    domain=f"{domain_prefix}{index}",
-                    start=date(2050, 1, 1),
-                    row_count=100,
-                )
+            loaded = fred_ingest.ingest_slice(
+                f"{domain_prefix}{index}",
+                [f"{series_prefix}{index}"],
+                "2050-01-01",
+                "2050-04-10",
             )
             assert loaded == 100
         except BaseException as exc:  # pragma: no cover - reported below
@@ -330,9 +322,8 @@ def test_concurrent_domain_tasks_stay_unique_and_within_pool_budget(
             with reader.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT COUNT(*), COUNT(DISTINCT (series_id, obs_date,
-                           realtime_start, realtime_end))
-                    FROM raw_fred.fred_long WHERE domain LIKE %s
+                    SELECT COUNT(*), COUNT(DISTINCT (series_id, observation_date))
+                    FROM silver_fred.observation_revision WHERE domain LIKE %s
                     """,
                     (f"{domain_prefix}%",),
                 )
@@ -340,16 +331,7 @@ def test_concurrent_domain_tasks_stay_unique_and_within_pool_budget(
         finally:
             reader.close()
     finally:
-        cleanup = postgres_connection_factory()
-        try:
-            with cleanup.cursor() as cursor:
-                cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE domain LIKE %s",
-                    (f"{domain_prefix}%",),
-                )
-            cleanup.commit()
-        finally:
-            cleanup.close()
+        assert active == 0
 
 
 def test_critical_serving_query_uses_index_and_meets_duration_budget(
@@ -370,14 +352,14 @@ def test_critical_serving_query_uses_index_and_meets_duration_budget(
                     source_code, observation_date, duration_start, duration_end,
                     as_of_date, updated_at, geo_id, geo_level, series_id,
                     series_title, value, units, frequency, metric_code,
-                    metric_display_name, dashboard_suitability
+                    metric_display_name
                 )
                 SELECT 'FRED', DATE '2060-01-01' + day_no,
                        DATE '2060-01-01' + day_no, DATE '2060-01-01' + day_no,
                        DATE '2061-01-01', NOW(), 'us:1', 'NATIONAL',
                        %s || LPAD(metric_no::TEXT, 3, '0'), 'Plan fixture',
                        metric_no * 100000 + day_no, 'Index', 'Daily',
-                       %s || LPAD(metric_no::TEXT, 3, '0'), 'Plan fixture', 'EXPERIMENTAL'
+                       %s || LPAD(metric_no::TEXT, 3, '0'), 'Plan fixture'
                 FROM GENERATE_SERIES(0, %s - 1) item
                 CROSS JOIN LATERAL (
                     SELECT item %% %s AS metric_no, item / %s AS day_no

@@ -6,9 +6,14 @@ on:
     paths:
       - "dags/**"
       - "src/**"
+      - "sql/**"
+      - "tests/dags/**"
+      - "tests/support/**"
       - "pyproject.toml"
+      - ".github/workflows/dag-parse.yml"
   push:
     branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
 
 permissions:
   contents: read

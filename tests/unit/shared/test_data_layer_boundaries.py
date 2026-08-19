@@ -13,53 +13,7 @@ pytestmark = pytest.mark.unit
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 SOURCE_ROOT = REPOSITORY_ROOT / "src/data_ingestion_toolbox"
 
-LEGACY_GOLD_DDL = {
-    "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql": {
-        "CREATE SCHEMA:gold_glossary",
-        "CREATE VIEW:gold_glossary.dim_geo",
-        "CREATE TABLE:gold_glossary.dim_source_system",
-        "CREATE TABLE:gold_glossary.dim_metric_catalog",
-        "CREATE TABLE:gold_glossary.serving_refresh_state",
-        "CREATE TABLE:gold_glossary.serving_refresh_chunk_state",
-        "CREATE TABLE:gold_glossary.bridge_metric_bls_series",
-        "CREATE TABLE:gold_glossary.dim_geo_latest",
-        "DROP PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-        "CREATE PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-    },
-    "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql": {
-        "CREATE SCHEMA:gold_glossary",
-        "CREATE VIEW:gold_glossary.dim_geo",
-        "CREATE VIEW:gold_glossary.dim_time",
-        "CREATE TABLE:gold_glossary.dim_source_system",
-        "CREATE TABLE:gold_glossary.dim_metric_catalog",
-        "CREATE TABLE:gold_glossary.serving_refresh_state",
-        "CREATE TABLE:gold_glossary.serving_refresh_chunk_state",
-        "CREATE TABLE:gold_glossary.bridge_metric_acs_variable",
-        "CREATE TABLE:gold_glossary.bridge_metric_bls_series",
-        "CREATE TABLE:gold_glossary.bridge_metric_fred_series",
-        "CREATE TABLE:gold_glossary.dim_geo_latest",
-        "DROP PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-        "CREATE PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-    },
-    "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql": {
-        "CREATE SCHEMA:gold_glossary",
-        "CREATE VIEW:gold_glossary.dim_geo",
-        "CREATE TABLE:gold_glossary.dim_source_system",
-        "CREATE TABLE:gold_glossary.dim_metric_catalog",
-        "CREATE TABLE:gold_glossary.serving_refresh_state",
-        "CREATE TABLE:gold_glossary.serving_refresh_chunk_state",
-        "CREATE TABLE:gold_glossary.bridge_metric_fred_series",
-        "CREATE TABLE:gold_glossary.dim_geo_latest",
-        "DROP PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-        "CREATE PROCEDURE:gold_glossary.refresh_dim_geo_latest",
-    },
-}
-
-LEGACY_RAW_DDL = {
-    "src/data_ingestion_toolbox/bls/DDL/raw_bls.sql",
-    "src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql",
-    "src/data_ingestion_toolbox/fred/DDL/raw_fred.sql",
-}
+LEGACY_GOLD_DDL: dict[str, set[str]] = {}
 
 POLICY_COLUMNS = (
     "business_definition",
@@ -105,7 +59,6 @@ def test_source_ddl_cannot_expand_shared_glossary_ownership() -> None:
 
 def test_new_raw_ddl_requires_a_lossless_append_only_capture_contract() -> None:
     """Covers: ARC-002 — new raw DDL declares the lossless capture envelope."""
-    failures: list[str] = []
     required_terms = {
         "capture_id",
         "request_fingerprint",
@@ -115,23 +68,25 @@ def test_new_raw_ddl_requires_a_lossless_append_only_capture_contract() -> None:
         "media_type",
     }
 
-    for path in sorted(SOURCE_ROOT.rglob("raw_*.sql")):
-        relative = _relative(path)
-        if relative in LEGACY_RAW_DDL:
-            continue
-        sql = path.read_text(encoding="utf-8").lower()
-        missing = sorted(term for term in required_terms if term not in sql)
-        if missing:
-            failures.append(f"{relative}: missing {missing}")
-        if re.search(r"\b(?:update|delete\s+from)\s+\w+\.\w*capture\w*", sql):
-            failures.append(f"{relative}: capture tables must be append-only")
+    source_sql = "\n".join(
+        path.read_text(encoding="utf-8").lower()
+        for path in sorted(SOURCE_ROOT.rglob("*.sql"))
+    )
+    assert not re.search(
+        r"create\s+table[^;]+raw_(?:census|bls|fred)\.\w+_long", source_sql
+    )
 
-    assert failures == [], "\n".join(failures)
+    foundation = (
+        (REPOSITORY_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    assert all(term in foundation for term in required_terms)
+    assert "create trigger response_capture_reject_mutation" in foundation
 
 
 def test_gold_ddl_cannot_add_dashboard_or_governance_policy_columns() -> None:
     """Covers: ARC-003 — new gold DDL cannot add consumer-policy columns."""
-    expected_legacy_columns = Counter({column: 2 for column in POLICY_COLUMNS})
     failures: list[str] = []
 
     for path in sorted(SOURCE_ROOT.rglob("gold_*.sql")):
@@ -145,10 +100,23 @@ def test_gold_ddl_cannot_add_dashboard_or_governance_policy_columns() -> None:
                 re.IGNORECASE | re.MULTILINE,
             )
         )
-        expected = expected_legacy_columns if relative in LEGACY_GOLD_DDL else Counter()
+        expected = Counter()
         if declarations != expected:
             failures.append(
                 f"{relative}: expected {dict(expected)}, found {dict(declarations)}"
             )
 
     assert failures == [], "\n".join(failures)
+
+
+def test_source_ddl_and_dags_keep_execution_ledgers_in_control() -> None:
+    """Covers: ARC-001 — shared control ownership excludes source raw schemas."""
+    failures: list[str] = []
+    roots = (SOURCE_ROOT, REPOSITORY_ROOT / "dags")
+    pattern = re.compile(r"\braw_(?:census|bls|fred)\.\w*ingestion_slices\b")
+    for root in roots:
+        for path in sorted((*root.rglob("*.py"), *root.rglob("*.sql"))):
+            if pattern.search(path.read_text(encoding="utf-8")):
+                failures.append(_relative(path))
+
+    assert failures == [], "execution ledgers remain raw-owned: " + ", ".join(failures)

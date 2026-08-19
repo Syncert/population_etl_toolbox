@@ -145,7 +145,6 @@ def _source_select_sql(source: str) -> str:
         geo_longitude,
         metric_code,
         metric_display_name,
-        dashboard_suitability,
         value::TEXT AS value,
         value_type,
         units,

@@ -1,1 +1,1 @@
-"""Deterministic raw-to-API end-to-end tests."""
+"""Deterministic capture-to-API end-to-end tests."""

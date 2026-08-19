@@ -6,12 +6,15 @@ on:
       - "src/data_ingestion_toolbox/**"
       - "sql/gold_contract/**"
       - "sql/migrations/**"
+      - "sql/bootstrap/**"
+      - "infra/docker/docker-compose.test.yml"
       - "tests/integration/database/**"
-      - "tests/support/postgres.py"
+      - "tests/support/**"
       - "pyproject.toml"
       - ".github/workflows/postgres-integration.yml"
   push:
     branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
 
 permissions:
   contents: read

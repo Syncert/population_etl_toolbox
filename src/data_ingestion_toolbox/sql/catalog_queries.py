@@ -49,7 +49,6 @@ SOURCES_QUERY_GLOSSARY: TextClause = text(
 def _build_metric_where(
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     params: dict,
 ) -> str:
@@ -59,9 +58,6 @@ def _build_metric_where(
         params["source_code"] = source_code
     if active_only:
         clauses.append("is_active = TRUE")
-    if dashboard_suitability:
-        clauses.append("UPPER(dashboard_suitability) = UPPER(:dashboard_suitability)")
-        params["dashboard_suitability"] = dashboard_suitability
     if q:
         clauses.append(
             "(UPPER(metric_code) LIKE UPPER(:q) OR UPPER(metric_display_name) LIKE UPPER(:q))"
@@ -78,15 +74,12 @@ def _build_metric_where(
 def build_metrics_queries(
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(
-        source_code, active_only, dashboard_suitability, q, params
-    )
+    where = _build_metric_where(source_code, active_only, q, params)
     view = "gold.dim_metric"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -98,15 +91,12 @@ def build_metrics_queries(
 def build_metrics_queries_legacy(
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(
-        source_code, active_only, dashboard_suitability, q, params
-    )
+    where = _build_metric_where(source_code, active_only, q, params)
     view = "gold.dim_metric_catalog"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -123,15 +113,12 @@ def build_metrics_queries_legacy(
 def build_metrics_queries_glossary(
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(
-        source_code, active_only, dashboard_suitability, q, params
-    )
+    where = _build_metric_where(source_code, active_only, q, params)
     view = "gold_glossary.dim_metric"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"
@@ -143,15 +130,12 @@ def build_metrics_queries_glossary(
 def build_metrics_queries_glossary_legacy(
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_metric_where(
-        source_code, active_only, dashboard_suitability, q, params
-    )
+    where = _build_metric_where(source_code, active_only, q, params)
     view = "gold_glossary.dim_metric_catalog"
     list_q = text(
         f"SELECT * FROM {view} WHERE {where} ORDER BY metric_code LIMIT :limit OFFSET :offset"

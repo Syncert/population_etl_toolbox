@@ -34,16 +34,15 @@ def real_api_fixture(
                 """
                 INSERT INTO gold_glossary.dim_metric_catalog (
                     metric_code, metric_display_name, source_code,
-                    source_object_type, valid_geo_grains, valid_time_grains,
-                    dashboard_suitability, do_not_compare_with,
-                    recommended_aggregation, owner_team, is_active
+                    source_object_type, source_object_key,
+                    valid_geo_grains, valid_time_grains
                 ) VALUES
-                    (%s, 'API fixture A', 'FRED', 'FRED_SERIES', ARRAY['NATIONAL'],
-                     ARRAY['MONTHLY'], 'PUBLIC_SAFE', ARRAY[]::TEXT[], 'LAST', 'test', TRUE),
-                    (%s, 'API fixture B', 'FRED', 'FRED_SERIES', ARRAY['NATIONAL'],
-                     ARRAY['MONTHLY'], 'PUBLIC_SAFE', ARRAY[]::TEXT[], 'LAST', 'test', TRUE)
+                    (%s, 'API fixture A', 'FRED', 'FRED_SERIES', %s,
+                     ARRAY['NATIONAL'], ARRAY['MONTHLY']),
+                    (%s, 'API fixture B', 'FRED', 'FRED_SERIES', %s,
+                     ARRAY['NATIONAL'], ARRAY['MONTHLY'])
                 """,
-                (metric_a, metric_b),
+                (metric_a, series_a, metric_b, series_b),
             )
             cursor.execute(
                 """
@@ -51,17 +50,17 @@ def real_api_fixture(
                     source_code, observation_date, duration_start, duration_end,
                     time_sk, as_of_date, updated_at, geo_id, geo_level,
                     series_id, series_title, value, units, frequency,
-                    metric_code, metric_display_name, dashboard_suitability
+                    metric_code, metric_display_name
                 ) VALUES
                     ('FRED', '2097-01-01', '2097-01-01', '2097-01-31', 20970101,
                      '2097-02-01', NOW(), 'us:1', 'NATIONAL', %s, 'API fixture A',
-                     10, 'Index', 'Monthly', %s, 'API fixture A', 'PUBLIC_SAFE'),
+                     10, 'Index', 'Monthly', %s, 'API fixture A'),
                     ('FRED', '2097-02-01', '2097-02-01', '2097-02-28', 20970201,
                      '2097-03-01', NOW(), 'us:1', 'NATIONAL', %s, 'API fixture A',
-                     20, 'Index', 'Monthly', %s, 'API fixture A', 'PUBLIC_SAFE'),
+                     20, 'Index', 'Monthly', %s, 'API fixture A'),
                     ('FRED', '2097-02-01', '2097-02-01', '2097-02-28', 20970201,
                      '2097-03-01', NOW(), 'us:1', 'NATIONAL', %s, 'API fixture B',
-                     5, 'Index', 'Monthly', %s, 'API fixture B', 'PUBLIC_SAFE')
+                     5, 'Index', 'Monthly', %s, 'API fixture B')
                 """,
                 (series_a, metric_a, series_a, metric_a, series_b, metric_b),
             )
@@ -191,18 +190,15 @@ def census_bls_api_fixture(
                 """
                 INSERT INTO gold_glossary.dim_metric_catalog (
                     metric_code, metric_display_name, source_code,
-                    source_object_type, valid_geo_grains, valid_time_grains,
-                    dashboard_suitability, do_not_compare_with,
-                    recommended_aggregation, owner_team, is_active
+                    source_object_type, source_object_key,
+                    valid_geo_grains, valid_time_grains
                 ) VALUES
-                    (%s, 'Census API fixture', 'CENSUS_ACS', 'ACS_VARIABLE',
-                     ARRAY['COUNTY'], ARRAY['ANNUAL'], 'PUBLIC_SAFE',
-                     ARRAY[]::TEXT[], 'LAST', 'test', TRUE),
-                    (%s, 'BLS API fixture', 'BLS', 'BLS_SERIES',
-                     ARRAY['COUNTY'], ARRAY['MONTHLY'], 'PUBLIC_SAFE',
-                     ARRAY[]::TEXT[], 'LAST', 'test', TRUE)
+                    (%s, 'Census API fixture', 'CENSUS_ACS', 'ACS_VARIABLE', %s,
+                     ARRAY['COUNTY'], ARRAY['ANNUAL']),
+                    (%s, 'BLS API fixture', 'BLS', 'BLS_SERIES', %s,
+                     ARRAY['COUNTY'], ARRAY['MONTHLY'])
                 """,
-                (census_metric, bls_metric),
+                (census_metric, census_variable, bls_metric, bls_series),
             )
             cursor.execute(
                 """
@@ -211,16 +207,16 @@ def census_bls_api_fixture(
                     as_of_date, updated_at, geo_id, geo_level, state_fips,
                     county_fips, state_name, county_name, value, dataset_code,
                     vintage_year, table_id, variable_code, estimate_value,
-                    units, metric_code, metric_display_name, dashboard_suitability
+                    units, metric_code, metric_display_name
                 ) VALUES
                     ('2096-01-01', '2092-01-01', '2096-12-31', 20960101,
                      '2097-01-01', NOW(), %s, 'COUNTY', '55', %s,
                      'Wisconsin', 'API County', 100, 'acs5', 2096, 'TEST', %s,
-                     100, 'people', %s, 'Census API fixture', 'PUBLIC_SAFE'),
+                     100, 'people', %s, 'Census API fixture'),
                     ('2097-01-01', '2093-01-01', '2097-12-31', 20970101,
                      '2098-01-01', NOW(), %s, 'COUNTY', '55', %s,
                      'Wisconsin', 'API County', 110, 'acs5', 2097, 'TEST', %s,
-                     110, 'people', %s, 'Census API fixture', 'PUBLIC_SAFE')
+                     110, 'people', %s, 'Census API fixture')
                 """,
                 (
                     geo_id,
@@ -247,17 +243,16 @@ def census_bls_api_fixture(
                     observation_date, duration_start, duration_end, time_sk,
                     as_of_date, updated_at, geo_id, geo_level, state_fips,
                     county_fips, state_name, county_name, series_id, program_code,
-                    value, value_type, units, metric_code, metric_display_name,
-                    dashboard_suitability
+                    value, value_type, units, metric_code, metric_display_name
                 ) VALUES
                     ('2097-01-01', '2097-01-01', '2097-01-31', 20970101,
                      '2097-02-01', NOW(), %s, 'COUNTY', '55', %s,
                      'Wisconsin', 'API County', %s, 'LA', 4, 'RATE', 'percent',
-                     %s, 'BLS API fixture', 'PUBLIC_SAFE'),
+                     %s, 'BLS API fixture'),
                     ('2097-02-01', '2097-02-01', '2097-02-28', 20970201,
                      '2097-03-01', NOW(), %s, 'COUNTY', '55', %s,
                      'Wisconsin', 'API County', %s, 'LA', 5, 'RATE', 'percent',
-                     %s, 'BLS API fixture', 'PUBLIC_SAFE')
+                     %s, 'BLS API fixture')
                 """,
                 (
                     geo_id,

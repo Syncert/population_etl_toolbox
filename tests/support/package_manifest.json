@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "required_wheel_modules": [
+    "apps/api/main.py",
+    "data_ingestion_toolbox/utility/retry.py"
+  ],
+  "runtime_sql": [
+    "data_ingestion_toolbox/bls/DDL/raw_bls.sql",
+    "data_ingestion_toolbox/bls/DDL/silver_bls.sql",
+    "data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql",
+    "data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql",
+    "data_ingestion_toolbox/census_acs/DDL/raw_census.sql",
+    "data_ingestion_toolbox/census_acs/DDL/silver_census.sql",
+    "data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql",
+    "data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql",
+    "data_ingestion_toolbox/fred/DDL/raw_fred.sql",
+    "data_ingestion_toolbox/fred/DDL/silver_fred.sql",
+    "data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql",
+    "data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql",
+    "data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql"
+  ]
+}

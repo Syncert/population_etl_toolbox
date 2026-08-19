@@ -42,12 +42,15 @@ def test_fred_ingest_commits_capture_before_silver_and_bypasses_legacy_raw(
     monkeypatch.setattr(ingest, "fetch_fred_observations", lambda **_kwargs: payload)
     monkeypatch.setattr(ingest.time, "sleep", lambda _delay: None)
 
-    assert ingest.ingest_slice(
-        domain=domain,
-        series_ids=[series_id],
-        date_start="2024-01-01",
-        date_end="2024-02-29",
-    ) == 2
+    assert (
+        ingest.ingest_slice(
+            domain=domain,
+            series_ids=[series_id],
+            date_start="2024-01-01",
+            date_end="2024-02-29",
+        )
+        == 2
+    )
 
     reader = postgres_connection_factory()
     try:
@@ -73,10 +76,7 @@ def test_fred_ingest_commits_capture_before_silver_and_bypasses_legacy_raw(
                 ("success", "captured", "3.75", "valid"),
                 ("success", "captured", ".", "missing"),
             ]
-            cursor.execute(
-                "SELECT COUNT(*) FROM raw_fred.fred_long WHERE series_id = %s",
-                (series_id,),
-            )
-            assert cursor.fetchone() == (0,)
+            cursor.execute("SELECT to_regclass('raw_fred.fred_long')")
+            assert cursor.fetchone() == (None,)
     finally:
         reader.close()

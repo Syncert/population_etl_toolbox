@@ -5,6 +5,8 @@ on:
     paths:
       - "apps/api/**"
       - "apps/web/**"
+      - "src/data_ingestion_toolbox/**"
+      - "sql/**"
       - "infra/docker/**"
       - "infra/web/**"
       - "infra/martin/**"
@@ -20,6 +22,7 @@ permissions:
 
 jobs:
   compose:
+    name: Deployment compose smoke
     # Covers: DEPLOY-002, DEPLOY-003 — healthy startup and complete teardown.
     runs-on: ubuntu-latest
     timeout-minutes: 20

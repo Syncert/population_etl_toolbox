@@ -16,7 +16,7 @@ class FredConfig(BaseModel):
     - One schema: raw_fred
     - One ingestion framework: expands to any number of series
     - Curated series list drives ingestion/backfill
-      (hash-based slice ledger in raw_fred)
+      (hash-based slice ledger in control)
 
     Philosophy:
     - FRED is the *stable macro spine*

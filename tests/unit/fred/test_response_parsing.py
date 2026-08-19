@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 import json
+import logging
 from datetime import date
 
 import pytest
@@ -22,6 +23,11 @@ from data_ingestion_toolbox.fred.silver_fred.replay import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_fred_http_access_logging_cannot_render_query_credentials() -> None:
+    """Covers: ETL-038 — FRED query credentials stay out of HTTP access logs."""
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
 
 
 def test_fred_response_parsing_preserves_fields(source_fixture) -> None:
@@ -144,9 +150,9 @@ def test_fred_capture_parser_retains_exact_source_values() -> None:
     assert observations[1]["value_status"] == "invalid"
 
 
-def test_fred_capture_parser_rejects_invalid_dates_without_losing_source_bytes() -> None:
+def test_fred_capture_parser_rejects_invalid_dates_without_losing_source_bytes() -> (
+    None
+):
     """Covers: ETL-017, RES-002 — malformed captured values fail explicitly."""
     with pytest.raises(FredCapturePayloadError, match="invalid date"):
-        parse_captured_observations(
-            b'{"observations":[{"date":"bad","value":"3.1"}]}'
-        )
+        parse_captured_observations(b'{"observations":[{"date":"bad","value":"3.1"}]}')
