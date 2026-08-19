@@ -94,15 +94,30 @@ def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(monkeypatch) 
     assert cursor.rows[2]["is_month_start"] is True
 
 
-def _boundary_zip() -> bytes:
+def _boundary_zip(
+    *, state_fips: str = "55", place_fips: str = "53000", name: str = "Test Place"
+) -> bytes:
     shp, shx, dbf = io.BytesIO(), io.BytesIO(), io.BytesIO()
     writer = shapefile.Writer(shp=shp, shx=shx, dbf=dbf, shapeType=shapefile.POLYGON)
     writer.field("STATEFP", "C", size=2)
     writer.field("PLACEFP", "C", size=5)
+    writer.field("NAME", "C", size=100)
+    writer.field("STUSPS", "C", size=2)
+    writer.field("AFFGEOID", "C", size=20)
+    writer.field("ALAND", "N", size=14, decimal=0)
+    writer.field("AWATER", "N", size=14, decimal=0)
     writer.poly(
         [[[-89.5, 43.0], [-89.3, 43.0], [-89.3, 43.2], [-89.5, 43.2], [-89.5, 43.0]]]
     )
-    writer.record("55", "53000")
+    writer.record(
+        state_fips,
+        place_fips,
+        name,
+        "VI" if state_fips == "78" else "WI",
+        f"1600000US{state_fips}{place_fips}",
+        44_000_000,
+        1_000_000,
+    )
     writer.close()
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w") as archive:
@@ -120,3 +135,23 @@ def test_captured_boundary_replays_place_geometry_offline() -> None:
     assert len(records) == 1
     assert records[0].geo_id == "state:55|place:53000"
     assert json.loads(records[0].geojson)["type"] == "Polygon"
+    assert records[0].geography is not None
+    assert records[0].geography.name == "Test Place"
+    assert records[0].geography.land_area_m2 == 44_000_000
+
+
+def test_boundary_attributes_cover_island_area_missing_from_gazetteer() -> None:
+    """Covers: ETL-024 — authoritative boundaries fill Island Area entities."""
+    records = parse_boundary_capture(
+        _boundary_zip(
+            state_fips="78",
+            place_fips="00000",
+            name="United States Virgin Islands",
+        ),
+        geo_type="state",
+        boundary_vintage=2025,
+    )
+    assert records[0].geo_id == "state:78"
+    assert records[0].geography is not None
+    assert records[0].geography.census_geoid == "78"
+    assert records[0].geography.usps == "VI"

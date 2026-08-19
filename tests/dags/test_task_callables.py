@@ -468,9 +468,30 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "county",
         }
         assert len(work_units) == 54
+        county_parent_fips = {
+            work_unit["state_fips"]
+            for work_unit in work_units
+            if work_unit["geo_level"] == "county"
+        }
+        assert "72" in county_parent_fips
+        assert "52" not in county_parent_fips
     else:
         starts = {
             work_unit.get("start_year", work_unit.get("date_start"))
             for work_unit in work_units
         }
         assert len(starts) == 2
+
+
+def test_acs_target_selection_rejects_empty_metadata(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: DAG-010 — ACS cannot report success with an empty target set."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "get_target_years")
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+
+    with pytest.raises(RuntimeError, match="empty ACS ingestion plan"):
+        callable_()

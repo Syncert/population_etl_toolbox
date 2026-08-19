@@ -259,6 +259,7 @@ def test_sync_captures_every_asset_before_atomic_publication(
 
         def retire_missing(self, *, connection=None, **kwargs) -> int:
             assert connection is publication
+            assert "state:78" in kwargs["active_geo_ids"]
             events.append(("retire", kwargs["vintage"]))
             return 0
 
@@ -312,16 +313,30 @@ def test_sync_captures_every_asset_before_atomic_publication(
         ]
 
     def parse_geometry(payload, *, geo_type, boundary_vintage):
+        boundary_geography = None
+        if geo_type == "state":
+            boundary_geography = geography_pipeline.GeographyRecord(
+                "state",
+                "state:78",
+                "78",
+                "78",
+                None,
+                None,
+                "United States Virgin Islands",
+                boundary_vintage,
+                usps="VI",
+            )
         return [
             geography_pipeline.GeometryRecord(
                 geography_pipeline.canonical_geo_id(
                     geo_type,
-                    state_fips="98",
+                    state_fips="78" if geo_type == "state" else "98",
                     county_fips="764" if geo_type == "county" else None,
                     place_fips="54321" if geo_type == "place" else None,
                 ),
                 boundary_vintage,
                 '{"type":"Polygon","coordinates":[]}',
+                geography=boundary_geography,
             )
         ]
 
@@ -340,7 +355,7 @@ def test_sync_captures_every_asset_before_atomic_publication(
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
 
     assert geography_pipeline.sync_geography_reference(source_year=2098) == {
-        "attributes": 4,
+        "attributes": 5,
         "geometries": 3,
         "retired": 0,
     }

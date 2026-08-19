@@ -4,7 +4,7 @@
 # -------------------------------------------------------------------
 # What this DAG does:
 # 1) Syncs which ACS Detailed Tables datasets are available (acs1/acs5 by year)
-# 2) Picks the most recent available year per dataset (default "keep current" policy)
+# 2) Selects every available year for each configured dataset
 # 3) Builds a slice plan for US + State + County-by-State
 # 4) Skips slices already completed *for the current variable set*
 #    - If you change the curated variable list in config.py, variables_hash changes
@@ -53,7 +53,7 @@ from typing import Optional
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox import census_acs as census_acs_package
-from data_ingestion_toolbox.census_acs.config import CONFIG
+from data_ingestion_toolbox.census_acs.config import ACS_COUNTY_PARENT_FIPS, CONFIG
 from data_ingestion_toolbox.census_acs.metadata import (
     sync_acs_dataset_table,
     sync_variable_metadata_for_year,
@@ -286,7 +286,7 @@ def acs_ingest():
     ACS Detailed Tables ingestion DAG for raw_census.
 
     - Sync datasets available (acs1/acs5)
-    - Determine target years (latest per dataset)
+    - Determine all available target years per dataset
     - Build plan (us/state + county per state)
     - Skip completed slices *unless* variable set changed (hash mismatch)
     - Ingest remaining slices with dynamic task mapping and pool throttling
@@ -297,11 +297,11 @@ def acs_ingest():
     # Task 1: Dataset availability sync
     # -----------------------------
     @task
-    def sync_datasets() -> None:
+    def sync_datasets() -> int:
         """
         Upsert the dataset/year entries for base Detailed Tables (acs1/acs5) into raw_census.acs_datasets.
         """
-        sync_acs_dataset_table()
+        return sync_acs_dataset_table()
 
     @task
     def require_shared_geography() -> None:
@@ -360,6 +360,12 @@ def acs_ingest():
                 continue
             targets.append({"dataset": str(dataset), "year": int(year)})
 
+        if not targets:
+            raise RuntimeError(
+                "raw_census.acs_datasets contains no available configured datasets; "
+                "refusing to continue with an empty ACS ingestion plan"
+            )
+
         return targets
 
     # -----------------------------
@@ -379,9 +385,10 @@ def acs_ingest():
         """
         hook = _get_postgres_hook()
 
-        # County tasks are expanded by state FIPS.
-        # Keep this simple to start; you can extend to territories later.
-        state_fips_list = [f"{i:02d}" for i in range(1, 57) if i not in (3, 7, 14, 43)]
+        # ACS county coverage includes the 50 states, DC, and Puerto Rico.
+        # Use the explicit Census state/territory codes so gaps in the numeric
+        # FIPS range (for example, invalid code 52) cannot become empty slices.
+        state_fips_list = ACS_COUNTY_PARENT_FIPS
 
         # Compute current variable set hash/count for each target (dataset, year).
         varset_meta: dict[tuple[str, int], dict] = {}
@@ -481,7 +488,7 @@ def acs_ingest():
         if not plan:
             return [[]]
 
-        batches = chunk_list(plan, chunk_size=25)  # 1836/25 ≈ 74 mapped tasks
+        batches = chunk_list(plan, chunk_size=25)  # Currently about 76 mapped tasks.
         return batches
 
     # -----------------------------
@@ -621,7 +628,7 @@ def acs_ingest():
     sync = sync_datasets()
     shared_geo = require_shared_geography()
 
-    # 2) Determine target year(s) and build a variable-aware plan
+    # 2) Determine all target years and build a variable-aware plan
     targets = get_target_years()
     batches = build_ingestion_plan(targets)
 

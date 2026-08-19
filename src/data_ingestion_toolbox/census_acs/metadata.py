@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import httpx
+import logging
 import psycopg2
 import re
 
@@ -28,6 +29,8 @@ _TARGET_DATABASE = "public_data"
 # connection. In local dev (no Airflow), this will be None and the factory
 # will fall back to POSTGRES_* env vars.
 _AIRFLOW_CONN_ID: Optional[str] = getattr(CONFIG, "postgres_conn_id", None)
+
+logger = logging.getLogger(__name__)
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
@@ -105,74 +108,75 @@ def fetch_acs_datasets_from_data_json() -> List[Dict]:
     return filtered
 
 
-def sync_acs_dataset_table() -> None:
+def _classify_detailed_table_dataset(dataset: Dict) -> tuple[str, int, str, str] | None:
+    """Return the local dataset identity for an ACS Detailed Tables catalog row."""
+    title = str(dataset["title"])
+    year = int(dataset["year"])
+    identifier = str(dataset["identifier"])
+    census_id = identifier.rstrip("/").rsplit("/", 1)[-1]
+    expected_ids = {
+        f"ACSDT1Y{year}": "acs1",
+        f"ACSDT5Y{year}": "acs5",
+    }
+    local_name = expected_ids.get(census_id)
+    if local_name is None:
+        return None
+    return local_name, year, census_id, title
+
+
+def sync_acs_dataset_table() -> int:
     """
     Upsert filtered ACS datasets into raw_census.acs_datasets.
 
     Uses ID prefixes (e.g., ACSDT1Y, ACSDT5Y) to determine dataset type.
     """
+    datasets = fetch_acs_datasets_from_data_json()
+    classified = [
+        classified_dataset
+        for dataset in datasets
+        if (classified_dataset := _classify_detailed_table_dataset(dataset))
+        is not None
+    ]
+    if not classified:
+        raise RuntimeError(
+            "Census catalog returned no ACS Detailed Tables datasets; "
+            "refusing to continue with an empty ingestion plan"
+        )
+
     conn = _get_pg_connection()
+    cur = None
     try:
         conn.autocommit = False
         cur = conn.cursor()
 
-        datasets = fetch_acs_datasets_from_data_json()
         now = datetime.now(timezone.utc)
-        print(f"Found {len(datasets)} datasets from data.json")
-
-        inserted_count = 0
-        skipped_count = 0
-
-        for ds in datasets:
-            title = ds["title"]
-            year = ds["year"]
-            identifier = ds["identifier"]
-
-            # Extract the ID from the URL
-            id_part = identifier.split("/")[-1]
-
-            # Classify by ID prefix
-            if id_part == ("ACSDT1Y" + str(year)):
-                dataset = "acs1"
-                census_id = "ACSDT1Y" + str(year)
-            elif id_part == ("ACSDT5Y" + str(year)):
-                dataset = "acs5"
-                census_id = "ACSDT5Y" + str(year)
-            else:
-                skipped_count += 1
-                continue
-
-            try:
-                cur.execute(
-                    """
-                    INSERT INTO raw_census.acs_datasets (
-                        dataset, year, census_id, title, is_available, first_seen_at, last_checked_at
-                    )
-                    VALUES (%s, %s, %s, %s, TRUE, %s, %s)
-                    ON CONFLICT (dataset, year)
-                    DO UPDATE SET
-                        is_available = TRUE,
-                        last_checked_at = EXCLUDED.last_checked_at;
-                    """,
-                    (dataset, year, census_id, title, now, now),
+        for dataset, year, census_id, title in classified:
+            cur.execute(
+                """
+                INSERT INTO raw_census.acs_datasets (
+                    dataset, year, census_id, title, is_available, first_seen_at, last_checked_at
                 )
-                inserted_count += 1
-            except Exception as e:
-                print(f"Error inserting {dataset}, {year}: {e}")
-                continue
+                VALUES (%s, %s, %s, %s, TRUE, %s, %s)
+                ON CONFLICT (dataset, year)
+                DO UPDATE SET
+                    census_id = EXCLUDED.census_id,
+                    title = EXCLUDED.title,
+                    is_available = TRUE,
+                    last_checked_at = EXCLUDED.last_checked_at;
+                """,
+                (dataset, year, census_id, title, now, now),
+            )
 
         conn.commit()
-        print(f"Sync complete. Inserted: {inserted_count}, Skipped: {skipped_count}")
+        logger.info("Synchronized %s ACS Detailed Tables datasets", len(classified))
+        return len(classified)
 
-    except Exception as e:
-        print(f"Transaction failed: {e}")
+    except Exception:
         conn.rollback()
         raise
     finally:
-        try:
+        if cur is not None:
             cur.close()
-        except Exception:
-            pass
         conn.close()
 
 

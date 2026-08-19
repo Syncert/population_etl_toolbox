@@ -8,6 +8,7 @@ import json
 import polars as pl
 import pytest
 
+from data_ingestion_toolbox.census_acs.config import ACS_COUNTY_PARENT_FIPS
 from data_ingestion_toolbox.census_acs.ingest import (
     CensusNoContent,
     CensusPayloadError,
@@ -19,6 +20,14 @@ from data_ingestion_toolbox.census_acs.silver_census.replay import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_county_scope_includes_puerto_rico_and_excludes_unassigned_fips() -> None:
+    """Covers: ETL-001 — county planning uses valid ACS parent geographies."""
+    assert len(ACS_COUNTY_PARENT_FIPS) == 52
+    assert len(set(ACS_COUNTY_PARENT_FIPS)) == 52
+    assert "72" in ACS_COUNTY_PARENT_FIPS
+    assert "52" not in ACS_COUNTY_PARENT_FIPS
 
 
 @pytest.mark.parametrize(

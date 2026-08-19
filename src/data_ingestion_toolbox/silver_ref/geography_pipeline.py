@@ -67,6 +67,7 @@ class GeometryRecord:
     boundary_vintage: int
     geojson: str
     resolution: str = "500k"
+    geography: GeographyRecord | None = None
 
     @property
     def geometry_checksum(self) -> str:
@@ -87,7 +88,7 @@ def _optional_float(value: object) -> float | None:
 
 
 def _area_m2(
-    row: dict[str, str], metric_name: str, square_miles_name: str
+    row: dict[str, Any], metric_name: str, square_miles_name: str
 ) -> int | None:
     metric = _optional_int(_first(row, metric_name))
     if metric is not None:
@@ -96,7 +97,7 @@ def _area_m2(
     return round(square_miles * 2_589_988.110336) if square_miles is not None else None
 
 
-def _first(row: dict[str, str], *names: str) -> str | None:
+def _first(row: dict[str, Any], *names: str) -> str | None:
     normalized = {key.strip().upper(): value for key, value in row.items()}
     for name in names:
         value = normalized.get(name)
@@ -192,20 +193,50 @@ def parse_boundary_capture(
         state = str(properties.get("STATEFP") or "").zfill(2)
         if geo_type == "state":
             geo_id = canonical_geo_id("state", state_fips=state)
+            census_geoid, county, place = state, None, None
         elif geo_type == "county":
-            geo_id = canonical_geo_id(
-                "county", state_fips=state, county_fips=properties.get("COUNTYFP")
-            )
+            county = str(properties.get("COUNTYFP") or "").zfill(3)
+            geo_id = canonical_geo_id("county", state_fips=state, county_fips=county)
+            census_geoid, place = f"{state}{county}", None
         elif geo_type == "place":
-            geo_id = canonical_geo_id(
-                "place", state_fips=state, place_fips=properties.get("PLACEFP")
-            )
+            place = str(properties.get("PLACEFP") or "").zfill(5)
+            geo_id = canonical_geo_id("place", state_fips=state, place_fips=place)
+            census_geoid, county = f"{state}{place}", None
         else:
             raise ValueError(f"unsupported boundary type: {geo_type}")
         geojson = json.dumps(
             shaped.shape.__geo_interface__, sort_keys=True, separators=(",", ":")
         )
-        records.append(GeometryRecord(geo_id, boundary_vintage, geojson))
+        name = _first(properties, "NAMELSAD", "NAME")
+        geography = None
+        if name:
+            geography = GeographyRecord(
+                geo_type=geo_type,
+                geo_id=geo_id,
+                census_geoid=census_geoid,
+                state_fips=state,
+                county_fips=county,
+                place_fips=place,
+                name=name,
+                geography_vintage=boundary_vintage,
+                geoidfq=_first(properties, "GEOIDFQ", "AFFGEOID"),
+                usps=_first(properties, "STUSPS"),
+                lsad=_first(properties, "LSAD"),
+                functional_status=_first(properties, "FUNCSTAT"),
+                legal_statistical_class=_first(properties, "CLASSFP"),
+                land_area_m2=_area_m2(properties, "ALAND", "ALAND_SQMI"),
+                water_area_m2=_area_m2(properties, "AWATER", "AWATER_SQMI"),
+                latitude=_optional_float(_first(properties, "INTPTLAT")),
+                longitude=_optional_float(_first(properties, "INTPTLON", "INTPTLONG")),
+            )
+        records.append(
+            GeometryRecord(
+                geo_id,
+                boundary_vintage,
+                geojson,
+                geography=geography,
+            )
+        )
     return records
 
 
@@ -626,14 +657,21 @@ def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
                         ]
                     attribute_batches.append((records, capture_id))
                 else:
-                    geometry_batches.append(
-                        (
-                            parse_boundary_capture(
-                                payload, geo_type=geo_type, boundary_vintage=year
-                            ),
-                            capture_id,
-                        )
+                    boundary_records = parse_boundary_capture(
+                        payload, geo_type=geo_type, boundary_vintage=year
                     )
+                    boundary_only_entities = [
+                        record.geography
+                        for record in boundary_records
+                        if record.geography is not None
+                        and record.geo_id not in active_geo_ids
+                    ]
+                    if boundary_only_entities:
+                        attribute_batches.append((boundary_only_entities, capture_id))
+                        active_geo_ids.update(
+                            record.geo_id for record in boundary_only_entities
+                        )
+                    geometry_batches.append((boundary_records, capture_id))
             except BaseException as exc:
                 control.quarantine(
                     capture_id=capture_id,
