@@ -21,12 +21,14 @@
     {"workflow": "e2e-performance.yml", "job": "e2e-performance", "name": "Bounded E2E and performance evidence"}
   ],
   "architecture_path_owners": {
-    "sql/migrations/**": ["postgres-integration.yml", "coverage.yml", "deployment-smoke.yml"],
+    "sql/migrations/**": ["postgres-integration.yml", "coverage.yml", "deployment-smoke.yml", "martin-integration.yml"],
     "sql/bootstrap/**": ["postgres-integration.yml", "dag-parse.yml", "scheduler-image.yml"],
     "src/data_ingestion_toolbox/**": ["etl-unit.yml", "postgres-integration.yml", "scheduler-image.yml"],
+    "src/data_ingestion_toolbox/silver_ref/**": ["etl-unit.yml", "postgres-integration.yml", "scheduler-image.yml", "martin-integration.yml"],
     "dags/**": ["dag-parse.yml", "scheduler-image.yml"],
     "tests/support/**": ["postgres-integration.yml", "dag-parse.yml", "scheduler-image.yml"],
     "apps/api/**": ["api-unit.yml", "frontend.yml", "deployment-smoke.yml"],
-    "apps/web/**": ["frontend.yml", "deployment-smoke.yml"]
+    "apps/web/**": ["frontend.yml", "deployment-smoke.yml"],
+    "docs/plans/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md": ["postgres-integration.yml", "dag-parse.yml", "scheduler-image.yml", "martin-integration.yml"]
   }
 }

@@ -11,3 +11,4 @@ Current sequence:
 3. `003_semantic_policy_extraction.sql` removes authored policy from the shared metric contract after source report and API consumers have been cut over. It is part of every fresh bootstrap.
 4. `004_fred_capture_cutover.sql`, `005_census_acs_capture_cutover.sql`, and `006_bls_capture_cutover.sql` add source-shaped silver revision tables backed by immutable captures.
 5. `007_remove_legacy_parsed_raw.sql` removes the beta-era parsed-observation staging relations after the capture-first cutover.
+6. `008_geography_reference_cutover.sql` removes ACS geography ownership after the versioned shared-reference schema is installed.

@@ -235,6 +235,22 @@ class CaptureControl:
             (status, summary, str(request_id), self.source_code),
         )
 
+    def record_request_retry(
+        self, request_id: UUID, *, error: BaseException | str
+    ) -> None:
+        """Record a bounded transport retry without completing the request."""
+        self._execute(
+            """
+            UPDATE control.ingestion_request
+               SET attempt_count = attempt_count + 1,
+                   last_error = %s,
+                   updated_at = NOW()
+             WHERE request_id = %s AND source_code = %s
+               AND attempt_count < max_attempts
+            """,
+            (sanitize_error_message(error), str(request_id), self.source_code),
+        )
+
     def quarantine(
         self,
         *,

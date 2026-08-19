@@ -10,6 +10,7 @@ on:
       - "tests/support/**"
       - "infra/airflow/Dockerfile"
       - "pyproject.toml"
+      - "docs/plans/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md"
       - ".github/workflows/scheduler-image.yml"
   push:
     branches: [main, "copilot/**", "feat/**"]

@@ -10,6 +10,9 @@ import polars as pl
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.bls.config import CONFIG as RAW_CONFIG, LAUS_MEASURE_META
+from data_ingestion_toolbox.silver_ref.geography_contract import (
+    persist_exact_resolution_outcomes,
+)
 from .geography_parser import parse_bls_geography
 from .time_utils import parse_bls_period_to_date
 
@@ -510,6 +513,22 @@ def _transform_rows_to_silver_df(
 
     df = df.join(time_df, left_on="duration_start", right_on="date_key", how="left")
     df = df.join(geo_df, on=["geo_level", "geo_id"], how="left")
+
+    persist_exact_resolution_outcomes(
+        hook,
+        provider_source="BLS",
+        provider_dataset=program.lower(),
+        rows=(
+            {
+                "geo_level": row["geo_level"],
+                "geo_id": row["geo_id"],
+                "source_vintage": row["duration_start"].year,
+            }
+            for row in df.select(["geo_level", "geo_id", "duration_start"])
+            .unique()
+            .iter_rows(named=True)
+        ),
+    )
 
     df_before_filter = df.clone()
     missing_time = df.filter(pl.col("time_sk").is_null()).height

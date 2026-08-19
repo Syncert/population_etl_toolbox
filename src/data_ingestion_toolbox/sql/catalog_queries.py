@@ -165,7 +165,8 @@ def _build_geo_where(
     if q:
         clauses.append(
             "(UPPER(geo_id) LIKE UPPER(:q) OR UPPER(geo_name) LIKE UPPER(:q)"
-            " OR UPPER(state_name) LIKE UPPER(:q) OR UPPER(county_name) LIKE UPPER(:q))"
+            " OR UPPER(state_name) LIKE UPPER(:q) OR UPPER(county_name) LIKE UPPER(:q)"
+            " OR UPPER(place_name) LIKE UPPER(:q))"
         )
         params["q"] = f"%{q}%"
     return " AND ".join(clauses) if clauses else "TRUE"

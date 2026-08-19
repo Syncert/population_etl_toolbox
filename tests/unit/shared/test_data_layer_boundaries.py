@@ -120,3 +120,30 @@ def test_source_ddl_and_dags_keep_execution_ledgers_in_control() -> None:
                 failures.append(_relative(path))
 
     assert failures == [], "execution ledgers remain raw-owned: " + ", ".join(failures)
+
+
+def test_shared_reference_pipeline_is_the_only_geography_owner() -> None:
+    """Covers: ARC-001, ARC-002 — no source owns a competing geography dimension."""
+    source_paths = [
+        *sorted((SOURCE_ROOT / "census_acs").rglob("*.py")),
+        *sorted((SOURCE_ROOT / "census_acs").rglob("*.sql")),
+        REPOSITORY_ROOT / "dags/acs_ingest_dag.py",
+    ]
+    legacy = re.compile(r"raw_census\.geo_dim|census_acs\.geography|sync_geo_dim")
+    failures = [
+        _relative(path)
+        for path in source_paths
+        if legacy.search(path.read_text(encoding="utf-8"))
+    ]
+    assert failures == [], "legacy ACS geography ownership remains: " + ", ".join(
+        failures
+    )
+
+    pipeline = (SOURCE_ROOT / "silver_ref/geography_pipeline.py").read_text(
+        encoding="utf-8"
+    )
+    assert pipeline.index("persist_response_capture(") < pipeline.index(
+        "load_captured_payload("
+    )
+    ddl = (SOURCE_ROOT / "silver_ref/DDL/silver_ref.sql").read_text(encoding="utf-8")
+    assert "REFERENCES raw_capture.response_capture(capture_id)" in ddl

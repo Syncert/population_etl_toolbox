@@ -11,10 +11,10 @@ pytestmark = pytest.mark.unit
 
 def test_package_artifact_contract_accepts_only_runtime_assets() -> None:
     """Covers: ENV-005 — wheel contract requires API, ETL, and runtime SQL."""
+    manifest = _manifest()
     names = [
-        "apps/api/main.py",
-        "data_ingestion_toolbox/utility/retry.py",
-        *list(_manifest()["runtime_sql"]),
+        *list(manifest["required_wheel_modules"]),
+        *list(manifest["runtime_sql"]),
     ]
     validate_artifact_names(names, wheel=True)
 
@@ -30,10 +30,10 @@ def test_package_artifact_contract_rejects_non_runtime_files(leaked: str) -> Non
 
 def test_package_artifact_contract_rejects_manifest_drift() -> None:
     """Covers: ENV-005 — undeclared runtime SQL cannot enter a distribution."""
+    manifest = _manifest()
     names = [
-        "apps/api/main.py",
-        "data_ingestion_toolbox/utility/retry.py",
-        *list(_manifest()["runtime_sql"]),
+        *list(manifest["required_wheel_modules"]),
+        *list(manifest["runtime_sql"]),
         "data_ingestion_toolbox/unknown/DDL/unreviewed.sql",
     ]
     with pytest.raises(ValueError, match="runtime SQL manifest mismatch"):

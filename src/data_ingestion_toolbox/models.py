@@ -82,8 +82,10 @@ class GeographyLatest(BaseModel):
     geo_name: Optional[str] = None
     state_fips: Optional[str] = None
     county_fips: Optional[str] = None
+    place_fips: Optional[str] = None
     state_name: Optional[str] = None
     county_name: Optional[str] = None
+    place_name: Optional[str] = None
     geo_latitude: Optional[float] = None
     geo_longitude: Optional[float] = None
 

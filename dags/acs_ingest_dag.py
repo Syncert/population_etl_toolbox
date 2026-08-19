@@ -59,7 +59,6 @@ from data_ingestion_toolbox.census_acs.metadata import (
     sync_variable_metadata_for_year,
 )
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
-from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
 )
@@ -305,9 +304,24 @@ def acs_ingest():
         sync_acs_dataset_table()
 
     @task
-    def sync_geographies() -> None:
-        # Auto-pick latest available Gazetteer year
-        sync_geo_dim(source_year=None, min_year=2010)
+    def require_shared_geography() -> None:
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FILTER (WHERE geo_type = 'nation'),
+                       COUNT(*) FILTER (WHERE geo_type = 'state'),
+                       COUNT(*) FILTER (WHERE geo_type = 'county')
+                FROM silver_ref.dim_geo_current
+                WHERE is_active
+                """
+            )
+            nation, states, counties = cur.fetchone()
+        if nation != 1 or states < 50 or counties < 3000:
+            raise RuntimeError(
+                "shared geography is incomplete; run silver_ref successfully first "
+                f"(nation={nation}, states={states}, counties={counties})"
+            )
 
     # -----------------------------
     # Task 2: Decide what year(s) to ingest
@@ -605,14 +619,14 @@ def acs_ingest():
     # -----------------------------
     # 1) Refresh dataset availability
     sync = sync_datasets()
-    sync_geo = sync_geographies()
+    shared_geo = require_shared_geography()
 
     # 2) Determine target year(s) and build a variable-aware plan
     targets = get_target_years()
     batches = build_ingestion_plan(targets)
 
     # Ensure ordering: dataset sync -> target selection -> plan build
-    sync >> sync_geo >> targets >> batches
+    sync >> shared_geo >> targets >> batches
 
     # 3) Mark slices planned for observability (optional but recommended)
     planned = mark_slices_planned(batches)

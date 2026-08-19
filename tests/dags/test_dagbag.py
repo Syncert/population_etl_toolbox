@@ -274,6 +274,20 @@ def test_source_pipeline_order(dagbag, dag_id: str) -> None:
         )
 
 
+@pytest.mark.dag
+@pytest.mark.parametrize("dag_id", ["acs_ingest", "bls_ingest"])
+def test_geography_consumers_require_shared_reference_before_planning(
+    dagbag, dag_id: str
+) -> None:
+    """Covers: DAG-009 — geography consumers validate the shared owner first."""
+    dag = dagbag.dags[dag_id]
+    required = dag.get_task("require_shared_geography")
+    plan = dag.get_task("build_ingestion_plan")
+    assert required.task_id in {
+        task.task_id for task in plan.get_flat_relatives(upstream=True)
+    }
+
+
 # --------------------------------------------------------------------------
 # DAG-011: No side effects at import time
 # --------------------------------------------------------------------------

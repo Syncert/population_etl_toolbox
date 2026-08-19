@@ -19,6 +19,7 @@ from data_ingestion_toolbox.census_acs.silver_census import transform as census_
 from tests.e2e.test_fred_pipeline import _real_client
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import delete_geography, seed_geography
 
 pytestmark = [pytest.mark.e2e, pytest.mark.database, pytest.mark.slow]
 
@@ -51,15 +52,12 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20950101, "2095-01-01")
-            cursor.execute(
-                """
-                INSERT INTO silver_ref.dim_geo (
-                    geo_level, geo_id, state_fips, name, state_name,
-                    is_active, source, source_year, ingested_at
-                ) VALUES ('state', 'state:97', '97', 'E2E State', 'E2E State',
-                          TRUE, 'test', 2095, NOW())
-                ON CONFLICT (geo_level, geo_id) DO NOTHING
-                """
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="97",
+                vintage=2095,
+                name="E2E State",
             )
             cursor.execute(
                 """
@@ -160,9 +158,7 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                 cursor.execute(
                     "DELETE FROM raw_bls.bls_series WHERE series_id = %s", (series_id,)
                 )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = 'state:97'"
-                )
+                delete_geography(cursor, "state:97")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20950101"
                 )
@@ -185,15 +181,12 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20900101, "2090-01-01")
-            cursor.execute(
-                """
-                INSERT INTO silver_ref.dim_geo (
-                    geo_level, geo_id, state_fips, name, state_name,
-                    is_active, source, source_year, ingested_at
-                ) VALUES ('state', 'state:96', '96', 'ACS E2E State', 'ACS E2E State',
-                          TRUE, 'test', 2094, NOW())
-                ON CONFLICT (geo_level, geo_id) DO NOTHING
-                """
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="96",
+                vintage=2094,
+                name="ACS E2E State",
             )
             cursor.execute(
                 """
@@ -305,9 +298,7 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
                 cursor.execute(
                     "DELETE FROM raw_census.acs_variables WHERE table_id = 'B99998'"
                 )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = 'state:96'"
-                )
+                delete_geography(cursor, "state:96")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20900101"
                 )

@@ -2,34 +2,43 @@
 
 ## Plan status
 
-- **Status:** Proposed
-- **Last updated:** 2026-08-18
+- **Status:** Implemented locally; deployment verification pending
+- **Last updated:** 2026-08-19
 - **Primary owner:** Shared reference-data pipeline
 - **Depends on:** ARCH-004 raw capture/control foundation and the new-source expansion gate in [DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md](./DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
 - **Enables:** Census PEP, CDC, FBI, USDA NASS, broader ACS geography, cross-source maps, and stable geographic joins
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-19
 
-**Current milestone:** Target design complete; implementation has not started
+**Current milestone:** GEO-001 through GEO-006 implemented; fresh beta deployment and hosted CI evidence pending
 
-**Next pickup:** Complete GEO-001 by freezing the canonical geography identifiers and adding nation/state/county/place contract tests.
+**Next pickup:** Push an immutable candidate, verify hosted checks, reset/re-bootstrap beta, run `silver_ref`, and re-ingest configured observation history.
 
 ### Completed in the current slice
 
 - [x] Audited the existing `silver_ref` runtime, table grain, refresh behavior, and ownership limitations.
 - [x] Chose an independent shared geography pipeline with stable identities and versioned attributes, geometry, and relationships.
 - [x] Defined source-resolution, replay, cutover, rollback, validation, and provider-enablement contracts.
+- [x] Added exact, zero-padded nation/state/county/place and provider-agency identity contracts without name matching.
+- [x] Added capture-first Gazetteer and boundary ingestion with checksum-verified offline replay and quarantine.
+- [x] Made transient HTTP retries visible in control state and publish complete parsed snapshots in one database transaction.
+- [x] Added stable entity, immutable attribute, immutable geometry, current projection, resolution, and relationship relations.
+- [x] Preserved cross-county places through multiple evidence-backed intersection relationships.
+- [x] Removed ACS-owned geography DDL/runtime code and made ACS/BLS require the shared reference snapshot.
+- [x] Added exact-code resolution outcomes for ACS/BLS and reusable PEP/CDC/USDA/FBI contracts.
+- [x] Updated PostGIS bootstrap, API geography projection, Martin triggers, and GitHub Actions ownership.
+- [x] Added an operator runbook for immutable code staging, beta reset, manifest bootstrap, reference validation, and ordered re-ingestion.
 
 ### Remaining
 
-- [ ] GEO-001 — Freeze and test canonical nation/state/county/place identifiers.
-- [ ] GEO-002 — Implement lossless reference-file capture, quarantine, and offline replay.
-- [ ] GEO-003 — Implement versioned geography identity and attribute dimensions.
-- [ ] GEO-004 — Implement versioned geometry and cross-boundary relationships.
-- [ ] GEO-005 — Cut ACS and BLS over to the shared geography contract and reconcile existing observations.
-- [ ] GEO-006 — Enable exact-code resolution for PEP, CDC, USDA NASS, and FBI.
+- [x] GEO-001 — Freeze and test canonical nation/state/county/place identifiers.
+- [x] GEO-002 — Implement lossless reference-file capture, quarantine, and offline replay.
+- [x] GEO-003 — Implement versioned geography identity and attribute dimensions.
+- [x] GEO-004 — Implement versioned geometry and cross-boundary relationships.
+- [x] GEO-005 — Cut ACS and BLS over to the shared geography contract; beta reconciliation is a clean reset/re-ingestion.
+- [x] GEO-006 — Enable exact-code resolution contracts for PEP, CDC, USDA NASS, and FBI.
 
 ## Decision
 
@@ -63,7 +72,7 @@ A Census place is not always contained by exactly one county. County and place a
 
 Source coverage is not permission to synthesize missing levels. State and national values must come from provider-published observations unless an explicitly reviewed derived product documents aggregation eligibility and completeness.
 
-## Existing implementation
+## Historical implementation audited before cutover
 
 ### Runtime and ownership
 

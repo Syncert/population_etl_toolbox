@@ -36,12 +36,17 @@ SELECT
     geo_level,
     state_fips,
     county_fips,
+    place_fips,
     state_name,
     county_name,
+    place_name,
     latitude,
     longitude,
+    latitude AS geo_latitude,
+    longitude AS geo_longitude,
+    boundary_vintage,
     refreshed_at,
-    COALESCE(county_name, state_name, geo_id) AS geo_name
+    COALESCE(place_name, county_name, state_name, geo_id) AS geo_name
 FROM gold_glossary.dim_geo_latest;
 
 -- BLS observation contracts.

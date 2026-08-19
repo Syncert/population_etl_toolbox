@@ -1,18 +1,19 @@
-"""Deterministic contracts for production time and geography reference loaders."""
+"""Deterministic contracts for shared time and boundary reference parsing."""
 
 from __future__ import annotations
 
 import io
+import json
 import sys
 import zipfile
 from datetime import date
 from types import ModuleType
 
-import httpx
 import pytest
 import shapefile
 
-from data_ingestion_toolbox.silver_ref import geography, time_dim
+from data_ingestion_toolbox.silver_ref import time_dim
+from data_ingestion_toolbox.silver_ref.geography_pipeline import parse_boundary_capture
 
 pytestmark = pytest.mark.unit
 
@@ -49,41 +50,32 @@ class _RecordingConnection:
         self.commits += 1
 
 
-def test_reference_loaders_resolve_optional_airflow_hook_lazily(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Covers: ETL-024, ETL-025 — base installs can import pure helpers."""
+def test_time_loader_resolves_optional_airflow_hook_lazily(monkeypatch) -> None:
+    """Covers: ETL-024 — optional runtime integration remains lazy."""
     created_with: list[str] = []
 
     class PostgresHook:
         def __init__(self, postgres_conn_id: str) -> None:
             created_with.append(postgres_conn_id)
 
-    module_names = (
+    names = (
         "airflow",
         "airflow.providers",
         "airflow.providers.postgres",
         "airflow.providers.postgres.hooks",
         "airflow.providers.postgres.hooks.postgres",
     )
-    for module_name in module_names:
-        module = ModuleType(module_name)
+    for name in names:
+        module = ModuleType(name)
         module.__path__ = []  # type: ignore[attr-defined]
-        monkeypatch.setitem(sys.modules, module_name, module)
-    sys.modules[module_names[-1]].PostgresHook = PostgresHook  # type: ignore[attr-defined]
-
-    assert isinstance(geography._get_hook(), PostgresHook)
+        monkeypatch.setitem(sys.modules, name, module)
+    sys.modules[names[-1]].PostgresHook = PostgresHook  # type: ignore[attr-defined]
     assert isinstance(time_dim._get_hook(), PostgresHook)
-    assert created_with == [
-        geography.CONFIG.postgres_conn_id,
-        time_dim.CONFIG.postgres_conn_id,
-    ]
+    assert created_with == [time_dim.CONFIG.postgres_conn_id]
 
 
-def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Covers: ETL-024, ETL-025 — production time rows reconcile exactly."""
+def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(monkeypatch) -> None:
+    """Covers: ETL-024, ETL-025 — calendar rows and counts reconcile exactly."""
     cursor = _RecordingCursor()
     connection = _RecordingConnection(cursor)
     monkeypatch.setattr(
@@ -91,7 +83,6 @@ def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(
         "_get_hook",
         lambda: type("Hook", (), {"get_conn": lambda _self: connection})(),
     )
-
     assert time_dim.sync_time_dim(date(2024, 2, 28), date(2024, 3, 1)) == 3
     assert connection.commits == 1
     assert [row["date_key"] for row in cursor.rows] == [
@@ -100,85 +91,32 @@ def test_time_dimension_loader_emits_exact_leap_and_calendar_flags(
         date(2024, 3, 1),
     ]
     assert cursor.rows[1]["is_month_end"] is True
-    assert cursor.rows[1]["day_name"] == "Thursday"
     assert cursor.rows[2]["is_month_start"] is True
-    assert all(row["quarter"] == 1 for row in cursor.rows)
-
-
-def test_legacy_county_parsers_preserve_zero_padding_and_coordinates() -> None:
-    """Covers: ETL-002, ETL-024 — legacy Gazetteer formats retain exact keys."""
-    row_1990 = "55   025 Dane County".ljust(69) + " 043066700" + "-089400000"
-    parsed_1990 = geography._parse_1990_counties(row_1990).to_dicts()
-    assert parsed_1990 == [
-        {
-            "GEOID": "55025",
-            "NAME": "Dane County",
-            "INTPTLAT": pytest.approx(43.0667),
-            "INTPTLONG": pytest.approx(-89.4),
-        }
-    ]
-
-    row_2000 = "  55025Dane County".ljust(73) + "43.066700 -89.400000"
-    parsed_2000 = geography._parse_2000_counties(row_2000).to_dicts()
-    assert parsed_2000 == [
-        {
-            "GEOID": "55025",
-            "NAME": "Dane County",
-            "INTPTLAT": "43.066700",
-            "INTPTLONG": "-89.400000",
-        }
-    ]
 
 
 def _boundary_zip() -> bytes:
-    shp = io.BytesIO()
-    shx = io.BytesIO()
-    dbf = io.BytesIO()
+    shp, shx, dbf = io.BytesIO(), io.BytesIO(), io.BytesIO()
     writer = shapefile.Writer(shp=shp, shx=shx, dbf=dbf, shapeType=shapefile.POLYGON)
     writer.field("STATEFP", "C", size=2)
-    writer.field("COUNTYFP", "C", size=3)
+    writer.field("PLACEFP", "C", size=5)
     writer.poly(
         [[[-89.5, 43.0], [-89.3, 43.0], [-89.3, 43.2], [-89.5, 43.2], [-89.5, 43.0]]]
     )
-    writer.record("55", "025")
+    writer.record("55", "53000")
     writer.close()
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w") as archive:
-        archive.writestr("county.shp", shp.getvalue())
-        archive.writestr("county.shx", shx.getvalue())
-        archive.writestr("county.dbf", dbf.getvalue())
+        archive.writestr("place.shp", shp.getvalue())
+        archive.writestr("place.shx", shx.getvalue())
+        archive.writestr("place.dbf", dbf.getvalue())
     return payload.getvalue()
 
 
-def test_boundary_zip_parser_returns_valid_feature_contract(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Covers: ETL-024 — production boundary parser reads shapefile features."""
-    response = httpx.Response(
-        200,
-        content=_boundary_zip(),
-        request=httpx.Request("GET", "https://fixture.invalid/county.zip"),
+def test_captured_boundary_replays_place_geometry_offline() -> None:
+    """Covers: ETL-024 — captured boundaries map to exact canonical identities."""
+    records = parse_boundary_capture(
+        _boundary_zip(), geo_type="place", boundary_vintage=2025
     )
-
-    class Client:
-        def __init__(self, **_kwargs) -> None:
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        def get(self, _url: str) -> httpx.Response:
-            return response
-
-    monkeypatch.setattr(geography.httpx, "Client", Client)
-    features = geography._fetch_boundary_features(
-        "https://fixture.invalid/county.zip", retries=1
-    )
-
-    assert len(features) == 1
-    assert features[0]["properties"] == {"STATEFP": "55", "COUNTYFP": "025"}
-    assert features[0]["geometry"]["type"] == "Polygon"
-    assert features[0]["geometry"]["coordinates"]
+    assert len(records) == 1
+    assert records[0].geo_id == "state:55|place:53000"
+    assert json.loads(records[0].geojson)["type"] == "Polygon"

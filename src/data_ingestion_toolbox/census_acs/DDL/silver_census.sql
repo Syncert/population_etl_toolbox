@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS census_observation_revision_slice_idx
 CREATE TABLE IF NOT EXISTS silver_census.fact_demographics (
     demographic_sk BIGSERIAL PRIMARY KEY,
     time_sk INTEGER NOT NULL REFERENCES silver_ref.dim_time(time_sk),
-    geo_sk INTEGER NOT NULL REFERENCES silver_ref.dim_geo(geo_sk),
+    geo_sk BIGINT NOT NULL REFERENCES silver_ref.dim_geo_entity(geo_sk),
     duration_start DATE NOT NULL,
     duration_end DATE NOT NULL,
     estimate_year INTEGER NOT NULL,

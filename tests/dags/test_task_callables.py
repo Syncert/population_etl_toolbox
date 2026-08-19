@@ -389,8 +389,8 @@ def test_reference_dimension_task_callables_forward_declared_windows(
     _patch_callable_global(
         monkeypatch,
         geo_callable,
-        "sync_geo_dim",
-        lambda **kwargs: calls.append(("geo", kwargs)) or 4,
+        "sync_geography_reference",
+        lambda **kwargs: calls.append(("geo", kwargs)) or {"attributes": 4},
     )
     _patch_callable_global(
         monkeypatch,
@@ -399,9 +399,9 @@ def test_reference_dimension_task_callables_forward_declared_windows(
         lambda **kwargs: calls.append(("time", kwargs)) or 5,
     )
 
-    assert geo_callable() == 4
+    assert geo_callable() == {"attributes": 4}
     assert time_callable() == 5
-    assert calls[0] == ("geo", {"source_year": None, "min_year": 2010})
+    assert calls[0] == ("geo", {"source_year": None})
     assert calls[1][0] == "time"
     assert calls[1][1]["start_date"].isoformat() == "1970-01-01"
     assert calls[1][1]["end_date"] is None

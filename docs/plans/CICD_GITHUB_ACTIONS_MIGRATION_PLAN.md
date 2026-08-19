@@ -12,7 +12,7 @@
 
 **Last updated:** 2026-08-19
 
-**Current milestone:** CI-001 through CI-006 implemented and reproduced locally; immutable-SHA verification pending
+**Current milestone:** CI-001 through CI-006 include the versioned geography cutover and are being reproduced locally; immutable-SHA verification pending
 
 **Next pickup:** Push the candidate SHA, confirm protected checks, then record fresh credentialed external-contract and bounded release evidence.
 
@@ -28,6 +28,7 @@
 - [x] Added a machine-validated workflow-to-contract evidence map with stable required/release job names and architecture path ownership.
 - [x] Aligned semantic migration, source cutovers, publisher DDL, and contract views across test helpers, Docker, Airflow, deployment smoke, and frontend triggers.
 - [x] Reproduced lint/format, package, unit, coverage, empty PostGIS bootstrap, Linux Airflow, frontend, Redis, deployment, Martin, E2E, and bounded performance gates locally.
+- [x] Corrected the small-slice performance fixture so mocked provider calls do not retain production pacing sleeps; the unchanged Linux-calibrated 12-second gate passes in-container.
 - [x] Ran the credentialed Census, BLS, and FRED contracts against the capture-first boundary: 17 passed on 2026-08-19; corrected stale legacy-raw assertions and suppressed credential-bearing HTTP access URLs.
 
 ### Remaining

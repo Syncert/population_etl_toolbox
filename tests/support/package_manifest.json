@@ -2,6 +2,8 @@
   "version": 1,
   "required_wheel_modules": [
     "apps/api/main.py",
+    "data_ingestion_toolbox/silver_ref/geography_contract.py",
+    "data_ingestion_toolbox/silver_ref/geography_pipeline.py",
     "data_ingestion_toolbox/utility/retry.py"
   ],
   "runtime_sql": [

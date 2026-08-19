@@ -14,6 +14,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.census_acs.config import CONFIG as RAW_CONFIG
+from data_ingestion_toolbox.silver_ref.geography_contract import (
+    persist_exact_resolution_outcomes,
+)
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -589,6 +592,22 @@ def _transform_rows_to_silver_df(
         time_df, left_on="duration_start", right_on="date_key", how="left"
     )
     grouped = grouped.join(geo_df, on=["geo_level", "geo_id"], how="left")
+
+    persist_exact_resolution_outcomes(
+        hook,
+        provider_source="CENSUS_ACS",
+        provider_dataset=str(grouped["dataset"][0]),
+        rows=(
+            {
+                "geo_level": row["geo_level"],
+                "geo_id": row["geo_id"],
+                "source_vintage": row["estimate_year"],
+            }
+            for row in grouped.select(["geo_level", "geo_id", "estimate_year"])
+            .unique()
+            .iter_rows(named=True)
+        ),
+    )
 
     missing_time_rows = grouped.filter(pl.col("time_sk").is_null()).height
     if missing_time_rows:

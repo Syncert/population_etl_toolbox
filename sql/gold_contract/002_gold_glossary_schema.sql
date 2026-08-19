@@ -68,13 +68,21 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
     geo_level    TEXT,
     state_fips   TEXT,
     county_fips  TEXT,
+    place_fips   TEXT,
     state_name   TEXT,
     county_name  TEXT,
+    place_name   TEXT,
     latitude     DOUBLE PRECISION,
     longitude    DOUBLE PRECISION,
     geo_geom     geometry(MultiPolygon, 4326),
+    boundary_vintage INTEGER,
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE gold_glossary.dim_geo_latest
+    ADD COLUMN IF NOT EXISTS place_fips TEXT,
+    ADD COLUMN IF NOT EXISTS place_name TEXT,
+    ADD COLUMN IF NOT EXISTS boundary_vintage INTEGER;
 
 CREATE INDEX IF NOT EXISTS ix_gold_glossary_dim_geo_latest_geom
     ON gold_glossary.dim_geo_latest USING GIST (geo_geom);
@@ -91,11 +99,14 @@ BEGIN
         geo_level,
         state_fips,
         county_fips,
+        place_fips,
         state_name,
         county_name,
+        place_name,
         latitude,
         longitude,
         geo_geom,
+        boundary_vintage,
         refreshed_at
     )
     SELECT DISTINCT ON (g.geo_id)
@@ -108,11 +119,14 @@ BEGIN
         END,
         CASE WHEN g.state_fips  IS NOT NULL THEN LPAD(g.state_fips::TEXT,  2, '0') ELSE NULL END,
         CASE WHEN g.county_fips IS NOT NULL THEN LPAD(g.county_fips::TEXT, 3, '0') ELSE NULL END,
+        CASE WHEN g.place_fips IS NOT NULL THEN LPAD(g.place_fips::TEXT, 5, '0') ELSE NULL END,
         g.state_name,
         g.county_name,
+        g.place_name,
         g.latitude,
         g.longitude,
         g.geom,
+        g.boundary_vintage,
         NOW()
     FROM silver_ref.dim_geo g
     WHERE g.is_active = TRUE
@@ -121,30 +135,39 @@ BEGIN
     SET geo_level = EXCLUDED.geo_level,
         state_fips = EXCLUDED.state_fips,
         county_fips = EXCLUDED.county_fips,
+        place_fips = EXCLUDED.place_fips,
         state_name = EXCLUDED.state_name,
         county_name = EXCLUDED.county_name,
+        place_name = EXCLUDED.place_name,
         latitude = EXCLUDED.latitude,
         longitude = EXCLUDED.longitude,
         geo_geom = EXCLUDED.geo_geom,
+        boundary_vintage = EXCLUDED.boundary_vintage,
         refreshed_at = NOW()
     WHERE (
         gold_glossary.dim_geo_latest.geo_level,
         gold_glossary.dim_geo_latest.state_fips,
         gold_glossary.dim_geo_latest.county_fips,
+        gold_glossary.dim_geo_latest.place_fips,
         gold_glossary.dim_geo_latest.state_name,
         gold_glossary.dim_geo_latest.county_name,
+        gold_glossary.dim_geo_latest.place_name,
         gold_glossary.dim_geo_latest.latitude,
         gold_glossary.dim_geo_latest.longitude,
-        gold_glossary.dim_geo_latest.geo_geom
+        gold_glossary.dim_geo_latest.geo_geom,
+        gold_glossary.dim_geo_latest.boundary_vintage
     ) IS DISTINCT FROM (
         EXCLUDED.geo_level,
         EXCLUDED.state_fips,
         EXCLUDED.county_fips,
+        EXCLUDED.place_fips,
         EXCLUDED.state_name,
         EXCLUDED.county_name,
+        EXCLUDED.place_name,
         EXCLUDED.latitude,
         EXCLUDED.longitude,
-        EXCLUDED.geo_geom
+        EXCLUDED.geo_geom,
+        EXCLUDED.boundary_vintage
     );
 
     DELETE FROM gold_glossary.dim_geo_latest d
@@ -194,10 +217,15 @@ SELECT
     geo_level,
     state_fips,
     county_fips,
+    place_fips,
     state_name,
     county_name,
+    place_name,
     latitude,
     longitude,
+    latitude AS geo_latitude,
+    longitude AS geo_longitude,
+    boundary_vintage,
     refreshed_at,
-    COALESCE(county_name, state_name, geo_id) AS geo_name
+    COALESCE(place_name, county_name, state_name, geo_id) AS geo_name
 FROM gold_glossary.dim_geo_latest;

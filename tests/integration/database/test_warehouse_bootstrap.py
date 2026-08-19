@@ -7,6 +7,7 @@ import pytest
 from psycopg2.extensions import connection
 
 from tests.support.postgres import WAREHOUSE_DDL_FILES, apply_sql_files
+from tests.support.capture_seed import seed_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -36,7 +37,12 @@ REQUIRED_RELATIONS = {
     ("control", "fred_ingestion_slices", "r"),
     ("raw_capture", "payload_blob", "r"),
     ("raw_capture", "response_capture", "r"),
-    ("silver_ref", "dim_geo", "r"),
+    ("silver_ref", "dim_geo", "v"),
+    ("silver_ref", "dim_geo_current", "v"),
+    ("silver_ref", "dim_geo_entity", "r"),
+    ("silver_ref", "dim_geo_entity_version", "r"),
+    ("silver_ref", "dim_geo_geometry_version", "r"),
+    ("silver_ref", "bridge_geo_relationship_version", "r"),
     ("silver_ref", "dim_time", "r"),
     ("silver_census", "fact_demographics", "r"),
     ("silver_bls", "fact_labor_statistics", "r"),
@@ -236,16 +242,13 @@ def test_silver_fact_foreign_keys_reject_orphans_and_accept_dimensions(
             )
             """
         )
-        cursor.execute(
-            """
-            INSERT INTO silver_ref.dim_geo (
-                geo_sk, geo_level, geo_id, state_fips, name,
-                is_active, source, source_year, ingested_at
-            ) VALUES (
-                999999, 'state', 'state:55', '55', 'Wisconsin',
-                TRUE, 'test', 2024, NOW()
-            )
-            """
+        seed_geography(
+            cursor,
+            geo_type="state",
+            state_fips="55",
+            vintage=2024,
+            name="Wisconsin",
+            geo_sk=999999,
         )
         cursor.execute(insert_fact, fact_values)
 

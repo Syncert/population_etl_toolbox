@@ -6,7 +6,7 @@
 
 **Last updated:** 2026-08-19
 
-**Current ticket:** ARCH-002 / ARCH-003 / control-plane ownership implemented locally; release verification pending
+**Current ticket:** ARCH-001 through ARCH-007 plus shared geography cutover implemented locally; release verification pending
 
 **Next pickup:** Release verification: push an immutable candidate, run credentialed external contracts, and perform the configured beta history re-ingestion.
 
@@ -36,14 +36,14 @@
 - [x] Removed source-owned glossary DDL and direct catalog seeds; source gold now publishes provider-neutral contracts without depending on glossary refreshes.
 - [x] Removed authored dashboard/aggregation policy from gold reports, API models/queries, frontend consumers, fixtures, and serving contracts; migration `003` is in every authoritative bootstrap path.
 - [x] Moved ACS, BLS, and FRED slice ledgers into `control`, removed their source-raw DDL ownership, and added a static regression boundary.
-- [x] Made shared geography refresh a glossary-reconciliation responsibility rather than a source-DAG side effect.
+- [x] Made shared geography refresh an independent `silver_ref` DAG responsibility rather than an observation-source side effect.
 - [x] Validated all 68 DAG contracts in the pinned Linux scheduler image with disposable PostGIS task execution.
 - [x] Rebuilt from an empty database and passed the database, API, E2E, deployment, spatial, and bounded performance contracts.
 
 ### Remaining
 
 - [x] Removed the legacy parsed-observation loaders/tables and silver fallbacks. Migration 007 drops beta-era relations, and database, DAG, E2E, resilience, and bounded performance fixtures exercise capture/revision-first paths.
-- [ ] Reset the beta database and re-ingest configured history through the capture-first paths.
+- [ ] Reset/re-bootstrap the beta database with migration 008, run `silver_ref`, and re-ingest configured history through the capture-first paths.
 
 The local `.venv` was recreated with uv using managed Python 3.11.16 and the documented two-step Airflow constraints plus `airflow-dev` installation. The shared suite was revalidated in that environment; CI remains authoritative.
 

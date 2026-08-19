@@ -493,6 +493,26 @@ def bls_ingest():
     # Task 1: Metadata sync
     # -----------------------------
     @task
+    def require_shared_geography() -> None:
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FILTER (WHERE geo_type = 'nation'),
+                       COUNT(*) FILTER (WHERE geo_type = 'state'),
+                       COUNT(*) FILTER (WHERE geo_type = 'county')
+                FROM silver_ref.dim_geo_current
+                WHERE is_active
+                """
+            )
+            nation, states, counties = cur.fetchone()
+        if nation != 1 or states < 50 or counties < 3000:
+            raise RuntimeError(
+                "shared geography is incomplete; run silver_ref successfully first "
+                f"(nation={nation}, states={states}, counties={counties})"
+            )
+
+    @task
     def sync_datasets() -> None:
         """Sync bls_datasets table."""
         sync_bls_datasets_table()
@@ -856,12 +876,13 @@ def bls_ingest():
     # -----------------------------
     # DAG wiring
     # -----------------------------
+    shared_geo = require_shared_geography()
     sync_ds = sync_datasets()
     sync_meta = sync_metadata()
 
     plan = build_ingestion_plan(sync_meta)
 
-    sync_ds >> sync_meta >> plan
+    shared_geo >> sync_ds >> sync_meta >> plan
 
     planned = mark_slices_planned(plan)
     plan >> planned

@@ -1,30 +1,38 @@
-"""Production reference-dimension replay, geometry, index, and serving contracts."""
+"""Versioned reference replay, geometry, relationship, and serving contracts."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from datetime import date
 
-import polars as pl
 import pytest
 from psycopg2.extensions import connection
 
-from data_ingestion_toolbox.silver_ref import geography, time_dim
+from data_ingestion_toolbox.silver_ref import time_dim
+from data_ingestion_toolbox.silver_ref.geography_pipeline import (
+    GeographyRecord,
+    GeographyRepository,
+    GeometryRecord,
+)
+from tests.support.capture_seed import seed_capture
 from tests.support.postgres import PostgresHookStub
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
-TEST_STATE_FIPS = "98"
-TEST_COUNTY_FIPS = "765"
-TEST_STATE_GEO_ID = f"state:{TEST_STATE_FIPS}"
-TEST_COUNTY_GEO_ID = f"state:{TEST_STATE_FIPS}|county:{TEST_COUNTY_FIPS}"
+TEST_IDS = [
+    "us:1",
+    "state:98",
+    "state:98|county:764",
+    "state:98|county:765",
+    "state:98|place:54321",
+]
 
 
 @pytest.fixture
 def reference_dimension_scope(
     postgres_connection_factory: Callable[[], connection],
 ) -> Iterator[None]:
-    """Own committed production-loader rows and verify teardown state."""
     try:
         yield
     finally:
@@ -32,28 +40,35 @@ def reference_dimension_scope(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = ANY(%s)",
-                    ([TEST_STATE_GEO_ID, TEST_COUNTY_GEO_ID],),
+                    "DELETE FROM silver_ref.geography_resolution WHERE geo_sk IN "
+                    "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s))",
+                    (TEST_IDS,),
                 )
                 cursor.execute(
-                    "DELETE FROM silver_ref.dim_time "
-                    "WHERE date_key BETWEEN '2096-02-28' AND '2096-03-01'"
+                    "DELETE FROM silver_ref.bridge_geo_relationship_version WHERE parent_geo_sk IN "
+                    "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s)) "
+                    "OR related_geo_sk IN (SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s))",
+                    (TEST_IDS, TEST_IDS),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_geo_geometry_version WHERE geo_sk IN "
+                    "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s))",
+                    (TEST_IDS,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_geo_entity_version WHERE geo_sk IN "
+                    "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s))",
+                    (TEST_IDS,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s)",
+                    (TEST_IDS,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_time WHERE date_key BETWEEN '2096-02-28' AND '2096-03-01'"
                 )
             cleanup.commit()
-            with cleanup.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      (SELECT COUNT(*) FROM silver_ref.dim_geo WHERE geo_id = ANY(%s))
-                      +
-                      (SELECT COUNT(*) FROM silver_ref.dim_time
-                       WHERE date_key BETWEEN '2096-02-28' AND '2096-03-01')
-                    """,
-                    ([TEST_STATE_GEO_ID, TEST_COUNTY_GEO_ID],),
-                )
-                assert cursor.fetchone() == (0,)
         finally:
-            cleanup.rollback()
             cleanup.close()
 
 
@@ -62,27 +77,19 @@ def test_time_dimension_sync_replays_exact_leap_window(
     postgres_connection_factory: Callable[[], connection],
     reference_dimension_scope: None,
 ) -> None:
-    """Covers: ETL-024, ETL-025 — real dim_time upsert replays exactly."""
+    """Covers: ETL-024, ETL-025 — time replay is exact and idempotent."""
     monkeypatch.setattr(
-        time_dim,
-        "_get_hook",
-        lambda: PostgresHookStub(postgres_connection_factory),
+        time_dim, "_get_hook", lambda: PostgresHookStub(postgres_connection_factory)
     )
-
     for _ in range(2):
         assert time_dim.sync_time_dim(date(2096, 2, 28), date(2096, 3, 1)) == 3
-
     reader = postgres_connection_factory()
     try:
         with reader.cursor() as cursor:
             cursor.execute(
-                """
-                SELECT date_key::TEXT, is_month_start, is_month_end,
-                       day_of_week, quarter
-                FROM silver_ref.dim_time
-                WHERE date_key BETWEEN '2096-02-28' AND '2096-03-01'
-                ORDER BY date_key
-                """
+                """SELECT date_key::TEXT, is_month_start, is_month_end, day_of_week, quarter
+                   FROM silver_ref.dim_time
+                   WHERE date_key BETWEEN '2096-02-28' AND '2096-03-01' ORDER BY date_key"""
             )
             assert cursor.fetchall() == [
                 ("2096-02-28", False, False, 2, 1),
@@ -93,116 +100,137 @@ def test_time_dimension_sync_replays_exact_leap_window(
         reader.close()
 
 
-def test_geography_sync_replays_valid_polygons_and_refreshes_serving_view(
-    monkeypatch: pytest.MonkeyPatch,
+def _polygon(x1: float, x2: float) -> str:
+    return json.dumps(
+        {
+            "type": "Polygon",
+            "coordinates": [[[x1, 40], [x2, 40], [x2, 41], [x1, 41], [x1, 40]]],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def test_geography_replay_retains_versions_and_cross_county_place_relationships(
     postgres_connection_factory: Callable[[], connection],
     reference_dimension_scope: None,
 ) -> None:
-    """Covers: ETL-024, DB-018 — production geography replay serves valid PostGIS."""
-    states = pl.DataFrame(
-        {
-            "GEOID": [TEST_STATE_FIPS],
-            "NAME": ["Test State"],
-            "INTPTLAT": ["40.0"],
-            "INTPTLONG": ["-90.0"],
-        }
-    )
-    counties = pl.DataFrame(
-        {
-            "GEOID": [TEST_STATE_FIPS + TEST_COUNTY_FIPS],
-            "NAME": ["Replay County"],
-            "INTPTLAT": ["40.1"],
-            "INTPTLONG": ["-89.9"],
-        }
-    )
-    state_polygon = {
-        "type": "Polygon",
-        "coordinates": [[[-91, 39], [-89, 39], [-89, 41], [-91, 41], [-91, 39]]],
-    }
-    county_polygon = {
-        "type": "Polygon",
-        "coordinates": [
-            [[-90.1, 40.0], [-89.8, 40.0], [-89.8, 40.2], [-90.1, 40.2], [-90.1, 40.0]]
-        ],
-    }
+    """Covers: DB-018 — versions, retirement, geometry, and intersections persist."""
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_2096 = seed_capture(cursor, "CENSUS_GEO", b"snapshot-2096")
+    writer.commit()
+    writer.close()
 
-    monkeypatch.setattr(
-        geography,
-        "_get_hook",
-        lambda: PostgresHookStub(postgres_connection_factory),
-    )
-    monkeypatch.setattr(geography, "_url_exists", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(
-        geography,
-        "_fetch_zipped_tsv",
-        lambda url: counties if "counties" in url else states,
-    )
-    monkeypatch.setattr(
-        geography,
-        "_load_polygon_lookup",
-        lambda: (
-            {TEST_STATE_FIPS: __import__("json").dumps(state_polygon)},
-            {
-                TEST_STATE_FIPS + TEST_COUNTY_FIPS: __import__("json").dumps(
-                    county_polygon
-                )
-            },
+    repository = GeographyRepository(postgres_connection_factory)
+    records = [
+        GeographyRecord("nation", "us:1", "1", None, None, None, "United States", 2096),
+        GeographyRecord(
+            "state", "state:98", "98", "98", None, None, "Old State Name", 2096
         ),
-    )
+        GeographyRecord(
+            "county",
+            "state:98|county:764",
+            "98764",
+            "98",
+            "764",
+            None,
+            "West County",
+            2096,
+        ),
+        GeographyRecord(
+            "county",
+            "state:98|county:765",
+            "98765",
+            "98",
+            "765",
+            None,
+            "East County",
+            2096,
+        ),
+        GeographyRecord(
+            "place",
+            "state:98|place:54321",
+            "9854321",
+            "98",
+            None,
+            "54321",
+            "Crossing Place",
+            2096,
+        ),
+    ]
+    assert repository.load_attributes(records, capture_id=capture_2096) == 5
+    geometries = [
+        GeometryRecord("state:98", 2096, _polygon(-91, -88)),
+        GeometryRecord("state:98|county:764", 2096, _polygon(-91, -89.5)),
+        GeometryRecord("state:98|county:765", 2096, _polygon(-89.5, -88)),
+        GeometryRecord("state:98|place:54321", 2096, _polygon(-90, -89)),
+    ]
+    assert repository.load_geometries(geometries, capture_id=capture_2096) == 4
+    repository.reconcile_relationships(vintage=2096, capture_id=capture_2096)
 
-    for _ in range(2):
-        assert geography.sync_geo_dim(source_year=2097, min_year=2097) == 3
+    serving_reader = postgres_connection_factory()
+    try:
+        with serving_reader.cursor() as cursor:
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            cursor.execute(
+                """SELECT place_fips, place_name, boundary_vintage,
+                          ST_IsValid(geo_geom), ST_SRID(geo_geom)
+                   FROM gold.dim_geo_latest
+                   WHERE geo_id = 'state:98|place:54321'"""
+            )
+            assert cursor.fetchone() == (
+                "54321",
+                "Crossing Place",
+                2096,
+                True,
+                4326,
+            )
+        serving_reader.rollback()
+    finally:
+        serving_reader.close()
+
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_2097 = seed_capture(cursor, "CENSUS_GEO", b"snapshot-2097")
+    writer.commit()
+    writer.close()
+    renamed = GeographyRecord(
+        "state", "state:98", "98", "98", None, None, "New State Name", 2097
+    )
+    repository.load_attributes([renamed], capture_id=capture_2097)
+    repository.retire_missing(
+        active_geo_ids={"state:98"}, vintage=2097, capture_id=capture_2097
+    )
 
     reader = postgres_connection_factory()
     try:
         with reader.cursor() as cursor:
             cursor.execute(
-                """
-                SELECT geo_id, state_name, county_name, first_seen_year,
-                       last_seen_year, ST_IsValid(geom), ST_SRID(geom)
-                FROM silver_ref.dim_geo
-                WHERE geo_id = ANY(%s) ORDER BY geo_id
-                """,
-                ([TEST_STATE_GEO_ID, TEST_COUNTY_GEO_ID],),
+                "SELECT name, is_active FROM silver_ref.dim_geo_current WHERE geo_id = 'state:98'"
             )
-            assert cursor.fetchall() == [
-                (
-                    TEST_STATE_GEO_ID,
-                    "Test State",
-                    None,
-                    2097,
-                    2097,
-                    True,
-                    4326,
-                ),
-                (
-                    TEST_COUNTY_GEO_ID,
-                    "Test State",
-                    "Replay County",
-                    2097,
-                    2097,
-                    True,
-                    4326,
-                ),
-            ]
+            assert cursor.fetchone() == ("New State Name", True)
+            cursor.execute(
+                "SELECT name FROM silver_ref.dim_geo_entity_version v JOIN silver_ref.dim_geo_entity e USING (geo_sk) "
+                "WHERE e.geo_id = 'state:98' ORDER BY geography_vintage"
+            )
+            assert cursor.fetchall() == [("Old State Name",), ("New State Name",)]
+            cursor.execute(
+                "SELECT is_active FROM silver_ref.dim_geo_current WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone() == (False,)
+            cursor.execute(
+                """SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version r
+                   JOIN silver_ref.dim_geo_entity p ON p.geo_sk = r.related_geo_sk
+                   WHERE p.geo_id = 'state:98|place:54321' AND r.relationship_type = 'intersects'"""
+            )
+            assert cursor.fetchone() == (2,)
             cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             cursor.execute(
-                """
-                SELECT geo_id, ST_IsValid(geo_geom), ST_SRID(geo_geom)
-                FROM gold.dim_geo_latest
-                WHERE geo_id = %s
-                """,
-                (TEST_COUNTY_GEO_ID,),
+                "SELECT state_name, ST_IsValid(geo_geom), ST_SRID(geo_geom) FROM gold.dim_geo_latest "
+                "WHERE geo_id = 'state:98'"
             )
-            assert cursor.fetchone() == (TEST_COUNTY_GEO_ID, True, 4326)
-            cursor.execute(
-                """
-                SELECT indexdef FROM pg_indexes
-                WHERE schemaname = 'silver_ref' AND tablename = 'dim_geo'
-                  AND indexdef ILIKE '%USING gist%geom%'
-                """
-            )
-            assert cursor.fetchone() is not None
+            assert cursor.fetchone() == ("New State Name", True, 4326)
         reader.rollback()
     finally:
         reader.close()

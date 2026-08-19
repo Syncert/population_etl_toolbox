@@ -14,6 +14,7 @@
     {"id": "migration-005", "phase": "source-cutover", "path": "sql/migrations/005_census_acs_capture_cutover.sql"},
     {"id": "migration-006", "phase": "source-cutover", "path": "sql/migrations/006_bls_capture_cutover.sql"},
     {"id": "migration-007", "phase": "source-cutover", "path": "sql/migrations/007_remove_legacy_parsed_raw.sql"},
+    {"id": "migration-008", "phase": "geography-cutover", "path": "sql/migrations/008_geography_reference_cutover.sql"},
     {"id": "gold-census", "phase": "gold", "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"},
     {"id": "gold-bls", "phase": "gold", "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"},
     {"id": "gold-fred", "phase": "gold", "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql"},

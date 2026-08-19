@@ -155,6 +155,9 @@ def test_many_small_slices_finish_without_duplicate_keys(
             "observations": [{"date": observation_start, "value": "1"}]
         },
     )
+    # The source call is mocked, so provider pacing is outside this database
+    # throughput contract. Production ingest retains its configured sleep.
+    monkeypatch.setattr(fred_ingest.time, "sleep", lambda _seconds: None)
 
     started = time.perf_counter()
     try:
