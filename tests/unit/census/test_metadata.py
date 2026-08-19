@@ -10,6 +10,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_detailed_table_catalog_identity_is_classified() -> None:
+    """Covers: ETL-026 — detailed-table catalog identity is deterministic."""
     assert metadata._classify_detailed_table_dataset(
         {
             "title": "ACS 5-Year Detailed Tables",
@@ -20,6 +21,7 @@ def test_detailed_table_catalog_identity_is_classified() -> None:
 
 
 def test_non_detailed_table_catalog_identity_is_skipped() -> None:
+    """Covers: ETL-026 — unrelated ACS products remain outside configured scope."""
     assert (
         metadata._classify_detailed_table_dataset(
             {
@@ -35,6 +37,7 @@ def test_non_detailed_table_catalog_identity_is_skipped() -> None:
 def test_dataset_sync_rejects_empty_catalog_before_opening_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-026 — empty ACS discovery cannot produce a green sync."""
     monkeypatch.setattr(metadata, "fetch_acs_datasets_from_data_json", lambda: [])
     monkeypatch.setattr(
         metadata,
@@ -49,6 +52,7 @@ def test_dataset_sync_rejects_empty_catalog_before_opening_database(
 def test_dataset_sync_propagates_database_insert_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-026 — ACS metadata write failures roll back and propagate."""
     class BrokenCursor:
         def execute(self, *_args, **_kwargs) -> None:
             raise RuntimeError("insert failed")

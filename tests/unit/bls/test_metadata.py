@@ -11,6 +11,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_laus_county_scope_includes_puerto_rico_and_excludes_unassigned_fips() -> None:
+    """Covers: ETL-001 — LAUS planning uses valid county-parent geographies."""
     assert len(LAUS_COUNTY_PARENT_FIPS) == 52
     assert len(set(LAUS_COUNTY_PARENT_FIPS)) == 52
     assert "72" in LAUS_COUNTY_PARENT_FIPS
@@ -20,6 +21,7 @@ def test_laus_county_scope_includes_puerto_rico_and_excludes_unassigned_fips() -
 def test_fetch_metadata_propagates_download_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-026 — BLS metadata download failures remain visible."""
     def fail_download(_url: str):
         raise RuntimeError("download failed")
 
@@ -32,6 +34,7 @@ def test_fetch_metadata_propagates_download_failure(
 def test_series_sync_rejects_empty_metadata_before_opening_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-026 — empty BLS metadata cannot produce a green sync."""
     monkeypatch.setattr(metadata, "fetch_bls_metadata", lambda _program: ([], {}))
     monkeypatch.setattr(
         metadata,

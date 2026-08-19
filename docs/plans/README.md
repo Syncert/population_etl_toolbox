@@ -2,6 +2,8 @@
 
 ## Active architecture work
 
+- [Warehouse data-quality assessment](./WAREHOUSE_DATA_QUALITY_PLAN.md) — source-to-warehouse completeness, lineage, reconciliation, freshness, validity, anomaly, and deployment-certification contracts.
+
 - [Data-layer design remediation tickets](./DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md) — active prerequisite work for raw capture, control-plane separation, shared glossary ownership, and existing-source cutover.
 - [CI/CD GitHub Actions migration](./CICD_GITHUB_ACTIONS_MIGRATION_PLAN.md) — co-delivered workflow, packaging, coverage, bootstrap-parity, and release evidence migration for the data-layer remediation.
 
