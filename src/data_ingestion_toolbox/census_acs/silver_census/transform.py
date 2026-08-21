@@ -33,6 +33,12 @@ LARGE_DATASET_ROW_THRESHOLD = 500_000
 # Tuned upward to reduce commit overhead during large initial loads.
 _INSERT_SUB_BATCH_SIZE = 500_000
 
+# Revision-aware upserts do substantially more work than insert-only loads:
+# every row probes the natural-key index and conflicts may update the heap and
+# secondary indexes.  Keep each merge statement comfortably bounded so a
+# large ACS year cannot consume the database's entire statement-timeout window.
+_UPSERT_SUB_BATCH_SIZE = 100_000
+
 # Retry budget per sub-batch for transient DB errors (connection resets,
 # corruption after REINDEX, etc.).
 _INSERT_MAX_RETRIES = 3
@@ -999,7 +1005,6 @@ def _upsert_silver_rows(
     # psycopg2 does not register a UUID adapter in every supported runtime.
     # PostgreSQL accepts the canonical string representation for UUID columns.
     suffix = ("CENSUS_ACS", str(load_batch_id), ingested_at)
-    records = [row + suffix for row in df.select(upsert_cols).rows()]
 
     # Use TEMP table strategy for better performance on large upserts
     create_temp_sql = """
@@ -1025,7 +1030,7 @@ def _upsert_silver_rows(
             source_system VARCHAR(50),
             load_batch_id UUID,
             ingested_at TIMESTAMPTZ
-        ) ON COMMIT DROP;
+        ) ON COMMIT PRESERVE ROWS;
     """
 
     insert_temp_sql = """
@@ -1122,13 +1127,38 @@ def _upsert_silver_rows(
     """
 
     affected_rows = 0
+    num_batches = (df.height + _UPSERT_SUB_BATCH_SIZE - 1) // _UPSERT_SUB_BATCH_SIZE
     try:
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(create_temp_sql)
-            execute_values(cur, insert_temp_sql, records, page_size=10000)
-            cur.execute(merge_sql)
-            affected_rows = cur.rowcount
-            conn.commit()
+        with hook.get_conn() as conn:
+            for batch_idx in range(num_batches):
+                offset = batch_idx * _UPSERT_SUB_BATCH_SIZE
+                batch_df = df.slice(offset, _UPSERT_SUB_BATCH_SIZE)
+                records = [
+                    row + suffix for row in batch_df.select(upsert_cols).rows()
+                ]
+
+                with conn.cursor() as cur:
+                    if batch_idx == 0:
+                        cur.execute(create_temp_sql)
+                    else:
+                        cur.execute("TRUNCATE temp_census_upsert;")
+                    execute_values(cur, insert_temp_sql, records, page_size=10000)
+                    cur.execute(merge_sql)
+                    changed_now = (
+                        cur.rowcount
+                        if cur.rowcount is not None and cur.rowcount >= 0
+                        else 0
+                    )
+                conn.commit()
+                affected_rows += changed_now
+                logger.info(
+                    "[CENSUS_ACS UPSERT] Completed sub-batch %s/%s: "
+                    "input=%s, changed=%s",
+                    batch_idx + 1,
+                    num_batches,
+                    len(records),
+                    changed_now,
+                )
     except Exception:
         logger.exception("Failed to upsert Census silver rows")
         raise

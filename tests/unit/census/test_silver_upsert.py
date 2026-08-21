@@ -93,3 +93,51 @@ def test_silver_upsert_serializes_uuid_for_psycopg2(
     assert connection.commits == 1
     assert captured_records[0][-2] == str(batch_id)
     assert isinstance(captured_records[0][-2], str)
+
+
+def test_silver_upsert_commits_bounded_sub_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pl.DataFrame(
+        {
+            "time_sk": [20940101, 20950101],
+            "geo_sk": [1, 1],
+            "duration_start": [date(2094, 1, 1), date(2095, 1, 1)],
+            "duration_end": [date(2098, 12, 31), date(2099, 12, 31)],
+            "estimate_year": [2098, 2099],
+            "dataset": ["acs5", "acs5"],
+            "table_id": ["B99999", "B99999"],
+            "variable_code": ["B99999_001", "B99999_001"],
+            "geo_level": ["state", "state"],
+            "geo_id": ["state:98", "state:98"],
+            "state_fips": ["98", "98"],
+            "county_fips": [None, None],
+            "estimate_value": [1234.0, 1235.0],
+            "margin_of_error": [12.0, 13.0],
+            "margin_of_error_pct": [0.97, 1.05],
+            "variable_label": ["Estimate label", "Estimate label"],
+            "variable_concept": ["Fixture concept", "Fixture concept"],
+            "universe": [None, None],
+        }
+    )
+    connection = _Connection()
+    hook = type("Hook", (), {"get_conn": lambda _self: connection})()
+    batch_sizes: list[int] = []
+
+    def capture_values(_cursor, _sql, records, *, page_size: int) -> None:
+        assert page_size == 10000
+        batch_sizes.append(len(records))
+
+    monkeypatch.setattr(transform, "execute_values", capture_values)
+    monkeypatch.setattr(transform, "_UPSERT_SUB_BATCH_SIZE", 1)
+
+    changed = transform._upsert_silver_rows(
+        hook,
+        frame,
+        uuid4(),
+        datetime(2099, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert changed == 2
+    assert batch_sizes == [1, 1]
+    assert connection.commits == 2
