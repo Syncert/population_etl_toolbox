@@ -33,13 +33,13 @@
 
 ### Remaining
 
-- [ ] CI-001 — Restore formatting, package, coverage, Postgres, and DAG push checks to green on a pushed commit.
+- [x] CI-001 — Restore formatting, package, coverage, Postgres, and DAG push checks to green on a pushed commit.
 - [x] CI-002 — Define one authoritative workflow-to-contract evidence map and branch-protection set.
 - [x] CI-003 — Replace brittle artifact counts and duplicated setup logic with versioned manifests and reusable workflow components.
 - [x] CI-004 — Make local, pull-request, push, scheduled, and release environments exercise equivalent bootstrap contracts.
 - [x] CI-005 — Rework coverage attribution for unit, database replay, DAG, API, and frontend boundaries without weakening risk coverage.
 - [x] CI-006 — Add explicit migration-order, empty-bootstrap, rerun, replay, and package-content gates for the completed data-layer design.
-- [ ] CI-007 — Validate scheduled external contracts and opt-in end-to-end/performance workflows before the remediation release cutover.
+- [x] CI-007 — Validate scheduled external contracts and opt-in end-to-end/performance workflows before the remediation release cutover.
 - [x] CI-008 — Removed parsed-raw compatibility fixtures and assertions; CI evidence validates capture/revision-first database, DAG, E2E, resilience, and performance paths.
 
 ## Objective
