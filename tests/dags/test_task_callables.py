@@ -411,7 +411,12 @@ def test_reference_dimension_task_callables_forward_declared_windows(
     ("dag_id", "module_name", "programs", "fingerprint_name"),
     [
         ("acs_ingest", "dags.acs_ingest_dag", ["acs5"], "_variables_fingerprint"),
-        ("bls_ingest", "dags.bls_ingest_dag", ["ce"], "_series_fingerprint"),
+        (
+            "bls_ingest",
+            "dags.bls_ingest_dag",
+            ["la", "ln", "ce", "cu", "jt"],
+            "_series_fingerprint",
+        ),
         ("fred_ingest", "dags.fred_ingest_dag", ["macro"], "_series_fingerprint"),
     ],
 )
@@ -449,7 +454,7 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "_configured_series_by_domain",
             lambda: {"macro": []},
         )
-        planning_input = 1
+        planning_input = len(callable_.__globals__["CONFIG"].curated_series_ids)
     else:
         planning_input = programs
 

@@ -134,8 +134,7 @@ def sync_acs_dataset_table() -> int:
     classified = [
         classified_dataset
         for dataset in datasets
-        if (classified_dataset := _classify_detailed_table_dataset(dataset))
-        is not None
+        if (classified_dataset := _classify_detailed_table_dataset(dataset)) is not None
     ]
     if not classified:
         raise RuntimeError(

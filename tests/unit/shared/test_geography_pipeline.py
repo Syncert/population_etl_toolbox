@@ -149,6 +149,7 @@ def test_legacy_county_gazetteers_preserve_canonical_attributes(
     expected_land: int,
     expected_latitude: float,
 ) -> None:
+    """Covers: ETL-024 — legacy captures preserve canonical geography attributes."""
     records = parse_legacy_county_gazetteer_capture(
         _gazetteer_zip(line + "\n"), geography_vintage=vintage
     )
@@ -160,6 +161,8 @@ def test_legacy_county_gazetteers_preserve_canonical_attributes(
 
 
 def test_2000_counties_include_obsolete_alaska_entities() -> None:
+    """Covers: ETL-024 — historical geography retains obsolete county IDs."""
+
     def row(county: str, name: str) -> str:
         return (
             f"AK02{county}{name:<64}{0:>9}{0:>9}{0:>14}{0:>14}"
@@ -276,6 +279,7 @@ def test_latest_complete_vintage_requires_every_asset(
 def test_historical_county_discovery_includes_legacy_decennial_assets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: ETL-024 — history discovery includes legacy decennial assets."""
     requested: list[str] = []
 
     class ClientStub:

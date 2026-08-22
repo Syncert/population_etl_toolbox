@@ -13,6 +13,7 @@ def test_series_sync_rolls_back_when_configured_metadata_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Covers: ETL-026 — incomplete FRED metadata rolls back and fails."""
+
     class Cursor:
         def __enter__(self) -> "Cursor":
             return self

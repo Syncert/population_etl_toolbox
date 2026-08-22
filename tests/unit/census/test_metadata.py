@@ -53,6 +53,7 @@ def test_dataset_sync_propagates_database_insert_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Covers: ETL-026 — ACS metadata write failures roll back and propagate."""
+
     class BrokenCursor:
         def execute(self, *_args, **_kwargs) -> None:
             raise RuntimeError("insert failed")

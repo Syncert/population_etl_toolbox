@@ -184,7 +184,9 @@ def sync_fred_series_metadata(series_ids: Optional[List[str]] = None) -> int:
 
                 except Exception as e:
                     failure = sanitize_error_message(e)
-                    logger.error("Error syncing metadata for %s: %s", series_id, failure)
+                    logger.error(
+                        "Error syncing metadata for %s: %s", series_id, failure
+                    )
                     failures.append(f"{series_id}: {failure}")
 
             if failures:

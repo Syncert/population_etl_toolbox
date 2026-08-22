@@ -22,6 +22,7 @@ def test_fetch_metadata_propagates_download_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Covers: ETL-026 — BLS metadata download failures remain visible."""
+
     def fail_download(_url: str):
         raise RuntimeError("download failed")
 
