@@ -3,7 +3,7 @@
 ## Plan status
 
 - **Status:** Proposed; no CDC adapter is currently implemented
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-22
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
@@ -11,7 +11,7 @@
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-22
 
 **Current milestone:** Planning complete; implementation has not started
 
@@ -88,6 +88,18 @@ tests/fixtures/cdc/
 
 Use a registry entry per CDC asset ID, parser version, expected columns, geography levels, update cadence, and source documentation. Do not build a generic parser that guesses measure meaning from arbitrary Socrata columns.
 
+Reserve `CDC_SOCRATA_APP_TOKEN` as the environment-secret name for the Socrata
+application token used by CDC Open Data requests. This is the public-read app
+token sent as `X-App-Token`; the OAuth secret token is not required for this
+pipeline. The deployment must inject `CDC_SOCRATA_APP_TOKEN` into every Airflow
+scheduler or worker Docker container that can execute CDC ingestion when the
+container starts. The value must come from the external stack's
+secret/environment configuration; it must not be baked into an image or stored
+in a tracked environment file, Airflow DAG, database, or capture. The adapter
+may permit an empty value only while the selected CDC API contract supports
+anonymous reads, and it must read and validate a configured value only at
+request execution.
+
 ## Capture and control design
 
 - Use stable CDC Open Data/Socrata asset identifiers rather than mutable display titles.
@@ -97,7 +109,9 @@ Use a registry entry per CDC asset ID, parser version, expected columns, geograp
 - Preserve exact value strings, footnotes, null/suppression representations, confidence bounds, and source record identifiers.
 - Store requests, page cursors, retries, dataset watermarks, and quarantine state in `control`.
 - Detect a dataset replacement, schema change, or backward-moving update watermark and stop publication until validated.
-- API credentials, if later configured for higher limits, must be validated at request time and excluded from fingerprints, captures, headers, logs, and errors.
+- `CDC_SOCRATA_APP_TOKEN`, when configured for higher limits, must be validated
+  at request time and excluded from fingerprints, captures, selected headers,
+  logs, and errors.
 
 ## Target silver model
 

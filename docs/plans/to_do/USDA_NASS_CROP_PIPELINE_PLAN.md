@@ -3,7 +3,7 @@
 ## Plan status
 
 - **Status:** Proposed; no agricultural adapter is currently implemented
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-22
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
@@ -11,7 +11,7 @@
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-22
 
 **Current milestone:** Planning complete; implementation has not started
 
@@ -85,7 +85,14 @@ sql/migrations/{sequence}_usda_nass_crop_pipeline.sql
 tests/fixtures/usda_nass/
 ```
 
-Use `USDA_NASS_API_KEY`. Validate it only when making an external request and never include it in request fingerprints, captured parameters/headers, logs, or exception summaries.
+Use the required environment secret `USDA_NASS_API_KEY`. The deployment must
+inject this named secret into every Airflow scheduler or worker Docker container
+that can execute NASS ingestion when the container starts. The value must come
+from the external stack's secret/environment configuration; it must not be baked
+into an image or stored in a tracked environment file, Airflow DAG, database, or
+capture. Read and validate it only when making an external request, and never
+include it in request fingerprints, captured parameters/headers, logs, or
+exception summaries.
 
 ## Query registry and slicing
 

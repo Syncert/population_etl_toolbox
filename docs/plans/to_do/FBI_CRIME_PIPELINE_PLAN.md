@@ -3,14 +3,14 @@
 ## Plan status
 
 - **Status:** Proposed; no FBI adapter is currently implemented
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-22
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** National, state, county, and city-facing results; agency is a required source-native geography
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-22
 
 **Current milestone:** Planning complete; implementation has not started
 
@@ -100,7 +100,15 @@ sql/migrations/{sequence}_fbi_ucr_pipeline.sql
 tests/fixtures/fbi_ucr/
 ```
 
-Use `FBI_CDE_API_KEY` only if the documented delivery contract requires one. Validate it at request execution; never persist it in parameters, fingerprints, captures, selected headers, logs, or error summaries.
+Reserve `FBI_CDE_API_KEY` as the environment-secret name for FBI CDE access and
+use it only if the documented delivery contract requires a key. When configured,
+the deployment must inject this named secret into every Airflow scheduler or
+worker Docker container that can execute FBI ingestion when the container starts.
+The value must come from the external stack's secret/environment configuration;
+it must not be baked into an image or stored in a tracked environment file,
+Airflow DAG, database, or capture. Validate it at request execution; never
+persist it in parameters, fingerprints, captures, selected headers, logs, or
+error summaries.
 
 ## Capture and control design
 
