@@ -466,10 +466,18 @@ Before first run, sync dimension tables:
 airflow dags trigger silver_ref
 ```
 
-This commits complete Gazetteer and boundary ZIP responses before parsing,
-loads nation/state/county/place identities with versioned attributes and
-geometry, reconciles evidence-backed relationships, and creates the daily
-calendar. ACS and BLS should run only after this DAG succeeds.
+On its first successful run, this capture-first load publishes the 1990 and
+2000 decennial county Gazetteers, backfills every available annual county
+Gazetteer from 2013 onward, then publishes the newest complete
+nation/state/county/place Gazetteer and boundary snapshot last. Legacy
+Gazetteers retain names, land/water area, and internal-point coordinates; their
+raw captures also retain source population and housing fields. Later monthly
+runs skip completed historical county vintages and refresh the newest complete
+snapshot. This keeps retired county identities resolvable for historical ACS
+and BLS observations while preserving current retirement state. ACS and BLS
+should run only after this DAG succeeds; the ACS silver transform fails its
+preflight instead of silently dropping observations when any captured
+geography identity is unresolved.
 
 ### 5. First Run
 

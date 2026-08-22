@@ -14,7 +14,10 @@ from data_ingestion_toolbox.silver_ref.geography_contract import (
     canonical_geo_id,
     resolve_provider_geography,
 )
-from data_ingestion_toolbox.silver_ref.geography_pipeline import parse_gazetteer_capture
+from data_ingestion_toolbox.silver_ref.geography_pipeline import (
+    parse_gazetteer_capture,
+    parse_legacy_county_gazetteer_capture,
+)
 from data_ingestion_toolbox.silver_ref import geography_pipeline
 
 pytestmark = pytest.mark.unit
@@ -110,6 +113,76 @@ def test_gazetteer_capture_replays_places_and_preserves_source_attributes() -> N
     assert len(records[0].attribute_checksum) == 64
 
 
+@pytest.mark.parametrize(
+    (
+        "vintage",
+        "line",
+        "expected_geo_id",
+        "expected_name",
+        "expected_land",
+        "expected_latitude",
+    ),
+    [
+        (
+            1990,
+            "02   013 Aleutians East Borough                                             AK 000002464 000000693 0018090504 0020789982 +55229183 -161915191",
+            "state:02|county:013",
+            "Aleutians East Borough",
+            18_090_504_000,
+            55.229183,
+        ),
+        (
+            2000,
+            "AL01001Autauga County                                                      43671    17662    1543550050      21959029  595.968032    8.478429 32.523283 -86.577176",
+            "state:01|county:001",
+            "Autauga County",
+            1_543_550_050,
+            32.523283,
+        ),
+    ],
+)
+def test_legacy_county_gazetteers_preserve_canonical_attributes(
+    vintage: int,
+    line: str,
+    expected_geo_id: str,
+    expected_name: str,
+    expected_land: int,
+    expected_latitude: float,
+) -> None:
+    records = parse_legacy_county_gazetteer_capture(
+        _gazetteer_zip(line + "\n"), geography_vintage=vintage
+    )
+    assert len(records) == 1
+    assert records[0].geo_id == expected_geo_id
+    assert records[0].name == expected_name
+    assert records[0].land_area_m2 == expected_land
+    assert records[0].latitude == pytest.approx(expected_latitude)
+
+
+def test_2000_counties_include_obsolete_alaska_entities() -> None:
+    def row(county: str, name: str) -> str:
+        return (
+            f"AK02{county}{name:<64}{0:>9}{0:>9}{0:>14}{0:>14}"
+            f"{0.0:>12.6f}{0.0:>12.6f}{55.0:>10.6f}{-133.0:>11.6f}"
+        )
+
+    payload = _gazetteer_zip(
+        "\n".join(
+            [
+                row("201", "Prince of Wales-Outer Ketchikan Census Area"),
+                row("232", "Skagway-Hoonah-Angoon Census Area"),
+                row("280", "Wrangell-Petersburg Census Area"),
+            ]
+        )
+    )
+    records = parse_legacy_county_gazetteer_capture(payload, geography_vintage=2000)
+    assert {record.geo_id for record in records} == {
+        "state:02|county:201",
+        "state:02|county:232",
+        "state:02|county:280",
+    }
+
+
 def test_malformed_gazetteer_is_rejected_after_capture_boundary() -> None:
     """Covers: ARC-002 — malformed source bytes cannot pass replay validation."""
     with pytest.raises(ValueError, match="not a ZIP"):
@@ -195,6 +268,83 @@ def test_latest_complete_vintage_requires_every_asset(
 
     monkeypatch.setattr(geography_pipeline.httpx, "Client", ClientStub)
     assert geography_pipeline.resolve_latest_complete_year(2098, min_year=2097) == 2097
+    assert geography_pipeline.resolve_historical_county_years(2097, min_year=2097) == [
+        2097
+    ]
+
+
+def test_historical_county_discovery_includes_legacy_decennial_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[str] = []
+
+    class ClientStub:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            pass
+
+        def head(self, url: str) -> SimpleNamespace:
+            requested.append(url)
+            return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(geography_pipeline.httpx, "Client", ClientStub)
+    assert geography_pipeline.resolve_historical_county_years(2000) == [1990, 2000]
+    assert requested == [
+        geography_pipeline.LEGACY_COUNTY_URLS[1990],
+        geography_pipeline.LEGACY_COUNTY_URLS[2000],
+    ]
+
+
+def test_history_sync_backfills_missing_vintages_and_replays_latest_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-024 — history sync is cumulative, resumable, and ordered."""
+    synced: list[tuple[int, dict[str, object]]] = []
+
+    class HookStub:
+        get_conn = object()
+
+    monkeypatch.setattr(geography_pipeline, "_get_hook", lambda: HookStub())
+    monkeypatch.setattr(
+        geography_pipeline,
+        "resolve_latest_complete_year",
+        lambda **_kwargs: 2015,
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "resolve_historical_county_years",
+        lambda *_args, **_kwargs: [1990, 2000, 2013, 2014, 2015],
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "successful_geography_vintages",
+        lambda _factory, **_kwargs: {2014, 2015},
+    )
+
+    def sync(*, source_year: int, **kwargs) -> dict[str, int]:
+        synced.append((source_year, kwargs))
+        return {"attributes": 10, "geometries": 7, "retired": 2}
+
+    monkeypatch.setattr(geography_pipeline, "sync_geography_reference", sync)
+
+    assert geography_pipeline.sync_geography_history(source_year=2015) == {
+        "vintages_discovered": 5,
+        "vintages_synced": 4,
+        "vintages_skipped": 1,
+        "latest_vintage": 2015,
+        "attributes": 40,
+        "geometries": 28,
+        "retired": 8,
+    }
+    assert [year for year, _ in synced] == [1990, 2000, 2013, 2015]
+    assert synced[0][1]["assets"] == [geography_pipeline._historical_county_asset(1990)]
+    assert synced[1][1]["assets"] == [geography_pipeline._historical_county_asset(2000)]
+    assert synced[-1][1]["snapshot_scope"] == "full"
 
 
 def test_sync_captures_every_asset_before_atomic_publication(

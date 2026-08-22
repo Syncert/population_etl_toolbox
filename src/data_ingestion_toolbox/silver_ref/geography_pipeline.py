@@ -29,10 +29,16 @@ from data_ingestion_toolbox.silver_ref.geography_contract import canonical_geo_i
 logger = logging.getLogger(__name__)
 
 SOURCE_CODE = "CENSUS_GEO"
-PARSER_VERSION = "census-geography-v1"
+PARSER_VERSION = "census-geography-v2"
 HTTP_MAX_ATTEMPTS = 3
+MIN_SUPPORTED_GEOGRAPHY_YEAR = 2013
+MIN_HISTORICAL_COUNTY_YEAR = 1990
 GAZ_ROOT = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer"
 BOUNDARY_ROOT = "https://www2.census.gov/geo/tiger/GENZ"
+LEGACY_COUNTY_URLS = {
+    1990: f"{GAZ_ROOT}/counties.zip",
+    2000: f"{GAZ_ROOT}/county2k.zip",
+}
 
 
 @dataclass(frozen=True)
@@ -76,7 +82,7 @@ class GeometryRecord:
 
 def _optional_int(value: object) -> int | None:
     text = str(value or "").strip()
-    return int(text) if text and text.lstrip("-").isdigit() else None
+    return int(text) if text and text.lstrip("+-").isdigit() else None
 
 
 def _optional_float(value: object) -> float | None:
@@ -106,17 +112,25 @@ def _first(row: dict[str, Any], *names: str) -> str | None:
     return None
 
 
+def _read_single_text_capture(payload: bytes, *, label: str) -> str:
+    if not payload.startswith(b"PK"):
+        raise ValueError(f"{label} capture is not a ZIP archive")
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = [name for name in archive.namelist() if name.lower().endswith(".txt")]
+        if len(names) != 1:
+            raise ValueError(f"{label} capture must contain exactly one text file")
+        contents = archive.read(names[0])
+    try:
+        return contents.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return contents.decode("cp1252")
+
+
 def parse_gazetteer_capture(
     payload: bytes, *, geo_type: str, geography_vintage: int
 ) -> list[GeographyRecord]:
     """Parse a captured Gazetteer ZIP without network or database access."""
-    if not payload.startswith(b"PK"):
-        raise ValueError("gazetteer capture is not a ZIP archive")
-    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-        names = [name for name in archive.namelist() if name.lower().endswith(".txt")]
-        if len(names) != 1:
-            raise ValueError("gazetteer capture must contain exactly one text file")
-        text = archive.read(names[0]).decode("utf-8-sig", errors="replace")
+    text = _read_single_text_capture(payload, label="gazetteer")
     header = text.splitlines()[0] if text else ""
     delimiter = "\t" if "\t" in header else "|"
     rows = csv.DictReader(io.StringIO(text), delimiter=delimiter)
@@ -166,6 +180,93 @@ def parse_gazetteer_capture(
         )
     if len({record.geo_id for record in records}) != len(records):
         raise ValueError("gazetteer capture contains duplicate canonical identities")
+    return records
+
+
+def parse_legacy_county_gazetteer_capture(
+    payload: bytes, *, geography_vintage: int
+) -> list[GeographyRecord]:
+    """Parse the fixed-width national county Gazetteers from 1990 and 2000."""
+    if geography_vintage not in LEGACY_COUNTY_URLS:
+        raise ValueError(
+            f"unsupported legacy county Gazetteer vintage: {geography_vintage}"
+        )
+    text = _read_single_text_capture(payload, label="legacy county Gazetteer")
+    records: list[GeographyRecord] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if geography_vintage == 1990:
+            if len(line) < 141:
+                raise ValueError(
+                    f"1990 county row {line_number} is shorter than 141 columns"
+                )
+            state = line[0:2].strip()
+            county = line[5:8].strip()
+            name = line[9:75].strip()
+            usps = line[76:78].strip() or None
+            land_source = _optional_int(line[99:109])
+            water_source = _optional_int(line[110:120])
+            latitude_source = _optional_int(line[121:130])
+            longitude_source = _optional_int(line[131:141])
+            # The 1990 source stores area in thousandths of a square kilometer
+            # and internal points in millionths of a degree.
+            land_area_m2 = land_source * 1_000 if land_source is not None else None
+            water_area_m2 = water_source * 1_000 if water_source is not None else None
+            latitude = (
+                latitude_source / 1_000_000 if latitude_source is not None else None
+            )
+            longitude = (
+                longitude_source / 1_000_000 if longitude_source is not None else None
+            )
+        else:
+            if len(line) < 162:
+                raise ValueError(
+                    f"2000 county row {line_number} is shorter than 162 columns"
+                )
+            usps = line[0:2].strip() or None
+            state = line[2:4].strip()
+            county = line[4:7].strip()
+            name = line[7:71].strip()
+            land_area_m2 = _optional_int(line[89:103])
+            water_area_m2 = _optional_int(line[103:117])
+            latitude = _optional_float(line[141:151])
+            longitude = _optional_float(line[151:162])
+
+        if (
+            len(state) != 2
+            or not state.isdigit()
+            or len(county) != 3
+            or not county.isdigit()
+            or not name
+        ):
+            raise ValueError(
+                f"legacy county row {line_number} has an invalid state/county code or name"
+            )
+        census_geoid = f"{state}{county}"
+        records.append(
+            GeographyRecord(
+                geo_type="county",
+                geo_id=canonical_geo_id("county", state_fips=state, county_fips=county),
+                census_geoid=census_geoid,
+                state_fips=state,
+                county_fips=county,
+                place_fips=None,
+                name=name,
+                geography_vintage=geography_vintage,
+                usps=usps,
+                land_area_m2=land_area_m2,
+                water_area_m2=water_area_m2,
+                latitude=latitude,
+                longitude=longitude,
+            )
+        )
+    if not records:
+        raise ValueError("legacy county Gazetteer contains no records")
+    if len({record.geo_id for record in records}) != len(records):
+        raise ValueError(
+            "legacy county Gazetteer contains duplicate canonical identities"
+        )
     return records
 
 
@@ -266,6 +367,10 @@ class GeographyRepository:
                             place_fips, first_seen_version, last_seen_version
                         ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                         ON CONFLICT (geo_id) DO UPDATE SET
+                            first_seen_version = LEAST(
+                                silver_ref.dim_geo_entity.first_seen_version,
+                                EXCLUDED.first_seen_version
+                            ),
                             last_seen_version = GREATEST(
                                 silver_ref.dim_geo_entity.last_seen_version,
                                 EXCLUDED.last_seen_version
@@ -384,6 +489,7 @@ class GeographyRepository:
         self,
         *,
         active_geo_ids: set[str],
+        geo_types: set[str] | None = None,
         vintage: int,
         capture_id: UUID,
         connection: Any | None = None,
@@ -391,6 +497,7 @@ class GeographyRepository:
         """Retire only after the caller proves a complete successful snapshot."""
         owns_connection = connection is None
         connection = connection or self.connection_factory()
+        scoped_geo_types = sorted(geo_types or {"nation", "state", "county", "place"})
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -407,7 +514,8 @@ class GeographyRepository:
                             ORDER BY version.geography_vintage DESC, version.ingested_at DESC
                             LIMIT 1
                         ) current ON TRUE
-                        WHERE entity.geo_type IN ('nation','state','county','place')
+                        WHERE entity.geo_type = ANY(%s)
+                          AND entity.first_seen_version <= %s
                           AND NOT (entity.geo_id = ANY(%s))
                           AND current.is_active
                     )
@@ -423,7 +531,14 @@ class GeographyRepository:
                            ENCODE(DIGEST(geo_sk::TEXT || ':' || %s::TEXT || ':retired', 'sha256'), 'hex')
                     FROM missing ON CONFLICT DO NOTHING
                     """,
-                    (list(active_geo_ids), vintage, str(capture_id), vintage),
+                    (
+                        scoped_geo_types,
+                        vintage,
+                        list(active_geo_ids),
+                        vintage,
+                        str(capture_id),
+                        vintage,
+                    ),
                 )
                 retired = cursor.rowcount
             if owns_connection:
@@ -442,6 +557,7 @@ class GeographyRepository:
         *,
         vintage: int,
         capture_id: UUID,
+        active_geo_ids: set[str],
         connection: Any | None = None,
     ) -> None:
         owns_connection = connection is None
@@ -461,9 +577,10 @@ class GeographyRepository:
                         (child.geo_type = 'state' AND parent.geo_type = 'nation') OR
                         (child.geo_type IN ('county','place') AND parent.geo_type = 'state'
                          AND parent.state_fips = child.state_fips)
+                    WHERE child.geo_id = ANY(%s)
                     ON CONFLICT DO NOTHING
                     """,
-                    (vintage, str(capture_id)),
+                    (vintage, str(capture_id), list(active_geo_ids)),
                 )
                 cursor.execute(
                     """
@@ -519,13 +636,27 @@ def _urls(year: int) -> list[tuple[str, str, str]]:
     ]
 
 
-def resolve_latest_complete_year(
-    start_year: int | None = None, min_year: int = 2013
-) -> int:
-    """Select the newest vintage where every required attribute/boundary exists."""
+def _historical_county_asset(year: int) -> tuple[str, str, str]:
+    legacy_url = LEGACY_COUNTY_URLS.get(year)
+    if legacy_url:
+        return ("attributes", "county", legacy_url)
+    if year < MIN_SUPPORTED_GEOGRAPHY_YEAR:
+        raise ValueError(f"no supported county geography asset for vintage {year}")
+    return _urls(year)[1]
+
+
+def resolve_complete_years(
+    start_year: int | None = None,
+    min_year: int = MIN_SUPPORTED_GEOGRAPHY_YEAR,
+) -> list[int]:
+    """Return every supported vintage with all required attribute/boundary assets."""
     first = start_year or datetime.now(timezone.utc).year
+    if first < min_year:
+        raise ValueError("start_year must be greater than or equal to min_year")
+
+    complete: list[int] = []
     with httpx.Client(timeout=20, follow_redirects=True) as client:
-        for year in range(first, min_year - 1, -1):
+        for year in range(min_year, first + 1):
             available = True
             for _, _, url in _urls(year):
                 response = client.head(url)
@@ -535,10 +666,75 @@ def resolve_latest_complete_year(
                     available = False
                     break
             if available:
-                return year
+                complete.append(year)
+    if complete:
+        return complete
     raise RuntimeError(
         f"no complete Census geography snapshot found for {min_year}..{first}"
     )
+
+
+def resolve_latest_complete_year(
+    start_year: int | None = None,
+    min_year: int = MIN_SUPPORTED_GEOGRAPHY_YEAR,
+) -> int:
+    """Select the newest vintage where every required attribute/boundary exists."""
+    return resolve_complete_years(start_year=start_year, min_year=min_year)[-1]
+
+
+def resolve_historical_county_years(
+    start_year: int,
+    min_year: int = MIN_HISTORICAL_COUNTY_YEAR,
+) -> list[int]:
+    """Return vintages with the national county Gazetteer needed by ACS."""
+    if start_year < min_year:
+        raise ValueError("start_year must be greater than or equal to min_year")
+    years: list[int] = []
+    candidates = [
+        year for year in sorted(LEGACY_COUNTY_URLS) if min_year <= year <= start_year
+    ]
+    candidates.extend(
+        range(max(min_year, MIN_SUPPORTED_GEOGRAPHY_YEAR), start_year + 1)
+    )
+    with httpx.Client(timeout=20, follow_redirects=True) as client:
+        for year in candidates:
+            url = _historical_county_asset(year)[2]
+            response = client.head(url)
+            if response.status_code in (403, 405):
+                response = client.get(url, headers={"Range": "bytes=0-3"})
+            if response.status_code in (200, 206):
+                years.append(year)
+    if years:
+        return years
+    raise RuntimeError(
+        f"no Census county Gazetteer snapshots found for {min_year}..{start_year}"
+    )
+
+
+def successful_geography_vintages(
+    connection_factory: Any,
+    *,
+    snapshot_scopes: tuple[str, ...] = ("full",),
+) -> set[int]:
+    """Return vintages that completed atomic publication successfully."""
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT (source_watermark->>'geography_vintage')::INTEGER
+                FROM control.ingestion_run
+                WHERE source_code = %s
+                  AND status = 'success'
+                  AND source_watermark ? 'geography_vintage'
+                  AND source_watermark->>'geography_vintage' ~ '^[0-9]+$'
+                  AND COALESCE(source_watermark->>'snapshot_scope', 'full') = ANY(%s)
+                """,
+                (SOURCE_CODE, list(snapshot_scopes)),
+            )
+            return {int(row[0]) for row in cursor.fetchall()}
+    finally:
+        connection.close()
 
 
 def _retryable_http_error(error: BaseException) -> bool:
@@ -571,22 +767,35 @@ def _download_with_retry(
     raise AssertionError("bounded HTTP retry loop exhausted without a result")
 
 
-def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
+def sync_geography_reference(
+    source_year: int | None = None,
+    *,
+    assets: list[tuple[str, str, str]] | None = None,
+    retire_geo_types: set[str] | None = None,
+    snapshot_scope: str = "full",
+) -> dict[str, int]:
     """Capture/parse a complete snapshot, then publish it in one transaction."""
     year = source_year or resolve_latest_complete_year()
     hook = _get_hook()
     factory = hook.get_conn
     control = CaptureControl(factory, source_code=SOURCE_CODE)
     repository = GeographyRepository(factory)
-    run_id = control.start_run(watermark={"geography_vintage": year})
+    run_id = control.start_run(
+        watermark={"geography_vintage": year, "snapshot_scope": snapshot_scope}
+    )
     captured: list[tuple[str, str, str, UUID]] = []
     try:
         with httpx.Client(follow_redirects=True, timeout=300) as client:
-            for product, geo_type, url in _urls(year):
+            for product, geo_type, url in assets or _urls(year):
                 parameters = {
                     "geography_vintage": year,
                     "geo_type": geo_type,
                     "product": product,
+                    "source_format": (
+                        "legacy_fixed_width"
+                        if geo_type == "county" and year in LEGACY_COUNTY_URLS
+                        else "modern_gazetteer_or_shapefile"
+                    ),
                 }
                 request = control.start_request(
                     run_id=run_id,
@@ -637,9 +846,14 @@ def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
             payload = load_captured_payload(factory, capture_id)
             try:
                 if product == "attributes":
-                    records = parse_gazetteer_capture(
-                        payload, geo_type=geo_type, geography_vintage=year
-                    )
+                    if geo_type == "county" and year in LEGACY_COUNTY_URLS:
+                        records = parse_legacy_county_gazetteer_capture(
+                            payload, geography_vintage=year
+                        )
+                    else:
+                        records = parse_gazetteer_capture(
+                            payload, geo_type=geo_type, geography_vintage=year
+                        )
                     active_geo_ids.update(record.geo_id for record in records)
                     if geo_type == "state":
                         records = [
@@ -696,6 +910,7 @@ def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
                 )
             counts["retired"] = repository.retire_missing(
                 active_geo_ids=active_geo_ids,
+                geo_types=retire_geo_types,
                 vintage=year,
                 capture_id=relationship_capture,
                 connection=publication,
@@ -703,6 +918,7 @@ def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
             repository.reconcile_relationships(
                 vintage=year,
                 capture_id=relationship_capture,
+                active_geo_ids=active_geo_ids,
                 connection=publication,
             )
             publication.commit()
@@ -716,3 +932,74 @@ def sync_geography_reference(source_year: int | None = None) -> dict[str, int]:
     except BaseException as exc:
         control.finish_run(run_id, status="failed", error=exc)
         raise
+
+
+def sync_geography_history(
+    source_year: int | None = None,
+    *,
+    min_year: int = MIN_HISTORICAL_COUNTY_YEAR,
+) -> dict[str, int]:
+    """Backfill every complete vintage once and always refresh the newest vintage.
+
+    Historical vintages are published oldest-to-newest. The newest vintage is always
+    replayed last so entities absent from it receive an authoritative retirement
+    version. Successfully published historical vintages are skipped on later monthly
+    runs, keeping routine refreshes bounded to the newest snapshot.
+    """
+    latest_year = resolve_latest_complete_year(
+        start_year=source_year,
+        min_year=MIN_SUPPORTED_GEOGRAPHY_YEAR,
+    )
+    historical_years = resolve_historical_county_years(
+        latest_year,
+        min_year=min_year,
+    )
+    factory = _get_hook().get_conn
+    completed = successful_geography_vintages(
+        factory,
+        snapshot_scopes=("historical_county", "full"),
+    )
+    historical_to_sync = [
+        year
+        for year in historical_years
+        if year != latest_year and year not in completed
+    ]
+
+    totals = {
+        "vintages_discovered": len(historical_years),
+        "vintages_synced": 0,
+        "vintages_skipped": len(historical_years) - len(historical_to_sync) - 1,
+        "latest_vintage": latest_year,
+        "attributes": 0,
+        "geometries": 0,
+        "retired": 0,
+    }
+    for year in historical_to_sync:
+        logger.info(
+            "[CENSUS_GEO] Publishing geography vintage %s (%s/%s)",
+            year,
+            totals["vintages_synced"] + 1,
+            len(historical_to_sync) + 1,
+        )
+        counts = sync_geography_reference(
+            source_year=year,
+            assets=[_historical_county_asset(year)],
+            retire_geo_types={"county"},
+            snapshot_scope="historical_county",
+        )
+        totals["vintages_synced"] += 1
+        for key in ("attributes", "geometries", "retired"):
+            totals[key] += counts[key]
+
+    logger.info(
+        "[CENSUS_GEO] Publishing latest complete geography vintage %s last",
+        latest_year,
+    )
+    counts = sync_geography_reference(
+        source_year=latest_year,
+        snapshot_scope="full",
+    )
+    totals["vintages_synced"] += 1
+    for key in ("attributes", "geometries", "retired"):
+        totals[key] += counts[key]
+    return totals

@@ -316,6 +316,51 @@ def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
     return int(row[0]) if row else 0
 
 
+def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
+    """Fail before transformation when captured ACS geography IDs are not loaded."""
+    sql = """
+        WITH source_geographies AS (
+            SELECT DISTINCT
+                observation.geo_level,
+                CASE
+                    WHEN observation.geo_level = 'us' THEN 'us:1'
+                    WHEN observation.geo_level = 'state'
+                        THEN 'state:' || observation.state_fips_source
+                    WHEN observation.geo_level = 'county'
+                        THEN 'state:' || observation.state_fips_source
+                             || '|county:' || observation.county_fips_source
+                    ELSE NULL
+                END AS geo_id
+            FROM silver_census.observation_revision AS observation
+        ), missing AS (
+            SELECT source.geo_level, source.geo_id
+            FROM source_geographies AS source
+            LEFT JOIN silver_ref.dim_geo_entity AS entity
+              ON entity.geo_id = source.geo_id
+            WHERE source.geo_id IS NULL OR entity.geo_sk IS NULL
+        )
+        SELECT geo_level, geo_id, COUNT(*) OVER () AS missing_count
+        FROM missing
+        ORDER BY geo_level, geo_id NULLS FIRST
+        LIMIT 25;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+    if not rows:
+        return
+
+    missing_count = int(rows[0][2])
+    examples = "; ".join(
+        f"{geo_level}:{geo_id or '<invalid>'}" for geo_level, geo_id, _ in rows
+    )
+    raise RuntimeError(
+        "Census ACS transform blocked: silver_ref geography history is incomplete "
+        f"({missing_count} distinct IDs missing; examples: {examples}). "
+        "Run the silver_ref load_dim_geo historical backfill before retrying."
+    )
+
+
 def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     sql = """
         SELECT dataset, year, variable_name, label, concept, predicate_type
@@ -1133,9 +1178,7 @@ def _upsert_silver_rows(
             for batch_idx in range(num_batches):
                 offset = batch_idx * _UPSERT_SUB_BATCH_SIZE
                 batch_df = df.slice(offset, _UPSERT_SUB_BATCH_SIZE)
-                records = [
-                    row + suffix for row in batch_df.select(upsert_cols).rows()
-                ]
+                records = [row + suffix for row in batch_df.select(upsert_cols).rows()]
 
                 with conn.cursor() as cur:
                     if batch_idx == 0:
@@ -1223,6 +1266,9 @@ def transform_census_to_silver() -> int:
         len(years),
     )
     metrics.log_pre_transform()
+
+    logger.info("[CENSUS_ACS] Validating historical geography coverage...")
+    _assert_geo_dimension_coverage(hook)
 
     inserted_total = 0
 

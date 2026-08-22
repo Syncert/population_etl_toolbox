@@ -389,7 +389,7 @@ def test_reference_dimension_task_callables_forward_declared_windows(
     _patch_callable_global(
         monkeypatch,
         geo_callable,
-        "sync_geography_reference",
+        "sync_geography_history",
         lambda **kwargs: calls.append(("geo", kwargs)) or {"attributes": 4},
     )
     _patch_callable_global(

@@ -98,6 +98,7 @@ def test_silver_upsert_serializes_uuid_for_psycopg2(
 def test_silver_upsert_commits_bounded_sub_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Covers: DB-008 — Census silver upserts commit each bounded sub-batch."""
     frame = pl.DataFrame(
         {
             "time_sk": [20940101, 20950101],
@@ -141,3 +142,42 @@ def test_silver_upsert_commits_bounded_sub_batches(
     assert changed == 2
     assert batch_sizes == [1, 1]
     assert connection.commits == 2
+
+
+def test_transform_preflight_rejects_missing_historical_geographies() -> None:
+    """Covers: ETL-024 — missing historical dimension IDs block the transform."""
+
+    class CoverageCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, sql: str) -> None:
+            assert "silver_ref.dim_geo_entity" in sql
+
+        def fetchall(self) -> list[tuple[str, str, int]]:
+            return [
+                ("county", "state:09|county:001", 2),
+                ("county", "state:51|county:515", 2),
+            ]
+
+    class CoverageConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def cursor(self) -> CoverageCursor:
+            return CoverageCursor()
+
+    hook = type(
+        "CoverageHook",
+        (),
+        {"get_conn": lambda _self: CoverageConnection()},
+    )()
+
+    with pytest.raises(RuntimeError, match="2 distinct IDs missing"):
+        transform._assert_geo_dimension_coverage(hook)

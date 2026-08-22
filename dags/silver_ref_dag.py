@@ -15,7 +15,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox import silver_ref as silver_ref_package
 from data_ingestion_toolbox.silver_ref.config import CONFIG
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
-    sync_geography_reference,
+    sync_geography_history,
 )
 from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
 
@@ -60,7 +60,7 @@ def silver_ref():
 
     @task
     def load_dim_geo() -> dict[str, int]:
-        return sync_geography_reference(source_year=None)
+        return sync_geography_history(source_year=None)
 
     @task
     def load_dim_time() -> int:

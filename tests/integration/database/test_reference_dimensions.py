@@ -167,7 +167,11 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
         GeometryRecord("state:98|place:54321", 2096, _polygon(-90, -89)),
     ]
     assert repository.load_geometries(geometries, capture_id=capture_2096) == 4
-    repository.reconcile_relationships(vintage=2096, capture_id=capture_2096)
+    repository.reconcile_relationships(
+        vintage=2096,
+        capture_id=capture_2096,
+        active_geo_ids={record.geo_id for record in records},
+    )
 
     serving_reader = postgres_connection_factory()
     try:
@@ -234,3 +238,34 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
         reader.rollback()
     finally:
         reader.close()
+
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_2095 = seed_capture(cursor, "CENSUS_GEO", b"snapshot-2095")
+    writer.commit()
+    writer.close()
+    repository.load_attributes(
+        [
+            GeographyRecord(
+                "state",
+                "state:98",
+                "98",
+                "98",
+                None,
+                None,
+                "Oldest State Name",
+                2095,
+            )
+        ],
+        capture_id=capture_2095,
+    )
+    bounds_reader = postgres_connection_factory()
+    try:
+        with bounds_reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT first_seen_version, last_seen_version "
+                "FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:98'"
+            )
+            assert cursor.fetchone() == (2095, 2097)
+    finally:
+        bounds_reader.close()
