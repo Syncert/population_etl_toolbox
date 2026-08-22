@@ -3,15 +3,15 @@
 ## Plan status
 
 - **Status:** Proposed; no agricultural adapter is currently implemented
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-22
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
-- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-22
 
 **Current milestone:** Planning complete; implementation has not started
 
@@ -85,7 +85,14 @@ sql/migrations/{sequence}_usda_nass_crop_pipeline.sql
 tests/fixtures/usda_nass/
 ```
 
-Use `USDA_NASS_API_KEY`. Validate it only when making an external request and never include it in request fingerprints, captured parameters/headers, logs, or exception summaries.
+Use the required environment secret `USDA_NASS_API_KEY`. The deployment must
+inject this named secret into every Airflow scheduler or worker Docker container
+that can execute NASS ingestion when the container starts. The value must come
+from the external stack's secret/environment configuration; it must not be baked
+into an image or stored in a tracked environment file, Airflow DAG, database, or
+capture. Read and validate it only when making an external request, and never
+include it in request fingerprints, captured parameters/headers, logs, or
+exception summaries.
 
 ## Query registry and slicing
 
@@ -252,4 +259,4 @@ The final cadence and incremental key must be proven during NASS-001 rather than
 - [USDA NASS data and statistics](https://www.nass.usda.gov/data_and_statistics/index.php)
 - [NASS Crops/Stocks survey](https://data.nass.usda.gov/Surveys/Guide_to_NASS_Surveys/Crops_Stocks/index.php)
 - [NASS Census of Agriculture](https://www.nass.usda.gov/Surveys/Guide_to_NASS_Surveys/Census_of_Agriculture/)
-- [ADR-0001 data-layer ownership boundaries](../decisions/0001-data-layer-boundaries.md)
+- [ADR-0001 data-layer ownership boundaries](../../decisions/0001-data-layer-boundaries.md)

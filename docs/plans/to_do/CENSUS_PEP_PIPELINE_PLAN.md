@@ -6,7 +6,7 @@
 - **Last updated:** 2026-08-18
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
-- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
@@ -248,4 +248,4 @@ PEP products are released on different annual schedules by geography and demogra
 - [Census city and town population datasets](https://www.census.gov/data/datasets/time-series/demo/popest/2020s-total-cities-and-towns.html)
 - [Census Population Estimates release schedule](https://www.census.gov/programs-surveys/popest/about/schedule.html)
 - [Census Data API geography guidance](https://www.census.gov/data/developers/geography.html)
-- [ADR-0001 data-layer ownership boundaries](../decisions/0001-data-layer-boundaries.md)
+- [ADR-0001 data-layer ownership boundaries](../../decisions/0001-data-layer-boundaries.md)
