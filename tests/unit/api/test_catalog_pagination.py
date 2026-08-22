@@ -40,17 +40,11 @@ class _CatalogPaginationSession:
                     "metric_display_name": "Population Total",
                     "source_code": "ACS",
                     "source_object_type": "TABLE",
-                    "business_definition": "Total resident population",
-                    "caveats": None,
+                    "source_object_key": "B01003_001",
                     "valid_geo_grains": ["state", "county"],
                     "valid_time_grains": ["year"],
-                    "dashboard_suitability": "PRIMARY",
-                    "comparability_group": None,
-                    "do_not_compare_with": [],
-                    "recommended_aggregation": "SUM",
-                    "owner_team": "analytics",
-                    "is_active": True,
-                    "updated_at": datetime(2026, 1, 1, 0, 0, 0),
+                    "harvested_at": datetime(2026, 1, 1, 0, 0, 0),
+                    "freshness_state": "current",
                 }
             ]
         )

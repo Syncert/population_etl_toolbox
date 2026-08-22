@@ -100,30 +100,19 @@ def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
     print(area_type_url)
     print(area_url)
 
-    # Download series data
-    try:
-        series_df = read_bls_tsv(series_url)
+    series_df = read_bls_tsv(series_url)
+    series_data = process_series_data(series_df, program)
 
-        series_data = process_series_data(series_df, program)
+    # For LAUS, also get area and area_type data.
+    dataset_data = {}
+    if program == "la":
+        area_type_df = read_bls_tsv(area_type_url)
+        area_type_data = process_area_type_data(area_type_df)
+        area_df = read_bls_tsv(area_url)
+        area_data = process_area_data(area_df)
+        dataset_data = {"area_types": area_type_data, "areas": area_data}
 
-        # For LAUS, also get area and area_type data
-        dataset_data = {}
-        if program == "la":
-            # Process area type data
-            area_type_df = read_bls_tsv(area_type_url)
-            area_type_data = process_area_type_data(area_type_df)
-
-            # Process area data
-            area_df = read_bls_tsv(area_url)
-            area_data = process_area_data(area_df)
-
-            dataset_data = {"area_types": area_type_data, "areas": area_data}
-
-        return series_data, dataset_data
-
-    except Exception as e:
-        print(f"Error fetching metadata for {program}: {e}")
-        return {}, {}
+    return series_data, dataset_data
 
 
 def process_series_data(df: pl.DataFrame, program: str) -> List[Dict]:
@@ -175,8 +164,9 @@ def sync_bls_series_metadata(program: str) -> int:
     series_data, dataset_data = fetch_bls_metadata(program)
 
     if not series_data:
-        print(f"No series data found for {program}")
-        return 0
+        raise RuntimeError(
+            f"BLS returned no series metadata for configured program {program!r}"
+        )
 
     conn = _get_pg_connection()
     count = 0
@@ -239,6 +229,11 @@ def sync_bls_series_metadata(program: str) -> int:
                     ),
                 )
                 count += 1
+
+            if count <= 0:
+                raise RuntimeError(
+                    f"BLS metadata for {program!r} contained no usable series IDs"
+                )
 
             conn.commit()
             print(f"Synced {count} series for program {program}")

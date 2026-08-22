@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import uuid
+import json
+import logging
 from datetime import date
 
 import pytest
@@ -15,8 +17,17 @@ from data_ingestion_toolbox.fred.ingest import (
     fetch_fred_observations,
     parse_fred_response,
 )
+from data_ingestion_toolbox.fred.silver_fred.replay import (
+    FredCapturePayloadError,
+    parse_captured_observations,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def test_fred_http_access_logging_cannot_render_query_credentials() -> None:
+    """Covers: ETL-038 — FRED query credentials stay out of HTTP access logs."""
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
 
 
 def test_fred_response_parsing_preserves_fields(source_fixture) -> None:
@@ -113,3 +124,35 @@ def test_fred_invalid_json_is_retryable(monkeypatch) -> None:
     monkeypatch.setattr("data_ingestion_toolbox.fred.ingest.time.sleep", lambda _: None)
     with pytest.raises(FredRetryableHTTP, match="invalid JSON"):
         fetch_fred_observations.__wrapped__("UNRATE", "2024-01-01", "2024-12-31")
+
+
+def test_fred_capture_parser_retains_exact_source_values() -> None:
+    """Covers: ETL-016, ETL-017 — silver parsing retains source strings."""
+    payload = json.dumps(
+        {
+            "observations": [
+                {
+                    "date": "2024-01-01",
+                    "value": ".",
+                    "realtime_start": "2024-02-01",
+                    "realtime_end": "2024-02-01",
+                },
+                {"date": "2024-02-01", "value": "not-a-number"},
+            ]
+        }
+    ).encode()
+
+    observations = parse_captured_observations(payload)
+
+    assert observations[0]["value_source"] == "."
+    assert observations[0]["value_status"] == "missing"
+    assert observations[1]["value_source"] == "not-a-number"
+    assert observations[1]["value_status"] == "invalid"
+
+
+def test_fred_capture_parser_rejects_invalid_dates_without_losing_source_bytes() -> (
+    None
+):
+    """Covers: ETL-017, RES-002 — malformed captured values fail explicitly."""
+    with pytest.raises(FredCapturePayloadError, match="invalid date"):
+        parse_captured_observations(b'{"observations":[{"date":"bad","value":"3.1"}]}')

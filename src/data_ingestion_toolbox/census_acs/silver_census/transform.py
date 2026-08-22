@@ -14,6 +14,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.census_acs.config import CONFIG as RAW_CONFIG
+from data_ingestion_toolbox.silver_ref.geography_contract import (
+    persist_exact_resolution_outcomes,
+)
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -29,6 +32,12 @@ LARGE_DATASET_ROW_THRESHOLD = 500_000
 # transaction so that partial progress survives crashes / corruption errors.
 # Tuned upward to reduce commit overhead during large initial loads.
 _INSERT_SUB_BATCH_SIZE = 500_000
+
+# Revision-aware upserts do substantially more work than insert-only loads:
+# every row probes the natural-key index and conflicts may update the heap and
+# secondary indexes.  Keep each merge statement comfortably bounded so a
+# large ACS year cannot consume the database's entire statement-timeout window.
+_UPSERT_SUB_BATCH_SIZE = 100_000
 
 # Retry budget per sub-batch for transient DB errors (connection resets,
 # corruption after REINDEX, etc.).
@@ -307,6 +316,51 @@ def _count_unpadded_state_geo_ids(hook: PostgresHook) -> int:
     return int(row[0]) if row else 0
 
 
+def _assert_geo_dimension_coverage(hook: PostgresHook) -> None:
+    """Fail before transformation when captured ACS geography IDs are not loaded."""
+    sql = """
+        WITH source_geographies AS (
+            SELECT DISTINCT
+                observation.geo_level,
+                CASE
+                    WHEN observation.geo_level = 'us' THEN 'us:1'
+                    WHEN observation.geo_level = 'state'
+                        THEN 'state:' || observation.state_fips_source
+                    WHEN observation.geo_level = 'county'
+                        THEN 'state:' || observation.state_fips_source
+                             || '|county:' || observation.county_fips_source
+                    ELSE NULL
+                END AS geo_id
+            FROM silver_census.observation_revision AS observation
+        ), missing AS (
+            SELECT source.geo_level, source.geo_id
+            FROM source_geographies AS source
+            LEFT JOIN silver_ref.dim_geo_entity AS entity
+              ON entity.geo_id = source.geo_id
+            WHERE source.geo_id IS NULL OR entity.geo_sk IS NULL
+        )
+        SELECT geo_level, geo_id, COUNT(*) OVER () AS missing_count
+        FROM missing
+        ORDER BY geo_level, geo_id NULLS FIRST
+        LIMIT 25;
+    """
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+    if not rows:
+        return
+
+    missing_count = int(rows[0][2])
+    examples = "; ".join(
+        f"{geo_level}:{geo_id or '<invalid>'}" for geo_level, geo_id, _ in rows
+    )
+    raise RuntimeError(
+        "Census ACS transform blocked: silver_ref geography history is incomplete "
+        f"({missing_count} distinct IDs missing; examples: {examples}). "
+        "Run the silver_ref load_dim_geo historical backfill before retrying."
+    )
+
+
 def _load_variable_metadata(hook: PostgresHook) -> pl.DataFrame:
     sql = """
         SELECT dataset, year, variable_name, label, concept, predicate_type
@@ -351,11 +405,11 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
     without a full sequential scan.
     """
     sql = """
-        SELECT COALESCE(c.reltuples, 0)::bigint
+        SELECT COALESCE(SUM(c.reltuples), 0)::bigint
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'raw_census'
-          AND c.relname = 'acs_long';
+        WHERE n.nspname = 'silver_census'
+          AND c.relname = 'observation_revision';
     """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -365,6 +419,35 @@ def _get_approx_row_count(hook: PostgresHook) -> int:
 
 def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
     sql = """
+        WITH captured_ranked AS (
+            SELECT
+                observation.dataset,
+                observation.year,
+                observation.geo_level,
+                observation.state_fips_source AS state_fips,
+                observation.county_fips_source AS county_fips,
+                observation.table_id,
+                observation.variable_name,
+                observation.measure_type,
+                observation.value,
+                ROW_NUMBER() OVER (
+                    PARTITION BY observation.dataset, observation.year,
+                                 observation.geo_level,
+                                 observation.state_fips_source,
+                                 observation.county_fips_source,
+                                 observation.variable_name
+                    ORDER BY capture.retrieved_at DESC,
+                             observation.capture_id DESC
+                ) AS revision_rank
+            FROM silver_census.observation_revision AS observation
+            JOIN raw_capture.response_capture AS capture USING (capture_id)
+        ),
+        observations AS (
+            SELECT dataset, year, geo_level, state_fips, county_fips,
+                   table_id, variable_name, measure_type, value
+            FROM captured_ranked
+            WHERE revision_rank = 1
+        )
         SELECT
             dataset,
             year,
@@ -375,7 +458,7 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
             variable_name,
             measure_type,
             value
-        FROM raw_census.acs_long
+        FROM observations
     """
     params: list[object] = []
     if year is not None:
@@ -560,6 +643,22 @@ def _transform_rows_to_silver_df(
         time_df, left_on="duration_start", right_on="date_key", how="left"
     )
     grouped = grouped.join(geo_df, on=["geo_level", "geo_id"], how="left")
+
+    persist_exact_resolution_outcomes(
+        hook,
+        provider_source="CENSUS_ACS",
+        provider_dataset=str(grouped["dataset"][0]),
+        rows=(
+            {
+                "geo_level": row["geo_level"],
+                "geo_id": row["geo_id"],
+                "source_vintage": row["estimate_year"],
+            }
+            for row in grouped.select(["geo_level", "geo_id", "estimate_year"])
+            .unique()
+            .iter_rows(named=True)
+        ),
+    )
 
     missing_time_rows = grouped.filter(pl.col("time_sk").is_null()).height
     if missing_time_rows:
@@ -951,7 +1050,6 @@ def _upsert_silver_rows(
     # psycopg2 does not register a UUID adapter in every supported runtime.
     # PostgreSQL accepts the canonical string representation for UUID columns.
     suffix = ("CENSUS_ACS", str(load_batch_id), ingested_at)
-    records = [row + suffix for row in df.select(upsert_cols).rows()]
 
     # Use TEMP table strategy for better performance on large upserts
     create_temp_sql = """
@@ -977,7 +1075,7 @@ def _upsert_silver_rows(
             source_system VARCHAR(50),
             load_batch_id UUID,
             ingested_at TIMESTAMPTZ
-        ) ON COMMIT DROP;
+        ) ON COMMIT PRESERVE ROWS;
     """
 
     insert_temp_sql = """
@@ -1074,13 +1172,36 @@ def _upsert_silver_rows(
     """
 
     affected_rows = 0
+    num_batches = (df.height + _UPSERT_SUB_BATCH_SIZE - 1) // _UPSERT_SUB_BATCH_SIZE
     try:
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(create_temp_sql)
-            execute_values(cur, insert_temp_sql, records, page_size=10000)
-            cur.execute(merge_sql)
-            affected_rows = cur.rowcount
-            conn.commit()
+        with hook.get_conn() as conn:
+            for batch_idx in range(num_batches):
+                offset = batch_idx * _UPSERT_SUB_BATCH_SIZE
+                batch_df = df.slice(offset, _UPSERT_SUB_BATCH_SIZE)
+                records = [row + suffix for row in batch_df.select(upsert_cols).rows()]
+
+                with conn.cursor() as cur:
+                    if batch_idx == 0:
+                        cur.execute(create_temp_sql)
+                    else:
+                        cur.execute("TRUNCATE temp_census_upsert;")
+                    execute_values(cur, insert_temp_sql, records, page_size=10000)
+                    cur.execute(merge_sql)
+                    changed_now = (
+                        cur.rowcount
+                        if cur.rowcount is not None and cur.rowcount >= 0
+                        else 0
+                    )
+                conn.commit()
+                affected_rows += changed_now
+                logger.info(
+                    "[CENSUS_ACS UPSERT] Completed sub-batch %s/%s: "
+                    "input=%s, changed=%s",
+                    batch_idx + 1,
+                    num_batches,
+                    len(records),
+                    changed_now,
+                )
     except Exception:
         logger.exception("Failed to upsert Census silver rows")
         raise
@@ -1091,7 +1212,7 @@ def _upsert_silver_rows(
 def transform_census_to_silver() -> int:
     """Transform ALL Census ACS raw data to silver layer.
 
-    Processes ``raw_census.acs_long`` in memory-safe year chunks and upserts
+    Processes captured observation revisions in memory-safe year chunks and upserts
     ``silver_census.fact_demographics``. Census errata on an existing natural
     key propagate, while equivalent replays report zero changed rows.
 
@@ -1117,7 +1238,11 @@ def transform_census_to_silver() -> int:
 
     # ── year-level counts ─────────────────────────────────────────────
     logger.info("[CENSUS_ACS] Gathering per-year row counts...")
-    sql = "SELECT year, COUNT(*) FROM raw_census.acs_long GROUP BY year ORDER BY year;"
+    sql = """
+        SELECT year, COUNT(*)
+        FROM silver_census.observation_revision
+        GROUP BY year ORDER BY year;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         for row in cur.fetchall():
@@ -1141,6 +1266,9 @@ def transform_census_to_silver() -> int:
         len(years),
     )
     metrics.log_pre_transform()
+
+    logger.info("[CENSUS_ACS] Validating historical geography coverage...")
+    _assert_geo_dimension_coverage(hook)
 
     inserted_total = 0
 

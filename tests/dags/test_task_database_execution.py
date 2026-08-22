@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from uuid import uuid4
 
-import polars as pl
 import pytest
 from psycopg2.extensions import connection
 
@@ -20,22 +19,6 @@ pytestmark = [
     pytest.mark.database,
     pytest.mark.slow,
 ]
-
-
-def _frame(domain: str, series_id: str) -> pl.DataFrame:
-    return pl.DataFrame(
-        {
-            "domain": [domain, domain],
-            "series_id": [series_id, series_id],
-            "obs_date": [date(2070, 1, 1), date(2070, 2, 1)],
-            "value": [10.0, 20.0],
-            "is_missing": [False, False],
-            "realtime_start": [date(2070, 3, 1), date(2070, 3, 1)],
-            "realtime_end": [date(2070, 3, 1), date(2070, 3, 1)],
-            "load_batch_id": [str(uuid4()), str(uuid4())],
-            "ingested_at": [datetime.now(timezone.utc), datetime.now(timezone.utc)],
-        }
-    )
 
 
 def test_worker_termination_gap_is_detected_and_production_replay_recovers(
@@ -65,9 +48,32 @@ def test_worker_termination_gap_is_detected_and_production_replay_recovers(
     class WorkerTerminated(BaseException):
         pass
 
+    payload = {
+        "observations": [
+            {
+                "date": "2070-01-01",
+                "value": "10",
+                "realtime_start": "2070-03-01",
+                "realtime_end": "2070-03-01",
+            },
+            {
+                "date": "2070-02-01",
+                "value": "20",
+                "realtime_start": "2070-03-01",
+                "realtime_end": "2070-03-01",
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        fred_ingest, "fetch_fred_observations", lambda **_kwargs: payload
+    )
+
     def terminate_after_commit(**_kwargs) -> int:
-        assert fred_ingest.load_df_to_fred_long(_frame(domain, series_id)) == 2
-        raise WorkerTerminated("injected termination after raw commit")
+        assert (
+            fred_ingest.ingest_slice(domain, [series_id], "2070-01-01", "2070-02-28")
+            == 2
+        )
+        raise WorkerTerminated("injected termination after capture commit")
 
     monkeypatch.setattr(module, "ingest_slice", terminate_after_commit)
     try:
@@ -78,12 +84,12 @@ def test_worker_termination_gap_is_detected_and_production_replay_recovers(
         try:
             with gap_reader.cursor() as cursor:
                 cursor.execute(
-                    "SELECT status, rows_loaded FROM raw_fred.fred_ingestion_slices WHERE domain = %s",
+                    "SELECT status, rows_loaded FROM control.fred_ingestion_slices WHERE domain = %s",
                     (domain,),
                 )
                 assert cursor.fetchone() == ("running", 0)
                 cursor.execute(
-                    "SELECT COUNT(*) FROM raw_fred.fred_long WHERE domain = %s",
+                    "SELECT COUNT(*) FROM silver_fred.observation_revision WHERE domain = %s",
                     (domain,),
                 )
                 assert cursor.fetchone() == (2,)
@@ -93,8 +99,8 @@ def test_worker_termination_gap_is_detected_and_production_replay_recovers(
         monkeypatch.setattr(
             module,
             "ingest_slice",
-            lambda **_kwargs: fred_ingest.load_df_to_fred_long(
-                _frame(domain, series_id)
+            lambda **_kwargs: fred_ingest.ingest_slice(
+                domain, [series_id], "2070-01-01", "2070-02-28"
             ),
         )
         assert module._run_one_work_unit(work_unit) == 2
@@ -105,15 +111,17 @@ def test_worker_termination_gap_is_detected_and_production_replay_recovers(
                 cursor.execute(
                     """
                     SELECT status, rows_loaded, last_error IS NULL
-                    FROM raw_fred.fred_ingestion_slices WHERE domain = %s
+                    FROM control.fred_ingestion_slices WHERE domain = %s
                     """,
                     (domain,),
                 )
                 assert cursor.fetchone() == ("success", 2, True)
                 cursor.execute(
                     """
-                    SELECT obs_date::TEXT, value
-                    FROM raw_fred.fred_long WHERE domain = %s ORDER BY obs_date
+                    SELECT DISTINCT observation_date::TEXT, value
+                    FROM silver_fred.observation_revision
+                    WHERE domain = %s
+                    ORDER BY observation_date
                     """,
                     (domain,),
                 )
@@ -125,10 +133,7 @@ def test_worker_termination_gap_is_detected_and_production_replay_recovers(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM raw_fred.fred_long WHERE domain = %s", (domain,)
-                )
-                cursor.execute(
-                    "DELETE FROM raw_fred.fred_ingestion_slices WHERE domain = %s",
+                    "DELETE FROM control.fred_ingestion_slices WHERE domain = %s",
                     (domain,),
                 )
             cleanup.commit()
@@ -194,7 +199,7 @@ def test_airflow_observes_production_failure_and_bounds_retry_eligibility(
             with reader.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT status, last_error FROM raw_fred.fred_ingestion_slices
+                    SELECT status, last_error FROM control.fred_ingestion_slices
                     WHERE domain = %s
                     """,
                     (domain,),
@@ -210,7 +215,7 @@ def test_airflow_observes_production_failure_and_bounds_retry_eligibility(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM raw_fred.fred_ingestion_slices WHERE domain = %s",
+                    "DELETE FROM control.fred_ingestion_slices WHERE domain = %s",
                     (domain,),
                 )
             cleanup.commit()

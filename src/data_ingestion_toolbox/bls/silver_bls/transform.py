@@ -10,6 +10,9 @@ import polars as pl
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.bls.config import CONFIG as RAW_CONFIG, LAUS_MEASURE_META
+from data_ingestion_toolbox.silver_ref.geography_contract import (
+    persist_exact_resolution_outcomes,
+)
 from .geography_parser import parse_bls_geography
 from .time_utils import parse_bls_period_to_date
 
@@ -241,7 +244,7 @@ def _extract_measure_code(
 
 
 def _get_program_row_count(hook: PostgresHook, program: str) -> int:
-    sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s;"
+    sql = "SELECT COUNT(*) FROM silver_bls.observation_revision WHERE program = %s;"
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (program,))
         row = cur.fetchone()
@@ -249,7 +252,10 @@ def _get_program_row_count(hook: PostgresHook, program: str) -> int:
 
 
 def _get_program_years(hook: PostgresHook, program: str) -> list[int]:
-    sql = "SELECT DISTINCT year FROM raw_bls.bls_long WHERE program = %s ORDER BY year;"
+    sql = """
+        SELECT DISTINCT year FROM silver_bls.observation_revision
+        WHERE program = %s ORDER BY year;
+    """
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (program,))
         rows = cur.fetchall()
@@ -260,23 +266,42 @@ def _fetch_raw_rows(
     hook: PostgresHook, program: str, year: int | None = None
 ) -> list[tuple]:
     sql = """
+        WITH captured_ranked AS (
+            SELECT
+                observation.series_id,
+                observation.program,
+                observation.year,
+                observation.period,
+                observation.period_name,
+                observation.value,
+                ROW_NUMBER() OVER (
+                    PARTITION BY observation.program, observation.series_id,
+                                 observation.year, observation.period
+                    ORDER BY observation.is_latest DESC,
+                             capture.retrieved_at DESC,
+                             observation.capture_id DESC
+                ) AS revision_rank
+            FROM silver_bls.observation_revision AS observation
+            JOIN raw_capture.response_capture AS capture USING (capture_id)
+            WHERE observation.program = %s
+        ),
+        observations AS (
+            SELECT series_id, program, year, period, period_name, value
+            FROM captured_ranked
+            WHERE revision_rank = 1
+        )
         SELECT
-            bl.series_id,
-            bl.program,
-            bl.year,
-            bl.period,
-            bl.period_name,
-            bl.value,
+            bl.series_id, bl.program, bl.year, bl.period, bl.period_name, bl.value,
             bs.measure AS measure_code,
             bs.seasonal AS seasonal_adjustment,
             bs.title
-        FROM raw_bls.bls_long bl
+        FROM observations bl
         LEFT JOIN raw_bls.bls_series bs
             ON bl.series_id = bs.series_id
             AND bl.program = bs.program
         WHERE bl.program = %s
     """
-    params: list[object] = [program]
+    params: list[object] = [program, program]
     if year is not None:
         sql += " AND bl.year = %s"
         params.append(int(year))
@@ -489,6 +514,22 @@ def _transform_rows_to_silver_df(
     df = df.join(time_df, left_on="duration_start", right_on="date_key", how="left")
     df = df.join(geo_df, on=["geo_level", "geo_id"], how="left")
 
+    persist_exact_resolution_outcomes(
+        hook,
+        provider_source="BLS",
+        provider_dataset=program.lower(),
+        rows=(
+            {
+                "geo_level": row["geo_level"],
+                "geo_id": row["geo_id"],
+                "source_vintage": row["duration_start"].year,
+            }
+            for row in df.select(["geo_level", "geo_id", "duration_start"])
+            .unique()
+            .iter_rows(named=True)
+        ),
+    )
+
     df_before_filter = df.clone()
     missing_time = df.filter(pl.col("time_sk").is_null()).height
     if missing_time:
@@ -542,8 +583,7 @@ def _transform_rows_to_silver_df(
 
 def transform_bls_to_silver(program: str) -> int:
     """
-    Transform ALL BLS raw data to silver layer for specified program.
-    Processes entire raw_bls.bls_long table for this program.
+    Transform captured BLS observation revisions for the specified program.
     """
     hook = _get_hook()
     metrics = TransformMetrics(dataset_name=f"BLS_{program.upper()}")
@@ -567,7 +607,7 @@ def transform_bls_to_silver(program: str) -> int:
         )
         # Pre-transform diagnostics
         for y in years:
-            sql = "SELECT COUNT(*) FROM raw_bls.bls_long WHERE program = %s AND year = %s;"
+            sql = "SELECT COUNT(*) FROM silver_bls.observation_revision WHERE program = %s AND year = %s;"
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute(sql, (program, y))
                 row = cur.fetchone()

@@ -16,6 +16,9 @@ from data_ingestion_toolbox.utility.gold_quality import run_quality_checks
 from data_ingestion_toolbox.utility.gold_schema import (
     DateShard,
     _compute_ddl_hash,
+    _ensure_schema_state_table,
+    _get_recorded_hash,
+    _record_hash,
     build_month_shards,
 )
 
@@ -70,6 +73,30 @@ def test_gold_ddl_hash_is_stable_and_content_sensitive(tmp_path: Path) -> None:
     assert _compute_ddl_hash([first, second]) == original
     second.write_text("CREATE TABLE two (id BIGINT);", encoding="utf-8")
     assert _compute_ddl_hash([first, second]) != original
+
+
+class _MigrationCursor:
+    def __init__(self, row: tuple[str] | None = None) -> None:
+        self.row = row
+        self.executed: list[tuple[str, object]] = []
+
+    def execute(self, statement: str, parameters: object = None) -> None:
+        self.executed.append((statement, parameters))
+
+    def fetchone(self) -> tuple[str] | None:
+        return self.row
+
+
+def test_gold_schema_state_is_control_owned_and_records_hashes() -> None:
+    """Covers: ETL-028 — DDL state is read and written through control."""
+    cursor = _MigrationCursor(("abc123",))
+    _ensure_schema_state_table(cursor)
+    assert _get_recorded_hash(cursor, "gold_fred") == "abc123"
+    _record_hash(cursor, "gold_fred", "def456")
+
+    rendered = "\n".join(statement for statement, _ in cursor.executed)
+    assert "control.schema_migration_state" in rendered
+    assert cursor.executed[-1][1] == ("gold_fred", "def456")
 
 
 class _ScalarCursor:

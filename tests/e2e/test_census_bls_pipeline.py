@@ -6,7 +6,6 @@ import copy
 import json
 from collections.abc import Callable
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from psycopg2.extensions import connection
@@ -20,6 +19,7 @@ from data_ingestion_toolbox.census_acs.silver_census import transform as census_
 from tests.e2e.test_fred_pipeline import _real_client
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import delete_geography, seed_geography
 
 pytestmark = [pytest.mark.e2e, pytest.mark.database, pytest.mark.slow]
 
@@ -42,7 +42,7 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: E2E-002 — BLS raw-to-API rows are exact.
+    """Covers: E2E-002 — BLS capture-to-API rows are exact.
 
     Covers: E2E-004 — the complete BLS fixture replays identically.
     """
@@ -52,15 +52,12 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20950101, "2095-01-01")
-            cursor.execute(
-                """
-                INSERT INTO silver_ref.dim_geo (
-                    geo_level, geo_id, state_fips, name, state_name,
-                    is_active, source, source_year, ingested_at
-                ) VALUES ('state', 'state:97', '97', 'E2E State', 'E2E State',
-                          TRUE, 'test', 2095, NOW())
-                ON CONFLICT (geo_level, geo_id) DO NOTHING
-                """
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="97",
+                vintage=2095,
+                name="E2E State",
             )
             cursor.execute(
                 """
@@ -81,11 +78,17 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch.setattr(bls_ingest, "_get_pg_connection", postgres_connection_factory)
     monkeypatch.setattr(bls_silver, "_get_hook", lambda: hook)
     try:
-        raw_frame = bls_ingest.enrich_with_geography(
-            bls_ingest.parse_bls_response(payload, "la", uuid4()),
-            "la",
+        active_payload = payload
+        monkeypatch.setattr(
+            bls_ingest, "get_curated_series_for_program", lambda _program: ["03"]
         )
-        assert bls_ingest.load_df_to_bls_long(raw_frame, "la") == 1
+        monkeypatch.setattr(
+            bls_ingest, "expand_laus_series_ids", lambda **_kwargs: [series_id]
+        )
+        monkeypatch.setattr(
+            bls_ingest, "fetch_bls_api", lambda **_kwargs: active_payload
+        )
+        assert bls_ingest.ingest_slice("la", 2095, 2095, "state", "97") == 1
         responses = []
         for _ in range(2):
             assert bls_silver.transform_bls_to_silver("la") == 1
@@ -106,17 +109,14 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                 )
             assert source.status_code == common.status_code == 200
             assert source.json()["total"] == common.json()["total"] == 1
-            assert source.json()["items"][0]["value"] == "4.5"
+            assert source.json()["items"][0]["value"] == "4.50"
             responses.append(source.json())
         assert responses[0] == responses[1]
 
         revised_payload = copy.deepcopy(payload)
         revised_payload["Results"]["series"][0]["data"][0]["value"] = "5.25"
-        revised_frame = bls_ingest.enrich_with_geography(
-            bls_ingest.parse_bls_response(revised_payload, "la", uuid4()),
-            "la",
-        )
-        assert bls_ingest.load_df_to_bls_long(revised_frame, "la") == 1
+        active_payload = revised_payload
+        assert bls_ingest.ingest_slice("la", 2095, 2095, "state", "97") == 1
         assert bls_silver.transform_bls_to_silver("la") == 1
         bls_gold.refresh_bls_elements(hook)
         _call_refresh(
@@ -144,14 +144,6 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                     (series_id,),
                 )
                 cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_bls_series b
-                    USING gold_bls.dim_bls_series s
-                    WHERE b.bls_series_sk = s.bls_series_sk AND s.series_id = %s
-                    """,
-                    (series_id,),
-                )
-                cursor.execute(
                     "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code = %s",
                     (metric_code,),
                 )
@@ -164,14 +156,9 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                     (series_id,),
                 )
                 cursor.execute(
-                    "DELETE FROM raw_bls.bls_long WHERE series_id = %s", (series_id,)
-                )
-                cursor.execute(
                     "DELETE FROM raw_bls.bls_series WHERE series_id = %s", (series_id,)
                 )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = 'state:97'"
-                )
+                delete_geography(cursor, "state:97")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20950101"
                 )
@@ -184,7 +171,7 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: E2E-001 — ACS raw-to-API rows are exact.
+    """Covers: E2E-001 — ACS capture-to-API rows are exact.
 
     Covers: E2E-004 — the complete ACS fixture replays identically.
     """
@@ -194,15 +181,12 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20900101, "2090-01-01")
-            cursor.execute(
-                """
-                INSERT INTO silver_ref.dim_geo (
-                    geo_level, geo_id, state_fips, name, state_name,
-                    is_active, source, source_year, ingested_at
-                ) VALUES ('state', 'state:96', '96', 'ACS E2E State', 'ACS E2E State',
-                          TRUE, 'test', 2094, NOW())
-                ON CONFLICT (geo_level, geo_id) DO NOTHING
-                """
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="96",
+                vintage=2094,
+                name="ACS E2E State",
             )
             cursor.execute(
                 """
@@ -229,10 +213,16 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch.setattr(census_silver, "_get_hook", lambda: hook)
     monkeypatch.setattr(census_silver, "_get_approx_row_count", lambda _: 2)
     try:
-        raw_frame = census_ingest.rows_to_polars(
-            payload, "acs5", 2094, "state", None, uuid4()
+        active_payload = payload
+        monkeypatch.setattr(
+            census_ingest,
+            "get_curated_variables",
+            lambda _year, _dataset: [f"{variable}E", f"{variable}M"],
         )
-        assert census_ingest.load_df_to_acs_long(raw_frame, "acs5", 2094, "state") == 2
+        monkeypatch.setattr(
+            census_ingest, "fetch_acs_api", lambda **_kwargs: active_payload
+        )
+        assert census_ingest.ingest_slice(2094, "acs5", "state") == 2
         responses = []
         for expected_inserted in (1, 0):
             assert census_silver.transform_census_to_silver() == expected_inserted
@@ -261,12 +251,8 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
         revised_payload = copy.deepcopy(payload)
         revised_payload[1][0] = "525"
         revised_payload[1][1] = "6"
-        revised_frame = census_ingest.rows_to_polars(
-            revised_payload, "acs5", 2094, "state", None, uuid4()
-        )
-        assert (
-            census_ingest.load_df_to_acs_long(revised_frame, "acs5", 2094, "state") == 2
-        )
+        active_payload = revised_payload
+        assert census_ingest.ingest_slice(2094, "acs5", "state") == 2
         assert census_silver.transform_census_to_silver() == 1
         census_gold.refresh_acs_elements(hook)
         _call_refresh(
@@ -295,14 +281,6 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
                     (variable,),
                 )
                 cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_acs_variable b
-                    USING gold_census.dim_acs_variable v
-                    WHERE b.acs_variable_sk = v.acs_variable_sk AND v.variable_code = %s
-                    """,
-                    (variable,),
-                )
-                cursor.execute(
                     "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code = %s",
                     (metric_code,),
                 )
@@ -318,14 +296,9 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
                     (variable,),
                 )
                 cursor.execute(
-                    "DELETE FROM raw_census.acs_long WHERE table_id = 'B99998'"
-                )
-                cursor.execute(
                     "DELETE FROM raw_census.acs_variables WHERE table_id = 'B99998'"
                 )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = 'state:96'"
-                )
+                delete_geography(cursor, "state:96")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20900101"
                 )

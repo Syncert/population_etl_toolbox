@@ -3,203 +3,11 @@
 -- Subject-scoped gold DDL for BLS objects — no unified wide table.
 -- Serving tables contain BLS-specific columns only; no NULL pollution.
 
-CREATE SCHEMA IF NOT EXISTS gold_glossary;
 CREATE SCHEMA IF NOT EXISTS gold_bls;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
-CREATE OR REPLACE VIEW gold_glossary.dim_geo AS
-SELECT
-    geo_sk,
-    geo_level,
-    geo_id,
-    state_fips,
-    county_fips,
-    name,
-    state_name,
-    county_name,
-    latitude,
-    longitude,
-    geom,
-    ST_AsGeoJSON(geom)::TEXT AS geo_polygon_geojson,
-    is_active,
-    source,
-    source_year,
-    first_seen_year,
-    last_seen_year,
-    ingested_at
-FROM silver_ref.dim_geo;
-
-CREATE TABLE IF NOT EXISTS gold_glossary.dim_source_system (
-    source_system_sk BIGSERIAL PRIMARY KEY,
-    source_code      TEXT NOT NULL UNIQUE,
-    source_name      TEXT NOT NULL,
-    source_type      TEXT NOT NULL CHECK (source_type IN ('PRIMARY', 'REPUBLISHER', 'CURATED')),
-    reference_url    TEXT,
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-INSERT INTO gold_glossary.dim_source_system (source_code, source_name, source_type, reference_url)
-VALUES
-    ('CENSUS_ACS', 'US Census ACS', 'PRIMARY', 'https://www.census.gov/programs-surveys/acs'),
-    ('BLS', 'Bureau of Labor Statistics', 'PRIMARY', 'https://www.bls.gov/'),
-    ('FRED', 'Federal Reserve Economic Data', 'REPUBLISHER', 'https://fred.stlouisfed.org/')
-ON CONFLICT (source_code) DO UPDATE
-SET source_name = EXCLUDED.source_name,
-    source_type = EXCLUDED.source_type,
-    reference_url = EXCLUDED.reference_url,
-    updated_at = NOW();
-
-CREATE TABLE IF NOT EXISTS gold_glossary.dim_metric_catalog (
-    metric_catalog_sk      BIGSERIAL PRIMARY KEY,
-    metric_code            TEXT NOT NULL UNIQUE,
-    metric_display_name    TEXT NOT NULL,
-    source_code            TEXT NOT NULL REFERENCES gold_glossary.dim_source_system(source_code),
-    source_object_type     TEXT NOT NULL CHECK (source_object_type IN ('ACS_VARIABLE', 'BLS_SERIES', 'FRED_SERIES', 'COMPOSITE_VIEW')),
-    business_definition    TEXT,
-    caveats                TEXT,
-    valid_geo_grains       TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    valid_time_grains      TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    dashboard_suitability  TEXT NOT NULL DEFAULT 'PUBLIC_SAFE'
-        CHECK (dashboard_suitability IN ('PUBLIC_SAFE', 'INTERNAL_ONLY', 'EXPERIMENTAL')),
-    comparability_group    TEXT,
-    do_not_compare_with    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    recommended_aggregation TEXT,
-    owner_team             TEXT,
-    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_state (
-    source_code                 TEXT PRIMARY KEY
-        REFERENCES gold_glossary.dim_source_system(source_code),
-    last_silver_ingested_at     TIMESTAMPTZ NOT NULL DEFAULT '-infinity'::TIMESTAMPTZ,
-    last_refresh_started_at     TIMESTAMPTZ,
-    last_refresh_completed_at   TIMESTAMPTZ,
-    last_window_start           DATE,
-    last_window_end             DATE,
-    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.serving_refresh_chunk_state (
-    source_code                         TEXT NOT NULL
-        REFERENCES gold_glossary.dim_source_system(source_code),
-    chunk_start                         DATE NOT NULL,
-    chunk_end                           DATE NOT NULL,
-    target_silver_ingested_at           TIMESTAMPTZ NOT NULL,
-    completed_silver_ingested_at        TIMESTAMPTZ,
-    status                              TEXT NOT NULL DEFAULT 'PENDING'
-        CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED')),
-    attempt_count                       INTEGER NOT NULL DEFAULT 0,
-    last_refresh_started_at             TIMESTAMPTZ,
-    last_refresh_completed_at           TIMESTAMPTZ,
-    last_error                          TEXT,
-    updated_at                          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (source_code, chunk_start, chunk_end),
-    CHECK (chunk_end >= chunk_start)
-);
-
-CREATE INDEX IF NOT EXISTS ix_serving_refresh_chunk_state_status
-    ON gold_glossary.serving_refresh_chunk_state (source_code, status, chunk_start);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.bridge_metric_bls_series (
-    metric_catalog_sk BIGINT NOT NULL REFERENCES gold_glossary.dim_metric_catalog(metric_catalog_sk),
-    bls_series_sk     BIGINT NOT NULL,
-    PRIMARY KEY (metric_catalog_sk, bls_series_sk)
-);
-
-CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
-    geo_id       TEXT PRIMARY KEY,
-    geo_level    TEXT,
-    state_fips   TEXT,
-    county_fips  TEXT,
-    state_name   TEXT,
-    county_name  TEXT,
-    latitude     DOUBLE PRECISION,
-    longitude    DOUBLE PRECISION,
-    geo_geom     geometry(MultiPolygon, 4326),
-    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS ix_dim_geo_latest_geo_geom
-    ON gold_glossary.dim_geo_latest USING GIST (geo_geom);
-
-DROP PROCEDURE IF EXISTS gold_glossary.refresh_dim_geo_latest();
-CREATE OR REPLACE PROCEDURE gold_glossary.refresh_dim_geo_latest()
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    PERFORM pg_advisory_xact_lock(hashtext('gold_glossary.refresh_dim_geo_latest'));
-
-    INSERT INTO gold_glossary.dim_geo_latest (
-        geo_id,
-        geo_level,
-        state_fips,
-        county_fips,
-        state_name,
-        county_name,
-        latitude,
-        longitude,
-        geo_geom,
-        refreshed_at
-    )
-    SELECT DISTINCT ON (g.geo_id)
-        g.geo_id,
-        CASE
-            WHEN g.geo_level = 'us' THEN 'NATIONAL'
-            WHEN g.geo_level = 'state' THEN 'STATE'
-            WHEN g.geo_level = 'county' THEN 'COUNTY'
-            ELSE UPPER(g.geo_level)
-        END,
-        CASE WHEN g.state_fips IS NOT NULL THEN LPAD(g.state_fips::TEXT, 2, '0') ELSE NULL END,
-        CASE WHEN g.county_fips IS NOT NULL THEN LPAD(g.county_fips::TEXT, 3, '0') ELSE NULL END,
-        g.state_name,
-        g.county_name,
-        g.latitude,
-        g.longitude,
-        g.geom,
-        NOW()
-    FROM gold_glossary.dim_geo g
-    WHERE g.is_active = TRUE
-    ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
-    ON CONFLICT (geo_id) DO UPDATE
-    SET geo_level = EXCLUDED.geo_level,
-        state_fips = EXCLUDED.state_fips,
-        county_fips = EXCLUDED.county_fips,
-        state_name = EXCLUDED.state_name,
-        county_name = EXCLUDED.county_name,
-        latitude = EXCLUDED.latitude,
-        longitude = EXCLUDED.longitude,
-        geo_geom = EXCLUDED.geo_geom,
-        refreshed_at = NOW()
-    WHERE (
-        gold_glossary.dim_geo_latest.geo_level,
-        gold_glossary.dim_geo_latest.state_fips,
-        gold_glossary.dim_geo_latest.county_fips,
-        gold_glossary.dim_geo_latest.state_name,
-        gold_glossary.dim_geo_latest.county_name,
-        gold_glossary.dim_geo_latest.latitude,
-        gold_glossary.dim_geo_latest.longitude,
-        gold_glossary.dim_geo_latest.geo_geom
-    ) IS DISTINCT FROM (
-        EXCLUDED.geo_level,
-        EXCLUDED.state_fips,
-        EXCLUDED.county_fips,
-        EXCLUDED.state_name,
-        EXCLUDED.county_name,
-        EXCLUDED.latitude,
-        EXCLUDED.longitude,
-        EXCLUDED.geo_geom
-    );
-
-    DELETE FROM gold_glossary.dim_geo_latest d
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM gold_glossary.dim_geo g
-        WHERE g.is_active = TRUE
-          AND g.geo_id = d.geo_id
-    );
-END;
-$$;
+-- Shared glossary objects are owned by the ordered warehouse bootstrap.
+-- This source component only owns relations in gold_bls.
 
 CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_survey (
     bls_survey_sk      BIGSERIAL PRIMARY KEY,
@@ -312,14 +120,7 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_bls_observations (
     comparison_warning         TEXT,
     -- Metric catalog association
     metric_code                TEXT,
-    metric_display_name        TEXT,
-    dashboard_suitability      TEXT,
-    business_definition        TEXT,
-    caveats                    TEXT,
-    comparability_group        TEXT,
-    do_not_compare_with        TEXT[],
-    recommended_aggregation    TEXT,
-    owner_team                 TEXT
+    metric_display_name        TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_bls_observations_nk
@@ -446,14 +247,7 @@ BEGIN
         gold_metric_name,
         comparison_warning,
         metric_code,
-        metric_display_name,
-        dashboard_suitability,
-        business_definition,
-        caveats,
-        comparability_group,
-        do_not_compare_with,
-        recommended_aggregation,
-        owner_team
+        metric_display_name
     )
     SELECT
         'BLS',
@@ -484,23 +278,12 @@ BEGIN
         COALESCE(b.seasonal_adjustment_status, bs.seasonal_adjustment_status),
         bs.gold_metric_name,
         s.comparison_warning,
-        COALESCE(mc.metric_code,          'BLS:' || bs.series_id),
-        COALESCE(mc.metric_display_name,  bs.gold_metric_name, bs.series_title),
-        COALESCE(mc.dashboard_suitability,'EXPERIMENTAL'),
-        mc.business_definition,
-        mc.caveats,
-        mc.comparability_group,
-        COALESCE(mc.do_not_compare_with, ARRAY[]::TEXT[]),
-        mc.recommended_aggregation,
-        mc.owner_team
+        'BLS:' || bs.series_id,
+        COALESCE(bs.gold_metric_name, bs.series_title)
     FROM gold_bls.fact_bls_observation b
     JOIN gold_bls.dim_bls_survey s  ON s.bls_survey_sk  = b.bls_survey_sk
     JOIN gold_bls.dim_bls_series bs ON bs.bls_series_sk = b.bls_series_sk
-    LEFT JOIN gold_glossary.dim_geo_latest gl ON gl.geo_id = b.geo_id
-    LEFT JOIN gold_glossary.bridge_metric_bls_series bms ON bms.bls_series_sk = b.bls_series_sk
-    LEFT JOIN gold_glossary.dim_metric_catalog mc
-        ON mc.metric_catalog_sk = bms.metric_catalog_sk
-       AND mc.is_active = TRUE
+    LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = b.geo_id
     WHERE (p_start_date IS NULL OR b.period_date >= p_start_date)
       AND (p_end_date IS NULL OR b.period_date <= p_end_date);
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
@@ -609,7 +392,7 @@ BEGIN
     SET LOCAL statement_timeout = '60min';
     SET LOCAL lock_timeout = '30s';
 
-    INSERT INTO gold_glossary.serving_refresh_state (
+    INSERT INTO control.serving_refresh_state (
         source_code,
         last_silver_ingested_at,
         last_refresh_completed_at
@@ -623,11 +406,11 @@ BEGIN
 
     SELECT last_silver_ingested_at
       INTO v_watermark
-      FROM gold_glossary.serving_refresh_state
+      FROM control.serving_refresh_state
      WHERE source_code = 'BLS'
      FOR UPDATE;
 
-    UPDATE gold_glossary.serving_refresh_state
+    UPDATE control.serving_refresh_state
        SET last_refresh_started_at = v_started_at,
            updated_at = NOW()
      WHERE source_code = 'BLS';
@@ -641,7 +424,7 @@ BEGIN
        AND (p_force_full OR s.ingested_at > v_watermark);
 
     IF v_effective_start IS NULL THEN
-        UPDATE gold_glossary.serving_refresh_state
+        UPDATE control.serving_refresh_state
            SET last_refresh_completed_at = clock_timestamp(),
                updated_at = NOW()
          WHERE source_code = 'BLS';
@@ -664,7 +447,7 @@ BEGIN
         '[BLS DASHBOARD REFRESH] step=refresh_mv_bls_latest duration_ms=%',
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
 
-    UPDATE gold_glossary.serving_refresh_state
+    UPDATE control.serving_refresh_state
        SET last_silver_ingested_at = CASE
                WHEN p_force_full AND (p_start_date IS NOT NULL OR p_end_date IS NOT NULL)
                    THEN v_watermark

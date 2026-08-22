@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   e2e-performance:
+    name: Bounded E2E and performance evidence
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

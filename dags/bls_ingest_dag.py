@@ -10,13 +10,13 @@
 #    - For other programs (CES/CPI/JOLTS): ingests national series
 # 4) Skips slices already completed for the current series set (hash-based)
 # 5) Uses a Pool ("bls_api") to limit concurrency and respect BLS API limits
-# 6) Tracks status/rows/errors in raw_bls.bls_ingestion_slices
+# 6) Tracks status/rows/errors in control.bls_ingestion_slices
 #
 # REQUIRED DB TABLES:
 # - raw_bls.bls_datasets
 # - raw_bls.bls_series
-# - raw_bls.bls_ingestion_slices
-# - raw_bls.bls_long
+# - control.bls_ingestion_slices
+# - raw_capture.response_capture -> silver_bls.observation_revision
 #
 # REQUIRED AIRFLOW POOL:
 # - Create a pool named "bls_api" in Airflow UI and set its size conservatively (start with 4).
@@ -40,7 +40,7 @@ from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox import bls as bls_package
-from data_ingestion_toolbox.bls.config import CONFIG
+from data_ingestion_toolbox.bls.config import CONFIG, LAUS_COUNTY_PARENT_FIPS
 from data_ingestion_toolbox.bls.metadata import (
     sync_bls_series_metadata,
     sync_bls_datasets_table,
@@ -178,7 +178,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
 
     # Update ledger to 'running'
     sql_running_update = """
-        UPDATE raw_bls.bls_ingestion_slices
+        UPDATE control.bls_ingestion_slices
         SET status = 'running',
             rows_loaded = 0,
             started_at = %s,
@@ -195,7 +195,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     """
 
     sql_running_insert = """
-        INSERT INTO raw_bls.bls_ingestion_slices (
+        INSERT INTO control.bls_ingestion_slices (
             program, year_start, year_end, geo_level, state_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
@@ -256,7 +256,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         final_status = "empty" if rows_loaded == 0 else "success"
 
         sql_done = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
                 started_at = COALESCE(started_at, %s),
@@ -307,7 +307,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         finished = datetime.now(timezone.utc)
         err_txt = sanitize_error_message(e)
         sql_planned = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = 'planned',
                 started_at = COALESCE(started_at, %s),
                 finished_at = %s,
@@ -362,7 +362,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         # rest of the batch continues.  These will be retried on the next run.
         if isinstance(e, BlsRetryableHTTP):
             sql_planned = """
-                UPDATE raw_bls.bls_ingestion_slices
+                UPDATE control.bls_ingestion_slices
                 SET status = 'planned',
                     started_at = COALESCE(started_at, %s),
                     finished_at = %s,
@@ -402,7 +402,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         else:
             # Unexpected errors: mark as 'failed' and propagate.
             sql_failed = """
-                UPDATE raw_bls.bls_ingestion_slices
+                UPDATE control.bls_ingestion_slices
                 SET status = 'failed',
                     started_at = COALESCE(started_at, %s),
                     finished_at = %s,
@@ -449,7 +449,7 @@ def _is_work_unit_done_for_current_hash(work_unit: dict) -> bool:
 
     sql = """
         SELECT status, series_hash
-        FROM raw_bls.bls_ingestion_slices
+        FROM control.bls_ingestion_slices
         WHERE program = %s
           AND year_start = %s
           AND year_end = %s
@@ -486,28 +486,54 @@ def bls_ingest():
     - For LAUS: expand by subnational geography (state/county)
     - For others: ingest national series
     - Skip completed slices unless series set changed (hash mismatch)
-    - Track progress in raw_bls.bls_ingestion_slices
+    - Track progress in control.bls_ingestion_slices
     """
 
     # -----------------------------
     # Task 1: Metadata sync
     # -----------------------------
     @task
-    def sync_datasets() -> None:
+    def require_shared_geography() -> None:
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FILTER (WHERE geo_type = 'nation'),
+                       COUNT(*) FILTER (WHERE geo_type = 'state'),
+                       COUNT(*) FILTER (WHERE geo_type = 'county')
+                FROM silver_ref.dim_geo_current
+                WHERE is_active
+                """
+            )
+            nation, states, counties = cur.fetchone()
+        if nation != 1 or states < 50 or counties < 3000:
+            raise RuntimeError(
+                "shared geography is incomplete; run silver_ref successfully first "
+                f"(nation={nation}, states={states}, counties={counties})"
+            )
+
+    @task
+    def sync_datasets() -> int:
         """Sync bls_datasets table."""
-        sync_bls_datasets_table()
+        count = sync_bls_datasets_table()
+        if count != len(CONFIG.programs):
+            raise RuntimeError(
+                "BLS dataset synchronization was incomplete: "
+                f"expected={len(CONFIG.programs)}, synchronized={count}"
+            )
+        return count
 
     @task
     def sync_metadata() -> list[str]:
         """Sync series metadata for all configured programs."""
         synced_programs = []
         for program in CONFIG.programs:
-            try:
-                sync_bls_series_metadata(program)
-                synced_programs.append(program)
-            except Exception as e:
-                # Log but don't fail entire DAG
-                print(f"Warning: failed to sync metadata for {program}: {e}")
+            count = sync_bls_series_metadata(program)
+            if count <= 0:
+                raise RuntimeError(
+                    f"BLS metadata synchronization returned no series for {program!r}"
+                )
+            synced_programs.append(program)
         return synced_programs
 
     # -----------------------------
@@ -541,6 +567,12 @@ def bls_ingest():
         """
         hook = _get_postgres_hook()
 
+        if set(synced_programs) != set(CONFIG.programs):
+            raise RuntimeError(
+                "BLS metadata synchronization did not cover every configured program: "
+                f"expected={sorted(CONFIG.programs)}, synchronized={sorted(synced_programs)}"
+            )
+
         current_year = datetime.now(timezone.utc).year
 
         # Historical band: lock in once complete
@@ -551,24 +583,24 @@ def bls_ingest():
         roll_start = current_year - 2  # e.g. in 2026 → 2024
         roll_end = current_year  # e.g. in 2026 → 2026
 
-        # For LAUS county-level, we need state FIPS codes
-        state_fips_list = [
-            f"{i:02d}"
-            for i in range(1, 57)
-            if i not in (3, 7, 14, 43)  # Skip territories
-        ]
+        # LAUS county/county-equivalent coverage includes Puerto Rico.
+        state_fips_list = LAUS_COUNTY_PARENT_FIPS
 
         # Compute series fingerprints for each program
         series_meta = {}
         for program in synced_programs:
             shash, scount = _series_fingerprint(program)
+            if not shash or scount <= 0:
+                raise RuntimeError(
+                    f"BLS configured series fingerprint is empty for {program!r}"
+                )
             series_meta[program] = {"series_hash": shash, "series_count": scount}
 
         # Load completed historical slices so we can skip them
         completed = set()
         sql_completed = """
             SELECT program, year_start, year_end, geo_level, state_fips, series_hash
-            FROM raw_bls.bls_ingestion_slices
+            FROM control.bls_ingestion_slices
             WHERE status IN ('success', 'empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -589,7 +621,7 @@ def bls_ingest():
         planned_to_retry = set()
         sql_planned = """
             SELECT program, year_start, year_end, geo_level, state_fips
-            FROM raw_bls.bls_ingestion_slices
+            FROM control.bls_ingestion_slices
             WHERE status = 'planned';
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -697,7 +729,7 @@ def bls_ingest():
         # Airflow can fail with "cannot expand field mapped to length 0" if a mapped
         # TI already exists and a retry re-renders this task against an empty list.
         if not plan:
-            return [[]]
+            raise RuntimeError("BLS planner produced no ingestion work")
 
         batches = chunk_list(plan, chunk_size=20)
         return batches
@@ -715,7 +747,7 @@ def bls_ingest():
         now = datetime.now(timezone.utc)
 
         sql_planned_update = """
-            UPDATE raw_bls.bls_ingestion_slices
+            UPDATE control.bls_ingestion_slices
             SET status = CASE
                     WHEN status IN ('success','empty')
                         AND series_hash = %s
@@ -740,7 +772,7 @@ def bls_ingest():
         """
 
         sql_planned_insert = """
-            INSERT INTO raw_bls.bls_ingestion_slices (
+            INSERT INTO control.bls_ingestion_slices (
                 program, year_start, year_end, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
@@ -856,12 +888,13 @@ def bls_ingest():
     # -----------------------------
     # DAG wiring
     # -----------------------------
+    shared_geo = require_shared_geography()
     sync_ds = sync_datasets()
     sync_meta = sync_metadata()
 
     plan = build_ingestion_plan(sync_meta)
 
-    sync_ds >> sync_meta >> plan
+    shared_geo >> sync_ds >> sync_meta >> plan
 
     planned = mark_slices_planned(plan)
     plan >> planned
@@ -894,7 +927,6 @@ def bls_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET lock_timeout = '30s'")
             cur.execute("SET statement_timeout = '10min'")
-            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             conn.commit()
 
     @task(trigger_rule="all_success")
@@ -934,10 +966,19 @@ def bls_ingest():
             task_logger=logger,
         )
 
+    @task(trigger_rule="all_success")
+    def emit_bls_publisher_ready() -> None:
+        """Append a durable outbox event without waiting for glossary harvest."""
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        hook = _get_postgres_hook()
+        emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_bls")
+
     gold_bls_schema = ensure_gold_bls_schema()
     gold_geography = refresh_gold_geography()
     gold_bls_elements = refresh_gold_bls_elements()
     gold_bls_refresh = refresh_gold_bls_serving_layer()
+    publisher_ready = emit_bls_publisher_ready()
 
     (
         silver_transforms
@@ -945,6 +986,7 @@ def bls_ingest():
         >> gold_geography
         >> gold_bls_elements
         >> gold_bls_refresh
+        >> publisher_ready
     )
 
 

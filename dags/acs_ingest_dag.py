@@ -4,18 +4,18 @@
 # -------------------------------------------------------------------
 # What this DAG does:
 # 1) Syncs which ACS Detailed Tables datasets are available (acs1/acs5 by year)
-# 2) Picks the most recent available year per dataset (default "keep current" policy)
+# 2) Selects every available year for each configured dataset
 # 3) Builds a slice plan for US + State + County-by-State
 # 4) Skips slices already completed *for the current variable set*
 #    - If you change the curated variable list in config.py, variables_hash changes
 #    - Any previously completed slices with an old hash become "stale" and are re-run
 # 5) Uses a Pool ("census_api") to limit concurrency and respect Census API limits
-# 6) Tracks status/rows/errors in raw_census.acs_ingestion_slices
+# 6) Tracks status/rows/errors in control.acs_ingestion_slices
 #
 # REQUIRED DB TABLES:
 # - raw_census.acs_datasets          (filtered to base Detailed Tables only)
-# - raw_census.acs_ingestion_slices  (ledger)
-# - raw_census.acs_long              (fact table)
+# - control.acs_ingestion_slices  (ledger)
+# - raw_capture.response_capture -> silver_census.observation_revision
 #
 # REQUIRED AIRFLOW POOLS:
 # - Create a pool named "census_api" in Airflow UI and set its size conservatively (start with 4).
@@ -53,13 +53,12 @@ from typing import Optional
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox import census_acs as census_acs_package
-from data_ingestion_toolbox.census_acs.config import CONFIG
+from data_ingestion_toolbox.census_acs.config import ACS_COUNTY_PARENT_FIPS, CONFIG
 from data_ingestion_toolbox.census_acs.metadata import (
     sync_acs_dataset_table,
     sync_variable_metadata_for_year,
 )
 from data_ingestion_toolbox.census_acs.ingest import ingest_slice, get_curated_variables
-from data_ingestion_toolbox.census_acs.geography import sync_geo_dim
 from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
 )
@@ -149,7 +148,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     started = datetime.now(timezone.utc)
 
     sql_running_update = """
-        UPDATE raw_census.acs_ingestion_slices
+        UPDATE control.acs_ingestion_slices
         SET status = 'running',
             rows_loaded = 0,
             started_at = %s,
@@ -165,7 +164,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
     """
 
     sql_running_insert = """
-        INSERT INTO raw_census.acs_ingestion_slices (
+        INSERT INTO control.acs_ingestion_slices (
             dataset, year, geo_level, state_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
@@ -219,7 +218,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         final_status = "empty" if rows_loaded == 0 else "success"
 
         sql_done = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = %s,
                 rows_loaded = %s,
                 finished_at = %s,
@@ -255,7 +254,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
         err_txt = sanitize_error_message(e)
 
         sql_failed = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = 'failed',
                 finished_at = %s,
                 last_error = %s
@@ -287,27 +286,42 @@ def acs_ingest():
     ACS Detailed Tables ingestion DAG for raw_census.
 
     - Sync datasets available (acs1/acs5)
-    - Determine target years (latest per dataset)
+    - Determine all available target years per dataset
     - Build plan (us/state + county per state)
     - Skip completed slices *unless* variable set changed (hash mismatch)
     - Ingest remaining slices with dynamic task mapping and pool throttling
-    - Record progress in raw_census.acs_ingestion_slices
+    - Record progress in control.acs_ingestion_slices
     """
 
     # -----------------------------
     # Task 1: Dataset availability sync
     # -----------------------------
     @task
-    def sync_datasets() -> None:
+    def sync_datasets() -> int:
         """
         Upsert the dataset/year entries for base Detailed Tables (acs1/acs5) into raw_census.acs_datasets.
         """
-        sync_acs_dataset_table()
+        return sync_acs_dataset_table()
 
     @task
-    def sync_geographies() -> None:
-        # Auto-pick latest available Gazetteer year
-        sync_geo_dim(source_year=None, min_year=2010)
+    def require_shared_geography() -> None:
+        hook = _get_postgres_hook()
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) FILTER (WHERE geo_type = 'nation'),
+                       COUNT(*) FILTER (WHERE geo_type = 'state'),
+                       COUNT(*) FILTER (WHERE geo_type = 'county')
+                FROM silver_ref.dim_geo_current
+                WHERE is_active
+                """
+            )
+            nation, states, counties = cur.fetchone()
+        if nation != 1 or states < 50 or counties < 3000:
+            raise RuntimeError(
+                "shared geography is incomplete; run silver_ref successfully first "
+                f"(nation={nation}, states={states}, counties={counties})"
+            )
 
     # -----------------------------
     # Task 2: Decide what year(s) to ingest
@@ -346,6 +360,12 @@ def acs_ingest():
                 continue
             targets.append({"dataset": str(dataset), "year": int(year)})
 
+        if not targets:
+            raise RuntimeError(
+                "raw_census.acs_datasets contains no available configured datasets; "
+                "refusing to continue with an empty ACS ingestion plan"
+            )
+
         return targets
 
     # -----------------------------
@@ -365,9 +385,10 @@ def acs_ingest():
         """
         hook = _get_postgres_hook()
 
-        # County tasks are expanded by state FIPS.
-        # Keep this simple to start; you can extend to territories later.
-        state_fips_list = [f"{i:02d}" for i in range(1, 57) if i not in (3, 7, 14, 43)]
+        # ACS county coverage includes the 50 states, DC, and Puerto Rico.
+        # Use the explicit Census state/territory codes so gaps in the numeric
+        # FIPS range (for example, invalid code 52) cannot become empty slices.
+        state_fips_list = ACS_COUNTY_PARENT_FIPS
 
         # Compute current variable set hash/count for each target (dataset, year).
         varset_meta: dict[tuple[str, int], dict] = {}
@@ -391,7 +412,7 @@ def acs_ingest():
 
         sql_completed = """
             SELECT dataset, year, geo_level, state_fips, variables_hash
-            FROM raw_census.acs_ingestion_slices
+            FROM control.acs_ingestion_slices
             WHERE status IN ('success','empty');
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -467,7 +488,7 @@ def acs_ingest():
         if not plan:
             return [[]]
 
-        batches = chunk_list(plan, chunk_size=25)  # 1836/25 ≈ 74 mapped tasks
+        batches = chunk_list(plan, chunk_size=25)  # Currently about 76 mapped tasks.
         return batches
 
     # -----------------------------
@@ -487,17 +508,17 @@ def acs_ingest():
         now = datetime.now(timezone.utc)
 
         sql_planned_update = """
-            UPDATE raw_census.acs_ingestion_slices
+            UPDATE control.acs_ingestion_slices
             SET status = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.status
+                    WHEN control.acs_ingestion_slices.status IN ('success','empty')
+                        AND control.acs_ingestion_slices.variables_hash = %s
+                    THEN control.acs_ingestion_slices.status
                     ELSE 'planned'
                 END,
                 rows_loaded = CASE
-                    WHEN raw_census.acs_ingestion_slices.status IN ('success','empty')
-                        AND raw_census.acs_ingestion_slices.variables_hash = %s
-                    THEN raw_census.acs_ingestion_slices.rows_loaded
+                    WHEN control.acs_ingestion_slices.status IN ('success','empty')
+                        AND control.acs_ingestion_slices.variables_hash = %s
+                    THEN control.acs_ingestion_slices.rows_loaded
                     ELSE 0
                 END,
                 variables_hash = %s,
@@ -511,7 +532,7 @@ def acs_ingest():
         """
 
         sql_planned_insert = """
-            INSERT INTO raw_census.acs_ingestion_slices (
+            INSERT INTO control.acs_ingestion_slices (
                 dataset, year, geo_level, state_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
@@ -605,14 +626,14 @@ def acs_ingest():
     # -----------------------------
     # 1) Refresh dataset availability
     sync = sync_datasets()
-    sync_geo = sync_geographies()
+    shared_geo = require_shared_geography()
 
-    # 2) Determine target year(s) and build a variable-aware plan
+    # 2) Determine all target years and build a variable-aware plan
     targets = get_target_years()
     batches = build_ingestion_plan(targets)
 
     # Ensure ordering: dataset sync -> target selection -> plan build
-    sync >> sync_geo >> targets >> batches
+    sync >> shared_geo >> targets >> batches
 
     # 3) Mark slices planned for observability (optional but recommended)
     planned = mark_slices_planned(batches)
@@ -645,7 +666,6 @@ def acs_ingest():
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute("SET lock_timeout = '30s'")
             cur.execute("SET statement_timeout = '10min'")
-            cur.execute("CALL gold_glossary.refresh_dim_geo_latest()")
             conn.commit()
 
     @task(trigger_rule="none_failed")
@@ -685,10 +705,19 @@ def acs_ingest():
             task_logger=logger,
         )
 
+    @task(trigger_rule="none_failed")
+    def emit_census_publisher_ready() -> None:
+        """Append a durable outbox event without waiting for glossary harvest."""
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        hook = _get_postgres_hook()
+        emit_latest_publisher_ready(hook.get_conn, publisher_schema="gold_census")
+
     gold_census_schema = ensure_gold_census_schema()
     gold_geography = refresh_gold_geography()
     gold_census_elements = refresh_gold_census_elements()
     gold_census_refresh = refresh_gold_census_serving_layer()
+    publisher_ready = emit_census_publisher_ready()
 
     (
         silver_transform
@@ -696,6 +725,7 @@ def acs_ingest():
         >> gold_geography
         >> gold_census_elements
         >> gold_census_refresh
+        >> publisher_ready
     )
 
 

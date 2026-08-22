@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import httpx
 import psycopg2
 
+from data_ingestion_toolbox.normalization import sanitize_error_message
 from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionFactory,
     PostgresConnectionDetails,
@@ -105,6 +106,7 @@ def sync_fred_series_metadata(series_ids: Optional[List[str]] = None) -> int:
 
     conn = _get_pg_connection()
     count = 0
+    failures: list[str] = []
 
     try:
         with conn.cursor() as cur:
@@ -115,8 +117,7 @@ def sync_fred_series_metadata(series_ids: Optional[List[str]] = None) -> int:
                     metadata = fetch_fred_series_metadata(series_id)
 
                     if not metadata:
-                        logger.warning(f"Skipping {series_id}: no metadata returned")
-                        continue
+                        raise RuntimeError("no metadata returned")
 
                     # Extract fields from FRED response
                     title = metadata.get("title", "")
@@ -182,16 +183,26 @@ def sync_fred_series_metadata(series_ids: Optional[List[str]] = None) -> int:
                     logger.info(f"Synced metadata for {series_id}: {title}")
 
                 except Exception as e:
-                    logger.error(f"Error syncing metadata for {series_id}: {e}")
-                    # Continue to next series rather than failing entirely
-                    continue
+                    failure = sanitize_error_message(e)
+                    logger.error(
+                        "Error syncing metadata for %s: %s", series_id, failure
+                    )
+                    failures.append(f"{series_id}: {failure}")
+
+            if failures:
+                raise RuntimeError(
+                    "FRED metadata synchronization was incomplete: "
+                    + "; ".join(failures)
+                )
 
             conn.commit()
             logger.info(f"Synced {count} FRED series metadata records")
 
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error syncing FRED series metadata: {e}")
+        logger.error(
+            "Error syncing FRED series metadata: %s", sanitize_error_message(e)
+        )
         raise
     finally:
         conn.close()

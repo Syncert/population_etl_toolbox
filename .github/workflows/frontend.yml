@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "apps/web/**"
+      - "apps/api/**"
+      - "src/data_ingestion_toolbox/models.py"
+      - "sql/gold_contract/**"
+      - "sql/migrations/**"
       - "tests/frontend/**"
       - "infra/docker/Dockerfile.web"
       - ".github/workflows/frontend.yml"
@@ -20,6 +24,7 @@ concurrency:
 
 jobs:
   frontend:
+    name: Frontend lint, unit, build, and browser
     # Covers: WEB-007, WEB-008 — audit, lint, unit, build, and browser CI.
     runs-on: ubuntu-latest
     timeout-minutes: 20

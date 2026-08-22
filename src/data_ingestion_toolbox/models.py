@@ -47,17 +47,19 @@ class MetricCatalog(BaseModel):
     metric_display_name: Optional[str] = None
     source_code: Optional[str] = None
     source_object_type: Optional[str] = None
-    business_definition: Optional[str] = None
-    caveats: Optional[str] = None
     valid_geo_grains: Optional[list[str]] = None
     valid_time_grains: Optional[list[str]] = None
-    dashboard_suitability: Optional[str] = None
-    comparability_group: Optional[str] = None
-    do_not_compare_with: Optional[list[str]] = None
-    recommended_aggregation: Optional[str] = None
-    owner_team: Optional[str] = None
-    is_active: Optional[bool] = None
-    updated_at: Optional[datetime] = None
+    source_object_key: Optional[str] = None
+    units: Optional[str] = None
+    measure_kind: Optional[str] = None
+    aggregation_characteristic: Optional[str] = None
+    physical_lineage: Optional[dict[str, Any]] = None
+    publisher_contract_version: Optional[str] = None
+    source_watermark: Optional[str] = None
+    source_run_id: Optional[Any] = None
+    publication_time: Optional[datetime] = None
+    harvested_at: Optional[datetime] = None
+    freshness_state: Optional[str] = None
 
 
 class MetricListResponse(BaseModel):
@@ -80,8 +82,10 @@ class GeographyLatest(BaseModel):
     geo_name: Optional[str] = None
     state_fips: Optional[str] = None
     county_fips: Optional[str] = None
+    place_fips: Optional[str] = None
     state_name: Optional[str] = None
     county_name: Optional[str] = None
+    place_name: Optional[str] = None
     geo_latitude: Optional[float] = None
     geo_longitude: Optional[float] = None
 
@@ -122,7 +126,6 @@ class ObservationDashboard(BaseModel):
     geo_longitude: Optional[float] = None
     metric_code: Optional[str] = None
     metric_display_name: Optional[str] = None
-    dashboard_suitability: Optional[str] = None
     value: Optional[str] = None
     value_type: Optional[str] = None
     units: Optional[str] = None

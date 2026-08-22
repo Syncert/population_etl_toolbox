@@ -27,7 +27,14 @@ pytestmark = pytest.mark.dag
 # --------------------------------------------------------------------------
 # Expected DAG inventory
 # --------------------------------------------------------------------------
-EXPECTED_DAG_IDS = {"silver_ref", "acs_ingest", "bls_ingest", "fred_ingest"}
+EXPECTED_DAG_IDS = {
+    "silver_ref",
+    "acs_ingest",
+    "bls_ingest",
+    "fred_ingest",
+    "glossary_harvest",
+    "glossary_reconciliation",
+}
 
 # Declared schedule contracts (cron expressions)
 EXPECTED_SCHEDULES = {
@@ -35,6 +42,8 @@ EXPECTED_SCHEDULES = {
     "acs_ingest": "0 6 1 * *",
     "bls_ingest": "0 7 1 * *",
     "fred_ingest": "0 8 1 * *",
+    "glossary_harvest": "*/10 * * * *",
+    "glossary_reconciliation": "0 3 * * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -43,6 +52,8 @@ EXPECTED_DEFAULT_RETRIES = {
     "acs_ingest": 3,
     "bls_ingest": 3,
     "fred_ingest": 3,
+    "glossary_harvest": 2,
+    "glossary_reconciliation": 1,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -261,6 +272,20 @@ def test_source_pipeline_order(dagbag, dag_id: str) -> None:
         assert any(_is_upstream(silver, gold_task) for silver in silver_tasks), (
             f"{dag_id}: silver is not upstream of {gold_task}"
         )
+
+
+@pytest.mark.dag
+@pytest.mark.parametrize("dag_id", ["acs_ingest", "bls_ingest"])
+def test_geography_consumers_require_shared_reference_before_planning(
+    dagbag, dag_id: str
+) -> None:
+    """Covers: DAG-009 — geography consumers validate the shared owner first."""
+    dag = dagbag.dags[dag_id]
+    required = dag.get_task("require_shared_geography")
+    plan = dag.get_task("build_ingestion_plan")
+    assert required.task_id in {
+        task.task_id for task in plan.get_flat_relatives(upstream=True)
+    }
 
 
 # --------------------------------------------------------------------------

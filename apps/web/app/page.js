@@ -20,7 +20,7 @@ export default function HomePage() {
     let cancelled = false;
     Promise.all([
       fetch("/api/catalog/sources").then((response) => response.ok ? response.json() : Promise.reject(new Error("sources unavailable"))),
-      fetch("/api/catalog/metrics?active_only=true&dashboard_suitability=PUBLIC_SAFE&q=population&limit=6").then((response) => response.ok ? response.json() : Promise.reject(new Error("metrics unavailable"))),
+      fetch("/api/catalog/metrics?active_only=true&q=population&limit=6").then((response) => response.ok ? response.json() : Promise.reject(new Error("metrics unavailable"))),
     ]).then(([sourceItems, metricPayload]) => {
       if (!cancelled) {
         setSources(sourceItems);
@@ -71,7 +71,7 @@ export default function HomePage() {
           <div>
             <div className="section-kicker">National snapshot</div>
             <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
-            <p>{featuredMetric?.business_definition || "Latest ACS 5-year county estimates with distribution-aware map bins."}</p>
+            <p>Latest source-backed metric metadata and observation coverage.</p>
             <Link className="text-link" href={`/explore?metric=${encodeURIComponent(featuredMetric?.metric_code || "ACS:acs5:B01003_001")}`}>Open map <ArrowRight size={15} /></Link>
           </div>
         </article>

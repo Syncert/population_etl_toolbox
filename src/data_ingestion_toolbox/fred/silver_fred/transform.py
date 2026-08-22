@@ -189,8 +189,7 @@ def _load_time_dim(
 
 def transform_fred_to_silver(domain: str) -> int:
     """
-    Transform ALL FRED raw data to silver layer for specified domain.
-    Processes entire raw_fred.fred_long table for this domain.
+    Transform captured FRED observation revisions for the specified domain.
 
     Reference: https://fred.stlouisfed.org/docs/api/fred/series_observations.html
     """
@@ -198,26 +197,46 @@ def transform_fred_to_silver(domain: str) -> int:
     metrics = TransformMetrics(dataset_name=f"FRED_{domain}")
 
     sql = """
-        WITH latest_revisions AS (
+        WITH revision_candidates AS (
             SELECT
-                series_id,
-                obs_date,
-                value,
-                is_missing,
-                domain,
+                revision.series_id,
+                revision.observation_date AS obs_date,
+                revision.value,
+                revision.value_status <> 'valid' AS is_missing,
+                revision.value_source,
+                revision.value_status,
+                revision.realtime_start,
+                revision.realtime_end,
+                revision.capture_id,
+                revision.domain,
+                capture.retrieved_at AS revision_loaded_at
+            FROM silver_fred.observation_revision AS revision
+            JOIN raw_capture.response_capture AS capture
+              ON capture.capture_id = revision.capture_id
+            WHERE revision.domain = %s
+        ),
+        latest_revisions AS (
+            SELECT
+                *,
                 ROW_NUMBER() OVER (
                     PARTITION BY series_id, obs_date
-                    ORDER BY realtime_start DESC, ingested_at DESC
+                    ORDER BY realtime_start DESC NULLS LAST,
+                             revision_loaded_at DESC,
+                             capture_id DESC NULLS LAST
                 ) as rn
-            FROM raw_fred.fred_long
-            WHERE domain = %s
-              AND is_missing = FALSE
+            FROM revision_candidates
+            WHERE value_status = 'valid'
         )
         SELECT
             lr.series_id,
             lr.obs_date,
             lr.value,
             lr.is_missing,
+            lr.value_source,
+            lr.value_status,
+            lr.realtime_start,
+            lr.realtime_end,
+            lr.capture_id,
             lr.domain,
             fs.title AS series_title,
             fs.units AS unit_of_measure,
@@ -247,6 +266,11 @@ def transform_fred_to_silver(domain: str) -> int:
             "observation_date",
             "value",
             "is_missing",
+            "source_value",
+            "value_status",
+            "realtime_start",
+            "realtime_end",
+            "capture_id",
             "domain",
             "series_title",
             "unit_of_measure",
@@ -324,6 +348,11 @@ def transform_fred_to_silver(domain: str) -> int:
                 r["domain"],
                 r["value"],
                 r["is_missing"],
+                r["source_value"],
+                r["value_status"],
+                r["realtime_start"],
+                r["realtime_end"],
+                r["capture_id"],
                 r["series_title"],
                 r["unit_of_measure"],
                 r["frequency"],
@@ -338,7 +367,8 @@ def transform_fred_to_silver(domain: str) -> int:
         INSERT INTO silver_fred.fact_economic_indicators (
             time_sk, duration_start, duration_end,
             observation_date, series_id, domain,
-            value, is_missing, series_title,
+            value, is_missing, source_value, value_status,
+            realtime_start, realtime_end, capture_id, series_title,
             unit_of_measure, frequency, seasonal_adjustment,
             source_system, load_batch_id, ingested_at
         ) VALUES %s
@@ -350,6 +380,11 @@ def transform_fred_to_silver(domain: str) -> int:
             domain = EXCLUDED.domain,
             value = EXCLUDED.value,
             is_missing = EXCLUDED.is_missing,
+            source_value = EXCLUDED.source_value,
+            value_status = EXCLUDED.value_status,
+            realtime_start = EXCLUDED.realtime_start,
+            realtime_end = EXCLUDED.realtime_end,
+            capture_id = EXCLUDED.capture_id,
             series_title = EXCLUDED.series_title,
             unit_of_measure = EXCLUDED.unit_of_measure,
             frequency = EXCLUDED.frequency,
@@ -364,6 +399,11 @@ def transform_fred_to_silver(domain: str) -> int:
             silver_fred.fact_economic_indicators.domain,
             silver_fred.fact_economic_indicators.value,
             silver_fred.fact_economic_indicators.is_missing,
+            silver_fred.fact_economic_indicators.source_value,
+            silver_fred.fact_economic_indicators.value_status,
+            silver_fred.fact_economic_indicators.realtime_start,
+            silver_fred.fact_economic_indicators.realtime_end,
+            silver_fred.fact_economic_indicators.capture_id,
             silver_fred.fact_economic_indicators.series_title,
             silver_fred.fact_economic_indicators.unit_of_measure,
             silver_fred.fact_economic_indicators.frequency,
@@ -376,6 +416,11 @@ def transform_fred_to_silver(domain: str) -> int:
             EXCLUDED.domain,
             EXCLUDED.value,
             EXCLUDED.is_missing,
+            EXCLUDED.source_value,
+            EXCLUDED.value_status,
+            EXCLUDED.realtime_start,
+            EXCLUDED.realtime_end,
+            EXCLUDED.capture_id,
             EXCLUDED.series_title,
             EXCLUDED.unit_of_measure,
             EXCLUDED.frequency,

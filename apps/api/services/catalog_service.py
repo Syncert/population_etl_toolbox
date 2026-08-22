@@ -53,7 +53,6 @@ def list_metrics(
     db: Session,
     source_code: Optional[str],
     active_only: Optional[bool],
-    dashboard_suitability: Optional[str],
     q: Optional[str],
     limit: int,
     offset: int,
@@ -70,7 +69,6 @@ def list_metrics(
     list_query, count_query, params = metrics_builder(
         source_code=source_code,
         active_only=active_only,
-        dashboard_suitability=dashboard_suitability,
         q=q,
         limit=limit,
         offset=offset,

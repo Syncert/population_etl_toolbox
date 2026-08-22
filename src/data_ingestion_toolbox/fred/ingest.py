@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import random
@@ -25,11 +24,24 @@ from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
 )
-from data_ingestion_toolbox.utility.retry import retry_database_transaction
-from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
+from data_ingestion_toolbox.capture import (
+    ResponseCapture,
+    persist_response_capture,
+    request_fingerprint,
+)
+from data_ingestion_toolbox.normalization import (
+    NumericParseError,
+    parse_decimal,
+    sanitize_error_message,
+)
+from data_ingestion_toolbox.fred.silver_fred.replay import replay_fred_capture
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)
+# FRED authenticates with a query parameter. httpx's INFO access log renders the
+# complete request URL, so keep that third-party logger above INFO to prevent
+# credentials from reaching scheduler, CI, or application logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Target database
 _TARGET_DATABASE = "public_data"
@@ -53,6 +65,23 @@ class FredRetryableHTTP(Exception):
 
 class FredPayloadError(ValueError):
     """The FRED payload shape cannot be normalized safely."""
+
+
+class FredFetchedResponse(dict):
+    """Decoded FRED document accompanied by the exact successful HTTP body."""
+
+    def __init__(
+        self,
+        document: Dict,
+        *,
+        payload: bytes,
+        response_headers: Dict[str, str],
+        http_status: int,
+    ) -> None:
+        super().__init__(document)
+        self.payload = payload
+        self.response_headers = response_headers
+        self.http_status = http_status
 
 
 def _get_pg_conn_details() -> PostgresConnectionDetails:
@@ -176,13 +205,12 @@ def fetch_fred_observations(
         except (json.JSONDecodeError, ValueError) as exc:
             raise FredRetryableHTTP("FRED returned invalid JSON") from exc
 
-        # Check if we got observations
-        observations = data.get("observations", [])
-        if not observations:
-            logger.info(f"No observations returned for {series_id}")
-            raise FredNoContent(f"No observations for {series_id}")
-
-        return data
+        return FredFetchedResponse(
+            data,
+            payload=resp.content,
+            response_headers=dict(resp.headers),
+            http_status=resp.status_code,
+        )
 
 
 def parse_fred_response(
@@ -292,100 +320,110 @@ def parse_fred_response(
     return df
 
 
-@retry_database_transaction
-def load_df_to_fred_long(df: pl.DataFrame) -> int:
-    """
-    Bulk load a Polars DataFrame into raw_fred.fred_long using COPY.
-
-    We delete existing rows for (series_id, obs_date, realtime_start, realtime_end)
-    combinations present in this batch (idempotent upsert).
-    """
-    if df.is_empty():
-        return 0
-    if df.height > CONFIG.raw_load_max_rows:
-        raise ValueError(
-            f"FRED raw batch has {df.height} rows; configured maximum is "
-            f"{CONFIG.raw_load_max_rows}"
-        )
-
-    conn = _get_pg_connection()
+def _execute_control(statement: str, parameters: tuple[object, ...]) -> None:
+    """Commit one control-plane transition independently of capture parsing."""
+    connection = _get_pg_connection()
     try:
-        conn.autocommit = False
-        cur = conn.cursor()
-
-        # Overlapping mapped tasks may replace the same natural key. Serialize
-        # only writers for the same series so delete+COPY remains atomic while
-        # unrelated series can still load concurrently.
-        for series_id in sorted(df.get_column("series_id").unique().to_list()):
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (f"raw_fred.fred_long:{series_id}",),
-            )
-
-        # Get unique (series_id, obs_date, realtime_start, realtime_end) tuples for deletion
-        delete_keys = df.select(
-            ["series_id", "obs_date", "realtime_start", "realtime_end"]
-        ).unique()
-
-        for row in delete_keys.iter_rows():
-            series_id, obs_date, realtime_start, realtime_end = row
-            cur.execute(
-                """
-                DELETE FROM raw_fred.fred_long
-                WHERE series_id = %s
-                  AND obs_date = %s
-                  AND realtime_start IS NOT DISTINCT FROM %s
-                  AND realtime_end IS NOT DISTINCT FROM %s;
-                """,
-                (series_id, obs_date, realtime_start, realtime_end),
-            )
-
-        # Prepare CSV in-memory
-        output = io.StringIO()
-        df.select(
-            [
-                "domain",
-                "series_id",
-                "obs_date",
-                "value",
-                "is_missing",
-                "realtime_start",
-                "realtime_end",
-                "load_batch_id",
-                "ingested_at",
-            ]
-        ).write_csv(output, include_header=False)
-        output.seek(0)
-
-        # Copy into Postgres
-        cur.copy_expert(
-            """
-            COPY raw_fred.fred_long (
-                domain, series_id, obs_date, value, is_missing,
-                realtime_start, realtime_end,
-                load_batch_id, ingested_at
-            )
-            FROM STDIN WITH (FORMAT csv);
-            """,
-            output,
-        )
-
-        rowcount = cur.rowcount
-        conn.commit()
-
-        logger.info(f"Loaded {rowcount} rows to raw_fred.fred_long")
-        return rowcount
-
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error loading to fred_long: {e}")
+        with connection.cursor() as cursor:
+            cursor.execute(statement, parameters)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
         raise
     finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
+        connection.close()
+
+
+def _start_capture_run(run_id: uuid.UUID) -> None:
+    _execute_control(
+        """
+        INSERT INTO control.ingestion_run (
+            run_id, source_code, status, started_at
+        ) VALUES (%s, 'FRED', 'running', NOW())
+        """,
+        (str(run_id),),
+    )
+
+
+def _finish_capture_run(
+    run_id: uuid.UUID, *, status: str, error: str | None = None
+) -> None:
+    _execute_control(
+        """
+        UPDATE control.ingestion_run
+           SET status = %s, finished_at = NOW(), error_summary = %s,
+               updated_at = NOW()
+         WHERE run_id = %s AND source_code = 'FRED'
+        """,
+        (status, error, str(run_id)),
+    )
+
+
+def _start_capture_request(
+    *,
+    request_id: uuid.UUID,
+    run_id: uuid.UUID,
+    endpoint: str,
+    parameters: dict[str, object],
+    fingerprint: str,
+) -> None:
+    _execute_control(
+        """
+        INSERT INTO control.ingestion_request (
+            request_id, run_id, source_code, endpoint,
+            request_parameters, request_fingerprint, status,
+            attempt_count, max_attempts, started_at
+        ) VALUES (%s, %s, 'FRED', %s, %s::JSONB, %s, 'running', 1, 8, NOW())
+        """,
+        (
+            str(request_id),
+            str(run_id),
+            endpoint,
+            json.dumps(parameters, sort_keys=True),
+            fingerprint,
+        ),
+    )
+
+
+def _finish_capture_request(
+    request_id: uuid.UUID,
+    *,
+    status: str,
+    error: str | None = None,
+) -> None:
+    _execute_control(
+        """
+        UPDATE control.ingestion_request
+           SET status = %s, finished_at = NOW(), last_error = %s,
+               updated_at = NOW()
+         WHERE request_id = %s AND source_code = 'FRED'
+        """,
+        (status, error, str(request_id)),
+    )
+
+
+def _quarantine_capture(
+    *,
+    capture_id: uuid.UUID,
+    run_id: uuid.UUID,
+    error: BaseException,
+) -> None:
+    _execute_control(
+        """
+        INSERT INTO control.capture_quarantine (
+            quarantine_id, capture_id, run_id, source_code,
+            parser_version, error_code, error_summary
+        ) VALUES (%s, %s, %s, 'FRED', 'fred-observations-v1',
+                  'INVALID_FRED_OBSERVATIONS', %s)
+        ON CONFLICT (capture_id, parser_version, error_code) DO NOTHING
+        """,
+        (
+            str(uuid.uuid4()),
+            str(capture_id),
+            str(run_id),
+            sanitize_error_message(error),
+        ),
+    )
 
 
 def ingest_slice(
@@ -427,40 +465,125 @@ def ingest_slice(
         f"dates={date_start} to {date_end}"
     )
 
-    batch_id = uuid.uuid4()
-    frames: List[pl.DataFrame] = []
+    run_id = uuid.uuid4()
+    _start_capture_run(run_id)
+    total_rows = 0
+    endpoint = f"{FRED_API_BASE}/series/observations"
 
-    # Process each series individually (FRED API is per-series)
-    for series_id in series_ids:
-        try:
-            response_data = fetch_fred_observations(
-                series_id=series_id,
-                observation_start=date_start,
-                observation_end=date_end,
-                realtime_start=realtime_start,
-                realtime_end=realtime_end,
+    try:
+        # FRED is requested and captured one series at a time. Each successful
+        # HTTP body commits before its silver replay transaction begins.
+        for series_id in series_ids:
+            request_id = uuid.uuid4()
+            request_parameters: dict[str, object] = {
+                "series_id": series_id,
+                "file_type": "json",
+                "observation_start": date_start,
+                "observation_end": date_end,
+                "domain": domain,
+            }
+            if realtime_start:
+                request_parameters["realtime_start"] = realtime_start
+            if realtime_end:
+                request_parameters["realtime_end"] = realtime_end
+            fingerprint = request_fingerprint("FRED", endpoint, request_parameters)
+            _start_capture_request(
+                request_id=request_id,
+                run_id=run_id,
+                endpoint=endpoint,
+                parameters=request_parameters,
+                fingerprint=fingerprint,
             )
 
-            df = parse_fred_response(
-                response_data=response_data,
-                series_id=series_id,
-                domain=domain,
-                load_batch_id=batch_id,
+            try:
+                response_data = fetch_fred_observations(
+                    series_id=series_id,
+                    observation_start=date_start,
+                    observation_end=date_end,
+                    realtime_start=realtime_start,
+                    realtime_end=realtime_end,
+                )
+                payload = getattr(response_data, "payload", None)
+                if payload is None:
+                    # Test doubles predating ARCH-007 may return only a decoded
+                    # document. Production fetches always supply exact bytes.
+                    payload = json.dumps(
+                        response_data,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                capture_id = uuid.uuid4()
+                capture = ResponseCapture(
+                    capture_id=capture_id,
+                    request_id=request_id,
+                    run_id=run_id,
+                    source_code="FRED",
+                    endpoint=endpoint,
+                    request_parameters=request_parameters,
+                    retrieved_at=datetime.now(timezone.utc),
+                    http_status=getattr(response_data, "http_status", 200),
+                    response_headers=getattr(response_data, "response_headers", {}),
+                    media_type="application/json",
+                    payload=payload,
+                    payload_schema_version="fred-series-observations-v1",
+                    source_revision=(
+                        realtime_end or _latest_source_revision(response_data)
+                    ),
+                )
+                persist_response_capture(_get_pg_connection, capture)
+            except BaseException as error:
+                _finish_capture_request(
+                    request_id,
+                    status="failed",
+                    error=sanitize_error_message(error),
+                )
+                raise
+            try:
+                rows = replay_fred_capture(
+                    _get_pg_connection,
+                    capture_id=capture_id,
+                    series_id=series_id,
+                    domain=domain,
+                )
+            except BaseException as error:
+                sanitized = sanitize_error_message(error)
+                _quarantine_capture(
+                    capture_id=capture_id,
+                    run_id=run_id,
+                    error=error,
+                )
+                _finish_capture_request(
+                    request_id, status="quarantined", error=sanitized
+                )
+                raise
+            _finish_capture_request(
+                request_id,
+                status="captured" if rows else "empty",
             )
+            total_rows += rows
 
-            if not df.is_empty():
-                frames.append(df)
+            time.sleep(CONFIG.fred_api_min_spacing_seconds + random.random() * 0.2)
+    except BaseException as error:
+        _finish_capture_run(
+            run_id,
+            status="failed",
+            error=sanitize_error_message(error),
+        )
+        raise
 
-        except FredNoContent:
-            logger.info(f"No content for series {series_id}")
-            continue
+    _finish_capture_run(run_id, status="success")
+    if not total_rows:
+        logger.info("No data retrieved for domain %s", domain)
+    return total_rows
 
-        # Rate limiting between series
-        time.sleep(CONFIG.fred_api_min_spacing_seconds + random.random() * 0.2)
 
-    if not frames:
-        logger.info(f"No data retrieved for domain {domain}")
-        return 0
-
-    combined = pl.concat(frames, how="vertical_relaxed")
-    return load_df_to_fred_long(combined)
+def _latest_source_revision(response_data: Dict) -> str | None:
+    observations = response_data.get("observations", [])
+    if not isinstance(observations, list):
+        return None
+    revisions = [
+        str(observation["realtime_end"])
+        for observation in observations
+        if isinstance(observation, dict) and observation.get("realtime_end")
+    ]
+    return max(revisions) if revisions else None

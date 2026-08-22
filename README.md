@@ -17,16 +17,18 @@ The implemented test contract and longer-term product design live under
 - **BLS** (Bureau of Labor Statistics): labor statistics including employment, unemployment, and wage data
 - **FRED** (Federal Reserve Economic Data): macroeconomic time series (employment, inflation, interest rates, etc.)
 
-**Architecture:** Three-layer medallion pattern:
-1. **Raw Layer** (`raw_*` schemas): Unmodified data from source APIs, with ingestion ledgers for replay and idempotency
-2. **Silver Layer** (`silver_*` schemas): Dimension-matched, deduplicated, and validated fact tables with comprehensive data quality logging
-3. **Analytical Layer** (future): Aggregated star schemas and domain-specific views for reporting and dashboards
+**Target architecture:** The layer contract is defined by
+[`ADR-0001`](docs/decisions/0001-data-layer-boundaries.md): immutable lossless raw
+captures, separate mutable control state, conformed silver data, deterministic
+data-derived gold products, and independently owned semantic/serving policy.
+The current source pipelines predate that decision and are being migrated under
+the linked remediation tickets.
 
-## Current State (May 2026)
+## Current State (August 2026)
 
 ### ✅ Completed
 - **Raw Layer Ingestion:** Census ACS (1yr/5yr), BLS (9 programs), FRED (48 domains) with hash-based change detection
-- **Geographic Master Data:** 14-year Census Gazetteer history (2012-2025) with first/last-seen tracking
+- **Geographic Master Data:** capture-first, versioned Census nation/state/county/place identities, attributes, boundaries, and relationships
 - **Silver Transformations:** Dimension-matched fact tables with comprehensive metrics logging
 - **Data Quality Monitoring:** TransformMetrics instrumentation logs pre/per-chunk/upsert/summary statistics
 - **Idempotent Updates:** All ingestion and transforms support safe re-runs via unique constraints and ON CONFLICT logic
@@ -48,23 +50,24 @@ The implemented test contract and longer-term product design live under
 
 ### Data Models
 
-#### Raw Layer Tables
-All raw schemas contain immutable source data plus an ingestion ledger for tracking:
+#### Raw capture and control
 
-| Dataset | Raw Fact Table | Series Metadata | Ingestion Ledger |
-|---------|----------------|-----------------|------------------|
-| Census  | `raw_census.acs_long` | `raw_census.acs_datasets`, `raw_census.acs_variables` | `raw_census.acs_ingestion_slices` |
-| BLS     | `raw_bls.bls_long` | `raw_bls.bls_datasets`, `raw_bls.bls_series` | `raw_bls.bls_ingestion_slices` |
-| FRED    | `raw_fred.fred_long` | `raw_fred.fred_series` | `raw_fred.fred_ingestion_slices` |
+Exact provider response bytes are committed under `raw_capture` before parsing.
+Runs, requests, retries, watermarks, slice ledgers, and quarantine are maintained
+separately under `control`. Parsed observation revisions live in source silver
+schemas; the retired `raw_*.{source}_long` tables are not deployed.
 
 #### Silver Layer (Dimensional)
 All silver schemas use standard dimension keys for consistent joins:
 
 ```
-silver_ref.dim_time          — Daily calendar (gregorian dates)
-silver_ref.dim_geo           — Geographic dimension (14-year Gazetteer history)
-├─ state_fips, county_fips, geo_level, first_seen_year, last_seen_year
-├─ geography coverage: US + 50 states + 3,000+ counties
+silver_ref.dim_time                   — Daily Gregorian calendar
+silver_ref.dim_geo_entity             — Stable nation/state/county/place identities
+silver_ref.dim_geo_entity_version     — Immutable vintage-specific attributes
+silver_ref.dim_geo_geometry_version   — Immutable boundary geometries
+silver_ref.bridge_geo_relationship_version — Versioned containment/intersection evidence
+silver_ref.dim_geo_current            — Approved current projection
+silver_ref.dim_geo                    — Read-only compatibility projection
 
 silver_census.fact_demographics — Census ACS facts
 ├─ (time_sk, geo_sk, demographic_category, value)
@@ -80,10 +83,10 @@ silver_fred.fact_economic_indicators — FRED macro series
 
 | DAG | Schedule | Purpose |
 |-----|----------|---------|
-| `silver_ref` | Monthly (1st @ 05:00 UTC) | Sync geographic gazetteer (14 years) and time dimension |
-| `acs_ingest_dag` | Daily @ 02:00 UTC | Ingest Census ACS (all years available, varies by geography) |
-| `bls_ingest_dag` | Weekly Sundays @ 07:00 UTC | Ingest BLS series (100+ programs, national + state + county) |
-| `fred_ingest_dag` | Daily @ 02:45 UTC | Ingest FRED economic indicators (48+ domains) |
+| `silver_ref` | Monthly (1st @ 05:00 UTC) | Capture/replay the latest complete Census geography snapshot and sync time |
+| `acs_ingest` | Monthly (1st @ 06:00 UTC) | Ingest configured ACS history after shared geography is ready |
+| `bls_ingest` | Monthly (1st @ 07:00 UTC) | Ingest configured BLS history after shared geography is ready |
+| `fred_ingest` | Monthly (1st @ 08:00 UTC) | Ingest configured FRED history |
 
 ### Key Design Decisions
 
@@ -93,7 +96,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 - If hash changes (new variables added), mark old slices as stale and re-ingest
 
 **Dimension Matching with Metrics:**
-- All dimensions (time, geography) are loaded upfront into memory
+- Observation transforms resolve exact provider codes against shared current geography
 - Failed joins are tracked and logged per chunk
 - Missing dimension entries are flagged as warnings (don't drop rows — allows debugging)
 
@@ -111,7 +114,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 - Scheduled refreshes split changed history into calendar-year chunks. Each report/latest chunk and its row in `gold_glossary.serving_refresh_chunk_state` commit together.
 - A retry skips completed annual chunks and resumes at the first incomplete year; a failed year is rolled back without undoing earlier years.
 - Each chunk recomputes latest rows only for affected natural keys.
-- Geography synchronization commits in a separate short task, so ACS, BLS, and FRED cannot hold a shared geography lock throughout a report rebuild.
+- The independent `silver_ref` DAG owns geography; ACS and BLS fail early when its required snapshot is incomplete.
 - A bounded `lock_timeout` and source-specific `statement_timeout` prevent refreshes from waiting indefinitely.
 - Airflow logs the planned window and every chunk start, skip, completion, failure, duration, target watermark, and resulting report-row count. PostgreSQL procedures also emit row-count and duration notices.
 
@@ -267,45 +270,20 @@ Security note:
 
 ### 1. Database Setup
 
-#### Create Schemas
-```sql
-CREATE SCHEMA IF NOT EXISTS public;
-CREATE SCHEMA IF NOT EXISTS raw_census;
-CREATE SCHEMA IF NOT EXISTS raw_bls;
-CREATE SCHEMA IF NOT EXISTS raw_fred;
-CREATE SCHEMA IF NOT EXISTS silver_ref;
-CREATE SCHEMA IF NOT EXISTS silver_census;
-CREATE SCHEMA IF NOT EXISTS silver_bls;
-CREATE SCHEMA IF NOT EXISTS silver_fred;
-```
+Create the PostgreSQL database first; DAGs do not create databases. Apply every
+checked-in schema and migration through the ordered bootstrap manifest:
 
-#### Run DDL
-Execute all DDL scripts in order:
 ```bash
-# Reference dimensions (required first)
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql
-
-# Raw schemas (data ingestion tables)
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/raw_bls.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/raw_fred.sql
-
-# Silver schemas (transformed fact tables)
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/DDL/silver_bls.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/DDL/silver_fred.sql
-
-# Shared gold glossary objects (run once before source-specific gold DDL)
-psql -U postgres -d population_etl < sql/gold_contract/002_gold_glossary_schema.sql
-
-# Source-specific gold tables, indexes, and refresh procedures
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql
-psql -U postgres -d population_etl < src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql
-
-# API-facing compatibility views (run after the source gold objects exist)
-psql -U postgres -d population_etl < sql/gold_contract/001_gold_contract_views.sql
+export WAREHOUSE_URL='postgresql://postgres:REDACTED@HOST:5432/population_etl'
+jq -r '.assets[].path' sql/bootstrap/warehouse_manifest.json |
+while IFS= read -r asset; do
+    psql "$WAREHOUSE_URL" -X -v ON_ERROR_STOP=1 -f "$asset" || exit 1
+done
 ```
+
+For the destructive beta cutover, container-based `psql` alternative, validation
+queries, and exact DAG order, use the
+[beta reset and re-ingestion runbook](docs/reference/BETA_RESET_REINGESTION.md).
 
 ### 2. Airflow Setup
 
@@ -484,20 +462,22 @@ Before first run, sync dimension tables:
 ```bash
 # Option A: Run via Airflow UI (trigger silver_ref DAG manually)
 
-# Option B: Run directly
-cd /path/to/data_ingestion_toolbox
-python -c "
-from data_ingestion_toolbox.silver_ref.geography import sync_geo_dim
-from data_ingestion_toolbox.silver_ref.time_dim import sync_time_dim
-sync_geo_dim()  # Loads 14 years of Gazetteer data
-sync_time_dim()  # Loads daily calendar (1970 - 2100)
-"
+# Option B: Trigger from the Airflow CLI
+airflow dags trigger silver_ref
 ```
 
-This step:
-- Downloads Census Gazetteer files (2012-2025), merges multi-year history
-- Creates `dim_geo` with ~270K unique geography entries (with first/last seen years)
-- Creates `dim_time` with daily calendar for date-to-time_sk joins
+On its first successful run, this capture-first load publishes the 1990 and
+2000 decennial county Gazetteers, backfills every available annual county
+Gazetteer from 2013 onward, then publishes the newest complete
+nation/state/county/place Gazetteer and boundary snapshot last. Legacy
+Gazetteers retain names, land/water area, and internal-point coordinates; their
+raw captures also retain source population and housing fields. Later monthly
+runs skip completed historical county vintages and refresh the newest complete
+snapshot. This keeps retired county identities resolvable for historical ACS
+and BLS observations while preserving current retirement state. ACS and BLS
+should run only after this DAG succeeds; the ACS silver transform fails its
+preflight instead of silently dropping observations when any captured
+geography identity is unresolved.
 
 ### 5. First Run
 
@@ -568,18 +548,17 @@ Indicates Census/BLS data contains geographic codes not in `silver_ref.dim_geo`.
 
 **Diagnosis:**
 ```sql
-— Find missing geographies
-SELECT DISTINCT geo_level, geo_id 
-FROM raw_census.acs_long ac
-LEFT JOIN silver_ref.dim_geo sg ON ac.geo_id = sg.geo_id
-WHERE sg.geo_sk IS NULL
-ORDER BY geo_level, geo_id;
+SELECT provider_source, provider_dataset, source_geo_type, source_code,
+       source_vintage, status, reason_code
+FROM silver_ref.geography_resolution
+WHERE status <> 'resolved'
+ORDER BY resolved_at DESC;
 ```
 
 **Resolution:**
-- Check if geographies are historical (retired counties, annexed areas)
-- Re-run `silver_ref` DAG to load multi-year Gazetteer history
-- Manually add missing geographies to `silver_ref.dim_geo` if not in Gazetteer
+- Check whether the exact source code/type and vintage are supported.
+- Re-run `silver_ref` to replay a complete captured reference snapshot.
+- Do not insert guessed name matches; unresolved observations remain reported until an exact-code or evidence-backed crosswalk exists.
 
 ### "Pool exhausted" Errors
 API request pool is full; Airflow task queues instead of execute.
@@ -631,13 +610,13 @@ GROUP BY dataset, status;
 **Geographic Coverage:**
 ```sql
 — Verify coverage against expected geographies
-SELECT 
-    MAX(first_seen_year) as oldest_year,
-    MIN(last_seen_year) as newest_year,
-    COUNT(*) as total_geos
-FROM silver_ref.dim_geo;
-
-— Expected: oldest_year ≥ 2012, newest_year =2025, total_geos ≥ 270K
+SELECT geo_type, COUNT(*) AS active_entities,
+       MIN(first_seen_version) AS first_vintage,
+       MAX(last_seen_version) AS last_vintage
+FROM silver_ref.dim_geo_entity
+JOIN silver_ref.dim_geo_current USING (geo_sk)
+WHERE is_active
+GROUP BY geo_type ORDER BY geo_type;
 ```
 
 **Fact Table Growth:**
@@ -811,11 +790,10 @@ data_ingestion_toolbox/
 
 ### Adding a New Data Source
 
-1. Create `new_source/` directory with `config.py`, `metadata.py`, `ingest.py`
-2. Create `new_source/DDL/raw_new_source.sql` and `silver_new_source/DDL/silver_new_source.sql`
-3. Implement ingestion functions following BLS/FRED/Census patterns
-4. Create `dags/new_source_ingest_dag.py` following existing DAG structure
-5. Define transformation logic in `new_source/silver_new_source/transform.py` using `TransformMetrics` class
+New source onboarding is gated until the shared glossary, policy separation, and
+raw-capture foundation are ready. Use the contract-driven
+[`Adding a data source` checklist](docs/reference/ADDING_A_DATA_SOURCE.md); do not
+copy the current sources' legacy raw or shared-gold ownership patterns.
 
 ---
 
@@ -838,6 +816,6 @@ For issues, questions, or contributions, see individual module READMEs or contac
 
 ---
 
-**Last Updated:** May 2026
-**Status:** Production (v2.1, FRED ledger fix applied)
-**Data Currency:** Daily ingestion updates (Gazetteer quarterly) 
+**Last Updated:** August 2026
+**Status:** Beta; clean database reset/re-ingestion is supported
+**Data Currency:** Source schedules plus monthly Census reference discovery

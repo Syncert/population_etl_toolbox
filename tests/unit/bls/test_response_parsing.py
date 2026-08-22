@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import json
 
 import pytest
 
@@ -15,6 +16,7 @@ from data_ingestion_toolbox.bls.ingest import (
     fetch_bls_api,
     parse_bls_response,
 )
+from data_ingestion_toolbox.bls.silver_bls.replay import parse_captured_observations
 
 pytestmark = pytest.mark.unit
 
@@ -171,3 +173,17 @@ def test_bls_invalid_json_is_retryable(monkeypatch) -> None:
     monkeypatch.setattr("data_ingestion_toolbox.bls.ingest.time.sleep", lambda _: None)
     with pytest.raises(BlsRetryableHTTP, match="invalid JSON"):
         fetch_bls_api.__wrapped__(["LNS14000000"], 2024, 2024)
+
+
+def test_bls_capture_parser_retains_value_latest_and_footnote_sources(
+    source_fixture,
+) -> None:
+    """Covers: ETL-011, ETL-012 — captured source fields remain observable."""
+    observations = parse_captured_observations(
+        json.dumps(source_fixture("bls", "representative.json")).encode()
+    )
+
+    assert observations[0]["value_source"] == "4.2"
+    assert observations[0]["latest_source"] == "true"
+    assert "Preliminary" in str(observations[0]["footnotes_source"])
+    assert observations[1]["value_status"] in {"missing", "invalid"}

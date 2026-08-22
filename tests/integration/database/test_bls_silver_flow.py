@@ -1,9 +1,8 @@
-"""BLS raw-to-silver database integration contract."""
+"""BLS revision-to-silver database integration contract."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from uuid import uuid4
 
 import pytest
 from psycopg2.extensions import connection
@@ -11,6 +10,7 @@ from psycopg2.extensions import connection
 from data_ingestion_toolbox.bls.silver_bls import transform
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
+from tests.support.capture_seed import delete_geography, seed_capture, seed_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -19,21 +19,18 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: DB-009 — BLS raw rows produce exact periods and dimension keys."""
+    """Covers: DB-009 — BLS revisions produce exact periods and dimension keys."""
     series_id = "LAUST990000000000003"
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20980101, "2098-01-01")
-            cursor.execute(
-                """
-                INSERT INTO silver_ref.dim_geo (
-                    geo_level, geo_id, state_fips, name, is_active,
-                    source, source_year, ingested_at
-                ) VALUES ('state', 'state:99', '99', 'Test State', TRUE,
-                          'test', 2098, NOW())
-                ON CONFLICT (geo_level, geo_id) DO NOTHING
-                """
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="99",
+                vintage=2098,
+                name="Test State",
             )
             cursor.execute(
                 """
@@ -43,14 +40,15 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
                 """,
                 (series_id,),
             )
+            capture_id = seed_capture(cursor, "BLS")
             cursor.execute(
-                """
-                INSERT INTO raw_bls.bls_long (
-                    program, series_id, year, period, period_name,
-                    value, load_batch_id
-                ) VALUES ('la', %s, 2098, 'M01', 'January', 4.25, %s)
-                """,
-                (series_id, str(uuid4())),
+                """INSERT INTO silver_bls.observation_revision (
+                    capture_id, observation_index, program, series_id,
+                    year_source, period_source, period_name_source, value_source,
+                    year, period, period_name, value, value_status, is_latest
+                ) VALUES (%s, 0, 'la', %s, '2098', 'M01', 'January', '4.25',
+                          2098, 'M01', 'January', 4.25, 'valid', TRUE)""",
+                (capture_id, series_id),
             )
         writer.commit()
     finally:
@@ -87,6 +85,15 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
                 )
                 assert row[6:] == ("state:99", 4.25, "03", "M01")
                 assert row[5] is not None
+                cursor.execute(
+                    """SELECT status, resolution_method, reason_code
+                       FROM silver_ref.geography_resolution
+                       WHERE provider_source = 'BLS'
+                         AND provider_dataset = 'la'
+                         AND source_code = 'state:99'
+                         AND source_vintage = 2098"""
+                )
+                assert cursor.fetchone() == ("resolved", "exact_code", None)
         finally:
             reader.close()
     finally:
@@ -98,14 +105,9 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
                     (series_id,),
                 )
                 cursor.execute(
-                    "DELETE FROM raw_bls.bls_long WHERE series_id = %s", (series_id,)
-                )
-                cursor.execute(
                     "DELETE FROM raw_bls.bls_series WHERE series_id = %s", (series_id,)
                 )
-                cursor.execute(
-                    "DELETE FROM silver_ref.dim_geo WHERE geo_id = 'state:99'"
-                )
+                delete_geography(cursor, "state:99")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20980101"
                 )

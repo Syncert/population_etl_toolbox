@@ -136,14 +136,6 @@ def configured_cached_api(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    """
-                    DELETE FROM gold_glossary.bridge_metric_fred_series b
-                    USING gold_fred.dim_fred_series s
-                    WHERE b.fred_series_sk = s.fred_series_sk AND s.series_id = %s
-                    """,
-                    (series_id,),
-                )
-                cursor.execute(
                     "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code = %s",
                     (metric_code,),
                 )

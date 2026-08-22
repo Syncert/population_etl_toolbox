@@ -25,9 +25,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.api]
 )
 def test_metric_query_builders_bind_every_filter(builder, view: str) -> None:
     """Covers: API-010, API-017 — metric filters remain bound parameters."""
-    list_query, count_query, params = builder(
-        "ACS", True, "PRIMARY", "population", 25, 50
-    )
+    list_query, count_query, params = builder("ACS", True, "population", 25, 50)
     rendered_list = str(list_query)
     rendered_count = str(count_query)
 
@@ -35,13 +33,12 @@ def test_metric_query_builders_bind_every_filter(builder, view: str) -> None:
     assert f"FROM {view}" in rendered_count
     assert "UPPER(source_code) = UPPER(:source_code)" in rendered_list
     assert "is_active = TRUE" in rendered_list
-    assert "UPPER(dashboard_suitability)" in rendered_list
+    assert "dashboard_suitability" not in rendered_list
     assert "UPPER(metric_code) LIKE UPPER(:q)" in rendered_list
     assert params == {
         "limit": 25,
         "offset": 50,
         "source_code": "ACS",
-        "dashboard_suitability": "PRIMARY",
         "q": "%population%",
     }
     assert "population" not in rendered_list
@@ -50,7 +47,7 @@ def test_metric_query_builders_bind_every_filter(builder, view: str) -> None:
 def test_metric_query_builder_uses_true_for_no_filters() -> None:
     """Covers: API-010 — omitted metric filters produce an unfiltered page."""
     list_query, count_query, params = catalog_queries.build_metrics_queries(
-        None, False, None, None, 10, 0
+        None, False, None, 10, 0
     )
 
     assert "WHERE TRUE" in str(list_query)

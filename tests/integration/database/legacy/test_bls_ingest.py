@@ -76,7 +76,7 @@ def test_bounded_live_bls_program_loads_source_appropriate_rows(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: EXT-007 — each promised BLS program reaches production raw storage."""
+    """Covers: EXT-007 — each promised BLS program reaches captured silver."""
     monkeypatch.setattr(ingest, "_get_pg_connection", postgres_connection_factory)
     monkeypatch.setattr(geography, "_get_pg_connection", postgres_connection_factory)
     laus_series_id = (
@@ -99,8 +99,10 @@ def test_bounded_live_bls_program_loads_source_appropriate_rows(
                 cursor.execute(
                     """
                     SELECT COUNT(*), COUNT(DISTINCT series_id),
-                           BOOL_AND(year = 2023), BOOL_AND(value IS NOT NULL)
-                    FROM raw_bls.bls_long WHERE program = %s AND year = 2023
+                           BOOL_AND(year = 2023),
+                           BOOL_AND(value_status = 'valid' AND value IS NOT NULL)
+                    FROM silver_bls.observation_revision
+                    WHERE program = %s AND year = 2023
                     """,
                     (program,),
                 )
@@ -114,7 +116,8 @@ def test_bounded_live_bls_program_loads_source_appropriate_rows(
         try:
             with cleanup.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM raw_bls.bls_long WHERE program = %s AND year = 2023",
+                    "DELETE FROM silver_bls.observation_revision "
+                    "WHERE program = %s AND year = 2023",
                     (program,),
                 )
                 if laus_series_id:

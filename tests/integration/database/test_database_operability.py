@@ -20,7 +20,7 @@ def test_changed_hash_replaces_only_the_target_slice(
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO raw_fred.fred_ingestion_slices (
+            INSERT INTO control.fred_ingestion_slices (
                 domain, date_start, date_end, series_hash, series_count,
                 status, rows_loaded
             ) VALUES
@@ -31,7 +31,7 @@ def test_changed_hash_replaces_only_the_target_slice(
         )
         cursor.execute(
             """
-            INSERT INTO raw_fred.fred_ingestion_slices (
+            INSERT INTO control.fred_ingestion_slices (
                 domain, date_start, date_end, series_hash, series_count,
                 status, rows_loaded
             ) VALUES (%s, '2098-01-01', '2098-01-31', 'new', 1, 'success', 1)
@@ -45,7 +45,7 @@ def test_changed_hash_replaces_only_the_target_slice(
         cursor.execute(
             """
             SELECT date_start::TEXT, series_hash, status, rows_loaded
-            FROM raw_fred.fred_ingestion_slices
+            FROM control.fred_ingestion_slices
             WHERE domain = %s ORDER BY date_start
             """,
             (domain,),

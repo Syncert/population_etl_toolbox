@@ -7,6 +7,7 @@ import pytest
 pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GLOSSARY_CONTRACT = REPO_ROOT / "sql/gold_contract/002_gold_glossary_schema.sql"
+CONTROL_FOUNDATION = REPO_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql"
 
 SOURCE_FILES = {
     "acs": {
@@ -49,21 +50,21 @@ def _read(path: Path) -> str:
 
 def test_shared_geography_refresh_is_not_held_by_source_rebuilds() -> None:
     """Covers: ETL-037 — source rebuilds do not own shared geography refresh."""
-    geography_definitions = [
-        *(_read(source["gold"]) for source in SOURCE_FILES.values()),
-        _read(GLOSSARY_CONTRACT),
-    ]
-    for sql in geography_definitions:
+    for source in SOURCE_FILES.values():
+        sql = _read(source["gold"])
         assert "TRUNCATE TABLE gold_glossary.dim_geo_latest" not in sql
         assert "CALL gold_glossary.refresh_dim_geo_latest();" not in sql
-        assert "pg_advisory_xact_lock" in sql
+        assert "pg_advisory_xact_lock" not in sql
+
+    glossary_sql = _read(GLOSSARY_CONTRACT)
+    assert "pg_advisory_xact_lock" in glossary_sql
 
 
 def test_source_refreshes_are_watermarked_and_affected_key_scoped() -> None:
     """Covers: ETL-037 — serving refreshes use watermarks and affected keys."""
     for source in SOURCE_FILES.values():
         sql = _read(source["gold"])
-        assert "gold_glossary.serving_refresh_state" in sql
+        assert "control.serving_refresh_state" in sql
         assert "s.ingested_at > v_watermark" in sql
         assert source["affected_keys"] in sql
         assert "p_force_full BOOLEAN DEFAULT FALSE" in sql
@@ -73,14 +74,10 @@ def test_source_refreshes_are_watermarked_and_affected_key_scoped() -> None:
 
 def test_chunk_checkpoint_table_is_installed_everywhere() -> None:
     """Covers: ETL-037 — every source installs durable chunk checkpoints."""
-    definitions = [
-        *(_read(source["gold"]) for source in SOURCE_FILES.values()),
-        _read(GLOSSARY_CONTRACT),
-    ]
-    for sql in definitions:
-        assert "gold_glossary.serving_refresh_chunk_state" in sql
-        assert "completed_silver_ingested_at" in sql
-        assert "attempt_count" in sql
+    foundation = _read(CONTROL_FOUNDATION)
+    assert "control.serving_refresh_chunk_state" in foundation
+    assert "completed_silver_ingested_at" in foundation
+    assert "attempt_count" in foundation
 
 
 def test_dags_refresh_changed_history_in_annual_chunks() -> None:
@@ -89,7 +86,7 @@ def test_dags_refresh_changed_history_in_annual_chunks() -> None:
         dag = _read(source["dag"])
         assert "get_gold_" not in dag or "_refresh_window" not in dag
         assert "SET statement_timeout = 0" not in dag
-        assert "CALL gold_glossary.refresh_dim_geo_latest()" in dag
+        assert "CALL gold_glossary.refresh_dim_geo_latest()" not in dag
         assert "refresh_serving_layer_in_year_chunks" in dag
         assert "MAKE_DATE" in dag
         assert source["report_procedure"] in dag

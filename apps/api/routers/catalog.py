@@ -31,7 +31,6 @@ def get_sources(db: Session = Depends(get_db_session_dep)) -> list[SourceSystem]
 def get_metrics(
     source_code: Optional[str] = Query(None, max_length=50),
     active_only: Optional[bool] = None,
-    dashboard_suitability: Optional[str] = Query(None, max_length=50),
     q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -42,7 +41,6 @@ def get_metrics(
             db,
             source_code=source_code,
             active_only=active_only,
-            dashboard_suitability=dashboard_suitability,
             q=q,
             limit=limit,
             offset=offset,

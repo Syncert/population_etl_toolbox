@@ -14,9 +14,32 @@ concurrency:
 
 jobs:
   coverage:
-    name: Unit coverage gates (Python 3.11)
+    name: Unit + database coverage gates (Python 3.11)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+        env:
+          POSTGRES_USER: population_test
+          POSTGRES_PASSWORD: population_test
+          POSTGRES_DB: population_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U population_test -d population_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RUN_INTEGRATION_TESTS: "1"
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
 
     steps:
       - uses: actions/checkout@v6
@@ -44,10 +67,19 @@ jobs:
         run: >-
           timeout 120s pytest tests/unit -q --tb=short
           --cov=apps --cov=data_ingestion_toolbox
+          --cov-report=
+          --junitxml=junit-coverage.xml
+
+      - name: Merge bounded warehouse execution coverage
+        run: >-
+          pytest tests/integration/database
+          -m "integration and database and not slow"
+          --tb=short -q
+          --cov=apps --cov=data_ingestion_toolbox --cov-append
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
           --cov-report=json:coverage.json
-          --junitxml=junit-coverage.xml
+          --junitxml=junit-coverage-database.xml
 
       - name: Enforce checked-in overall coverage ratchet
         run: >-
@@ -79,3 +111,4 @@ jobs:
             coverage.xml
             coverage.json
             junit-coverage.xml
+            junit-coverage-database.xml

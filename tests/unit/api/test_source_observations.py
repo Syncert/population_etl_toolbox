@@ -59,7 +59,6 @@ def _observation_row(
         "geo_longitude": -119.4179,
         "metric_code": metric_code,
         "metric_display_name": "Unemployment Rate",
-        "dashboard_suitability": "PUBLIC_SAFE",
         "value": "4.2",
         "value_type": "RATE",
         "units": "percent",

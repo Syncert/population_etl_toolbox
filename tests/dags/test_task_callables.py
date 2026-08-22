@@ -389,8 +389,8 @@ def test_reference_dimension_task_callables_forward_declared_windows(
     _patch_callable_global(
         monkeypatch,
         geo_callable,
-        "sync_geo_dim",
-        lambda **kwargs: calls.append(("geo", kwargs)) or 4,
+        "sync_geography_history",
+        lambda **kwargs: calls.append(("geo", kwargs)) or {"attributes": 4},
     )
     _patch_callable_global(
         monkeypatch,
@@ -399,9 +399,9 @@ def test_reference_dimension_task_callables_forward_declared_windows(
         lambda **kwargs: calls.append(("time", kwargs)) or 5,
     )
 
-    assert geo_callable() == 4
+    assert geo_callable() == {"attributes": 4}
     assert time_callable() == 5
-    assert calls[0] == ("geo", {"source_year": None, "min_year": 2010})
+    assert calls[0] == ("geo", {"source_year": None})
     assert calls[1][0] == "time"
     assert calls[1][1]["start_date"].isoformat() == "1970-01-01"
     assert calls[1][1]["end_date"] is None
@@ -411,7 +411,12 @@ def test_reference_dimension_task_callables_forward_declared_windows(
     ("dag_id", "module_name", "programs", "fingerprint_name"),
     [
         ("acs_ingest", "dags.acs_ingest_dag", ["acs5"], "_variables_fingerprint"),
-        ("bls_ingest", "dags.bls_ingest_dag", ["ce"], "_series_fingerprint"),
+        (
+            "bls_ingest",
+            "dags.bls_ingest_dag",
+            ["la", "ln", "ce", "cu", "jt"],
+            "_series_fingerprint",
+        ),
         ("fred_ingest", "dags.fred_ingest_dag", ["macro"], "_series_fingerprint"),
     ],
 )
@@ -449,7 +454,7 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "_configured_series_by_domain",
             lambda: {"macro": []},
         )
-        planning_input = 1
+        planning_input = len(callable_.__globals__["CONFIG"].curated_series_ids)
     else:
         planning_input = programs
 
@@ -468,9 +473,47 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "county",
         }
         assert len(work_units) == 54
+        county_parent_fips = {
+            work_unit["state_fips"]
+            for work_unit in work_units
+            if work_unit["geo_level"] == "county"
+        }
+        assert "72" in county_parent_fips
+        assert "52" not in county_parent_fips
     else:
         starts = {
             work_unit.get("start_year", work_unit.get("date_start"))
             for work_unit in work_units
         }
         assert len(starts) == 2
+
+
+def test_acs_target_selection_rejects_empty_metadata(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: DAG-010 — ACS cannot report success with an empty target set."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "get_target_years")
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+
+    with pytest.raises(RuntimeError, match="empty ACS ingestion plan"):
+        callable_()
+
+
+@pytest.mark.parametrize(
+    ("dag_id", "planning_input", "message"),
+    [
+        ("bls_ingest", [], "every configured program"),
+        ("fred_ingest", 0, "incomplete metadata"),
+    ],
+)
+def test_source_planners_reject_incomplete_metadata(
+    dagbag, dag_id: str, planning_input: Any, message: str
+) -> None:
+    """Covers: DAG-010 — rolling planners cannot silently produce no work."""
+    callable_ = _callable(dagbag, dag_id, "build_ingestion_plan")
+
+    with pytest.raises(RuntimeError, match=message):
+        callable_(planning_input)

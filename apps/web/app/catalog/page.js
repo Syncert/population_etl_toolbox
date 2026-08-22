@@ -74,8 +74,8 @@ export default function CatalogPage() {
             <div className="dataset-mark"><Database aria-hidden="true" size={19} /></div>
             <div className="dataset-body">
               <div className="dataset-title-row"><div><span className="source-badge">{group.source}</span><h2>{group.dataset.toUpperCase()}</h2></div><span>{group.metrics.length} shown</span></div>
-              <p>{group.metrics[0]?.business_definition || "Curated public indicators exposed through the analytical gold contract."}</p>
-              <dl className="inline-metadata"><div><dt>Geographies</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_geo_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Time grain</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_time_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Updated</dt><dd>{new Date(group.metrics[0].updated_at).toLocaleDateString()}</dd></div></dl>
+              <p>Source-backed metric identity, grains, units, and publication lineage.</p>
+              <dl className="inline-metadata"><div><dt>Geographies</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_geo_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Time grain</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_time_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Harvested</dt><dd>{group.metrics[0].harvested_at ? new Date(group.metrics[0].harvested_at).toLocaleDateString() : "Pending"}</dd></div></dl>
               <div className="metric-preview-list">
                 {group.metrics.slice(0, 4).map((metric) => (
                   <Link href={`/explore?metric=${encodeURIComponent(metric.metric_code)}`} key={metric.metric_code}>

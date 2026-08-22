@@ -8,6 +8,64 @@ import os
 from pydantic import BaseModel, Field, field_validator
 
 
+# LAUS publishes county/county-equivalent data for the 50 states, DC, and
+# Puerto Rico. Numeric FIPS ranges contain unassigned codes such as 52.
+LAUS_COUNTY_PARENT_FIPS: tuple[str, ...] = (
+    "01",
+    "02",
+    "04",
+    "05",
+    "06",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "53",
+    "54",
+    "55",
+    "56",
+    "72",
+)
+
+
 class BlsConfig(BaseModel):
     """
     BLS ingestion config.
@@ -16,7 +74,7 @@ class BlsConfig(BaseModel):
     - One schema: raw_bls
     - One ingestion framework: supports multiple BLS programs
     - Curated definitions drive ingestion/backfill
-      (hash-based slice ledger in raw_bls)
+      (hash-based slice ledger in control)
 
     Philosophy:
     - LAUS requests are selected from published metadata by geography + measure

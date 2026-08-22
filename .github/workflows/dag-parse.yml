@@ -6,9 +6,15 @@ on:
     paths:
       - "dags/**"
       - "src/**"
+      - "sql/**"
+      - "tests/dags/**"
+      - "tests/support/**"
       - "pyproject.toml"
+      - "docs/plans/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md"
+      - ".github/workflows/dag-parse.yml"
   push:
     branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
 
 permissions:
   contents: read

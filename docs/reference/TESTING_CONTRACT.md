@@ -339,6 +339,16 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
 | ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
 
+### Data-layer Architecture Boundary Tests
+
+These static tests enforce [ADR-0001](../decisions/0001-data-layer-boundaries.md) while narrowly inventorying the legacy violations scheduled for removal by ARCH-002 through ARCH-007.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| ARC-001 | P0 | Static / `unit` | Shared glossary ownership boundary | Source-specific SQL contains exactly the frozen ACS, BLS, and FRED legacy shared-object definitions and no new shared `gold_glossary` DDL | A new source owns a shared object or the legacy exception expands |
+| ARC-002 | P0 | Static / `unit` | Lossless raw capture boundary | Every non-legacy source raw DDL declares capture identity, request fingerprint, retrieval time, checksum, media type, and payload, with no capture update/delete path | A new source persists only parsed observations or mutates captures |
+| ARC-003 | P0 | Static / `unit` | Gold policy boundary | Policy-column declarations remain exactly at the frozen legacy inventory and no new source gold DDL declares them | A new dashboard, aggregation, definition, comparison, or ownership policy column appears in gold |
+
 ### Airflow DAG Tests
 
 All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temporary `AIRFLOW_HOME`, and mocked application boundaries.
@@ -403,6 +413,9 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-035 | P1 | Unit / `unit` | BLS unknown-period fallback | Empty, null, and unrecognized BLS period codes follow the documented annual fallback | Unknown period crashes or produces a non-annual duration |
 | ETL-036 | P1 | Unit / `unit` | FRED unknown-frequency fallback | Null and empty FRED frequency values follow the documented daily fallback | Unknown frequency crashes or produces a non-daily duration |
 | ETL-037 | P1 | Contract / `unit` | Incremental serving implementation contract | Source refreshes are watermarked and affected-key scoped; checkpoints, annual changed-history chunks, progress logs, and unchanged-row watermark preservation remain wired | A source returns to full rebuild behavior, loses checkpoints/progress, or rewrites unchanged watermarks |
+| ETL-038 | P0 | Unit / `unit` | Request fingerprint safety | Canonical source/endpoint/parameters produce a stable fingerprint and secret-bearing fields are rejected | Equivalent requests drift or credentials enter fingerprint inputs |
+| ETL-039 | P0 | Unit / `unit` | Dedicated capture commit | Payload plus envelope commit on their own connection; envelope failure rolls back both and closes the connection | Parser transaction can own capture commit or partial capture persists |
+| ETL-040 | P0 | Unit / `unit` | Offline capture loading | Replay returns stored bytes only after checksum verification and performs no network work | Missing checksum verification, changed bytes, or network dependency |
 
 ### PostgreSQL Integration Tests
 
@@ -417,9 +430,9 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-005 | P1 | Integration / `integration database` | Check constraints | Invalid status, year/date range, measure type, and negative row count are rejected | Any invalid row commits |
 | DB-006 | P1 | Integration / `integration database` | Raw ingestion idempotency | Replaying each source fixture leaves the same natural-key count and zero duplicates | Count increases or duplicate key exists |
 | DB-007 | P1 | Integration / `integration database` | Changed-slice handling | Changed hash marks/replaces only the intended stale slice and loads the revised value once | Unrelated slice changes, stale value served, or duplicate revision |
-| DB-008 | P1 | Integration / `integration database` | Census raw-to-silver | Expected fixture natural keys, values, time keys, and geography keys match exactly | Missing/extra row or value/key mismatch |
-| DB-009 | P1 | Integration / `integration database` | BLS raw-to-silver | Expected fixture natural keys, values, periods, time keys, and geography keys match exactly | Missing/extra row or value/key mismatch |
-| DB-010 | P1 | Integration / `integration database` | FRED raw-to-silver | Expected fixture natural keys, values, durations, and time keys match exactly | Missing/extra row or value/key mismatch |
+| DB-008 | P1 | Integration / `integration database` | Census revision-to-silver | Expected fixture natural keys, values, time keys, and geography keys match exactly | Missing/extra row or value/key mismatch |
+| DB-009 | P1 | Integration / `integration database` | BLS revision-to-silver | Expected fixture natural keys, values, periods, time keys, and geography keys match exactly | Missing/extra row or value/key mismatch |
+| DB-010 | P1 | Integration / `integration database` | FRED revision-to-silver | Expected fixture natural keys, values, durations, and time keys match exactly | Missing/extra row or value/key mismatch |
 | DB-011 | P1 | Integration / `integration database` | Missing dimension handling | Deliberate misses equal the expected metric count and no unintended fact is created | Silent miss, wrong count, or corrupt fact |
 | DB-012 | P1 | Integration / `integration database` | Silver-to-gold refresh | Gold dimensions, bridges, report tables, and latest serving objects contain the exact expected fixture rows | Missing/extra serving row or broken bridge |
 | DB-013 | P1 | Integration / `integration database` | Materialized/latest refresh | A revised observation becomes latest after refresh and old history remains queryable | Stale latest value or lost history |
@@ -428,6 +441,11 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-016 | P2 | Concurrency / `integration database slow` | Concurrent same-key upsert | Final natural-key count is one, value follows the declared conflict rule, and no deadlock escapes retry handling | Duplicate, corruption, or unhandled deadlock |
 | DB-017 | P2 | Volume / `integration database slow` | Maximum supported batch | Configured maximum batch completes without PostgreSQL parameter-limit or memory error | Limit, OOM, timeout, or partial write |
 | DB-018 | P1 | Isolation / `integration database` | Test cleanup | Unique test schema/database is removed after pass and injected failure | Residual schema, rows, or cross-test contamination |
+| DB-019 | P0 | Integration / `integration database` | Capture/control foundation | Ordered migration creates only the declared immutable capture and mutable control relations | Missing, extra, or incorrectly owned foundation relation |
+| DB-020 | P0 | Integration / `integration database` | Lossless payload round trip | Fixture bytes, checksum, request identity, media type, and source revision round-trip exactly | Payload or capture-envelope field changes after retrieval |
+| DB-021 | P0 | Integration / `integration database` | Append-only capture enforcement | Update, delete, and truncate against capture relations fail with the declared mutation error | Captured evidence can be changed or erased by normal DML |
+| DB-022 | P0 | Integration / `integration database` | Changed-response retention | Two payloads for one request fingerprint retain distinct checksums and ordered retrieval events | Revised response overwrites or hides an earlier capture |
+| DB-023 | P0 | Integration / `integration database` | Parser quarantine lineage | Sanitized parser failure state references a still-queryable immutable capture | Failure loses payload lineage or stores no replay target |
 
 ### API and Redis Tests
 
@@ -515,8 +533,8 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-004 | P2 | Contract / `external slow` | Curated identifiers | A small representative set of configured ACS variables, BLS series, and FRED series still exists | Configured identifier is definitively unknown/removed |
 | EXT-005 | P2 | Observability / `external slow` | External result classification | Status, latency, source, and failure class are recorded; 429/5xx/timeout is reported as upstream-unavailable, not regression | Missing telemetry or transient outage reported as code failure |
 | EXT-006 | P2 | Secret handling / `external` | Missing credentials | Test skips with a clear reason where a key is optional for CI policy; logs contain no secret values | Ambiguous failure or secret exposure |
-| EXT-007 | P2 | Legacy smoke / `integration database external slow` | BLS live ingestion paths | Representative LAUS, CPS, CES, CPI, and JOLTS requests load non-empty source-appropriate raw rows into a disposable database | Live request or raw load fails, produces no rows, or violates source/geography expectations |
-| EXT-008 | P2 | Legacy smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests load expected raw observations, including explicit missing values, into a disposable database | Live request or raw load fails, produces no rows, or mishandles missing values |
+| EXT-007 | P2 | Provider smoke / `integration database external slow` | BLS live ingestion paths | Representative LAUS, CPS, CES, CPI, and JOLTS requests persist non-empty source-appropriate captures and revisions | Live request or capture/replay fails, produces no revisions, or violates source/geography expectations |
+| EXT-008 | P2 | Provider smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests persist expected revisions, including explicit missing values | Live request or capture/replay fails, produces no revisions, or mishandles missing values |
 | EXT-009 | P2 | Legacy metadata / `integration database external slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
 | EXT-010 | P2 | Legacy metadata / `integration database external slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
 
