@@ -7,7 +7,7 @@
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
-- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
@@ -239,4 +239,4 @@ Do not publish a single unlabeled `rate` or `prevalence` field. Values require t
 - [CDC Chronic Disease Indicators overview](https://www.cdc.gov/cdi/about/index.html)
 - [CDC PLACES overview and geography coverage](https://www.cdc.gov/places/about/index.html)
 - [CDC PLACES data portal and API formats](https://www.cdc.gov/places/tools/explore-places-data-portal.html)
-- [ADR-0001 data-layer ownership boundaries](../decisions/0001-data-layer-boundaries.md)
+- [ADR-0001 data-layer ownership boundaries](../../decisions/0001-data-layer-boundaries.md)

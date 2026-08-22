@@ -7,7 +7,7 @@
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
-- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](./GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
+- **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-003 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
@@ -259,4 +259,4 @@ The final cadence and incremental key must be proven during NASS-001 rather than
 - [USDA NASS data and statistics](https://www.nass.usda.gov/data_and_statistics/index.php)
 - [NASS Crops/Stocks survey](https://data.nass.usda.gov/Surveys/Guide_to_NASS_Surveys/Crops_Stocks/index.php)
 - [NASS Census of Agriculture](https://www.nass.usda.gov/Surveys/Guide_to_NASS_Surveys/Census_of_Agriculture/)
-- [ADR-0001 data-layer ownership boundaries](../decisions/0001-data-layer-boundaries.md)
+- [ADR-0001 data-layer ownership boundaries](../../decisions/0001-data-layer-boundaries.md)

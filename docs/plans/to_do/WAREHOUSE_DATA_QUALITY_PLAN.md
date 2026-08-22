@@ -6,7 +6,7 @@
 - **Last updated:** 2026-08-19
 - **Primary owner:** Shared warehouse reliability
 - **Depends on:** Capture/control foundation, shared geography, and source-specific silver and gold contracts
-- **Co-delivery requirement:** Every implementation ticket must update the relevant GitHub Actions, scheduled checks, and release evidence in the [CI/CD migration plan](./CICD_GITHUB_ACTIONS_MIGRATION_PLAN.md).
+- **Co-delivery requirement:** Every implementation ticket must update the relevant GitHub Actions, scheduled checks, and release evidence defined by the CI/CD migration plan; resolve its current workflow location through the [plan index](../README.md).
 
 ## Objective
 
