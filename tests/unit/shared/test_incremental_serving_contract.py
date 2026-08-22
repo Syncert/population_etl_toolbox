@@ -109,6 +109,21 @@ def test_chunk_refreshes_emit_progress_and_row_count_logs() -> None:
         assert "GET DIAGNOSTICS v_inserted_rows = ROW_COUNT" in sql
 
 
+def test_acs_latest_refresh_uses_bounded_indexed_key_lookups() -> None:
+    """Covers: ETL-037 — ACS latest refresh avoids a global historical-row sort."""
+    sql = _read(SOURCE_FILES["acs"]["gold"])
+    procedure = sql.split(
+        "CREATE OR REPLACE PROCEDURE gold_census.refresh_mv_acs_latest(", 1
+    )[1].split(
+        "DROP PROCEDURE IF EXISTS gold_census.refresh_dashboard_serving_layer_acs", 1
+    )[0]
+
+    assert "ANALYZE gold_acs_affected_keys;" in procedure
+    assert "CROSS JOIN LATERAL" in procedure
+    assert "LIMIT 1" in procedure
+    assert "SELECT DISTINCT ON" not in procedure
+
+
 def test_silver_upserts_preserve_watermarks_for_unchanged_rows() -> None:
     """Covers: ETL-037 — unchanged silver rows preserve their watermarks."""
     for source in SOURCE_FILES.values():

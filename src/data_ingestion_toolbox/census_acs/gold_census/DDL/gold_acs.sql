@@ -351,6 +351,11 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
+    -- PostgreSQL does not auto-analyze session-local temporary tables. Accurate
+    -- key cardinality keeps the delete and per-key latest lookups predictable
+    -- for large ACS annual chunks.
+    ANALYZE gold_acs_affected_keys;
+
     DELETE FROM gold_census.mv_acs_latest m
     USING gold_acs_affected_keys k
     WHERE m.geo_id = k.geo_id
@@ -359,21 +364,21 @@ BEGIN
     GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
     INSERT INTO gold_census.mv_acs_latest
-    SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code)
-        d.*
-    FROM gold_census.rpt_acs_observations d
-    JOIN gold_acs_affected_keys k
-      ON k.geo_id = d.geo_id
-     AND k.variable_code = d.variable_code
-     AND k.metric_code = d.metric_code
-    ORDER BY
-        d.geo_id,
-        d.variable_code,
-        d.metric_code,
-        d.observation_date DESC,
-        d.updated_at DESC,
-        CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
-        d.vintage_year DESC;
+    SELECT latest.*
+    FROM gold_acs_affected_keys k
+    CROSS JOIN LATERAL (
+        SELECT d.*
+        FROM gold_census.rpt_acs_observations d
+        WHERE d.geo_id = k.geo_id
+          AND d.variable_code = k.variable_code
+          AND d.metric_code = k.metric_code
+        ORDER BY
+            d.observation_date DESC,
+            d.updated_at DESC,
+            CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
+            d.vintage_year DESC
+        LIMIT 1
+    ) latest;
     GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
 
     RAISE NOTICE
