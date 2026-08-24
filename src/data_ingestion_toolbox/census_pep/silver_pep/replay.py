@@ -1,15 +1,10 @@
-"""
-Census PEP silver replay — unpivot captured JSON into ``silver_pep.observation_revision``.
-
-The PEP API returns a JSON array with a header row followed by data rows,
-identical in structure to the ACS API responses already handled by
-``census_acs.silver_census.replay``.  This module reuses the same sentinel
-values and parsing strategy while targeting the PEP-specific schema.
-"""
+"""Offline replay of captured Census PEP bulk CSV releases."""
 
 from __future__ import annotations
 
-import json
+import csv
+import io
+import re
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -17,191 +12,226 @@ from uuid import UUID
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
+from data_ingestion_toolbox.census_pep.config import CONFIG, PEPRelease
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 
-# Census null / suppressed value sentinels (shared with ACS replay)
-_CENSUS_NULL_SENTINELS = frozenset({
-    "-222222222",
-    "-333333333",
-    "-555555555",
-    "-666666666",
-    "-888888888",
-    "-999999999",
-})
+_CENSUS_NULL_SENTINELS = frozenset(
+    {
+        "-222222222",
+        "-333333333",
+        "-555555555",
+        "-666666666",
+        "-888888888",
+        "-999999999",
+    }
+)
+
+_RATE_METRICS = frozenset(
+    {
+        "RBIRTH",
+        "RDEATH",
+        "RNATURALCHG",
+        "RINTERNATIONALMIG",
+        "RDOMESTICMIG",
+        "RNETMIG",
+    }
+)
+
+_REQUIRED_SOURCE_COLUMNS = {
+    "pep_nst_alldata": frozenset({"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"}),
+    "pep_county_alldata": frozenset({"SUMLEV", "STATE", "COUNTY", "STNAME", "CTYNAME"}),
+    "pep_subcounty": frozenset(
+        {
+            "SUMLEV",
+            "STATE",
+            "COUNTY",
+            "PLACE",
+            "COUSUB",
+            "CONCIT",
+            "FUNCSTAT",
+            "NAME",
+            "STNAME",
+        }
+    ),
+}
 
 
 class PepCapturePayloadError(ValueError):
     """A captured PEP payload violates its registered response contract."""
 
 
-def _text(value: Any) -> str | None:
-    return None if value is None else str(value)
+def _parse_document(payload: bytes) -> tuple[list[str], list[list[str]]]:
+    if not payload:
+        raise PepCapturePayloadError("PEP capture is empty")
+    try:
+        source = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PepCapturePayloadError("PEP capture is not valid UTF-8 CSV") from exc
+    if not source.strip():
+        raise PepCapturePayloadError("PEP capture is empty")
+
+    try:
+        document = list(csv.reader(io.StringIO(source, newline=""), strict=True))
+    except csv.Error as exc:
+        raise PepCapturePayloadError("PEP capture is not valid CSV") from exc
+    if not document or not document[0]:
+        raise PepCapturePayloadError("PEP CSV header is empty")
+
+    header = document[0]
+    records = document[1:]
+    if any(not column.strip() for column in header):
+        raise PepCapturePayloadError("PEP CSV header contains a blank column")
+    if len(header) != len(set(header)):
+        raise PepCapturePayloadError("PEP CSV header contains duplicate columns")
+    if not records:
+        raise PepCapturePayloadError("PEP CSV contains no data rows")
+    if any(len(record) != len(header) for record in records):
+        raise PepCapturePayloadError("PEP CSV row length does not match header")
+    return header, records
 
 
-# ---------------------------------------------------------------------------
-# PEP-specific validation rules
-# ---------------------------------------------------------------------------
+def _metric_columns(
+    header: list[str],
+    release: PEPRelease,
+) -> list[tuple[int, str, int]]:
+    dataset = CONFIG.datasets.get(release.dataset_code)
+    if dataset is None:
+        raise ValueError(f"unknown registered PEP dataset: {release.dataset_code}")
+    required = _REQUIRED_SOURCE_COLUMNS[release.dataset_code]
+    missing = required - set(header)
+    if missing:
+        raise PepCapturePayloadError(
+            "PEP CSV is missing required columns: " + ", ".join(sorted(missing))
+        )
 
-_PEP_REQUIRED_GEO = {
-    "us": {"us"},
-    "state": {"state", "name"},
-    "county": {"state", "county"},
-    "place": {"state", "place"},
-    "division": {"state", "diviston"},  # intentional: source may use "division"
-    "region": {"region"},
-}
+    family_pattern = "|".join(
+        re.escape(family) for family in sorted(dataset.variables, key=len, reverse=True)
+    )
+    pattern = re.compile(rf"^({family_pattern})_?(\d{{4}})$")
+    metrics: list[tuple[int, str, int]] = []
+    for index, column in enumerate(header):
+        match = pattern.fullmatch(column)
+        if match is None:
+            continue
+        observation_year = int(match.group(2))
+        if not (
+            release.observation_start_year
+            <= observation_year
+            <= release.observation_end_year
+        ):
+            raise PepCapturePayloadError(
+                f"PEP metric column is outside release range: {column}"
+            )
+        metrics.append((index, match.group(1), observation_year))
+    if not metrics:
+        raise PepCapturePayloadError("PEP CSV contains no registered metric column")
+    return metrics
+
+
+def _value(value_source: str) -> tuple[Any, str]:
+    if value_source == "":
+        return None, "blank"
+    if value_source in _CENSUS_NULL_SENTINELS:
+        return None, "sentinel"
+    try:
+        value = parse_decimal(value_source)
+    except NumericParseError:
+        return None, "invalid"
+    if value is None:
+        return None, "invalid"
+    return value, "valid"
 
 
 def parse_captured_pep_values(
     payload: bytes,
     *,
-    year: int,
-    file_type: str,
+    release: PEPRelease,
 ) -> list[dict[str, Any]]:
-    """Unpivot a captured PEP JSON array into silver-layer records.
-
-    Parameters
-    ----------
-    payload:
-        Raw ``bytes`` from ``raw_capture.payload_blob``.
-    year:
-        Calendar year the capture represents (extracted from the API URL).
-    file_type:
-        PEP file type: ``"ansfile"`` or ``"intlfile"``.
-
-    Returns
-    -------
-    list[dict[str, Any]]
-        One dict per (geography, variable) combination.
-    """
-    try:
-        document = json.loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PepCapturePayloadError("PEP capture is not valid JSON") from exc
-
-    if not isinstance(document, list) or not document:
-        raise PepCapturePayloadError("PEP response must be a non-empty array")
-
-    header = document[0]
-    records = document[1:]
-
-    if not isinstance(header, list) or not all(isinstance(item, str) for item in header):
-        raise PepCapturePayloadError("PEP header must be an array of strings")
-
-    if len(set(header)) != len(header):
-        raise PepCapturePayloadError("PEP response contains duplicate headers")
-
-    if any(not isinstance(record, list) or len(record) != len(header) for record in records):
-        raise PepCapturePayloadError("PEP response row length does not match header")
-
-    # Identify geography columns (PEP always includes 'state'; 'us' or 'county' or 'place' depending on file)
-    geo_columns = {"us", "state", "county", "place", "name", "region", "division"}
-    variable_indexes = [i for i, name in enumerate(header) if name not in geo_columns]
+    """Unpivot source-shaped PEP CSV bytes into revision records."""
+    header, records = _parse_document(payload)
+    metrics = _metric_columns(header, release)
 
     parsed: list[dict[str, Any]] = []
     for row_index, record in enumerate(records):
         source_row = dict(zip(header, record))
-        state_source = _text(source_row.get("state"))
-        county_source = _text(source_row.get("county"))
-        us_source = _text(source_row.get("us"))
-        place_source = _text(source_row.get("place"))
-        name_source = _text(source_row.get("name"))
-
-        for column_index in variable_indexes:
-            variable_name = header[column_index]
-            value_source = _text(record[column_index])
-
-            if value_source is None or value_source == "":
-                value_status = "absent"
-                value = None
-            elif value_source in _CENSUS_NULL_SENTINELS:
-                value_status = "sentinel"
-                value = None
-            else:
-                try:
-                    value = parse_decimal(value_source)
-                except NumericParseError:
-                    value_status = "invalid"
-                    value = None
-                else:
-                    value_status = "valid" if value is not None else "invalid"
-
-            parsed.append({
-                "source_row_index": row_index,
-                "source_column_index": column_index,
-                "source_header": variable_name,
-                "year": year,
-                "file_type": file_type,
-                "state_fips_source": state_source,
-                "county_fips_source": county_source,
-                "place_fips_source": place_source,
-                "name_source": name_source,
-                "us_source": us_source,
-                "variable_name": variable_name,
-                "value_source": value_source,
-                "value": value,
-                "value_status": value_status,
-            })
-
+        for column_index, metric_code, observation_year in metrics:
+            value_source = record[column_index]
+            value, value_status = _value(value_source)
+            parsed.append(
+                {
+                    "source_row_index": row_index,
+                    "source_column_index": column_index,
+                    "source_header": header[column_index],
+                    "dataset_code": release.dataset_code,
+                    "release_vintage": release.vintage_year,
+                    "product_code": release.product_code,
+                    "observation_year": observation_year,
+                    "metric_code": metric_code,
+                    "unit": (
+                        "per_1000_population"
+                        if metric_code in _RATE_METRICS
+                        else "persons"
+                    ),
+                    "summary_level": source_row.get("SUMLEV"),
+                    "region_code_source": source_row.get("REGION"),
+                    "division_code_source": source_row.get("DIVISION"),
+                    "state_fips_source": source_row.get("STATE"),
+                    "county_fips_source": source_row.get("COUNTY"),
+                    "place_fips_source": source_row.get("PLACE"),
+                    "county_subdivision_source": source_row.get("COUSUB"),
+                    "consolidated_city_source": source_row.get("CONCIT"),
+                    "functional_status_source": source_row.get("FUNCSTAT"),
+                    "name_source": source_row.get("NAME") or source_row.get("CTYNAME"),
+                    "state_name_source": source_row.get("STNAME"),
+                    "value_source": value_source,
+                    "value": value,
+                    "value_status": value_status,
+                }
+            )
     return parsed
 
-
-# ---------------------------------------------------------------------------
-# Replay into silver layer
-# ---------------------------------------------------------------------------
 
 def replay_pep_capture(
     connection_factory: Callable[[], Any],
     *,
     capture_id: UUID,
-    year: int,
-    file_type: str,
+    release: PEPRelease,
 ) -> int:
-    """Replay one stored PEP response into ``silver_pep.observation_revision``.
-
-    Parameters
-    ----------
-    connection_factory:
-        Callable returning a psycopg2-style database connection.
-    capture_id:
-        UUID of the captured response in ``raw_capture.response_capture``.
-    year:
-        Calendar year of the capture.
-    file_type:
-        PEP file type (``"ansfile"`` / ``"intlfile"``).
-
-    Returns
-    -------
-    int
-        Number of rows inserted into ``silver_pep.observation_revision``.
-    """
+    """Replay one stored PEP release into its capture-scoped silver revision."""
     values = parse_captured_pep_values(
         load_captured_payload(connection_factory, capture_id),
-        year=year,
-        file_type=file_type,
+        release=release,
     )
     if not values:
         return 0
 
+    columns = (
+        "source_row_index",
+        "source_column_index",
+        "source_header",
+        "dataset_code",
+        "release_vintage",
+        "product_code",
+        "observation_year",
+        "metric_code",
+        "unit",
+        "summary_level",
+        "region_code_source",
+        "division_code_source",
+        "state_fips_source",
+        "county_fips_source",
+        "place_fips_source",
+        "county_subdivision_source",
+        "consolidated_city_source",
+        "functional_status_source",
+        "name_source",
+        "state_name_source",
+        "value_source",
+        "value",
+        "value_status",
+    )
     records = [
-        (
-            str(capture_id),
-            item["source_row_index"],
-            item["source_column_index"],
-            item["source_header"],
-            item["year"],
-            item["file_type"],
-            item["state_fips_source"],
-            item["county_fips_source"],
-            item["place_fips_source"],
-            item["name_source"],
-            item["us_source"],
-            item["variable_name"],
-            item["value_source"],
-            item["value"],
-            item["value_status"],
-        )
-        for item in values
+        (str(capture_id), *(item[column] for column in columns)) for item in values
     ]
 
     database_connection = connection_factory()
@@ -212,10 +242,13 @@ def replay_pep_capture(
                 """
                 INSERT INTO silver_pep.observation_revision (
                     capture_id, source_row_index, source_column_index,
-                    source_header, year, file_type,
-                    state_fips_source, county_fips_source,
-                    place_fips_source, name_source, us_source,
-                    variable_name, value_source, value, value_status
+                    source_header, dataset_code, release_vintage, product_code,
+                    observation_year, metric_code, unit, summary_level,
+                    region_code_source, division_code_source, state_fips_source,
+                    county_fips_source, place_fips_source,
+                    county_subdivision_source, consolidated_city_source,
+                    functional_status_source, name_source, state_name_source,
+                    value_source, value, value_status
                 ) VALUES %s
                 ON CONFLICT (capture_id, source_row_index, source_column_index)
                 DO NOTHING

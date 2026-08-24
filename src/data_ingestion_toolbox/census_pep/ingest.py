@@ -1,16 +1,11 @@
-"""
-Census PEP (Population Estimates) adapter — HTTP capture layer.
-
-Fetches annual population estimates from the U.S. Census Bureau API
-and persists raw response payloads for offline replay.
-
-API reference: https://www.census.gov/data/datasets/time-series-democ-pep.html
-"""
+"""Lossless HTTP capture for registered Census PEP bulk releases."""
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -24,7 +19,8 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
-from data_ingestion_toolbox.census_pep.config import CONFIG
+from data_ingestion_toolbox.census_pep.config import CONFIG, PEPRelease
+from data_ingestion_toolbox.census_pep.registry import PEPRegistry
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -39,83 +35,146 @@ def _get_hook() -> PostgresHook:
 
 
 # ---------------------------------------------------------------------------
-# URL construction
+# Release selection
 # ---------------------------------------------------------------------------
 
-_PEP_API_URL = "https://api.census.gov/data/{year}/pep/{file_type}.json"
-_SUPPORTED_FILE_TYPES = ("ansfile", "intlfile")
-_DEFAULT_YEARS = range(2020, 2027)  # years available via the PEP API
 
+def _select_releases(
+    *,
+    dataset_codes: tuple[str, ...] | None = None,
+    vintage_years: tuple[int, ...] | None = None,
+) -> list[PEPRelease]:
+    """Resolve a deterministic set of registered releases before I/O."""
+    registry = PEPRegistry(CONFIG)
+    requested_datasets = (
+        tuple(sorted(set(dataset_codes)))
+        if dataset_codes is not None
+        else tuple(sorted(registry.datasets))
+    )
+    unknown = set(requested_datasets) - set(registry.datasets)
+    if unknown:
+        raise ValueError("unknown PEP dataset: " + ", ".join(sorted(unknown)))
 
-def _build_urls(years: range | None = None, file_types: tuple[str, ...] | None = None) -> list[str]:
-    """Build the list of Census PEP API URLs to fetch."""
-    years = years or _DEFAULT_YEARS
-    file_types = file_types or _SUPPORTED_FILE_TYPES
-    urls: list[str] = []
-    for year in years:
-        for ft in file_types:
-            urls.append(_PEP_API_URL.format(year=year, file_type=ft))
-    return urls
+    if vintage_years is None:
+        releases = [
+            release
+            for dataset_code in requested_datasets
+            if (release := registry.get_current_release(dataset_code)) is not None
+        ]
+    else:
+        requested_vintages = tuple(sorted(set(vintage_years)))
+        releases = [
+            release
+            for dataset_code in requested_datasets
+            for vintage_year in requested_vintages
+            if (release := registry.get_release(dataset_code, vintage_year)) is not None
+        ]
+        expected_count = len(requested_datasets) * len(requested_vintages)
+        if len(releases) != expected_count:
+            found = {
+                (release.dataset_code, release.vintage_year) for release in releases
+            }
+            missing = [
+                f"{dataset_code}/{vintage_year}"
+                for dataset_code in requested_datasets
+                for vintage_year in requested_vintages
+                if (dataset_code, vintage_year) not in found
+            ]
+            raise ValueError("no registered PEP releases for: " + ", ".join(missing))
+
+    if not releases:
+        raise ValueError("no registered PEP releases match the requested scope")
+    return sorted(
+        releases,
+        key=lambda release: (release.dataset_code, release.vintage_year),
+    )
 
 
 # ---------------------------------------------------------------------------
 # HTTP client with retry / rate-limit handling
 # ---------------------------------------------------------------------------
 
+
+@dataclass(frozen=True)
+class PEPHTTPResponse:
+    """Source response values required by immutable raw capture."""
+
+    payload: bytes
+    status_code: int
+    response_headers: dict[str, str]
+
+
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503})
+
+
 def _fetch_with_retry(
     url: str,
     *,
     max_retries: int = 3,
     base_delay: float = 5.0,
-) -> bytes:
+    on_retry: Callable[[Exception], None] | None = None,
+) -> PEPHTTPResponse:
     """Fetch *url* with exponential-backoff retry.
 
-    Census API enforces a rate limit (approximately one request per second).
-    When a 429 or transient network error occurs the function backs off
-    and retries up to *max_retries* times before raising.
+    Retries are bounded to transport failures and explicitly retryable HTTP
+    statuses. Other 4xx responses fail immediately.
     """
     last_exc: Exception | None = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(
+        timeout=CONFIG.request_timeout,
+        follow_redirects=True,
+    ) as client:
+        for attempt in range(1, max_retries + 1):
+            try:
                 response = client.get(url)
-                if response.status_code == 429:
-                    retry_after = int(response.headers.get("retry-after", base_delay * 2))
+                response.raise_for_status()
+                return PEPHTTPResponse(
+                    payload=response.content,
+                    status_code=response.status_code,
+                    response_headers=dict(response.headers),
+                )
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                status_code = exc.response.status_code
+                if status_code not in _RETRYABLE_STATUS_CODES:
+                    raise RuntimeError(
+                        f"Census PEP returned non-retryable HTTP {status_code} for {url}"
+                    ) from exc
+                if attempt < max_retries:
+                    if on_retry is not None:
+                        on_retry(exc)
+                    retry_after = exc.response.headers.get("retry-after")
+                    try:
+                        delay = (
+                            float(retry_after)
+                            if retry_after
+                            else base_delay * 2 ** (attempt - 1)
+                        )
+                    except ValueError:
+                        delay = base_delay * 2 ** (attempt - 1)
                     logger.warning(
-                        "Census PEP rate limit (%s) on %s; retrying in %ss (attempt %s/%s)",
-                        response.status_code,
+                        "Retryable Census PEP HTTP %s on %s; retrying in %ss "
+                        "(attempt %s/%s)",
+                        status_code,
                         url,
-                        retry_after,
+                        delay,
                         attempt,
                         max_retries,
                     )
-                    time.sleep(retry_after)
-                    continue
-                response.raise_for_status()
-                return response.content
-        except httpx.HTTPStatusError as exc:
-            last_exc = exc
-            logger.warning(
-                "HTTP %s fetching %s (attempt %s/%s): %s",
-                exc.response.status_code,
-                url,
-                attempt,
-                max_retries,
-                exc,
-            )
-            if attempt < max_retries:
-                time.sleep(base_delay * (2 ** (attempt - 1)))
-        except httpx.RequestError as exc:
-            last_exc = exc
-            logger.warning(
-                "Request error fetching %s (attempt %s/%s): %s",
-                url,
-                attempt,
-                max_retries,
-                exc,
-            )
-            if attempt < max_retries:
-                time.sleep(base_delay * (2 ** (attempt - 1)))
+                    time.sleep(delay)
+            except httpx.RequestError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Request error fetching %s (attempt %s/%s): %s",
+                    url,
+                    attempt,
+                    max_retries,
+                    exc,
+                )
+                if attempt < max_retries:
+                    if on_retry is not None:
+                        on_retry(exc)
+                    time.sleep(base_delay * 2 ** (attempt - 1))
     raise RuntimeError(
         f"Failed to fetch {url} after {max_retries} attempts"
     ) from last_exc
@@ -125,67 +184,68 @@ def _fetch_with_retry(
 # Capture orchestration
 # ---------------------------------------------------------------------------
 
-def _ingest_url(
+
+def _ingest_release(
     hook: PostgresHook,
-    url: str,
+    release: PEPRelease,
     run_id: UUID,
 ) -> CaptureReceipt:
-    """Capture one PEP API response into raw_capture.
+    """Capture one registered PEP bulk release into ``raw_capture``.
 
     Returns a :class:`CaptureReceipt` identifying the persisted payload.
     """
-    conn_factory = lambda: hook.get_conn()  # noqa: E731
+    conn_factory = hook.get_conn
 
     ctrl = CaptureControl(conn_factory, source_code=CONFIG.source_code)
-    parsed = url.rsplit("/", 1)[-1]  # e.g. "2023/pep/ansfile.json" -> parts
-    parts = parsed.split("/")
-    year_str = parts[0] if len(parts) > 0 else "unknown"
-    file_type = parts[-1].replace(".json", "") if parts else "unknown"
+    request_parameters = {
+        "dataset_code": release.dataset_code,
+        "vintage_year": release.vintage_year,
+        "product_code": release.product_code,
+    }
 
     req = ctrl.start_request(
         run_id=run_id,
-        endpoint=url,
-        parameters={},
+        endpoint=release.data_url,
+        parameters=request_parameters,
         max_attempts=3,
     )
 
-    payload = b""
-    status_code = 0
-    response_headers: dict[str, object] = {}
-    start = datetime.now(timezone.utc)
+    def record_retry(error: Exception) -> None:
+        ctrl.record_request_retry(req.request_id, error=error)
 
     try:
-        payload = _fetch_with_retry(url, max_retries=3, base_delay=5.0)
-        status_code = 200  # _fetch_with_retry raises on error
-        response_headers = {"content-type": "application/json"}
+        response = _fetch_with_retry(
+            release.data_url,
+            max_retries=3,
+            base_delay=5.0,
+            on_retry=record_retry,
+        )
+        capture = ResponseCapture(
+            capture_id=uuid4(),
+            request_id=req.request_id,
+            run_id=run_id,
+            source_code=CONFIG.source_code,
+            endpoint=release.data_url,
+            request_parameters=request_parameters,
+            retrieved_at=datetime.now(timezone.utc),
+            http_status=response.status_code,
+            response_headers=response.response_headers,
+            media_type=release.media_type,
+            payload=response.payload,
+            payload_schema_version=release.schema_version,
+            source_revision=release.product_code,
+        )
+        receipt = persist_response_capture(conn_factory, capture)
     except Exception as exc:
         ctrl.finish_request(req.request_id, status="error", error=exc)
-        raise RuntimeError(f"Capture failed for {url}: {exc}") from exc
-    finally:
-        ctrl.finish_request(req.request_id, status="success")
+        raise RuntimeError(f"Capture failed for {release.product_code}: {exc}") from exc
 
-    capture = ResponseCapture(
-        capture_id=uuid4(),
-        request_id=req.request_id,
-        run_id=run_id,
-        source_code=CONFIG.source_code,
-        endpoint=url,
-        request_parameters={},
-        retrieved_at=start,
-        http_status=status_code,
-        response_headers=response_headers,
-        media_type="application/json",
-        payload=payload,
-        payload_schema_version="1.0",
-        source_revision=year_str,
-    )
-
-    receipt = persist_response_capture(conn_factory, capture)
+    ctrl.finish_request(req.request_id, status="success")
     logger.info(
-        "Census PEP captured: url=%s year=%s file_type=%s checksum=%s",
-        url,
-        year_str,
-        file_type,
+        "Census PEP captured: dataset=%s vintage=%s product=%s checksum=%s",
+        release.dataset_code,
+        release.vintage_year,
+        release.product_code,
         receipt.payload_checksum,
     )
     return receipt
@@ -195,45 +255,73 @@ def _ingest_url(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def ingest_census_pep(
-    years: range | None = None,
-    file_types: tuple[str, ...] | None = None,
+    dataset_codes: tuple[str, ...] | None = None,
+    vintage_years: tuple[int, ...] | None = None,
 ) -> int:
-    """Fetch and capture Census PEP annual/international files for *years*.
+    """Fetch and capture an exact registered Census PEP release scope.
 
     Parameters
     ----------
-    years:
-        Inclusive range of calendar years to ingest (default: 2020-2026).
-    file_types:
-        Which PEP file types to fetch.  Supported values are ``"ansfile"``
-        (annual domestic) and ``"intlfile"`` (international).
+    dataset_codes:
+        Stable registered products. Defaults to every supported product.
+    vintage_years:
+        Explicit release vintages for replay/backfill. When omitted, selects
+        the latest published release for each requested product.
 
     Returns
     -------
     int
         Number of distinct payloads captured.
     """
+    releases = _select_releases(
+        dataset_codes=dataset_codes,
+        vintage_years=vintage_years,
+    )
+
     hook = _get_hook()
-    years = years or _DEFAULT_YEARS
-    file_types = file_types or _SUPPORTED_FILE_TYPES
-
-    run_id = uuid4()
-    conn_factory = lambda: hook.get_conn()  # noqa: E731
+    conn_factory = hook.get_conn
     ctrl = CaptureControl(conn_factory, source_code=CONFIG.source_code)
-    ctrl.start_run(watermark={"years": list(years), "file_types": list(file_types)})
-
-    urls = _build_urls(years, file_types)
+    run_id = ctrl.start_run(
+        watermark={
+            "releases": [
+                {
+                    "dataset_code": release.dataset_code,
+                    "vintage_year": release.vintage_year,
+                    "product_code": release.product_code,
+                }
+                for release in releases
+            ]
+        }
+    )
     captured = 0
+    failures: list[str] = []
 
-    logger.info("[CENSUS_PEP] Starting ingestion: years=%s-%s, file_types=%s", min(years), max(years), file_types)
+    logger.info(
+        "[CENSUS_PEP] Starting ingestion for %d registered releases",
+        len(releases),
+    )
 
-    for url in urls:
+    for release in releases:
         try:
-            _ingest_url(hook, url, run_id)
+            _ingest_release(hook, release, run_id)
             captured += 1
         except Exception as exc:
-            logger.error("[CENSUS_PEP] Failed to capture %s: %s", url, exc)
+            failures.append(release.product_code)
+            logger.error(
+                "[CENSUS_PEP] Failed to capture %s: %s",
+                release.product_code,
+                exc,
+            )
+
+    if failures:
+        error = RuntimeError(
+            f"{len(failures)} of {len(releases)} PEP releases failed: "
+            + ", ".join(failures)
+        )
+        ctrl.finish_run(run_id, status="error", error=error)
+        raise error
 
     ctrl.finish_run(run_id, status="success")
     logger.info("[CENSUS_PEP] Ingestion complete: %d payloads captured", captured)

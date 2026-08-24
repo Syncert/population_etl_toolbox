@@ -1,21 +1,14 @@
-"""
-Unit tests for Census PEP ingest module.
-
-Covers:
-- URL construction for PEP API endpoints
-- HTTP retry logic with SequencedHttpClient
-- Capture orchestration with mocked HTTP and DB
-- ingest_census_pep entry point with full chain
-"""
+"""Unit contracts for Census PEP bulk-release capture."""
 
 from __future__ import annotations
 
-import json
 import uuid
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
+from data_ingestion_toolbox.capture import ControlRequest
 from data_ingestion_toolbox.census_pep import ingest
 from data_ingestion_toolbox.census_pep.config import CONFIG
 from tests.support.http import SequencedHttpClient, response
@@ -23,298 +16,326 @@ from tests.support.http import SequencedHttpClient, response
 pytestmark = pytest.mark.unit
 
 
-# ---------------------------------------------------------------------------
-# URL construction tests
-# ---------------------------------------------------------------------------
+class TestSelectReleases:
+    def test_default_scope_is_each_current_published_product(self) -> None:
+        """Covers: ETL-030 — Default PEP scope selects published releases."""
+        releases = ingest._select_releases()
 
+        assert [release.dataset_code for release in releases] == [
+            "pep_county_alldata",
+            "pep_nst_alldata",
+            "pep_subcounty",
+        ]
+        assert {release.vintage_year for release in releases} == {2025}
+        assert {release.status for release in releases} == {"published"}
 
-class TestBuildUrls:
-    """Verify _build_urls generates correct Census PEP API endpoint URLs."""
+    def test_explicit_vintage_selects_archived_release(self) -> None:
+        """Covers: ETL-030 — Explicit PEP vintage supports replay/backfill."""
+        releases = ingest._select_releases(
+            dataset_codes=("pep_nst_alldata",),
+            vintage_years=(2024,),
+        )
 
-    def test_default_years_and_file_types(self) -> None:
-        """Default range produces 7 years × 2 file_types = 14 URLs.
+        assert len(releases) == 1
+        assert releases[0].product_code == "NST-EST2024-ALLDATA"
+        assert releases[0].status == "archived"
 
-        Covers: PEP-001.1
-        """
-        urls = ingest._build_urls()
-        assert len(urls) == 14
-        # First URL should be 2020/pep/ansfile.json
-        assert urls[0] == "https://api.census.gov/data/2020/pep/ansfile.json"
-        # Last URL should be 2026/pep/intlfile.json
-        assert urls[-1] == "https://api.census.gov/data/2026/pep/intlfile.json"
+    def test_unknown_dataset_is_rejected_before_database_work(self) -> None:
+        """Covers: ETL-030 — Unknown PEP products fail configuration validation."""
+        with pytest.raises(ValueError, match="unknown PEP dataset"):
+            ingest._select_releases(dataset_codes=("not_a_product",))
 
-    def test_custom_years_single_file_type(self) -> None:
-        """Custom year range and file types produce expected count."""
-        urls = ingest._build_urls(years=range(2020, 2023), file_types=("ansfile",))
-        assert len(urls) == 3
-        assert urls[0] == "https://api.census.gov/data/2020/pep/ansfile.json"
-        assert urls[2] == "https://api.census.gov/data/2022/pep/ansfile.json"
-
-    def test_custom_years_both_file_types(self) -> None:
-        """Custom years with both file types."""
-        urls = ingest._build_urls(years=range(2023, 2025), file_types=("ansfile", "intlfile"))
-        assert len(urls) == 4
-        # Year ordering: all file types for 2023, then 2024
-        assert "2023" in urls[0]
-        assert "2024" in urls[2]
-
-    def test_international_file_type(self) -> None:
-        """intlfile URLs are constructed correctly."""
-        urls = ingest._build_urls(years=range(2024, 2025), file_types=("intlfile",))
-        assert urls[0] == "https://api.census.gov/data/2024/pep/intlfile.json"
-
-
-# ---------------------------------------------------------------------------
-# HTTP retry tests
-# ---------------------------------------------------------------------------
+    def test_unregistered_vintage_is_rejected(self) -> None:
+        """Covers: ETL-030 — Unregistered PEP vintages cannot be requested."""
+        with pytest.raises(ValueError, match="no registered PEP releases"):
+            ingest._select_releases(vintage_years=(2023,))
 
 
 class TestFetchWithRetry:
-    """Verify _fetch_with_retry retry behavior and error handling."""
-
-    def test_success_no_retry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Successful first call returns content immediately."""
-        expected = b'{"data":[1,2,3]}'
-        client = SequencedHttpClient([response(200, json.loads(expected))])
+    def test_success_preserves_response_envelope(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ARC-002 — Successful fetch retains payload and HTTP metadata."""
+        source_response = httpx.Response(
+            200,
+            request=httpx.Request("GET", "https://source.example.test/data.csv"),
+            content=b"SUMLEV,POPESTIMATE2025\n040,100\n",
+            headers={"content-type": "text/csv", "etag": '"revision-1"'},
+        )
+        client = SequencedHttpClient([source_response])
         monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
 
-        result = ingest._fetch_with_retry("https://test.example.com/api", max_retries=3)
-        assert result == expected
+        result = ingest._fetch_with_retry("https://source.example.test/data.csv")
+
+        assert result.payload == b"SUMLEV,POPESTIMATE2025\n040,100\n"
+        assert result.status_code == 200
+        assert result.response_headers["content-type"] == "text/csv"
+        assert result.response_headers["etag"] == '"revision-1"'
         assert client.calls == 1
 
-    def test_retry_on_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Transient 503 triggers retry; success on second attempt."""
-        client = SequencedHttpClient([
-            response(503),
-            response(200, {"data": [1]}),
-        ])
+    @pytest.mark.parametrize("status_code", [429, 500, 502, 503])
+    def test_retryable_status_then_success(
+        self,
+        status_code: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ETL-020 — Retryable Census status receives another attempt."""
+        client = SequencedHttpClient(
+            [response(status_code), response(200, {"data": [1]})]
+        )
         monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
         monkeypatch.setattr(ingest.time, "sleep", lambda delay: None)
 
-        result = ingest._fetch_with_retry("https://test.example.com/api", max_retries=3, base_delay=0.01)
-        assert result == b'{"data":[1]}'
+        result = ingest._fetch_with_retry(
+            "https://source.example.test/data.csv",
+            base_delay=0.01,
+        )
+
+        assert result.status_code == 200
         assert client.calls == 2
 
-    def test_retry_on_429(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """429 rate limit triggers retry with exponential backoff."""
-        client = SequencedHttpClient([
-            response(429),
-            response(200, {"data": [1]}),
-        ])
+    def test_transport_error_then_success(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ETL-020 — Census transport failures are retryable."""
+        request = httpx.Request("GET", "https://source.example.test/data.csv")
+        client = SequencedHttpClient(
+            [httpx.ConnectError("connection refused", request=request), response(200)]
+        )
         monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
         monkeypatch.setattr(ingest.time, "sleep", lambda delay: None)
 
-        result = ingest._fetch_with_retry("https://test.example.com/api", max_retries=3, base_delay=0.01)
+        ingest._fetch_with_retry("https://source.example.test/data.csv")
+
         assert client.calls == 2
 
-    def test_exhausted_retries_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """All retries exhausted raises RuntimeError."""
+    def test_nonretryable_404_stops_immediately(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ETL-020 — Permanent Census 4xx responses are not retried."""
+        client = SequencedHttpClient([response(404)])
+        monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
+
+        with pytest.raises(RuntimeError, match="non-retryable HTTP 404"):
+            ingest._fetch_with_retry("https://source.example.test/missing.csv")
+
+        assert client.calls == 1
+
+    def test_retry_budget_exposes_final_cause(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ETL-021 — Census retries stop at the configured budget."""
         client = SequencedHttpClient([response(503), response(503), response(503)])
         monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
         monkeypatch.setattr(ingest.time, "sleep", lambda delay: None)
 
-        with pytest.raises(RuntimeError, match="Failed to fetch"):
-            ingest._fetch_with_retry("https://test.example.com/api", max_retries=3, base_delay=0.01)
+        with pytest.raises(RuntimeError, match="after 3 attempts") as error:
+            ingest._fetch_with_retry("https://source.example.test/data.csv")
+
+        assert isinstance(error.value.__cause__, httpx.HTTPStatusError)
         assert client.calls == 3
 
-    def test_transport_error_triggers_retry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Network error triggers retry; success on second attempt."""
-        import httpx
-
-        client = SequencedHttpClient([
-            httpx.RequestError("connection refused", request=MagicMock()),
-            response(200, {"data": [1]}),
-        ])
+    def test_retry_callback_receives_each_retryable_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Covers: ETL-021 — PEP exposes retries to durable control state."""
+        client = SequencedHttpClient([response(503), response(200)])
         monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
         monkeypatch.setattr(ingest.time, "sleep", lambda delay: None)
+        failures: list[Exception] = []
 
-        result = ingest._fetch_with_retry("https://test.example.com/api", max_retries=3, base_delay=0.01)
-        assert client.calls == 2
+        ingest._fetch_with_retry(
+            "https://source.example.test/data.csv",
+            on_retry=failures.append,
+        )
 
-    def test_http_status_error_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Terminal HTTP error (404) raises after exhausting retries."""
-        import httpx
-        client = SequencedHttpClient([
-            httpx.HTTPStatusError(
-                "Not Found",
-                request=MagicMock(),
-                response=httpx.Response(404),
-            ),
-            httpx.HTTPStatusError(
-                "Not Found",
-                request=MagicMock(),
-                response=httpx.Response(404),
-            ),
-            httpx.HTTPStatusError(
-                "Not Found",
-                request=MagicMock(),
-                response=httpx.Response(404),
-            ),
-        ])
-        monkeypatch.setattr(ingest.httpx, "Client", lambda *a, **k: client)
-        monkeypatch.setattr(ingest.time, "sleep", lambda delay: None)
-
-        with pytest.raises(RuntimeError, match="Failed to fetch"):
-            ingest._fetch_with_retry("https://test.example.com/api", max_retries=3, base_delay=0.01)
+        assert len(failures) == 1
+        assert isinstance(failures[0], httpx.HTTPStatusError)
 
 
-# ---------------------------------------------------------------------------
-# Capture orchestration tests
-# ---------------------------------------------------------------------------
-
-
-class TestIngestUrl:
-    """Verify _ingest_url captures payloads and persists to raw_capture."""
-
+class TestIngestRelease:
     @patch("data_ingestion_toolbox.census_pep.ingest.persist_response_capture")
     @patch("data_ingestion_toolbox.census_pep.ingest._fetch_with_retry")
-    def test_successful_capture(self, mock_fetch, mock_persist, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Successful fetch returns a CaptureReceipt with checksum."""
-        mock_fetch.return_value = b'[{"name": "United States", "value": 331893745}]'
-        mock_persist.return_value = MagicMock(payload_checksum="abc123")
-
-        mock_hook = MagicMock()
-        mock_hook.get_conn.return_value.__enter__ = MagicMock(return_value=None)
-        mock_hook.get_conn.return_value.__exit__ = MagicMock(return_value=None)
-
-        # Mock CaptureControl to capture the control object
-        captured_control = []
-        original_start_request = MagicMock(return_value=MagicMock(request_id="req-001"))
-        original_finish_request = MagicMock()
-
-        def mock_start_run(*a, **k):
-            pass
-
-        def mock_start_request_patch(*a, **k):
-            return MagicMock(request_id="req-001")
-
-        def mock_finish_request_patch(*a, **k):
-            pass
-
-        monkeypatch.setattr(ingest.CaptureControl, "__init__", lambda self, *a, **k: None)
-        monkeypatch.setattr(ingest.CaptureControl, "start_request", mock_start_request_patch)
-        monkeypatch.setattr(ingest.CaptureControl, "finish_request", mock_finish_request_patch)
-        monkeypatch.setattr(ingest.CaptureControl, "start_run", mock_start_run)
-        monkeypatch.setattr(ingest.CaptureControl, "finish_run", mock_start_run)
-
-        receipt = ingest._ingest_url(
-            mock_hook,
-            "https://api.census.gov/data/2023/pep/ansfile.json",
-            uuid.uuid4(),
+    @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
+    def test_capture_preserves_release_identity_and_envelope(
+        self,
+        mock_control_class: MagicMock,
+        mock_fetch: MagicMock,
+        mock_persist: MagicMock,
+    ) -> None:
+        """Covers: ARC-002 — PEP raw capture retains release provenance."""
+        release = next(
+            item
+            for item in CONFIG.releases
+            if item.dataset_code == "pep_nst_alldata" and item.vintage_year == 2025
         )
+        request_id = uuid.uuid4()
+        run_id = uuid.uuid4()
+        control = mock_control_class.return_value
+        control.start_request.return_value = ControlRequest(request_id, "fingerprint")
+        mock_fetch.return_value = ingest.PEPHTTPResponse(
+            payload=b"SUMLEV,POPESTIMATE2025\n040,100\n",
+            status_code=200,
+            response_headers={"content-type": "text/csv", "etag": '"revision-1"'},
+        )
+        mock_persist.return_value = MagicMock(payload_checksum="abc123")
+        hook = MagicMock()
+
+        receipt = ingest._ingest_release(hook, release, run_id)
+
         assert receipt.payload_checksum == "abc123"
-        mock_fetch.assert_called_once()
+        control.start_request.assert_called_once_with(
+            run_id=run_id,
+            endpoint=release.data_url,
+            parameters={
+                "dataset_code": "pep_nst_alldata",
+                "vintage_year": 2025,
+                "product_code": "NST-EST2025-ALLDATA",
+            },
+            max_attempts=3,
+        )
+        capture = mock_persist.call_args.args[1]
+        assert capture.run_id == run_id
+        assert capture.request_id == request_id
+        assert capture.payload == mock_fetch.return_value.payload
+        assert capture.media_type == "text/csv"
+        assert capture.payload_schema_version == "nst-est2025-alldata"
+        assert capture.source_revision == "NST-EST2025-ALLDATA"
+        assert capture.response_headers["etag"] == '"revision-1"'
+        retry_callback = mock_fetch.call_args.kwargs["on_retry"]
+        retry_error = RuntimeError("transient failure")
+        retry_callback(retry_error)
+        control.record_request_retry.assert_called_once_with(
+            request_id,
+            error=retry_error,
+        )
+        control.finish_request.assert_called_once_with(request_id, status="success")
 
     @patch("data_ingestion_toolbox.census_pep.ingest._fetch_with_retry")
-    def test_failed_fetch_raises(self, mock_fetch, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Failed fetch raises RuntimeError."""
-        mock_fetch.side_effect = RuntimeError("Network error")
-
-        mock_hook = MagicMock()
-        mock_hook.get_conn.return_value.__enter__ = MagicMock(return_value=None)
-        mock_hook.get_conn.return_value.__exit__ = MagicMock(return_value=None)
-
-        monkeypatch.setattr(ingest.CaptureControl, "__init__", lambda self, *a, **k: None)
-        monkeypatch.setattr(ingest.CaptureControl, "start_request", lambda *a, **k: MagicMock(request_id="req-001"))
-        monkeypatch.setattr(ingest.CaptureControl, "finish_request", lambda *a, **k: None)
-        monkeypatch.setattr(ingest.CaptureControl, "start_run", lambda *a, **k: None)
-        monkeypatch.setattr(ingest.CaptureControl, "finish_run", lambda *a, **k: None)
+    @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
+    def test_failed_capture_is_never_marked_successful(
+        self,
+        mock_control_class: MagicMock,
+        mock_fetch: MagicMock,
+    ) -> None:
+        """Covers: ARC-002 — Failed PEP request has one terminal error state."""
+        release = CONFIG.releases[1]
+        request_id = uuid.uuid4()
+        control = mock_control_class.return_value
+        control.start_request.return_value = ControlRequest(request_id, "fingerprint")
+        mock_fetch.side_effect = RuntimeError("network unavailable")
 
         with pytest.raises(RuntimeError, match="Capture failed"):
-            ingest._ingest_url(
-                mock_hook,
-                "https://api.census.gov/data/2023/pep/ansfile.json",
-                uuid.uuid4(),
-            )
+            ingest._ingest_release(MagicMock(), release, uuid.uuid4())
 
-
-# ---------------------------------------------------------------------------
-# Public entry point tests
-# ---------------------------------------------------------------------------
+        control.finish_request.assert_called_once()
+        assert control.finish_request.call_args.args == (request_id,)
+        assert control.finish_request.call_args.kwargs["status"] == "error"
+        assert isinstance(
+            control.finish_request.call_args.kwargs["error"], RuntimeError
+        )
 
 
 class TestIngestCensusPep:
-    """Verify ingest_census_pep orchestrates the full capture chain."""
-
-    @patch("data_ingestion_toolbox.census_pep.ingest._build_urls")
-    @patch("data_ingestion_toolbox.census_pep.ingest._ingest_url")
+    @patch("data_ingestion_toolbox.census_pep.ingest._ingest_release")
     @patch("data_ingestion_toolbox.census_pep.ingest._get_hook")
     @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
-    def test_all_urls_captured(self, mock_ctrl, mock_get_hook, mock_ingest_url, mock_build_urls) -> None:
-        """All generated URLs are fetched and counted."""
-        mock_build_urls.return_value = [
-            "https://api.census.gov/data/2023/pep/ansfile.json",
-            "https://api.census.gov/data/2023/pep/intlfile.json",
-        ]
-        mock_ingest_url.return_value = MagicMock(payload_checksum="abc123")
-        mock_hook = MagicMock()
-        mock_get_hook.return_value = mock_hook
-        mock_ctrl_instance = MagicMock()
-        mock_ctrl.return_value = mock_ctrl_instance
+    def test_control_run_id_drives_every_capture(
+        self,
+        mock_control_class: MagicMock,
+        mock_get_hook: MagicMock,
+        mock_ingest_release: MagicMock,
+    ) -> None:
+        """Covers: ARC-002 — PEP captures reference the committed control run."""
+        run_id = uuid.uuid4()
+        control = mock_control_class.return_value
+        control.start_run.return_value = run_id
 
-        result = ingest.ingest_census_pep(years=range(2023, 2024), file_types=("ansfile", "intlfile"))
-        assert result == 2
-        assert mock_ingest_url.call_count == 2
-        mock_ctrl_instance.start_run.assert_called_once()
-        mock_ctrl_instance.finish_run.assert_called_once()
+        captured = ingest.ingest_census_pep(
+            dataset_codes=("pep_nst_alldata",),
+            vintage_years=(2025,),
+        )
 
-    @patch("data_ingestion_toolbox.census_pep.ingest._build_urls")
-    @patch("data_ingestion_toolbox.census_pep.ingest._ingest_url")
+        assert captured == 1
+        release = mock_ingest_release.call_args.args[1]
+        assert release.product_code == "NST-EST2025-ALLDATA"
+        assert mock_ingest_release.call_args.args[2] == run_id
+        control.finish_run.assert_called_once_with(run_id, status="success")
+
+    @patch("data_ingestion_toolbox.census_pep.ingest._ingest_release")
     @patch("data_ingestion_toolbox.census_pep.ingest._get_hook")
     @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
-    def test_partial_failure_counts_only_success(self, mock_ctrl, mock_get_hook, mock_ingest_url, mock_build_urls) -> None:
-        """Failed URLs are logged but don't stop ingestion; only successful counts."""
-        mock_build_urls.return_value = [
-            "https://api.census.gov/data/2023/pep/ansfile.json",
-            "https://api.census.gov/data/2023/pep/intlfile.json",
-        ]
-        mock_ingest_url.side_effect = [
+    def test_partial_failure_marks_run_error_and_raises(
+        self,
+        mock_control_class: MagicMock,
+        mock_get_hook: MagicMock,
+        mock_ingest_release: MagicMock,
+    ) -> None:
+        """Covers: ARC-002 — Partial PEP capture cannot report run success."""
+        run_id = uuid.uuid4()
+        control = mock_control_class.return_value
+        control.start_run.return_value = run_id
+        mock_ingest_release.side_effect = [
             MagicMock(payload_checksum="abc123"),
-            RuntimeError("Network error"),
+            RuntimeError("network unavailable"),
         ]
-        mock_hook = MagicMock()
-        mock_get_hook.return_value = mock_hook
-        mock_ctrl_instance = MagicMock()
-        mock_ctrl.return_value = mock_ctrl_instance
 
-        result = ingest.ingest_census_pep(years=range(2023, 2024), file_types=("ansfile", "intlfile"))
-        assert result == 1
-        mock_ctrl_instance.finish_run.assert_called_once()
+        with pytest.raises(RuntimeError, match="1 of 2 PEP releases failed"):
+            ingest.ingest_census_pep(
+                dataset_codes=("pep_nst_alldata", "pep_subcounty"),
+                vintage_years=(2025,),
+            )
 
-
-# ---------------------------------------------------------------------------
-# get_pep_api_columns test
-# ---------------------------------------------------------------------------
+        control.finish_run.assert_called_once()
+        assert control.finish_run.call_args.args == (run_id,)
+        assert control.finish_run.call_args.kwargs["status"] == "error"
 
 
 class TestGetPepApiColumns:
-    """Verify get_pep_api_columns returns column metadata."""
-
     @patch("data_ingestion_toolbox.census_pep.ingest._get_hook")
-    def test_returns_polars_dataframe(self, mock_get_hook) -> None:
-        """Returns a Polars DataFrame with expected columns."""
+    def test_returns_polars_dataframe(self, mock_get_hook: MagicMock) -> None:
+        """Covers: ETL-030 — PEP metadata query returns its declared columns."""
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            ("total", "Total population", "demographics", "Total", "integer", True, False),
-            ("under5", "Under 5 years", "demographics", "Total", "integer", True, False),
+            (
+                "total",
+                "Total population",
+                "demographics",
+                "Total",
+                "integer",
+                True,
+                False,
+            )
         ]
         mock_cursor.description = [
-            ("variable_code",), ("variable_label",), ("concept",), ("universe",),
-            ("data_type",), ("is_numeric",), ("is_geometry",),
+            ("variable_code",),
+            ("variable_label",),
+            ("concept",),
+            ("universe",),
+            ("data_type",),
+            ("is_numeric",),
+            ("is_geometry",),
         ]
-
         mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
-
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         mock_hook = MagicMock()
-        mock_hook.get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_hook.get_conn.return_value.__exit__ = MagicMock(return_value=None)
+        mock_hook.get_conn.return_value.__enter__.return_value = mock_conn
         mock_get_hook.return_value = mock_hook
 
-        import polars as pl
-        df = ingest.get_pep_api_columns()
-        assert isinstance(df, pl.DataFrame)
-        assert df.height == 2
-        assert "variable_code" in df.columns
-        assert "is_numeric" in df.columns
+        frame = ingest.get_pep_api_columns()
+
+        assert frame.height == 1
+        assert frame.columns == [
+            "variable_code",
+            "variable_label",
+            "concept",
+            "universe",
+            "data_type",
+            "is_numeric",
+            "is_geometry",
+        ]

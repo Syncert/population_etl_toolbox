@@ -40,6 +40,9 @@ def test_bootstrap_creates_metadata_capture_and_revision_tables(
         "raw_census.acs_datasets",
         "raw_bls.bls_datasets",
         "raw_fred.fred_datasets",
+        "silver_pep.pep_dataset",
+        "silver_pep.pep_release",
+        "silver_pep.observation_revision",
     }
     conn = postgres_connection_factory()
     try:

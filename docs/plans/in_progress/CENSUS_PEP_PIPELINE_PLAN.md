@@ -12,9 +12,9 @@
 
 **Last updated:** 2026-08-24
 
-**Current milestone:** PEP-001 dataset/vintage registry implementation before capture remediation
+**Current milestone:** PEP-002 lossless bulk capture and offline CSV replay
 
-**Next pickup:** Replace the disconnected `ansfile`/`intlfile` API request model with release-driven bulk CSV requests, then add representative current/prior fixtures without repairing downstream schemas around the obsolete model.
+**Next pickup:** Fix PEP request terminal states to use the shared control vocabulary (`captured`/`failed` rather than `success`/`error`), then make replay return the actual inserted row count so a second replay reports zero before rerunning the real capture-to-replay integration test.
 
 ### Completed in the current slice
 
@@ -27,10 +27,13 @@
 - [x] Froze official Vintage 2025 and prior Vintage 2024 bulk release contracts for national/state, county, and subcounty products.
 - [x] Added deterministic registry lookup, current-release selection, release discovery, and actual-vintage initialization.
 - [x] Replaced unusable runtime defaults with the existing `public_data` connection, `census_api` pool, 60-second timeout, and concurrency of two.
+- [x] Replaced invented `ansfile`/`intlfile` requests with registered bulk-release selection and lossless HTTP envelope capture.
+- [x] Added exact current/prior national fixtures and a current incorporated-place fixture from registered Census URLs.
+- [x] Aligned the SQL registry with all Python products/releases and wired migration 009 into authoritative bootstrap order.
 
 ### Remaining
 
-- [ ] PEP-001 — Complete fixtures, metric/source keys, and SQL alignment; Python release discovery is implemented and tested.
+- [x] PEP-001 — Implement the dataset/vintage registry and prove release discovery.
 - [ ] PEP-002 — Implement lossless API/bulk capture, completeness checks, and offline replay.
 - [ ] PEP-003 — Implement national/state and county totals/components silver data.
 - [ ] PEP-004 — Implement incorporated-place totals and geography reconciliation.
@@ -45,7 +48,30 @@
 - Focused red evidence: four registry tests initially failed because the default registry was empty, release lookup APIs were absent, and initialization returned vintage 2020.
 - Focused green evidence: `python -u -m pytest tests/unit/census_pep/test_config.py tests/unit/census_pep/test_registry.py -q --tb=short --maxfail=1` — **40 passed** on Python 3.13.5; only environment-local pytest cache permission warnings were emitted.
 - Formatting/lint evidence: `python -m ruff format ...` reformatted the four changed config/registry files; targeted `python -m ruff check ...` — **passed**.
-- Not yet validated: bulk response capture/replay, source fixtures, SQL registry alignment, Airflow runtime, PostgreSQL integration, and external Census reachability. This checkpoint is not ready for deployment.
+- At this earlier checkpoint, bulk replay, fixtures, SQL alignment, PostgreSQL integration, Airflow runtime, and external-source execution remained unvalidated; the following checkpoint supersedes the completed fixture/registry/database items.
+
+### 2026-08-24 PEP-001 completion and PEP-002 capture evidence
+
+- Capture defaults to the latest `published` release for each registered product; explicit dataset/vintage filters support deterministic prior-vintage replay and reject unknown combinations before database work.
+- HTTP capture retains source payload bytes, status, headers, media type, schema version, product revision, and sanitized request parameters. Retryable 429/500/502/503 and transport failures are bounded and recorded in durable request control state; other 4xx responses fail immediately.
+- The UUID returned by `CaptureControl.start_run` now drives every request/capture. A partial release failure marks the control run `error` and raises instead of reporting partial success.
+- Exact source fixtures are documented under `tests/fixtures/census_pep/`. The current/prior national rows prove a same-observation-year revision (`POPESTIMATE2024`: 340003797 in Vintage 2025 versus 340110988 in Vintage 2024); the place fixture retains `SUMLEV=162`, state `01`, and place `00124`.
+- Migration 009 now owns only the three registered datasets and six versioned releases, including separate observation ranges and geography-basis dates. It is present in both `sql/bootstrap/warehouse_manifest.json` and the Docker bootstrap mounts.
+- Unit evidence: `python -u -m pytest tests/unit/census_pep tests/unit/shared/test_warehouse_manifest.py -q --tb=short --maxfail=1` — **82 passed**.
+- Real database evidence: the pinned PostGIS 16/3.5 disposable service passed version verification, required PEP registry relation checks, and two consecutive authoritative-manifest applies — **3 passed**. The disposable container/network were removed afterward.
+- Targeted Ruff formatting/checks passed. Only environment-local pytest cache permission warnings were emitted.
+- That checkpoint's JSON replay and silver-key blockers are superseded by the replay implementation below; the external Airflow gate remains closed for the newly discovered control-state failure.
+
+### 2026-08-24 PEP-002 replay checkpoint
+
+- Replaced JSON-array parsing with strict offline bulk CSV replay using the registered release contract.
+- Replay now emits capture-positioned rows with separate dataset code, release vintage, product code, observation year, metric code, unit, source geography codes, exact source value, parsed numeric value, and value status.
+- Current/prior revision, incorporated-place identity, rate-unit, malformed CSV, sentinel, and invalid-numeric paths pass focused tests.
+- Replaced the speculative silver fact/metadata DDL with the proven `observation_revision` boundary and wired it into the authoritative manifest and Docker bootstrap immediately after migration 009.
+- Unit/manifest evidence after replay changes: **91 passed**; targeted Ruff formatting and lint passed.
+- Updated PostGIS bootstrap and idempotent manifest application passed **3 tests** with the new silver table.
+- The first real fixture capture-to-replay integration test is currently **failing before replay**: `CaptureControl.finish_request(..., status="success")` violates the shared request constraint, whose terminal states are `captured`, `empty`, `quarantined`, and `failed`. PEP currently also uses invalid `error` on failure. This is the immediate next fix and means the external Airflow gate remains closed.
+- After the status fix, the same integration test must prove first replay inserts rows, second replay inserts zero, and Vintage 2025 retains the revised 2024 observation. The disposable PostGIS service is still running for that continuation and should be removed when validation finishes.
 
 ## 2026-08-24 implementation quality assessment
 
