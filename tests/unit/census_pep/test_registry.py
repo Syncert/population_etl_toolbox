@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from data_ingestion_toolbox.census_pep.config import PEPConfig, PEPDataset
+from data_ingestion_toolbox.census_pep.config import CONFIG, PEPConfig, PEPDataset
 from data_ingestion_toolbox.census_pep.registry import (
     PEPRegistry,
     PEPReleaseSeries,
@@ -50,7 +50,7 @@ def registry_with_config(minimal_config: PEPConfig) -> PEPRegistry:
 
 
 def test_register_dataset_success(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.register_dataset — new dataset registered without error."""
+    """Covers: ETL-030 — Registry registers a new dataset."""
     new_ds = PEPDataset(
         code="new_ds",
         title="New Dataset",
@@ -62,7 +62,7 @@ def test_register_dataset_success(registry_with_config: PEPRegistry) -> None:
 
 
 def test_register_dataset_duplicate_raises(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.register_dataset — duplicate code raises ValueError."""
+    """Covers: ETL-030 — Registry rejects a duplicate dataset code."""
     dup_ds = PEPDataset(
         code="test_ds",
         title="Duplicate",
@@ -74,7 +74,7 @@ def test_register_dataset_duplicate_raises(registry_with_config: PEPRegistry) ->
 
 
 def test_get_dataset_returns_descriptor(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.get_dataset — returns the dataset or None."""
+    """Covers: ETL-030 — Registry returns a registered dataset."""
     ds = registry_with_config.get_dataset("test_ds")
     assert ds is not None
     assert ds.code == "test_ds"
@@ -82,19 +82,19 @@ def test_get_dataset_returns_descriptor(registry_with_config: PEPRegistry) -> No
 
 
 def test_get_dataset_missing_returns_none(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.get_dataset — missing code returns None."""
+    """Covers: ETL-030 — Registry returns None for an unknown dataset."""
     assert registry_with_config.get_dataset("nonexistent") is None
 
 
 def test_list_datasets_no_filter(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.list_datasets — returns all when unfiltered."""
+    """Covers: ETL-030 — Registry lists all datasets when unfiltered."""
     all_ds = registry_with_config.list_datasets()
     assert len(all_ds) == 1
     assert all_ds[0].code == "test_ds"
 
 
 def test_list_datasets_by_geography(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.list_datasets — geography filter works."""
+    """Covers: ETL-030 — Registry filters datasets by geography."""
     county_ds = PEPDataset(
         code="county_ds",
         title="County Dataset",
@@ -113,7 +113,7 @@ def test_list_datasets_by_geography(registry_with_config: PEPRegistry) -> None:
 
 
 def test_list_datasets_by_status(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.list_datasets — status filter works."""
+    """Covers: ETL-030 — Registry filters datasets by status."""
     pending_ds = PEPDataset(
         code="pending_ds",
         title="Pending Dataset",
@@ -133,7 +133,7 @@ def test_list_datasets_by_status(registry_with_config: PEPRegistry) -> None:
 def test_list_datasets_combined_filters(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.list_datasets — combined filters intersect."""
+    """Covers: ETL-030 — Registry intersects dataset filters."""
     state_active = PEPDataset(
         code="state_active",
         title="State Active",
@@ -163,7 +163,7 @@ def test_list_datasets_combined_filters(
 
 
 def test_register_vintage_and_get(registry_with_config: PEPRegistry) -> None:
-    """Covers: Registry.register_vintage — vintage stored and retrievable."""
+    """Covers: ETL-030 — Registry stores and retrieves a vintage."""
     vintage = PEPVintage(
         vintage_year=2020,
         decennial_base=2020,
@@ -182,7 +182,7 @@ def test_register_vintage_and_get(registry_with_config: PEPRegistry) -> None:
 def test_get_current_vintage_returns_most_recent(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.get_current_vintage — returns the latest current."""
+    """Covers: ETL-030 — Registry returns the latest current vintage."""
     v2019 = PEPVintage(
         vintage_year=2019,
         decennial_base=2020,
@@ -208,7 +208,7 @@ def test_get_current_vintage_returns_most_recent(
 def test_get_current_vintage_none_when_none_current(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.get_current_vintage — None when no current vintage."""
+    """Covers: ETL-030 — Registry handles a missing current vintage."""
     v2019 = PEPVintage(
         vintage_year=2019,
         decennial_base=2020,
@@ -228,7 +228,7 @@ def test_get_current_vintage_none_when_none_current(
 def test_register_vintage_creates_series(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.register_vintage — creates release series for new dataset."""
+    """Covers: ETL-030 — Registry creates a dataset release series."""
     vintage = PEPVintage(
         vintage_year=2020,
         decennial_base=2020,
@@ -250,7 +250,7 @@ def test_register_vintage_creates_series(
 def test_register_vintage_updates_existing_series(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.register_vintage — extends series vintages tuple."""
+    """Covers: ETL-030 — Registry extends a dataset release series."""
     v2019 = PEPVintage(
         vintage_year=2019,
         decennial_base=2020,
@@ -279,7 +279,7 @@ def test_register_vintage_updates_existing_series(
 def test_list_release_series_status_filter(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.list_release_series — status filter works."""
+    """Covers: ETL-030 — Registry filters release series by status."""
     v2020 = PEPVintage(
         vintage_year=2020,
         decennial_base=2020,
@@ -300,7 +300,7 @@ def test_list_release_series_status_filter(
 def test_list_release_series_vintage_filter(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.list_release_series — vintage filter works."""
+    """Covers: ETL-030 — Registry filters release series by vintage."""
     v2015 = PEPVintage(
         vintage_year=2015,
         decennial_base=2010,
@@ -318,9 +318,7 @@ def test_list_release_series_vintage_filter(
     registry_with_config.register_vintage(v2015)
     registry_with_config.register_vintage(v2020)
 
-    recent = registry_with_config.list_release_series(
-        has_vintage_at_least=2018
-    )
+    recent = registry_with_config.list_release_series(has_vintage_at_least=2018)
     assert len(recent) == 1
     assert recent[0].dataset_code == "test_ds"
 
@@ -328,7 +326,7 @@ def test_list_release_series_vintage_filter(
 def test_release_series_is_complete_property(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: PEPReleaseSeries.is_complete — True only when completed."""
+    """Covers: ETL-030 — Release series reports completion state."""
     series_pending = PEPReleaseSeries(
         dataset_code="test",
         vintages=(2020,),
@@ -356,7 +354,7 @@ def test_release_series_is_complete_property(
 def test_initialize_registers_decennial_vintage(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.initialize — registers decennial base vintage."""
+    """Covers: ETL-030 — Legacy registry derives a decennial vintage."""
     registry_with_config.initialize()
     assert 2020 in registry_with_config.vintages
 
@@ -368,7 +366,7 @@ def test_initialize_registers_decennial_vintage(
 def test_initialize_is_idempotent(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.initialize — calling twice does not duplicate."""
+    """Covers: ETL-030 — Registry initialization is idempotent."""
     registry_with_config.initialize()
     first_count = len(registry_with_config.vintages)
     registry_with_config.initialize()
@@ -378,7 +376,7 @@ def test_initialize_is_idempotent(
 def test_reset_clears_vintages_and_series(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.reset — clears runtime state."""
+    """Covers: ETL-030 — Registry reset clears runtime state."""
     vintage = PEPVintage(
         vintage_year=2020,
         decennial_base=2020,
@@ -402,7 +400,7 @@ def test_reset_clears_vintages_and_series(
 def test_discover_releases_returns_summaries(
     registry_with_config: PEPRegistry,
 ) -> None:
-    """Covers: Registry.discover_releases — returns list of release dicts."""
+    """Covers: ETL-030 — Registry discovers legacy release summaries."""
     v2019 = PEPVintage(
         vintage_year=2019,
         decennial_base=2020,
@@ -437,7 +435,7 @@ def test_discover_releases_returns_summaries(
 def test_get_registry_returns_singleton(
     minimal_config: PEPConfig,
 ) -> None:
-    """Covers: get_registry — returns same instance on repeated calls."""
+    """Covers: ETL-030 — Default registry is a singleton."""
     reset_registry()
     reg1 = get_registry(minimal_config)
     reg2 = get_registry(minimal_config)
@@ -447,14 +445,14 @@ def test_get_registry_returns_singleton(
 def test_get_registry_uses_config(
     minimal_config: PEPConfig,
 ) -> None:
-    """Covers: get_registry — registry is initialized with provided config."""
+    """Covers: ETL-030 — Default registry accepts an explicit config."""
     reset_registry()
     reg = get_registry(minimal_config)
     assert "test_ds" in reg.datasets
 
 
 def test_reset_registry_clears_singleton() -> None:
-    """Covers: reset_registry — clears the module-level singleton."""
+    """Covers: ETL-030 — Default registry singleton can be reset."""
     reset_registry()
     reg1 = get_registry()
     reset_registry()
@@ -467,8 +465,66 @@ def test_reset_registry_clears_singleton() -> None:
 # -----------------------------------------------------------------------
 
 
-def test_default_registry_empty_datasets() -> None:
-    """Covers: PEPRegistry — default config has no curated datasets."""
+def test_default_registry_uses_curated_products() -> None:
+    """Covers: ETL-030 — Default registry exposes supported PEP products."""
     reset_registry()
     reg = PEPRegistry()
-    assert len(reg.datasets) == 0
+    assert set(reg.datasets) == {
+        "pep_nst_alldata",
+        "pep_county_alldata",
+        "pep_subcounty",
+    }
+
+
+def test_registry_exposes_versioned_release_contract() -> None:
+    """Covers: ETL-030 — Dataset/vintage resolves to one bulk product."""
+    reg = PEPRegistry(CONFIG)
+
+    release = reg.get_release("pep_nst_alldata", 2025)
+
+    assert release is not None
+    assert release.product_code == "NST-EST2025-ALLDATA"
+    assert release.observation_start_year == 2020
+    assert release.observation_end_year == 2025
+    assert release.status == "published"
+    assert release.data_url.endswith("/NST-EST2025-ALLDATA.csv")
+    assert release.layout_url.endswith("/NST-EST2025-ALLDATA.pdf")
+
+
+def test_registry_selects_current_release_per_dataset() -> None:
+    """Covers: ETL-030 — Current selection uses publication status."""
+    reg = PEPRegistry(CONFIG)
+
+    releases = reg.list_releases(dataset_code="pep_county_alldata")
+    current = reg.get_current_release("pep_county_alldata")
+
+    assert [release.vintage_year for release in releases] == [2024, 2025]
+    assert current is not None
+    assert current.vintage_year == 2025
+    assert current.status == "published"
+
+
+def test_initialize_discovers_actual_release_vintages() -> None:
+    """Covers: ETL-030 — Initialization derives configured release vintages."""
+    reg = PEPRegistry(CONFIG)
+
+    reg.initialize()
+    discovered = reg.discover_releases()
+
+    assert set(reg.vintages) == {2024, 2025}
+    assert reg.get_current_vintage() is not None
+    assert reg.get_current_vintage().vintage_year == 2025
+    assert len(discovered) == 6
+    assert discovered[-1] == {
+        "dataset_code": "pep_subcounty",
+        "vintage_year": 2025,
+        "product_code": "SUB-EST2025",
+        "release_date": "2026-05-14",
+        "status": "published",
+        "observation_start_year": 2020,
+        "observation_end_year": 2025,
+        "geography_basis_date": "2025-01-01",
+        "schema_version": "sub-est2025",
+        "data_url": "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/cities/totals/sub-est2025.csv",
+        "layout_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-2025/SUB-EST2025.pdf",
+    }

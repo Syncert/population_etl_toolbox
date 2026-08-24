@@ -13,7 +13,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from data_ingestion_toolbox.census_pep.config import PEPDataset, PEPConfig
+from data_ingestion_toolbox.census_pep.config import (
+    CONFIG,
+    PEPConfig,
+    PEPDataset,
+    PEPRelease,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Vintage descriptor
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class PEPVintage:
@@ -44,6 +50,7 @@ class PEPVintage:
 # ---------------------------------------------------------------------------
 # Release series
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class PEPReleaseSeries:
@@ -73,6 +80,7 @@ class PEPReleaseSeries:
 # Registry
 # ---------------------------------------------------------------------------
 
+
 class PEPRegistry:
     """Immutable dataset and vintage registry.
 
@@ -81,8 +89,12 @@ class PEPRegistry:
     """
 
     def __init__(self, config: PEPConfig | None = None) -> None:
-        self._config = config or PEPConfig()
+        self._config = CONFIG if config is None else config
         self._datasets: dict[str, PEPDataset] = dict(self._config.datasets)
+        self._releases: dict[tuple[str, int], PEPRelease] = {
+            (release.dataset_code, release.vintage_year): release
+            for release in self._config.releases
+        }
         self._vintages: dict[int, PEPVintage] = {}
         self._series: dict[str, PEPReleaseSeries] = {}
         self._initialized = False
@@ -102,6 +114,11 @@ class PEPRegistry:
         """Return a copy of the release series registry."""
         return dict(self._series)
 
+    @property
+    def releases(self) -> dict[tuple[str, int], PEPRelease]:
+        """Return versioned release contracts keyed by dataset and vintage."""
+        return dict(self._releases)
+
     # ------------------------------------------------------------------
     # Dataset registration
     # ------------------------------------------------------------------
@@ -116,9 +133,7 @@ class PEPRegistry:
             ValueError: If a dataset with the same code already exists.
         """
         if dataset.code in self._datasets:
-            raise ValueError(
-                f"dataset already registered: {dataset.code}"
-            )
+            raise ValueError(f"dataset already registered: {dataset.code}")
         self._datasets[dataset.code] = dataset
         logger.info("Registered dataset: %s", dataset.code)
 
@@ -160,20 +175,53 @@ class PEPRegistry:
         results = list(self._datasets.values())
 
         if geography_level is not None:
-            results = [
-                ds
-                for ds in results
-                if geography_level in ds.geography_levels
-            ]
+            results = [ds for ds in results if geography_level in ds.geography_levels]
 
         if release_status is not None:
-            results = [
-                ds
-                for ds in results
-                if ds.release_status == release_status
-            ]
+            results = [ds for ds in results if ds.release_status == release_status]
 
         return results
+
+    # ------------------------------------------------------------------
+    # Versioned release lookup
+    # ------------------------------------------------------------------
+
+    def get_release(
+        self,
+        dataset_code: str,
+        vintage_year: int,
+    ) -> PEPRelease | None:
+        """Return the exact bulk-file contract for a dataset vintage."""
+        return self._releases.get((dataset_code, vintage_year))
+
+    def list_releases(
+        self,
+        *,
+        dataset_code: str | None = None,
+        status: str | None = None,
+    ) -> list[PEPRelease]:
+        """List stable release contracts in dataset/vintage order."""
+        releases = self._releases.values()
+        if dataset_code is not None:
+            releases = (
+                release for release in releases if release.dataset_code == dataset_code
+            )
+        if status is not None:
+            releases = (release for release in releases if release.status == status)
+        return sorted(
+            releases,
+            key=lambda release: (release.dataset_code, release.vintage_year),
+        )
+
+    def get_current_release(self, dataset_code: str) -> PEPRelease | None:
+        """Return the latest published release for a dataset."""
+        published = self.list_releases(
+            dataset_code=dataset_code,
+            status="published",
+        )
+        if not published:
+            return None
+        return max(published, key=lambda release: release.vintage_year)
 
     # ------------------------------------------------------------------
     # Vintage registration and discovery
@@ -192,7 +240,9 @@ class PEPRegistry:
         for ds_code in vintage.datasets:
             if ds_code in self._series:
                 series = self._series[ds_code]
-                new_vintages = tuple(sorted(set(series.vintages) | {vintage.vintage_year}))
+                new_vintages = tuple(
+                    sorted(set(series.vintages) | {vintage.vintage_year})
+                )
                 self._series[ds_code] = PEPReleaseSeries(
                     dataset_code=ds_code,
                     vintages=new_vintages,
@@ -226,9 +276,7 @@ class PEPRegistry:
         Returns:
             The current vintage, or None if no current vintage is registered.
         """
-        current_vintages = [
-            v for v in self._vintages.values() if v.is_current
-        ]
+        current_vintages = [v for v in self._vintages.values() if v.is_current]
         if not current_vintages:
             return None
         return max(current_vintages, key=lambda v: v.vintage_year)
@@ -269,10 +317,7 @@ class PEPRegistry:
             results = [s for s in results if s.status == status]
 
         if has_vintage_at_least is not None:
-            results = [
-                s for s in results
-                if s.latest_vintage >= has_vintage_at_least
-            ]
+            results = [s for s in results if s.latest_vintage >= has_vintage_at_least]
 
         return results
 
@@ -293,6 +338,27 @@ class PEPRegistry:
         Returns:
             List of release summary dictionaries.
         """
+        if self._releases:
+            return [
+                {
+                    "dataset_code": release.dataset_code,
+                    "vintage_year": release.vintage_year,
+                    "product_code": release.product_code,
+                    "release_date": release.release_date,
+                    "status": release.status,
+                    "observation_start_year": release.observation_start_year,
+                    "observation_end_year": release.observation_end_year,
+                    "geography_basis_date": release.geography_basis_date,
+                    "schema_version": release.schema_version,
+                    "data_url": release.data_url,
+                    "layout_url": release.layout_url,
+                }
+                for release in sorted(
+                    self._releases.values(),
+                    key=lambda item: (item.vintage_year, item.dataset_code),
+                )
+            ]
+
         releases = []
         for year, vintage in sorted(self._vintages.items()):
             series_info = {}
@@ -303,13 +369,15 @@ class PEPRegistry:
                         "vintages": series.vintages,
                         "status": series.status,
                     }
-            releases.append({
-                "vintage_year": year,
-                "is_current": vintage.is_current,
-                "dataset_count": len(vintage.datasets),
-                "datasets": sorted(vintage.datasets),
-                "series": series_info,
-            })
+            releases.append(
+                {
+                    "vintage_year": year,
+                    "is_current": vintage.is_current,
+                    "dataset_count": len(vintage.datasets),
+                    "datasets": sorted(vintage.datasets),
+                    "series": series_info,
+                }
+            )
         return releases
 
     # ------------------------------------------------------------------
@@ -325,8 +393,70 @@ class PEPRegistry:
         if self._initialized:
             return
 
-        # Register the decennial base vintage
-        decennial_bases = {ds.decennial_base for ds in self._datasets.values() if ds.decennial_base}
+        if self._releases:
+            current_year = max(
+                release.vintage_year
+                for release in self._releases.values()
+                if release.status == "published"
+            )
+            release_years = sorted(
+                {release.vintage_year for release in self._releases.values()}
+            )
+            for year in release_years:
+                year_releases = [
+                    release
+                    for release in self._releases.values()
+                    if release.vintage_year == year
+                ]
+                dataset_codes = frozenset(
+                    release.dataset_code for release in year_releases
+                )
+                bases = {
+                    self._datasets[code].decennial_base
+                    for code in dataset_codes
+                    if self._datasets[code].decennial_base is not None
+                }
+                if len(bases) != 1:
+                    raise ValueError(f"vintage {year} must have one decennial base")
+                self.register_vintage(
+                    PEPVintage(
+                        vintage_year=year,
+                        decennial_base=bases.pop(),
+                        release_date=max(
+                            release.release_date for release in year_releases
+                        ),
+                        is_current=year == current_year,
+                        datasets=dataset_codes,
+                    )
+                )
+
+            for dataset_code in self._datasets:
+                dataset_releases = self.list_releases(dataset_code=dataset_code)
+                if not dataset_releases:
+                    continue
+                vintages = tuple(release.vintage_year for release in dataset_releases)
+                self._series[dataset_code] = PEPReleaseSeries(
+                    dataset_code=dataset_code,
+                    vintages=vintages,
+                    earliest_vintage=min(vintages),
+                    latest_vintage=max(vintages),
+                    status=(
+                        "active"
+                        if any(
+                            release.status == "published"
+                            for release in dataset_releases
+                        )
+                        else "completed"
+                    ),
+                )
+
+            self._initialized = True
+            return
+
+        # Compatibility path for caller-provided datasets without releases.
+        decennial_bases = {
+            ds.decennial_base for ds in self._datasets.values() if ds.decennial_base
+        }
         for base in decennial_bases:
             # The decennial base year is the current vintage
             vintage = PEPVintage(
@@ -335,7 +465,8 @@ class PEPRegistry:
                 release_date=None,
                 is_current=True,
                 datasets=frozenset(
-                    ds.code for ds in self._datasets.values()
+                    ds.code
+                    for ds in self._datasets.values()
                     if ds.decennial_base == base
                 ),
             )

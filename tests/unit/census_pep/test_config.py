@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from data_ingestion_toolbox.census_pep import config
@@ -11,15 +12,16 @@ pytestmark = pytest.mark.unit
 
 
 def test_config_has_curated_datasets() -> None:
-    """Covers: PEP-001.2 — default config includes curated datasets."""
-    assert len(config.CONFIG.datasets) > 0
-    assert "pepprst2020" in config.CONFIG.datasets
-    assert "pecp2020" in config.CONFIG.datasets
-    assert "gvc2020" in config.CONFIG.datasets
+    """Covers: ETL-030 — default config includes curated datasets."""
+    assert set(config.CONFIG.datasets) == {
+        "pep_nst_alldata",
+        "pep_county_alldata",
+        "pep_subcounty",
+    }
 
 
 def test_config_pepdataset_immutable() -> None:
-    """Covers: PEP-001.2 — PEPDataset is immutable after construction."""
+    """Covers: ETL-030 — PEPDataset is immutable after construction."""
     ds = config.PEPDataset(
         code="test_ds",
         title="Test Dataset",
@@ -30,7 +32,7 @@ def test_config_pepdataset_immutable() -> None:
 
 
 def test_config_pepdataset_hash_equality() -> None:
-    """Covers: PEP-001.2 — PEPDataset hash is based on code."""
+    """Covers: ETL-030 — PEPDataset hash is based on code."""
     ds1 = config.PEPDataset(code="dup", title="Dup")
     ds2 = config.PEPDataset(code="dup", title="Dup different title")
     assert hash(ds1) == hash(ds2)
@@ -38,14 +40,14 @@ def test_config_pepdataset_hash_equality() -> None:
 
 
 def test_config_with_api_key_returns_new_instance() -> None:
-    """Covers: PEP-001.2 — with_api_key returns a new config with key set."""
+    """Covers: ETL-030 — with_api_key returns a new config with key set."""
     new_config = config.CONFIG.with_api_key("test-key-123")
     assert new_config.has_api_key
     assert new_config.get_api_key() == "test-key-123"
 
 
 def test_config_get_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Covers: PEP-001.2 — get_api_key falls back to environment variable."""
+    """Covers: ETL-030 — get_api_key falls back to environment variable."""
     monkeypatch.setenv(config.CENSUS_API_KEY_ENV, "env-key-456")
     env_config = config.PEPConfig()
     assert env_config.has_api_key
@@ -53,7 +55,7 @@ def test_config_get_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_config_get_api_key_raises_without_key() -> None:
-    """Covers: PEP-001.2 — get_api_key raises when no key available."""
+    """Covers: ETL-030 — get_api_key raises when no key available."""
     # Ensure the env var is not set
     env_key = config.CENSUS_API_KEY_ENV
     if env_key in os.environ:
@@ -67,48 +69,54 @@ def test_config_get_api_key_raises_without_key() -> None:
 
 
 def test_config_frozen_dataclass() -> None:
-    """Covers: PEP-001.2 — PEPConfig is a frozen dataclass."""
+    """Covers: ETL-030 — PEPConfig is a frozen dataclass."""
     cfg = config.PEPConfig(request_timeout=60.0, max_concurrency=8)
     with pytest.raises(Exception):  # dataclasses.FrozenInstanceError
         cfg.request_timeout = 10.0  # type: ignore[misc]
 
 
 def test_config_default_values() -> None:
-    """Covers: PEP-001.2 — PEPConfig has sensible defaults."""
+    """Covers: ETL-030 — PEPConfig has sensible defaults."""
     cfg = config.PEPConfig()
-    assert cfg.request_timeout == 30.0
-    assert cfg.max_concurrency == 4
-    assert cfg.airflow_pool == "census_pep"
+    assert cfg.request_timeout == 60.0
+    assert cfg.max_concurrency == 2
+    assert cfg.airflow_pool == "census_api"
 
 
 def test_config_curated_dataset_geography_levels() -> None:
-    """Covers: PEP-001.2 — curated datasets have correct geography levels."""
-    pepprst = config.CONFIG.datasets["pepprst2020"]
-    assert "national" in pepprst.geography_levels
-    assert "state" in pepprst.geography_levels
+    """Covers: ETL-030 — curated products declare official geographies."""
+    nst = config.CONFIG.datasets["pep_nst_alldata"]
+    assert nst.geography_levels == frozenset(
+        {"national", "region", "division", "state"}
+    )
+    assert nst.summary_levels == frozenset({"010", "020", "030", "040"})
 
-    pecp = config.CONFIG.datasets["pecp2020"]
-    assert "county" in pecp.geography_levels
-    assert "state" in pecp.geography_levels
+    county = config.CONFIG.datasets["pep_county_alldata"]
+    assert county.geography_levels == frozenset({"state", "county"})
+    assert county.summary_levels == frozenset({"040", "050"})
 
-    gvc = config.CONFIG.datasets["gvc2020"]
-    assert "place" in gvc.geography_levels
-    assert "state" in gvc.geography_levels
+    subcounty = config.CONFIG.datasets["pep_subcounty"]
+    assert "place" in subcounty.geography_levels
+    assert subcounty.summary_levels == frozenset(
+        {"040", "050", "061", "071", "157", "162", "170", "172"}
+    )
 
 
 def test_config_curated_dataset_variables() -> None:
-    """Covers: PEP-001.2 — curated datasets include population variables."""
-    pepprst = config.CONFIG.datasets["pepprst2020"]
+    """Covers: ETL-030 — curated datasets use official variable families."""
+    nst = config.CONFIG.datasets["pep_nst_alldata"]
     expected_vars = {
-        "POPULATION",
+        "ESTIMATESBASE",
+        "POPESTIMATE",
         "BIRTHS",
         "DEATHS",
-        "NATURAL_INCREASE",
-        "DOMESTIC_MIGRATION",
-        "INTERNATIONAL_MIGRATION",
-        "TOTAL_CHANGE",
+        "NATURALCHG",
+        "DOMESTICMIG",
+        "INTERNATIONALMIG",
+        "NPOPCHG",
+        "RNETMIG",
     }
-    assert expected_vars.issubset(pepprst.variables)
+    assert expected_vars.issubset(nst.variables)
 
 
 def test_config_freezes_official_current_bulk_products() -> None:
@@ -146,7 +154,9 @@ def test_config_separates_current_and_prior_release_vintages() -> None:
         ("pep_subcounty", 2024),
         ("pep_subcounty", 2025),
     }
-    assert all(release.observation_start_year == 2020 for release in config.CONFIG.releases)
+    assert all(
+        release.observation_start_year == 2020 for release in config.CONFIG.releases
+    )
     assert all(
         release.observation_end_year == release.vintage_year
         for release in config.CONFIG.releases

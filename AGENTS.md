@@ -295,3 +295,29 @@ If terminal work is delegated to another subagent:
 - require the subagent to return concrete results rather than silently completing without evidence.
 
 The parent agent remains responsible for ensuring all delegated commands obey repository terminal-safety constraints.
+
+### External research rules
+
+Internet research is permitted and should be used when implementation depends
+on information not reliably established by the repository.
+
+Use authoritative sources before guessing about:
+
+- API endpoints, schemas, parameters, authentication, and rate limits
+- current library/framework behavior
+- external dataset definitions and geographic coverage
+- compatibility or version-specific behavior
+- unfamiliar errors that cannot be resolved from repository context
+
+Prefer primary sources in this order:
+
+1. Official documentation
+2. Official source repositories / release notes
+3. Standards or government documentation
+4. Reputable technical references
+
+Do not repeatedly search the web when the repository or an authoritative
+source already answers the question.
+
+After research, return to implementation. Web research is supporting work,
+not a substitute for modifying and testing the repository.

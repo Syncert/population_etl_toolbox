@@ -12,9 +12,9 @@
 
 **Last updated:** 2026-08-24
 
-**Current milestone:** Production-readiness remediation of the initial PEP scaffold before its first external-Airflow test
+**Current milestone:** PEP-001 dataset/vintage registry implementation before capture remediation
 
-**Next pickup:** Freeze one narrow, official PEP product/vintage/geography contract and replace the disconnected `ansfile`/`intlfile` request model before repairing orchestration or downstream schemas.
+**Next pickup:** Replace the disconnected `ansfile`/`intlfile` API request model with release-driven bulk CSV requests, then add representative current/prior fixtures without repairing downstream schemas around the obsolete model.
 
 ### Completed in the current slice
 
@@ -24,15 +24,28 @@
 - [x] Audited the initial implementation against the source-adapter, testing, bootstrap/re-ingestion, and data-layer ownership contracts.
 - [x] Ran focused PEP unit/DAG, DagBag, repository-hygiene, Ruff, formatting, compilation, and fixture-replay diagnostics.
 - [x] Recorded the blocking defects and an ordered remediation path for the first external-Airflow test.
+- [x] Froze official Vintage 2025 and prior Vintage 2024 bulk release contracts for national/state, county, and subcounty products.
+- [x] Added deterministic registry lookup, current-release selection, release discovery, and actual-vintage initialization.
+- [x] Replaced unusable runtime defaults with the existing `public_data` connection, `census_api` pool, 60-second timeout, and concurrency of two.
 
 ### Remaining
 
-- [ ] PEP-001 — Implement the dataset/vintage registry and prove release discovery.
+- [ ] PEP-001 — Complete fixtures, metric/source keys, and SQL alignment; Python release discovery is implemented and tested.
 - [ ] PEP-002 — Implement lossless API/bulk capture, completeness checks, and offline replay.
 - [ ] PEP-003 — Implement national/state and county totals/components silver data.
 - [ ] PEP-004 — Implement incorporated-place totals and geography reconciliation.
 - [ ] PEP-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
 - [ ] PEP-006 — Add demographic-characteristics datasets after the totals contract is proven.
+
+### 2026-08-24 PEP-001 implementation evidence
+
+- The supported product codes are `pep_nst_alldata`, `pep_county_alldata`, and `pep_subcounty`; each uses the official Census bulk CSV transport and an explicitly versioned parser/layout contract.
+- Six immutable release records distinguish the 2024/2025 release vintage from the 2020-through-vintage observation range, publication status, release date, geography-basis date, schema version, data URL, and layout URL.
+- `PEPRegistry` now defaults to the curated config, resolves an exact dataset/vintage, selects only the latest `published` release as current, and derives 2024/2025 vintage summaries from releases instead of falsely treating the 2020 decennial base as the current vintage.
+- Focused red evidence: four registry tests initially failed because the default registry was empty, release lookup APIs were absent, and initialization returned vintage 2020.
+- Focused green evidence: `python -u -m pytest tests/unit/census_pep/test_config.py tests/unit/census_pep/test_registry.py -q --tb=short --maxfail=1` — **40 passed** on Python 3.13.5; only environment-local pytest cache permission warnings were emitted.
+- Formatting/lint evidence: `python -m ruff format ...` reformatted the four changed config/registry files; targeted `python -m ruff check ...` — **passed**.
+- Not yet validated: bulk response capture/replay, source fixtures, SQL registry alignment, Airflow runtime, PostgreSQL integration, and external Census reachability. This checkpoint is not ready for deployment.
 
 ## 2026-08-24 implementation quality assessment
 
@@ -358,11 +371,11 @@ PEP products are released on different annual schedules by geography and demogra
 
 ### PEP-002 — Capture and offline replay
 
-- Implement Census API and bulk-file capture through the shared raw/control foundation.
+- Implement registered Census bulk-file capture through the shared raw/control foundation; add API transport only for a separately verified product contract.
 - Capture metadata/layouts and observations before parsing.
 - Add deterministic slices, completeness manifests, schema-drift quarantine, and offline replay.
 
-**Acceptance:** Fixtures for API and subcounty bulk data replay with network disabled, and incomplete state/place files cannot publish.
+**Acceptance:** Fixtures for the registered national/state, county, and subcounty bulk products replay with network disabled, and incomplete state/place files cannot publish.
 
 ### PEP-003 — National/state and county totals/components
 
