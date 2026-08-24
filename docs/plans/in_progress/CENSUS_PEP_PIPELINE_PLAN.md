@@ -2,25 +2,28 @@
 
 ## Plan status
 
-- **Status:** Proposed; PEP is described in product documents but no adapter is currently implemented
-- **Last updated:** 2026-08-18
+- **Status:** In progress; an initial scaffold exists but is not operational or safe to deploy
+- **Last updated:** 2026-08-24
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-24
 
-**Current milestone:** Planning complete; implementation has not started
+**Current milestone:** Production-readiness remediation of the initial PEP scaffold before its first external-Airflow test
 
-**Next pickup:** Complete PEP-001 by registering the first totals/components datasets and freezing their vintage and geography contracts.
+**Next pickup:** Freeze one narrow, official PEP product/vintage/geography contract and replace the disconnected `ansfile`/`intlfile` request model before repairing orchestration or downstream schemas.
 
 ### Completed in the current slice
 
 - [x] Defined the initial national/state, county, and incorporated-place product sequence.
 - [x] Defined separate observation-year, release-vintage, revision, and geography-basis contracts.
 - [x] Split delivery into acceptance-tested registry, capture/replay, silver, publication, and follow-on demographic phases.
+- [x] Audited the initial implementation against the source-adapter, testing, bootstrap/re-ingestion, and data-layer ownership contracts.
+- [x] Ran focused PEP unit/DAG, DagBag, repository-hygiene, Ruff, formatting, compilation, and fixture-replay diagnostics.
+- [x] Recorded the blocking defects and an ordered remediation path for the first external-Airflow test.
 
 ### Remaining
 
@@ -30,6 +33,176 @@
 - [ ] PEP-004 — Implement incorporated-place totals and geography reconciliation.
 - [ ] PEP-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
 - [ ] PEP-006 — Add demographic-characteristics datasets after the totals contract is proven.
+
+## 2026-08-24 implementation quality assessment
+
+### Readiness verdict
+
+The current diff is a scaffold, not an operational pipeline. It must not be deployed to the external Airflow instance yet. The DAG parses, but its first task execution will fail because required configuration fields do not exist. If that is bypassed, capture/control lineage fails, no captured response is replayed into silver, the silver upsert contains deterministic runtime and SQL errors, the gold refresh references nonexistent objects, and the final publisher task has no publisher view to read.
+
+Python compilation passing is not evidence of pipeline operability. The new mock-heavy tests allow several production failures to remain unexecuted.
+
+### P0 blockers before any external run
+
+#### 1. Source products and requests are not evidence-backed
+
+- `ingest.py` constructs `/{year}/pep/ansfile.json` and `intlfile.json` requests for 2020 through 2026 without Census `get`, geography, or API-key parameters.
+- The curated registry defines different dataset paths, but ingestion never consumes that registry.
+- The asserted annual availability, variables, geographies, and bulk paths have not been proven against official release metadata.
+- The Census API key accessor exists but is never used by the HTTP request.
+- The checked-in `representative.json` fixture is an array of objects, while the replay parser requires the Census two-dimensional array format.
+
+Required update:
+
+1. Inventory official Census API and bulk products and record the exact product identifier, vintage, release identity, supported geography, variable/layout version, publication status, and geography basis.
+2. Select one narrow initial vertical slice with a reviewed current/prior-vintage fixture.
+3. Build requests exclusively from that registry, including request-time `CENSUS_API_KEY`, deterministic slicing, real response metadata, and a completeness manifest.
+4. Treat an unsupported product/vintage, missing slice, changed layout, or zero-capture release as a failed/incomplete release rather than success.
+
+#### 2. DAG configuration fails at task runtime
+
+- `CONFIG.years` and `CONFIG.file_types` do not exist.
+- `CONFIG.postgres_conn_id` defaults to `None`, while the DAG calls `.strip()` on it.
+- Configuration names the `census_pep` pool while the DAG uses `census_api`.
+- `check_pep_api` is not assigned to the expected API pool, does not use the required key, and records failed checks without failing the task.
+- The `refresh_gold_geography` task performs no geography refresh or prerequisite validation; it only sets transaction timeouts.
+
+Required update:
+
+- Define and validate nonempty source scope, PostgreSQL connection ID, timeouts, concurrency, retry policy, schedule, and one consistent Airflow pool without import-time I/O.
+- Add a shared-geography prerequisite task that verifies the required nation/state/county/place reference coverage before planning PEP work.
+- Make release discovery and reachability failures typed, sanitized task failures rather than informational dictionaries.
+- Use `schedule`, not the deprecated `schedule_interval` argument.
+
+#### 3. Capture/control state is internally inconsistent
+
+- `ingest_census_pep()` creates a UUID, calls `CaptureControl.start_run()`, and discards the different committed run UUID returned by that method. `start_request()` therefore references a run that does not exist.
+- `_ingest_url()` marks a failed request as `error` and then overwrites it to `success` in `finally`.
+- Per-URL failures are swallowed; the overall run is always marked successful, including partial or zero-capture runs.
+- Transport retries are not reflected in control state, all HTTP status errors are retried, and actual allowlisted response headers are not retained.
+- URL parsing records the filename rather than the PEP vintage as `source_revision`.
+
+Required update:
+
+- Use the UUID returned by `start_run()` throughout the run and finish it exactly once as success or failure.
+- Give every deterministic product/vintage/geography slice a control record and bounded retry history.
+- Commit the exact successful response capture before parsing, replay that capture immediately, quarantine typed parser/schema failures with capture lineage, and fail incomplete releases.
+- Preserve actual allowlisted headers, checksum, retrieval time, media type, request identity, product/vintage revision, and source parameters without credentials.
+
+#### 4. Capture-to-silver replay is disconnected and under-specified
+
+- `replay_pep_capture()` is never called by ingestion or the DAG, so `silver_pep.observation_revision` remains empty after capture.
+- `_PEP_REQUIRED_GEO` is unused and contains a misspelled `diviston` key.
+- Header handling is case-sensitive and would treat source metadata such as uppercase `NAME` as a numeric measure.
+- The parser does not retain a registered dataset/release identity, distinct PEP vintage and estimate period, measure metadata, geography basis, or completeness lineage.
+- There are no replay tests for the checked-in fixture, malformed headers, changed layouts, missing state/place slices, or network-disabled replay.
+
+Required update:
+
+- Create reviewed fixtures in the exact captured media format for each initial API/bulk contract.
+- Parse the registered product layout into source-faithful observation revisions, preserving original strings and explicit absent/sentinel/invalid status.
+- Extract estimate dates from documented variables/fields rather than treating the request year as both vintage and observation year.
+- Exercise capture-to-revision replay twice with network disabled and prove identical output.
+
+#### 5. Silver transformation is nonfunctional and violates the PEP fact contract
+
+- `_get_approx_row_count()` compares the schema-qualified name `silver_pep.observation_revision` to `pg_class.relname`, which normally returns no row and causes a false empty-input exit.
+- `_load_geo_dim()` queries nonexistent `silver_ref.dim_geography` and only loads state codes.
+- The transform drops nation/county/place observations and constructs invalid IDs such as `FIPS:01` instead of canonical `us:1`, `state:SS`, `state:SS|county:CCC`, or `state:SS|place:PPPPP`.
+- The upsert column list duplicates `geo_id`, omits `table_id`, attempts tuple-plus-string concatenation, contains an unbound `%s` in temporary-table creation, and uses an `ON CONFLICT` target that does not match the declared unique constraint.
+- It invents a 2 percent margin of error even though PEP does not publish one.
+- It coerces all values to integers, losing valid decimal/rate/percentage semantics.
+- It conflates dataset, estimate year, and PEP vintage, so later vintages can overwrite earlier estimates for the same observation period.
+- The fact does not retain required capture/source-record lineage, exact source value text, resolution basis/status, measure identity/unit, release completeness, or demographic slice.
+
+Required update:
+
+- Implement the planned `dim_dataset_release`, `dim_measure`, optional `dim_demographic_slice`, and `fact_population_estimate` contracts rather than copying the legacy ACS serving shape.
+- Preserve `pep_vintage` separately from `estimate_date`; include both in every natural key and retain prior vintages immutably.
+- Resolve exact source codes through `silver_ref.dim_geo_entity` and `silver_ref.geography_resolution`; retain or quarantine every miss with reason and evidence.
+- Preserve numeric precision and measure-specific units. Never fabricate MoE, definitions, universes, classifications, or policy.
+- Add exact uniqueness, population/component sign rules, completeness reconciliation, capture lineage, rerun idempotency, and changed-capture revision tests.
+
+#### 6. Gold publication is not executable and can destroy history
+
+- The refresh SQL references nonexistent `silver_pep.fact_population` columns `estimate_annotation` and `moe_annotation`.
+- It references nonexistent `silver_ref.dim_geo.geography` and `gold_ddc.metric_catalog` objects.
+- `refresh_rpt_pep_observations()` truncates the entire report table for every annual chunk. A multi-year run would leave only the final processed year.
+- The latest table includes `vintage_year` in its unique key and orders primarily by observation date, so it does not implement newest-complete-vintage selection per observation key.
+- `is_publishable_default` and the hard-coded `true` value copy policy-bearing legacy design that new source gold DDL is forbidden to extend.
+- No `gold_pep.metric_publisher` view is defined, but the final DAG task emits a publisher-ready event from that view.
+- The planned revision, latest-vintage, population-change, and provider-neutral publisher contracts are not implemented.
+
+Required update:
+
+- Build source-derived revision and latest-complete-vintage products from the corrected silver contract.
+- Publish through atomic staging/swap or window-scoped delete/upsert; never truncate unrelated vintage/observation windows.
+- Remove source-authored publication policy and join only to real repository contracts.
+- Add the complete provider-neutral `gold_pep.metric_publisher` view and test publisher discovery/event emission independently.
+- Prove that two vintages for the same estimate date coexist and that latest selection changes without deleting revision history.
+
+#### 7. Bootstrap, packaging, documentation, and tests are incomplete
+
+- Migration `009_census_pep_registry.sql`, silver DDL, gold DDL, and publisher DDL are absent from `sql/bootstrap/warehouse_manifest.json`.
+- The registry migration, Python registry, and silver DDL define disconnected dataset concepts and none drives ingestion.
+- There are no PEP database, clean-bootstrap, rerun, rollback, E2E, live-contract, API, completeness, quarantine, or reconciliation tests.
+- The central DagBag expected inventory was not updated for `census_pep_ingest`.
+- `tests/dags/test_pep_dag.py` is marked `unit` instead of `dag`, and the new tests lack valid testing-catalog attribution.
+- Root scratch artifacts `check_mocks.py`, `test_fix.py`, and `test_output.txt` should not ship.
+- The implementation/package description, testing catalog/evidence register, operations documentation, environment examples, reset/re-ingestion procedure, and this plan were not synchronized with the new source.
+
+Required update:
+
+- Put every required migration and runtime DDL asset in the authoritative bootstrap manifest in dependency order and prove clean apply plus rerun on the pinned PostGIS 16 image.
+- Update DAG inventory/topology/runtime tests, testing catalog IDs and evidence, CI ownership, source operations, environment examples, and reset/re-ingestion order.
+- Add deterministic unit/replay tests first, then disposable-database capture-to-silver-to-gold tests, scheduler-image compatibility, and a bounded live external contract.
+- Remove scratch output and retain only reviewed fixtures and operational documentation.
+
+### Ordered remediation sequence
+
+1. **PEP-001 source contract:** freeze one real product/vintage/geography slice and align the Python/SQL registry with official metadata.
+2. **PEP-002 capture/replay:** correct configuration, request authentication, control UUID/status handling, immutable capture, replay, quarantine, and completeness.
+3. **PEP-003 narrow silver:** implement distinct release vintage and observation date, exact measures/units, canonical nation/state geography, and source lineage. Add county only after the narrow slice passes.
+4. **PEP-004 geography expansion:** add county and incorporated-place/bulk contracts, classification, completeness, and cross-county place reconciliation.
+5. **PEP-005 publication:** implement revision/latest products, atomic refresh, publisher view/event, bootstrap, DAG, API exposure, and integration/E2E evidence.
+6. **PEP-006 demographics:** remain blocked until totals/components and vintage behavior are operational.
+
+Do not repair the existing downstream code around the current invented request model. The source contract is the upstream dependency and must be corrected first.
+
+### Validation evidence from the assessment
+
+Assessment environment was the Windows host on Python 3.13.5. It is supplementary only; authoritative Airflow validation remains Python 3.11 with Airflow 2.9.3 in the scheduler image.
+
+| Check | Result | Evidence / implication |
+| --- | --- | --- |
+| PEP unit/DAG focused suite | **79 passed, 4 failed** | Pool assertion failed; three DAG tests use invalid/unsupported Airflow attributes. Passing mocked transform tests did not execute the broken real upsert. |
+| Central DagBag suite | **45 passed, 2 failed** | The PEP DAG imports, but the central expected DAG inventory and uniqueness count were not updated. |
+| Repository hygiene, data-layer boundary, and warehouse-manifest focused suite | **16 passed, 2 failed** | 83 PEP tests lack valid catalog labels/IDs; PEP DAG tests lack the required `dag` marker. Manifest tests pass only because PEP assets were never added to the manifest. |
+| Ruff lint on PEP paths | **Failed: 14 errors** | Production and test files contain unused variables/imports and do not satisfy the lint gate. |
+| Ruff formatting on PEP paths | **Failed: 11 files require formatting** | Formatting gate is not ready. |
+| Python compilation of the PEP package and DAG | **Passed** | Syntax/import compilation only; it does not establish runtime or SQL correctness. |
+| Direct replay of `tests/fixtures/census_pep/representative.json` | **Failed** | `PepCapturePayloadError: PEP header must be an array of strings`. |
+| PEP disposable-database/bootstrap/E2E validation | **Not run / unavailable by design** | No PEP assets are wired into bootstrap and no PEP database/E2E tests exist. This is missing evidence, not a pass. |
+
+The affected broader suite must not be represented as healthy while these focused gates fail.
+
+### First external-Airflow test gate
+
+Do not stage the DAG externally until all items below are checked and recorded with exact commands/results:
+
+- [ ] One official initial product/vintage/geography contract and reviewed fixture are frozen in the registry.
+- [ ] `CENSUS_API_KEY` is read only at request time and absent from fingerprints, captures, logs, headers, exceptions, and fixtures.
+- [ ] `public_data` connection ID and one existing Airflow pool are validated consistently.
+- [ ] Shared Census geography has the required version/basis and passes its coverage checks before PEP planning.
+- [ ] One fixture and one mocked HTTP response complete capture -> checksum-verified replay -> silver with network disabled.
+- [ ] Missing/changed/malformed/incomplete slices fail or quarantine with exact capture lineage; zero captured rows cannot produce a successful run.
+- [ ] Two vintages for the same estimate date coexist and deterministic latest-vintage selection is proven.
+- [ ] Fresh bootstrap and bootstrap rerun pass with every PEP migration/runtime/publisher asset in the manifest.
+- [ ] PEP database replay, rerun idempotency, rollback, geography miss, gold atomicity, and publisher-event tests pass.
+- [ ] Default deterministic, ETL unit, repository hygiene, Ruff format/lint, DagBag, and scheduler-image gates pass with zero unexpected skips/xfails.
+- [ ] A bounded live contract request succeeds using the exact registered endpoint/schema without printing credentials.
+- [ ] External scheduler and workers stage the same immutable revision, expose the package on `PYTHONPATH`, have the required connection/pool/secret, and report no DAG import errors.
+- [ ] The first external DAG run is limited to the proven narrow slice; capture/control/revision/gold row counts and geography outcomes are reconciled before expanding scope.
 
 ## Objective
 
