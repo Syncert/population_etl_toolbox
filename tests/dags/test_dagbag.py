@@ -32,6 +32,7 @@ EXPECTED_DAG_IDS = {
     "acs_ingest",
     "bls_ingest",
     "fred_ingest",
+    "census_pep_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
 }
@@ -42,6 +43,7 @@ EXPECTED_SCHEDULES = {
     "acs_ingest": "0 6 1 * *",
     "bls_ingest": "0 7 1 * *",
     "fred_ingest": "0 8 1 * *",
+    "census_pep_ingest": "0 6 1 * *",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
 }
@@ -52,6 +54,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "acs_ingest": 3,
     "bls_ingest": 3,
     "fred_ingest": 3,
+    "census_pep_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
 }

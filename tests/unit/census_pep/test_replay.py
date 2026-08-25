@@ -10,6 +10,7 @@ from data_ingestion_toolbox.census_pep.config import CONFIG, PEPRelease
 from data_ingestion_toolbox.census_pep.silver_pep.replay import (
     PepCapturePayloadError,
     parse_captured_pep_values,
+    validate_release_completeness,
 )
 
 pytestmark = pytest.mark.unit
@@ -132,3 +133,24 @@ def test_sentinel_and_invalid_values_are_not_coerced_to_zero() -> None:
     assert by_metric["POPESTIMATE"]["value_status"] == "sentinel"
     assert by_metric["BIRTHS"]["value"] is None
     assert by_metric["BIRTHS"]["value_status"] == "invalid"
+
+
+def test_unregistered_summary_level_is_schema_drift() -> None:
+    """Covers: ETL-005 — new source geography layouts cannot load silently."""
+    payload = (
+        b"SUMLEV,REGION,DIVISION,STATE,NAME,POPESTIMATE2025\n999,0,0,00,Unknown,1\n"
+    )
+    with pytest.raises(PepCapturePayloadError, match="unregistered summary level"):
+        parse_captured_pep_values(
+            payload,
+            release=_release("pep_nst_alldata", 2025),
+        )
+
+
+def test_production_completeness_rejects_partial_fixture() -> None:
+    """Covers: ETL-019 — a missing state slice cannot publish as complete."""
+    release = _release("pep_nst_alldata", 2025)
+    values = parse_captured_pep_values(_fixture("nst_2025.csv"), release=release)
+
+    with pytest.raises(PepCapturePayloadError, match="release is incomplete"):
+        validate_release_completeness(values, release=release)

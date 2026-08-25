@@ -31,6 +31,7 @@ services:
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/030_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/031_gold_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/032_gold_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql:/docker-entrypoint-initdb.d/032a_gold_pep.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/033_census_publisher.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/034_bls_publisher.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/035_fred_publisher.sql:ro

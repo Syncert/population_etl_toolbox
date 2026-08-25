@@ -280,7 +280,7 @@ Last audited against the repository on 2026-08-12. **Implemented** means that ch
 | Database integration | DB-001–DB-018 | None |
 | API | API-001–API-027 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
-| External source contracts | EXT-001–EXT-010 | None |
+| External source contracts | EXT-001–EXT-011 | None |
 | End-to-end | E2E-001–E2E-006 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
@@ -537,6 +537,7 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-008 | P2 | Provider smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests persist expected revisions, including explicit missing values | Live request or capture/replay fails, produces no revisions, or mishandles missing values |
 | EXT-009 | P2 | Legacy metadata / `integration database external slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
 | EXT-010 | P2 | Legacy metadata / `integration database external slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
+| EXT-011 | P2 | Contract / `external slow` | Census PEP bulk schema and completeness | The current registered national/state bulk file returns 2xx, parses with its registered encoding/layout, meets coverage thresholds, and contains the vintage population measure | Stable bulk bytes drift from the registered parser or the release is incomplete |
 
 ### End-to-End Tests
 

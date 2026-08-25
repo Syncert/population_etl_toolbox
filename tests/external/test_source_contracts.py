@@ -12,6 +12,11 @@ import pytest
 from data_ingestion_toolbox.bls.config import CONFIG as BLS_CONFIG
 from data_ingestion_toolbox.census_acs.config import CONFIG as ACS_CONFIG
 from data_ingestion_toolbox.fred.config import CONFIG as FRED_CONFIG
+from data_ingestion_toolbox.census_pep.config import CONFIG as PEP_CONFIG
+from data_ingestion_toolbox.census_pep.silver_pep.replay import (
+    parse_captured_pep_values,
+    validate_release_completeness,
+)
 from tests.support.external import (
     classify_external_failure,
     observe_external_call,
@@ -107,6 +112,25 @@ def test_representative_curated_identifiers_still_exist() -> None:
     assert census_variable in _census_payload(census_variable)[0]
     assert _bls_payload(BLS_CONFIG.curated_by_program["ln"][0])["Results"]["series"]
     assert _fred_payload(FRED_CONFIG.curated_series_ids[1])["observations"]
+
+
+def test_census_pep_current_bulk_schema_and_completeness() -> None:
+    """Covers: EXT-011 — current PEP bulk bytes satisfy the frozen contract."""
+    release = next(
+        item
+        for item in PEP_CONFIG.releases
+        if item.dataset_code == "pep_nst_alldata" and item.status == "published"
+    )
+    response = httpx.get(release.data_url, timeout=TIMEOUT_SECONDS)
+    response.raise_for_status()
+    values = parse_captured_pep_values(response.content, release=release)
+
+    validate_release_completeness(values, release=release)
+    assert any(
+        value["metric_code"] == "POPESTIMATE"
+        and value["observation_year"] == release.vintage_year
+        for value in values
+    )
 
 
 @pytest.mark.parametrize(

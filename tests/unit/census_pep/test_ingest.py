@@ -160,12 +160,14 @@ class TestFetchWithRetry:
 
 class TestIngestRelease:
     @patch("data_ingestion_toolbox.census_pep.ingest.persist_response_capture")
+    @patch("data_ingestion_toolbox.census_pep.ingest.replay_pep_capture")
     @patch("data_ingestion_toolbox.census_pep.ingest._fetch_with_retry")
     @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
     def test_capture_preserves_release_identity_and_envelope(
         self,
         mock_control_class: MagicMock,
         mock_fetch: MagicMock,
+        mock_replay: MagicMock,
         mock_persist: MagicMock,
     ) -> None:
         """Covers: ARC-002 — PEP raw capture retains release provenance."""
@@ -183,7 +185,10 @@ class TestIngestRelease:
             status_code=200,
             response_headers={"content-type": "text/csv", "etag": '"revision-1"'},
         )
-        mock_persist.return_value = MagicMock(payload_checksum="abc123")
+        capture_id = uuid.uuid4()
+        mock_persist.return_value = MagicMock(
+            capture_id=capture_id, payload_checksum="abc123"
+        )
         hook = MagicMock()
 
         receipt = ingest._ingest_release(hook, release, run_id)
@@ -214,7 +219,13 @@ class TestIngestRelease:
             request_id,
             error=retry_error,
         )
-        control.finish_request.assert_called_once_with(request_id, status="success")
+        control.finish_request.assert_called_once_with(request_id, status="captured")
+        mock_replay.assert_called_once_with(
+            hook.get_conn,
+            capture_id=capture_id,
+            release=release,
+            require_complete=True,
+        )
 
     @patch("data_ingestion_toolbox.census_pep.ingest._fetch_with_retry")
     @patch("data_ingestion_toolbox.census_pep.ingest.CaptureControl")
@@ -235,7 +246,7 @@ class TestIngestRelease:
 
         control.finish_request.assert_called_once()
         assert control.finish_request.call_args.args == (request_id,)
-        assert control.finish_request.call_args.kwargs["status"] == "error"
+        assert control.finish_request.call_args.kwargs["status"] == "failed"
         assert isinstance(
             control.finish_request.call_args.kwargs["error"], RuntimeError
         )

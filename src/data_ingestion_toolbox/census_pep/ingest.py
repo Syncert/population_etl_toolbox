@@ -21,6 +21,7 @@ from data_ingestion_toolbox.capture import (
 )
 from data_ingestion_toolbox.census_pep.config import CONFIG, PEPRelease
 from data_ingestion_toolbox.census_pep.registry import PEPRegistry
+from data_ingestion_toolbox.census_pep.silver_pep.replay import replay_pep_capture
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -237,10 +238,28 @@ def _ingest_release(
         )
         receipt = persist_response_capture(conn_factory, capture)
     except Exception as exc:
-        ctrl.finish_request(req.request_id, status="error", error=exc)
+        ctrl.finish_request(req.request_id, status="failed", error=exc)
         raise RuntimeError(f"Capture failed for {release.product_code}: {exc}") from exc
 
-    ctrl.finish_request(req.request_id, status="success")
+    try:
+        replay_pep_capture(
+            conn_factory,
+            capture_id=receipt.capture_id,
+            release=release,
+            require_complete=True,
+        )
+    except Exception as exc:
+        ctrl.quarantine(
+            capture_id=receipt.capture_id,
+            run_id=run_id,
+            parser_version=CONFIG.datasets[release.dataset_code].parser_version,
+            error_code="pep_payload_contract",
+            error=exc,
+        )
+        ctrl.finish_request(req.request_id, status="quarantined", error=exc)
+        raise RuntimeError(f"Replay failed for {release.product_code}: {exc}") from exc
+
+    ctrl.finish_request(req.request_id, status="captured")
     logger.info(
         "Census PEP captured: dataset=%s vintage=%s product=%s checksum=%s",
         release.dataset_code,

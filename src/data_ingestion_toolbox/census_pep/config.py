@@ -185,6 +185,7 @@ class PEPDataset:
         "variables",
         "layout_version",
         "parser_version",
+        "text_encoding",
         "release_page_url",
         "data_url_template",
         "layout_url_template",
@@ -205,6 +206,7 @@ class PEPDataset:
         variables: frozenset[str] = frozenset(),
         layout_version: str = "1",
         parser_version: str = "census-pep-bulk-csv-v1",
+        text_encoding: Literal["utf-8-sig", "cp1252"] = "utf-8-sig",
         release_page_url: str = "",
         data_url_template: str = "",
         layout_url_template: str = "",
@@ -222,6 +224,7 @@ class PEPDataset:
         object.__setattr__(self, "variables", variables)
         object.__setattr__(self, "layout_version", layout_version)
         object.__setattr__(self, "parser_version", parser_version)
+        object.__setattr__(self, "text_encoding", text_encoding)
         object.__setattr__(self, "release_page_url", release_page_url)
         object.__setattr__(self, "data_url_template", data_url_template)
         object.__setattr__(self, "layout_url_template", layout_url_template)
@@ -277,6 +280,7 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         ),
         layout_version="vintage-specific-official-layout",
         parser_version="census-pep-bulk-csv-v1",
+        text_encoding="utf-8-sig",
         release_page_url="https://www.census.gov/data/tables/time-series/demo/popest/2020s-national-total.html",
         data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2020-{vintage}/state/totals/NST-EST{vintage}-ALLDATA.csv",
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/NST-EST{vintage}-ALLDATA.pdf",
@@ -311,6 +315,7 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         ),
         layout_version="vintage-specific-official-layout",
         parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
         release_page_url="https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html",
         data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2020-{vintage}/counties/totals/co-est{vintage}-alldata.csv",
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/CO-EST{vintage}-ALLDATA.pdf",
@@ -330,6 +335,7 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         variables=frozenset({"ESTIMATESBASE", "POPESTIMATE"}),
         layout_version="vintage-specific-official-layout",
         parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
         release_page_url="https://www.census.gov/data/tables/time-series/demo/popest/2020s-total-cities-and-towns.html",
         data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2020-{vintage}/cities/totals/sub-est{vintage}.csv",
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/SUB-EST{vintage}.pdf",

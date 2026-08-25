@@ -1,499 +1,129 @@
--- census_pep/gold_pep/DDL/gold_pep.sql
--- Gold analytics layer for Census PEP (Population Estimates) objects.
--- Per-source serving table with PEP-specific columns only.
-
 CREATE SCHEMA IF NOT EXISTS gold_pep;
-CREATE EXTENSION IF NOT EXISTS postgis;
 
--- ============================================================
--- PEP METADATA DIMENSIONS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS gold_pep.dim_pep_table (
-    pep_table_sk        BIGSERIAL PRIMARY KEY,
-    dataset_code        TEXT NOT NULL DEFAULT 'pep',
-    vintage_year        INTEGER NOT NULL,
-    table_id            TEXT NOT NULL,
-    table_title         TEXT,
-    concept             TEXT,
-    universe            TEXT,
-    reference_url       TEXT,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (dataset_code, vintage_year, table_id)
-);
-
-CREATE TABLE IF NOT EXISTS gold_pep.dim_pep_variable (
-    pep_variable_sk        BIGSERIAL PRIMARY KEY,
-    pep_table_sk           BIGINT NOT NULL REFERENCES gold_pep.dim_pep_table(pep_table_sk),
-    dataset_code           TEXT NOT NULL DEFAULT 'pep',
-    vintage_year           INTEGER NOT NULL,
-    variable_code          TEXT NOT NULL,
-    variable_label         TEXT,
-    concept                TEXT,
-    universe               TEXT,
-    value_role             TEXT NOT NULL CHECK (value_role IN ('ESTIMATE', 'MOE', 'ANNOTATION')),
-    is_publishable_default BOOLEAN NOT NULL DEFAULT TRUE,
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (dataset_code, vintage_year, variable_code)
-);
-
--- ============================================================
--- PEP FACT VIEW (source of truth)
--- ============================================================
-
-CREATE OR REPLACE VIEW gold_pep.fact_pep_observation AS
-SELECT
-    s.geo_id,
-    CASE
-        WHEN s.geo_id LIKE 'us:%'     THEN 'NATIONAL'
-        WHEN s.geo_id LIKE 'state:%'  THEN 'STATE'
-        WHEN s.geo_id LIKE 'county:%' THEN 'COUNTY'
-        WHEN s.geo_id LIKE 'place:%'  THEN 'PLACE'
-        ELSE 'NATIONAL'
-    END AS geo_level,
-    s.time_sk,
-    MAKE_DATE(s.estimate_year, 1, 1) AS observation_date,
-    s.duration_start,
-    s.duration_end,
-    NULL::BIGINT AS pep_table_sk,
-    NULL::BIGINT AS pep_variable_sk,
-    s.dataset     AS dataset_code,
-    s.estimate_year AS vintage_year,
-    s.estimate_value,
-    s.margin_of_error,
-    s.margin_of_error_pct,
-    NULL::TEXT AS estimate_annotation,
-    NULL::TEXT AS moe_annotation,
-    CURRENT_DATE AS as_of_date,
-    s.ingested_at AS updated_at
-FROM silver_pep.fact_population s
-WHERE s.estimate_value IS NOT NULL
-  AND s.variable_code IS NOT NULL
-  AND s.variable_code <> '';
-
--- ============================================================
--- PEP SERVING TABLE (Source-First: PEP-specific columns only)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS gold_pep.rpt_pep_observations (
-    source_code                TEXT NOT NULL DEFAULT 'CENSUS_PEP',
-    observation_date           DATE NOT NULL,
-    duration_start             DATE,
-    duration_end               DATE,
-    time_sk                    INTEGER,
-    as_of_date                 DATE NOT NULL,
-    updated_at                 TIMESTAMPTZ NOT NULL,
-    geo_id                     TEXT NOT NULL,
-    geo_level                  TEXT NOT NULL,
-    state_fips                 TEXT,
-    county_fips                TEXT,
-    place_fips                 TEXT,
-    state_name                 TEXT,
-    county_name                TEXT,
-    place_name                 TEXT,
-    geo_latitude               DOUBLE PRECISION,
-    geo_longitude              DOUBLE PRECISION,
-    -- PEP values (all PEP estimates are point estimates)
-    value                      NUMERIC NOT NULL,
-    dataset_code               TEXT NOT NULL DEFAULT 'pep',
-    vintage_year               INTEGER NOT NULL,
-    table_id                   TEXT NOT NULL,
-    table_title                TEXT,
-    variable_code              TEXT NOT NULL,
-    variable_label             TEXT,
-    concept                    TEXT,
-    universe                   TEXT,
-    is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC NOT NULL,
-    margin_of_error            NUMERIC,
-    margin_of_error_pct        NUMERIC,
-    estimate_annotation        TEXT,
-    moe_annotation             TEXT,
-    value_type                 TEXT,
-    units                      TEXT,
-    -- Metric catalog association
-    metric_code                TEXT,
-    metric_display_name        TEXT
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_pep_observations_nk
-    ON gold_pep.rpt_pep_observations (
-        geo_id,
-        observation_date,
-        dataset_code,
-        vintage_year,
-        variable_code,
-        COALESCE(metric_code, '')
-    );
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_observations_source_geo_date
-    ON gold_pep.rpt_pep_observations (source_code, geo_id, observation_date);
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_observations_metric_date
-    ON gold_pep.rpt_pep_observations (metric_code, observation_date);
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_observations_dataset_vintage
-    ON gold_pep.rpt_pep_observations (dataset_code, vintage_year);
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_observations_metric_geo_date
-    ON gold_pep.rpt_pep_observations (metric_code, geo_id, observation_date);
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_observations_updated_at
-    ON gold_pep.rpt_pep_observations (updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS ix_rpt_pep_latest_selection
-    ON gold_pep.rpt_pep_observations (
-        geo_id,
-        variable_code,
-        metric_code,
-        observation_date DESC,
-        updated_at DESC,
-        vintage_year DESC
-    );
-
--- ============================================================
--- PEP MATERIALIZED VIEW (latest per geo/variable)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS gold_pep.mv_pep_latest
-    (LIKE gold_pep.rpt_pep_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_pep_latest
-    ON gold_pep.mv_pep_latest (
-        geo_id,
-        dataset_code,
-        vintage_year,
-        variable_code,
-        COALESCE(metric_code, '')
-    );
-
-CREATE INDEX IF NOT EXISTS ix_mv_pep_latest_source_metric
-    ON gold_pep.mv_pep_latest (source_code, metric_code);
-
-CREATE INDEX IF NOT EXISTS ix_mv_pep_latest_vintage
-    ON gold_pep.mv_pep_latest (dataset_code, vintage_year);
-
-CREATE INDEX IF NOT EXISTS ix_mv_pep_latest_metric_geo
-    ON gold_pep.mv_pep_latest (metric_code, geo_id);
-
--- ============================================================
--- PEP REFRESH PROCEDURES
--- ============================================================
-
-DROP PROCEDURE IF EXISTS gold_pep.refresh_rpt_pep_observations(DATE, DATE);
-CREATE OR REPLACE PROCEDURE gold_pep.refresh_rpt_pep_observations(
-    p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
+CREATE OR REPLACE VIEW gold_pep.population_estimate_revision AS
+WITH ranked AS (
+    SELECT fact.*,
+        capture.retrieved_at AS source_retrieved_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY fact.dataset_code, fact.release_vintage,
+                fact.metric_code, fact.geo_id, fact.observation_year
+            ORDER BY capture.retrieved_at DESC, fact.capture_id DESC
+        ) AS capture_rank
+    FROM silver_pep.fact_population_estimate AS fact
+    JOIN silver_pep.release_load AS load USING (capture_id)
+    JOIN raw_capture.response_capture AS capture USING (capture_id)
+    WHERE load.completeness_status = 'complete'
+      AND fact.resolution_status = 'resolved'
 )
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_started_at TIMESTAMPTZ := clock_timestamp();
-    v_deleted_rows BIGINT;
-    v_inserted_rows BIGINT;
-    v_affected_keys BIGINT;
-BEGIN
-    RAISE NOTICE '[PEP RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
+SELECT capture_id, dataset_code, release_vintage AS pep_vintage,
+    product_code, metric_code, observation_year, estimate_date,
+    geo_id, geo_sk, geo_type, geography_basis_date, summary_level,
+    source_name, functional_status_source, value_source, value, unit,
+    source_retrieved_at
+FROM ranked
+WHERE capture_rank = 1;
 
-    DROP TABLE IF EXISTS pg_temp.gold_pep_affected_keys;
-    CREATE TEMP TABLE gold_pep_affected_keys (
-        geo_id        TEXT NOT NULL,
-        variable_code TEXT NOT NULL,
-        metric_code   TEXT NOT NULL,
-        PRIMARY KEY (geo_id, variable_code, metric_code)
-    ) ON COMMIT DROP;
+CREATE OR REPLACE VIEW gold_pep.population_estimate_latest AS
+SELECT capture_id, dataset_code, pep_vintage, product_code, metric_code,
+    observation_year, estimate_date, geo_id, geo_sk, geo_type,
+    geography_basis_date, summary_level, source_name,
+    functional_status_source, value_source, value, unit,
+    source_retrieved_at
+FROM (
+    SELECT revision.*,
+        DENSE_RANK() OVER (
+            PARTITION BY dataset_code, metric_code, geo_id, observation_year
+            ORDER BY pep_vintage DESC
+        ) AS vintage_rank
+    FROM gold_pep.population_estimate_revision AS revision
+) AS ranked
+WHERE vintage_rank = 1;
 
-    -- Step 1: Truncate and repopulate affected keys
-    DELETE FROM gold_pep_affected_keys;
-    INSERT INTO gold_pep_affected_keys (geo_id, variable_code, metric_code)
-    SELECT DISTINCT d.geo_id, d.variable_code, COALESCE(d.metric_code, '')
-    FROM gold_pep.rpt_pep_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+CREATE OR REPLACE VIEW gold_pep.population_change AS
+SELECT *, FALSE AS is_derived
+FROM gold_pep.population_estimate_revision
+WHERE metric_code IN ('NPOPCHG', 'NATURALCHG', 'NETMIG');
 
-    -- Step 2: Truncate and repopulate the reporting table for the window
-    TRUNCATE gold_pep.rpt_pep_observations;
+CREATE OR REPLACE VIEW gold_pep.rpt_pep_observations AS
+SELECT revision.capture_id,
+    'CENSUS_PEP'::TEXT AS source_code,
+    revision.estimate_date AS observation_date,
+    revision.estimate_date::TEXT AS period,
+    revision.estimate_date AS duration_start,
+    revision.estimate_date AS duration_end,
+    time.time_sk,
+    release.release_date AS as_of_date,
+    revision.source_retrieved_at AS updated_at,
+    revision.geo_id,
+    revision.geo_type AS geo_level,
+    entity.state_fips,
+    entity.county_fips,
+    entity.place_fips,
+    current.state_name,
+    current.county_name,
+    current.place_name,
+    current.latitude AS geo_latitude,
+    current.longitude AS geo_longitude,
+    'CENSUS_PEP:' || revision.dataset_code || ':' || revision.metric_code AS metric_code,
+    measure.display_name AS metric_display_name,
+    revision.value,
+    measure.value_type,
+    revision.unit AS units,
+    NULL::TEXT AS seasonal_adjustment_status,
+    revision.dataset_code,
+    revision.pep_vintage AS vintage_year,
+    NULL::NUMERIC AS margin_of_error,
+    NULL::NUMERIC AS margin_of_error_pct
+FROM gold_pep.population_estimate_revision AS revision
+JOIN silver_pep.dim_measure AS measure USING (metric_code)
+JOIN silver_pep.pep_release AS release
+  ON release.dataset_code = revision.dataset_code
+ AND release.vintage_year = revision.pep_vintage
+JOIN silver_ref.dim_geo_entity AS entity USING (geo_sk)
+LEFT JOIN silver_ref.dim_geo_current AS current USING (geo_sk)
+LEFT JOIN silver_ref.dim_time AS time ON time.date_key = revision.estimate_date;
 
-    INSERT INTO gold_pep.rpt_pep_observations (
-        source_code,
-        observation_date,
-        duration_start,
-        duration_end,
-        time_sk,
-        as_of_date,
-        updated_at,
-        geo_id,
-        geo_level,
-        state_fips,
-        county_fips,
-        place_fips,
-        state_name,
-        county_name,
-        place_name,
-        geo_latitude,
-        geo_longitude,
-        value,
-        dataset_code,
-        vintage_year,
-        table_id,
-        table_title,
-        variable_code,
-        variable_label,
-        concept,
-        universe,
-        is_publishable_default,
-        estimate_value,
-        margin_of_error,
-        margin_of_error_pct,
-        estimate_annotation,
-        moe_annotation,
-        value_type,
-        units,
-        metric_code,
-        metric_display_name
-    )
-    SELECT
-        'CENSUS_PEP' AS source_code,
-        MAKE_DATE(f.estimate_year, 1, 1) AS observation_date,
-        f.duration_start,
-        f.duration_end,
-        f.time_sk,
-        CURRENT_DATE AS as_of_date,
-        f.ingested_at AS updated_at,
-        f.geo_id,
-        CASE
-            WHEN f.geo_id LIKE 'us:%'     THEN 'NATIONAL'
-            WHEN f.geo_id LIKE 'state:%'  THEN 'STATE'
-            WHEN f.geo_id LIKE 'county:%' THEN 'COUNTY'
-            WHEN f.geo_id LIKE 'place:%'  THEN 'PLACE'
-            ELSE 'NATIONAL'
-        END AS geo_level,
-        NULLIF(SPLIT_PART(f.geo_id, ':', 2), '') AS state_fips,
-        NULLIF(SPLIT_PART(f.geo_id, ':', 3), '') AS county_fips,
-        NULLIF(SPLIT_PART(f.geo_id, ':', 4), '') AS place_fips,
-        gl.state_name,
-        gl.county_name,
-        gl.place_name,
-        gl.geography::DOUBLE PRECISION,
-        gl.geography::DOUBLE PRECISION,
-        f.estimate_value::NUMERIC AS value,
-        f.dataset AS dataset_code,
-        f.estimate_year AS vintage_year,
-        f.table_id,
-        COALESCE(dt.table_title, f.variable_label) AS table_title,
-        f.variable_code,
-        f.variable_label,
-        f.variable_concept,
-        f.universe,
-        true AS is_publishable_default,
-        f.estimate_value::NUMERIC,
-        f.margin_of_error::NUMERIC,
-        f.margin_of_error_pct,
-        f.estimate_annotation,
-        f.moe_annotation,
-        'ESTIMATE' AS value_type,
-        'persons' AS units,
-        COALESCE(m.metric_code, '') AS metric_code,
-        m.metric_display_name
-    FROM silver_pep.fact_population f
-    LEFT JOIN gold_pep.dim_pep_table dt
-        ON dt.dataset_code = f.dataset
-       AND dt.vintage_year = f.estimate_year
-       AND dt.table_id = f.table_id
-    LEFT JOIN gold_pep.dim_pep_variable dv
-        ON dv.dataset_code = f.dataset
-       AND dv.vintage_year = f.estimate_year
-       AND dv.variable_code = f.variable_code
-       AND dv.pep_table_sk = dt.pep_table_sk
-    LEFT JOIN silver_ref.dim_geo gl
-        ON gl.geo_id = f.geo_id
-    LEFT JOIN gold_ddc.metric_catalog m
-        ON m.variable_code = f.variable_code
-       AND m.dataset_code = f.dataset
-       AND m.vintage_year = f.estimate_year
-    WHERE (p_start_date IS NULL OR MAKE_DATE(f.estimate_year, 1, 1) >= p_start_date)
-      AND (p_end_date IS NULL OR MAKE_DATE(f.estimate_year, 1, 1) <= p_end_date)
-      AND f.estimate_value IS NOT NULL;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+CREATE OR REPLACE VIEW gold_pep.mv_pep_latest AS
+SELECT reporting.*
+FROM gold_pep.rpt_pep_observations AS reporting
+JOIN gold_pep.population_estimate_latest AS latest
+  ON latest.capture_id = reporting.capture_id
+ AND latest.dataset_code = reporting.dataset_code
+ AND latest.pep_vintage = reporting.vintage_year
+ AND ('CENSUS_PEP:' || latest.dataset_code || ':' || latest.metric_code) = reporting.metric_code
+ AND latest.geo_id = reporting.geo_id
+ AND latest.observation_year = EXTRACT(YEAR FROM reporting.observation_date)::INTEGER;
 
-    INSERT INTO gold_pep_affected_keys (geo_id, variable_code, metric_code)
-    SELECT DISTINCT d.geo_id, d.variable_code, COALESCE(d.metric_code, '')
-    FROM gold_pep.rpt_pep_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+CREATE OR REPLACE VIEW gold_pep.measure_export AS
+SELECT measure.metric_code AS source_object_key,
+    measure.display_name AS metric_display_name, measure.unit,
+    measure.is_component, measure.allows_negative,
+    measure.population_universe,
+    ARRAY_AGG(DISTINCT fact.geo_type ORDER BY fact.geo_type) AS valid_geo_grains,
+    MAX(fact.transformed_at) AS publication_time
+FROM silver_pep.dim_measure AS measure
+JOIN silver_pep.fact_population_estimate AS fact USING (metric_code)
+GROUP BY measure.metric_code;
 
-    SELECT COUNT(*) INTO v_affected_keys FROM gold_pep_affected_keys;
-    RAISE NOTICE
-        '[PEP RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
-        p_start_date,
-        p_end_date,
-        v_deleted_rows,
-        v_inserted_rows,
-        v_affected_keys,
-        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
-END;
-$$;
-
-DROP PROCEDURE IF EXISTS gold_pep.refresh_mv_pep_latest();
-CREATE OR REPLACE PROCEDURE gold_pep.refresh_mv_pep_latest(
-    p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_started_at TIMESTAMPTZ := clock_timestamp();
-    v_deleted_rows BIGINT;
-    v_inserted_rows BIGINT;
-BEGIN
-    RAISE NOTICE '[PEP LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
-
-    IF to_regclass('pg_temp.gold_pep_affected_keys') IS NULL THEN
-        CREATE TEMP TABLE gold_pep_affected_keys (
-            geo_id        TEXT NOT NULL,
-            variable_code TEXT NOT NULL,
-            metric_code   TEXT NOT NULL,
-            PRIMARY KEY (geo_id, variable_code, metric_code)
-        ) ON COMMIT DROP;
-
-        INSERT INTO gold_pep_affected_keys (geo_id, variable_code, metric_code)
-        SELECT DISTINCT d.geo_id, d.variable_code, COALESCE(d.metric_code, '')
-        FROM gold_pep.rpt_pep_observations d
-        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-        ON CONFLICT DO NOTHING;
-    END IF;
-
-    ANALYZE gold_pep_affected_keys;
-
-    DELETE FROM gold_pep.mv_pep_latest m
-    USING gold_pep_affected_keys k
-    WHERE m.geo_id = k.geo_id
-      AND m.variable_code = k.variable_code
-      AND m.metric_code = k.metric_code;
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
-
-    INSERT INTO gold_pep.mv_pep_latest
-    SELECT latest.*
-    FROM gold_pep_affected_keys k
-    CROSS JOIN LATERAL (
-        SELECT d.*
-        FROM gold_pep.rpt_pep_observations d
-        WHERE d.geo_id = k.geo_id
-          AND d.variable_code = k.variable_code
-          AND d.metric_code = k.metric_code
-        ORDER BY
-            d.observation_date DESC,
-            d.updated_at DESC,
-            d.vintage_year DESC
-        LIMIT 1
-    ) latest;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
-
-    RAISE NOTICE
-        '[PEP LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
-        p_start_date,
-        p_end_date,
-        v_deleted_rows,
-        v_inserted_rows,
-        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
-END;
-$$;
-
-DROP PROCEDURE IF EXISTS gold_pep.refresh_dashboard_serving_layer_pep(DATE, DATE);
-DROP PROCEDURE IF EXISTS gold_pep.refresh_dashboard_serving_layer_pep(DATE, DATE, BOOLEAN);
-CREATE OR REPLACE PROCEDURE gold_pep.refresh_dashboard_serving_layer_pep(
-    p_start_date DATE DEFAULT NULL,
-    p_end_date DATE DEFAULT NULL,
-    p_force_full BOOLEAN DEFAULT FALSE
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_started_at TIMESTAMPTZ := clock_timestamp();
-    v_step_started TIMESTAMPTZ;
-    v_watermark TIMESTAMPTZ;
-    v_high_watermark TIMESTAMPTZ;
-    v_effective_start DATE;
-    v_effective_end DATE;
-BEGIN
-    SET LOCAL statement_timeout = '90min';
-    SET LOCAL lock_timeout = '30s';
-
-    INSERT INTO control.serving_refresh_state (
-        source_code,
-        last_silver_ingested_at,
-        last_refresh_completed_at
-    )
-    SELECT
-        'CENSUS_PEP',
-        COALESCE(MAX(r.updated_at), '-infinity'::TIMESTAMPTZ),
-        CASE WHEN COUNT(*) > 0 THEN NOW() ELSE NULL END
-    FROM gold_pep.rpt_pep_observations r
-    ON CONFLICT (source_code) DO NOTHING;
-
-    SELECT last_silver_ingested_at
-      INTO v_watermark
-      FROM control.serving_refresh_state
-     WHERE source_code = 'CENSUS_PEP'
-     FOR UPDATE;
-
-    UPDATE control.serving_refresh_state
-       SET last_refresh_started_at = v_started_at,
-           updated_at = NOW()
-     WHERE source_code = 'CENSUS_PEP';
-
-    SELECT
-        MAX(s.ingested_at),
-        MIN(MAKE_DATE(s.estimate_year, 1, 1)),
-        MAX(MAKE_DATE(s.estimate_year, 1, 1))
-      INTO v_high_watermark, v_effective_start, v_effective_end
-      FROM silver_pep.fact_population s
-     WHERE s.estimate_value IS NOT NULL
-       AND (p_start_date IS NULL OR MAKE_DATE(s.estimate_year, 1, 1) >= p_start_date)
-       AND (p_end_date IS NULL OR MAKE_DATE(s.estimate_year, 1, 1) <= p_end_date)
-       AND (p_force_full OR s.ingested_at > v_watermark);
-
-    IF v_effective_start IS NULL THEN
-        UPDATE control.serving_refresh_state
-           SET last_refresh_completed_at = clock_timestamp(),
-               updated_at = NOW()
-         WHERE source_code = 'CENSUS_PEP';
-        RAISE NOTICE '[PEP DASHBOARD REFRESH] no changed silver rows after watermark=%', v_watermark;
-        RETURN;
-    END IF;
-
-    RAISE NOTICE '[PEP DASHBOARD REFRESH] start window_start=% window_end=% watermark=% force_full=%',
-        v_effective_start, v_effective_end, v_watermark, p_force_full;
-
-    v_step_started := clock_timestamp();
-    CALL gold_pep.refresh_rpt_pep_observations(v_effective_start, v_effective_end);
-    RAISE NOTICE
-        '[PEP DASHBOARD REFRESH] step=refresh_rpt_pep_observations duration_ms=%',
-        (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
-
-    v_step_started := clock_timestamp();
-    CALL gold_pep.refresh_mv_pep_latest(v_effective_start, v_effective_end);
-    RAISE NOTICE
-        '[PEP DASHBOARD REFRESH] step=refresh_mv_pep_latest duration_ms=%',
-        (EXTRACT(EPOCH FROM (clock_timestamp() - v_step_started)) * 1000)::NUMERIC(18,2);
-
-    UPDATE control.serving_refresh_state
-       SET last_silver_ingested_at = CASE
-               WHEN p_force_full AND (p_start_date IS NOT NULL OR p_end_date IS NOT NULL)
-                   THEN v_watermark
-               ELSE GREATEST(v_watermark, v_high_watermark)
-           END,
-           last_refresh_completed_at = clock_timestamp(),
-           last_window_start = v_effective_start,
-           last_window_end = v_effective_end,
-           updated_at = NOW()
-     WHERE source_code = 'CENSUS_PEP';
-
-    RAISE NOTICE
-        '[PEP DASHBOARD REFRESH] completed total_duration_ms=%',
-        (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
-END;
-$$;
+CREATE OR REPLACE VIEW gold_pep.metric_publisher AS
+SELECT 'CENSUS_PEP'::TEXT AS source_code,
+    '1.0'::TEXT AS publisher_contract_version,
+    export.source_object_key::TEXT AS source_object_key,
+    'measure'::TEXT AS source_object_type,
+    export.metric_display_name::TEXT AS metric_display_name,
+    export.unit::TEXT AS units,
+    CASE WHEN export.is_component THEN 'component' ELSE 'level' END::TEXT AS measure_kind,
+    ARRAY(SELECT UPPER(value) FROM UNNEST(export.valid_geo_grains) AS value)::TEXT[] AS valid_geo_grains,
+    ARRAY['ANNUAL']::TEXT[] AS valid_time_grains,
+    NULL::TEXT AS aggregation_characteristic,
+    JSONB_BUILD_OBJECT(
+        'schema', 'gold_pep', 'relation', 'population_estimate_revision',
+        'key', export.source_object_key
+    ) AS physical_lineage,
+    export.publication_time::TEXT AS source_watermark,
+    NULL::UUID AS source_run_id,
+    export.publication_time,
+    'U.S. Census Bureau Population Estimates Program'::TEXT AS source_name,
+    'government-statistical-program'::TEXT AS source_type,
+    'https://www.census.gov/programs-surveys/popest.html'::TEXT AS reference_url
+FROM gold_pep.measure_export AS export;

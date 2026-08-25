@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS silver_pep.pep_dataset (
     summary_levels     TEXT[] NOT NULL,
     variable_families  TEXT[] NOT NULL,
     parser_version     TEXT NOT NULL,
+    text_encoding      TEXT NOT NULL DEFAULT 'utf-8-sig',
     release_page_url   TEXT NOT NULL,
     decennial_base     SMALLINT NOT NULL,
     is_active          BOOLEAN NOT NULL DEFAULT TRUE,
@@ -21,6 +22,9 @@ CREATE TABLE IF NOT EXISTS silver_pep.pep_dataset (
     CHECK (cardinality(variable_families) > 0),
     CHECK (release_page_url LIKE 'https://www.census.gov/%')
 );
+
+ALTER TABLE silver_pep.pep_dataset
+    ADD COLUMN IF NOT EXISTS text_encoding TEXT NOT NULL DEFAULT 'utf-8-sig';
 
 CREATE TABLE IF NOT EXISTS silver_pep.pep_release (
     dataset_code           TEXT NOT NULL
@@ -57,6 +61,7 @@ INSERT INTO silver_pep.pep_dataset (
     summary_levels,
     variable_families,
     parser_version,
+    text_encoding,
     release_page_url,
     decennial_base,
     is_active
@@ -75,6 +80,7 @@ VALUES
             'RINTERNATIONALMIG', 'RDOMESTICMIG', 'RNETMIG'
         ],
         'census-pep-bulk-csv-v1',
+        'utf-8-sig',
         'https://www.census.gov/data/tables/time-series/demo/popest/2020s-national-total.html',
         2020,
         TRUE
@@ -92,6 +98,7 @@ VALUES
             'RINTERNATIONALMIG', 'RDOMESTICMIG', 'RNETMIG'
         ],
         'census-pep-bulk-csv-v1',
+        'cp1252',
         'https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html',
         2020,
         TRUE
@@ -104,6 +111,7 @@ VALUES
         ARRAY['040', '050', '061', '071', '157', '162', '170', '172'],
         ARRAY['ESTIMATESBASE', 'POPESTIMATE'],
         'census-pep-bulk-csv-v1',
+        'cp1252',
         'https://www.census.gov/data/tables/time-series/demo/popest/2020s-total-cities-and-towns.html',
         2020,
         TRUE
@@ -115,6 +123,7 @@ ON CONFLICT (dataset_code) DO UPDATE SET
     summary_levels = EXCLUDED.summary_levels,
     variable_families = EXCLUDED.variable_families,
     parser_version = EXCLUDED.parser_version,
+    text_encoding = EXCLUDED.text_encoding,
     release_page_url = EXCLUDED.release_page_url,
     decennial_base = EXCLUDED.decennial_base,
     is_active = EXCLUDED.is_active,

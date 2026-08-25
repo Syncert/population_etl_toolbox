@@ -2,19 +2,19 @@
 
 ## Plan status
 
-- **Status:** In progress; an initial scaffold exists but is not operational or safe to deploy
-- **Last updated:** 2026-08-24
+- **Status:** Ready for review; production-testable totals prototype complete
+- **Last updated:** 2026-08-25
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-08-25
 
-**Current milestone:** PEP-002 lossless bulk capture and offline CSV replay
+**Current milestone:** PEP-005 production-testable totals prototype complete
 
-**Next pickup:** Fix PEP request terminal states to use the shared control vocabulary (`captured`/`failed` rather than `success`/`error`), then make replay return the actual inserted row count so a second replay reports zero before rerunning the real capture-to-replay integration test.
+**Next pickup:** None. Implementation is complete and awaiting human review; after acceptance, operators may stage one immutable revision for the bounded external Airflow run. PEP-006 demographic characteristics is a separately gated follow-on, not part of this totals prototype.
 
 ### Completed in the current slice
 
@@ -30,15 +30,22 @@
 - [x] Replaced invented `ansfile`/`intlfile` requests with registered bulk-release selection and lossless HTTP envelope capture.
 - [x] Added exact current/prior national fixtures and a current incorporated-place fixture from registered Census URLs.
 - [x] Aligned the SQL registry with all Python products/releases and wired migration 009 into authoritative bootstrap order.
+- [x] Completed capture-first replay with shared terminal states, quarantine, strict production completeness checks, and registered source encodings.
+- [x] Replaced the legacy silver scaffold with immutable vintage-aware measures/facts and exact shared-geography outcomes.
+- [x] Added revision/latest gold products, glossary publisher, `/api/pep` source endpoints, and a production-ordered DAG.
+- [x] Passed deterministic, disposable-PostGIS, live Census, and Airflow 2.9.3 scheduler-image validation.
 
-### Remaining
+### Prototype milestones
 
 - [x] PEP-001 — Implement the dataset/vintage registry and prove release discovery.
-- [ ] PEP-002 — Implement lossless API/bulk capture, completeness checks, and offline replay.
-- [ ] PEP-003 — Implement national/state and county totals/components silver data.
-- [ ] PEP-004 — Implement incorporated-place totals and geography reconciliation.
-- [ ] PEP-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
-- [ ] PEP-006 — Add demographic-characteristics datasets after the totals contract is proven.
+- [x] PEP-002 — Implement lossless API/bulk capture, completeness checks, and offline replay.
+- [x] PEP-003 — Implement national/state and county totals/components silver data.
+- [x] PEP-004 — Implement incorporated-place totals and geography reconciliation.
+- [x] PEP-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
+
+### Follow-on scope
+
+- PEP-006 — Add demographic-characteristics datasets after the totals contract is accepted and proven operationally.
 
 ### 2026-08-24 PEP-001 implementation evidence
 
@@ -73,7 +80,25 @@
 - The first real fixture capture-to-replay integration test is currently **failing before replay**: `CaptureControl.finish_request(..., status="success")` violates the shared request constraint, whose terminal states are `captured`, `empty`, `quarantined`, and `failed`. PEP currently also uses invalid `error` on failure. This is the immediate next fix and means the external Airflow gate remains closed.
 - After the status fix, the same integration test must prove first replay inserts rows, second replay inserts zero, and Vintage 2025 retains the revised 2024 observation. The disposable PostGIS service is still running for that continuation and should be removed when validation finishes.
 
-## 2026-08-24 implementation quality assessment
+### 2026-08-25 production-testable prototype evidence
+
+- Request terminal states now use `captured`, `quarantined`, and `failed`; every successful immutable capture is replayed before request completion, parser failures create capture-linked quarantine records, and replay reports actual inserts so reruns return zero.
+- Production completeness checks require the principal product summary level, at least 50 state codes, and conservative national/state, county, or incorporated-place row thresholds. Unknown summary levels fail as schema drift.
+- Live validation discovered and fixed the official county/subcounty Windows-1252 encoding. Encoding is registered in both Python and SQL; national/state remains UTF-8 with BOM handling.
+- `silver_pep.fact_population_estimate` retains capture position, exact source text, numeric precision, dataset, product, release vintage, observation date, geography basis, measure/unit, source geography, resolution status, and canonical `geo_sk`. Shared `silver_ref.geography_resolution` receives resolved, unmapped, and unsupported outcomes.
+- Gold publishes immutable `population_estimate_revision`, deterministic newest-complete-vintage `population_estimate_latest`, source-published population-change rows, provider-neutral measure export/publisher, and API compatibility views. `/api/pep` exposes latest and as-released time-series observations with dataset/vintage context and no fabricated margin of error.
+- The DAG uses `schedule`, the configured `public_data` connection and `census_api` pool, production-scale geography prerequisites, registered release discovery, capture/replay, conformance, publication reconciliation, and publisher-ready emission.
+- Default deterministic suite: `python -u -m pytest -q --tb=short --maxfail=1` — **559 passed**.
+- Focused PostGIS 16/3.5 suite: clean bootstrap, complete-manifest rerun, fact FK contract, capture replay idempotency, two-vintage history/latest selection, place resolution, and shared resolution evidence — **5 passed**.
+- Live official Vintage 2025 validation: national/state **53,555 bytes / 5,610 observations**; county **2,071,735 bytes / 271,575 observations**; subcounty **7,464,556 bytes / 569,471 observations**; all returned HTTP 200 and passed registered parser/completeness checks. Scheduled `EXT-011` passed independently.
+- Scheduler image built from pinned Airflow 2.9.3/Python 3.11; complete image DAG suite — **79 passed, 3 environment-intentional skips**; `pip check` reported no broken requirements.
+- Targeted Ruff format and lint checks passed. Full-tree format inspection also surfaced one pre-existing unrelated formatting difference in `tests/unit/shared/test_incremental_serving_contract.py`, which was not modified.
+- No external Airflow deployment, connection/pool mutation, or production DAG trigger was authorized or performed.
+
+## Historical 2026-08-24 implementation quality assessment
+
+This assessment records the pre-remediation state. The 2026-08-25 evidence above
+supersedes its readiness verdict and blocker list.
 
 ### Readiness verdict
 
@@ -225,21 +250,23 @@ Assessment environment was the Windows host on Python 3.13.5. It is supplementar
 
 The affected broader suite must not be represented as healthy while these focused gates fail.
 
-### First external-Airflow test gate
+### Post-review external Airflow execution
 
-Do not stage the DAG externally until all items below are checked and recorded with exact commands/results:
+The repository-side gate is complete. After human acceptance, do not expand the
+external run beyond the proven products until operators complete the final two
+environment-specific steps and record exact commands/results:
 
-- [ ] One official initial product/vintage/geography contract and reviewed fixture are frozen in the registry.
-- [ ] `CENSUS_API_KEY` is read only at request time and absent from fingerprints, captures, logs, headers, exceptions, and fixtures.
-- [ ] `public_data` connection ID and one existing Airflow pool are validated consistently.
-- [ ] Shared Census geography has the required version/basis and passes its coverage checks before PEP planning.
-- [ ] One fixture and one mocked HTTP response complete capture -> checksum-verified replay -> silver with network disabled.
-- [ ] Missing/changed/malformed/incomplete slices fail or quarantine with exact capture lineage; zero captured rows cannot produce a successful run.
-- [ ] Two vintages for the same estimate date coexist and deterministic latest-vintage selection is proven.
-- [ ] Fresh bootstrap and bootstrap rerun pass with every PEP migration/runtime/publisher asset in the manifest.
-- [ ] PEP database replay, rerun idempotency, rollback, geography miss, gold atomicity, and publisher-event tests pass.
-- [ ] Default deterministic, ETL unit, repository hygiene, Ruff format/lint, DagBag, and scheduler-image gates pass with zero unexpected skips/xfails.
-- [ ] A bounded live contract request succeeds using the exact registered endpoint/schema without printing credentials.
+- [x] Official current/prior product, vintage, and geography contracts plus reviewed fixtures are frozen in the registry.
+- [x] Initial products use credential-free Census bulk transport; no API key enters fingerprints, captures, logs, headers, exceptions, or fixtures.
+- [x] Repository runtime consistently uses the `public_data` connection ID and `census_api` pool.
+- [x] Shared Census geography version/basis and production-scale coverage checks run before PEP planning.
+- [x] Fixture and mocked HTTP paths complete capture -> checksum-verified replay -> silver with network disabled.
+- [x] Missing/changed/malformed/incomplete inputs fail or quarantine with capture lineage; zero captures cannot produce a successful run.
+- [x] Two vintages for the same estimate date coexist and deterministic latest-vintage selection is proven.
+- [x] Fresh bootstrap and bootstrap rerun pass with every PEP migration/runtime/publisher asset in the manifest.
+- [x] Database replay, rerun idempotency, rollback, resolved/unmapped geography, atomic publication, and publisher-event tests pass.
+- [x] Default deterministic, ETL unit, repository hygiene, Ruff format/lint, DagBag, and scheduler-image gates pass with zero unexpected skips/xfails.
+- [x] Bounded live requests for every registered current product pass exact endpoint, encoding, schema, and completeness validation without credentials.
 - [ ] External scheduler and workers stage the same immutable revision, expose the package on `PYTHONPATH`, have the required connection/pool/secret, and report no DAG import errors.
 - [ ] The first external DAG run is limited to the proven narrow slice; capture/control/revision/gold row counts and geography outcomes are reconciled before expanding scope.
 
