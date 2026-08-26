@@ -108,7 +108,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null
           locust -f tests/performance/locustfile.py --headless \
             --users 16 --spawn-rate 8 --run-time 30s \
-            --host http://127.0.0.1:8000 --fail-ratio 0.01 \
+            --host http://127.0.0.1:8000 \
             --csv performance-artifacts/locust --csv-full-history
           printf '%s\n' \
             'runner=github-hosted ubuntu-latest' \

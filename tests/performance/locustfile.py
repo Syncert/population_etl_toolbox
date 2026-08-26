@@ -2,9 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
-from locust import HttpUser, between, task
+from locust import HttpUser, between, events, task
+
+from tests.performance.support import locust_exit_code
+
+
+@events.quitting.add_listener
+def enforce_error_budget(environment, **_kwargs) -> None:
+    """Fail CI when the controlled scenario has no requests or at least 1% errors."""
+    stats = environment.stats.total
+    environment.process_exit_code = locust_exit_code(
+        stats.num_requests,
+        stats.fail_ratio,
+    )
+    if environment.process_exit_code:
+        logging.error(
+            "Locust error budget failed: requests=%s fail_ratio=%.4f",
+            stats.num_requests,
+            stats.fail_ratio,
+        )
 
 
 class CachedApiUser(HttpUser):
