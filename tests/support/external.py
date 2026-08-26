@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, TypeVar
 
@@ -11,6 +13,11 @@ import httpx
 import pytest
 
 T = TypeVar("T")
+REQUIRED_SCHEDULED_CREDENTIALS = (
+    "CENSUS_API_KEY",
+    "BLS_API_KEY",
+    "FRED_API_KEY",
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +33,19 @@ def require_external_key(name: str, value: str | None) -> str:
     if not value or not value.strip():
         pytest.skip(f"{name} is not configured for external contract tests")
     return value.strip()
+
+
+def validate_scheduled_credentials(environment: Mapping[str, str]) -> None:
+    """Fail a credentialed scheduled run without exposing secret values."""
+    missing = [
+        name
+        for name in REQUIRED_SCHEDULED_CREDENTIALS
+        if not environment.get(name, "").strip()
+    ]
+    if missing:
+        raise RuntimeError(
+            "missing required scheduled external credentials: " + ", ".join(missing)
+        )
 
 
 def classify_external_failure(error: BaseException) -> str:
@@ -76,3 +96,11 @@ def observe_external_call(
         result.latency_seconds,
     )
     return value, result
+
+
+def main() -> None:
+    validate_scheduled_credentials(os.environ)
+
+
+if __name__ == "__main__":
+    main()

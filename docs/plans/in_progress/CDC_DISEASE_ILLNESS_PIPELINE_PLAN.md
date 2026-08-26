@@ -88,11 +88,11 @@ in CDC-A13 through CDC-A16.
   **passed**.
 - Focused Ruff lint/format, Python compilation, and `git diff --check`:
   **passed**.
-- The complete non-external database suite reached **37 passed** before an
-  existing Census PEP test-isolation failure: `silver_pep.fact_population_estimate`
-  retained `geo_sk=7` while `test_reference_dimensions` attempted teardown.
-  The CDC integration test itself passed and has a guaranteed finalizer; this
-  unrelated baseline defect was not reported as passing or changed here.
+- The Census PEP integration-isolation defect was repaired on 2026-08-26. The
+  complete non-external database suite now passes **40 tests** with **11
+  deselected**, and post-suite reconciliation reports zero residual PEP facts,
+  revisions, release loads, geography resolutions, runs, requests, captures,
+  or publisher-ready events.
 - Not run: live CDC metadata checks, production/homelab deployment, CDC API/E2E,
   or Review Gate 2/3 human runtime review.
 

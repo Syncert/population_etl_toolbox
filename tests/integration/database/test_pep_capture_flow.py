@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from psycopg2.extensions import connection
@@ -21,6 +22,7 @@ from data_ingestion_toolbox.census_pep.silver_pep.transform import (
     transform_pep_to_silver,
 )
 from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+from tests.support.capture_seed import delete_geography
 from tests.support.postgres import PostgresHookStub
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -30,8 +32,194 @@ FIXTURE = (
 )
 
 
+@dataclass
+class PepDatabaseScope:
+    """Track committed PEP fixture state for foreign-key-safe test cleanup."""
+
+    captures: list[ResponseCapture] = field(default_factory=list)
+    event_ids: set[UUID] = field(default_factory=set)
+    geo_ids: set[str] = field(default_factory=set)
+    request_ids: set[UUID] = field(default_factory=set)
+    run_ids: set[UUID] = field(default_factory=set)
+
+    def track_run(self, run_id: UUID) -> None:
+        self.run_ids.add(run_id)
+
+    def track_request(self, request_id: UUID) -> None:
+        self.request_ids.add(request_id)
+
+    def track_capture(self, capture: ResponseCapture) -> None:
+        self.captures.append(capture)
+
+
+@pytest.fixture
+def pep_database_scope(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> PepDatabaseScope:
+    """Remove every committed row owned by one PEP integration test."""
+    scope = PepDatabaseScope()
+
+    def cleanup() -> None:
+        capture_ids = [capture.capture_id for capture in scope.captures]
+        payload_checksums: list[str] = []
+        database_connection = postgres_connection_factory()
+        try:
+            with database_connection.cursor() as cursor:
+                if scope.event_ids:
+                    cursor.execute(
+                        "DELETE FROM control.publisher_ready_event "
+                        "WHERE event_id = ANY(%s)",
+                        (list(scope.event_ids),),
+                    )
+                if capture_ids:
+                    cursor.execute(
+                        "DELETE FROM silver_ref.geography_resolution "
+                        "WHERE evidence_capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM silver_pep.fact_population_estimate "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM silver_pep.release_load "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM silver_pep.observation_revision "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM control.capture_quarantine "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "SELECT DISTINCT payload_checksum "
+                        "FROM raw_capture.response_capture "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    payload_checksums = [row[0] for row in cursor.fetchall()]
+                    cursor.execute(
+                        "ALTER TABLE raw_capture.response_capture "
+                        "DISABLE TRIGGER response_capture_reject_mutation"
+                    )
+                    cursor.execute(
+                        "DELETE FROM raw_capture.response_capture "
+                        "WHERE capture_id = ANY(%s)",
+                        (capture_ids,),
+                    )
+                    cursor.execute(
+                        "ALTER TABLE raw_capture.response_capture "
+                        "ENABLE TRIGGER response_capture_reject_mutation"
+                    )
+                    if payload_checksums:
+                        cursor.execute(
+                            "ALTER TABLE raw_capture.payload_blob "
+                            "DISABLE TRIGGER payload_blob_reject_mutation"
+                        )
+                        cursor.execute(
+                            "DELETE FROM raw_capture.payload_blob AS payload "
+                            "WHERE payload.payload_checksum = ANY(%s) "
+                            "AND NOT EXISTS ("
+                            "SELECT 1 FROM raw_capture.response_capture AS capture "
+                            "WHERE capture.payload_checksum = payload.payload_checksum)",
+                            (payload_checksums,),
+                        )
+                        cursor.execute(
+                            "ALTER TABLE raw_capture.payload_blob "
+                            "ENABLE TRIGGER payload_blob_reject_mutation"
+                        )
+                if scope.request_ids:
+                    cursor.execute(
+                        "DELETE FROM control.ingestion_request "
+                        "WHERE request_id = ANY(%s)",
+                        (list(scope.request_ids),),
+                    )
+                if scope.run_ids:
+                    cursor.execute(
+                        "DELETE FROM control.ingestion_run WHERE run_id = ANY(%s)",
+                        (list(scope.run_ids),),
+                    )
+                for geo_id in sorted(scope.geo_ids):
+                    delete_geography(cursor, geo_id)
+                if capture_ids:
+                    cursor.execute(
+                        """
+                        SELECT
+                            (SELECT COUNT(*) FROM silver_pep.fact_population_estimate
+                             WHERE capture_id = ANY(%s))
+                          + (SELECT COUNT(*) FROM silver_pep.release_load
+                             WHERE capture_id = ANY(%s))
+                          + (SELECT COUNT(*) FROM silver_pep.observation_revision
+                             WHERE capture_id = ANY(%s))
+                          + (SELECT COUNT(*) FROM silver_ref.geography_resolution
+                             WHERE evidence_capture_id = ANY(%s))
+                          + (SELECT COUNT(*) FROM control.capture_quarantine
+                             WHERE capture_id = ANY(%s))
+                          + (SELECT COUNT(*) FROM raw_capture.response_capture
+                             WHERE capture_id = ANY(%s))
+                        """,
+                        (capture_ids,) * 6,
+                    )
+                    assert cursor.fetchone() == (0,)
+                if payload_checksums:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM raw_capture.payload_blob AS payload "
+                        "WHERE payload.payload_checksum = ANY(%s) "
+                        "AND NOT EXISTS ("
+                        "SELECT 1 FROM raw_capture.response_capture AS capture "
+                        "WHERE capture.payload_checksum = payload.payload_checksum)",
+                        (payload_checksums,),
+                    )
+                    assert cursor.fetchone() == (0,)
+                if scope.request_ids:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM control.ingestion_request "
+                        "WHERE request_id = ANY(%s)",
+                        (list(scope.request_ids),),
+                    )
+                    assert cursor.fetchone() == (0,)
+                if scope.run_ids:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM control.ingestion_run "
+                        "WHERE run_id = ANY(%s)",
+                        (list(scope.run_ids),),
+                    )
+                    assert cursor.fetchone() == (0,)
+                if scope.event_ids:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM control.publisher_ready_event "
+                        "WHERE event_id = ANY(%s)",
+                        (list(scope.event_ids),),
+                    )
+                    assert cursor.fetchone() == (0,)
+                if scope.geo_ids:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM silver_ref.dim_geo_entity "
+                        "WHERE geo_id = ANY(%s)",
+                        (list(scope.geo_ids),),
+                    )
+                    assert cursor.fetchone() == (0,)
+            database_connection.commit()
+        except BaseException:
+            database_connection.rollback()
+            raise
+        finally:
+            database_connection.close()
+
+    request.addfinalizer(cleanup)
+    return scope
+
+
 def test_pep_fixture_capture_replays_idempotently(
     postgres_connection_factory: Callable[[], connection],
+    pep_database_scope: PepDatabaseScope,
 ) -> None:
     """Covers: ARC-002, DB-003 — PEP replay stays capture scoped and rerunnable."""
     release = next(
@@ -44,6 +232,7 @@ def test_pep_fixture_capture_replays_idempotently(
         source_code=CONFIG.source_code,
     )
     run_id = control.start_run(watermark={"product_code": release.product_code})
+    pep_database_scope.track_run(run_id)
     parameters = {
         "dataset_code": release.dataset_code,
         "vintage_year": release.vintage_year,
@@ -54,6 +243,7 @@ def test_pep_fixture_capture_replays_idempotently(
         endpoint=release.data_url,
         parameters=parameters,
     )
+    pep_database_scope.track_request(request.request_id)
     capture = ResponseCapture(
         capture_id=uuid4(),
         request_id=request.request_id,
@@ -70,6 +260,7 @@ def test_pep_fixture_capture_replays_idempotently(
         source_revision=release.product_code,
     )
     persist_response_capture(postgres_connection_factory, capture)
+    pep_database_scope.track_capture(capture)
     control.finish_request(request.request_id, status="captured")
     control.finish_run(run_id, status="success")
 
@@ -107,6 +298,7 @@ def test_pep_fixture_capture_replays_idempotently(
 def _capture_fixture(
     connection_factory: Callable[[], connection],
     *,
+    database_scope: PepDatabaseScope,
     dataset_code: str,
     vintage_year: int,
     fixture_name: str,
@@ -118,6 +310,7 @@ def _capture_fixture(
     )
     control = CaptureControl(connection_factory, source_code=CONFIG.source_code)
     run_id = control.start_run(watermark={"product_code": release.product_code})
+    database_scope.track_run(run_id)
     parameters = {
         "dataset_code": dataset_code,
         "vintage_year": vintage_year,
@@ -128,6 +321,7 @@ def _capture_fixture(
         endpoint=release.data_url,
         parameters=parameters,
     )
+    database_scope.track_request(request.request_id)
     capture = ResponseCapture(
         capture_id=uuid4(),
         request_id=request.request_id,
@@ -144,6 +338,7 @@ def _capture_fixture(
         source_revision=release.product_code,
     )
     persist_response_capture(connection_factory, capture)
+    database_scope.track_capture(capture)
     replay_pep_capture(
         connection_factory,
         capture_id=capture.capture_id,
@@ -156,6 +351,7 @@ def _capture_fixture(
 
 def test_pep_two_vintages_and_place_publish_without_losing_revision_history(
     postgres_connection_factory: Callable[[], connection],
+    pep_database_scope: PepDatabaseScope,
 ) -> None:
     """Covers: DB-003 — revision/latest and canonical place contracts coexist."""
     writer = postgres_connection_factory()
@@ -170,26 +366,31 @@ def test_pep_two_vintages_and_place_publish_without_losing_revision_history(
                     ('us:1', 'nation', NULL, NULL, 2020, 2025),
                     ('state:01|place:00124', 'place', '01', '00124', 2020, 2025)
                 ON CONFLICT (geo_id) DO NOTHING
+                RETURNING geo_id
                 """
             )
+            pep_database_scope.geo_ids.update(row[0] for row in cursor.fetchall())
         writer.commit()
     finally:
         writer.close()
 
     _capture_fixture(
         postgres_connection_factory,
+        database_scope=pep_database_scope,
         dataset_code="pep_nst_alldata",
         vintage_year=2024,
         fixture_name="nst_2024.csv",
     )
     current_capture = _capture_fixture(
         postgres_connection_factory,
+        database_scope=pep_database_scope,
         dataset_code="pep_nst_alldata",
         vintage_year=2025,
         fixture_name="nst_2025.csv",
     )
     _capture_fixture(
         postgres_connection_factory,
+        database_scope=pep_database_scope,
         dataset_code="pep_subcounty",
         vintage_year=2025,
         fixture_name="subcounty_2025.csv",
@@ -216,10 +417,6 @@ def test_pep_two_vintages_and_place_publish_without_losing_revision_history(
                 """,
                 (current_capture.capture_id,),
             )
-            cursor.execute(
-                "DELETE FROM control.publisher_ready_event "
-                "WHERE source_code = 'CENSUS_PEP'"
-            )
         writer.commit()
     finally:
         writer.close()
@@ -238,6 +435,7 @@ def test_pep_two_vintages_and_place_publish_without_losing_revision_history(
         publisher_schema="gold_pep",
     )
     assert event_id is not None
+    pep_database_scope.event_ids.add(event_id)
     reader = postgres_connection_factory()
     try:
         with reader.cursor() as cursor:

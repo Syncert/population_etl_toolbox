@@ -51,6 +51,9 @@ jobs:
           python -m pip install -e ".[dev]"
           python -m pip check
 
+      - name: Validate scheduled external credentials
+        run: python -m tests.support.external
+
       - name: Run external source contracts
         run: >-
           pytest tests/external tests/integration/database/legacy

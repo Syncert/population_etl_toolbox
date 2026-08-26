@@ -3,14 +3,14 @@
 ## Plan status
 
 - **Status:** Ready for review; production-testable totals prototype complete
-- **Last updated:** 2026-08-25
+- **Last updated:** 2026-08-26
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-26
 
 **Current milestone:** PEP-005 production-testable totals prototype complete
 
@@ -94,6 +94,14 @@
 - Scheduler image built from pinned Airflow 2.9.3/Python 3.11; complete image DAG suite — **79 passed, 3 environment-intentional skips**; `pip check` reported no broken requirements.
 - Targeted Ruff format and lint checks passed. Full-tree format inspection also surfaced one pre-existing unrelated formatting difference in `tests/unit/shared/test_incremental_serving_contract.py`, which was not modified.
 - No external Airflow deployment, connection/pool mutation, or production DAG trigger was authorized or performed.
+
+### 2026-08-26 integration-isolation evidence
+
+- Reproduced the complete-suite failure by running the two PEP database flows before the shared reference-dimension tests: the PEP assertions passed, then reference teardown failed because `silver_pep.fact_population_estimate` retained a foreign key to a test-created geography.
+- Both PEP integration flows now register a finalizer before assertions and track only their own run, request, capture, publisher-event, and newly inserted geography identities. Cleanup removes dependent PEP facts, release loads, revisions, geography resolutions, quarantine rows, immutable raw capture records through a transactionally restored test-only trigger bypass, orphaned payloads, control rows, events, and test-created geographies in foreign-key-safe order.
+- Focused ordering evidence: `python -u -m pytest tests/integration/database/test_pep_capture_flow.py tests/integration/database/test_reference_dimensions.py -m "integration and database and not slow" -q --tb=short --maxfail=1` — **4 passed**.
+- Complete non-external database evidence: `python -u -m pytest tests/integration/database -m "integration and database and not slow and not external" -q --tb=short --maxfail=1` — **40 passed, 11 deselected**.
+- Post-suite reconciliation returned zero PEP facts, revisions, release loads, geography resolutions, ingestion runs, requests, raw captures, and publisher-ready events. Targeted Ruff format/lint and `git diff --check` passed; host-only Airflow, pytest-cache, and Windows console-encoding warnings remain environment-local.
 
 ## Historical 2026-08-24 implementation quality assessment
 

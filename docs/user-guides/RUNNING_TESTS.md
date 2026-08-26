@@ -100,7 +100,8 @@ not end in `_test`.
 External tests make bounded live requests. Census and FRED require
 `CENSUS_API_KEY` and `FRED_API_KEY`; BLS uses `BLS_API_KEY` when available.
 Missing required keys are reported as named skips only in runners that permit a
-partial local run. Never commit credentials.
+partial local run. The scheduled GitHub Actions runner requires all three keys
+before it collects live contract evidence. Never commit credentials.
 
 For frontend tests:
 
