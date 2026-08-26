@@ -113,6 +113,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "acs_ingestion_slices"),
         ("control", "bls_ingestion_slices"),
         ("control", "fred_ingestion_slices"),
+        ("control", "cdc_dataset_release"),
     }
     with postgres_connection.cursor() as cursor:
         cursor.execute(

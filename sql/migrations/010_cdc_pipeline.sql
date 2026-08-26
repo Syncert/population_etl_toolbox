@@ -1,367 +1,296 @@
--- CDC illness and disease data pipeline migration.
--- This is a reproducible fresh-bootstrap DDL, not a production compatibility migration.
--- Existing prototype raw_* schemas are intentionally left alone until source cutover.
+-- Capture-first CDC CDI and PLACES county warehouse contract.
+-- Fresh-bootstrap and idempotent rerun DDL for the disposable beta warehouse.
 
 CREATE SCHEMA IF NOT EXISTS silver_cdc;
 CREATE SCHEMA IF NOT EXISTS gold_cdc;
 
+CREATE TABLE IF NOT EXISTS control.cdc_dataset_release (
+    run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    socrata_id TEXT NOT NULL CHECK (socrata_id ~ '^[a-z0-9]{4}-[a-z0-9]{4}$'),
+    title TEXT NOT NULL CHECK (BTRIM(title) <> ''),
+    release_watermark BIGINT NOT NULL CHECK (release_watermark >= 0),
+    schema_contract JSONB NOT NULL,
+    provider_row_count BIGINT CHECK (provider_row_count >= 0),
+    license_id TEXT,
+    metadata_capture_id UUID NOT NULL
+        REFERENCES raw_capture.response_capture(capture_id),
+    decision TEXT NOT NULL CHECK (decision IN (
+        'unchanged', 'ingest', 'schema_change_quarantine',
+        'dataset_replacement_quarantine', 'backward_watermark_quarantine'
+    )),
+    status TEXT NOT NULL CHECK (status IN (
+        'captured', 'quarantined', 'silver_ready', 'published'
+    )),
+    captured_row_count BIGINT NOT NULL DEFAULT 0 CHECK (captured_row_count >= 0),
+    page_count INTEGER NOT NULL DEFAULT 0 CHECK (page_count >= 0),
+    complete BOOLEAN NOT NULL,
+    published_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (status <> 'published' OR published_at IS NOT NULL),
+    CHECK (decision <> 'ingest' OR status = 'quarantined' OR complete),
+    UNIQUE (asset_id, release_watermark, run_id)
+);
+CREATE INDEX IF NOT EXISTS cdc_dataset_release_latest_idx
+    ON control.cdc_dataset_release (asset_id, release_watermark DESC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS silver_cdc.observation_revision (
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    source_row_index BIGINT NOT NULL CHECK (source_row_index >= 0),
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    release_watermark TEXT NOT NULL,
+    source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{64}$'),
+    source_record JSONB NOT NULL,
+    measure_id TEXT NOT NULL,
+    measure_label TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    period_start INTEGER NOT NULL,
+    period_end INTEGER NOT NULL CHECK (period_end >= period_start),
+    geo_source_code TEXT NOT NULL,
+    geo_source_label TEXT,
+    geo_type TEXT NOT NULL CHECK (geo_type IN ('nation', 'state', 'county', 'unsupported')),
+    geo_id TEXT,
+    value_source TEXT,
+    value NUMERIC,
+    value_status TEXT NOT NULL CHECK (value_status IN ('valid', 'missing', 'suppressed')),
+    unit TEXT,
+    value_type_id TEXT NOT NULL,
+    value_type_label TEXT NOT NULL,
+    adjustment_status TEXT NOT NULL CHECK (
+        adjustment_status IN ('crude', 'age_adjusted', 'source_specific')
+    ),
+    confidence_lower NUMERIC,
+    confidence_upper NUMERIC,
+    footnote_code TEXT,
+    footnote_text TEXT,
+    stratum_id TEXT NOT NULL CHECK (stratum_id ~ '^[0-9a-f]{64}$'),
+    strata JSONB NOT NULL,
+    estimate_method TEXT NOT NULL,
+    population_basis TEXT NOT NULL,
+    total_population NUMERIC CHECK (total_population IS NULL OR total_population >= 0),
+    population_18_plus NUMERIC CHECK (
+        population_18_plus IS NULL OR population_18_plus >= 0
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (capture_id, source_row_index),
+    CHECK (value_status <> 'valid' OR value IS NOT NULL),
+    CHECK (confidence_lower IS NULL OR confidence_upper IS NULL OR
+           confidence_lower <= confidence_upper)
+);
+CREATE INDEX IF NOT EXISTS cdc_observation_revision_run_idx
+    ON silver_cdc.observation_revision (run_id, asset_id, release_watermark);
+
+CREATE TABLE IF NOT EXISTS silver_cdc.observation_quarantine (
+    quarantine_sk BIGSERIAL PRIMARY KEY,
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    release_watermark TEXT NOT NULL,
+    source_row_index BIGINT NOT NULL CHECK (source_row_index >= 0),
+    error_code TEXT NOT NULL,
+    error_summary TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (run_id, asset_id, release_watermark, source_row_index, error_code)
+);
+
 CREATE TABLE IF NOT EXISTS silver_cdc.dim_dataset_release (
-    asset_id                 TEXT NOT NULL CHECK (asset_id ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    title                    TEXT NOT NULL,
-    publisher_program        TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    release_timestamp        TIMESTAMPTZ NOT NULL,
-    methodology_url          TEXT NOT NULL CHECK (BTRIM(methodology_url) <> ''),
-    geography_basis          TEXT NOT NULL,
-    parser_contract_version  TEXT NOT NULL CHECK (BTRIM(parser_contract_version) <> ''),
-    capture_lineage          JSONB NOT NULL DEFAULT '{}'::JSONB,
-    PRIMARY KEY (asset_id, release_version)
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    release_watermark TEXT NOT NULL,
+    socrata_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    methodology_url TEXT NOT NULL,
+    geography_basis TEXT NOT NULL,
+    parser_contract_version TEXT NOT NULL,
+    estimate_method TEXT NOT NULL,
+    population_basis TEXT NOT NULL,
+    metadata_capture_id UUID NOT NULL
+        REFERENCES raw_capture.response_capture(capture_id),
+    source_run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    source_record_count BIGINT NOT NULL CHECK (source_record_count >= 0),
+    quarantine_count BIGINT NOT NULL CHECK (quarantine_count >= 0),
+    status TEXT NOT NULL CHECK (status IN ('replaying', 'silver_ready', 'published')),
+    reconciled_at TIMESTAMPTZ,
+    published_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (asset_id, release_watermark),
+    CHECK (status = 'replaying' OR reconciled_at IS NOT NULL),
+    CHECK (status <> 'published' OR published_at IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS silver_cdc.dim_measure (
-    measure_id               TEXT NOT NULL CHECK (measure_id ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    dataset                 TEXT NOT NULL,
-    topic                    TEXT NOT NULL,
-    response_category        TEXT NOT NULL,
-    unit                    TEXT NOT NULL,
-    value_type               TEXT NOT NULL CHECK (value_type IN ('numeric', 'string', 'percentage')),
-    population_universe      TEXT NOT NULL,
-    crude_adjusted_status    TEXT NOT NULL CHECK (crude_adjusted_status IN ('crude', 'age-adjusted')),
-    source_label             TEXT NOT NULL,
-    PRIMARY KEY (measure_id)
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    measure_id TEXT NOT NULL,
+    value_type_id TEXT NOT NULL,
+    measure_label TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    value_type_label TEXT NOT NULL,
+    unit TEXT,
+    adjustment_status TEXT NOT NULL,
+    estimate_method TEXT NOT NULL,
+    population_basis TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (asset_id, measure_id, value_type_id)
 );
 
 CREATE TABLE IF NOT EXISTS silver_cdc.dim_stratum (
-    stratum_id               TEXT NOT NULL CHECK (stratum_id ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    stratum_code             TEXT NOT NULL,
-    stratum_label            TEXT NOT NULL,
-    PRIMARY KEY (stratum_id)
+    stratum_id TEXT PRIMARY KEY CHECK (stratum_id ~ '^[0-9a-f]{64}$'),
+    strata JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS silver_cdc.fact_health_observation (
-    observation_id           UUID PRIMARY KEY,
-    dataset                 TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    measure_id               TEXT NOT NULL,
-    geo_id                  TEXT NOT NULL,
-    period                  TEXT NOT NULL,
-    value_type               TEXT NOT NULL,
-    adjustment_status        TEXT NOT NULL CHECK (adjustment_status IN ('crude', 'age-adjusted')),
-    stratum_id               TEXT NOT NULL,
-    value                   NUMERIC,
-    value_text               TEXT,
-    unit                    TEXT NOT NULL,
-    confidence_interval_lower NUMERIC,
-    confidence_interval_upper NUMERIC,
-    numerator               NUMERIC,
-    denominator             NUMERIC,
-    sample_size             NUMERIC,
-    suppression_code        TEXT,
-    missing_code            TEXT,
-    footnote_code           TEXT,
-    footnote_text           TEXT,
-    source_record_id        TEXT NOT NULL,
-    geo_sk                  TEXT NOT NULL,
-    capture_id              UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
-    transformation_version  TEXT NOT NULL CHECK (BTRIM(transformation_version) <> ''),
-    PRIMARY KEY (observation_id),
-    UNIQUE (dataset, release_version, measure_id, geo_id, period, value_type, adjustment_status, stratum_id)
-);
-
-CREATE TABLE IF NOT EXISTS gold_cdc.health_observation (
-    observation_id           UUID PRIMARY KEY,
-    dataset                 TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    measure_id               TEXT NOT NULL,
-    geo_id                  TEXT NOT NULL,
-    period                  TEXT NOT NULL,
-    value_type               TEXT NOT NULL,
-    adjustment_status        TEXT NOT NULL CHECK (adjustment_status IN ('crude', 'age-adjusted')),
-    stratum_id               TEXT NOT NULL,
-    value                   NUMERIC,
-    unit                    TEXT NOT NULL,
-    confidence_interval_lower NUMERIC,
-    confidence_interval_upper NUMERIC,
-    numerator               NUMERIC,
-    denominator             NUMERIC,
-    sample_size             NUMERIC,
-    suppression_code        TEXT,
-    missing_code            TEXT,
-    footnote_code           TEXT,
-    footnote_text           TEXT,
-    source_record_id        TEXT NOT NULL,
-    geo_sk                  TEXT NOT NULL,
-    PRIMARY KEY (observation_id),
-    UNIQUE (dataset, release_version, measure_id, geo_id, period, value_type, adjustment_status, stratum_id)
-);
-
-CREATE TABLE IF NOT EXISTS gold_cdc.measure_export (
-    export_id               UUID PRIMARY KEY,
-    dataset                 TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    measure_id               TEXT NOT NULL,
-    glossary_keys           TEXT[] NOT NULL,
-    source_labels           TEXT[] NOT NULL,
-    units_grains            TEXT[] NOT NULL,
-    lineage                 JSONB NOT NULL DEFAULT '{}'::JSONB,
-    schema_version          TEXT NOT NULL,
-    watermark               TEXT NOT NULL,
-    PRIMARY KEY (export_id)
-);
-
-CREATE TABLE IF NOT EXISTS gold_cdc.latest_release_observation (
-    observation_id           UUID PRIMARY KEY,
-    dataset                 TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    measure_id               TEXT NOT NULL,
-    geo_id                  TEXT NOT NULL,
-    period                  TEXT NOT NULL,
-    value_type               TEXT NOT NULL,
-    adjustment_status        TEXT NOT NULL CHECK (adjustment_status IN ('crude', 'age-adjusted')),
-    stratum_id               TEXT NOT NULL,
-    value                   NUMERIC,
-    unit                    TEXT NOT NULL,
-    confidence_interval_lower NUMERIC,
-    confidence_interval_upper NUMERIC,
-    numerator               NUMERIC,
-    denominator             NUMERIC,
-    sample_size             NUMERIC,
-    suppression_code        TEXT,
-    missing_code            TEXT,
-    footnote_code           TEXT,
-    footnote_text           TEXT,
-    source_record_id        TEXT NOT NULL,
-    geo_sk                  TEXT NOT NULL,
-    PRIMARY KEY (observation_id),
-    UNIQUE (dataset, measure_id, geo_id, period, value_type, adjustment_status, stratum_id)
-);
-
-CREATE INDEX IF NOT EXISTS silver_cdc_dim_dataset_release_asset_idx
-    ON silver_cdc.dim_dataset_release (asset_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_dim_dataset_release_release_idx
-    ON silver_cdc.dim_dataset_release (release_version);
-CREATE INDEX IF NOT EXISTS silver_cdc_dim_measure_dataset_idx
-    ON silver_cdc.dim_measure (dataset);
-CREATE INDEX IF NOT EXISTS silver_cdc_dim_measure_id_idx
-    ON silver_cdc.dim_measure (measure_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_dim_stratum_id_idx
-    ON silver_cdc.dim_stratum (stratum_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_dataset_idx
-    ON silver_cdc.fact_health_observation (dataset);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_measure_idx
-    ON silver_cdc.fact_health_observation (measure_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_geo_idx
-    ON silver_cdc.fact_health_observation (geo_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_period_idx
-    ON silver_cdc.fact_health_observation (period);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_value_type_idx
-    ON silver_cdc.fact_health_observation (value_type);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_adjustment_idx
-    ON silver_cdc.fact_health_observation (adjustment_status);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_stratum_idx
-    ON silver_cdc.fact_health_observation (stratum_id);
-CREATE INDEX IF NOT EXISTS silver_cdc_fact_health_observation_capture_idx
-    ON silver_cdc.fact_health_observation (capture_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_dataset_idx
-    ON gold_cdc.health_observation (dataset);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_measure_idx
-    ON gold_cdc.health_observation (measure_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_geo_idx
-    ON gold_cdc.health_observation (geo_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_period_idx
-    ON gold_cdc.health_observation (period);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_value_type_idx
-    ON gold_cdc.health_observation (value_type);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_adjustment_idx
-    ON gold_cdc.health_observation (adjustment_status);
-CREATE INDEX IF NOT EXISTS gold_cdc_health_observation_stratum_idx
-    ON gold_cdc.health_observation (stratum_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_measure_export_dataset_idx
-    ON gold_cdc.measure_export (dataset);
-CREATE INDEX IF NOT EXISTS gold_cdc_measure_export_release_idx
-    ON gold_cdc.measure_export (release_version);
-CREATE INDEX IF NOT EXISTS gold_cdc_measure_export_measure_idx
-    ON gold_cdc.measure_export (measure_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_dataset_idx
-    ON gold_cdc.latest_release_observation (dataset);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_measure_idx
-    ON gold_cdc.latest_release_observation (measure_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_geo_idx
-    ON gold_cdc.latest_release_observation (geo_id);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_period_idx
-    ON gold_cdc.latest_release_observation (period);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_value_type_idx
-    ON gold_cdc.latest_release_observation (value_type);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_adjustment_idx
-    ON gold_cdc.latest_release_observation (adjustment_status);
-CREATE INDEX IF NOT EXISTS gold_cdc_latest_release_observation_stratum_idx
-    ON gold_cdc.latest_release_observation (stratum_id);
-
-CREATE TABLE IF NOT EXISTS control.cdc_ingestion_slices (
-    id                     BIGSERIAL PRIMARY KEY,
-    dataset                TEXT NOT NULL CHECK (dataset IN ('cdc_illness_disease')),
-    year                   INTEGER NOT NULL CHECK (
-        year BETWEEN 2000 AND EXTRACT(YEAR FROM CURRENT_DATE) + 1
+    observation_sk BIGSERIAL PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    release_watermark TEXT NOT NULL,
+    source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{64}$'),
+    source_run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    source_row_index BIGINT NOT NULL CHECK (source_row_index >= 0),
+    measure_id TEXT NOT NULL,
+    value_type_id TEXT NOT NULL,
+    stratum_id TEXT NOT NULL REFERENCES silver_cdc.dim_stratum(stratum_id),
+    period_start INTEGER NOT NULL,
+    period_end INTEGER NOT NULL CHECK (period_end >= period_start),
+    geo_id TEXT,
+    geo_sk BIGINT REFERENCES silver_ref.dim_geo_entity(geo_sk),
+    geo_type TEXT NOT NULL,
+    geography_status TEXT NOT NULL CHECK (
+        geography_status IN ('resolved', 'unmapped', 'unsupported')
     ),
-    geo_level              TEXT NOT NULL CHECK (geo_level IN ('us', 'state', 'county')),
-    county_asset_id       TEXT,
-    variables_hash         TEXT,
-    variables_count        INTEGER,
-    status                 TEXT NOT NULL CHECK (
-        status IN ('planned', 'running', 'success', 'empty', 'failed')
-    ),
-    rows_loaded            BIGINT NOT NULL DEFAULT 0 CHECK (rows_loaded >= 0),
-    started_at             TIMESTAMPTZ,
-    finished_at            TIMESTAMPTZ,
-    variables_hash_seen_at TIMESTAMPTZ,
-    last_error             TEXT,
-    CHECK (finished_at IS NULL OR (started_at IS NOT NULL AND started_at <= finished_at)),
-    CHECK (
-        (geo_level IN ('us', 'state') AND county_asset_id IS NULL)
-        OR (geo_level = 'county' AND county_asset_id ~ '^[A-Z0-9][A-Z0-9_-]*$')
-    )
+    value_source TEXT,
+    value NUMERIC,
+    value_status TEXT NOT NULL CHECK (value_status IN ('valid', 'missing', 'suppressed')),
+    unit TEXT,
+    adjustment_status TEXT NOT NULL,
+    confidence_lower NUMERIC,
+    confidence_upper NUMERIC,
+    footnote_code TEXT,
+    footnote_text TEXT,
+    estimate_method TEXT NOT NULL,
+    population_basis TEXT NOT NULL,
+    total_population NUMERIC,
+    population_18_plus NUMERIC,
+    transformation_version TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (asset_id, release_watermark)
+        REFERENCES silver_cdc.dim_dataset_release(asset_id, release_watermark),
+    FOREIGN KEY (asset_id, measure_id, value_type_id)
+        REFERENCES silver_cdc.dim_measure(asset_id, measure_id, value_type_id),
+    UNIQUE (asset_id, release_watermark, source_record_id),
+    CHECK (value_status <> 'valid' OR value IS NOT NULL),
+    CHECK (confidence_lower IS NULL OR confidence_upper IS NULL OR
+           confidence_lower <= confidence_upper)
 );
+CREATE INDEX IF NOT EXISTS cdc_fact_measure_geo_period_idx
+    ON silver_cdc.fact_health_observation (
+        asset_id, measure_id, geo_id, period_start, period_end
+    );
+CREATE INDEX IF NOT EXISTS cdc_fact_capture_idx
+    ON silver_cdc.fact_health_observation (capture_id, source_row_index);
 
-CREATE UNIQUE INDEX IF NOT EXISTS cdc_ingestion_slices_uniq_nostate
-    ON control.cdc_ingestion_slices (dataset, year, geo_level)
-    WHERE county_asset_id IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS cdc_ingestion_slices_uniq_state
-    ON control.cdc_ingestion_slices (dataset, year, geo_level, county_asset_id)
-    WHERE county_asset_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS cdc_ingestion_slices_status_idx
-    ON control.cdc_ingestion_slices (status);
-CREATE INDEX IF NOT EXISTS cdc_ingestion_slices_hash_idx
-    ON control.cdc_ingestion_slices (variables_hash);
-CREATE INDEX IF NOT EXISTS cdc_ingestion_slices_geo_idx
-    ON control.cdc_ingestion_slices (geo_level);
-CREATE INDEX IF NOT EXISTS cdc_ingestion_slices_asset_idx
-    ON control.cdc_ingestion_slices (county_asset_id);
+CREATE OR REPLACE VIEW gold_cdc.health_observation AS
+SELECT fact.observation_sk, fact.asset_id, release.title AS dataset_title,
+       fact.release_watermark, fact.measure_id, measure.measure_label,
+       measure.topic, fact.value_type_id, measure.value_type_label,
+       fact.period_start, fact.period_end, fact.geo_id, fact.geo_sk,
+       fact.geo_type, fact.geography_status, fact.value_source, fact.value,
+       fact.value_status, fact.unit, fact.adjustment_status,
+       fact.confidence_lower, fact.confidence_upper, fact.footnote_code,
+       fact.footnote_text, fact.stratum_id, stratum.strata,
+       fact.estimate_method, fact.population_basis, fact.total_population,
+       fact.population_18_plus, release.methodology_url,
+       release.geography_basis, fact.source_record_id, fact.capture_id
+FROM silver_cdc.fact_health_observation AS fact
+JOIN silver_cdc.dim_dataset_release AS release
+  ON release.asset_id = fact.asset_id
+ AND release.release_watermark = fact.release_watermark
+JOIN silver_cdc.dim_measure AS measure
+  ON measure.asset_id = fact.asset_id
+ AND measure.measure_id = fact.measure_id
+ AND measure.value_type_id = fact.value_type_id
+JOIN silver_cdc.dim_stratum AS stratum USING (stratum_id)
+WHERE release.status = 'published';
 
-CREATE TABLE IF NOT EXISTS control.cdc_dataset_registry (
-    registry_id             UUID NOT NULL,
-    dataset                TEXT NOT NULL,
-    asset_id               TEXT NOT NULL CHECK (asset_id ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    title                  TEXT NOT NULL,
-    publisher_program        TEXT NOT NULL,
-    release_version          TEXT NOT NULL,
-    release_timestamp        TIMESTAMPTZ NOT NULL,
-    methodology_url          TEXT NOT NULL CHECK (BTRIM(methodology_url) <> ''),
-    geography_basis          TEXT NOT NULL,
-    parser_contract_version  TEXT NOT NULL CHECK (BTRIM(parser_contract_version) <> ''),
-    expected_columns        TEXT[] NOT NULL,
-    geography_levels        TEXT[] NOT NULL,
-    update_cadence          TEXT NOT NULL,
-    PRIMARY KEY (registry_id, dataset)
-);
+CREATE OR REPLACE VIEW gold_cdc.latest_release_observation AS
+SELECT observation.*
+FROM gold_cdc.health_observation AS observation
+JOIN (
+    SELECT asset_id, MAX(release_watermark::BIGINT) AS release_watermark
+    FROM silver_cdc.dim_dataset_release
+    WHERE status = 'published'
+    GROUP BY asset_id
+) AS latest
+  ON latest.asset_id = observation.asset_id
+ AND latest.release_watermark::TEXT = observation.release_watermark;
 
-CREATE INDEX IF NOT EXISTS control.cdc_dataset_registry_dataset_idx
-    ON control.cdc_dataset_registry (dataset);
-CREATE INDEX IF NOT EXISTS control.cdc_dataset_registry_asset_idx
-    ON control.cdc_dataset_registry (asset_id);
-CREATE INDEX IF NOT EXISTS control.cdc_dataset_registry_release_idx
-    ON control.cdc_dataset_registry (release_version);
+CREATE OR REPLACE VIEW gold_cdc.measure_export AS
+SELECT measure.asset_id AS source_dataset,
+       measure.measure_id AS source_measure_code,
+       measure.value_type_id AS source_value_type_code,
+       measure.measure_label AS display_name,
+       measure.topic, measure.value_type_label, measure.unit,
+       measure.adjustment_status, measure.estimate_method,
+       measure.population_basis,
+       release.release_watermark AS source_watermark,
+       release.methodology_url,
+       release.parser_contract_version AS schema_version
+FROM silver_cdc.dim_measure AS measure
+JOIN LATERAL (
+    SELECT candidate.*
+    FROM silver_cdc.dim_dataset_release AS candidate
+    WHERE candidate.asset_id = measure.asset_id
+      AND candidate.status = 'published'
+    ORDER BY candidate.release_watermark::BIGINT DESC
+    LIMIT 1
+) AS release ON TRUE;
 
-CREATE TABLE IF NOT EXISTS control.cdc_schema_contract (
-    contract_id             UUID NOT NULL,
-    dataset                TEXT NOT NULL,
-    asset_id               TEXT NOT NULL CHECK (asset_id ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    schema_version          TEXT NOT NULL,
-    column_names           TEXT[] NOT NULL,
-    column_types           TEXT[] NOT NULL,
-    primary_keys           TEXT[] NOT NULL,
-    release_version          TEXT NOT NULL,
-    PRIMARY KEY (contract_id, dataset, schema_version)
-);
-
-CREATE INDEX IF NOT EXISTS control.cdc_schema_contract_dataset_idx
-    ON control.cdc_schema_contract (dataset);
-CREATE INDEX IF NOT EXISTS control.cdc_schema_contract_asset_idx
-    ON control.cdc_schema_contract (asset_id);
-CREATE INDEX IF NOT EXISTS control.cdc_schema_contract_schema_idx
-    ON control.cdc_schema_contract (schema_version);
-
-CREATE TABLE IF NOT EXISTS control.cdc_capture_quarantine (
-    quarantine_id    UUID PRIMARY KEY,
-    capture_id       UUID NOT NULL,
-    run_id           UUID NOT NULL,
-    source_code      TEXT NOT NULL CHECK (source_code ~ '^[A-Z0-9][A-Z0-9_-]*$'),
-    parser_version   TEXT NOT NULL CHECK (BTRIM(parser_version) <> ''),
-    error_code       TEXT NOT NULL CHECK (BTRIM(error_code) <> ''),
-    error_summary    TEXT NOT NULL CHECK (BTRIM(error_summary) <> ''),
-    status           TEXT NOT NULL DEFAULT 'pending' CHECK (
-        status IN ('pending', 'replaying', 'resolved', 'ignored')
-    ),
-    replay_attempts  INTEGER NOT NULL DEFAULT 0 CHECK (replay_attempts >= 0),
-    last_replayed_at TIMESTAMPTZ,
-    resolved_at      TIMESTAMPTZ,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (capture_id, parser_version, error_code),
-    CHECK (status <> 'resolved' OR resolved_at IS NOT NULL),
-    FOREIGN KEY (capture_id, run_id, source_code)
-        REFERENCES raw_capture.response_capture(capture_id, run_id, source_code)
-);
-
-CREATE INDEX IF NOT EXISTS control.cdc_capture_quarantine_status_idx
-    ON control.cdc_capture_quarantine (source_code, status, created_at);
-
-CREATE OR REPLACE FUNCTION silver_cdc.reject_mutation()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RAISE EXCEPTION 'silver_cdc relations are append-only'
-        USING ERRCODE = '55000';
-END;
-$$;
-
-DROP TRIGGER IF EXISTS silver_cdc_fact_health_observation_reject_mutation
-    ON silver_cdc.fact_health_observation;
-CREATE TRIGGER silver_cdc_fact_health_observation_reject_mutation
-    BEFORE UPDATE OR DELETE OR TRUNCATE ON silver_cdc.fact_health_observation
-    FOR EACH STATEMENT EXECUTE FUNCTION silver_cdc.reject_mutation();
-
-CREATE OR REPLACE FUNCTION gold_cdc.reject_mutation()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RAISE EXCEPTION 'gold_cdc relations are append-only'
-        USING ERRCODE = '55000';
-END;
-$$;
-
-DROP TRIGGER IF EXISTS gold_cdc_health_observation_reject_mutation
-    ON gold_cdc.health_observation;
-CREATE TRIGGER gold_cdc_health_observation_reject_mutation
-    BEFORE UPDATE OR DELETE OR TRUNCATE ON gold_cdc.health_observation
-    FOR EACH STATEMENT EXECUTE FUNCTION gold_cdc.reject_mutation();
+CREATE OR REPLACE VIEW gold_cdc.metric_publisher AS
+SELECT 'CDC'::TEXT AS source_code,
+       '1.0'::TEXT AS publisher_contract_version,
+       measure.asset_id || ':' || measure.measure_id || ':' ||
+           measure.value_type_id AS source_object_key,
+       'measure'::TEXT AS source_object_type,
+       measure.measure_label::TEXT AS metric_display_name,
+       measure.unit::TEXT AS units,
+       'source_fact'::TEXT AS measure_kind,
+       ARRAY_AGG(DISTINCT UPPER(fact.geo_type)
+                 ORDER BY UPPER(fact.geo_type))::TEXT[] AS valid_geo_grains,
+       ARRAY['ANNUAL']::TEXT[] AS valid_time_grains,
+       NULL::TEXT AS aggregation_characteristic,
+       JSONB_BUILD_OBJECT(
+           'schema', 'gold_cdc',
+           'relation', 'health_observation',
+           'asset_id', measure.asset_id,
+           'measure_id', measure.measure_id,
+           'value_type_id', measure.value_type_id
+       ) AS physical_lineage,
+       release.release_watermark::TEXT AS source_watermark,
+       release.source_run_id,
+       release.published_at AS publication_time,
+       'Centers for Disease Control and Prevention'::TEXT AS source_name,
+       'government-public-health'::TEXT AS source_type,
+       release.methodology_url::TEXT AS reference_url
+FROM silver_cdc.dim_measure AS measure
+JOIN silver_cdc.fact_health_observation AS fact
+  ON fact.asset_id = measure.asset_id
+ AND fact.measure_id = measure.measure_id
+ AND fact.value_type_id = measure.value_type_id
+JOIN silver_cdc.dim_dataset_release AS release
+  ON release.asset_id = fact.asset_id
+ AND release.release_watermark = fact.release_watermark
+WHERE release.status = 'published'
+GROUP BY measure.asset_id, measure.measure_id, measure.value_type_id,
+         measure.measure_label, measure.unit, release.release_watermark,
+         release.source_run_id, release.published_at, release.methodology_url;
 
 COMMENT ON SCHEMA silver_cdc IS
-    'Normalized CDC illness and disease observations with release, measure, stratum, and geography dimensions.';
+    'Source-faithful CDC CDI and PLACES release history and reconciliation.';
 COMMENT ON SCHEMA gold_cdc IS
-    'Publication-ready CDC health observations with provider-neutral glossary export contract.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.value_text IS
-    'Exact source value text preserved for unparseable values, suppression, missing, and confidence bounds.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.suppression_code IS
-    'Source suppression code preserved, never converted to zero.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.missing_code IS
-    'Source missing code preserved, never converted to zero.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.confidence_interval_lower IS
-    'Lower confidence bound bracketing the estimate, violations quarantine the record or release.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.confidence_interval_upper IS
-    'Upper confidence bound bracketing the estimate, violations quarantine the record or release.';
-COMMENT ON COLUMN silver_cdc.fact_health_observation.geo_sk IS
-    'Shared geography code resolving county GEOIDs against the expected geography basis.';
-COMMENT ON COLUMN gold_cdc.health_observation.value IS
-    'Numeric value where parseable, exact source value text preserved for unparseable values.';
-COMMENT ON COLUMN gold_cdc.measure_export.units_grains IS
-    'Source-specific units and grains, never conflated across datasets.';
-COMMENT ON COLUMN gold_cdc.measure_export.source_labels IS
-    'Provider-neutral source labels distinguishing CDI from PLACES, national/state from county.';
-COMMENT ON COLUMN control.cdc_ingestion_slices.county_asset_id IS
-    'CDC asset identifier for county-level ingestion, NULL for us/state slices.';
-COMMENT ON COLUMN control.cdc_dataset_registry.expected_columns IS
-    'Expected columns from schema contract, no inferred measure or geography semantics.';
-COMMENT ON COLUMN control.cdc_schema_contract.primary_keys IS
-    'Primary keys from schema contract, preserving exact source record identifiers.';
+    'Policy-free publication views for validated CDC observations and measures.';
+COMMENT ON COLUMN silver_cdc.observation_revision.source_record IS
+    'Exact provider row retained beside typed fields; missing and suppression are not zero.';
+COMMENT ON VIEW gold_cdc.measure_export IS
+    'Provider-neutral glossary publisher contract; owns no gold_glossary objects.';

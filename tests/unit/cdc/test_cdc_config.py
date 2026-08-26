@@ -44,11 +44,12 @@ class TestCdcConfigDefaults:
     ) -> None:
         """Covers: ETL-030 — optional CDC token is read without import-time need."""
         monkeypatch.delenv("CDC_SOCRATA_APP_TOKEN", raising=False)
-        assert CdcConfig().has_token is False
+        assert CdcConfig.from_environment().has_token is False
 
         monkeypatch.setenv("CDC_SOCRATA_APP_TOKEN", "CDC:from-env")
-        assert CdcConfig().socrata_app_token == "CDC:from-env"
-        assert CdcConfig().has_token is True
+        assert CdcConfig().socrata_app_token == ""
+        assert CdcConfig.from_environment().socrata_app_token == "CDC:from-env"
+        assert CdcConfig.from_environment().has_token is True
 
 
 class TestCdcConfigHasToken:

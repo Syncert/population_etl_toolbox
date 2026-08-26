@@ -402,6 +402,7 @@ Airflow pools limit concurrent API requests (prevents rate-limiting):
 airflow pools create census_api 4 "Census Bureau API limit"
 airflow pools create bls_api 4 "BLS API limit"
 airflow pools create fred_api 4 "FRED API limit"
+airflow pools create cdc_api 2 "CDC Open Data API limit"
 ```
 
 Sizing guidance:
@@ -421,6 +422,9 @@ export CENSUS_API_KEY="your_census_api_key_here"
 
 # For BLS API (usually not required; BLS allows public access)
 export BLS_API_KEY="your_bls_api_key_here"
+
+# Optional CDC Socrata public-read app token; anonymous reads are supported.
+export CDC_SOCRATA_APP_TOKEN="your_cdc_socrata_app_token_here"
 ```
 
 ### 3. Configuration Files

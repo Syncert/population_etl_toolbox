@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 # CDC Open Data (Socrata) public base URL. No credentials are required for
 # baseline access; an optional app token only raises the per-page row limit.
@@ -27,9 +27,7 @@ class CdcConfig(BaseModel):
     placed in request parameters, fingerprints, captures, logs, or errors.
     """
 
-    socrata_app_token: str = Field(
-        default_factory=lambda: os.environ.get("CDC_SOCRATA_APP_TOKEN", "")
-    )
+    socrata_app_token: str = ""
 
     # Airflow connection ID to Postgres.
     postgres_conn_id: str = "public_data"
@@ -54,6 +52,13 @@ class CdcConfig(BaseModel):
     @property
     def has_token(self) -> bool:
         return bool(self.socrata_app_token.strip())
+
+    @classmethod
+    def from_environment(cls, **overrides: object) -> "CdcConfig":
+        """Read the optional token only for an executing request/task."""
+        values = {"socrata_app_token": os.environ.get("CDC_SOCRATA_APP_TOKEN", "")}
+        values.update(overrides)
+        return cls(**values)
 
     @field_validator("postgres_conn_id")
     @classmethod

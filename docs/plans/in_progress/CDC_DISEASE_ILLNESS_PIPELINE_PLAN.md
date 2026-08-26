@@ -2,7 +2,7 @@
 
 ## Plan status
 
-- **Status:** In progress; Review Gate 1 approved, CDC-A03 is next
+- **Status:** In progress; first capture-to-gold deployment candidate implemented
 - **Last updated:** 2026-08-26
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
@@ -13,18 +13,28 @@
 
 **Last audited:** 2026-08-26
 
-**Current milestone:** CDC-001 and Review Gate 1 are complete. CDC-002 is
-unblocked and begins with CDC-A03.
+**Current milestone:** CDC-001 through CDC-004 and the capture-to-gold portion
+of CDC-005 have a first-pass implementation suitable for deployment testing.
+The user discarded the Qwen/local-agent experiment on 2026-08-26; its packets
+are historical evidence only and no longer control execution.
 
-**Next pickup:** Execute `CDC-A03`, then continue in dependency order through
-the capture/replay foundation.
+**Next pickup:** Stage one immutable revision, apply the warehouse manifest,
+run `silver_ref`, and execute the first deployment test from
+`docs/user-guides/CDC_PIPELINE_OPERATIONS.md`. After runtime review of the
+warehouse grain, fan-out, and source behavior (Review Gates 2 and 3), implement
+the CDC API, deterministic raw-to-API E2E coverage, and isolated live contracts
+in CDC-A13 through CDC-A16.
 
 ### Repository evidence at this checkpoint
 
 - [x] The plan defines the intended CDI and PLACES county product boundary and source-transparency rules.
-- [x] `src/data_ingestion_toolbox/cdc/` contains `config.py`, `registry.py`, `schemas.py`, `client.py`, and `__init__.py` scaffolding.
-- [x] `client.py` has bounded retry scaffolding and keeps the optional app token in `X-App-Token`.
-- [x] Draft files exist at `dags/cdc_ingest_dag.py` and `sql/migrations/010_cdc_pipeline.sql`.
+- [x] `src/data_ingestion_toolbox/cdc/` contains request-time configuration,
+  deterministic client, shared capture orchestration, typed metadata decisions,
+  product-specific replay, silver transformation, and gold publication code.
+- [x] `client.py` bounds retries, records retry callbacks, and keeps the optional
+  app token only in `X-App-Token`; the token is read at request/task runtime.
+- [x] The invalid DAG and migration drafts were replaced with contract-valid,
+  tested implementations.
 - [x] The official current PLACES county Open Data distribution is registered
   as Socrata asset `swc5-untb`; the former placeholder is removed.
 - [x] Both enabled registry contracts carry parser version, consumed
@@ -35,28 +45,56 @@ the capture/replay foundation.
   PLACES county crude/age-adjusted/suppressed rows.
 - [x] Configuration, registry, schema, fixture-contract, and capture-oriented
   Socrata client tests exist under `tests/unit/cdc/`.
-- [ ] `capture.py`, `metadata.py`, `silver_cdc/`, and `gold_cdc/` do not exist.
+- [x] `capture.py`, `metadata.py`, `silver_cdc/`, and `gold_cdc/` implement the
+  first capture-to-publication slice.
 - [x] The client builds pages from `CdcAsset`, sends registered `$select` and
   stable `$order` with `$limit`/`$offset`, preserves raw bytes and allowlisted
   metadata, rejects malformed/truncated/wrong-shape payloads, bounds retries,
   and validates optional tokens only at request execution.
-- [ ] The draft DAG imports missing modules and symbols, references configuration fields that do not exist, contains invalid SQL/status values, and fails Python compilation with an indentation error.
-- [ ] The draft migration has not passed clean-bootstrap testing and conflicts with current Python identifiers/statuses in several places. It must be treated as a design draft, not implementation evidence.
+- [x] Review Gate 1 is user-approved and the PLACES contract explicitly
+  distinguishes U.S. comparison rows from modeled county rows.
+- [x] Shared control state records release watermark, metadata decision,
+  completeness, captured rows/pages, reconciliation status, and publication.
+- [x] CDI and PLACES replay verifies checksums, page continuity, terminating
+  short page, JSON list shape, exact row reconciliation, confidence bounds,
+  unit-aware ranges, geography identifiers, and missing/suppression semantics.
+- [x] Migration 010 is in the warehouse manifest and disposable Compose
+  bootstrap; it owns only CDC control/silver/gold objects and exposes the shared
+  glossary publisher contract without owning `gold_glossary`.
+- [x] `cdc_ingest` checks shared geography, uses `cdc_api`, fans out over both
+  registered assets, and gates publication behind complete replay and silver
+  reconciliation.
+- [ ] CDC API, raw-to-API E2E, and marked live contract checks remain in
+  CDC-A13 through CDC-A16 and are not claimed by this checkpoint.
 
 ### Validation evidence
 
-- `python -m pytest tests/unit/cdc -m unit -q` on 2026-08-26:
-  **71 passed**; two environment-owned pytest-cache permission warnings.
-- `python -m pytest tests/unit/shared/test_repository_hygiene.py::test_python_tests_reference_known_catalog_ids tests/unit/cdc -m unit -q`:
-  **72 passed**; two environment-owned pytest-cache permission warnings.
-- `python -m ruff check src/data_ingestion_toolbox/cdc tests/unit/cdc`:
+- `python -m pytest tests/unit/cdc -m unit -q`: **80 passed**.
+- `python -m pytest tests/unit -m unit -q`: **639 passed**.
+- `python -m pytest tests/dags -m dag -q`: **89 passed** on the host.
+- Scheduler image (`apache/airflow:2.9.3-python3.11`) build: **passed**;
+  in-image DAG suite **86 passed, 3 expected context skips**; `pip check`
+  reported no broken requirements.
+- Disposable PostGIS CDC fixture flow: **passed** for CDI and PLACES capture,
+  replay, exact geography, idempotency, silver reconciliation, gold publication,
+  and two publisher-ready events.
+- Fresh-database CDC flow followed by shared reference-dimension tests:
+  **3 passed**, proving the CDC integration finalizer leaves shared dimensions
+  clean for subsequent tests.
+- Final affected disposable-database suite (CDC, raw/control inventory,
+  warehouse bootstrap/rerun, and shared dimensions): **11 passed**.
+- Warehouse clean-bootstrap and complete-manifest rerun checks: **2 passed**.
+- All four checked-in Compose variants: `docker compose ... config --quiet`
   **passed**.
-- `python -m ruff format --check src/data_ingestion_toolbox/cdc tests/unit/cdc`:
-  **passed** (12 files already formatted).
-- `git diff --check`: **passed**.
-- `python -m py_compile ... dags/cdc_ingest_dag.py`: still **fails** with the
-  pre-gate draft's `IndentationError` at line 530; replacing that draft is
-  CDC-A12 and remains dependency-blocked.
+- Focused Ruff lint/format, Python compilation, and `git diff --check`:
+  **passed**.
+- The complete non-external database suite reached **37 passed** before an
+  existing Census PEP test-isolation failure: `silver_pep.fact_population_estimate`
+  retained `geo_sk=7` while `test_reference_dimensions` attempted teardown.
+  The CDC integration test itself passed and has a guaranteed finalizer; this
+  unrelated baseline defect was not reported as passing or changed here.
+- Not run: live CDC metadata checks, production/homelab deployment, CDC API/E2E,
+  or Review Gate 2/3 human runtime review.
 
 ### Review Gate 1 packet (approved 2026-08-26)
 
@@ -87,9 +125,11 @@ not include municipal-place observations.
   asset IDs, CDC PLACES Data Portal/current release notes/methodology, and CDC
   CDI overview.
 
-## Local-agent implementation task list
+## Implementation task list
 
-This queue is intentionally decomposed for a Qwen 3.8 30B-class local coding model. Each task should be run as a separate agent session after all dependencies are checked. The agent creates a reviewable implementation and evidence; it does not declare a milestone complete, move the plan, or silently resolve an architectural ambiguity.
+This historical decomposition remains the acceptance map. The Qwen/local-agent
+workflow was discarded by the user on 2026-08-26; repository evidence and the
+normal plan workflow are authoritative.
 
 ### Execution rules for every agent task
 
@@ -317,10 +357,10 @@ If Review Gate 1 cannot verify PLACES, record the blocker and execute an explici
 
 ### Remaining milestones
 
-- [ ] CDC-001 — Freeze source asset, schema, paging, release, methodology, and fixture contracts (`CDC-A01`–`CDC-A02`).
-- [ ] CDC-002 — Implement lossless capture, deterministic paging, metadata decisions, quarantine, and offline replay foundation (`CDC-A03`–`CDC-A06`).
-- [ ] CDC-003 — Implement and reconcile CDI national/state silver data (`CDC-A07`, plus shared DDL work in `CDC-A09`).
-- [ ] CDC-004 — Implement and reconcile PLACES county silver data (`CDC-A08` and `CDC-A10`).
+- [x] CDC-001 — Freeze source asset, schema, paging, release, methodology, and fixture contracts (`CDC-A01`–`CDC-A02`).
+- [x] CDC-002 — Implement lossless capture, deterministic paging, metadata decisions, quarantine, and offline replay foundation (`CDC-A03`–`CDC-A06`).
+- [x] CDC-003 — Implement and reconcile CDI national/state silver data (`CDC-A07`, plus shared DDL work in `CDC-A09`).
+- [x] CDC-004 — Implement and reconcile PLACES county silver data (`CDC-A08` and `CDC-A10`).
 - [ ] CDC-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage (`CDC-A11`–`CDC-A16`).
 
 ## Objective

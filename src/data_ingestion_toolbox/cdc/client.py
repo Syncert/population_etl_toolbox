@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,7 +13,7 @@ import httpx
 
 from data_ingestion_toolbox.capture import allowlisted_response_headers
 
-from .config import CONFIG, SOCRATA_BASE_URL, CdcConfig
+from .config import SOCRATA_BASE_URL, CdcConfig
 from .registry import CdcAsset
 
 SOURCE_CODE = "CDC"
@@ -90,7 +90,7 @@ def _validated_headers(config: CdcConfig) -> dict[str, str]:
 
 def build_cdc_headers(config: CdcConfig | None = None) -> dict[str, str]:
     """Build request headers and validate a configured token at call time."""
-    return _validated_headers(config or CONFIG)
+    return _validated_headers(config or CdcConfig.from_environment())
 
 
 def page_parameters(
@@ -153,6 +153,7 @@ def _request_bytes(
     params: Mapping[str, object],
     config: CdcConfig,
     client: Any,
+    on_retry: Callable[[BaseException], None] | None = None,
 ) -> tuple[bytes, dict[str, str], int]:
     headers = _validated_headers(config)
     url = f"{SOCRATA_BASE_URL}{endpoint}"
@@ -196,6 +197,8 @@ def _request_bytes(
             if response is not None:
                 response.close()
         if attempt < config.socrata_max_attempts:
+            if on_retry is not None and final_error is not None:
+                on_retry(final_error)
             _sleep_with_backoff(config, attempt, retry_after)
     raise SocrataRetryExhausted(
         endpoint,
@@ -211,9 +214,10 @@ def fetch_socrata_page(
     page_size: int | None = None,
     config: CdcConfig | None = None,
     client: Any | None = None,
+    on_retry: Callable[[BaseException], None] | None = None,
 ) -> SocrataPage:
     """Fetch and structurally validate one registered observation page."""
-    config = config or CONFIG
+    config = config or CdcConfig.from_environment()
     params = page_parameters(
         asset,
         page_size=page_size or config.socrata_page_size,
@@ -227,6 +231,7 @@ def fetch_socrata_page(
             params=params,
             config=config,
             client=active_client,
+            on_retry=on_retry,
         )
         rows = _validated_json(raw_bytes, asset.api_path, list)
         return SocrataPage(params, raw_bytes, response_headers, status, len(rows))
@@ -240,9 +245,10 @@ def fetch_socrata_metadata(
     *,
     config: CdcConfig | None = None,
     client: Any | None = None,
+    on_retry: Callable[[BaseException], None] | None = None,
 ) -> SocrataMetadataResponse:
     """Fetch and structurally validate the registered dataset metadata."""
-    config = config or CONFIG
+    config = config or CdcConfig.from_environment()
     own_client = client is None
     active_client = client or httpx.Client(timeout=config.socrata_timeout_seconds)
     try:
@@ -251,6 +257,7 @@ def fetch_socrata_metadata(
             params={},
             config=config,
             client=active_client,
+            on_retry=on_retry,
         )
         _validated_json(raw_bytes, asset.metadata_path, dict)
         return SocrataMetadataResponse(raw_bytes, response_headers, status)
@@ -267,7 +274,7 @@ def fetch_socrata_dataset_pages(
     page_size: int | None = None,
 ) -> Iterable[SocrataPage]:
     """Yield a finite, deterministically ordered registered dataset."""
-    config = config or CONFIG
+    config = config or CdcConfig.from_environment()
     page_size = page_size or config.socrata_page_size
     own_client = client is None
     active_client = client or httpx.Client(timeout=config.socrata_timeout_seconds)
