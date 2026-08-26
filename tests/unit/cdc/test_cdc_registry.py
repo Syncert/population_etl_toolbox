@@ -48,7 +48,7 @@ def test_products_keep_distinct_method_and_geography_semantics() -> None:
     """Covers: ETL-024 — CDI and PLACES remain semantically distinct."""
     assert CDI_ASSET.geography_levels == ("us", "state")
     assert CDI_ASSET.estimate_method == "provider_published"
-    assert PLACES_COUNTY_ASSET.geography_levels == ("county",)
+    assert PLACES_COUNTY_ASSET.geography_levels == ("us", "county")
     assert PLACES_COUNTY_ASSET.estimate_method == "model_based_small_area_estimate"
     assert "2020 Census" in PLACES_COUNTY_ASSET.geography_basis
     assert CDI_ASSET.source_key != PLACES_COUNTY_ASSET.source_key

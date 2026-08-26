@@ -13,8 +13,8 @@ numeric text, footnotes, and confidence limits were not reinterpreted.
 - PLACES county metadata: `https://data.cdc.gov/api/views/swc5-untb`; public
   domain; 2025 release; metadata watermark `rowsUpdatedAt=1764844506`.
 - PLACES county observations: `https://data.cdc.gov/resource/swc5-untb.json`;
-  selected to cover crude and age-adjusted modeled estimates plus a provider-
-  suppressed county row.
+  selected to cover crude and age-adjusted modeled county estimates, a matching
+  U.S. comparison estimate, and a provider-suppressed county row.
 
 The metadata fixtures retain only the reviewed identity, watermark, license,
 and consumed column/type contract. Observation fixtures contain only the

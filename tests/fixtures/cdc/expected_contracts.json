@@ -10,9 +10,9 @@
   "places_county": {
     "asset_id": "swc5-untb",
     "parser_contract_version": "places-county-2025-soda-v1",
-    "fixture_rows": 3,
-    "publishable_rows": 2,
+    "fixture_rows": 4,
+    "publishable_rows": 3,
     "suppressed_rows": 1,
-    "geography_levels": ["county"]
+    "geography_levels": ["us", "county"]
   }
 }

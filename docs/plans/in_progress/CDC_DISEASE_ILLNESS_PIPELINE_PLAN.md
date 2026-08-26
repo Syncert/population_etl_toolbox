@@ -2,7 +2,7 @@
 
 ## Plan status
 
-- **Status:** In progress; CDC-A01 and CDC-A02 are implemented and awaiting Review Gate 1 approval
+- **Status:** In progress; Review Gate 1 approved, CDC-A03 is next
 - **Last updated:** 2026-08-26
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
@@ -13,13 +13,11 @@
 
 **Last audited:** 2026-08-26
 
-**Current milestone:** CDC-001 source-contract implementation is complete and
-awaiting the required human Review Gate 1. CDC-002 through CDC-005 remain
-blocked by that gate.
+**Current milestone:** CDC-001 and Review Gate 1 are complete. CDC-002 is
+unblocked and begins with CDC-A03.
 
-**Next pickup:** Human-review the Review Gate 1 packet below. After explicit
-approval, execute `CDC-A03`; do not extend capture, silver, gold, migration,
-DAG, or API surfaces before approval.
+**Next pickup:** Execute `CDC-A03`, then continue in dependency order through
+the capture/replay foundation.
 
 ### Repository evidence at this checkpoint
 
@@ -60,7 +58,12 @@ DAG, or API surfaces before approval.
   pre-gate draft's `IndentationError` at line 530; replacing that draft is
   CDC-A12 and remains dependency-blocked.
 
-### Review Gate 1 packet (awaiting human approval)
+### Review Gate 1 packet (approved 2026-08-26)
+
+The user approved this gate after reviewing the source contracts and a concrete
+county-versus-U.S. example. The approved PLACES contract recognizes both
+five-digit county FIPS rows and `locationid=59` U.S. comparison rows; it does
+not include municipal-place observations.
 
 - **CDI identity:** official CDC Socrata asset `hksd-2xuw`, label
   `U.S. Chronic Disease Indicators`, ODbL metadata license, consumed
@@ -68,8 +71,9 @@ DAG, or API surfaces before approval.
   classification, and `rowsUpdatedAt` release watermark.
 - **PLACES identity:** official CDC Socrata asset `swc5-untb`, label
   `PLACES: Local Data for Better Health, County Data, 2025 release`, public
-  domain metadata license, exact five-digit county FIPS, 2020 Census county and
-  county-equivalent basis, adult small-area modeled estimates, and
+  domain metadata license, exact five-digit county FIPS plus U.S. comparison
+  code `59`, 2020 Census county and county-equivalent basis, adult small-area
+  modeled county estimates, and
   `rowsUpdatedAt` release watermark.
 - **Paging/source keys:** CDI uses its complete period/location/indicator/value
   type/stratum/data-source identity; PLACES uses

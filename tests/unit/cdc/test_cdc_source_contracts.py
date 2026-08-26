@@ -80,6 +80,7 @@ def test_places_fixture_preserves_modeled_values_population_and_suppression() ->
     assert {row["datavaluetypeid"] for row in rows} == {"AgeAdjPrv", "CrdPrv"}
     assert rows[0]["locationid"] == "01001"
     assert rows[0]["totalpop18plus"] == "46253"
+    assert any(row["locationid"] == "59" for row in rows)
     assert rows[-1]["locationid"] == "48301"
     assert "data_value" not in rows[-1]
     assert rows[-1]["data_value_footnote_symbol"] == "*"
