@@ -48,13 +48,27 @@ def validate_scheduled_credentials(environment: Mapping[str, str]) -> None:
         )
 
 
+def _is_unavailable_status(status: object) -> bool:
+    return isinstance(status, int) and (status == 429 or status >= 500)
+
+
 def classify_external_failure(error: BaseException) -> str:
-    """Separate transient upstream availability from contract regressions."""
+    """Separate transient upstream availability from contract regressions.
+
+    Adapters that wrap transport failures in their own sanitized error type
+    stay classifiable through the provider-neutral ``status``/``code``
+    attributes, so a live 429, 5xx, or exhausted retry budget is never
+    reported as an implementation regression.
+    """
     if isinstance(error, (httpx.TimeoutException, httpx.NetworkError)):
         return "upstream-unavailable"
-    if isinstance(error, httpx.HTTPStatusError) and (
-        error.response.status_code == 429 or error.response.status_code >= 500
+    if isinstance(error, httpx.HTTPStatusError) and _is_unavailable_status(
+        error.response.status_code
     ):
+        return "upstream-unavailable"
+    if _is_unavailable_status(getattr(error, "status", None)):
+        return "upstream-unavailable"
+    if getattr(error, "code", None) in {"retry_exhausted", "retryable_http"}:
         return "upstream-unavailable"
     return "contract-regression"
 

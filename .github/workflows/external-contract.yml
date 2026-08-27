@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   source-contracts:
-    name: Census, BLS, and FRED live contracts
+    name: Census, BLS, FRED, and CDC live contracts
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -38,6 +38,8 @@ jobs:
       CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
       BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      # Optional: raises CDC Socrata rate limits; anonymous reads still work.
+      CDC_SOCRATA_APP_TOKEN: ${{ secrets.CDC_SOCRATA_APP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v6

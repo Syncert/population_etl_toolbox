@@ -17,7 +17,7 @@
   ],
   "release_freshness_days": 7,
   "release": [
-    {"workflow": "external-contract.yml", "job": "source-contracts", "name": "Census, BLS, and FRED live contracts"},
+    {"workflow": "external-contract.yml", "job": "source-contracts", "name": "Census, BLS, FRED, and CDC live contracts"},
     {"workflow": "e2e-performance.yml", "job": "e2e-performance", "name": "Bounded E2E and performance evidence"}
   ],
   "architecture_path_owners": {

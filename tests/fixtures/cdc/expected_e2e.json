@@ -1,0 +1,118 @@
+{
+  "review": {
+    "reviewed_on": "2026-08-27",
+    "purpose": "Reviewed exact raw, silver, gold, quarantine, and API counts for the checked-in CDC fixtures.",
+    "source_fixtures": [
+      "cdi_metadata.json",
+      "cdi_observations.json",
+      "places_county_metadata.json",
+      "places_county_observations.json"
+    ],
+    "seeded_geographies": ["us:1", "state:01", "state:01|county:001"],
+    "withheld_geography": "state:48|county:301",
+    "withheld_reason": "Proves a county PLACES row without a canonical entity stays an inspectable geography miss instead of being synthesized or dropped."
+  },
+  "release_watermarks": {
+    "cdi": "1780605223",
+    "cdi_second_release": "1780691623",
+    "places_county": "1764844506"
+  },
+  "capture": {
+    "cdi": {"page_captures": 1, "metadata_captures": 1, "captured_rows": 3},
+    "places_county": {"page_captures": 1, "metadata_captures": 1, "captured_rows": 4}
+  },
+  "silver": {
+    "cdi": {"revisions": 3, "quarantined": 0, "facts": 3},
+    "places_county": {"revisions": 4, "quarantined": 0, "facts": 4}
+  },
+  "gold_first_release": {
+    "cdi": {
+      "rows": 3,
+      "valid": 2,
+      "missing": 1,
+      "suppressed": 0,
+      "resolved": 3,
+      "unmapped": 0,
+      "estimate_method": "provider_published"
+    },
+    "places_county": {
+      "rows": 4,
+      "valid": 3,
+      "missing": 0,
+      "suppressed": 1,
+      "resolved": 3,
+      "unmapped": 1,
+      "estimate_method": "model_based_small_area_estimate"
+    }
+  },
+  "gold_after_second_release": {
+    "cdi_history_rows": 6,
+    "cdi_latest_rows": 3,
+    "places_county_history_rows": 4,
+    "places_county_latest_rows": 4
+  },
+  "publisher_ready_events": 2,
+  "api": {
+    "latest_total": 7,
+    "cdi_total": 3,
+    "places_county_total": 4,
+    "nation_total": 2,
+    "state_total": 2,
+    "county_total": 3,
+    "age_adjusted_total": 3,
+    "cdi_national_observation": {
+      "dataset": "cdi",
+      "measure_id": "ALC01",
+      "value_type_id": "CRDPREV",
+      "geo_id": "us:1",
+      "geo_type": "nation",
+      "geography_status": "resolved",
+      "period_start": 2023,
+      "period_end": 2023,
+      "value": "22.1",
+      "value_source": "22.1",
+      "value_status": "valid",
+      "unit": "%",
+      "adjustment_status": "crude",
+      "confidence_lower": "20.5",
+      "confidence_upper": "23.8",
+      "estimate_method": "provider_published",
+      "population_basis": "indicator-specific surveillance population",
+      "strata": [["OVERALL", "Overall", "OVR", "Overall"]]
+    },
+    "cdi_missing_observation": {
+      "geo_id": "state:01",
+      "measure_id": "ALC01",
+      "value": null,
+      "value_source": null,
+      "value_status": "missing",
+      "footnote_code": "*",
+      "footnote_text": "No data available"
+    },
+    "places_county_suppressed_observation": {
+      "dataset": "places_county",
+      "measure_id": "COLON_SCREEN",
+      "geo_id": "state:48|county:301",
+      "geo_type": "county",
+      "geography_status": "unmapped",
+      "period_start": 2022,
+      "period_end": 2022,
+      "value": null,
+      "value_status": "suppressed",
+      "footnote_code": "*",
+      "footnote_text": "Estimates suppressed for population less than 50",
+      "estimate_method": "model_based_small_area_estimate",
+      "population_basis": "adults age 18 years and older",
+      "total_population": "43",
+      "population_18_plus": "30"
+    }
+  },
+  "partial_page_failure": {
+    "page_size": 2,
+    "captured_pages": 1,
+    "control_releases": 0,
+    "silver_revisions": 0,
+    "gold_rows": 0,
+    "replay_error": "CDC release lacks a terminating short page"
+  }
+}

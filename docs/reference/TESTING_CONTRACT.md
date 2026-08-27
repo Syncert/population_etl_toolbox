@@ -270,23 +270,25 @@ Unless a row says otherwise, any unmet pass condition is the failure condition a
 
 ### Implementation Status
 
-Last audited against the repository on 2026-08-12. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
+Last audited against the repository on 2026-08-27. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-011 | None |
-| Airflow DAGs | DAG-001–DAG-014 | None |
-| ETL and shared units | ETL-001–ETL-037 | None |
-| Database integration | DB-001–DB-018 | None |
-| API | API-001–API-027 | None |
+| Data-layer architecture boundaries | ARC-001–ARC-003 | None |
+| Plan dispatcher | PLAN-001–PLAN-007 | None |
+| Airflow DAGs | DAG-001–DAG-017 | None |
+| ETL and shared units | ETL-001–ETL-041 | None |
+| Database integration | DB-001–DB-023 | None |
+| API | API-001–API-030 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
-| External source contracts | EXT-001–EXT-011 | None |
-| End-to-end | E2E-001–E2E-006 | None |
+| External source contracts | EXT-001–EXT-012 | None |
+| End-to-end | E2E-001–E2E-007 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **163 of 163** | **0 of 163** |
+| **Total** | **192 of 192** | **0 of 192** |
 
 Awaiting implementation IDs: None.
 
@@ -502,6 +504,9 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-025 | P0 | Router / `unit api` | Catalog sources response | The catalog sources route returns the stable source metadata contract without real database access | Non-200 response, malformed source metadata, or real database access |
 | API-026 | P0 | Router / `unit api` | Model status response | The models status route returns the stable source-model availability contract | Non-200 response or model status contract drift |
 | API-027 | P0 | Service / `unit api` | Latest-view fallback | An empty latest materialized view falls back to the durable report relation while preserving pagination totals and schema | Empty result despite durable rows, wrong total, or response contract drift |
+| API-028 | P0 | Router / `unit api` | CDC source-explorer contract | CDI and PLACES observations return dataset, release, measure, stratum, unit, adjustment, method, population basis, uncertainty, and typed suppression/missing state, and every documented filter binds exactly | Product conflation, dropped filter, missing interpretive field, or suppressed/missing value rendered numerically |
+| API-029 | P0 | Router / `unit api` | CDC release selection | An omitted release reads `gold_cdc.latest_release_observation`; a named release reads `gold_cdc.health_observation` with the same response contract | Wrong relation, silent latest fallback, or lost release identity |
+| API-030 | P0 | Router / `unit api` | CDC filter validation | Unregistered dataset, unsupported geography type, unknown adjustment, and reversed year range return 422 before any database work | Invalid filter reaches the database, returns 500, or degrades to an empty result |
 
 ### Frontend Tests
 
@@ -545,7 +550,7 @@ Martin unit tests are deterministic and require no service. Integration tests us
 
 ### External Source Contract Tests
 
-These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions. Census Data API queries require `CENSUS_API_KEY` under the Census Bureau's [May 2026 authentication policy](https://www.census.gov/library/video/2026/adrm/requesting-a-census-data-api-key.html); FRED queries require `FRED_API_KEY`; BLS uses `BLS_API_KEY` when configured. The scheduled release-evidence runner requires all three credentials before collecting live contracts. Missing required live-test credentials are named skips only in runners that explicitly permit and report partial execution.
+These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions. Census Data API queries require `CENSUS_API_KEY` under the Census Bureau's [May 2026 authentication policy](https://www.census.gov/library/video/2026/adrm/requesting-a-census-data-api-key.html); FRED queries require `FRED_API_KEY`; BLS uses `BLS_API_KEY` when configured; CDC Open Data reads anonymously and uses `CDC_SOCRATA_APP_TOKEN` only to raise rate limits. The scheduled release-evidence runner requires all three credentials before collecting live contracts. Missing required live-test credentials are named skips only in runners that explicitly permit and report partial execution.
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
@@ -560,6 +565,7 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-009 | P2 | Legacy metadata / `integration database external slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
 | EXT-010 | P2 | Legacy metadata / `integration database external slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
 | EXT-011 | P2 | Contract / `external slow` | Census PEP bulk schema and completeness | The current registered national/state bulk file returns 2xx, parses with its registered encoding/layout, meets coverage thresholds, and contains the vintage population measure | Stable bulk bytes drift from the registered parser or the release is incomplete |
+| EXT-012 | P2 | Contract / `external slow` | CDC registered asset metadata | Each enabled CDC Socrata asset returns its registered identifier, label, positive release watermark, and exactly the registered consumed columns/types within 15 seconds; 429/5xx/timeout classify as upstream-unavailable and the optional app token stays out of logs and errors | Registered CDC identity, label, watermark, or consumed contract drifts; an outage is reported as a contract regression; or the app token appears in telemetry |
 
 ### End-to-End Tests
 
@@ -573,6 +579,7 @@ End-to-end fixtures contain normal rows, duplicates, a revision, a dimension mis
 | E2E-004 | P1 | E2E / `e2e database slow` | Replay safety | Running each complete fixture twice produces zero additional facts and identical API JSON | Natural-key count or response changes |
 | E2E-005 | P1 | E2E / `e2e database slow` | Revision propagation | Revised source observation replaces latest value while prior durable history follows the declared revision policy | Stale latest response, duplicate latest row, or unintended history loss |
 | E2E-006 | P1 | E2E / `e2e database slow` | Invalid/missing data accounting | Invalid row and dimension miss do not corrupt serving data and produce exact expected rejection/miss metrics | Invalid row served, valid row lost, or metrics do not reconcile |
+| E2E-007 | P1 | E2E / `e2e database slow` | CDC fixture to API | Reviewed CDI and PLACES fixtures pass raw capture -> silver -> gold -> CDC API with the exact counts and values in `tests/fixtures/cdc/expected_e2e.json`, retain every published release, keep a county geography miss inspectable, and expose no app token | Any stage loses, duplicates, or mutates an approved row; an incomplete page sequence publishes; a suppressed or missing value becomes numeric; or a token appears in capture, control, log, or API output |
 
 ### Performance, Concurrency, and Resilience Tests
 

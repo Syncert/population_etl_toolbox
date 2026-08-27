@@ -141,6 +141,8 @@ add an evidence-backed crosswalk, then replay the affected captured observations
 - Capture and control records exist for every provider run.
 - Unmapped geography outcomes are reviewed and no observations disappear
   without a recorded resolution outcome.
-- API catalog and observation smoke requests succeed.
+- API catalog and observation smoke requests succeed, including
+  `GET /api/cdc/observations?dataset=cdi&limit=1` and
+  `GET /api/cdc/observations?dataset=places_county&limit=1`.
 - Martin TileJSON/MVT smoke checks succeed if spatial serving is deployed.
 
