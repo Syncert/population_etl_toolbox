@@ -374,13 +374,13 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
 | DAG-001 | P0 | Structure / `dag` | Import the repository DAG folder with `DagBag` | `import_errors == {}` | Any DAG import error |
-| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present for reference, ACS, BLS, FRED, Census PEP, CDC, glossary harvest, and glossary reconciliation | Missing, renamed, or duplicate expected DAG |
+| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present for reference, ACS, BLS, FRED, Census PEP, CDC, USDA NASS crop, glossary harvest, and glossary reconciliation | Missing, renamed, or duplicate expected DAG |
 | DAG-003 | P0 | Structure / `dag` | DAG IDs are unique | Four expected IDs map to four distinct DAG objects | Duplicate ID or overwritten DAG |
 | DAG-004 | P0 | Structure / `dag` | Required DAG metadata | Every DAG has owner `data-eng`, a non-null schedule/start date, non-empty tags, and `catchup is False` | Missing or unintended metadata |
-| DAG-005 | P0 | Structure / `dag` | Schedule contract | Source/reference/glossary schedules match `tests/dags/test_dagbag.py`; CDC checks releases weekly at 09:00 UTC Monday | Cron differs from the declared contract |
+| DAG-005 | P0 | Structure / `dag` | Schedule contract | Source/reference/glossary schedules match `tests/dags/test_dagbag.py`; CDC checks releases weekly at 09:00 UTC Monday and USDA NASS checks them on business days at 10:00 UTC | Cron differs from the declared contract |
 | DAG-006 | P0 | Structure / `dag` | Task ID uniqueness | `len(task_ids) == len(set(task_ids))` in every DAG | Duplicate task ID |
-| DAG-007 | P0 | Structure / `dag` | External API pools | ACS uses `census_api`, BLS uses `bls_api`, FRED uses `fred_api`, and CDC uses `cdc_api` | Missing or wrong pool assignment |
-| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries match the checked-in per-DAG contract; CDC uses 2 and BLS `ingest_batch` retains the intentional 10-retry override | Retry count is absent or changes without test update |
+| DAG-007 | P0 | Structure / `dag` | External API pools | ACS uses `census_api`, BLS uses `bls_api`, FRED uses `fred_api`, CDC uses `cdc_api`, and USDA NASS uses `usda_nass_api` | Missing or wrong pool assignment |
+| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries match the checked-in per-DAG contract; CDC and USDA NASS use 2 and BLS `ingest_batch` retains the intentional 10-retry override | Retry count is absent or changes without test update |
 | DAG-009 | P0 | Structure / `dag` | Reference dependencies | `ensure_schema` is upstream of both `load_dim_geo` and `load_dim_time` | Either dimension can run before schema creation |
 | DAG-010 | P0 | Structure / `dag` | Source pipeline order | For each source, metadata/planning or capture precedes ingestion/replay; silver reconciliation precedes gold publication | Required stage has no dependency path or order is reversed |
 | DAG-011 | P0 | Import side effect / `dag` | No work during module import | Mock HTTP, database, and Redis call counts all remain zero during `DagBag` construction | Any external call occurs at import time |
