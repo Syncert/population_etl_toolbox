@@ -14,6 +14,7 @@ orchestration defect rather than a mocking artifact.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -401,23 +402,75 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cdc_capture, "fetch_socrata_page", page)
 
 
+def build_pep_release_csv(url: str) -> bytes:
+    """Generate a production-shaped PEP bulk release for one registered URL.
+
+    The reviewed fixtures are bounded samples, but the PEP replay applies its
+    production completeness contract: NST needs 50 states at summary level 040,
+    counties 3000 principal rows at 050, and subcounty 18000 at 162. Those
+    guards are correct production behaviour, so the sample is generated at
+    production shape from the same synthetic geography the shared dimension
+    uses, rather than weakening the checks.
+    """
+    lowered = url.lower()
+    # The vintage is the four digits in the release filename (nst-est2025,
+    # co-est2025, sub-est2025), not the first digits anywhere in the URL.
+    match = re.search(r"est(\d{4})", lowered.rsplit("/", 1)[-1])
+    vintage = match.group(1) if match else "2025"
+    metric = f"POPESTIMATE{vintage}"
+
+    def state_rows() -> list[dict[str, str]]:
+        return [
+            entry
+            for entry in build_geography_records("state")
+            if entry["state_fips"] != "00"
+        ]
+
+    lines: list[str]
+    if "nst-est" in lowered:
+        lines = [f"SUMLEV,REGION,DIVISION,STATE,NAME,{metric}"]
+        lines.append("010,0,0,00,United States,331000000")
+        for entry in state_rows():
+            lines.append(f"040,1,1,{entry['state_fips']},{entry['name']},1000000")
+    elif "co-est" in lowered:
+        lines = [f"SUMLEV,STATE,COUNTY,STNAME,CTYNAME,{metric}"]
+        states = {entry["state_fips"]: entry["name"] for entry in state_rows()}
+        for entry in states:
+            lines.append(f"040,{entry},000,{states[entry]},{states[entry]},1000000")
+        for entry in build_geography_records("county"):
+            state_name = states.get(entry["state_fips"], "Unknown State")
+            lines.append(
+                f"050,{entry['state_fips']},{entry['county_fips']},"
+                f"{state_name},{entry['name']},10000"
+            )
+    elif "sub-est" in lowered:
+        lines = [
+            f"SUMLEV,STATE,COUNTY,PLACE,COUSUB,CONCIT,FUNCSTAT,NAME,STNAME,{metric}"
+        ]
+        states = {entry["state_fips"]: entry["name"] for entry in state_rows()}
+        for entry in states:
+            lines.append(
+                f"040,{entry},000,00000,00000,00000,A,{states[entry]},"
+                f"{states[entry]},1000000"
+            )
+        for entry in build_geography_records("place"):
+            state_name = states.get(entry["state_fips"], "Unknown State")
+            lines.append(
+                f"162,{entry['state_fips']},000,{entry['place_fips']},00000,00000,A,"
+                f"{entry['name']},{state_name},5000"
+            )
+    else:
+        raise AssertionError(f"No PEP release fixture registered for {url}")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 def stub_census_pep_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed Census PEP bulk-release fixtures."""
+    """Serve generated production-shaped Census PEP bulk releases."""
     from data_ingestion_toolbox.census_pep import ingest as pep_ingest
 
-    releases = {
-        "nst": (FIXTURE_ROOT / "census_pep/nst_2025.csv").read_bytes(),
-        "sub-est": (FIXTURE_ROOT / "census_pep/subcounty_2025.csv").read_bytes(),
-    }
-
     def fetch(url: str, **_kwargs: Any) -> Any:
-        lowered = url.lower()
-        payload = next(
-            (value for key, value in releases.items() if key in lowered),
-            releases["nst"],
-        )
         return pep_ingest.PEPHTTPResponse(
-            payload=payload,
+            payload=build_pep_release_csv(url),
             status_code=200,
             response_headers={"content-type": "text/csv"},
         )
@@ -428,81 +481,258 @@ def stub_census_pep_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Census ACS fixtures instead of the live API.
 
-    The ACS DAG discovers datasets from the provider catalogue before it fetches
-    any observation, so the discovery boundary needs a fixture too.
+    The ACS DAG discovers its datasets from the provider catalogue and reads the
+    variable dictionary before fetching observations, so both catalogue
+    boundaries need fixtures as well as the observation boundary.
     """
     from data_ingestion_toolbox.census_acs import ingest as acs_ingest
+    from data_ingestion_toolbox.census_acs import metadata as acs_metadata
 
-    payload = load_fixture("census", "e2e_pipeline.json")
-    monkeypatch.setattr(acs_ingest, "fetch_acs_api", lambda **_kwargs: payload)
-
-    catalogue = {
-        "dataset": [
-            {
-                "c_vintage": 2023,
-                "c_dataset": ["acs", "acs5"],
-                "title": "American Community Survey 5-Year",
-                "description": "Fixture ACS 5-year dataset",
-                "distribution": [
-                    {"accessURL": "https://api.census.gov/data/2023/acs/acs5"}
-                ],
-            }
-        ]
-    }
-    for attribute in ("fetch_dataset_catalog", "fetch_acs_datasets", "fetch_datasets"):
-        if hasattr(acs_ingest, attribute):
-            monkeypatch.setattr(
-                acs_ingest, attribute, lambda *_a, **_k: catalogue, raising=False
+    def observations(
+        year: int,
+        dataset: str,
+        variables: list[str],
+        geo_level: str,
+        state_fips: str | None = None,
+    ) -> list[list[str]]:
+        # The provider returns list-of-lists whose geography columns depend on
+        # the requested level, and silver replay rejects a payload missing its
+        # level's columns, so the sample is generated per request rather than
+        # served from one flat fixture.
+        geographies = {
+            "us": (["us"], [["1"]]),
+            "state": (["state"], [["11"]]),
+            "county": (["state", "county"], [["11", "001"]]),
+            "place": (["state", "place"], [["11", "50000"]]),
+        }
+        if geo_level not in geographies:
+            raise AssertionError(
+                f"No ACS fixture registered for geography level {geo_level!r}"
             )
+        geo_columns, geo_rows = geographies[geo_level]
+        header = [*variables, *geo_columns]
+        rows = [
+            [str(100 + index) for index in range(len(variables))] + geo_row
+            for geo_row in geo_rows
+        ]
+        return [header, *rows]
+
+    monkeypatch.setattr(acs_ingest, "fetch_acs_api", observations)
+
+    datasets = [
+        {
+            "title": f"American Community Survey {label} Estimates: Detailed Tables",
+            "year": FIXTURE_GEOGRAPHY_VINTAGE,
+            "identifier": (
+                "https://api.census.gov/data/id/"
+                f"ACSDT{code}Y{FIXTURE_GEOGRAPHY_VINTAGE}"
+            ),
+        }
+        for label, code in (("5-Year", "5"), ("1-Year", "1"))
+    ]
+    monkeypatch.setattr(
+        acs_metadata, "fetch_acs_datasets_from_data_json", lambda: datasets
+    )
+
+    def variables(year: int, dataset: str) -> dict[str, Any]:
+        return {
+            "variables": {
+                "B01003_001E": {
+                    "label": "Estimate!!Total",
+                    "concept": "TOTAL POPULATION",
+                    "group": "B01003",
+                    "predicateType": "int",
+                }
+            }
+        }
+
+    monkeypatch.setattr(acs_metadata, "fetch_variables_json", variables)
+
+
+#: The LAUS area the reviewed BLS observation fixture reports against.
+BLS_FIXTURE_AREA = {"area_code": "ST1100000000000", "area_text": "District of Columbia"}
 
 
 def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed BLS fixture instead of the live API."""
-    from data_ingestion_toolbox.bls import ingest as bls_ingest
+    """Serve the reviewed BLS fixtures instead of the live provider.
 
-    payload = load_fixture("bls", "e2e_pipeline.json")
-    monkeypatch.setattr(bls_ingest, "fetch_bls_api", lambda **_kwargs: payload)
+    The BLS DAG synchronises its series, area, and area-type catalogues from
+    published TSV downloads before it fetches any observation, so the catalogue
+    boundary needs fixtures as well as the observation boundary.
+    """
+    import polars as pl
+
+    from data_ingestion_toolbox.bls import ingest as bls_ingest
+    from data_ingestion_toolbox.bls import metadata as bls_metadata
+
+    def observations(
+        series_ids: list[str] | None = None,
+        start_year: int = 2023,
+        end_year: int = 2023,
+        api_version: str = "v2",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        # The DAG requests its curated series per program; a flat fixture that
+        # ignores the request would report observations for a series the
+        # catalogue never registered.
+        requested = series_ids or kwargs.get("seriesid") or []
+        return {
+            "status": "REQUEST_SUCCEEDED",
+            "responseTime": 1,
+            "message": [],
+            "Results": {
+                "series": [
+                    {
+                        "seriesID": series_id,
+                        "data": [
+                            {
+                                "year": str(start_year),
+                                "period": "M01",
+                                "periodName": "January",
+                                "value": "4.5",
+                                "footnotes": [{}],
+                                "latest": "true",
+                            }
+                        ],
+                    }
+                    for series_id in requested
+                ]
+            },
+        }
+
+    monkeypatch.setattr(bls_ingest, "fetch_bls_api", observations)
+
+    series_id = f"LAU{BLS_FIXTURE_AREA['area_code']}03"
+    catalogues = {
+        ".series": pl.DataFrame(
+            {
+                "series_id": [series_id],
+                "series_title": ["Unemployment Rate: District of Columbia"],
+                "seasonal": ["U"],
+                "measure_code": ["03"],
+                "area_code": [BLS_FIXTURE_AREA["area_code"]],
+                "area_text": [BLS_FIXTURE_AREA["area_text"]],
+            }
+        ),
+        ".area_type": pl.DataFrame(
+            {"area_type_code": ["A"], "areatype_text": ["Statewide"]}
+        ),
+        ".area": pl.DataFrame(
+            {
+                "area_type_code": ["A"],
+                "area_code": [BLS_FIXTURE_AREA["area_code"]],
+                "area_text": [BLS_FIXTURE_AREA["area_text"]],
+            }
+        ),
+    }
+
+    def read_tsv(url: str) -> Any:
+        for suffix, frame in catalogues.items():
+            if str(url).endswith(suffix):
+                return frame
+        raise AssertionError(f"No BLS catalogue fixture registered for {url}")
+
+    monkeypatch.setattr(bls_metadata, "read_bls_tsv", read_tsv)
 
 
 def stub_fred(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed FRED fixture instead of the live API."""
+    """Serve the reviewed FRED fixtures instead of the live API.
+
+    The FRED DAG synchronises series metadata from the ``/series`` endpoint for
+    every configured series before ingesting observations, so that boundary
+    needs a fixture too.
+    """
     from data_ingestion_toolbox.fred import ingest as fred_ingest
+    from data_ingestion_toolbox.fred import metadata as fred_metadata
 
-    payload = load_fixture("fred", "e2e_pipeline.json")
-    monkeypatch.setattr(
-        fred_ingest, "fetch_fred_observations", lambda *_args, **_kwargs: payload
-    )
+    def observations(
+        series_id: str,
+        observation_start: str,
+        observation_end: str,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+    ) -> dict[str, Any]:
+        # The reviewed fixture is dated far in the future so it cannot collide
+        # with real data. The DAG requests a concrete window and discards
+        # anything outside it, so the sample is emitted inside that window
+        # instead, keeping every configured series covered.
+        released = realtime_start or observation_end
+        return {
+            "observations": [
+                {
+                    "realtime_start": released,
+                    "realtime_end": realtime_end or released,
+                    "date": observation_start,
+                    "value": "10",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(fred_ingest, "fetch_fred_observations", observations)
+
+    def series_metadata(series_id: str) -> dict[str, str]:
+        return {
+            "id": series_id,
+            "title": f"Fixture series {series_id}",
+            "units": "Percent",
+            "frequency": "Monthly",
+            "seasonal_adjustment": "Seasonally Adjusted",
+            "notes": "Deterministic fixture metadata for orchestrated DAG execution.",
+            "observation_start": "1970-01-01",
+            "observation_end": "2026-01-01",
+        }
+
+    monkeypatch.setattr(fred_metadata, "fetch_fred_series_metadata", series_metadata)
 
 
-#: Modules pinning the production target database name.
-TARGET_DATABASE_MODULES: tuple[str, ...] = (
-    "data_ingestion_toolbox.bls.ingest",
-    "data_ingestion_toolbox.census_acs.ingest",
-    "data_ingestion_toolbox.fred.ingest",
-    "data_ingestion_toolbox.cdc.config",
-)
+def _target_database_modules() -> list[Any]:
+    """Import every toolbox module pinning a production target database name.
+
+    The list is discovered rather than hard-coded: metadata, geography, and
+    ingest modules each carry their own ``_TARGET_DATABASE``, and a source added
+    later would silently reconnect to the production database name if this had
+    to be maintained by hand.
+    """
+    import importlib
+    import pkgutil
+
+    import data_ingestion_toolbox
+
+    modules = []
+    for info in pkgutil.walk_packages(
+        data_ingestion_toolbox.__path__, f"{data_ingestion_toolbox.__name__}."
+    ):
+        try:
+            module = importlib.import_module(info.name)
+        except Exception:  # pragma: no cover - optional extras may be absent
+            continue
+        if hasattr(module, "_TARGET_DATABASE"):
+            modules.append(module)
+    return modules
 
 
 def redirect_target_database(
     monkeypatch: pytest.MonkeyPatch, config: PostgresTestConfig
 ) -> None:
-    """Point the pinned production database name at the disposable database.
+    """Point every pinned production database name at the disposable database.
 
     These sources take host, port, and credentials from the Airflow connection
     but override the database with a hard-coded production name. Only that name
     is redirected, so connection resolution, pooling, and hook construction stay
     real while the writes land in the disposable database.
     """
-    import importlib
-
-    for name in TARGET_DATABASE_MODULES:
-        module = importlib.import_module(name)
-        monkeypatch.setattr(module, "_TARGET_DATABASE", config.database, raising=False)
+    redirected = 0
+    for module in _target_database_modules():
+        monkeypatch.setattr(module, "_TARGET_DATABASE", config.database)
+        redirected += 1
         module_config = getattr(module, "CONFIG", None)
         if module_config is not None and hasattr(module_config, "target_database"):
-            monkeypatch.setattr(
-                module_config, "target_database", config.database, raising=False
-            )
+            monkeypatch.setattr(module_config, "target_database", config.database)
+
+    assert redirected, (
+        "no module pinning _TARGET_DATABASE was found; the orchestrated run "
+        "would write to the production database name"
+    )
 
 
 def block_live_providers(monkeypatch: pytest.MonkeyPatch) -> None:

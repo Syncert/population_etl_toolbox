@@ -271,40 +271,39 @@ registered here; and no task reaches a live provider.
 
 The harness is implemented in `tests/support/dag_pipeline.py` and
 `tests/dags/test_dag_pipeline_execution.py`, and has been executed against a
-real PostgreSQL 16 + PostGIS 3 warehouse with Airflow 2.9.3.
+real PostgreSQL 16 + PostGIS 3 warehouse with Airflow 2.9.3. All eight
+production DAGs have completed successful DagRuns with every task instance
+successful: `silver_ref` (22,194 geography and 20,819 time rows at production
+scale), `acs_ingest`, `bls_ingest`, `fred_ingest`, `cdc_ingest`,
+`census_pep_ingest`, `glossary_harvest`, and `glossary_reconciliation`.
 
-Green as real DagRuns, all task instances successful:
+This tier found and fixed two production defects no other tier had reached:
 
-- `silver_ref` — loads 22,194 geography rows and 20,819 time rows at production
-  scale through capture lineage;
-- `cdc_ingest` — capture, replay, and publish for both registered assets;
-- `glossary_harvest`; and
-- `glossary_reconciliation`.
+- the BLS and ACS silver transforms crashed with a polars `SchemaError` when a
+  geography lookup returned zero rows, because their empty lookup frames were
+  built with Null-typed columns; an unresolved geography now flows into
+  resolution accounting as the layer contract requires;
+- `utility/gold_schema.py` rendered invalid SQL (`syntax error at end of
+  input`) for any component registering no required procedures, which broke
+  the PEP gold publication path — the only source that passes an empty
+  procedure tuple; and
+- `utility/db_connection.py` used the Postgres provider's deprecated
+  `schema=` argument, which strict warning filters escalate to a task failure.
 
-Not yet green, with the exact blocker each run reported:
+It also hardened the harness itself: source DAGs without provider credentials
+fail at task runtime and retry on production backoff, so fixture credentials
+are injected and per-task retries disabled; an unstubbed provider boundary now
+fails fast naming the URL instead of reaching the internet; the pinned
+production `public_data` database name is redirected by discovering every
+module carrying `_TARGET_DATABASE`; and the ACS, BLS, FRED, CDC, and PEP
+provider stubs answer the actual request (geography level, series list,
+release vintage) at the scale the production completeness guards demand,
+rather than serving one flat fixture.
 
-- `acs_ingest` — discovers datasets from `https://api.census.gov/data.json`
-  before fetching observations. A catalogue stub is now in place but unverified.
-- `acs_ingest`, `bls_ingest`, `fred_ingest` — these sources take host, port, and
-  credentials from the Airflow connection but override the database with a
-  hard-coded `public_data`. `redirect_target_database` addresses this and is
-  unverified; at least one path still reached `public_data`, so the redirect is
-  incomplete.
-- `acs_ingest`, `bls_ingest` — enforce production-scale shared geography, so
-  they only pass on a full-scale `silver_ref` run.
-- `census_pep_ingest` — requires 50 states, 3000 counties, and 18000 places, and
-  has not yet been executed against a full-scale geography load.
-
-**Next pickup:** Run `./tests/run.ps1 dag-pipeline` against a full-scale
-geography load, then resolve the remaining `public_data` resolution path and any
-remaining provider seam the network guard reports. Do not weaken a production
-guard to make a pipeline pass.
-
-Three findings already came out of this tier and are fixed in the harness: the
-source DAGs fail at task runtime without provider credentials and then retry on
-their production backoff, turning a missing fixture into a silent multi-minute
-hang; an unstubbed provider boundary reaches the real internet unless blocked;
-and the pinned `public_data` target database bypasses the Airflow connection.
+**Next pickup:** None for the capture-to-gold orchestration slice. When the FBI
+Crime and USDA Crop sources land, register their stubs in
+`iter_provider_stubs` — the coverage assertion fails until their DAGs execute
+here.
 
 ## Validation commands
 

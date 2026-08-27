@@ -116,7 +116,10 @@ class PostgresConnectionFactory:
             )
 
         # schema argument overrides the connection's schema/database
-        hook = PostgresHook(postgres_conn_id=conn_id, schema=database)
+        # The provider renamed 'schema' to 'database'; the old name still
+        # works but emits a deprecation warning that strict test filters
+        # escalate to an error.
+        hook = PostgresHook(postgres_conn_id=conn_id, database=database)
         conn = hook.get_connection(conn_id)
 
         host = conn.host or "localhost"
