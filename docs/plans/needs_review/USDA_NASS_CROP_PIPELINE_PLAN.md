@@ -165,25 +165,25 @@ tested, and validated on `feat/usda-crop`. The plan is ready for human review.
 
 ### Validation
 
-Run on 2026-08-27 from `feat/usda-crop` against the pinned disposable PostGIS
-warehouse (`infra/docker/docker-compose.test.yml`):
+Run on 2026-08-27 from `feat/usda-crop`. Database-backed tiers ran against a
+freshly provisioned pinned disposable PostGIS warehouse
+(`docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`).
 
 | Command | Result |
 | --- | --- |
-| `ruff format --check .` | pass (325 files) |
+| `ruff format --check .` | pass (326 files) |
 | `ruff check .` | pass |
-| `./tests/run.ps1 etl` | 510 passed, 0 skipped |
-| `./tests/run.ps1 api` | 110 passed, 0 skipped |
-| `./tests/run.ps1 dags` | 100 passed, 4 skipped |
-| `./tests/run.ps1 integration` | 67 passed, 8 skipped |
-| `pytest tests/unit` | 883 passed |
+| `./tests/run.ps1 etl` | exit 0 — 510 passed, 0 skipped |
+| `./tests/run.ps1 api` | exit 0 — 110 passed, 0 skipped |
+| `./tests/run.ps1 dags` | exit 0 — 100 passed, 4 skipped |
+| `./tests/run.ps1 integration` | exit 0 — 67 passed, 8 skipped |
+| `pytest tests/unit` | exit 0 — 883 passed |
 
 The four `dags` skips are the database-backed DAG tests that require
-`TEST_POSTGRES_*`; they belong to the `dag-pipeline` tier. The eight
-`integration` skips are the Redis and Compose tests that require
-`TEST_REDIS_URL` or `RUN_COMPOSE_TESTS`; they belong to the `martin`,
-`redis-integration`, and `compose-smoke` tiers. No skip or xfail was introduced
-by this work.
+`TEST_POSTGRES_*`. The eight `integration` skips are the Redis and Compose
+tests that require `TEST_REDIS_URL` or `RUN_COMPOSE_TESTS`; they belong to the
+`martin`, `redis-integration`, and `compose-smoke` tiers. No skip or xfail was
+introduced by this work.
 
 New coverage added by this plan: 140 unit tests in `tests/unit/usda_nass/`, 14
 API unit tests in `tests/unit/api/test_usda_nass_api.py`, 5 DAG structure tests
@@ -199,28 +199,57 @@ the tier definition stays synchronized across all three.
 ### Environment-limited checks
 
 Two checks could not run on this machine. Neither is caused by this work, and
-neither was reported as passing.
+neither is reported as passing.
 
-1. **`./tests/run.ps1 dag-pipeline` (DAG-016 orchestrated DagRun).**
-   `airflow.utils.db.initdb()` fails during test setup with
-   `ImportError: cannot import name 'ignore_sqlite_value_error' from
-   'airflow.migrations.utils'`. The installed environment is Airflow 2.11.2 on
-   Python 3.13 whose `airflow/migrations/versions/` directory also contains 97
-   orphaned Airflow 3 migration modules; alembic loads one of them and fails.
-   The repository pins Airflow 2.9.3 on Python 3.11 (`.github/workflows/etl-unit.yml`,
-   `infra/airflow/Dockerfile`). **To resume:** run the tier in a clean pinned
-   `airflow-dev` environment, or in the scheduler image, with
+1. **DAG-016 orchestrated DagRun.** `airflow.utils.db.initdb()` fails during
+   test setup with `ImportError: cannot import name
+   'ignore_sqlite_value_error' from 'airflow.migrations.utils'`. The installed
+   environment is Airflow 2.11.2 on Python 3.13 whose
+   `airflow/migrations/versions/` directory also holds 97 orphaned Airflow 3
+   migration modules; alembic loads one of them and fails. The repository pins
+   Airflow 2.9.3 on Python 3.11 (`.github/workflows/etl-unit.yml`,
+   `.github/workflows/dag-parse.yml`, `infra/airflow/Dockerfile`).
+
+   This affects `./tests/run.ps1 dag-pipeline`, and it also affects
+   `./tests/run.ps1 dags` whenever `TEST_POSTGRES_*` is configured, because the
+   orchestrated tests then stop skipping: that combination reports
+   `102 passed, 2 errors`, both errors being the `ImportError` above in
+   `tests/dags/test_dag_pipeline_execution.py`. Every other DAG test passes in
+   both configurations.
+
+   **To resume:** run in a clean pinned `airflow-dev` environment or in the
+   scheduler image:
    `docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`
-   followed by `./tests/run.ps1 dag-pipeline`. DAG-015 (static coverage of the
-   new DAG by that suite) does pass in `./tests/run.ps1 dags`.
+   then `./tests/run.ps1 dag-pipeline`. That run is the machine-verifiable
+   precondition of `docs/plans/gates/THREE_SOURCE_REVIEW_GATE.md` and is
+   expected to be produced on the integration branch, where it also covers the
+   CDC and FBI pipelines. DAG-015 — static coverage proving the new DAG does
+   not escape the orchestrated suite — does pass here.
+
 2. **pytest temporary root.** `%LOCALAPPDATA%\Temp\pytest-of-synce` on this
    machine denies access to its owner, so `tmp_path_factory.mktemp` fails and
    every tier that uses a temporary path errors before collection. The
    directory cannot be read, renamed, or removed without elevation. **To
    resume:** delete that directory from an elevated shell, or set
-   `PYTEST_DEBUG_TEMPROOT` to a writable directory. All results in the table
-   above were produced with `PYTEST_DEBUG_TEMPROOT` pointing at a writable
+   `PYTEST_DEBUG_TEMPROOT` to a writable directory. Every result in the table
+   above was produced with `PYTEST_DEBUG_TEMPROOT` pointing at a writable
    scratch directory; nothing else about the runs was changed.
+
+### Observations outside this plan's scope
+
+- `tests/integration/database/test_source_capture_cutovers.py::test_census_ingest_captures_array_and_bypasses_legacy_raw`
+  leaves a `silver_census.observation_revision` row for `state:55|county:001`
+  without a matching geography and never removes it. Re-running
+  `./tests/run.ps1 integration` against the *same* database therefore fails
+  `test_census_silver_flow.py::test_census_raw_rows_transform_to_exact_silver_keys`
+  on the historical-geography guard. The tier passes on a freshly provisioned
+  warehouse, which is how CI runs it. This predates this plan and is untouched
+  here.
+- Moving this plan out of `to_do/` leaves one stale relative link in
+  `docs/plans/to_do/DATA_PRODUCT_E2E_COVERAGE_PLAN.md`
+  (`[USDA NASS Crop pipeline](USDA_NASS_CROP_PIPELINE_PLAN.md)`), which now
+  needs `../needs_review/`. This execution was explicitly bounded to not modify
+  other plans, so the link is reported rather than repaired.
 
 ## Objective
 
