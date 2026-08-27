@@ -22,7 +22,8 @@ switch ($Tier) {
     "etl" {
         Invoke-Pytest -Arguments @(
             "-m", "unit and not api",
-            "tests/unit/census", "tests/unit/bls", "tests/unit/fred", "tests/unit/shared"
+            "tests/unit/census", "tests/unit/bls", "tests/unit/fred",
+            "tests/unit/cdc", "tests/unit/shared"
         )
     }
     "api" {

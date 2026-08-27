@@ -77,3 +77,80 @@ no network calls. A partial page sequence cannot become silver-ready. Retrying
 an unchanged capture is idempotent, and a changed provider release retains the
 prior published release while `gold_cdc.latest_release_observation` selects the
 latest watermark.
+
+## Bootstrap, reset, and re-ingestion order
+
+Follow [`docs/reference/BETA_RESET_REINGESTION.md`](../reference/BETA_RESET_REINGESTION.md)
+for a full beta reset. The CDC-specific ordering inside that procedure is:
+
+1. Stage one immutable revision of `dags/`, `src/`, and `sql/`, and pause
+   `cdc_ingest` with the other ingestion DAGs.
+2. Apply every asset in `sql/bootstrap/warehouse_manifest.json` in manifest
+   order; migration `010_cdc_pipeline.sql` must apply after the shared raw,
+   control, glossary, and `silver_ref` assets it references.
+3. Run `silver_ref` to success so `silver_ref.dim_geo_entity` can resolve CDI
+   state codes and PLACES county codes before any CDC observation is conformed.
+4. Trigger `cdc_ingest`. Re-ingestion is safe: the DAG re-reads provider
+   metadata, and an unchanged watermark finishes without refetching
+   observations.
+5. Confirm `GET /api/cdc/observations?dataset=cdi&limit=1` and
+   `GET /api/cdc/observations?dataset=places_county&limit=1` return published
+   rows.
+
+## Consumer API surface
+
+`GET /api/cdc/observations` serves published CDC observations from
+`gold_cdc.latest_release_observation`. Supplying `release=<watermark>` reads the
+durable `gold_cdc.health_observation` history for exactly that release instead;
+prior releases are never overwritten.
+
+| Filter | Accepted values |
+| --- | --- |
+| `dataset` | `cdi`, `places_county` |
+| `measure_id`, `value_type_id` | registered provider measure identity |
+| `geo_id` | canonical `us:1`, `state:SS`, `state:SS\|county:CCC` |
+| `geo_type` | `nation`, `state`, `county` |
+| `year_from`, `year_to` | inclusive observation-period bounds |
+| `stratum_id` | silver stratum hash |
+| `adjustment` | `crude`, `age_adjusted`, `source_specific` |
+| `release` | provider release watermark |
+| `limit`, `offset` | 1–5000 and 0+ |
+
+An unregistered dataset, unsupported geography type, unknown adjustment, or
+reversed year range returns `422` before any database work. Every row carries
+its dataset, release, measure, stratum, unit, adjustment, estimate method,
+population basis, confidence bounds, footnote, methodology URL, geography
+basis, and typed `value_status`. `missing` and `suppressed` observations keep a
+null numeric value beside the exact provider text; the API never fills them,
+and it never rolls modeled county estimates into state or national values.
+
+## Offline replay and test evidence
+
+Replay uses only committed capture bytes and performs no network calls:
+
+```python
+from data_ingestion_toolbox.cdc.registry import get_asset
+from data_ingestion_toolbox.cdc.silver_cdc.replay import replay_captured_run
+
+result = replay_captured_run(
+    connection_factory, run_id=run_id, asset=get_asset("cdi"),
+    release_watermark=watermark,
+)
+```
+
+Deterministic checks, in increasing cost:
+
+```powershell
+./tests/run.ps1 etl           # CDC configuration, registry, client, replay units
+./tests/run.ps1 api           # CDC source-explorer endpoint contract
+./tests/run.ps1 dags          # cdc_ingest topology, pool, schedule, and retries
+./tests/run.ps1 integration   # CDC capture-to-gold against disposable PostGIS
+./tests/run.ps1 e2e           # CDC fixture flow from raw capture to the API
+./tests/run.ps1 external      # live CDC metadata contract; scheduled only
+```
+
+The integration, `e2e`, and `dag-pipeline` tiers need the pinned disposable
+PostGIS service from `infra/docker/docker-compose.test.yml` and the
+`TEST_POSTGRES_*` settings; they never touch a production warehouse. The
+`external` tier is the only tier that contacts CDC, and it requests dataset
+metadata only.

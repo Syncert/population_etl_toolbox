@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress; first capture-to-gold deployment candidate implemented
-- **Last updated:** 2026-08-26
+- **Status:** Implementation complete; ready for human review
+- **Last updated:** 2026-08-27
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
@@ -24,19 +24,25 @@ verify:
 
 ## Implementation checkpoint
 
-**Last audited:** 2026-08-26
+**Last audited:** 2026-08-27
 
-**Current milestone:** CDC-001 through CDC-004 and the capture-to-gold portion
-of CDC-005 have a first-pass implementation suitable for deployment testing.
-The user discarded the Qwen/local-agent experiment on 2026-08-26; its packets
-are historical evidence only and no longer control execution.
+**Current milestone:** CDC-001 through CDC-005 are implemented. CDC-A13 through
+CDC-A16 added the CDC API slice, deterministic raw-to-API end-to-end coverage,
+isolated live source contracts, and synchronized testing/CI/operator evidence.
 
-**Next pickup:** Stage one immutable revision, apply the warehouse manifest,
-run `silver_ref`, and execute the first deployment test from
-`docs/user-guides/CDC_PIPELINE_OPERATIONS.md`. After runtime review of the
-warehouse grain, fan-out, and source behavior (Review Gates 2 and 3), implement
-the CDC API, deterministic raw-to-API E2E coverage, and isolated live contracts
-in CDC-A13 through CDC-A16.
+**Next pickup:** None. The plan is submitted for human review.
+
+**Open for the reviewer:** Review Gates 2 and 3 are human runtime reviews that
+only a person can close. The warehouse grain, ownership boundaries, and
+migration compatibility for Gate 2 are inspectable in
+`sql/migrations/010_cdc_pipeline.sql`, with executable evidence in
+`tests/integration/database/test_cdc_pipeline.py` and
+`tests/integration/database/test_warehouse_bootstrap.py`. The operational
+fan-out, retry ownership, schedule, and publication gating for Gate 3 are
+inspectable in `dags/cdc_ingest_dag.py`, with executable evidence in
+`tests/dags/test_cdc_dag.py` and `tests/dags/test_dagbag.py`. No implementation
+work is blocked on those gates; production deployment of the DAG should wait for
+them.
 
 ### Repository evidence at this checkpoint
 
@@ -53,9 +59,10 @@ in CDC-A13 through CDC-A16.
 - [x] Both enabled registry contracts carry parser version, consumed
   columns/types, deterministic source key/order, geography basis, metadata
   watermark field, cadence, methodology, estimate method, and population basis.
-- [x] Six reviewed fixture/expected/source-note files exist under
-  `tests/fixtures/cdc/`, covering CDI national/state/stratified/missing rows and
-  PLACES county crude/age-adjusted/suppressed rows.
+- [x] Seven reviewed fixture/expected/source-note files exist under
+  `tests/fixtures/cdc/`, covering CDI national/state/stratified/missing rows,
+  PLACES county crude/age-adjusted/suppressed rows, the frozen contract
+  expectations, and the reviewed end-to-end expected output.
 - [x] Configuration, registry, schema, fixture-contract, and capture-oriented
   Socrata client tests exist under `tests/unit/cdc/`.
 - [x] `capture.py`, `metadata.py`, `silver_cdc/`, and `gold_cdc/` implement the
@@ -77,37 +84,86 @@ in CDC-A13 through CDC-A16.
 - [x] `cdc_ingest` checks shared geography, uses `cdc_api`, fans out over both
   registered assets, and gates publication behind complete replay and silver
   reconciliation.
-- [ ] CDC API, raw-to-API E2E, and marked live contract checks remain in
-  CDC-A13 through CDC-A16 and are not claimed by this checkpoint.
+- [x] CDC-A13 — `apps/api/routers/cdc.py`, `apps/api/services/cdc_service.py`,
+  `src/data_ingestion_toolbox/sql/cdc_queries.py`, and the
+  `CdcObservation`/`CdcObservationListResponse` models in
+  `src/data_ingestion_toolbox/models.py` serve `GET /api/cdc/observations`.
+  Filters bind dataset, measure, value type, geography, period, stratum,
+  adjustment, and release; an omitted release reads
+  `gold_cdc.latest_release_observation` and a named release reads
+  `gold_cdc.health_observation`. Nineteen deterministic tests in
+  `tests/unit/api/test_cdc_observations.py` cover the response contract,
+  filters, pagination totals, empty results, invalid filters, injection input,
+  and the sanitized 503. Policy, comparability judgement, clinical
+  interpretation, and county rollups stay out of the API.
+- [x] CDC-A14 — `tests/e2e/test_cdc_pipeline.py` drives the real capture
+  orchestration against a scripted transport and reconciles raw, silver, gold,
+  quarantine, and API counts against the reviewed
+  `tests/fixtures/cdc/expected_e2e.json`. It proves replay idempotency,
+  changed-release retention with an advancing latest projection, an inspectable
+  county geography miss, typed suppressed and missing values, and app-token
+  absence from captures, control rows, logs, and API output. A second test
+  proves an incomplete page sequence never publishes, rolls back before silver,
+  and reruns to exactly the clean successful state.
+- [x] CDC-A15 — `tests/external/test_cdc_source_contracts.py` requests only
+  registered dataset metadata for each enabled asset, verifies identity, label,
+  watermark, and consumed columns, classifies 429/5xx/timeout as upstream
+  unavailable through the now adapter-neutral
+  `tests/support/external.classify_external_failure`, and proves the optional
+  token stays out of logs and errors. The `external-contract` workflow owns it
+  and it is excluded from every deterministic tier.
+- [x] CDC-A16 — `docs/reference/TESTING_CONTRACT.md` registers API-028 through
+  API-030, E2E-007, and EXT-012 with a refreshed implementation-status table;
+  `docs/reference/CI_EVIDENCE_MAP.md` and
+  `tests/support/ci_evidence_manifest.json` name the CDC live-contract job;
+  `tests/run.ps1`, `Makefile`, and `.github/workflows/etl-unit.yml` run
+  `tests/unit/cdc` in the ETL tier;
+  `docs/user-guides/CDC_PIPELINE_OPERATIONS.md` documents bootstrap, reset and
+  re-ingestion order, the consumer API surface, offline replay, and every CDC
+  test tier; and `docs/reference/BETA_RESET_REINGESTION.md` adds the CDC API
+  smoke check.
 
 ### Validation evidence
 
-- `python -m pytest tests/unit/cdc -m unit -q`: **80 passed**.
-- `python -m pytest tests/unit -m unit -q`: **639 passed**.
-- `python -m pytest tests/dags -m dag -q`: **89 passed** on the host.
-- Scheduler image (`apache/airflow:2.9.3-python3.11`) build: **passed**;
-  in-image DAG suite **86 passed, 3 expected context skips**; `pip check`
-  reported no broken requirements.
-- Disposable PostGIS CDC fixture flow: **passed** for CDI and PLACES capture,
-  replay, exact geography, idempotency, silver reconciliation, gold publication,
-  and two publisher-ready events.
-- Fresh-database CDC flow followed by shared reference-dimension tests:
-  **3 passed**, proving the CDC integration finalizer leaves shared dimensions
-  clean for subsequent tests.
-- Final affected disposable-database suite (CDC, raw/control inventory,
-  warehouse bootstrap/rerun, and shared dimensions): **11 passed**.
-- Warehouse clean-bootstrap and complete-manifest rerun checks: **2 passed**.
-- All four checked-in Compose variants: `docker compose ... config --quiet`
-  **passed**.
-- Focused Ruff lint/format, Python compilation, and `git diff --check`:
-  **passed**.
-- The Census PEP integration-isolation defect was repaired on 2026-08-26. The
-  complete non-external database suite now passes **40 tests** with **11
-  deselected**, and post-suite reconciliation reports zero residual PEP facts,
-  revisions, release loads, geography resolutions, runs, requests, captures,
-  or publisher-ready events.
-- Not run: live CDC metadata checks, production/homelab deployment, CDC API/E2E,
-  or Review Gate 2/3 human runtime review.
+Recorded 2026-08-27 on Windows against the pinned disposable
+`postgis/postgis:16-3.5-alpine` service from
+`infra/docker/docker-compose.test.yml`.
+
+- `./tests/run.ps1 etl`: **450 passed**, now including `tests/unit/cdc`.
+- `./tests/run.ps1 dags`: **90 passed, 4 skipped**; the four skips are the
+  database-backed DAG tests that require `TEST_POSTGRES_*`.
+- `./tests/run.ps1 integration`: **55 passed, 8 skipped** against a fresh
+  disposable PostGIS database. The skips are the six Redis tests, the
+  Redis-backed cache test, and the compose smoke test; this tier provisions
+  neither Redis nor the composed stack. Recreate the container between local
+  tier runs: reusing one that already completed a tier leaves Census ACS and
+  glossary residue that makes unrelated pre-existing tests fail. CI starts a
+  fresh container per job, so this affects local reruns only.
+- `./tests/run.ps1 api`: **115 passed**.
+- `./tests/run.ps1 unit`: **748 passed**.
+- `./tests/run.ps1 e2e` on a fresh database: **5 passed**, including both CDC
+  end-to-end tests.
+- `RUN_EXTERNAL_TESTS=1 python -m pytest -m external tests/external/test_cdc_source_contracts.py`:
+  **8 passed** against the live CDC metadata endpoints for `hksd-2xuw` and
+  `swc5-untb`, confirming both frozen contracts still match the provider.
+- `ruff format --check .` and `ruff check .`: **passed**.
+- Retained earlier evidence: disposable PostGIS CDC fixture flow; fresh-database
+  CDC flow followed by shared reference-dimension tests; warehouse
+  clean-bootstrap and complete-manifest rerun; `docker compose ... config
+  --quiet` for all four checked-in Compose variants; and the scheduler-image DAG
+  suite.
+
+Environment-limited checks, not run here:
+
+- `./tests/run.ps1 dag-pipeline` cannot initialize an Airflow metadata database
+  on this host: `ImportError: cannot import name 'ignore_sqlite_value_error'
+  from 'airflow.migrations.utils'`. This is a local Airflow/alembic
+  incompatibility under Windows Python 3.13, not a repository defect; the
+  `dag-parse` and `scheduler-image` jobs own that evidence.
+- Redis-backed tiers were not provisioned for the recorded integration run, so
+  their tests are reported as skips rather than passes.
+- Production and homelab deployment, and the Review Gate 2 and 3 human runtime
+  reviews.
 
 ### Review Gate 1 packet (approved 2026-08-26)
 
@@ -374,7 +430,7 @@ If Review Gate 1 cannot verify PLACES, record the blocker and execute an explici
 - [x] CDC-002 — Implement lossless capture, deterministic paging, metadata decisions, quarantine, and offline replay foundation (`CDC-A03`–`CDC-A06`).
 - [x] CDC-003 — Implement and reconcile CDI national/state silver data (`CDC-A07`, plus shared DDL work in `CDC-A09`).
 - [x] CDC-004 — Implement and reconcile PLACES county silver data (`CDC-A08` and `CDC-A10`).
-- [ ] CDC-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage (`CDC-A11`–`CDC-A16`).
+- [x] CDC-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage (`CDC-A11`–`CDC-A16`).
 
 ## Objective
 
