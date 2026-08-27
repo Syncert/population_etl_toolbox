@@ -83,6 +83,13 @@ Set-StrictMode -Version Latest
 $script:RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:PythonExecutable = $null
 
+# The integration branch gets its own checkout. Merging in the operator's main
+# working tree would land plan branches on whatever they happen to have checked
+# out -- usually the base branch this design promises never to touch -- and
+# would fight them for the working tree while the fleet runs.
+$script:IntegrationWorktree = Join-Path $WorktreeRoot '_integration'
+$script:PlansRootArgument = $PlansRoot
+
 if ($DryRun) {
     # A dry run must not leave run state behind in the repository, so it plans
     # against a throwaway state file instead of the real one.
@@ -145,7 +152,7 @@ function Invoke-Planner {
 
     $arguments = @(
         '-m', 'tools.plan_dispatcher',
-        '--plans-root', $PlansRoot,
+        '--plans-root', $script:PlansRootArgument,
         '--state-path', $StatePath
     ) + $PlannerArgs
 
@@ -204,6 +211,31 @@ function Invoke-Native {
         ExitCode = $exitCode
         Output   = ($output | Out-String)
         DryRun   = $false
+    }
+}
+
+function Get-ShellInvocation {
+    <#
+        .SYNOPSIS
+            Return the shell that runs a plan's verification command.
+        .DESCRIPTION
+            Verification commands are ordinary shell strings from plan
+            frontmatter, and this repository's plans invoke tests/run.ps1.
+            Running them in the PowerShell host that is already executing this
+            dispatcher keeps one command string working on an operator's
+            Windows machine and on a Linux runner alike; hard-coding bash would
+            break every .ps1 runner, and hard-coding a name would miss Windows
+            PowerShell.
+    #>
+    param([Parameter(Mandatory)][string]$Command)
+
+    $host_ = (Get-Process -Id $PID).Path
+    if (-not $host_) {
+        $host_ = if ($IsWindows) { 'powershell' } else { 'pwsh' }
+    }
+    return @{
+        FilePath  = $host_
+        Arguments = @('-NoProfile', '-NonInteractive', '-Command', $Command)
     }
 }
 
@@ -279,23 +311,47 @@ function Initialize-Run {
     $identity = Resolve-RunIdentity
     if (-not $identity.IsNew) {
         Write-Log "Resuming run $($identity.RunId) on $($identity.IntegrationBranch)."
+        Initialize-IntegrationWorktree -IntegrationBranch $identity.IntegrationBranch
         return $identity
     }
 
     Write-Log "Starting run $($identity.RunId) on $($identity.IntegrationBranch)."
+    if (-not (Test-GitRefExists -Ref $identity.IntegrationBranch)) {
+        Invoke-Git -Arguments @(
+            'branch', $identity.IntegrationBranch, $BaseBranch
+        ) | Out-Null
+    }
+    Initialize-IntegrationWorktree -IntegrationBranch $identity.IntegrationBranch
+
     Invoke-Planner -PlannerArgs @(
         'init-run',
         '--run-id', $identity.RunId,
         '--integration-branch', $identity.IntegrationBranch,
         '--max-concurrency', "$MaxConcurrency"
     ) | Out-Null
+    return $identity
+}
 
-    if (-not (Test-GitRefExists -Ref $identity.IntegrationBranch)) {
+function Initialize-IntegrationWorktree {
+    <#
+        .SYNOPSIS
+            Check the integration branch out into its own worktree.
+        .DESCRIPTION
+            Once it exists, the planner reads the backlog from it, so a plan
+            already merged into this run reads as satisfied and is never
+            dispatched twice.
+    #>
+    param([Parameter(Mandatory)][string]$IntegrationBranch)
+
+    $absolutePath = Join-Path $script:RepositoryRoot $script:IntegrationWorktree
+    if (-not (Test-Path -Path $absolutePath)) {
         Invoke-Git -Arguments @(
-            'branch', $identity.IntegrationBranch, $BaseBranch
+            'worktree', 'add', $script:IntegrationWorktree, $IntegrationBranch
         ) | Out-Null
     }
-    return $identity
+    if (Test-Path -Path (Join-Path $absolutePath $PlansRoot)) {
+        $script:PlansRootArgument = Join-Path $absolutePath $PlansRoot
+    }
 }
 
 function New-PlanWorktree {
@@ -346,7 +402,7 @@ function Start-PlanWorker {
     )
 
     $prompt = Invoke-Planner -PlannerArgs @(
-        'prompt', '--plan-id', $Plan.id, '--raw'
+        'prompt', '--plan-id', $Plan.id, '--raw', '--display-root', $PlansRoot
     ) -Raw
 
     $arguments = @('--bg', '--permission-mode', $PermissionMode, $prompt)
@@ -413,7 +469,8 @@ function Test-PlanVerification {
     $workingDirectory = Join-Path $script:RepositoryRoot $WorktreePath
     foreach ($command in $Plan.verify) {
         Write-Log "Verifying $($Plan.id): $command"
-        $result = Invoke-Native -FilePath 'bash' -Arguments @('-lc', $command) `
+        $shell = Get-ShellInvocation -Command $command
+        $result = Invoke-Native -FilePath $shell.FilePath -Arguments $shell.Arguments `
             -WorkingDirectory $workingDirectory -AllowFailure
         if ($result.ExitCode -ne 0) {
             $tail = ($result.Output -split "`r?`n" | Select-Object -Last 20) -join "`n"
@@ -458,12 +515,14 @@ function Merge-PlanBranch {
     )
 
     $message = "merge($($Plan.id)): integrate verified plan branch $($Plan.branch)"
+    $integrationTree = Join-Path $script:RepositoryRoot $script:IntegrationWorktree
     $result = Invoke-Git -Arguments @(
         'merge', '--no-ff', '-m', $message, $Plan.branch
-    ) -AllowFailure
+    ) -WorkingDirectory $integrationTree -AllowFailure
 
     if ($result.ExitCode -ne 0) {
-        Invoke-Git -Arguments @('merge', '--abort') -AllowFailure | Out-Null
+        Invoke-Git -Arguments @('merge', '--abort') `
+            -WorkingDirectory $integrationTree -AllowFailure | Out-Null
         return [pscustomobject]@{
             Merged = $false
             Detail = "Merge into $IntegrationBranch conflicted; resolve by hand."
@@ -625,7 +684,7 @@ function Invoke-Run {
         if ($decision.done) {
             Write-Log "Run $($identity.RunId) finished." -Level ok
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
-            if ($decision.blocked.PSObject.Properties.Count -eq 0) {
+            if (@($decision.blocked.PSObject.Properties).Count -eq 0) {
                 return 0
             }
             return 1
@@ -668,6 +727,9 @@ function Invoke-Clean {
             'worktree', 'remove', $record.worktree, '--force'
         ) -AllowFailure | Out-Null
     }
+    Invoke-Git -Arguments @(
+        'worktree', 'remove', $script:IntegrationWorktree, '--force'
+    ) -AllowFailure | Out-Null
     Invoke-Git -Arguments @('worktree', 'prune') -AllowFailure | Out-Null
     return 0
 }

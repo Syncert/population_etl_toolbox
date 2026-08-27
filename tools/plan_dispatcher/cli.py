@@ -123,7 +123,7 @@ def _prompt(arguments: argparse.Namespace) -> int:
     if arguments.plan_id not in plans:
         raise PlanMetadataError(f"Unknown plan id '{arguments.plan_id}'.")
     plan = plans[arguments.plan_id]
-    text = build_goal_prompt(plan, plans_root=arguments.plans_root.as_posix())
+    text = build_goal_prompt(plan, plans_root=arguments.display_root.as_posix())
     if arguments.raw:
         sys.stdout.write(text)
         return 0
@@ -231,6 +231,16 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.add_argument("--plan-id", required=True)
     prompt.add_argument(
         "--raw", action="store_true", help="Write the prompt text without JSON."
+    )
+    prompt.add_argument(
+        "--display-root",
+        type=Path,
+        default=DEFAULT_PLANS_ROOT,
+        help=(
+            "Repository-relative plans root to name in the prompt. Inventory may "
+            "be read from an integration worktree, but the worker edits its own "
+            "checkout, so the path it is given must be repository-relative."
+        ),
     )
     prompt.set_defaults(handler=_prompt)
 

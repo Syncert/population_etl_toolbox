@@ -231,6 +231,21 @@ def test_cli_drives_a_run_from_init_through_dispatch(
     ]
 
 
+def test_cli_prompt_path_stays_repository_relative(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Covers: PLAN-006 — a worker edits its own worktree, not the inventory root."""
+    plans_root = tmp_path / "integration" / "docs" / "plans"
+    seed_plans(plans_root)
+    common = ["--plans-root", str(plans_root), "--state-path", str(tmp_path / "s.json")]
+
+    assert main([*common, "prompt", "--plan-id", "first", "--raw"]) == 0
+
+    prompt = capsys.readouterr().out
+    assert prompt.startswith("/goal Implement docs/plans/to_do/first.md")
+    assert str(tmp_path) not in prompt
+
+
 def test_cli_refuses_to_overwrite_a_live_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

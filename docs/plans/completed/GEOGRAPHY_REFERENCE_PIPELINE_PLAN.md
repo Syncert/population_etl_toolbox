@@ -5,8 +5,8 @@ depends_on: []
 parallel_safe: true
 complexity: high
 verify:
-  - make test-etl
-  - make test-integration
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 integration
 ---
 
 # Census geography reference pipeline plan

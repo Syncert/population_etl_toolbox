@@ -7,8 +7,8 @@ depends_on:
 parallel_safe: false
 complexity: high
 verify:
-  - make test-etl
-  - make test-integration
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 integration
 ---
 
 # Warehouse data-quality assessment plan

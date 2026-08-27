@@ -5,7 +5,7 @@ depends_on: []
 parallel_safe: false
 complexity: medium
 verify:
-  - make test-unit
+  - ./tests/run.ps1 unit
 ---
 
 # CI/CD GitHub Actions migration plan

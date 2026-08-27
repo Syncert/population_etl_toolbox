@@ -10,9 +10,9 @@ depends_on:
 parallel_safe: false
 complexity: high
 verify:
-  - make test-api
-  - make test-integration
-  - make test-e2e
+  - ./tests/run.ps1 api
+  - ./tests/run.ps1 integration
+  - ./tests/run.ps1 e2e
 ---
 
 # API development plan

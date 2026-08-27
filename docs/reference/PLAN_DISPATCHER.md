@@ -42,9 +42,9 @@ depends_on:
 parallel_safe: true
 complexity: high
 verify:
-  - make test-etl
-  - make test-dags
-  - make test-integration
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 dags
+  - ./tests/run.ps1 integration
 ---
 ```
 
@@ -56,6 +56,11 @@ verify:
 | `parallel_safe` | no | `true` | `false` means the plan runs alone. |
 | `complexity` | no | `medium` | `low`, `medium`, or `high`; breaks scheduling ties. |
 | `verify` | no | `[]` | Commands the dispatcher reruns before integrating. |
+
+Verification commands run through the platform shell — `pwsh` on Windows,
+`bash` elsewhere. The repository's plans use
+[`tests/run.ps1`](../../tests/run.ps1) tiers rather than `make` targets, so the
+same plan verifies on an operator's Windows machine and on a Linux runner.
 
 **There is deliberately no `status` key.** `docs/plans/README.md` makes the
 containing folder the authoritative workflow state, and a second copy of that
@@ -129,6 +134,18 @@ Each plan gets its own Git worktree under `.worktrees/<id>` so simultaneous
 workers do not share a working tree. The dispatcher creates the branch itself
 rather than relying on `claude --worktree`, so branch naming and the
 integration base stay under the run's control.
+
+The integration branch also gets its own checkout, at `.worktrees/_integration`,
+and every merge happens there. Merging in the operator's main working tree
+would land plan branches on whatever they happen to have checked out — usually
+the base branch this design promises never to touch — and would fight them for
+the working tree while the fleet runs. Once that checkout exists the planner
+reads the backlog from it, so a plan already integrated during this run reads
+as satisfied and is never dispatched twice.
+
+Worker prompts always name plans by their repository-relative path
+(`docs/plans/...`), because a worker edits the plan inside its own worktree
+rather than wherever the dispatcher happens to read inventory from.
 
 ## Worker prompts
 

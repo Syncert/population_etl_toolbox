@@ -6,9 +6,9 @@ depends_on:
 parallel_safe: true
 complexity: high
 verify:
-  - make test-web-unit
-  - make test-web-browser
-  - make test-web-build
+  - ./tests/run.ps1 web-unit
+  - ./tests/run.ps1 web-browser
+  - ./tests/run.ps1 web-build
 ---
 
 # Web analytics foundation and first-wave products plan

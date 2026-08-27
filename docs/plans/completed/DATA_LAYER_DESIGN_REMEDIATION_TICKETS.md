@@ -5,8 +5,8 @@ depends_on: []
 parallel_safe: false
 complexity: medium
 verify:
-  - make test-etl
-  - make test-integration
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 integration
 ---
 
 # Data-layer design investigation and remediation tickets

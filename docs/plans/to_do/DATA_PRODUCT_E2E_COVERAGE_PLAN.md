@@ -8,8 +8,8 @@ depends_on:
 parallel_safe: false
 complexity: medium
 verify:
-  - make test-e2e
-  - make test-performance
+  - ./tests/run.ps1 e2e
+  - ./tests/run.ps1 performance
 ---
 
 # Data-product end-to-end coverage expansion plan

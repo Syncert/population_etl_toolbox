@@ -6,9 +6,9 @@ depends_on:
 parallel_safe: true
 complexity: high
 verify:
-  - make test-etl
-  - make test-dags
-  - make test-integration
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 dags
+  - ./tests/run.ps1 integration
 ---
 
 # FBI crime data pipeline plan
