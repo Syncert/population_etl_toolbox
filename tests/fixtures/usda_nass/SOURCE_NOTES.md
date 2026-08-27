@@ -103,6 +103,32 @@ Crop survey products in this registry are `freq_desc = ANNUAL` with
 `week_ending` is empty for annual records and carries an ISO date for weekly
 progress and condition records. All four fields are preserved.
 
+## Observation grain
+
+One published observation is uniquely identified by the complete Quick Stats
+grain, not by commodity, geography, and year:
+
+```text
+registered product
+x extraction release (max load_time)
+x full commodity classification
+    (sector_desc, group_desc, commodity_desc, class_desc,
+     prodn_practice_desc, util_practice_desc)
+x statistic identity
+    (source_desc, statisticcat_desc, short_desc, unit_desc, freq_desc)
+x domain member (domain_desc, domaincat_desc)
+x geography (agg_level_desc and the exact location codes)
+x period (year, freq_desc, begin_code, end_code, reference_period_desc,
+          week_ending)
+```
+
+`silver_nass.observation_revision.source_record_id` is the SHA-256 of exactly
+those source fields, and `silver_nass.fact_crop_observation` is unique on
+`(product_id, release_watermark, source_record_id)`. `Value`, `CV (%)`, and
+`load_time` are revision attributes and are deliberately outside the grain, so
+a revised value replaces nothing: it arrives as a new release beside the one it
+revises.
+
 ## Release identity and revisions
 
 Quick Stats publishes no dataset-metadata document. A release is identified by
