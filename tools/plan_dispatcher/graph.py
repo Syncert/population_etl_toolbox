@@ -34,6 +34,8 @@ class DispatchDecision:
     deferred: Mapping[str, str] = field(default_factory=dict)
     blocked: Mapping[str, str] = field(default_factory=dict)
     complete: tuple[str, ...] = ()
+    gates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    awaiting_review: tuple[str, ...] = ()
     done: bool = False
     stalled: bool = False
     reason: str = ""
@@ -47,6 +49,8 @@ class DispatchDecision:
             "deferred": dict(self.deferred),
             "blocked": dict(self.blocked),
             "complete": list(self.complete),
+            "gates": {key: dict(value) for key, value in self.gates.items()},
+            "awaiting_review": list(self.awaiting_review),
             "done": self.done,
             "stalled": self.stalled,
             "reason": self.reason,
@@ -139,7 +143,58 @@ def _transitive_dependents(
 
 
 def _is_satisfied(plan: PlanMetadata, status: str) -> bool:
+    if plan.is_gate:
+        return status == "approved"
     return status == "complete" or plan.is_satisfied
+
+
+def evaluate_gates(
+    plans: Mapping[str, PlanMetadata], run_state: RunState
+) -> dict[str, dict[str, Any]]:
+    """Return each gate's current status and what it is still waiting on.
+
+    A gate opens for review as soon as everything it guards is satisfied, but
+    only a recorded human decision moves it past that. Approval and rejection
+    are sticky: once decided, a gate is not silently reopened by later state.
+    """
+    statuses = {plan_id: run_state.status_of(plan_id) for plan_id in plans}
+    gate_statuses = {
+        plan_id: run_state.gate_status_of(plan_id)
+        for plan_id, plan in plans.items()
+        if plan.is_gate
+    }
+
+    def satisfied(plan_id: str) -> bool:
+        plan = plans[plan_id]
+        if plan.is_gate:
+            return gate_statuses.get(plan_id) == "approved"
+        return _is_satisfied(plan, statuses[plan_id])
+
+    evaluated: dict[str, dict[str, Any]] = {}
+    for gate_id in sorted(gate_statuses):
+        gate = plans[gate_id]
+        pending = tuple(
+            dependency for dependency in gate.depends_on if not satisfied(dependency)
+        )
+        recorded = gate_statuses[gate_id]
+        if recorded in {"approved", "rejected"}:
+            status = recorded
+        elif pending:
+            status = "pending"
+        else:
+            status = "awaiting_review"
+        entry = run_state.gates.get(gate_id)
+        evaluated[gate_id] = {
+            "status": status,
+            "title": gate.title,
+            "path": str(gate.path),
+            "waiting_on": list(pending),
+            "guards": list(gate.depends_on),
+            "decided_by": entry.decided_by if entry else "",
+            "decided_at": entry.decided_at if entry else "",
+            "note": entry.note if entry else "",
+        }
+    return evaluated
 
 
 def build_dispatch_decision(
@@ -161,14 +216,25 @@ def build_dispatch_decision(
        highest-ranked ready plan and other work is still running, the tick
        dispatches nothing and waits for the fleet to drain. That costs a little
        throughput but makes starvation impossible.
+    5. A review gate is never dispatched. It satisfies its dependents only once
+       a human approval is recorded, and a run whose remaining work all sits
+       behind an undecided gate reports ``paused`` rather than stalling.
     """
     if max_concurrency < 1:
         raise PlanGraphError("max_concurrency must be at least 1.")
     validate_graph(plans)
 
     statuses = {plan_id: run_state.status_of(plan_id) for plan_id in plans}
+    gates = evaluate_gates(plans, run_state)
+    for gate_id, gate in gates.items():
+        # Fold the evaluated gate verdict back in so one satisfaction rule
+        # serves the rest of the scheduler.
+        statuses[gate_id] = gate["status"]
+
     running = tuple(
-        plan_id for plan_id in sorted(plans) if statuses[plan_id] in OCCUPYING_STATUSES
+        plan_id
+        for plan_id in sorted(plans)
+        if not plans[plan_id].is_gate and statuses[plan_id] in OCCUPYING_STATUSES
     )
     complete = tuple(
         plan_id
@@ -176,11 +242,11 @@ def build_dispatch_decision(
         if _is_satisfied(plans[plan_id], statuses[plan_id])
     )
 
-    blocked = _propagate_blocked(plans, statuses)
+    blocked = _propagate_blocked(plans, statuses, gates)
     waiting: dict[str, tuple[str, ...]] = {}
     ready: list[PlanMetadata] = []
     for plan in _ordered(plans):
-        if plan.plan_id in blocked:
+        if plan.plan_id in blocked or plan.is_gate:
             continue
         if not plan.is_active or statuses[plan.plan_id] != "pending":
             continue
@@ -195,9 +261,18 @@ def build_dispatch_decision(
             ready.append(plan)
 
     dispatch, deferred = _select(plans, ready, len(running), max_concurrency)
+    awaiting_review = tuple(
+        gate_id
+        for gate_id in sorted(gates)
+        if gates[gate_id]["status"] == "awaiting_review"
+    )
     pending_work = bool(ready) or bool(waiting)
-    stalled = not running and not dispatch and pending_work
-    done = not running and not dispatch and not pending_work
+    idle = not running and not dispatch
+    # A gate awaiting a decision is a deliberate pause, not a stall: the run has
+    # done everything it may do and is handing the decision to a human.
+    paused = idle and bool(awaiting_review)
+    stalled = idle and pending_work and not paused
+    done = idle and not pending_work and not paused
 
     return DispatchDecision(
         dispatch=dispatch,
@@ -206,31 +281,45 @@ def build_dispatch_decision(
         deferred=deferred,
         blocked=blocked,
         complete=complete,
+        gates=gates,
+        awaiting_review=awaiting_review,
         done=done,
         stalled=stalled,
-        reason=_reason(dispatch, running, waiting, blocked, done, stalled),
+        reason=_reason(
+            dispatch, running, waiting, blocked, awaiting_review, done, stalled
+        ),
     )
 
 
 def _propagate_blocked(
-    plans: Mapping[str, PlanMetadata], statuses: Mapping[str, str]
+    plans: Mapping[str, PlanMetadata],
+    statuses: Mapping[str, str],
+    gates: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, str]:
     blocked: dict[str, str] = {
         plan_id: f"run status '{statuses[plan_id]}'"
         for plan_id in sorted(plans)
-        if statuses[plan_id] in TERMINAL_FAILURE_STATUSES
+        if not plans[plan_id].is_gate and statuses[plan_id] in TERMINAL_FAILURE_STATUSES
     }
+    for gate_id in sorted(gates):
+        if gates[gate_id]["status"] == "rejected":
+            blocked[gate_id] = "review gate rejected"
     changed = True
     while changed:
         changed = False
         for plan in _ordered(plans):
-            if plan.plan_id in blocked or not plan.is_active:
+            if plan.plan_id in blocked or not (plan.is_active or plan.is_gate):
                 continue
             culprits = sorted(
                 dependency for dependency in plan.depends_on if dependency in blocked
             )
             if culprits:
-                blocked[plan.plan_id] = "depends on blocked plan(s): " + ", ".join(
+                label = (
+                    "gate"
+                    if all(plans[culprit].is_gate for culprit in culprits)
+                    else "plan"
+                )
+                blocked[plan.plan_id] = f"depends on blocked {label}(s): " + ", ".join(
                     culprits
                 )
                 changed = True
@@ -297,9 +386,16 @@ def _reason(
     running: Sequence[str],
     waiting: Mapping[str, tuple[str, ...]],
     blocked: Mapping[str, str],
+    awaiting_review: Sequence[str],
     done: bool,
     stalled: bool,
 ) -> str:
+    if not dispatch and not running and awaiting_review:
+        return (
+            "Paused for human review: "
+            + ", ".join(awaiting_review)
+            + ". Approve or reject to continue."
+        )
     if done:
         if blocked:
             return (

@@ -51,6 +51,7 @@ verify:
 | Key | Required | Default | Meaning |
 | --- | --- | --- | --- |
 | `id` | yes | — | Lowercase kebab-case identity used by `depends_on`. |
+| `kind` | no | `plan` | `gate` for a review checkpoint; see below. |
 | `branch` | no | `feat/<id>` | Feature branch for this plan's worker. |
 | `depends_on` | no | `[]` | Plan ids that must be satisfied first. |
 | `parallel_safe` | no | `true` | `false` means the plan runs alone. |
@@ -81,6 +82,70 @@ Note that `API_DEVELOPMENT_PLAN.md` gates on *every* planned data source, not
 only the sources that existed when it was written. When a new source plan is
 added to `to_do/`, add its id to that plan's `depends_on` as well.
 
+## Human review gates
+
+Some questions only a person can answer, and only at a specific point. A review
+gate is a checkpoint the dispatcher will not cross on its own.
+
+A gate is a node in the same dependency graph as the plans, so everything the
+scheduler already knows about ordering and propagation applies to it. It lives
+under `docs/plans/gates/` and declares what it guards:
+
+```yaml
+---
+id: three-source-review
+kind: gate
+depends_on:
+  - cdc-illness
+  - fbi-crime
+  - usda-crop
+---
+```
+
+Plans that must not start before the checkpoint simply depend on the gate.
+
+A gate is never dispatched to a worker. Its lifecycle is:
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | Something it guards is still unfinished. |
+| `awaiting_review` | Everything it guards is integrated; a human must decide. |
+| `approved` | A person cleared it; dependents may dispatch. |
+| `rejected` | A person refused it; every dependent is blocked. |
+
+**Only a recorded human decision clears a gate.** Nothing a worker does can
+approve one, and the dispatcher will not pre-approve a gate whose dependencies
+are unfinished — that would defeat the checkpoint. The decision, who made it,
+when, and their note are written into the run-state file so a later reader can
+see the checkpoint was actually cleared by a person.
+
+When the only remaining work sits behind an undecided gate, the run reports
+**paused** rather than stalled, prints the gate's review checklist path, and
+exits with code `2`. That is a deliberate, successful stopping point for an
+unattended overnight run: it did everything it was allowed to do and is now
+asking a question.
+
+```powershell
+./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
+    -By "your name" -Note "reviewed all three source diffs"
+
+./tools/Invoke-ClaudePlans.ps1 -Action reject  -Gate three-source-review `
+    -By "your name" -Note "CDC and PEP disagree on county vintage"
+
+./tools/Invoke-ClaudePlans.ps1 -Action reopen  -Gate three-source-review
+```
+
+After approving, rerun `-Action run` to continue the same run.
+
+This repository declares one gate,
+[`three-source-review`](../plans/gates/THREE_SOURCE_REVIEW_GATE.md). It opens
+once the CDC, FBI Crime, and USDA NASS Crop pipelines are all integrated, and
+it holds back the warehouse-quality, end-to-end coverage, and API platform
+plans until a human confirms the three sources are coherent together. Those
+questions — shared geography and revision semantics, comparability, adapter
+drift — are not answerable by any one plan's test suite, and this is the
+cheapest point to answer them.
+
 ## Scheduling rules
 
 A plan is dispatchable when its folder is `to_do/` or `in_progress/`, its
@@ -110,10 +175,15 @@ Two rules bound the fleet:
 
 A plan whose dependency ends `blocked` or `failed` is itself blocked, and that
 verdict propagates transitively, so a run never dispatches work that could not
-be integrated even if it succeeded.
+be integrated even if it succeeded. A rejected review gate blocks its
+dependents the same way.
 
 The run ends when no active plan remains. If plans remain but none can start,
-the run reports a stall rather than spinning.
+the run reports a stall rather than spinning; if the only thing standing in the
+way is an undecided review gate, it reports a pause instead.
+
+Exit codes: `0` finished cleanly, `1` finished with blockers or stalled, `2`
+paused awaiting a human decision.
 
 ## Branch and worktree layout
 
@@ -218,6 +288,7 @@ python -m tools.plan_dispatcher plan        # JSON decision for the next tick
 ## What the dispatcher does not do
 
 - It never moves a plan to `completed/`; human acceptance owns that transition.
+- It never approves its own review gates.
 - It never opens a pull request. The integration branch is left for review.
 - It does not replace `/batch` or dynamic workflows. Those decompose work
   *within* one plan; the plans themselves are already the decomposition layer.

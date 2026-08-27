@@ -286,6 +286,8 @@ def test_decision_serializes_every_group_for_the_shell_dispatcher() -> None:
         "deferred",
         "blocked",
         "complete",
+        "gates",
+        "awaiting_review",
         "done",
         "stalled",
         "reason",

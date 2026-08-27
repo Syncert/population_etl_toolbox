@@ -27,6 +27,9 @@
     status   Render the current run summary, then exit.
     stop     Stop every background session this run owns.
     clean    Remove the worktrees this run created.
+    approve  Record human approval of the review gate named by -Gate.
+    reject   Record human rejection of the review gate named by -Gate.
+    reopen   Clear a recorded decision and reopen the gate named by -Gate.
 
 .PARAMETER MaxConcurrency
     Maximum simultaneous plan workers. Parallel background agents multiply
@@ -42,11 +45,22 @@
 
 .EXAMPLE
     ./tools/Invoke-ClaudePlans.ps1 -Action run -MaxConcurrency 3
+
+.EXAMPLE
+    ./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
+        -By 'syncert' -Note 'reviewed all three source diffs'
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('run', 'plan', 'status', 'stop', 'clean')]
+    [ValidateSet('run', 'plan', 'status', 'stop', 'clean',
+        'approve', 'reject', 'reopen')]
     [string]$Action = 'plan',
+
+    [string]$Gate,
+
+    [string]$By,
+
+    [string]$Note,
 
     [ValidateRange(1, 8)]
     [int]$MaxConcurrency = 3,
@@ -689,6 +703,20 @@ function Invoke-Run {
             }
             return 1
         }
+        if (@($decision.awaiting_review).Count -gt 0 -and
+            @($decision.dispatch).Count -eq 0 -and
+            @($decision.running).Count -eq 0) {
+            Write-Log 'Paused for human review.' -Level warn
+            foreach ($gateId in $decision.awaiting_review) {
+                $gate = $decision.gates.$gateId
+                Write-Log "  $gateId - $($gate.title)" -Level warn
+                Write-Log "  review checklist: $PlansRoot/$($gate.path)" -Level warn
+            }
+            Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            Write-Log ("Approve with: ./tools/Invoke-ClaudePlans.ps1 -Action approve " +
+                "-Gate <id> -By '<you>' -Note '<why>'")
+            return 2
+        }
         if ($decision.stalled) {
             Write-Log 'Run stalled; no plan can start.' -Level error
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
@@ -701,6 +729,32 @@ function Invoke-Run {
 
         Start-Sleep -Seconds $PollSeconds
     }
+}
+
+function Invoke-GateDecision {
+    <#
+        .SYNOPSIS
+            Record a human decision on a review gate.
+        .DESCRIPTION
+            Only a person runs this. Nothing the fleet does can clear a gate,
+            which is what makes the checkpoint worth having.
+    #>
+    param([Parameter(Mandatory)][string]$Decision)
+
+    if (-not $Gate) {
+        throw "-Action $Decision requires -Gate <id>. Run -Action status to list gates."
+    }
+
+    $arguments = @($Decision, '--gate', $Gate)
+    if ($By) { $arguments += @('--by', $By) }
+    if ($Note) { $arguments += @('--note', $Note) }
+    $result = Invoke-Planner -PlannerArgs $arguments
+
+    Write-Log "Gate '$($result.id)' is now $($result.status)." -Level ok
+    if ($result.status -eq 'approved') {
+        Write-Log 'Rerun -Action run to continue the backlog.'
+    }
+    return 0
 }
 
 function Invoke-Stop {
@@ -748,6 +802,9 @@ try {
         }
         'stop' { Invoke-Stop }
         'clean' { Invoke-Clean }
+        'approve' { Invoke-GateDecision -Decision 'approve' }
+        'reject' { Invoke-GateDecision -Decision 'reject' }
+        'reopen' { Invoke-GateDecision -Decision 'reopen' }
     }
     exit $exitCode
 }

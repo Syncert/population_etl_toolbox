@@ -28,6 +28,15 @@ RUN_STATUSES: tuple[str, ...] = (
 )
 
 
+#: Lifecycle of a human review gate inside one dispatcher run.
+GATE_STATUSES: tuple[str, ...] = (
+    "pending",
+    "awaiting_review",
+    "approved",
+    "rejected",
+)
+
+
 class RunStateError(ValueError):
     """Raised when run state is unreadable or internally inconsistent."""
 
@@ -52,6 +61,27 @@ class PlanRunState:
 
 
 @dataclass(slots=True)
+class GateRunState:
+    """Dispatcher-owned state for one human review gate.
+
+    A gate is cleared only by a recorded human decision. Nothing the fleet
+    does can approve one, which is what makes the checkpoint meaningful.
+    """
+
+    status: str = "pending"
+    decided_by: str = ""
+    decided_at: str = ""
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.status not in GATE_STATUSES:
+            raise RunStateError(
+                f"Unknown gate status '{self.status}'; expected one of "
+                f"{', '.join(GATE_STATUSES)}."
+            )
+
+
+@dataclass(slots=True)
 class RunState:
     """State for one dispatcher run across all plans."""
 
@@ -60,6 +90,47 @@ class RunState:
     max_concurrency: int = 3
     version: int = STATE_VERSION
     plans: dict[str, PlanRunState] = field(default_factory=dict)
+    gates: dict[str, GateRunState] = field(default_factory=dict)
+
+    def gate_status_of(self, gate_id: str) -> str:
+        """Return the recorded status for ``gate_id``, defaulting to pending."""
+        entry = self.gates.get(gate_id)
+        return entry.status if entry is not None else "pending"
+
+    def gate_entry(self, gate_id: str) -> GateRunState:
+        """Return the mutable state for ``gate_id``, creating it on demand."""
+        return self.gates.setdefault(gate_id, GateRunState())
+
+    def mark_gate(
+        self,
+        gate_id: str,
+        status: str,
+        *,
+        decided_by: str | None = None,
+        decided_at: str | None = None,
+        note: str | None = None,
+    ) -> GateRunState:
+        """Record a gate transition, keeping any human decision attached."""
+        if status not in GATE_STATUSES:
+            raise RunStateError(
+                f"Unknown gate status '{status}'; expected one of "
+                f"{', '.join(GATE_STATUSES)}."
+            )
+        record = self.gate_entry(gate_id)
+        record.status = status
+        if status in {"pending", "awaiting_review"}:
+            # Reopening a gate must not leave a stale approval attached to it.
+            record.decided_by = ""
+            record.decided_at = ""
+            record.note = note or ""
+            return record
+        if decided_by is not None:
+            record.decided_by = decided_by
+        if decided_at is not None:
+            record.decided_at = decided_at
+        if note is not None:
+            record.note = note
+        return record
 
     def status_of(self, plan_id: str) -> str:
         """Return the recorded status for ``plan_id``, defaulting to pending."""
@@ -114,6 +185,9 @@ class RunState:
             "plans": {
                 plan_id: asdict(entry) for plan_id, entry in sorted(self.plans.items())
             },
+            "gates": {
+                gate_id: asdict(entry) for gate_id, entry in sorted(self.gates.items())
+            },
         }
 
     @classmethod
@@ -148,12 +222,30 @@ class RunState:
                 )
             plans[plan_id] = PlanRunState(**entry)
 
+        raw_gates = payload.get("gates", {})
+        if not isinstance(raw_gates, Mapping):
+            raise RunStateError("Run state 'gates' must be a JSON object.")
+        gates: dict[str, GateRunState] = {}
+        for gate_id, entry in raw_gates.items():
+            if not isinstance(entry, Mapping):
+                raise RunStateError(
+                    f"Run state for gate '{gate_id}' must be an object."
+                )
+            unknown = sorted(set(entry) - set(GateRunState.__slots__))
+            if unknown:
+                raise RunStateError(
+                    f"Run state for gate '{gate_id}' has unknown key(s): "
+                    f"{', '.join(unknown)}."
+                )
+            gates[gate_id] = GateRunState(**entry)
+
         return cls(
             run_id=payload["run_id"],
             integration_branch=payload["integration_branch"],
             max_concurrency=max_concurrency,
             version=STATE_VERSION,
             plans=plans,
+            gates=gates,
         )
 
 

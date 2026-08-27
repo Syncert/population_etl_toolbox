@@ -10,12 +10,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
 from tools.plan_dispatcher.graph import (
     PlanGraphError,
     build_dispatch_decision,
+    evaluate_gates,
     topological_order,
     validate_graph,
 )
@@ -31,6 +33,8 @@ from tools.plan_dispatcher.state import (
     load_state,
     save_state,
 )
+
+GATE_DECISIONS = ("approve", "reject")
 
 DEFAULT_PLANS_ROOT = Path("docs/plans")
 DEFAULT_STATE_PATH = Path(".claude/plan-runner-state.json")
@@ -118,6 +122,56 @@ def _mark(arguments: argparse.Namespace) -> int:
     )
 
 
+def _decide(arguments: argparse.Namespace) -> int:
+    """Record a human approve/reject/reopen decision on a review gate."""
+    plans = load_plans(arguments.plans_root)
+    gate = plans.get(arguments.gate)
+    if gate is None or not gate.is_gate:
+        known = sorted(key for key, value in plans.items() if value.is_gate)
+        raise PlanMetadataError(
+            f"Unknown review gate '{arguments.gate}'. Known gates: "
+            + (", ".join(known) if known else "none")
+            + "."
+        )
+
+    state = load_state(arguments.state_path)
+    evaluated = evaluate_gates(plans, state)[gate.plan_id]
+
+    if arguments.command == "reopen":
+        record = state.mark_gate(gate.plan_id, "pending", note=arguments.note or "")
+    else:
+        if evaluated["status"] == "pending":
+            raise RunStateError(
+                f"Gate '{gate.plan_id}' is not open for review yet; it still "
+                "waits on: " + ", ".join(evaluated["waiting_on"]) + "."
+            )
+        record = state.mark_gate(
+            gate.plan_id,
+            "approved" if arguments.command == "approve" else "rejected",
+            decided_by=arguments.by or "",
+            decided_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            note=arguments.note or "",
+        )
+    save_state(arguments.state_path, state)
+    return _emit(
+        {
+            "id": gate.plan_id,
+            "title": gate.title,
+            "status": record.status,
+            "decided_by": record.decided_by,
+            "decided_at": record.decided_at,
+            "note": record.note,
+        }
+    )
+
+
+def _gates(arguments: argparse.Namespace) -> int:
+    """Emit every review gate and its current status."""
+    plans = load_plans(arguments.plans_root)
+    state = load_state(arguments.state_path)
+    return _emit({"gates": evaluate_gates(plans, state)})
+
+
 def _prompt(arguments: argparse.Namespace) -> int:
     plans = load_plans(arguments.plans_root)
     if arguments.plan_id not in plans:
@@ -169,6 +223,19 @@ def _status(arguments: argparse.Namespace) -> int:
             [
                 f"{plan_id:<24} {reason}"
                 for plan_id, reason in sorted(decision.blocked.items())
+            ],
+        ),
+        (
+            "Review gates",
+            [
+                f"{gate_id:<24} {value['status']}"
+                + (
+                    f" — waiting on {', '.join(value['waiting_on'])}"
+                    if value["waiting_on"]
+                    else ""
+                )
+                + (f" — {value['decided_by']}" if value["decided_by"] else "")
+                for gate_id, value in sorted(decision.gates.items())
             ],
         ),
         ("Satisfied", list(decision.complete)),
@@ -247,6 +314,21 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "status", help="Render a human-readable run summary."
     ).set_defaults(handler=_status)
+
+    subparsers.add_parser(
+        "gates", help="Emit every review gate and its status."
+    ).set_defaults(handler=_gates)
+
+    for command, help_text in (
+        ("approve", "Record human approval of a review gate."),
+        ("reject", "Record human rejection of a review gate."),
+        ("reopen", "Clear a recorded decision and reopen a review gate."),
+    ):
+        decision = subparsers.add_parser(command, help=help_text)
+        decision.add_argument("--gate", required=True)
+        decision.add_argument("--by", help="Who made the decision.")
+        decision.add_argument("--note", help="Why, in one line.")
+        decision.set_defaults(handler=_decide)
 
     return parser
 

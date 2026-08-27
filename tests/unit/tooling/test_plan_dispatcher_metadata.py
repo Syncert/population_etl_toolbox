@@ -128,4 +128,6 @@ def test_repository_plan_inventory_is_valid() -> None:
         "in_progress",
         "needs_review",
         "completed",
+        "gate",
     }
+    assert any(plan.is_gate for plan in plans.values())

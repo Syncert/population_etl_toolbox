@@ -13,7 +13,7 @@ CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
     "ENV": 10,
     "ARC": 3,
-    "PLAN": 6,
+    "PLAN": 7,
     "DAG": 14,
     "ETL": 40,
     "DB": 23,
