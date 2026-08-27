@@ -135,7 +135,10 @@ Recorded 2026-08-27 on Windows against the pinned disposable
 - `./tests/run.ps1 integration`: **55 passed, 8 skipped** against a fresh
   disposable PostGIS database. The skips are the six Redis tests, the
   Redis-backed cache test, and the compose smoke test; this tier provisions
-  neither Redis nor the composed stack.
+  neither Redis nor the composed stack. Recreate the container between local
+  tier runs: reusing one that already completed a tier leaves Census ACS and
+  glossary residue that makes unrelated pre-existing tests fail. CI starts a
+  fresh container per job, so this affects local reruns only.
 - `./tests/run.ps1 api`: **115 passed**.
 - `./tests/run.ps1 unit`: **748 passed**.
 - `./tests/run.ps1 e2e` on a fresh database: **5 passed**, including both CDC
