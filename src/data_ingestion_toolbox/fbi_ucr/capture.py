@@ -232,7 +232,13 @@ def capture_product_release(
         if decision is ReleaseDecision.UNCHANGED:
             capture_control.finish_run(run_id, status="success")
             return CapturedFbiRelease(
-                run_id, product.product_id, release, decision, probe_capture_id, (), (),
+                run_id,
+                product.product_id,
+                release,
+                decision,
+                probe_capture_id,
+                (),
+                (),
                 True,
             )
         if decision is not ReleaseDecision.INGEST:
@@ -245,7 +251,13 @@ def capture_product_release(
             )
             capture_control.finish_run(run_id, status="partial")
             return CapturedFbiRelease(
-                run_id, product.product_id, release, decision, probe_capture_id, (), (),
+                run_id,
+                product.product_id,
+                release,
+                decision,
+                probe_capture_id,
+                (),
+                (),
                 False,
             )
 
@@ -333,9 +345,7 @@ def capture_product_release(
         complete = len(observation_capture_ids) == len(subjects) and len(
             directory_capture_ids
         ) == len(product.reference_states)
-        capture_control.finish_run(
-            run_id, status="success" if complete else "partial"
-        )
+        capture_control.finish_run(run_id, status="success" if complete else "partial")
         return CapturedFbiRelease(
             run_id,
             product.product_id,

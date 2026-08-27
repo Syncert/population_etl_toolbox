@@ -172,9 +172,7 @@ def test_agency_outside_the_requested_state_is_quarantined() -> None:
         }
     )
 
-    assert [item.error_code for item in result.quarantined] == [
-        "state_scope_mismatch"
-    ]
+    assert [item.error_code for item in result.quarantined] == ["state_scope_mismatch"]
 
 
 def test_missing_identity_fields_are_quarantined() -> None:

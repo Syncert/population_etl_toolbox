@@ -118,9 +118,7 @@ def _publish_registered_product(replay: dict[str, Any]) -> dict[str, Any]:
 
 with DAG(
     dag_id="fbi_ucr_ingest",
-    description=(
-        "Capture, replay, reconcile, and publish FBI UCR summarized offenses"
-    ),
+    description=("Capture, replay, reconcile, and publish FBI UCR summarized offenses"),
     default_args=DEFAULT_ARGS,
     schedule="0 10 * * 1",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),

@@ -78,7 +78,7 @@ def test_only_provenance_response_headers_are_retained(fbi_bytes) -> None:
                 raw=fbi_bytes("summarized_national_V"),
                 headers={
                     "content-type": "application/json",
-                    "etag": "W/\"fbi-1\"",
+                    "etag": 'W/"fbi-1"',
                     "set-cookie": "session=secret",
                     "authorization": "Bearer secret",
                 },
@@ -123,7 +123,9 @@ def test_malformed_credential_is_rejected_without_exposing_it() -> None:
 
 def test_structured_provider_error_body_is_a_payload_violation(fbi_bytes) -> None:
     """Covers: RES-002 — an error document is never treated as observations."""
-    client = ScriptedCdeClient([cde_response(200, raw=fbi_bytes("provider_error_body"))])
+    client = ScriptedCdeClient(
+        [cde_response(200, raw=fbi_bytes("provider_error_body"))]
+    )
 
     with pytest.raises(FbiCdePayloadError) as caught:
         fetch_summarized_observations(
@@ -238,7 +240,9 @@ def test_transport_failure_is_retried_then_reported(monkeypatch) -> None:
 
 def test_agency_directory_request_carries_no_period_parameters(fbi_bytes) -> None:
     """Covers: ETL-001 — the reference request uses the documented path only."""
-    client = ScriptedCdeClient([cde_response(200, raw=fbi_bytes("agency_directory_WI"))])
+    client = ScriptedCdeClient(
+        [cde_response(200, raw=fbi_bytes("agency_directory_WI"))]
+    )
 
     response = fetch_agency_directory("WI", config=_config(), client=client)
 

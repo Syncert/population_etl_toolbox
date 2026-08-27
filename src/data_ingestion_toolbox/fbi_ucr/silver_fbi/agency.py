@@ -43,9 +43,7 @@ def _split_county_labels(value: object) -> set[str]:
     """
     if not isinstance(value, str):
         return set()
-    return {
-        normalize_county_label(part) for part in value.split(",") if part.strip()
-    }
+    return {normalize_county_label(part) for part in value.split(",") if part.strip()}
 
 
 def _county_labels(entries: list[tuple[str, dict[str, Any]]]) -> tuple[str, ...]:

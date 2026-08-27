@@ -427,7 +427,10 @@ def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
     fixtures, and each answers the actual request rather than one flat payload.
     """
     from data_ingestion_toolbox.fbi_ucr import capture as fbi_capture
-    from data_ingestion_toolbox.fbi_ucr.client import CdeResponse, observation_parameters
+    from data_ingestion_toolbox.fbi_ucr.client import (
+        CdeResponse,
+        observation_parameters,
+    )
 
     def response(endpoint: str, parameters: dict, name: str) -> CdeResponse:
         payload = json.dumps(load_fixture("fbi_ucr", f"{name}.json")).encode("utf-8")

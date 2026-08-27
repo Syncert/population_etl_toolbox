@@ -215,7 +215,9 @@ def parse_summarized_observations(
                         period_end=period_end,
                         value_source=value_source,
                         value=value,
-                        value_status="reported" if value is not None else "not_reported",
+                        value_status="reported"
+                        if value is not None
+                        else "not_reported",
                         population_denominator=(
                             denominator if measure_form == "rate" else None
                         ),
@@ -240,8 +242,4 @@ def rate_is_recomputable(
     absolute total and denominator were both published for the same subject and
     period, rather than assuming they were.
     """
-    return (
-        absolute_total is not None
-        and denominator is not None
-        and denominator > 0
-    )
+    return absolute_total is not None and denominator is not None and denominator > 0

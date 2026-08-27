@@ -340,9 +340,13 @@ def test_fbi_release_replays_reconciles_and_publishes_idempotently(
     second = _run_pipeline(fbi_warehouse, captured)
 
     subjects = len(PRODUCT.subjects)
-    assert first == second == (
-        subjects * OBSERVATIONS_PER_SUBJECT,
-        subjects * OBSERVATIONS_PER_SUBJECT,
+    assert (
+        first
+        == second
+        == (
+            subjects * OBSERVATIONS_PER_SUBJECT,
+            subjects * OBSERVATIONS_PER_SUBJECT,
+        )
     )
 
     reader = fbi_warehouse()
@@ -360,9 +364,7 @@ def test_fbi_release_replays_reconciles_and_publishes_idempotently(
                 ("national", OBSERVATIONS_PER_SUBJECT),
                 ("state", OBSERVATIONS_PER_SUBJECT),
             ]
-            cursor.execute(
-                "SELECT COUNT(*) FROM gold_fbi.reporting_coverage"
-            )
+            cursor.execute("SELECT COUNT(*) FROM gold_fbi.reporting_coverage")
             assert cursor.fetchone() == (subjects * PERIODS,)
             cursor.execute(
                 "SELECT COUNT(*) FROM control.publisher_ready_event "
@@ -404,9 +406,7 @@ def test_provider_totals_and_agency_grain_stay_separable(
                 "provider-published state total",
                 1,
             ) in rows
-            assert not [
-                row for row in rows if row[0] == "agency" and row[1] != row[1]
-            ]
+            assert not [row for row in rows if row[0] == "agency" and row[1] != row[1]]
             cursor.execute(
                 """
                 SELECT DISTINCT geography_basis FROM gold_fbi.crime_observation
@@ -634,9 +634,7 @@ def test_ambiguous_county_evidence_is_withheld_from_gold(
         try:
             with remover.cursor() as cursor:
                 cursor.execute("DELETE FROM silver_fbi.fact_crime_observation")
-                cursor.execute(
-                    "DELETE FROM silver_fbi.agency_geography_relationship"
-                )
+                cursor.execute("DELETE FROM silver_fbi.agency_geography_relationship")
                 delete_geography(cursor, "state:55|county:997")
             remover.commit()
         finally:
@@ -853,9 +851,7 @@ def test_publisher_contract_exposes_measure_identity(
             }
             characteristics = {row[1]: row[3] for row in rows}
             assert (
-                characteristics[
-                    f"{PRODUCT.product_id}:V:offense:absolute_total"
-                ]
+                characteristics[f"{PRODUCT.product_id}:V:offense:absolute_total"]
                 == "additive_within_subject"
             )
             assert characteristics[f"{PRODUCT.product_id}:V:offense:rate"] == (
@@ -863,8 +859,7 @@ def test_publisher_contract_exposes_measure_identity(
             )
             assert all(row[4] == ["MONTHLY"] for row in rows)
             assert all(
-                json.loads(json.dumps(row[5]))["schema"] == "gold_fbi"
-                for row in rows
+                json.loads(json.dumps(row[5]))["schema"] == "gold_fbi" for row in rows
             )
     finally:
         reader.close()

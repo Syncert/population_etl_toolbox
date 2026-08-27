@@ -87,7 +87,11 @@ def test_every_replayed_row_carries_its_capture_lineage() -> None:
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["/agency/byStateAbbr/WI", "/summarized/state/WI/V", "/summarized/agency/WI0130000/V"],
+    [
+        "/agency/byStateAbbr/WI",
+        "/summarized/state/WI/V",
+        "/summarized/agency/WI0130000/V",
+    ],
 )
 def test_missing_required_slice_blocks_the_release(endpoint: str) -> None:
     """Covers: ETL-040 — an incomplete release cannot replay at all."""
@@ -206,7 +210,12 @@ def test_the_newest_capture_wins_while_earlier_bytes_stay_stored() -> None:
     newest = UUID(int=2)
     cursor = _Cursor(
         [
-            (newest, "/summarized/national/V", b"{}", hashlib.sha256(b"{}").hexdigest()),
+            (
+                newest,
+                "/summarized/national/V",
+                b"{}",
+                hashlib.sha256(b"{}").hexdigest(),
+            ),
             (
                 UUID(int=1),
                 "/summarized/national/V",

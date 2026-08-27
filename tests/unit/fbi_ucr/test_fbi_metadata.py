@@ -94,18 +94,14 @@ def test_first_release_ingests_and_an_identical_refresh_is_unchanged() -> None:
 
 def test_newer_refresh_ingests_as_a_retained_revision() -> None:
     """Covers: DB-022 — a later refresh is a new release, not an overwrite."""
-    decision = decide_release(
-        PRODUCT, _release("09/15/2026"), _release("08/15/2026")
-    )
+    decision = decide_release(PRODUCT, _release("09/15/2026"), _release("08/15/2026"))
 
     assert decision is ReleaseDecision.INGEST
 
 
 def test_backward_refresh_is_quarantined() -> None:
     """Covers: ETL-026 — a regressed refresh date never replaces history."""
-    decision = decide_release(
-        PRODUCT, _release("07/15/2026"), _release("08/15/2026")
-    )
+    decision = decide_release(PRODUCT, _release("07/15/2026"), _release("08/15/2026"))
 
     assert decision is ReleaseDecision.BACKWARD_REFRESH_QUARANTINE
 

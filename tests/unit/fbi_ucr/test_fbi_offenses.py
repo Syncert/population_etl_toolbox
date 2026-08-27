@@ -175,9 +175,7 @@ def test_absent_subject_series_quarantines_that_measure(fbi_payload) -> None:
     result = _parse(document, NATIONAL, "United States")
 
     assert len(result.quarantined) == len(PRODUCT.expected_periods)
-    assert {item.error_code for item in result.quarantined} == {
-        "subject_series_absent"
-    }
+    assert {item.error_code for item in result.quarantined} == {"subject_series_absent"}
     assert result.input_count == len(result.observations) + len(result.quarantined)
 
 
@@ -219,8 +217,7 @@ def test_non_object_payload_quarantines_the_whole_slice(fbi_payload) -> None:
     assert len(result.quarantined) == SLICE_INPUTS
 
 
-def test_period_bounds_cover_each_month_including_february(
-) -> None:
+def test_period_bounds_cover_each_month_including_february() -> None:
     """Covers: ETL-013 — month bounds are inclusive and leap-year correct."""
     assert period_bounds("01-2023")[1].day == 31
     assert period_bounds("02-2023")[1].day == 28
@@ -332,9 +329,7 @@ def test_out_of_range_coverage_percentage_is_quarantined(fbi_payload) -> None:
         slice_key=STATE.slice_key,
     )
 
-    assert [item.error_code for item in result.quarantined] == [
-        "coverage_out_of_range"
-    ]
+    assert [item.error_code for item in result.quarantined] == ["coverage_out_of_range"]
 
 
 def test_participation_above_covered_population_is_quarantined(fbi_payload) -> None:

@@ -44,8 +44,10 @@ AGENCIES: dict[str, tuple[str, tuple[str, ...], str]] = {
 
 def _trim_months(node: Any) -> Any:
     if isinstance(node, dict):
-        if node and all(isinstance(key, str) for key in node) and any(
-            key in PERIODS for key in node
+        if (
+            node
+            and all(isinstance(key, str) for key in node)
+            and any(key in PERIODS for key in node)
         ):
             return {period: node[period] for period in PERIODS if period in node}
         return {key: _trim_months(value) for key, value in node.items()}

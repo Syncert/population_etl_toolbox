@@ -33,5 +33,5 @@ docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler
 ```
 
 In the compose environment, `airflow-init` also seeds the `public_data` Airflow
-connection and ensures the `census_api`, `bls_api`, `fred_api`, and `cdc_api`
-pools exist.
+connection and ensures the `census_api`, `bls_api`, `fred_api`, `cdc_api`, and
+`fbi_cde_api` pools exist.

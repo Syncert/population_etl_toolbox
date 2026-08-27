@@ -72,6 +72,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
+      FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox
@@ -96,7 +97,8 @@ services:
       airflow pools set census_api 4 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
-      airflow pools set cdc_api 2 'CDC Open Data API limit'
+      airflow pools set cdc_api 2 'CDC Open Data API limit';
+      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit'
       "
 
   airflow-webserver:
