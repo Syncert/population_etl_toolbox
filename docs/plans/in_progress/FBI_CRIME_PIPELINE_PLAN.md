@@ -15,19 +15,19 @@ verify:
 
 ## Plan status
 
-- **Status:** Source discovery partially complete; no FBI adapter is currently implemented
-- **Last updated:** 2026-08-22
+- **Status:** In progress; claimed for implementation on `feat/fbi-crime`
+- **Last updated:** 2026-08-27
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** Provider-published national and state results plus source-native agency observations; county is an agency relationship/filter, not an FBI observation grain
 - **Depends on:** Completed new-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](../completed/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-22
+**Last updated:** 2026-08-27
 
-**Current milestone:** FBI-001 source discovery; implementation has not started
+**Current milestone:** FBI-001 — freezing the first summarized-offense product contract from the official CDE API documentation.
 
-**Next pickup:** Complete FBI-001 by selecting the first summarized-offense product and period, then freezing its parameters, authentication, schema, participation, completeness, and revision contract from the official CDE API documentation.
+**Next pickup:** Record the frozen request shape, parameters, authentication, schema, completeness rule, measure/count basis, participation join, and revision identity for the summarized violent-crime product, then implement FBI-002 capture and replay.
 
 ### Completed in the current slice
 
