@@ -31,7 +31,13 @@ FIXTURE_ROOT = REPOSITORY_ROOT / "tests/fixtures"
 WAREHOUSE_CONN_ID = "public_data"
 
 #: Pools the production DAGs throttle their provider calls with.
-PROVIDER_POOLS: tuple[str, ...] = ("census_api", "bls_api", "fred_api", "cdc_api")
+PROVIDER_POOLS: tuple[str, ...] = (
+    "census_api",
+    "bls_api",
+    "fred_api",
+    "cdc_api",
+    "usda_nass_api",
+)
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
 FIXTURE_GEOGRAPHY_VINTAGE = 2023
@@ -152,6 +158,7 @@ FIXTURE_CREDENTIALS: dict[str, str] = {
     "BLS_API_KEY": "fixture-bls-key",
     "FRED_API_KEY": "fixture-fred-key",
     "CDC_SOCRATA_APP_TOKEN": "fixture-cdc-token",
+    "USDA_NASS_API_KEY": "FIXTURE-USDA-NASS-KEY-0000-1111-2222",
 }
 
 
@@ -400,6 +407,63 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cdc_capture, "fetch_socrata_metadata", metadata)
     monkeypatch.setattr(cdc_capture, "fetch_socrata_page", page)
+
+
+def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed USDA NASS fixtures instead of the live Quick Stats API.
+
+    The NASS pipeline preflights every registered slice through ``get_counts``
+    and refuses to publish a release whose retrieval disagrees with its own
+    preflight, so this stub answers the actual request: it resolves the product
+    and aggregate level from the requested slice and reports a count that
+    matches the rows it then serves. The reviewed sample covers one year per
+    product, so the requested year is stamped onto the served rows rather than
+    the sample being widened; every other field stays exactly as reviewed.
+    """
+    from data_ingestion_toolbox.usda_nass import capture as nass_capture
+    from data_ingestion_toolbox.usda_nass.client import (
+        NassCountResponse,
+        NassDataResponse,
+        count_parameters,
+        data_parameters,
+    )
+
+    def rows_for(product: Any, item: Any) -> list[dict[str, Any]]:
+        document = load_fixture("usda_nass", f"{product.product_id}.json")
+        level = document["slices"].get(item.agg_level_desc)
+        if level is None:
+            raise AssertionError(
+                f"No USDA NASS fixture registered for {product.product_id} "
+                f"at {item.agg_level_desc}"
+            )
+        return [
+            {**row, "year": str(item.year)} for row in level["data"]["data"]
+        ]
+
+    def count(product: Any, item: Any, **_kwargs: Any) -> NassCountResponse:
+        rows = rows_for(product, item)
+        payload = json.dumps({"count": str(len(rows))}).encode("utf-8")
+        return NassCountResponse(
+            count_parameters(product, item),
+            payload,
+            {"content-type": "application/json"},
+            200,
+            len(rows),
+        )
+
+    def records(product: Any, item: Any, **_kwargs: Any) -> NassDataResponse:
+        rows = rows_for(product, item)
+        payload = json.dumps({"data": rows}).encode("utf-8")
+        return NassDataResponse(
+            data_parameters(product, item),
+            payload,
+            {"content-type": "application/json"},
+            200,
+            len(rows),
+        )
+
+    monkeypatch.setattr(nass_capture, "fetch_slice_count", count)
+    monkeypatch.setattr(nass_capture, "fetch_slice_records", records)
 
 
 def build_pep_release_csv(url: str) -> bytes:
@@ -772,5 +836,6 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("bls", stub_bls),
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
+        ("usda_nass", stub_usda_nass_quick_stats),
         ("census_pep", stub_census_pep_downloads),
     )

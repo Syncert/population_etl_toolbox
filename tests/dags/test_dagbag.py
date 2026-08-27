@@ -34,6 +34,7 @@ EXPECTED_DAG_IDS = {
     "fred_ingest",
     "census_pep_ingest",
     "cdc_ingest",
+    "usda_nass_crop_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
 }
@@ -46,6 +47,7 @@ EXPECTED_SCHEDULES = {
     "fred_ingest": "0 8 1 * *",
     "census_pep_ingest": "0 6 1 * *",
     "cdc_ingest": "0 9 * * 1",
+    "usda_nass_crop_ingest": "0 10 * * 1-5",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
 }
@@ -58,6 +60,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "fred_ingest": 3,
     "census_pep_ingest": 2,
     "cdc_ingest": 2,
+    "usda_nass_crop_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
 }
@@ -68,6 +71,7 @@ EXPECTED_INGEST_POOLS = {
     "bls_ingest": "bls_api",
     "fred_ingest": "fred_api",
     "cdc_ingest": "cdc_api",
+    "usda_nass_crop_ingest": "usda_nass_api",
 }
 
 

@@ -4,7 +4,7 @@ test-unit:
 	pytest tests/unit
 
 test-etl:
-	pytest -m "unit and not api" tests/unit/census tests/unit/bls tests/unit/fred tests/unit/shared
+	pytest -m "unit and not api" tests/unit/census tests/unit/bls tests/unit/fred tests/unit/usda_nass tests/unit/shared
 
 test-api:
 	pytest -m "unit and api" tests/unit/api

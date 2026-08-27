@@ -21,7 +21,7 @@ from data_ingestion_toolbox.usda_nass.capture import (
     persist_release_state,
     resolve_slice_mode,
 )
-from data_ingestion_toolbox.usda_nass.config import NassConfig
+from data_ingestion_toolbox.usda_nass.config import CONFIG, NassConfig
 from data_ingestion_toolbox.usda_nass.gold_nass.publisher import publish_release
 from data_ingestion_toolbox.usda_nass.metadata import load_latest_accepted_release
 from data_ingestion_toolbox.usda_nass.registry import enabled_products, get_product
@@ -40,13 +40,18 @@ DEFAULT_ARGS = {
 
 
 def _get_postgres_hook():  # noqa: ANN202
-    """Resolve the configured warehouse connection only at task runtime."""
-    config = NassConfig.from_environment()
-    if not config.postgres_conn_id.strip():
+    """Resolve the configured warehouse connection only at task runtime.
+
+    The connection ID lives in one module-level configuration so a deployment
+    can override it in one place; it is validated when a task runs rather than
+    when the DAG is parsed.
+    """
+    conn_id = CONFIG.postgres_conn_id.strip()
+    if not conn_id:
         raise RuntimeError("PostgreSQL connection ID is not configured")
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-    return PostgresHook(postgres_conn_id=config.postgres_conn_id)
+    return PostgresHook(postgres_conn_id=conn_id)
 
 
 def _require_shared_geography() -> None:
