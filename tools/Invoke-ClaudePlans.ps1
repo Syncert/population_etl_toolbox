@@ -36,6 +36,12 @@
     subscription usage roughly in proportion to their count, and integration
     cost rises faster than throughput, so the default is deliberately small.
 
+.PARAMETER BaseBranch
+    Branch the integration branch is cut from. Defaults to the branch currently
+    checked out, because that is the branch holding the backlog the operator is
+    looking at. Naming a branch whose docs/plans/ carries no dispatchable
+    frontmatter fails the run rather than quietly finishing with nothing done.
+
 .PARAMETER DryRun
     Print every Git and Claude command instead of executing it. The Python
     planner still runs, so a dry run exercises the real dependency graph.
@@ -69,7 +75,7 @@ param(
 
     [string]$IntegrationBranch,
 
-    [string]$BaseBranch = 'main',
+    [string]$BaseBranch,
 
     [string]$PlansRoot = 'docs/plans',
 
@@ -208,22 +214,36 @@ function Invoke-Native {
         return [pscustomobject]@{ ExitCode = 0; Output = ''; DryRun = $true }
     }
 
+    # Windows PowerShell turns a native command's stderr into NativeCommandError
+    # records, and the script-scoped 'Stop' preference would make those
+    # terminating -- escaping -AllowFailure entirely. Git routes ordinary
+    # progress ('Preparing worktree ...') to stderr, so the first worktree add
+    # would abort the whole run. Shadow the preference for the duration of the
+    # call and judge success by the exit code, which is the only reliable
+    # signal a native command gives.
+    $ErrorActionPreference = 'Continue'
+
     Write-Verbose "exec: $rendered"
     Push-Location $WorkingDirectory
     try {
-        $output = & $FilePath @Arguments 2>&1
+        $raw = & $FilePath @Arguments 2>&1
         $exitCode = $LASTEXITCODE
     }
     finally {
         Pop-Location
     }
 
+    $output = (@($raw) | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() }
+            else { $_ }
+        }) -join [Environment]::NewLine
+
     if ($exitCode -ne 0 -and -not $AllowFailure) {
-        throw "Command failed ($exitCode): $rendered`n$($output | Out-String)"
+        throw "Command failed ($exitCode): $rendered`n$output"
     }
     return [pscustomobject]@{
         ExitCode = $exitCode
-        Output   = ($output | Out-String)
+        Output   = $output
         DryRun   = $false
     }
 }
@@ -282,6 +302,67 @@ function Assert-CleanWorkingTree {
     }
 }
 
+function Resolve-BaseBranch {
+    <#
+        .SYNOPSIS
+            Return the branch the integration branch is cut from.
+        .DESCRIPTION
+            The default is the checked-out branch rather than a hard-coded
+            'main'. A backlog under active development lives on a feature
+            branch, and cutting the run from a branch that does not carry that
+            backlog produces an empty inventory and a run that does nothing.
+    #>
+    if ($BaseBranch) { return $BaseBranch }
+
+    # Asked even under -DryRun: this is a read-only query, and a dry run that
+    # reported a different base than the real run would be worthless.
+    $ErrorActionPreference = 'Continue'
+    Push-Location $script:RepositoryRoot
+    try {
+        $raw = & git rev-parse --abbrev-ref HEAD 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+
+    $current = (@($raw) | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() }
+            else { $_ }
+        }) -join '' | ForEach-Object { $_.Trim() }
+    if ($exitCode -ne 0 -or -not $current -or $current -eq 'HEAD') {
+        throw ('Could not determine the current branch to use as the run base. ' +
+            'Pass -BaseBranch <branch> explicitly.')
+    }
+    Write-Log "Base branch defaulted to the checked-out branch '$current'."
+    return $current
+}
+
+function Assert-DispatchableInventory {
+    <#
+        .SYNOPSIS
+            Fail loudly when the run would have no work to do.
+        .DESCRIPTION
+            The planner reads its backlog from the integration worktree. If that
+            branch predates the plan workflow folders or the dispatch
+            frontmatter, every plan parses as guidance and the inventory is
+            empty -- which the scheduler correctly reports as 'nothing left to
+            do'. That is indistinguishable from success, so it is caught here
+            instead, where the cause can be named.
+    #>
+    param([Parameter(Mandatory)][string]$BaseBranchName)
+
+    if ($DryRun) { return }
+
+    $inventory = Invoke-Planner -PlannerArgs @('inventory')
+    if (@($inventory.plans).Count -gt 0) { return }
+
+    throw ("No dispatchable plans found under '$($inventory.plans_root)'. The " +
+        "integration branch was cut from '$BaseBranchName', which does not " +
+        'carry the plan workflow folders or their dispatch frontmatter. Pass ' +
+        '-BaseBranch <branch> naming the branch that holds the backlog.')
+}
+
 function Resolve-RunIdentity {
     <#
         .SYNOPSIS
@@ -326,16 +407,19 @@ function Initialize-Run {
     if (-not $identity.IsNew) {
         Write-Log "Resuming run $($identity.RunId) on $($identity.IntegrationBranch)."
         Initialize-IntegrationWorktree -IntegrationBranch $identity.IntegrationBranch
+        Assert-DispatchableInventory -BaseBranchName $identity.IntegrationBranch
         return $identity
     }
 
+    $base = Resolve-BaseBranch
     Write-Log "Starting run $($identity.RunId) on $($identity.IntegrationBranch)."
     if (-not (Test-GitRefExists -Ref $identity.IntegrationBranch)) {
         Invoke-Git -Arguments @(
-            'branch', $identity.IntegrationBranch, $BaseBranch
+            'branch', $identity.IntegrationBranch, $base
         ) | Out-Null
     }
     Initialize-IntegrationWorktree -IntegrationBranch $identity.IntegrationBranch
+    Assert-DispatchableInventory -BaseBranchName $base
 
     Invoke-Planner -PlannerArgs @(
         'init-run',
@@ -354,11 +438,27 @@ function Initialize-IntegrationWorktree {
             Once it exists, the planner reads the backlog from it, so a plan
             already merged into this run reads as satisfied and is never
             dispatched twice.
+
+            The path is fixed, so a worktree left behind by an earlier run sits
+            exactly where this one expects its own. Reusing it unchecked would
+            read the previous run's backlog and, worse, send every merge to the
+            previous run's integration branch. An existing checkout is therefore
+            required to be on this run's branch, or the run stops.
     #>
     param([Parameter(Mandatory)][string]$IntegrationBranch)
 
     $absolutePath = Join-Path $script:RepositoryRoot $script:IntegrationWorktree
-    if (-not (Test-Path -Path $absolutePath)) {
+    if (Test-Path -Path $absolutePath) {
+        $checkedOut = Get-CheckedOutBranch -WorktreeFullPath $absolutePath
+        if ($checkedOut -ne $IntegrationBranch) {
+            throw ("The integration worktree at '$($script:IntegrationWorktree)' " +
+                "is on branch '$checkedOut', but this run integrates into " +
+                "'$IntegrationBranch'. It belongs to an earlier run: finish or " +
+                'discard that run, then remove it with ' +
+                "'git worktree remove $($script:IntegrationWorktree)'.")
+        }
+    }
+    else {
         Invoke-Git -Arguments @(
             'worktree', 'add', $script:IntegrationWorktree, $IntegrationBranch
         ) | Out-Null
@@ -366,6 +466,20 @@ function Initialize-IntegrationWorktree {
     if (Test-Path -Path (Join-Path $absolutePath $PlansRoot)) {
         $script:PlansRootArgument = Join-Path $absolutePath $PlansRoot
     }
+}
+
+function Get-CheckedOutBranch {
+    <#
+        .SYNOPSIS
+            Return the branch name checked out in a worktree, or '' if detached.
+    #>
+    param([Parameter(Mandatory)][string]$WorktreeFullPath)
+
+    $result = Invoke-Native -FilePath 'git' `
+        -Arguments @('rev-parse', '--abbrev-ref', 'HEAD') `
+        -WorkingDirectory $WorktreeFullPath -AllowFailure
+    if ($result.ExitCode -ne 0) { return '' }
+    return $result.Output.Trim()
 }
 
 function New-PlanWorktree {
@@ -408,7 +522,12 @@ function Start-PlanWorker {
         .DESCRIPTION
             'claude --bg' returns immediately and leaves the session under a
             local supervisor, so the fleet needs no terminal windows. Inspect it
-            with 'claude agents', 'claude logs <id>', or 'claude attach <id>'.
+            with 'claude agents', 'claude attach <id>', or 'claude stop <id>'.
+
+            The session id is resolved from 'claude agents --json --cwd <tree>'
+            rather than scraped from the launch output. Each plan owns its own
+            worktree, so that listing identifies the worker exactly, and the id
+            it returns is the same string the liveness poll later matches on.
     #>
     param(
         [Parameter(Mandatory)][pscustomobject]$Plan,
@@ -428,34 +547,97 @@ function Start-PlanWorker {
 
     $result = Invoke-Native -FilePath 'claude' -Arguments $arguments `
         -WorkingDirectory $workingDirectory
-    $match = [regex]::Match($result.Output, '(?<id>[0-9a-f]{8}(?:-[0-9a-f-]+)?)')
-    if ($match.Success) {
-        return $match.Groups['id'].Value
+
+    $session = Resolve-WorkerSession -WorktreeFullPath $workingDirectory
+    if ($session) { return $session }
+
+    # Fall back to the launch output only if the listing did not name the
+    # session; an unresolvable id is reported rather than guessed at.
+    $match = [regex]::Match(
+        $result.Output, '(?<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})'
+    )
+    if ($match.Success) { return $match.Groups['id'].Value }
+
+    throw ("Launched a worker for $($Plan.id) but could not determine its " +
+        "session id. Check 'claude agents --json' and stop any orphan.")
+}
+
+function Resolve-WorkerSession {
+    <#
+        .SYNOPSIS
+            Return the background session id running in one worktree.
+    #>
+    param([Parameter(Mandatory)][string]$WorktreeFullPath)
+
+    $result = Invoke-Native -FilePath 'claude' `
+        -Arguments @('agents', '--json', '--cwd', $WorktreeFullPath) -AllowFailure
+    if ($result.ExitCode -ne 0) { return $null }
+
+    try { $sessions = $result.Output | ConvertFrom-Json }
+    catch { return $null }
+
+    $identified = @(@($sessions) |
+        Where-Object { $_ -and $_.PSObject.Properties.Name -contains 'sessionId' })
+    if ($identified.Count -eq 0) { return $null }
+    return $identified[-1].sessionId
+}
+
+function Get-ActiveSessionIds {
+    <#
+        .SYNOPSIS
+            Return the session ids Claude Code currently considers active.
+        .DESCRIPTION
+            'claude agents' without --json is an interactive TUI: it refuses to
+            run when stdout is captured, which is exactly how this dispatcher
+            invokes it. Only '--json' is a scripting contract, and it lists
+            active sessions only -- completed background sessions appear solely
+            under '--all'. Presence in that listing is therefore the liveness
+            signal, and no prose parsing is involved.
+        .OUTPUTS
+            A string array of session ids, or $null when the listing could not
+            be read. $null means 'do not know', which is not the same as 'none'.
+    #>
+    $result = Invoke-Native -FilePath 'claude' -Arguments @('agents', '--json') `
+        -AllowFailure
+    if ($result.ExitCode -ne 0) {
+        Write-Log "Could not list background agents (exit $($result.ExitCode))." -Level warn
+        return $null
     }
-    return $result.Output.Trim()
+
+    try {
+        $sessions = $result.Output | ConvertFrom-Json
+    }
+    catch {
+        Write-Log "Background agent listing was not valid JSON." -Level warn
+        return $null
+    }
+
+    return @(@($sessions) |
+        Where-Object { $_ -and $_.PSObject.Properties.Name -contains 'sessionId' } |
+        ForEach-Object { $_.sessionId })
 }
 
 function Get-WorkerState {
     <#
         .SYNOPSIS
             Report whether a background session is still working.
+        .DESCRIPTION
+            An unreadable listing reports 'unknown', and the caller leaves the
+            worker alone rather than reaping it. Falsely declaring a live worker
+            finished destroys its run; waiting a tick longer costs only time.
         .OUTPUTS
             'running', 'finished', or 'unknown'.
     #>
-    param([Parameter(Mandatory)][string]$SessionId)
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$SessionId,
+        [string[]]$ActiveSessionIds
+    )
 
     if ($DryRun) { return 'finished' }
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return 'finished' }
+    if ($null -eq $ActiveSessionIds) { return 'unknown' }
 
-    $result = Invoke-Native -FilePath 'claude' -Arguments @('agents') -AllowFailure
-    if ($result.ExitCode -ne 0) { return 'unknown' }
-
-    foreach ($line in ($result.Output -split "`r?`n")) {
-        if ($line -notmatch [regex]::Escape($SessionId)) { continue }
-        if ($line -match '(?i)\b(working|running|starting|thinking)\b') {
-            return 'running'
-        }
-        return 'finished'
-    }
+    if ($ActiveSessionIds -contains $SessionId) { return 'running' }
     return 'finished'
 }
 
@@ -665,10 +847,24 @@ function Invoke-DispatchTick {
     $decision = Invoke-Planner -PlannerArgs @('plan')
     $runState = Get-RunState
 
+    # One listing serves the whole tick: polling per worker would ask the same
+    # question N times and could observe N different fleets.
+    $activeSessions = if (@($decision.running).Count -gt 0 -and -not $DryRun) {
+        Get-ActiveSessionIds
+    }
+    else {
+        @()
+    }
+
     foreach ($planId in @($decision.running)) {
         $record = Get-PlanRecord -RunState $runState -PlanId $planId
-        $workerState = Get-WorkerState -SessionId $record.session
+        $workerState = Get-WorkerState -SessionId $record.session `
+            -ActiveSessionIds $activeSessions
         if ($workerState -eq 'running') {
+            continue
+        }
+        if ($workerState -eq 'unknown') {
+            Write-Log "$planId left running; its liveness could not be read." -Level warn
             continue
         }
         $plan = Get-PlanById -PlanId $planId

@@ -65,6 +65,12 @@ exclude = ["*.tests", "*.tests.*", "tests", "tests.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Covers: ENV-011 — tests import the checkout they run in, not the editable
+# install's recorded path. The plan dispatcher runs each worker's verification
+# inside its own Git worktree, where an editable install still resolves
+# data_ingestion_toolbox to the original clone; the worker's new modules would
+# never be imported and its own suite would grade someone else's source tree.
+pythonpath = ["src", "."]
 # Covers: ENV-004 — unknown pytest markers fail collection.
 addopts = "--strict-markers -m 'not database and not redis and not martin and not external and not e2e and not performance and not slow'"
 filterwarnings = [

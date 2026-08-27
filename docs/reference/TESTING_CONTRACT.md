@@ -274,7 +274,7 @@ Last audited against the repository on 2026-08-12. **Implemented** means that ch
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
-| Environment, collection, and package | ENV-001–ENV-010 | None |
+| Environment, collection, and package | ENV-001–ENV-011 | None |
 | Airflow DAGs | DAG-001–DAG-014 | None |
 | ETL and shared units | ETL-001–ETL-037 | None |
 | Database integration | DB-001–DB-018 | None |
@@ -338,6 +338,7 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-008 | P1 | Configuration | Service image pin consistency | PostgreSQL/PostGIS and Redis image versions in test support, documentation, and CI agree; live integration services report the expected major versions | Pin drift between configuration surfaces or unexpected runtime service version |
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
 | ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
+| ENV-011 | P0 | Collection | Checkout-local imports | `apps` and `data_ingestion_toolbox` import from the checkout pytest runs in, not from an editable install's recorded path, so a Git worktree grades its own source | A test imports application code from outside its own checkout |
 
 ### Plan Dispatcher Tests
 

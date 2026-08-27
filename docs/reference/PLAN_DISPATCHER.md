@@ -188,12 +188,25 @@ paused awaiting a human decision.
 ## Branch and worktree layout
 
 ```text
-main
+<base branch>                            defaults to the checked-out branch
  └── automation/plan-run-<run-id>        integration branch
       ├── feat/census-pep                one worktree per plan
       ├── feat/fbi-crime
       └── feat/usda-crop
 ```
+
+`-BaseBranch` defaults to the branch currently checked out rather than to
+`main`, because a backlog under active development lives on a feature branch.
+Cutting a run from a branch whose `docs/plans/` predates the workflow folders
+or the dispatch frontmatter yields an empty inventory, which the scheduler
+correctly reports as "nothing left to do" — indistinguishable from success. The
+run therefore fails outright when its integration branch carries no
+dispatchable plan, and names the base branch that caused it.
+
+The integration worktree path is fixed, so one left behind by an earlier run
+sits exactly where the next run expects its own. Reusing it unchecked would
+read the wrong backlog and send every merge to the previous run's integration
+branch, so a checkout on any other branch stops the run instead.
 
 Workers never touch the base branch. Every feature branch is cut from, and
 merged back into, a single integration branch, so an unattended run that goes
@@ -245,6 +258,12 @@ finished worker the dispatcher independently checks that:
    worker's completion signal under the folder-as-state contract; and
 2. every command in the plan's `verify` list passes in that worker's worktree.
 
+Verification runs in the worker's own worktree and must grade the worker's own
+source. An editable install records an absolute path to the clone it was
+installed from, so `pytest` is configured with `pythonpath = ["src", "."]`
+(ENV-011); without it a worktree's suite imports the original clone's
+application code and a worker's new modules are never loaded at all.
+
 A plan that declares no `verify` commands is treated as unverifiable rather
 than as passing. Only after both checks does the dispatcher merge the feature
 branch into the integration branch with `--no-ff`. A conflicting merge is
@@ -263,6 +282,9 @@ worker's own judgement about whether to keep trying.
 # Start or resume a run and drive it to completion.
 ./tools/Invoke-ClaudePlans.ps1 -Action run -MaxConcurrency 3
 
+# Cut the run from a branch other than the one checked out.
+./tools/Invoke-ClaudePlans.ps1 -Action run -BaseBranch feat/my-backlog
+
 # Inspect, stop, or clean up.
 ./tools/Invoke-ClaudePlans.ps1 -Action status
 ./tools/Invoke-ClaudePlans.ps1 -Action stop
@@ -273,9 +295,17 @@ worker's own judgement about whether to keep trying.
 plans against a throwaway state file, so it leaves no run state behind. The
 Python planner still runs, so a dry run exercises the real dependency graph.
 
-Inspect the fleet directly with `claude agents`, `claude logs <session>`, and
-`claude attach <session>`; the dispatcher records each plan's session id in the
+Inspect the fleet directly with `claude agents`, `claude attach <session>`, and
+`claude stop <session>`; the dispatcher records each plan's session id in the
 run-state file.
+
+The dispatcher itself polls liveness with `claude agents --json`, which is the
+CLI's scripting contract — bare `claude agents` is an interactive view that
+refuses to run when its output is captured. That listing names active sessions
+only, so a session's presence in it is the liveness signal. When the listing
+cannot be read the worker is left running rather than reaped: falsely declaring
+a live worker finished destroys its run, while waiting one more tick costs only
+time.
 
 The planner is usable on its own:
 

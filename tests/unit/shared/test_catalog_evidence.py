@@ -14,6 +14,6 @@ def test_behavioral_evidence_register_is_complete_and_explicit() -> None:
     rows = build_evidence_rows()
     identifiers = [row[0] for row in rows]
 
-    assert len(rows) == len(set(identifiers)) == 186
+    assert len(rows) == len(set(identifiers)) == 187
     assert all(row[1] and row[2] and row[3] and row[4] for row in rows)
     assert {row[5] for row in rows} == {"FULL"}
