@@ -7,6 +7,12 @@ agent turns. It automates the loop that
 that document remains the authority on what a plan must satisfy, and this one
 describes only how the work is scheduled and integrated.
 
+For a step-by-step operator walkthrough of a run — what happens in each tick,
+where the human checkpoints are, and how the work is landed — see
+[`docs/user-guides/PLAN_DISPATCHER_WORKFLOW.md`](../user-guides/PLAN_DISPATCHER_WORKFLOW.md).
+This document stays the authoritative contract for metadata keys and scheduling
+rules.
+
 ## Why the responsibility is split
 
 ```text
@@ -273,6 +279,68 @@ A failed worker is retried once by default (`-MaxAttempts`) and then stands
 down as blocked. That ceiling lives in deterministic code rather than in a
 worker's own judgement about whether to keep trying.
 
+## Run observability
+
+A run outlives the terminal that starts it, so every log line is timestamped
+and appended to `.claude/plan-runs/<run-id>/dispatcher.log` as well as printed.
+That directory is untracked and also holds one transcript per verification
+command, named `<plan>-verify-attempt<n>-<i>.log`. A passing suite's duration
+and a failing suite's full output are both recoverable after the fact; the log
+line carries only the tail.
+
+Tick logging is change-driven. The planner's verdict is logged when it changes,
+not on every poll — an unchanged verdict repeated every `-PollSeconds` buries
+the transitions that matter under hundreds of identical lines. While the
+verdict holds steady the run summarises the fleet every `-HeartbeatMinutes`
+(default 5):
+
+```text
+[17:14:02] Fleet: 3 running, 0 dispatchable, 4 waiting, 0 blocked.
+           usda-crop       41m  working   2 commit(s), 32 files +9023/-5, 9 uncommitted  checklist 3/8  [in_progress]
+             next: Complete NASS-001 by registering the first bounded crop basket
+```
+
+Each row answers "is this plan getting anywhere", which liveness alone cannot:
+
+| Column | Source | What it tells you |
+| --- | --- | --- |
+| elapsed | the session's own `startedAt` | how long this attempt has run |
+| state | the session's `state`/`status` | whether it is working or idle |
+| commits, diff, uncommitted | `git` in the plan's worktree | work actually produced |
+| checklist | `- [x]` vs `- [ ]` in the plan | how much of the plan is claimed done |
+| `[folder]` | which workflow folder holds the plan | `to_do` → `in_progress` → `needs_review` |
+| next | the plan's next-pickup checkpoint | where the worker believes it is |
+
+The checklist and next-pickup values come from the plan checkpoint contract in
+[`docs/plans/README.md`](../plans/README.md), which the dispatcher cannot
+enforce. A plan that keeps no checklist reports `-` rather than a fabricated
+number. None of these readings feeds a scheduling decision: a worktree read
+while a worker is mid-write can catch a torn state, which is harmless in a
+status line and unacceptable in a merge.
+
+`-Action status` prints the same rows without writing anything, so a run can be
+inspected from a second terminal while it works. The run also prints a closing
+row per plan — outcome, attempts, branch, and the recorded reason — so a
+multi-hour run does not have to be re-read to learn what happened.
+
+## Reconciling state with reality
+
+Run state and the live fleet can disagree, and the dispatcher treats reality as
+authoritative in both directions.
+
+`-Action stop` returns a plan to `pending` only once its session has actually
+left the agent listing. Recording a stop that did not happen is worse than
+failing to stop: the plan becomes dispatchable again while its worker is still
+editing the worktree. A session that outlives the stop leaves its plan marked
+running, and the action exits `1` naming what is still alive.
+
+Whenever the fleet is summarised, a plan recorded as anything but running whose
+worktree still hosts a live session is reported as an orphan, with the command
+to stop it. And because a worktree is reused across attempts, the dispatcher
+refuses outright to launch a worker into a tree that already has a live session
+in it — two agents in one working tree is the failure the worktree design
+exists to prevent.
+
 ## Usage
 
 ```powershell
@@ -288,6 +356,7 @@ worker's own judgement about whether to keep trying.
 # Inspect, stop, or clean up.
 ./tools/Invoke-ClaudePlans.ps1 -Action status
 ./tools/Invoke-ClaudePlans.ps1 -Action stop
+./tools/Invoke-ClaudePlans.ps1 -Action run -HeartbeatMinutes 15
 ./tools/Invoke-ClaudePlans.ps1 -Action clean
 ```
 

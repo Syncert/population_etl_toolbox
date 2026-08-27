@@ -42,6 +42,11 @@
     looking at. Naming a branch whose docs/plans/ carries no dispatchable
     frontmatter fails the run rather than quietly finishing with nothing done.
 
+.PARAMETER HeartbeatMinutes
+    How often the run summarises the fleet while nothing else is happening.
+    The tick verdict itself is logged only when it changes, so this controls
+    the only periodic output a quiet run produces.
+
 .PARAMETER DryRun
     Print every Git and Claude command instead of executing it. The Python
     planner still runs, so a dry run exercises the real dependency graph.
@@ -92,6 +97,9 @@ param(
     [ValidateRange(5, 3600)]
     [int]$PollSeconds = 30,
 
+    [ValidateRange(1, 240)]
+    [int]$HeartbeatMinutes = 5,
+
     [switch]$DryRun,
 
     [switch]$Force
@@ -102,6 +110,22 @@ Set-StrictMode -Version Latest
 
 $script:RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:PythonExecutable = $null
+
+# Consecutive polls a session must be missing from the agent listing before the
+# dispatcher accepts that it finished. See Get-WorkerState.
+$script:AbsenceConfirmations = 2
+$script:AbsenceCounts = @{}
+
+# Run transcript. Set once the run identity is known; until then, and under
+# -DryRun, logging is console-only.
+$script:RunLogPath = $null
+$script:RunLogDirectory = $null
+
+# Tick logging is change-driven. Repeating an unchanged verdict every poll
+# buries the transitions that matter under hundreds of identical lines, so the
+# reason is logged when it changes and the fleet is summarised on a heartbeat.
+$script:LastReason = $null
+$script:LastHeartbeat = $null
 
 # The integration branch gets its own checkout. Merging in the operator's main
 # working tree would land plan branches on whatever they happen to have checked
@@ -119,8 +143,17 @@ if ($DryRun) {
 }
 
 function Write-Log {
+    <#
+        .SYNOPSIS
+            Emit one timestamped line to the console and the run log.
+        .DESCRIPTION
+            An unattended run outlives the terminal that started it, so every
+            line is also appended to the run log. Without that, a closed window
+            takes the entire history of the run with it -- including the reason
+            a plan ended blocked.
+    #>
     param(
-        [Parameter(Mandatory)][string]$Message,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
         [ValidateSet('info', 'warn', 'error', 'ok')][string]$Level = 'info'
     )
 
@@ -130,7 +163,87 @@ function Write-Log {
         'ok' { 'Green' }
         default { 'Cyan' }
     }
-    Write-Host "[plans] $Message" -ForegroundColor $colour
+    $stamp = (Get-Date).ToString('HH:mm:ss')
+    Write-Host "[$stamp] $Message" -ForegroundColor $colour
+    Write-RunLog -Line "[$stamp] $Message"
+}
+
+function Write-RunLog {
+    <#
+        .SYNOPSIS
+            Append one line to the run log, if a run log has been opened.
+        .DESCRIPTION
+            Logging must never be able to fail a run: a locked or unwritable
+            log file costs the transcript, not the fleet.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Line)
+
+    if (-not $script:RunLogPath) { return }
+    try {
+        Add-Content -Path $script:RunLogPath -Value $Line -Encoding utf8 `
+            -ErrorAction Stop
+    }
+    catch {
+        $script:RunLogPath = $null
+        Write-Host "[plans] Run log unavailable; continuing without it." `
+            -ForegroundColor Yellow
+    }
+}
+
+function Write-Detail {
+    <#
+        .SYNOPSIS
+            Emit an indented continuation line under the previous log line.
+        .DESCRIPTION
+            Progress rows are read as a block, so they carry no timestamp of
+            their own; the heartbeat line above them already carries it.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
+        [ValidateSet('info', 'warn', 'error', 'ok')][string]$Level = 'info'
+    )
+
+    $colour = switch ($Level) {
+        'warn' { 'Yellow' }
+        'error' { 'Red' }
+        'ok' { 'Green' }
+        default { 'Gray' }
+    }
+    Write-Host "           $Message" -ForegroundColor $colour
+    Write-RunLog -Line "           $Message"
+}
+
+function Open-RunLog {
+    <#
+        .SYNOPSIS
+            Point the run log at this run's own file and announce the run.
+        .DESCRIPTION
+            One directory per run keeps a run's transcript and its verification
+            output together, so a blocked plan's evidence is found next to the
+            log line that reported it.
+    #>
+    param([Parameter(Mandatory)][string]$RunIdentifier)
+
+    if ($DryRun) { return }
+
+    $script:RunLogDirectory = Join-Path $script:RepositoryRoot (
+        Join-Path '.claude/plan-runs' $RunIdentifier
+    )
+    try {
+        if (-not (Test-Path -Path $script:RunLogDirectory)) {
+            New-Item -ItemType Directory -Path $script:RunLogDirectory -Force |
+                Out-Null
+        }
+        $script:RunLogPath = Join-Path $script:RunLogDirectory 'dispatcher.log'
+        Write-RunLog -Line ''
+        Write-RunLog -Line ("=== run $RunIdentifier attached at " +
+            (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + ' ===')
+    }
+    catch {
+        $script:RunLogPath = $null
+        Write-Host "[plans] Could not open a run log; continuing without one." `
+            -ForegroundColor Yellow
+    }
 }
 
 function Get-PythonExecutable {
@@ -404,6 +517,7 @@ function Initialize-Run {
             unattended run that goes wrong is discarded by deleting one branch.
     #>
     $identity = Resolve-RunIdentity
+    Open-RunLog -RunIdentifier $identity.RunId
     if (-not $identity.IsNew) {
         Write-Log "Resuming run $($identity.RunId) on $($identity.IntegrationBranch)."
         Initialize-IntegrationWorktree -IntegrationBranch $identity.IntegrationBranch
@@ -448,7 +562,9 @@ function Initialize-IntegrationWorktree {
     param([Parameter(Mandatory)][string]$IntegrationBranch)
 
     $absolutePath = Join-Path $script:RepositoryRoot $script:IntegrationWorktree
-    if (Test-Path -Path $absolutePath) {
+    # A dry run mints a throwaway run id and merges nothing, so it would trip
+    # this guard against any real run's worktree while protecting no merge.
+    if ((Test-Path -Path $absolutePath) -and -not $DryRun) {
         $checkedOut = Get-CheckedOutBranch -WorktreeFullPath $absolutePath
         if ($checkedOut -ne $IntegrationBranch) {
             throw ("The integration worktree at '$($script:IntegrationWorktree)' " +
@@ -472,14 +588,27 @@ function Get-CheckedOutBranch {
     <#
         .SYNOPSIS
             Return the branch name checked out in a worktree, or '' if detached.
+        .DESCRIPTION
+            Runs even under -DryRun. This is a read-only query, and answering it
+            with the empty string a skipped command returns would make every
+            caller believe the worktree is detached.
     #>
     param([Parameter(Mandatory)][string]$WorktreeFullPath)
 
-    $result = Invoke-Native -FilePath 'git' `
-        -Arguments @('rev-parse', '--abbrev-ref', 'HEAD') `
-        -WorkingDirectory $WorktreeFullPath -AllowFailure
-    if ($result.ExitCode -ne 0) { return '' }
-    return $result.Output.Trim()
+    $ErrorActionPreference = 'Continue'
+    Push-Location $WorktreeFullPath
+    try {
+        $raw = & git rev-parse --abbrev-ref HEAD 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($exitCode -ne 0) { return '' }
+    return ((@($raw) | ForEach-Object {
+                if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() }
+                else { $_ }
+            }) -join '').Trim()
 }
 
 function New-PlanWorktree {
@@ -545,6 +674,19 @@ function Start-PlanWorker {
         return "dryrun-$($Plan.id)"
     }
 
+    # Never put two workers in one working tree. Run state can say a plan is
+    # dispatchable while its previous worker is still alive -- a stop that did
+    # not take, or a run resumed after state was edited -- and the worktree is
+    # reused, so the only reliable check is whether anything is running there
+    # right now.
+    $incumbent = Resolve-WorkerSession -WorktreeFullPath $workingDirectory
+    if ($incumbent) {
+        throw ("A session ($incumbent) is already running in " +
+            "'$WorktreePath'. Refusing to start a second worker for " +
+            "$($Plan.id) in the same working tree. Stop it with " +
+            "'claude stop $incumbent', or let it finish.")
+    }
+
     $result = Invoke-Native -FilePath 'claude' -Arguments $arguments `
         -WorkingDirectory $workingDirectory
 
@@ -582,10 +724,10 @@ function Resolve-WorkerSession {
     return $identified[-1].sessionId
 }
 
-function Get-ActiveSessionIds {
+function Get-ActiveSessions {
     <#
         .SYNOPSIS
-            Return the session ids Claude Code currently considers active.
+            Return the sessions Claude Code currently considers active.
         .DESCRIPTION
             'claude agents' without --json is an interactive TUI: it refuses to
             run when stdout is captured, which is exactly how this dispatcher
@@ -593,9 +735,13 @@ function Get-ActiveSessionIds {
             active sessions only -- completed background sessions appear solely
             under '--all'. Presence in that listing is therefore the liveness
             signal, and no prose parsing is involved.
+
+            The whole record is returned rather than just the id, because
+            'startedAt' and 'state' are what turn a liveness poll into a
+            progress report.
         .OUTPUTS
-            A string array of session ids, or $null when the listing could not
-            be read. $null means 'do not know', which is not the same as 'none'.
+            An array of session records, or $null when the listing could not be
+            read. $null means 'do not know', which is not the same as 'none'.
     #>
     $result = Invoke-Native -FilePath 'claude' -Arguments @('agents', '--json') `
         -AllowFailure
@@ -613,8 +759,315 @@ function Get-ActiveSessionIds {
     }
 
     return @(@($sessions) |
-        Where-Object { $_ -and $_.PSObject.Properties.Name -contains 'sessionId' } |
-        ForEach-Object { $_.sessionId })
+        Where-Object { $_ -and $_.PSObject.Properties.Name -contains 'sessionId' })
+}
+
+function Select-SessionIds {
+    <#
+        .SYNOPSIS
+            Reduce a session listing to its ids, preserving the unknown state.
+    #>
+    param([AllowNull()][object[]]$Sessions)
+
+    if ($null -eq $Sessions) { return $null }
+    return @($Sessions | ForEach-Object { $_.sessionId })
+}
+
+function Get-SessionRecord {
+    <#
+        .SYNOPSIS
+            Return one session's record from a listing, or $null.
+    #>
+    param(
+        [AllowNull()][object[]]$Sessions,
+        [AllowEmptyString()][string]$SessionId
+    )
+
+    if ($null -eq $Sessions -or [string]::IsNullOrWhiteSpace($SessionId)) {
+        return $null
+    }
+    return @($Sessions | Where-Object { $_.sessionId -eq $SessionId })[0]
+}
+
+function Write-FleetProgress {
+    <#
+        .SYNOPSIS
+            Log one progress row per running plan.
+        .DESCRIPTION
+            This is the block that answers 'how far along is each plan'. A
+            worker an hour in with no new commits and a frozen checklist reads
+            differently here from one advancing steadily, which is precisely
+            the distinction the tick verdict alone cannot make.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Decision,
+        [Parameter(Mandatory)][string]$IntegrationBranch,
+        [AllowNull()][object[]]$Sessions
+    )
+
+    $runState = Get-RunState
+    Write-OrphanWarnings -RunState $runState -Sessions $Sessions
+
+    $running = @($Decision.running)
+    if ($running.Count -eq 0) {
+        Write-Log 'Fleet idle; no plan is running.'
+        return
+    }
+
+    Write-Log ("Fleet: $($running.Count) running, " +
+        "$(@($Decision.dispatch).Count) dispatchable, " +
+        "$(@($Decision.waiting.PSObject.Properties).Count) waiting, " +
+        "$(@($Decision.blocked.PSObject.Properties).Count) blocked.")
+
+    foreach ($planId in $running) {
+        $record = Get-PlanRecord -RunState $runState -PlanId $planId
+        $plan = Get-PlanById -PlanId $planId
+        if (-not $plan) { continue }
+        $session = Get-SessionRecord -Sessions $Sessions -SessionId $record.session
+        $progress = Get-PlanProgress -Plan $plan -Record $record `
+            -IntegrationBranch $IntegrationBranch -Session $session
+
+        $volume = "$($progress.Commits) commit(s)"
+        if ($progress.DiffStat) { $volume += ", $($progress.DiffStat)" }
+        if ($progress.Uncommitted -ne '0' -and $progress.Uncommitted -ne '-') {
+            $volume += ", $($progress.Uncommitted) uncommitted"
+        }
+        Write-Detail ("{0,-24} {1,5}  {2,-8}  {3}  checklist {4}  [{5}]" -f
+            $progress.Id, $progress.Elapsed, $progress.State, $volume,
+            $progress.Checklist, $progress.PlanFolder)
+        if ($progress.NextPickup) {
+            Write-Detail "  next: $($progress.NextPickup)"
+        }
+    }
+}
+
+function Write-OrphanWarnings {
+    <#
+        .SYNOPSIS
+            Warn about live sessions in worktrees the run thinks are idle.
+        .DESCRIPTION
+            Run state and reality can disagree: a stop that did not take, a
+            hand-edited state file, or a run resumed after a crash all leave a
+            plan marked dispatchable while its previous worker is still
+            editing. Left unreported, the next tick starts a second worker in
+            the same tree. The session listing already carries each session's
+            working directory, so this costs nothing beyond the poll already
+            made.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$RunState,
+        [AllowNull()][object[]]$Sessions
+    )
+
+    if ($null -eq $Sessions) { return }
+
+    foreach ($property in $RunState.plans.PSObject.Properties) {
+        $record = $property.Value
+        if ($record.status -in @('running', 'verifying')) { continue }
+        if (-not $record.worktree) { continue }
+
+        $tree = Join-Path $script:RepositoryRoot $record.worktree
+        $live = @($Sessions | Where-Object {
+                $_.PSObject.Properties.Name -contains 'cwd' -and
+                $_.cwd -and
+                ([System.IO.Path]::GetFullPath($_.cwd).TrimEnd('\', '/') -eq
+                [System.IO.Path]::GetFullPath($tree).TrimEnd('\', '/'))
+            })
+        if ($live.Count -eq 0) { continue }
+
+        Write-Log ("$($property.Name) is recorded '$($record.status)' but " +
+            "session $($live[0].sessionId) is still live in " +
+            "$($record.worktree).") -Level warn
+        Write-Detail ("nothing will be dispatched into that tree until it " +
+            "exits; stop it with 'claude stop $($live[0].sessionId)'") -Level warn
+    }
+}
+
+function Get-PlanProgress {
+    <#
+        .SYNOPSIS
+            Gather how far one plan's worker has actually got.
+        .DESCRIPTION
+            Liveness answers 'is it alive'; this answers 'is it getting
+            anywhere', which is the question an unattended run leaves you
+            asking. Every signal is read locally and costs nothing:
+
+            - elapsed, from the session's own start time;
+            - commits and diff volume on the plan branch, which is work the
+              worker has actually committed;
+            - uncommitted files, which distinguishes a worker mid-edit from one
+              that has stopped producing;
+            - the plan's own checklist and next-pickup checkpoint, which
+              docs/plans/README.md already requires the worker to maintain.
+
+            The checklist is a heuristic on a contract the dispatcher cannot
+            enforce, so a plan that does not keep one reports '-' rather than a
+            fabricated number. Nothing here feeds a scheduling decision: a
+            worktree read mid-write can catch a torn state, which is harmless
+            for a status line and unacceptable for a merge.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][pscustomobject]$Record,
+        [Parameter(Mandatory)][string]$IntegrationBranch,
+        [AllowNull()][object]$Session
+    )
+
+    $progress = [ordered]@{
+        Id            = $Plan.id
+        Elapsed       = '-'
+        State         = 'unknown'
+        Commits       = '-'
+        DiffStat      = ''
+        Uncommitted   = '-'
+        Checklist     = '-'
+        NextPickup    = ''
+        PlanFolder    = '-'
+    }
+
+    if ($Session) {
+        if ($Session.PSObject.Properties.Name -contains 'startedAt') {
+            $started = [DateTimeOffset]::FromUnixTimeMilliseconds(
+                [int64]$Session.startedAt).LocalDateTime
+            $progress.Elapsed = Format-Duration -Span ((Get-Date) - $started)
+        }
+        foreach ($field in @('state', 'status')) {
+            if ($Session.PSObject.Properties.Name -contains $field) {
+                $progress.State = [string]$Session.$field
+                break
+            }
+        }
+    }
+
+    if (-not $Record.worktree) { return [pscustomobject]$progress }
+    $tree = Join-Path $script:RepositoryRoot $Record.worktree
+    if (-not (Test-Path -Path $tree)) { return [pscustomobject]$progress }
+
+    $ahead = Invoke-Native -FilePath 'git' -WorkingDirectory $tree -AllowFailure `
+        -Arguments @('rev-list', '--count', "$IntegrationBranch..HEAD")
+    if ($ahead.ExitCode -eq 0) { $progress.Commits = $ahead.Output.Trim() }
+
+    $diff = Invoke-Native -FilePath 'git' -WorkingDirectory $tree -AllowFailure `
+        -Arguments @('diff', '--shortstat', "$IntegrationBranch...HEAD")
+    if ($diff.ExitCode -eq 0) {
+        $progress.DiffStat = Format-ShortStat -ShortStat $diff.Output
+    }
+
+    $dirty = Invoke-Native -FilePath 'git' -WorkingDirectory $tree -AllowFailure `
+        -Arguments @('status', '--porcelain')
+    if ($dirty.ExitCode -eq 0) {
+        $lines = @($dirty.Output -split "`r?`n" | Where-Object { $_.Trim() })
+        $progress.Uncommitted = "$($lines.Count)"
+    }
+
+    $planFile = Find-PlanFileInWorktree -WorktreePath $tree -PlanPath $Plan.path
+    if ($planFile) {
+        $progress.PlanFolder = Split-Path -Leaf (Split-Path -Parent $planFile)
+        $checkpoint = Read-PlanCheckpoint -PlanFilePath $planFile
+        $progress.Checklist = $checkpoint.Checklist
+        $progress.NextPickup = $checkpoint.NextPickup
+    }
+
+    return [pscustomobject]$progress
+}
+
+function Find-PlanFileInWorktree {
+    <#
+        .SYNOPSIS
+            Locate a plan inside a worktree, wherever the worker has moved it.
+        .DESCRIPTION
+            The folder is the plan's workflow state, so the worker moves the
+            file as it progresses. Searching every workflow folder is what lets
+            the progress line report that move as it happens.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$WorktreePath,
+        [Parameter(Mandatory)][string]$PlanPath
+    )
+
+    $leaf = Split-Path -Leaf $PlanPath
+    foreach ($folder in @('in_progress', 'needs_review', 'to_do', 'completed')) {
+        $candidate = Join-Path $WorktreePath (
+            Join-Path $PlansRoot (Join-Path $folder $leaf))
+        if (Test-Path -Path $candidate) { return $candidate }
+    }
+    return $null
+}
+
+function Read-PlanCheckpoint {
+    <#
+        .SYNOPSIS
+            Return a plan's checklist tally and next-pickup line.
+    #>
+    param([Parameter(Mandatory)][string]$PlanFilePath)
+
+    $result = [pscustomobject]@{ Checklist = '-'; NextPickup = '' }
+    try {
+        $text = Get-Content -Path $PlanFilePath -Raw -ErrorAction Stop
+    }
+    catch {
+        return $result
+    }
+
+    $done = ([regex]::Matches($text, '(?im)^\s*[-*]\s+\[[xX]\]')).Count
+    $open = ([regex]::Matches($text, '(?im)^\s*[-*]\s+\[ \]')).Count
+    if (($done + $open) -gt 0) {
+        $result.Checklist = "$done/$($done + $open)"
+    }
+
+    $pickup = [regex]::Match($text, '(?im)^\s*\**Next pickup:\**\s*(?<t>.+?)\s*$')
+    if ($pickup.Success) {
+        $text = ($pickup.Groups['t'].Value -replace '\s+', ' ').Trim()
+        if ($text.Length -gt 96) { $text = $text.Substring(0, 93) + '...' }
+        $result.NextPickup = $text
+    }
+    return $result
+}
+
+function Format-ShortStat {
+    <#
+        .SYNOPSIS
+            Compact 'git diff --shortstat' prose into '32 files +9023/-5'.
+        .DESCRIPTION
+            Git's own phrasing is three clauses long and pushes the checklist
+            tally -- the part worth reading -- off the end of the line.
+    #>
+    param([AllowEmptyString()][string]$ShortStat)
+
+    $text = "$ShortStat".Trim()
+    if (-not $text) { return '' }
+
+    $files = [regex]::Match($text, '(\d+)\s+files?\s+changed')
+    $added = [regex]::Match($text, '(\d+)\s+insertions?\(\+\)')
+    $removed = [regex]::Match($text, '(\d+)\s+deletions?\(-\)')
+
+    $parts = @()
+    if ($files.Success) {
+        $count = $files.Groups[1].Value
+        $noun = if ($count -eq '1') { 'file' } else { 'files' }
+        $parts += "$count $noun"
+    }
+    $delta = ''
+    if ($added.Success) { $delta += "+$($added.Groups[1].Value)" }
+    if ($removed.Success) {
+        if ($delta) { $delta += '/' }
+        $delta += "-$($removed.Groups[1].Value)"
+    }
+    if ($delta) { $parts += $delta }
+    if ($parts.Count -eq 0) { return ($text -replace '\s+', ' ') }
+    return ($parts -join ' ')
+}
+
+function Format-Duration {
+    <#
+        .SYNOPSIS
+            Render a timespan compactly, e.g. '4h12m' or '41m'.
+    #>
+    param([Parameter(Mandatory)][TimeSpan]$Span)
+
+    if ($Span.TotalMinutes -lt 1) { return "$([int]$Span.TotalSeconds)s" }
+    if ($Span.TotalHours -lt 1) { return "$([int]$Span.TotalMinutes)m" }
+    return "$([int]$Span.TotalHours)h$('{0:d2}' -f $Span.Minutes)m"
 }
 
 function Get-WorkerState {
@@ -625,6 +1078,14 @@ function Get-WorkerState {
             An unreadable listing reports 'unknown', and the caller leaves the
             worker alone rather than reaping it. Falsely declaring a live worker
             finished destroys its run; waiting a tick longer costs only time.
+
+            Absence is confirmed rather than trusted on sight. The listing has
+            been observed returning an empty array while background workers were
+            demonstrably busy, and a single such reading would reap the entire
+            fleet mid-flight. A session must therefore be missing from
+            ABSENCE_CONFIRMATIONS consecutive polls before it counts as
+            finished, which costs one extra poll interval on a genuine
+            completion and nothing else.
         .OUTPUTS
             'running', 'finished', or 'unknown'.
     #>
@@ -637,7 +1098,20 @@ function Get-WorkerState {
     if ([string]::IsNullOrWhiteSpace($SessionId)) { return 'finished' }
     if ($null -eq $ActiveSessionIds) { return 'unknown' }
 
-    if ($ActiveSessionIds -contains $SessionId) { return 'running' }
+    if ($ActiveSessionIds -contains $SessionId) {
+        $script:AbsenceCounts.Remove($SessionId)
+        return 'running'
+    }
+
+    $misses = 1
+    if ($script:AbsenceCounts.ContainsKey($SessionId)) {
+        $misses = $script:AbsenceCounts[$SessionId] + 1
+    }
+    $script:AbsenceCounts[$SessionId] = $misses
+    if ($misses -lt $script:AbsenceConfirmations) {
+        Write-Verbose "session $SessionId absent ($misses of $($script:AbsenceConfirmations))"
+        return 'unknown'
+    }
     return 'finished'
 }
 
@@ -649,10 +1123,16 @@ function Test-PlanVerification {
             A worker asserting success is a claim, not evidence. The dispatcher
             reruns the plan's declared commands itself, and treats a plan that
             declares none as unverifiable rather than as passing.
+
+            Every command's full output is written to the run directory, pass
+            or fail. A passing suite that took forty minutes is worth knowing
+            about, and a failing one is never diagnosable from the truncated
+            tail that fits in a log line.
     #>
     param(
         [Parameter(Mandatory)][pscustomobject]$Plan,
-        [Parameter(Mandatory)][string]$WorktreePath
+        [Parameter(Mandatory)][string]$WorktreePath,
+        [int]$Attempt = 1
     )
 
     if (-not $Plan.verify -or $Plan.verify.Count -eq 0) {
@@ -663,20 +1143,70 @@ function Test-PlanVerification {
     }
 
     $workingDirectory = Join-Path $script:RepositoryRoot $WorktreePath
+    $index = 0
     foreach ($command in $Plan.verify) {
-        Write-Log "Verifying $($Plan.id): $command"
+        $index++
+        Write-Log "Verifying $($Plan.id) ($index/$($Plan.verify.Count)): $command"
         $shell = Get-ShellInvocation -Command $command
+        $started = Get-Date
         $result = Invoke-Native -FilePath $shell.FilePath -Arguments $shell.Arguments `
             -WorkingDirectory $workingDirectory -AllowFailure
+        $elapsed = Format-Duration -Span ((Get-Date) - $started)
+        $transcript = Save-VerificationOutput -Plan $Plan -Attempt $Attempt `
+            -Index $index -Command $command -Result $result
+
         if ($result.ExitCode -ne 0) {
-            $tail = ($result.Output -split "`r?`n" | Select-Object -Last 20) -join "`n"
+            Write-Log ("$($Plan.id) verification failed after $elapsed " +
+                "(exit $($result.ExitCode)).") -Level warn
+            if ($transcript) { Write-Detail "output: $transcript" -Level warn }
+            $tail = ($result.Output -split "`r?`n" |
+                Where-Object { $_.Trim() } | Select-Object -Last 20) -join "`n"
+            $detail = "'$command' failed with exit code $($result.ExitCode)."
+            if ($transcript) { $detail += " Full output: $transcript" }
             return [pscustomobject]@{
                 Passed = $false
-                Detail = "'$command' failed with exit code $($result.ExitCode).`n$tail"
+                Detail = "$detail`n$tail"
             }
         }
+        Write-Detail "passed in $elapsed" -Level ok
     }
     return [pscustomobject]@{ Passed = $true; Detail = 'All verify commands passed.' }
+}
+
+function Save-VerificationOutput {
+    <#
+        .SYNOPSIS
+            Write one verification command's full output to the run directory.
+        .OUTPUTS
+            The transcript path, or '' when no run directory is open.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][int]$Attempt,
+        [Parameter(Mandatory)][int]$Index,
+        [Parameter(Mandatory)][string]$Command,
+        [Parameter(Mandatory)][pscustomobject]$Result
+    )
+
+    if (-not $script:RunLogDirectory) { return '' }
+    $name = "$($Plan.id)-verify-attempt$Attempt-$Index.log"
+    $path = Join-Path $script:RunLogDirectory $name
+    $header = @(
+        "command : $Command",
+        "plan    : $($Plan.id)",
+        "attempt : $Attempt",
+        "exitcode: $($Result.ExitCode)",
+        "finished: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))",
+        ('-' * 72)
+    )
+    try {
+        Set-Content -Path $path -Value ($header + @($Result.Output)) `
+            -Encoding utf8 -ErrorAction Stop
+        return $path
+    }
+    catch {
+        return ''
+    }
 }
 
 function Test-PlanHandedOff {
@@ -764,7 +1294,8 @@ function Complete-PlanWorker {
         return
     }
 
-    $verification = Test-PlanVerification -Plan $Plan -WorktreePath $Record.worktree
+    $verification = Test-PlanVerification -Plan $Plan -WorktreePath $Record.worktree `
+        -Attempt $Record.attempts
     if (-not $verification.Passed) {
         Resolve-WorkerFailure -Plan $Plan -Record $Record -Detail $verification.Detail
         return
@@ -840,7 +1371,9 @@ function Invoke-DispatchTick {
         .SYNOPSIS
             Advance the run by one tick: reap finished workers, then dispatch.
         .OUTPUTS
-            The planner's decision for this tick.
+            A record carrying the planner's decision for this tick and the
+            session listing it was judged against, so the caller can report
+            progress without polling the fleet a second time.
     #>
     param([Parameter(Mandatory)][string]$IntegrationBranch)
 
@@ -849,12 +1382,13 @@ function Invoke-DispatchTick {
 
     # One listing serves the whole tick: polling per worker would ask the same
     # question N times and could observe N different fleets.
-    $activeSessions = if (@($decision.running).Count -gt 0 -and -not $DryRun) {
-        Get-ActiveSessionIds
+    $sessions = if (@($decision.running).Count -gt 0 -and -not $DryRun) {
+        Get-ActiveSessions
     }
     else {
         @()
     }
+    $activeSessions = Select-SessionIds -Sessions $sessions
 
     foreach ($planId in @($decision.running)) {
         $record = Get-PlanRecord -RunState $runState -PlanId $planId
@@ -868,6 +1402,7 @@ function Invoke-DispatchTick {
             continue
         }
         $plan = Get-PlanById -PlanId $planId
+        Write-Log "$planId finished working; verifying."
         Complete-PlanWorker -Plan $plan -Record $record -IntegrationBranch $IntegrationBranch
     }
 
@@ -880,19 +1415,44 @@ function Invoke-DispatchTick {
         Write-Log "Dispatched $($plan.id) on $($plan.branch) (session $session)." -Level ok
     }
 
-    return Invoke-Planner -PlannerArgs @('plan')
+    return [pscustomobject]@{
+        Decision = Invoke-Planner -PlannerArgs @('plan')
+        Sessions = $sessions
+    }
 }
 
 function Invoke-Run {
     Assert-CleanWorkingTree
     $identity = Initialize-Run
 
+    $heartbeat = [TimeSpan]::FromMinutes($HeartbeatMinutes)
+
     while ($true) {
-        $decision = Invoke-DispatchTick -IntegrationBranch $identity.IntegrationBranch
-        Write-Log $decision.reason
+        $tick = Invoke-DispatchTick -IntegrationBranch $identity.IntegrationBranch
+        $decision = $tick.Decision
+
+        # Log the verdict when it changes, not on every poll. An unchanged
+        # verdict repeated every 30 seconds buries the transitions that matter.
+        if ($decision.reason -ne $script:LastReason) {
+            Write-Log $decision.reason
+            $script:LastReason = $decision.reason
+            $due = $true
+        }
+        else {
+            $due = ($null -eq $script:LastHeartbeat) -or
+                (((Get-Date) - $script:LastHeartbeat) -ge $heartbeat)
+        }
+
+        if ($due -and -not $DryRun) {
+            Write-FleetProgress -Decision $decision `
+                -IntegrationBranch $identity.IntegrationBranch `
+                -Sessions $tick.Sessions
+            $script:LastHeartbeat = Get-Date
+        }
 
         if ($decision.done) {
             Write-Log "Run $($identity.RunId) finished." -Level ok
+            Write-RunSummary -Identity $identity
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
             if (@($decision.blocked.PSObject.Properties).Count -eq 0) {
                 return 0
@@ -908,6 +1468,7 @@ function Invoke-Run {
                 Write-Log "  $gateId - $($gate.title)" -Level warn
                 Write-Log "  review checklist: $PlansRoot/$($gate.path)" -Level warn
             }
+            Write-RunSummary -Identity $identity
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
             Write-Log ("Approve with: ./tools/Invoke-ClaudePlans.ps1 -Action approve " +
                 "-Gate <id> -By '<you>' -Note '<why>'")
@@ -915,6 +1476,7 @@ function Invoke-Run {
         }
         if ($decision.stalled) {
             Write-Log 'Run stalled; no plan can start.' -Level error
+            Write-RunSummary -Identity $identity
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
             return 1
         }
@@ -924,6 +1486,70 @@ function Invoke-Run {
         }
 
         Start-Sleep -Seconds $PollSeconds
+    }
+}
+
+function Write-FleetStatus {
+    <#
+        .SYNOPSIS
+            Render the same progress rows the run logs, for a second terminal.
+        .DESCRIPTION
+            Checking on a run should not require attaching to it or waiting for
+            its next heartbeat. This reads the same state and worktrees the run
+            does and writes nothing, so it is safe to call while the fleet is
+            working.
+    #>
+    if (-not (Test-Path -Path (Get-StateFullPath))) {
+        Write-Log 'No dispatcher run state; nothing is running.'
+        return
+    }
+
+    $runState = Get-RunState
+    Initialize-IntegrationWorktree -IntegrationBranch $runState.integration_branch
+    $decision = Invoke-Planner -PlannerArgs @('plan')
+    $sessions = Get-ActiveSessions
+    Write-FleetProgress -Decision $decision `
+        -IntegrationBranch $runState.integration_branch -Sessions $sessions
+}
+
+function Write-RunSummary {
+    <#
+        .SYNOPSIS
+            Log one closing row per plan the run touched.
+        .DESCRIPTION
+            A run that ends after several hours should not require re-reading
+            its whole transcript to learn what happened to each plan. This is
+            the row a reader wants: outcome, how many attempts it took, and the
+            recorded reason when it did not end well.
+    #>
+    param([Parameter(Mandatory)][pscustomobject]$Identity)
+
+    $runState = Get-RunState
+    $entries = @($runState.plans.PSObject.Properties)
+    if ($entries.Count -eq 0) {
+        Write-Log 'No plan was dispatched during this run.'
+        return
+    }
+
+    Write-Log "Run summary for $($Identity.RunId):"
+    foreach ($entry in ($entries | Sort-Object Name)) {
+        $record = $entry.Value
+        $level = switch ($record.status) {
+            'complete' { 'ok' }
+            'blocked' { 'warn' }
+            'failed' { 'warn' }
+            default { 'info' }
+        }
+        Write-Detail ("{0,-24} {1,-10} {2} attempt(s)  {3}" -f
+            $entry.Name, $record.status, $record.attempts, $record.branch) -Level $level
+        if ($record.detail) {
+            $detail = ($record.detail -split "`r?`n")[0]
+            if ($detail.Length -gt 108) { $detail = $detail.Substring(0, 105) + '...' }
+            Write-Detail "  $detail" -Level $level
+        }
+    }
+    if ($script:RunLogPath) {
+        Write-Log "Full transcript: $($script:RunLogPath)"
     }
 }
 
@@ -954,17 +1580,70 @@ function Invoke-GateDecision {
 }
 
 function Invoke-Stop {
+    <#
+        .SYNOPSIS
+            Stop every background session this run owns.
+        .DESCRIPTION
+            A plan is returned to 'pending' only once its session has actually
+            left the agent listing. Recording a stop that did not happen is
+            worse than failing to stop: the plan becomes dispatchable again
+            while its worker is still editing the worktree, and the next tick
+            starts a second worker on top of the first.
+    #>
     $runState = Get-RunState
+    $stopped = 0
+    $survived = @()
+
     foreach ($property in $runState.plans.PSObject.Properties) {
         $record = $property.Value
         if ($record.status -ne 'running' -or -not $record.session) { continue }
         Write-Log "Stopping $($property.Name) (session $($record.session))."
         Invoke-Native -FilePath 'claude' -Arguments @('stop', $record.session) `
             -AllowFailure | Out-Null
-        Set-PlanStatus -PlanId $property.Name -Status 'pending' `
-            -Detail 'Stopped by operator.' | Out-Null
+
+        if (Wait-ForSessionExit -SessionId $record.session) {
+            Set-PlanStatus -PlanId $property.Name -Status 'pending' `
+                -Detail 'Stopped by operator.' | Out-Null
+            $stopped++
+        }
+        else {
+            $survived += $property.Name
+            Write-Log ("$($property.Name) did not stop; leaving it marked " +
+                'running so nothing dispatches on top of it.') -Level warn
+        }
+    }
+
+    Write-Log "Stopped $stopped session(s)."
+    if ($survived.Count -gt 0) {
+        Write-Log ('Still running: ' + ($survived -join ', ') +
+            ". Stop them by hand with 'claude stop <session>'.") -Level warn
+        return 1
     }
     return 0
+}
+
+function Wait-ForSessionExit {
+    <#
+        .SYNOPSIS
+            Wait briefly for a session to leave the agent listing.
+        .OUTPUTS
+            $true if the session is gone, $false if it outlived the wait.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SessionId,
+        [int]$TimeoutSeconds = 20
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $sessions = Get-ActiveSessions
+        if ($null -ne $sessions) {
+            $ids = @(Select-SessionIds -Sessions $sessions)
+            if ($ids -notcontains $SessionId) { return $true }
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $false
 }
 
 function Invoke-Clean {
@@ -994,6 +1673,7 @@ try {
         }
         'status' {
             Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            Write-FleetStatus
             0
         }
         'stop' { Invoke-Stop }
