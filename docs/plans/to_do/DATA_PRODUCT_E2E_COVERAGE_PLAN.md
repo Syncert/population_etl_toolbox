@@ -19,7 +19,7 @@ verify:
 
 - **Status:** Approved to-do; blocked on the PEP, FBI Crime, and USDA Crop
   implementation gate
-- **Last updated:** 2026-08-26
+- **Last updated:** 2026-08-27
 - **Current milestone:** Dependency gate; implementation has not started
 - **Next pickup:** Re-inventory the three prerequisite source plans. Claim this
   plan only after each source has stable raw, silver, gold, source-specific API,
@@ -28,7 +28,8 @@ verify:
 - **Depends on:**
   - [Census PEP pipeline](../needs_review/CENSUS_PEP_PIPELINE_PLAN.md), currently
     implemented and awaiting human review;
-  - [FBI Crime pipeline](FBI_CRIME_PIPELINE_PLAN.md), currently unimplemented;
+  - [FBI Crime pipeline](../needs_review/FBI_CRIME_PIPELINE_PLAN.md), currently
+    implemented and awaiting human review;
   - [USDA NASS Crop pipeline](USDA_NASS_CROP_PIPELINE_PLAN.md), currently
     unimplemented; and
   - the existing disposable PostGIS/API test foundation and
@@ -51,10 +52,10 @@ all of the following in each source:
 6. reviewed deterministic fixtures; and
 7. foreign-key-safe cleanup that leaves no shared test state.
 
-At the time this plan was drafted, PEP satisfies the implementation portion of
-this gate and is in `needs_review/`; FBI Crime and USDA Crop remain in `to_do/`.
-The gate must be re-evaluated from the live plans and repository rather than
-from this historical statement.
+At this checkpoint, PEP and FBI Crime satisfy the implementation portion of
+this gate and are in `needs_review/`; USDA Crop remains in `to_do/`. The gate
+must be re-evaluated from the live plans and repository rather than from this
+checkpoint statement.
 
 The active CDC plan owns CDC's first source-specific API/E2E evidence. This
 plan must include that completed CDC E2E contract in its all-product inventory

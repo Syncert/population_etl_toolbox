@@ -29,6 +29,7 @@ services:
       - ../../sql/migrations/009_census_pep_registry.sql:/docker-entrypoint-initdb.d/028_census_pep_registry.sql:ro
       - ../../src/data_ingestion_toolbox/census_pep/DDL/silver_pep.sql:/docker-entrypoint-initdb.d/029_silver_pep.sql:ro
       - ../../sql/migrations/010_cdc_pipeline.sql:/docker-entrypoint-initdb.d/029a_cdc_pipeline.sql:ro
+      - ../../sql/migrations/011_fbi_ucr_pipeline.sql:/docker-entrypoint-initdb.d/029b_fbi_ucr_pipeline.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/030_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/031_gold_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/032_gold_fred.sql:ro

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "API_KEY_MISSING",
+    "message": "An API key was not provided. Please get one at https://api.data.gov/signup/"
+  }
+}

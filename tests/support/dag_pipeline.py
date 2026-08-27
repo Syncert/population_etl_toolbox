@@ -31,7 +31,13 @@ FIXTURE_ROOT = REPOSITORY_ROOT / "tests/fixtures"
 WAREHOUSE_CONN_ID = "public_data"
 
 #: Pools the production DAGs throttle their provider calls with.
-PROVIDER_POOLS: tuple[str, ...] = ("census_api", "bls_api", "fred_api", "cdc_api")
+PROVIDER_POOLS: tuple[str, ...] = (
+    "census_api",
+    "bls_api",
+    "fred_api",
+    "cdc_api",
+    "fbi_cde_api",
+)
 
 #: One bounded geography vintage is enough to exercise every dependent DAG.
 FIXTURE_GEOGRAPHY_VINTAGE = 2023
@@ -53,6 +59,15 @@ ANCHOR_GEOGRAPHIES: tuple[tuple[str, str, str | None, str | None, str], ...] = (
     ("county", "11", "001", None, "District of Columbia"),
     ("county", "48", "301", None, "Loving County"),
     ("place", "11", None, "50000", "Washington city"),
+    # Wisconsin anchors back the reviewed FBI agency sample: the county names
+    # are the authoritative Census names its provider county labels must match
+    # exactly, and the two places are the reviewed agency-to-place crosswalk.
+    ("state", "55", None, None, "Wisconsin"),
+    ("county", "55", "009", None, "Brown County"),
+    ("county", "55", "025", None, "Dane County"),
+    ("county", "55", "105", None, "Rock County"),
+    ("place", "55", None, "22575", "Edgerton city"),
+    ("place", "55", None, "25950", "Fitchburg city"),
 )
 
 
@@ -152,6 +167,7 @@ FIXTURE_CREDENTIALS: dict[str, str] = {
     "BLS_API_KEY": "fixture-bls-key",
     "FRED_API_KEY": "fixture-fred-key",
     "CDC_SOCRATA_APP_TOKEN": "fixture-cdc-token",
+    "FBI_CDE_API_KEY": "fixture-fbi-cde-key",
 }
 
 
@@ -400,6 +416,56 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cdc_capture, "fetch_socrata_metadata", metadata)
     monkeypatch.setattr(cdc_capture, "fetch_socrata_page", page)
+
+
+def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed FBI CDE fixtures instead of the live provider.
+
+    The FBI DAG captures an agency reference slice per state before it captures
+    any agency observation, and replay refuses to publish an agency slice whose
+    reference slice does not identify it. Both boundaries therefore need
+    fixtures, and each answers the actual request rather than one flat payload.
+    """
+    from data_ingestion_toolbox.fbi_ucr import capture as fbi_capture
+    from data_ingestion_toolbox.fbi_ucr.client import (
+        CdeResponse,
+        observation_parameters,
+    )
+
+    def response(endpoint: str, parameters: dict, name: str) -> CdeResponse:
+        payload = json.dumps(load_fixture("fbi_ucr", f"{name}.json")).encode("utf-8")
+        return CdeResponse(
+            endpoint, parameters, payload, {"content-type": "application/json"}, 200
+        )
+
+    def observations(product: Any, subject: Any, **_kwargs: Any) -> CdeResponse:
+        names = {
+            "national": f"summarized_national_{product.offense_code}",
+            "state": (
+                f"summarized_state_{subject.subject_code}_{product.offense_code}"
+            ),
+            "agency": (
+                f"summarized_agency_{subject.subject_code}_{product.offense_code}"
+            ),
+        }
+        name = names.get(subject.subject_type)
+        if name is None:
+            raise AssertionError(
+                f"No FBI fixture registered for subject {subject.slice_key}"
+            )
+        return response(
+            product.observation_endpoint(subject),
+            observation_parameters(product),
+            name,
+        )
+
+    def directory(state_code: str, **_kwargs: Any) -> CdeResponse:
+        return response(
+            f"/agency/byStateAbbr/{state_code}", {}, f"agency_directory_{state_code}"
+        )
+
+    monkeypatch.setattr(fbi_capture, "fetch_summarized_observations", observations)
+    monkeypatch.setattr(fbi_capture, "fetch_agency_directory", directory)
 
 
 def build_pep_release_csv(url: str) -> bytes:
@@ -773,4 +839,5 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("fred", stub_fred),
         ("cdc", stub_cdc_socrata),
         ("census_pep", stub_census_pep_downloads),
+        ("fbi_ucr", stub_fbi_cde),
     )

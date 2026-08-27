@@ -403,6 +403,7 @@ airflow pools create census_api 4 "Census Bureau API limit"
 airflow pools create bls_api 4 "BLS API limit"
 airflow pools create fred_api 4 "FRED API limit"
 airflow pools create cdc_api 2 "CDC Open Data API limit"
+airflow pools create fbi_cde_api 2 "FBI Crime Data Explorer API limit"
 ```
 
 Sizing guidance:
@@ -425,6 +426,9 @@ export BLS_API_KEY="your_bls_api_key_here"
 
 # Optional CDC Socrata public-read app token; anonymous reads are supported.
 export CDC_SOCRATA_APP_TOKEN="your_cdc_socrata_app_token_here"
+
+# Required api.data.gov key for the FBI Crime Data Explorer API.
+export FBI_CDE_API_KEY="your_fbi_cde_api_key_here"
 ```
 
 ### 3. Configuration Files

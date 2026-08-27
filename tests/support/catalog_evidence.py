@@ -15,7 +15,7 @@ AUDITED_COUNTS = {
     "ARC": 3,
     "PLAN": 7,
     "DAG": 17,
-    "ETL": 41,
+    "ETL": 42,
     "DB": 23,
     "API": 30,
     "WEB": 8,

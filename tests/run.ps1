@@ -23,7 +23,8 @@ switch ($Tier) {
         Invoke-Pytest -Arguments @(
             "-m", "unit and not api",
             "tests/unit/census", "tests/unit/bls", "tests/unit/fred",
-            "tests/unit/cdc", "tests/unit/shared"
+            "tests/unit/cdc",
+            "tests/unit/fbi_ucr", "tests/unit/shared"
         )
     }
     "api" {

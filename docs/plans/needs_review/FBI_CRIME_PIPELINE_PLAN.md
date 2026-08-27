@@ -15,21 +15,42 @@ verify:
 
 ## Plan status
 
-- **Status:** Source discovery partially complete; no FBI adapter is currently implemented
-- **Last updated:** 2026-08-22
+- **Status:** Implementation complete; ready for human review
+- **Last updated:** 2026-08-27
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** Provider-published national and state results plus source-native agency observations; county is an agency relationship/filter, not an FBI observation grain
 - **Depends on:** Completed new-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](../completed/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
 
-## Implementation checkpoint
+## Implementation status
 
-**Last updated:** 2026-08-22
+All five phases are implemented, tested, and validated on `feat/fbi-crime`.
+There is no remaining checklist item and no next pickup.
 
-**Current milestone:** FBI-001 source discovery; implementation has not started
+### Final validation checkpoint (2026-08-27)
 
-**Next pickup:** Complete FBI-001 by selecting the first summarized-offense product and period, then freezing its parameters, authentication, schema, participation, completeness, and revision contract from the official CDE API documentation.
+- `./tests/run.ps1 etl`: **492 passed**.
+- `./tests/run.ps1 dags`: **98 passed, 4 expected integration skips**; the
+  FBI DAG structure tests passed.
+- Focused disposable-PostGIS validation:
+  `python -m pytest -m "integration and database"
+  tests/integration/database/test_fbi_ucr_pipeline.py`: **12 passed**.
+- Aggregation-boundary, catalog-evidence, and repository-hygiene focus:
+  **8 passed**.
+- Ruff on all changed Python files and `git diff --check`: **passed**.
+- The broader `./tests/run.ps1 integration` command did not complete: after
+  the disposable services were configured, failures occurred first in the
+  unrelated API cache and legacy BLS integration tests, before the FBI file;
+  the run was interrupted after the repository's single permitted poll. The
+  FBI database file then passed independently in full against a fresh schema.
+- `./tests/run.ps1 dag-pipeline` could not start a DagRun in this host
+  environment. The installed `apache-airflow` reports 2.11.2 while
+  `apache-airflow-core` is 3.2.2; Airflow initialization loads a 3.0 migration
+  and raises `ImportError: ignore_sqlite_value_error`. `python -m pip check`
+  confirms the mixed Airflow/SQLAlchemy environment. This check is recorded
+  as blocked, not passing; production code was not changed to accommodate the
+  contaminated local installation.
 
-### Completed in the current slice
+### Delivered
 
 - [x] Defined the source-native agency model and qualified national/state/county/city-facing publication boundaries.
 - [x] Defined participation, coverage, revision, and effective-dated agency/geography bridge requirements.
@@ -38,14 +59,11 @@ verify:
 - [x] Confirmed that documented observation endpoint families publish at national, state, and agency levels, while the Agency resource associates ORIs with county labels.
 - [x] Froze county as an agency discovery/filter relationship rather than an FBI-published observation or aggregation grain.
 - [x] Defined provider-published absolute totals as distinct measures from rates, percentages, trends, and categorical breakdown counts.
-
-### Remaining
-
-- [ ] FBI-001 — Freeze official source, program, offense, participation, revision, and suppression semantics.
-- [ ] FBI-002 — Implement lossless capture, completeness checks, quarantine, and offline replay.
-- [ ] FBI-003 — Implement agency identity and effective-dated geography relationships.
-- [ ] FBI-004 — Implement crime and reporting-participation silver facts.
-- [ ] FBI-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage, and register the FBI provider stub in `iter_provider_stubs` for orchestrated DAG execution.
+- [x] FBI-001 — Froze official source, program, offense, participation, revision, and suppression semantics.
+- [x] FBI-002 — Implemented lossless capture, completeness checks, quarantine, and offline replay.
+- [x] FBI-003 — Implemented agency identity and effective-dated geography relationships.
+- [x] FBI-004 — Implemented crime and reporting-participation silver facts.
+- [x] FBI-005 — Implemented gold products, glossary publisher, DAG, and integration coverage, and registered the FBI provider stub in `iter_provider_stubs` for orchestrated DAG execution.
 
 ## Objective
 
@@ -102,6 +120,80 @@ The national/state/agency route pattern is a source contract, not an additive hi
 - An Expanded Homicide response contains separate victim, offender, weapon, circumstance, and relationship marginals. Their sums describe different entities and must not be added or treated as interchangeable totals.
 
 The checked-in fixtures must retain the raw provider values that demonstrate these contracts, together with redacted request URLs/parameters and documentation references. API keys and authorization material must not enter fixtures.
+
+## Frozen source contract (FBI-001)
+
+The first summarized-offense product is registered in
+`src/data_ingestion_toolbox/fbi_ucr/registry.py` as
+`summarized_violent_crime`. Its contract is frozen as follows; every value was
+read from the official CDE API documentation page and confirmed against
+representative live responses recorded in
+`tests/fixtures/fbi_ucr/SOURCE_NOTES.md`.
+
+| Contract element | Frozen value |
+| --- | --- |
+| Base URL | `https://api.usa.gov/crime/fbi/cde` + mutable base path `/LATEST` |
+| Authentication | `API_KEY` query parameter, supplied at request execution from the `FBI_CDE_API_KEY` environment secret |
+| Observation endpoints | `GET /summarized/national/{offense}`, `GET /summarized/state/{state}/{offense}`, `GET /summarized/agency/{ori}/{offense}` |
+| Required parameters | `from` and `to`, both `mm-yyyy` matching `^(0[1-9]|1[0-2])-[0-9]{4}$` |
+| Offense | `V` (Violent Crime) from the documented `summarized_offenses` enumeration |
+| Period window | `01-2023` through `06-2023` |
+| Reference endpoint | `GET /agency/byStateAbbr/{state}` from the documented `agency_query_types` enumeration |
+| Program / reporting basis | SRS plus summarized NIBRS; reported, not estimated (the `/estimate/*` family is a separate contract) |
+| Pagination | None; the period window is the slice, and every registered month must be present or explicitly not reported |
+| Release identity | `cde_properties.last_refresh_date.UCR` (`mm/dd/yyyy`), stored as the ISO release key |
+| Completeness signal | `cde_properties.max_data_date.UCR` (`mm/yyyy`); a window ending after it is quarantined |
+| Absolute totals | `offenses.actuals["<subject label> Offenses"|"<subject label> Clearances"]` |
+| Rates | `offenses.rates[...]`, per 100,000 population, a distinct measure form that is never derived from or added to a total |
+| Counted entities | `Offenses` counts reported offenses; `Clearances` counts cleared offenses |
+| Participation join | `populations.population[<subject label>]`, `populations.participated_population[<subject label>]`, and `tooltips["Percent of Population Coverage"][<subject label>]`, all keyed by the same `mm-yyyy` month |
+
+### Which rows are provider totals and which are agency observations
+
+A national or state row is consumed only from its own `/summarized/national/...`
+or `/summarized/state/...` endpoint and is labelled `provider_geo_exact`. A
+state or agency response also carries its parent geographies' comparison
+series; those are never attributed to the requested subject, because a series
+belongs to the subject named in its own label. An agency row keeps ORI grain
+and one of `agency_only`, `agency_county_bridged`, or `agency_place_bridged`.
+`gold_fbi.agency_observation_area_filter` exposes county and place filters that
+carry `observation_grain = 'agency'` and a `result_label` stating that the rows
+are agency-reported; no view in `gold_fbi` sums agencies into an area total.
+
+### Participation contract note
+
+The documented `/participation/*` endpoint family is scoped to the National
+Use-of-Force collection, not to summarized UCR reporting. The summarized
+payload itself publishes the covered population, the participating population,
+and (for provider-published national and state subjects) the percentage of
+population covered, so that payload is the participation join for this product.
+Agency subjects publish population and participating population but no coverage
+percentage; the absence is recorded as `coverage_basis =
+'provider_population_only'` rather than filled in.
+
+### Contract reconciliations recorded during implementation
+
+- **Agency identity.** This plan names the source-native level
+  `fbi_agency:<ORI>`, while the shared provider-neutral contract in
+  `silver_ref/geography_contract.py` mints `agency:<ORI>`. Both are retained
+  and queryable: `source_geo_level` on every FBI silver and gold row carries
+  `fbi_agency:<ORI>`, and `silver_ref.dim_geo_entity.geo_id` carries
+  `agency:<ORI>` so the shared reference model is not forked for one provider.
+- **County resolution rule.** The provider publishes a county *name*, never a
+  county code. A county relationship resolves only when the normalized label
+  matches exactly one authoritative Census county name inside the agency's own
+  resolved state; more than one match is recorded as `ambiguous` and zero
+  matches as `unresolved`. The method is recorded as
+  `reviewed_county_name_crosswalk` with `confidence_class = 'reviewed'`, it is
+  never a fuzzy or coordinate match, and it never creates a county observation.
+- **Place resolution rule.** A place relationship exists only where the
+  reviewed, effective-dated crosswalk in
+  `src/data_ingestion_toolbox/fbi_ucr/reference.py` covers the whole registered
+  period. Countywide, campus, tribal, and state-police agencies deliberately
+  have no entry.
+- **ETL tier scope.** `tests/run.ps1 etl`, the `test-etl` Makefile target, and
+  `.github/workflows/etl-unit.yml` now include `tests/unit/fbi_ucr`, so the
+  plan's own verification command exercises this source's ETL unit tests.
 
 ## Geography contract
 
@@ -285,6 +377,8 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 
 **Acceptance:** The plan or a linked versioned registry contains the redacted request shape, parameters, authentication, schema, pagination/completeness rule, measure/count basis, participation join, and revision identity for the first summarized-offense product. Maintainers can state exactly which rows are provider national/state totals and which are agency observations; county filters retain agency grain, and no county/place mapping depends on an agency-name or coordinate guess.
 
+**Met by:** [Frozen source contract (FBI-001)](#frozen-source-contract-fbi-001), `src/data_ingestion_toolbox/fbi_ucr/registry.py`, `tests/fixtures/fbi_ucr/SOURCE_NOTES.md`, and `tests/unit/fbi_ucr/test_fbi_registry.py`.
+
 ### FBI-002 — Capture and offline replay
 
 - Implement the documented authentication and deterministic request slices.
@@ -292,6 +386,8 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Add offline replay, schema drift detection, and malformed/truncated response quarantine.
 
 **Acceptance:** A complete fixture release rebuilds with network disabled and cannot publish without coverage/reference dependencies.
+
+**Met by:** `client.py`, `capture.py`, and `silver_fbi/replay.py`; `tests/unit/fbi_ucr/test_fbi_replay.py::test_complete_release_replays_without_network_access`, `::test_missing_required_slice_blocks_the_release`, `::test_agency_observation_without_its_reference_slice_is_quarantined`, and `::test_changed_bytes_fail_the_checksum_before_parsing`; and `tests/integration/database/test_fbi_ucr_pipeline.py::test_reference_dependency_failure_blocks_the_release`.
 
 ### FBI-003 — Agency and geography reference model
 
@@ -302,6 +398,8 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 
 **Acceptance:** Countywide and multi-jurisdiction fixtures remain agency observations, `NOT SPECIFIED` remains unresolved, county filtering deduplicates multi-county agencies by observation identity, and an exact incorporated-place mapping is queryable with evidence without creating a place total.
 
+**Met by:** `silver_fbi/agency.py`, `reference.py`, and `silver_fbi/transform.py`; `tests/unit/fbi_ucr/test_fbi_agency.py`; and `tests/integration/database/test_fbi_ucr_pipeline.py::test_agency_geography_status_matches_its_reviewed_evidence`, `::test_county_filter_keeps_agency_grain_and_deduplicates`, and `::test_ambiguous_county_evidence_is_withheld_from_gold`.
+
 ### FBI-004 — Crime and participation silver facts
 
 - Normalize program, offense, period, value, estimate, denominator, and coverage fields.
@@ -309,6 +407,8 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Apply geography publication statuses.
 
 **Acceptance:** Zero and non-reporting remain distinct and every published observation has a coverage interpretation.
+
+**Met by:** `silver_fbi/offenses.py`, `silver_fbi/participation.py`, and the `fact_crime_observation` foreign key to `fact_reporting_participation` in `sql/migrations/011_fbi_ucr_pipeline.sql`; `tests/unit/fbi_ucr/test_fbi_offenses.py::test_a_month_without_a_report_is_not_zero` and `::test_a_published_zero_stays_a_published_zero`; and `tests/integration/database/test_fbi_ucr_pipeline.py::test_missing_reports_stay_distinct_from_reported_zeros` and `::test_every_published_observation_has_a_coverage_interpretation`.
 
 ### FBI-005 — Gold, glossary publisher, DAG, and API
 
@@ -327,6 +427,8 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 
 **Acceptance:** API users cannot mistake county-filtered or place-filtered agency data for complete county/city crime, and program/measure/count basis/coverage/revision fields are always available. The FBI DAG completes a successful DagRun in the orchestrated suite with every task instance successful.
 
+**Met by:** the `gold_fbi` views in `sql/migrations/011_fbi_ucr_pipeline.sql`, `gold_fbi/publisher.py`, `dags/fbi_ucr_ingest_dag.py`, and the `fbi_ucr` stub registered in `iter_provider_stubs` in `tests/support/dag_pipeline.py`; `tests/dags/test_fbi_ucr_dag.py`; and `tests/integration/database/test_fbi_ucr_pipeline.py::test_provider_totals_and_agency_grain_stay_separable`, `::test_county_filter_keeps_agency_grain_and_deduplicates`, and `::test_publisher_contract_exposes_measure_identity`.
+
 ## Test plan
 
 - Unit: ORI parsing, pagination, revision keys, missing/reporting states, program/measure/count identity, geography status, and multi-county deduplication.
@@ -336,6 +438,75 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Orchestrated execution: the production DAG runs as a real DagRun against the disposable warehouse via the registered provider stub (DAG-015/DAG-016).
 - Reconciliation: provider totals only for explicitly reconcilable products; categorical marginals with different denominators must not be summed into a total.
 - API: geography filters retain agency grain, county filters cannot emit `county_total`, agency transparency, coverage fields, program isolation, latest/as-released behavior.
+
+The FBI aggregation boundary is cataloged as ETL-042 in
+`docs/reference/TESTING_CONTRACT.md` and guarded by
+`tests/unit/fbi_ucr/test_fbi_aggregation_boundary.py` plus the database
+integration suite.
+
+## Implementation evidence
+
+### Delivered code and warehouse objects
+
+```text
+src/data_ingestion_toolbox/fbi_ucr/
+├── __init__.py
+├── config.py                     frozen base URL, FBI_CDE_API_KEY handling, sizing
+├── client.py                     secret-safe transport, retry budget, payload guards
+├── capture.py                    run/request/capture orchestration and control state
+├── registry.py                   frozen product, offense, state, and subject contract
+├── metadata.py                   release identity, completeness, revision decisions
+├── reference.py                  reviewed, effective-dated agency-to-place crosswalk
+├── silver_fbi/
+│   ├── models.py                 typed source-faithful outcomes
+│   ├── agency.py                 Agency-resource parser and county-label evidence
+│   ├── participation.py          coverage, population, and participation status
+│   ├── offenses.py               measure identity, missing reports, reported zeros
+│   ├── replay.py                 checksum-verified, complete-slice offline replay
+│   └── transform.py              conformance, geography resolution, reconciliation
+└── gold_fbi/
+    └── publisher.py              atomic publication gate and publisher-ready emit
+
+dags/fbi_ucr_ingest_dag.py
+sql/migrations/011_fbi_ucr_pipeline.sql
+tests/fixtures/fbi_ucr/           reviewed captures, derived scenarios, SOURCE_NOTES
+```
+
+`sql/migrations/011_fbi_ucr_pipeline.sql` owns `control.fbi_ucr_release`, the
+`silver_fbi` revision/reference/fact model, and the `gold_fbi` publication
+views (`crime_observation`, `reporting_coverage`, `agency_geography`,
+`agency_observation_area_filter`, `latest_release_observation`,
+`measure_export`, `metric_publisher`). It is registered in
+`sql/bootstrap/warehouse_manifest.json` and mounted in the same order by
+`infra/docker/docker-compose.test.yml`.
+
+### Synchronized documentation, configuration, and manifests
+
+- `docs/user-guides/FBI_UCR_PIPELINE_OPERATIONS.md` — deployment prerequisites,
+  first-deployment test, quarantine and recovery, scope extension.
+- `docs/reference/TESTING_CONTRACT.md` — DAG-002/005/007/008 rows and the test
+  layout now include the FBI DAG, schedule, pool, retry contract, and suites.
+- `docs/reference/BETA_RESET_REINGESTION.md` — pause, ingestion order, and
+  completion checks include `fbi_ucr_ingest`.
+- `sql/migrations/README.md` — migration sequence entry for 011.
+- `README.md`, `infra/airflow/README.md`, and the three Compose files —
+  `fbi_cde_api` pool and the `FBI_CDE_API_KEY` secret passthrough. Tracked
+  environment examples keep no value.
+- `tests/support/dag_pipeline.py` — `fbi_cde_api` pool, fixture credential,
+  Wisconsin anchor geographies, and the `fbi_ucr` stub in
+  `iter_provider_stubs`.
+- `tests/support/build_fbi_fixtures.py` — reproducible fixture regeneration.
+
+### Secret handling
+
+`FBI_CDE_API_KEY` is read only inside `FbiUcrConfig.from_environment()`,
+validated when a request executes, and merged into the outgoing query
+parameters only. The redacted `request_parameters` written to
+`control.ingestion_request` and `raw_capture.response_capture` carry the
+documented `from`/`to` values alone, response headers are reduced to the shared
+provenance allowlist, and configuration errors never echo the value. This is
+asserted by `tests/unit/fbi_ucr/test_fbi_client.py` and
+`tests/unit/fbi_ucr/test_fbi_capture.py`.
 
 ## Non-goals for the first release
 
