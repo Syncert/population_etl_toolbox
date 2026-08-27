@@ -388,6 +388,7 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | DAG-014 | P1 | Configuration / `dag` | Missing connections/keys fail at task runtime, not import | DAGs still parse; invoked boundary reports a clear sanitized configuration error | Import failure, secret leak, or ambiguous runtime error |
 | DAG-015 | P0 | Coverage / `dag` | Orchestrated pipeline coverage | The set of DAGs executed by the orchestrated suite equals the set of DAGs in the DagBag, and the DagBag has no import errors | A production DAG is added without orchestrated execution coverage, or a stale DAG id lingers in the suite |
 | DAG-016 | P1 | Execution / `dag integration database slow` | Orchestrated pipeline execution | Every DAG in `dags/` completes a real DagRun with all task instances successful against the disposable PostGIS warehouse, driving a bounded reviewed provider sample from capture through replay to publication, with shared geography and time dimensions populated at production scale | Any task instance in any pipeline fails, the DAG-to-function wiring rejects its arguments or connection, or a task reaches a live provider |
+| DAG-017 | P1 | Configuration / `dag` | Warehouse connection resolution | Resolving the warehouse connection from Airflow uses only non-deprecated hook arguments and honors the database override | A provider deprecation warning escalates to a task failure under strict filters, or the override is ignored |
 
 ### ETL and Shared Unit Tests
 
@@ -435,6 +436,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-038 | P0 | Unit / `unit` | Request fingerprint safety | Canonical source/endpoint/parameters produce a stable fingerprint and secret-bearing fields are rejected | Equivalent requests drift or credentials enter fingerprint inputs |
 | ETL-039 | P0 | Unit / `unit` | Dedicated capture commit | Payload plus envelope commit on their own connection; envelope failure rolls back both and closes the connection | Parser transaction can own capture commit or partial capture persists |
 | ETL-040 | P0 | Unit / `unit` | Offline capture loading | Replay returns stored bytes only after checksum verification and performs no network work | Missing checksum verification, changed bytes, or network dependency |
+| ETL-041 | P1 | Unit / `unit` | Gold bootstrap detection | Required-object detection renders valid SQL for every combination of required relations and procedures, including an empty procedure list; a component with no required objects is vacuously bootstrapped | A trailing comma or empty predicate list produces invalid SQL, or bootstrap state is misdetected |
 
 ### PostgreSQL Integration Tests
 

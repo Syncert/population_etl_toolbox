@@ -193,3 +193,46 @@ def test_malformed_source_errors_do_not_echo_payload_or_secret() -> None:
     assert "row length" in str(failures[0])
     assert "observation must be an object" in str(failures[1])
     assert "missing date" in str(failures[2])
+
+
+def test_gold_bootstrap_detection_renders_valid_sql_without_procedures() -> None:
+    """Covers: ETL-041 — an empty procedure list cannot break the check SQL."""
+    from data_ingestion_toolbox.utility.gold_schema import _is_bootstrapped
+
+    cursor = _MigrationCursor(row=(True, True))
+    result = _is_bootstrapped(
+        cursor,
+        required_relations=("gold_pep.a", "gold_pep.b"),
+        required_procedures=(),
+    )
+
+    assert result is True
+    (statement, _parameters) = cursor.executed[-1]
+    assert statement.rstrip().endswith("IS NOT NULL")
+    assert statement.count("IS NOT NULL") == 2
+
+
+def test_gold_bootstrap_detection_reports_missing_objects() -> None:
+    """Covers: ETL-041 — one missing required object reads as not bootstrapped."""
+    from data_ingestion_toolbox.utility.gold_schema import _is_bootstrapped
+
+    cursor = _MigrationCursor(row=(True, False))
+    assert (
+        _is_bootstrapped(
+            cursor,
+            required_relations=("gold_pep.a",),
+            required_procedures=("gold_pep.p()",),
+        )
+        is False
+    )
+
+
+def test_gold_bootstrap_detection_is_vacuous_with_nothing_required() -> None:
+    """Covers: ETL-041 — no required objects means the DDL hash decides alone."""
+    from data_ingestion_toolbox.utility.gold_schema import _is_bootstrapped
+
+    cursor = _MigrationCursor()
+    assert (
+        _is_bootstrapped(cursor, required_relations=(), required_procedures=()) is True
+    )
+    assert cursor.executed == []
