@@ -45,7 +45,7 @@ verify:
 - [ ] FBI-002 — Implement lossless capture, completeness checks, quarantine, and offline replay.
 - [ ] FBI-003 — Implement agency identity and effective-dated geography relationships.
 - [ ] FBI-004 — Implement crime and reporting-participation silver facts.
-- [ ] FBI-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
+- [ ] FBI-005 — Implement gold products, glossary publisher, DAG, API, and integration coverage, and register the FBI provider stub in `iter_provider_stubs` for orchestrated DAG execution.
 
 ## Objective
 
@@ -316,8 +316,16 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Add national/state/agency observations plus county/place agency-association filters without hiding or changing source grain.
 - Add source notes and unsafe-comparison guards.
 - Emit publisher-ready state after atomic release publication.
+- Register a deterministic FBI provider stub in `iter_provider_stubs` in
+  `tests/support/dag_pipeline.py` so the new DAG executes in the orchestrated
+  DAG suite (`tests/dags/test_dag_pipeline_execution.py`). The suite's coverage
+  assertion (DAG-015) fails for any DAG in `dags/` without a registered stub,
+  and a passing `./tests/run.ps1 dag-pipeline` run is required evidence for the
+  three-source review gate. The stub must answer the actual request (endpoint,
+  parameters, pagination) at whatever scale the pipeline's own completeness
+  guards demand; do not weaken a production guard to make the DAG pass.
 
-**Acceptance:** API users cannot mistake county-filtered or place-filtered agency data for complete county/city crime, and program/measure/count basis/coverage/revision fields are always available.
+**Acceptance:** API users cannot mistake county-filtered or place-filtered agency data for complete county/city crime, and program/measure/count basis/coverage/revision fields are always available. The FBI DAG completes a successful DagRun in the orchestrated suite with every task instance successful.
 
 ## Test plan
 
@@ -325,6 +333,7 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Replay: complete and partial release fixtures with networking disabled.
 - Contract: raw-before-parse, secret redaction, no shared glossary DDL, no policy columns in gold.
 - Integration: fresh bootstrap, atomic publication, reference dependency failure, changed revision retention, ambiguous geography quarantine.
+- Orchestrated execution: the production DAG runs as a real DagRun against the disposable warehouse via the registered provider stub (DAG-015/DAG-016).
 - Reconciliation: provider totals only for explicitly reconcilable products; categorical marginals with different denominators must not be summed into a total.
 - API: geography filters retain agency grain, county filters cannot emit `county_total`, agency transparency, coverage fields, program isolation, latest/as-released behavior.
 

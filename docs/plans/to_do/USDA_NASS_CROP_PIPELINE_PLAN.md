@@ -41,7 +41,7 @@ verify:
 - [ ] NASS-001 — Freeze the initial product registry, bounded queries, source semantics, and fixtures.
 - [ ] NASS-002 — Implement count-aware capture, deterministic slicing, quarantine, and offline replay.
 - [ ] NASS-003 — Implement commodity/statistic/domain dimensions and crop observation silver data.
-- [ ] NASS-004 — Implement gold products, glossary publisher, DAG, API, and integration coverage.
+- [ ] NASS-004 — Implement gold products, glossary publisher, DAG, API, and integration coverage, and register the Quick Stats provider stub in `iter_provider_stubs` for orchestrated DAG execution.
 - [ ] NASS-005 — Backfill a bounded history and implement operational reconciliation.
 
 ## Objective
@@ -236,8 +236,17 @@ The final cadence and incremental key must be proven during NASS-001 rather than
 - Publish crop observations/series and source-backed metric exports.
 - Add filters for commodity, statistic, geography, period, source program, domain, and release.
 - Add source notes for units, suppression, forecast/final status, and county coverage.
+- Register a deterministic Quick Stats provider stub in `iter_provider_stubs`
+  in `tests/support/dag_pipeline.py` so the new DAG executes in the
+  orchestrated DAG suite (`tests/dags/test_dag_pipeline_execution.py`). The
+  suite's coverage assertion (DAG-015) fails for any DAG in `dags/` without a
+  registered stub, and a passing `./tests/run.ps1 dag-pipeline` run is required
+  evidence for the three-source review gate. The stub must answer the actual
+  request (registered slice parameters, counts, pagination) at whatever scale
+  the pipeline's own completeness guards demand; do not weaken a production
+  guard to make the DAG pass.
 
-**Acceptance:** Consumers cannot aggregate incompatible units or mistake suppressed values for zero through the default contract.
+**Acceptance:** Consumers cannot aggregate incompatible units or mistake suppressed values for zero through the default contract. The NASS DAG completes a successful DagRun in the orchestrated suite with every task instance successful.
 
 ### NASS-005 — Historical bootstrap and operational reconciliation
 
@@ -253,6 +262,7 @@ The final cadence and incremental key must be proven during NASS-001 rather than
 - Replay: survey/census and all three geography levels with networking disabled.
 - Contract: raw-before-parse, secret redaction, no shared glossary DDL, no policy in gold.
 - Integration: fresh bootstrap, truncation/partial-slice failure, rerun idempotency, changed revision retention, geography misses.
+- Orchestrated execution: the production DAG runs as a real DagRun against the disposable warehouse via the registered provider stub (DAG-015/DAG-016).
 - Reconciliation: source counts and selected published totals only where source methodology supports comparison.
 - API: multidimensional filters, exact units, suppression/CV exposure, latest/as-released behavior.
 
