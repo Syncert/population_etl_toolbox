@@ -32,8 +32,30 @@ A per-plan test suite cannot answer those. A human looking at all three
 diffs together can, and this is the cheapest point to answer them — before the
 warehouse-quality, end-to-end, and API plans build on the result.
 
+## Required evidence before review
+
+A checklist alone asks a person to certify something no one has measured. This
+gate therefore has a machine-verifiable precondition: the orchestrated DAG
+suite must pass on the integration branch before the gate is reviewed.
+
+```powershell
+./tests/run.ps1 dag-pipeline
+```
+
+That suite runs every DAG in `dags/` as a real Airflow `DagRun` against a
+disposable PostGIS warehouse, driving a bounded provider sample from capture
+through replay to publication. It is the closest automated equivalent of the
+first production Airflow run, and it fails if any task in any pipeline fails.
+
+Attach the result to the approval note. If the suite has not been run, or does
+not pass, the answer is to fix the pipeline rather than to approve the gate on
+the strength of the per-plan suites — those already passed for each source in
+isolation, which is exactly what this gate exists to look past.
+
 ## What a reviewer must confirm
 
+- [ ] `./tests/run.ps1 dag-pipeline` passes on the integration branch, with
+      every DAG reaching a successful DagRun.
 - [ ] Each source preserves provider grain, identity, units, suppression, and
       revision semantics without inventing a value the provider did not publish.
 - [ ] The three sources resolve geography through the shared versioned
@@ -51,7 +73,7 @@ From the repository root, once the run reports the gate is awaiting review:
 
 ```powershell
 ./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
-    -By "your name" -Note "reviewed all three source diffs"
+    -By "your name" -Note "dag-pipeline green; reviewed all three source diffs"
 
 ./tools/Invoke-ClaudePlans.ps1 -Action reject -Gate three-source-review `
     -By "your name" -Note "CDC and PEP disagree on county vintage handling"

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("unit", "etl", "api", "dags", "integration", "external", "e2e", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-build", "compose-smoke")]
+    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-build", "compose-smoke")]
     [string]$Tier = "unit"
 )
 
@@ -32,6 +32,20 @@ switch ($Tier) {
         $env:RUN_DAG_TESTS = "1"
         try { Invoke-Pytest -Arguments @("-m", "dag", "tests/dags") }
         finally { Remove-Item Env:RUN_DAG_TESTS -ErrorAction SilentlyContinue }
+    }
+    "dag-pipeline" {
+        $env:RUN_DAG_TESTS = "1"
+        $env:RUN_INTEGRATION_TESTS = "1"
+        try {
+            Invoke-Pytest -Arguments @(
+                "-m", "dag and integration and database",
+                "tests/dags/test_dag_pipeline_execution.py"
+            )
+        }
+        finally {
+            Remove-Item Env:RUN_DAG_TESTS -ErrorAction SilentlyContinue
+            Remove-Item Env:RUN_INTEGRATION_TESTS -ErrorAction SilentlyContinue
+        }
     }
     "integration" {
         $env:RUN_INTEGRATION_TESTS = "1"

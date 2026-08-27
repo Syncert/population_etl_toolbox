@@ -386,6 +386,8 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | DAG-012 | P0 | Performance / `dag` | DAG parse time | Each file parses in under 2 seconds and the complete folder in under 10 seconds on the CI runner | Either timing budget is exceeded |
 | DAG-013 | P1 | Compatibility / `dag` | Scheduler-image dependency compatibility | The same DagBag suite passes inside the built Airflow scheduler image | Local pass but scheduler-image import failure |
 | DAG-014 | P1 | Configuration / `dag` | Missing connections/keys fail at task runtime, not import | DAGs still parse; invoked boundary reports a clear sanitized configuration error | Import failure, secret leak, or ambiguous runtime error |
+| DAG-015 | P0 | Coverage / `dag` | Orchestrated pipeline coverage | The set of DAGs executed by the orchestrated suite equals the set of DAGs in the DagBag, and the DagBag has no import errors | A production DAG is added without orchestrated execution coverage, or a stale DAG id lingers in the suite |
+| DAG-016 | P1 | Execution / `dag integration database slow` | Orchestrated pipeline execution | Every DAG in `dags/` completes a real DagRun with all task instances successful against the disposable PostGIS warehouse, driving a bounded reviewed provider sample from capture through replay to publication, with shared geography and time dimensions populated at production scale | Any task instance in any pipeline fails, the DAG-to-function wiring rejects its arguments or connection, or a task reaches a live provider |
 
 ### ETL and Shared Unit Tests
 

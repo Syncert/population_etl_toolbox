@@ -234,6 +234,78 @@ semantic, and teardown evidence in the scheduled workflow; no product is
 skipped or deselected unexpectedly, and the workflow remains within its
 declared timeout.
 
+### E2E-PRODUCT-006 — Orchestrated DAG execution
+
+The other phases prove each product through the pipeline *functions*. This one
+proves the orchestration layer above them: that running the real DAG, in a real
+Airflow environment, invokes those functions with the right connection,
+arguments, and ordering.
+
+That wiring is currently unproven. `tests/dags/` verifies graph shape — task
+order, pools, import side effects, parse budget — and `tests/e2e/` calls
+`ingest_slice`, silver, and gold transforms directly. Nothing executes a DagRun
+of a production DAG, so a defect in the DAG-to-function boundary is invisible
+until the first real Airflow deployment.
+
+- Run every DAG in `dags/` as a real `DagRun` against the disposable PostGIS
+  warehouse, in the order the warehouse requires: shared dimensions, then the
+  publisher sources, then glossary reconciliation.
+- Register the `public_data` connection and provider pools in Airflow rather
+  than stubbing `PostgresHook`, so hook construction, connection resolution,
+  and pool assignment stay inside the tested surface.
+- Replace only the provider HTTP boundary, with the reviewed fixtures the other
+  phases already own. Capture control, replay, publication, and every warehouse
+  write execute for real.
+- Satisfy the production geography guard honestly with a synthetic dimension of
+  production shape. Do not weaken a production scale check to make a test pass.
+- Assert that the set of executed DAGs equals the set of DAGs in the DagBag, so
+  a newly added pipeline cannot be silently left uncovered.
+- Report every unsuccessful task in a failing DagRun, not only the first.
+
+**Acceptance:** Every DAG in `dags/` reaches a successful `DagRun` with all task
+instances successful; a bounded provider sample is visible in the warehouse
+afterwards; the coverage assertion fails when a DAG is added without being
+registered here; and no task reaches a live provider.
+
+#### E2E-PRODUCT-006 status
+
+The harness is implemented in `tests/support/dag_pipeline.py` and
+`tests/dags/test_dag_pipeline_execution.py`, and has been executed against a
+real PostgreSQL 16 + PostGIS 3 warehouse with Airflow 2.9.3.
+
+Green as real DagRuns, all task instances successful:
+
+- `silver_ref` — loads 22,194 geography rows and 20,819 time rows at production
+  scale through capture lineage;
+- `cdc_ingest` — capture, replay, and publish for both registered assets;
+- `glossary_harvest`; and
+- `glossary_reconciliation`.
+
+Not yet green, with the exact blocker each run reported:
+
+- `acs_ingest` — discovers datasets from `https://api.census.gov/data.json`
+  before fetching observations. A catalogue stub is now in place but unverified.
+- `acs_ingest`, `bls_ingest`, `fred_ingest` — these sources take host, port, and
+  credentials from the Airflow connection but override the database with a
+  hard-coded `public_data`. `redirect_target_database` addresses this and is
+  unverified; at least one path still reached `public_data`, so the redirect is
+  incomplete.
+- `acs_ingest`, `bls_ingest` — enforce production-scale shared geography, so
+  they only pass on a full-scale `silver_ref` run.
+- `census_pep_ingest` — requires 50 states, 3000 counties, and 18000 places, and
+  has not yet been executed against a full-scale geography load.
+
+**Next pickup:** Run `./tests/run.ps1 dag-pipeline` against a full-scale
+geography load, then resolve the remaining `public_data` resolution path and any
+remaining provider seam the network guard reports. Do not weaken a production
+guard to make a pipeline pass.
+
+Three findings already came out of this tier and are fixed in the harness: the
+source DAGs fail at task runtime without provider credentials and then retry on
+their production backoff, turning a missing fixture into a silent multi-minute
+hang; an unstubbed provider boundary reaches the real internet unless blocked;
+and the pinned `public_data` target database bypasses the Airflow connection.
+
 ## Validation commands
 
 Exact commands may evolve with the executable inventory, but implementation
@@ -241,6 +313,8 @@ must include at least:
 
 ```text
 python -m pytest tests/unit/shared/<product_e2e_inventory_test>.py -q
+python -m pytest tests/dags/test_dag_pipeline_execution.py \
+    -m "dag and integration and database" -q
 python -m pytest tests/e2e/<pep_test>.py -m "e2e and database and slow" -q
 python -m pytest tests/e2e/<fbi_test>.py -m "e2e and database and slow" -q
 python -m pytest tests/e2e/<nass_test>.py -m "e2e and database and slow" -q
@@ -265,6 +339,8 @@ Unexecuted, skipped, or deselected product nodes are not passing evidence.
 - [ ] Combined E2E execution is replay-safe and test-order independent.
 - [ ] Post-suite reconciliation finds no test-owned warehouse/control state.
 - [ ] Scheduled workflow runs every registered product without unexpected skips.
+- [ ] Every DAG in `dags/` executes as a real DagRun with all tasks
+  successful, and the coverage assertion leaves no pipeline uncovered.
 - [ ] Product-level artifacts identify failures precisely.
 - [ ] Deterministic, database, lint, documentation, and scheduled workflow gates
   pass and are recorded in this plan.
