@@ -1,3 +1,16 @@
+---
+id: warehouse-data-quality
+branch: feat/warehouse-data-quality
+depends_on:
+  - geography-reference
+  - cicd-actions
+parallel_safe: false
+complexity: high
+verify:
+  - make test-etl
+  - make test-integration
+---
+
 # Warehouse data-quality assessment plan
 
 ## Plan status

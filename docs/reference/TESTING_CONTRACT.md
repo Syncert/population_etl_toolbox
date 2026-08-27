@@ -339,6 +339,22 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
 | ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
 
+### Plan Dispatcher Tests
+
+These tests own the scheduling core described in
+[PLAN_DISPATCHER.md](PLAN_DISPATCHER.md). The dispatcher decides, unattended,
+which plans run in parallel and which branches are integrated, so its rules are
+verified here rather than only observed during a live run.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| PLAN-001 | P1 | Static / `unit` | Plan dispatch metadata contract | Frontmatter yields id, branch, dependencies, parallelism, complexity, and verification commands with documented defaults; a `status` key, unknown key, malformed value, or duplicate id is rejected | Invalid metadata is accepted, or workflow state is read from anywhere but the containing folder |
+| PLAN-002 | P1 | Static / `unit` | Plan dependency graph integrity | Unknown dependencies and cycles fail before any worktree exists; topological order is dependency-first and deterministic | An unschedulable backlog dispatches, or ordering varies between runs over one inventory |
+| PLAN-003 | P1 | Static / `unit` | Dispatch selection and concurrency | Only active plans with satisfied dependencies dispatch; the concurrency cap and `parallel_safe` exclusivity hold; resumable and bottleneck plans rank first | The cap is exceeded, an exclusive plan runs beside other work or is starved, or claimed work is not resumed first |
+| PLAN-004 | P1 | Static / `unit` | Blocked propagation and run termination | Blocked and failed statuses propagate to every transitive dependent; the run reports done or stalled deterministically and names plans that ended blocked | Work dispatches behind a blocked dependency, or a run finishing with blockers reports clean success |
+| PLAN-005 | P1 | Isolation / `unit` | Dispatcher run-state durability | Run state round-trips through disk, is replaced atomically, counts one attempt per worker start, and rejects corrupt or unversioned state | State is lost, partially written, miscounts attempts against the retry ceiling, or silently resets |
+| PLAN-006 | P1 | Contract / `unit` | Worker prompt and planner CLI contract | The `/goal` prompt carries verification commands, the `needs_review/` handoff, and the no-progress stand-down ceiling; CLI subcommands emit documented JSON and exit non-zero on unknown plans, live runs, and cycles | An unbounded or unverifiable prompt is issued, or the shell dispatcher cannot detect a planner failure |
+
 ### Data-layer Architecture Boundary Tests
 
 These static tests enforce [ADR-0001](../decisions/0001-data-layer-boundaries.md) while narrowly inventorying the legacy violations scheduled for removal by ARCH-002 through ARCH-007.

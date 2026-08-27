@@ -1,3 +1,16 @@
+---
+id: usda-crop
+branch: feat/usda-crop
+depends_on:
+  - geography-reference
+parallel_safe: true
+complexity: high
+verify:
+  - make test-etl
+  - make test-dags
+  - make test-integration
+---
+
 # USDA NASS agricultural crop data pipeline plan
 
 ## Plan status

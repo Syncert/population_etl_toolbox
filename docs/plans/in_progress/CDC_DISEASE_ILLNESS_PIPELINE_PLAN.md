@@ -1,3 +1,16 @@
+---
+id: cdc-illness
+branch: feat/cdc-illness
+depends_on:
+  - geography-reference
+parallel_safe: true
+complexity: high
+verify:
+  - make test-etl
+  - make test-dags
+  - make test-integration
+---
+
 # CDC illness and disease data pipeline plan
 
 ## Plan status

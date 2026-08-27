@@ -30,6 +30,7 @@ Before changing behavior, read the applicable contract in full:
 * `docs/reference/ADDING_A_DATA_SOURCE.md` — required adapter contract and checklist for public-data sources.
 * `docs/reference/BETA_RESET_REINGESTION.md` — warehouse bootstrap, reset, dependency-order ingestion, replay, and re-ingestion.
 * `docs/reference/CI_EVIDENCE_MAP.md` — automated evidence proving repository contracts.
+* `docs/reference/PLAN_DISPATCHER.md` — parallel plan dispatch, worker prompts, verification, and integration.
 
 When implementation intentionally changes a documented contract, update the applicable reference, implementation, and tests together.
 

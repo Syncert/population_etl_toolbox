@@ -10,6 +10,19 @@ location, the active plan's checkpoint, the working tree, and test evidence
 must be sufficient for another agent to continue after an interruption or
 context reset.
 
+## Automated execution
+
+[`docs/reference/PLAN_DISPATCHER.md`](../reference/PLAN_DISPATCHER.md) describes
+`tools/Invoke-ClaudePlans.ps1`, which runs the loop below across several plans
+at once, one Git worktree and feature branch per plan. It automates scheduling
+and integration only: the workflow states, checkpoint contract, completion
+gate, and blocked-work rules in this document still decide when a plan is done.
+
+Plans carry an optional YAML frontmatter block declaring their dispatch id,
+branch, dependencies, parallelism, and verification commands. That block
+deliberately carries no status field, because the containing folder remains the
+authoritative workflow state.
+
 ## Workflow states
 
 The folder containing a plan is its authoritative state:

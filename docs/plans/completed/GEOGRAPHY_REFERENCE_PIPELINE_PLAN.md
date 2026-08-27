@@ -1,3 +1,14 @@
+---
+id: geography-reference
+branch: feat/geography-reference
+depends_on: []
+parallel_safe: true
+complexity: high
+verify:
+  - make test-etl
+  - make test-integration
+---
+
 # Census geography reference pipeline plan
 
 ## Plan status

@@ -1,3 +1,17 @@
+---
+id: data-product-e2e
+branch: feat/data-product-e2e
+depends_on:
+  - census-pep
+  - fbi-crime
+  - usda-crop
+parallel_safe: false
+complexity: medium
+verify:
+  - make test-e2e
+  - make test-performance
+---
+
 # Data-product end-to-end coverage expansion plan
 
 ## Plan status

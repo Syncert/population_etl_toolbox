@@ -1,3 +1,20 @@
+---
+id: api-platform
+branch: feat/api-platform
+depends_on:
+  - census-pep
+  - cdc-illness
+  - fbi-crime
+  - usda-crop
+  - warehouse-data-quality
+parallel_safe: false
+complexity: high
+verify:
+  - make test-api
+  - make test-integration
+  - make test-e2e
+---
+
 # API development plan
 
 ## Plan status

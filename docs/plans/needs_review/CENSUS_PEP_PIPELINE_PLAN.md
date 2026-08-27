@@ -1,3 +1,16 @@
+---
+id: census-pep
+branch: feat/census-pep
+depends_on:
+  - geography-reference
+parallel_safe: true
+complexity: high
+verify:
+  - make test-etl
+  - make test-dags
+  - make test-integration
+---
+
 # Census Population Estimates Program pipeline plan
 
 ## Plan status

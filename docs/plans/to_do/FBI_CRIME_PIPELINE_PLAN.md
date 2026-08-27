@@ -1,3 +1,16 @@
+---
+id: fbi-crime
+branch: feat/fbi-crime
+depends_on:
+  - geography-reference
+parallel_safe: true
+complexity: high
+verify:
+  - make test-etl
+  - make test-dags
+  - make test-integration
+---
+
 # FBI crime data pipeline plan
 
 ## Plan status

@@ -13,6 +13,7 @@ CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
     "ENV": 10,
     "ARC": 3,
+    "PLAN": 6,
     "DAG": 14,
     "ETL": 40,
     "DB": 23,
@@ -28,6 +29,7 @@ AUDITED_COUNTS = {
 EXECUTION_PROFILES = {
     "ENV": ("make test-unit / package build", "lint, package-api, coverage"),
     "ARC": ("make test-etl", "etl-unit"),
+    "PLAN": ("make test-unit", "coverage"),
     "DAG": ("make test-dags", "dag-parse, scheduler-image"),
     "ETL": (
         "make test-etl / test-integration",

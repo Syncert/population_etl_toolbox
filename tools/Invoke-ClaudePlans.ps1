@@ -1,0 +1,695 @@
+<#
+.SYNOPSIS
+    Dispatch the plan backlog under docs/plans/ across parallel background
+    Claude Code workers.
+
+.DESCRIPTION
+    The dispatcher is deliberately split in two. Every scheduling decision --
+    plan discovery, metadata validation, dependency resolution, and selection --
+    belongs to tools/plan_dispatcher, a Python package covered by the
+    repository's normal pytest and Ruff gates. This script owns only process
+    orchestration: the integration branch, one Git worktree and feature branch
+    per plan, background Claude sessions, verification, and integration.
+
+    Keeping the outer loop in PowerShell rather than in another model matters:
+    concurrency, dependency order, retry ceilings, and termination stay
+    deterministic and inspectable. Claude Code also refuses to launch a nested
+    Claude Code session, so the fleet cannot be supervised from inside a Claude
+    conversation.
+
+    Each worker receives a completion-driven /goal prompt rather than a
+    time-driven /loop, and that prompt carries an explicit stand-down clause so
+    a worker that cannot progress documents a blocker instead of burning turns.
+
+.PARAMETER Action
+    run      Start or resume a dispatcher run and drive it to completion.
+    plan     Show what the next tick would dispatch, then exit.
+    status   Render the current run summary, then exit.
+    stop     Stop every background session this run owns.
+    clean    Remove the worktrees this run created.
+
+.PARAMETER MaxConcurrency
+    Maximum simultaneous plan workers. Parallel background agents multiply
+    subscription usage roughly in proportion to their count, and integration
+    cost rises faster than throughput, so the default is deliberately small.
+
+.PARAMETER DryRun
+    Print every Git and Claude command instead of executing it. The Python
+    planner still runs, so a dry run exercises the real dependency graph.
+
+.EXAMPLE
+    ./tools/Invoke-ClaudePlans.ps1 -Action plan -DryRun
+
+.EXAMPLE
+    ./tools/Invoke-ClaudePlans.ps1 -Action run -MaxConcurrency 3
+#>
+[CmdletBinding()]
+param(
+    [ValidateSet('run', 'plan', 'status', 'stop', 'clean')]
+    [string]$Action = 'plan',
+
+    [ValidateRange(1, 8)]
+    [int]$MaxConcurrency = 3,
+
+    [string]$RunId,
+
+    [string]$IntegrationBranch,
+
+    [string]$BaseBranch = 'main',
+
+    [string]$PlansRoot = 'docs/plans',
+
+    [string]$StatePath = '.claude/plan-runner-state.json',
+
+    [string]$WorktreeRoot = '.worktrees',
+
+    [ValidateSet('auto', 'default', 'acceptEdits', 'bypassPermissions')]
+    [string]$PermissionMode = 'auto',
+
+    [ValidateRange(1, 10)]
+    [int]$MaxAttempts = 2,
+
+    [ValidateRange(5, 3600)]
+    [int]$PollSeconds = 30,
+
+    [switch]$DryRun,
+
+    [switch]$Force
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$script:RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$script:PythonExecutable = $null
+
+if ($DryRun) {
+    # A dry run must not leave run state behind in the repository, so it plans
+    # against a throwaway state file instead of the real one.
+    $StatePath = Join-Path ([System.IO.Path]::GetTempPath()) (
+        'plan-runner-dryrun-{0}.json' -f ([System.Guid]::NewGuid().ToString('N'))
+    )
+}
+
+function Write-Log {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('info', 'warn', 'error', 'ok')][string]$Level = 'info'
+    )
+
+    $colour = switch ($Level) {
+        'warn' { 'Yellow' }
+        'error' { 'Red' }
+        'ok' { 'Green' }
+        default { 'Cyan' }
+    }
+    Write-Host "[plans] $Message" -ForegroundColor $colour
+}
+
+function Get-PythonExecutable {
+    if ($script:PythonExecutable) {
+        return $script:PythonExecutable
+    }
+
+    foreach ($candidate in @('python', 'python3')) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($command) {
+            $script:PythonExecutable = $command.Source
+            return $script:PythonExecutable
+        }
+    }
+
+    throw 'No python interpreter found on PATH; the plan dispatcher needs one.'
+}
+
+function Get-StateFullPath {
+    <#
+        .SYNOPSIS
+            Resolve the run-state file, accepting repo-relative or absolute paths.
+    #>
+    if ([System.IO.Path]::IsPathRooted($StatePath)) {
+        return $StatePath
+    }
+    return Join-Path $script:RepositoryRoot $StatePath
+}
+
+function Invoke-Planner {
+    <#
+        .SYNOPSIS
+            Call the Python planner and return its parsed JSON result.
+    #>
+    param(
+        [Parameter(Mandatory)][string[]]$PlannerArgs,
+        [switch]$Raw
+    )
+
+    $arguments = @(
+        '-m', 'tools.plan_dispatcher',
+        '--plans-root', $PlansRoot,
+        '--state-path', $StatePath
+    ) + $PlannerArgs
+
+    Push-Location $script:RepositoryRoot
+    try {
+        $output = & (Get-PythonExecutable) @arguments
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+
+    if ($exitCode -ne 0) {
+        throw "plan_dispatcher $($PlannerArgs -join ' ') failed with exit code $exitCode."
+    }
+
+    $text = ($output | Out-String)
+    if ($Raw) {
+        return $text
+    }
+    return $text | ConvertFrom-Json
+}
+
+function Invoke-Native {
+    <#
+        .SYNOPSIS
+            Run an external command, honouring -DryRun and failing loudly.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$WorkingDirectory = $script:RepositoryRoot,
+        [switch]$AllowFailure
+    )
+
+    $rendered = "$FilePath $($Arguments -join ' ')"
+    if ($DryRun) {
+        Write-Log "DRYRUN $rendered"
+        return [pscustomobject]@{ ExitCode = 0; Output = ''; DryRun = $true }
+    }
+
+    Write-Verbose "exec: $rendered"
+    Push-Location $WorkingDirectory
+    try {
+        $output = & $FilePath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+
+    if ($exitCode -ne 0 -and -not $AllowFailure) {
+        throw "Command failed ($exitCode): $rendered`n$($output | Out-String)"
+    }
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output   = ($output | Out-String)
+        DryRun   = $false
+    }
+}
+
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$WorkingDirectory = $script:RepositoryRoot,
+        [switch]$AllowFailure
+    )
+
+    return Invoke-Native -FilePath 'git' -Arguments $Arguments `
+        -WorkingDirectory $WorkingDirectory -AllowFailure:$AllowFailure
+}
+
+function Test-GitRefExists {
+    param([Parameter(Mandatory)][string]$Ref)
+
+    if ($DryRun) { return $false }
+    $result = Invoke-Git -Arguments @('rev-parse', '--verify', '--quiet', $Ref) -AllowFailure
+    return $result.ExitCode -eq 0
+}
+
+function Assert-CleanWorkingTree {
+    if ($DryRun -or $Force) { return }
+
+    $result = Invoke-Git -Arguments @('status', '--porcelain')
+    if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
+        throw ('The working tree has uncommitted changes. Commit or stash them ' +
+            'first, or rerun with -Force to dispatch anyway.')
+    }
+}
+
+function Resolve-RunIdentity {
+    <#
+        .SYNOPSIS
+            Reuse an existing run's identity, or mint one for a new run.
+    #>
+    $statePath = Get-StateFullPath
+    if (Test-Path -Path $statePath) {
+        $existing = Get-Content -Path $statePath -Raw | ConvertFrom-Json
+        return [pscustomobject]@{
+            RunId             = $existing.run_id
+            IntegrationBranch = $existing.integration_branch
+            IsNew             = $false
+        }
+    }
+
+    $stamp = Get-Date -Format 'yyyy-MM-dd-HHmmss'
+    $resolvedRunId = if ($RunId) { $RunId } else { $stamp }
+    $resolvedBranch = if ($IntegrationBranch) {
+        $IntegrationBranch
+    }
+    else {
+        "automation/plan-run-$resolvedRunId"
+    }
+
+    return [pscustomobject]@{
+        RunId             = $resolvedRunId
+        IntegrationBranch = $resolvedBranch
+        IsNew             = $true
+    }
+}
+
+function Initialize-Run {
+    <#
+        .SYNOPSIS
+            Create run state and the integration branch that isolates the fleet.
+        .DESCRIPTION
+            Workers never touch the base branch. Every feature branch is cut
+            from, and merged back into, a single integration branch, so an
+            unattended run that goes wrong is discarded by deleting one branch.
+    #>
+    $identity = Resolve-RunIdentity
+    if (-not $identity.IsNew) {
+        Write-Log "Resuming run $($identity.RunId) on $($identity.IntegrationBranch)."
+        return $identity
+    }
+
+    Write-Log "Starting run $($identity.RunId) on $($identity.IntegrationBranch)."
+    Invoke-Planner -PlannerArgs @(
+        'init-run',
+        '--run-id', $identity.RunId,
+        '--integration-branch', $identity.IntegrationBranch,
+        '--max-concurrency', "$MaxConcurrency"
+    ) | Out-Null
+
+    if (-not (Test-GitRefExists -Ref $identity.IntegrationBranch)) {
+        Invoke-Git -Arguments @(
+            'branch', $identity.IntegrationBranch, $BaseBranch
+        ) | Out-Null
+    }
+    return $identity
+}
+
+function New-PlanWorktree {
+    <#
+        .SYNOPSIS
+            Create an isolated checkout and feature branch for one plan.
+        .DESCRIPTION
+            Simultaneous workers must not share a working tree. The branch is
+            created explicitly rather than through 'claude --worktree' so the
+            run controls branch naming and the integration base.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][string]$IntegrationBranch
+    )
+
+    $relativePath = Join-Path $WorktreeRoot $Plan.id
+    $absolutePath = Join-Path $script:RepositoryRoot $relativePath
+
+    if (Test-Path -Path $absolutePath) {
+        Write-Log "Reusing existing worktree for $($Plan.id)."
+        return $relativePath
+    }
+
+    $arguments = if (Test-GitRefExists -Ref $Plan.branch) {
+        @('worktree', 'add', $relativePath, $Plan.branch)
+    }
+    else {
+        @('worktree', 'add', '-b', $Plan.branch, $relativePath, $IntegrationBranch)
+    }
+
+    Invoke-Git -Arguments $arguments | Out-Null
+    return $relativePath
+}
+
+function Start-PlanWorker {
+    <#
+        .SYNOPSIS
+            Launch one background Claude session for a plan.
+        .DESCRIPTION
+            'claude --bg' returns immediately and leaves the session under a
+            local supervisor, so the fleet needs no terminal windows. Inspect it
+            with 'claude agents', 'claude logs <id>', or 'claude attach <id>'.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][string]$WorktreePath
+    )
+
+    $prompt = Invoke-Planner -PlannerArgs @(
+        'prompt', '--plan-id', $Plan.id, '--raw'
+    ) -Raw
+
+    $arguments = @('--bg', '--permission-mode', $PermissionMode, $prompt)
+    $workingDirectory = Join-Path $script:RepositoryRoot $WorktreePath
+    if ($DryRun) {
+        Write-Log "DRYRUN claude --bg (in $WorktreePath) for $($Plan.id)"
+        return "dryrun-$($Plan.id)"
+    }
+
+    $result = Invoke-Native -FilePath 'claude' -Arguments $arguments `
+        -WorkingDirectory $workingDirectory
+    $match = [regex]::Match($result.Output, '(?<id>[0-9a-f]{8}(?:-[0-9a-f-]+)?)')
+    if ($match.Success) {
+        return $match.Groups['id'].Value
+    }
+    return $result.Output.Trim()
+}
+
+function Get-WorkerState {
+    <#
+        .SYNOPSIS
+            Report whether a background session is still working.
+        .OUTPUTS
+            'running', 'finished', or 'unknown'.
+    #>
+    param([Parameter(Mandatory)][string]$SessionId)
+
+    if ($DryRun) { return 'finished' }
+
+    $result = Invoke-Native -FilePath 'claude' -Arguments @('agents') -AllowFailure
+    if ($result.ExitCode -ne 0) { return 'unknown' }
+
+    foreach ($line in ($result.Output -split "`r?`n")) {
+        if ($line -notmatch [regex]::Escape($SessionId)) { continue }
+        if ($line -match '(?i)\b(working|running|starting|thinking)\b') {
+            return 'running'
+        }
+        return 'finished'
+    }
+    return 'finished'
+}
+
+function Test-PlanVerification {
+    <#
+        .SYNOPSIS
+            Re-run the plan's own verification commands in its worktree.
+        .DESCRIPTION
+            A worker asserting success is a claim, not evidence. The dispatcher
+            reruns the plan's declared commands itself, and treats a plan that
+            declares none as unverifiable rather than as passing.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][string]$WorktreePath
+    )
+
+    if (-not $Plan.verify -or $Plan.verify.Count -eq 0) {
+        return [pscustomobject]@{
+            Passed = $false
+            Detail = "Plan '$($Plan.id)' declares no verify commands."
+        }
+    }
+
+    $workingDirectory = Join-Path $script:RepositoryRoot $WorktreePath
+    foreach ($command in $Plan.verify) {
+        Write-Log "Verifying $($Plan.id): $command"
+        $result = Invoke-Native -FilePath 'bash' -Arguments @('-lc', $command) `
+            -WorkingDirectory $workingDirectory -AllowFailure
+        if ($result.ExitCode -ne 0) {
+            $tail = ($result.Output -split "`r?`n" | Select-Object -Last 20) -join "`n"
+            return [pscustomobject]@{
+                Passed = $false
+                Detail = "'$command' failed with exit code $($result.ExitCode).`n$tail"
+            }
+        }
+    }
+    return [pscustomobject]@{ Passed = $true; Detail = 'All verify commands passed.' }
+}
+
+function Test-PlanHandedOff {
+    <#
+        .SYNOPSIS
+            Confirm the worker moved its plan into needs_review/.
+        .DESCRIPTION
+            docs/plans/README.md makes the containing folder the authoritative
+            workflow state, so the move is the worker's completion signal.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][string]$WorktreePath
+    )
+
+    if ($DryRun) { return $true }
+
+    $planFile = Split-Path -Leaf $Plan.path
+    $reviewPath = Join-Path (Join-Path $script:RepositoryRoot $WorktreePath) `
+        (Join-Path $PlansRoot (Join-Path 'needs_review' $planFile))
+    return Test-Path -Path $reviewPath
+}
+
+function Merge-PlanBranch {
+    <#
+        .SYNOPSIS
+            Merge a verified feature branch into the integration branch.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][string]$IntegrationBranch
+    )
+
+    $message = "merge($($Plan.id)): integrate verified plan branch $($Plan.branch)"
+    $result = Invoke-Git -Arguments @(
+        'merge', '--no-ff', '-m', $message, $Plan.branch
+    ) -AllowFailure
+
+    if ($result.ExitCode -ne 0) {
+        Invoke-Git -Arguments @('merge', '--abort') -AllowFailure | Out-Null
+        return [pscustomobject]@{
+            Merged = $false
+            Detail = "Merge into $IntegrationBranch conflicted; resolve by hand."
+        }
+    }
+    return [pscustomobject]@{ Merged = $true; Detail = "Merged into $IntegrationBranch." }
+}
+
+function Set-PlanStatus {
+    param(
+        [Parameter(Mandatory)][string]$PlanId,
+        [Parameter(Mandatory)][string]$Status,
+        [string]$Branch,
+        [string]$Worktree,
+        [string]$Session,
+        [string]$Detail
+    )
+
+    $arguments = @('mark', '--plan-id', $PlanId, '--status', $Status)
+    if ($Branch) { $arguments += @('--branch', $Branch) }
+    if ($Worktree) { $arguments += @('--worktree', $Worktree) }
+    if ($Session) { $arguments += @('--session', $Session) }
+    if ($Detail) { $arguments += @('--detail', $Detail) }
+    return Invoke-Planner -PlannerArgs $arguments
+}
+
+function Complete-PlanWorker {
+    <#
+        .SYNOPSIS
+            Verify, integrate, and record the outcome of a finished worker.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][pscustomobject]$Record,
+        [Parameter(Mandatory)][string]$IntegrationBranch
+    )
+
+    Set-PlanStatus -PlanId $Plan.id -Status 'verifying' | Out-Null
+
+    if (-not (Test-PlanHandedOff -Plan $Plan -WorktreePath $Record.worktree)) {
+        $detail = "Worker stopped without moving $($Plan.path) to needs_review/."
+        Resolve-WorkerFailure -Plan $Plan -Record $Record -Detail $detail
+        return
+    }
+
+    $verification = Test-PlanVerification -Plan $Plan -WorktreePath $Record.worktree
+    if (-not $verification.Passed) {
+        Resolve-WorkerFailure -Plan $Plan -Record $Record -Detail $verification.Detail
+        return
+    }
+
+    $merge = Merge-PlanBranch -Plan $Plan -IntegrationBranch $IntegrationBranch
+    if (-not $merge.Merged) {
+        Set-PlanStatus -PlanId $Plan.id -Status 'blocked' -Detail $merge.Detail | Out-Null
+        Write-Log "$($Plan.id) blocked: $($merge.Detail)" -Level warn
+        return
+    }
+
+    Set-PlanStatus -PlanId $Plan.id -Status 'complete' -Detail $merge.Detail | Out-Null
+    Write-Log "$($Plan.id) complete and integrated." -Level ok
+}
+
+function Resolve-WorkerFailure {
+    <#
+        .SYNOPSIS
+            Retry a failed worker once, then stand it down as blocked.
+        .DESCRIPTION
+            The retry ceiling lives here, in deterministic code, rather than in
+            a worker's own judgement about whether to keep trying.
+    #>
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Plan,
+        [Parameter(Mandatory)][pscustomobject]$Record,
+        [Parameter(Mandatory)][string]$Detail
+    )
+
+    if ($Record.attempts -ge $MaxAttempts) {
+        Set-PlanStatus -PlanId $Plan.id -Status 'blocked' `
+            -Detail "Gave up after $($Record.attempts) attempt(s). $Detail" | Out-Null
+        Write-Log "$($Plan.id) blocked after $($Record.attempts) attempt(s)." -Level warn
+        Write-Log $Detail -Level warn
+        return
+    }
+
+    Set-PlanStatus -PlanId $Plan.id -Status 'pending' -Detail $Detail | Out-Null
+    Write-Log "$($Plan.id) failed; will retry. $Detail" -Level warn
+}
+
+function Get-RunState {
+    return Get-Content -Path (Get-StateFullPath) -Raw | ConvertFrom-Json
+}
+
+function Get-PlanRecord {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$RunState,
+        [Parameter(Mandatory)][string]$PlanId
+    )
+
+    if ($RunState.plans.PSObject.Properties.Name -contains $PlanId) {
+        return $RunState.plans.$PlanId
+    }
+    return [pscustomobject]@{
+        status = 'pending'; branch = ''; worktree = ''
+        session = ''; attempts = 0; detail = ''
+    }
+}
+
+function Get-PlanById {
+    param(
+        [Parameter(Mandatory)][string]$PlanId
+    )
+
+    $inventory = Invoke-Planner -PlannerArgs @('inventory')
+    return $inventory.plans | Where-Object { $_.id -eq $PlanId } | Select-Object -First 1
+}
+
+function Invoke-DispatchTick {
+    <#
+        .SYNOPSIS
+            Advance the run by one tick: reap finished workers, then dispatch.
+        .OUTPUTS
+            The planner's decision for this tick.
+    #>
+    param([Parameter(Mandatory)][string]$IntegrationBranch)
+
+    $decision = Invoke-Planner -PlannerArgs @('plan')
+    $runState = Get-RunState
+
+    foreach ($planId in @($decision.running)) {
+        $record = Get-PlanRecord -RunState $runState -PlanId $planId
+        $workerState = Get-WorkerState -SessionId $record.session
+        if ($workerState -eq 'running') {
+            continue
+        }
+        $plan = Get-PlanById -PlanId $planId
+        Complete-PlanWorker -Plan $plan -Record $record -IntegrationBranch $IntegrationBranch
+    }
+
+    $decision = Invoke-Planner -PlannerArgs @('plan')
+    foreach ($plan in @($decision.dispatch)) {
+        $worktree = New-PlanWorktree -Plan $plan -IntegrationBranch $IntegrationBranch
+        $session = Start-PlanWorker -Plan $plan -WorktreePath $worktree
+        Set-PlanStatus -PlanId $plan.id -Status 'running' -Branch $plan.branch `
+            -Worktree $worktree -Session $session -Detail '' | Out-Null
+        Write-Log "Dispatched $($plan.id) on $($plan.branch) (session $session)." -Level ok
+    }
+
+    return Invoke-Planner -PlannerArgs @('plan')
+}
+
+function Invoke-Run {
+    Assert-CleanWorkingTree
+    $identity = Initialize-Run
+
+    while ($true) {
+        $decision = Invoke-DispatchTick -IntegrationBranch $identity.IntegrationBranch
+        Write-Log $decision.reason
+
+        if ($decision.done) {
+            Write-Log "Run $($identity.RunId) finished." -Level ok
+            Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            if ($decision.blocked.PSObject.Properties.Count -eq 0) {
+                return 0
+            }
+            return 1
+        }
+        if ($decision.stalled) {
+            Write-Log 'Run stalled; no plan can start.' -Level error
+            Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            return 1
+        }
+        if ($DryRun) {
+            Write-Log 'Dry run: stopping after one tick.'
+            return 0
+        }
+
+        Start-Sleep -Seconds $PollSeconds
+    }
+}
+
+function Invoke-Stop {
+    $runState = Get-RunState
+    foreach ($property in $runState.plans.PSObject.Properties) {
+        $record = $property.Value
+        if ($record.status -ne 'running' -or -not $record.session) { continue }
+        Write-Log "Stopping $($property.Name) (session $($record.session))."
+        Invoke-Native -FilePath 'claude' -Arguments @('stop', $record.session) `
+            -AllowFailure | Out-Null
+        Set-PlanStatus -PlanId $property.Name -Status 'pending' `
+            -Detail 'Stopped by operator.' | Out-Null
+    }
+    return 0
+}
+
+function Invoke-Clean {
+    $runState = Get-RunState
+    foreach ($property in $runState.plans.PSObject.Properties) {
+        $record = $property.Value
+        if (-not $record.worktree) { continue }
+        Write-Log "Removing worktree $($record.worktree)."
+        Invoke-Git -Arguments @(
+            'worktree', 'remove', $record.worktree, '--force'
+        ) -AllowFailure | Out-Null
+    }
+    Invoke-Git -Arguments @('worktree', 'prune') -AllowFailure | Out-Null
+    return 0
+}
+
+try {
+    $exitCode = switch ($Action) {
+        'run' { Invoke-Run }
+        'plan' {
+            Initialize-Run | Out-Null
+            Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            0
+        }
+        'status' {
+            Write-Host (Invoke-Planner -PlannerArgs @('status') -Raw)
+            0
+        }
+        'stop' { Invoke-Stop }
+        'clean' { Invoke-Clean }
+    }
+    exit $exitCode
+}
+catch {
+    Write-Log $_.Exception.Message -Level error
+    exit 1
+}
