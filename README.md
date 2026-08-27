@@ -425,6 +425,10 @@ export BLS_API_KEY="your_bls_api_key_here"
 
 # Optional CDC Socrata public-read app token; anonymous reads are supported.
 export CDC_SOCRATA_APP_TOKEN="your_cdc_socrata_app_token_here"
+
+# For USDA NASS Quick Stats (required); inject it into every Airflow container
+# from the deployment secret store, never from a tracked file or an image.
+export USDA_NASS_API_KEY="your_usda_nass_api_key_here"
 ```
 
 ### 3. Configuration Files
