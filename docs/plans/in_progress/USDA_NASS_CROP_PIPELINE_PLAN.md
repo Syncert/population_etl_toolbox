@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Proposed; no agricultural adapter is currently implemented
-- **Last updated:** 2026-08-22
+- **Status:** In progress; claimed for implementation on `feat/usda-crop`
+- **Last updated:** 2026-08-27
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
@@ -24,11 +24,13 @@ verify:
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-22
+**Last updated:** 2026-08-27
 
-**Current milestone:** Planning complete; implementation has not started
+**Current milestone:** Plan claimed into `in_progress/`; NASS-001 through
+NASS-005 implementation is underway on `feat/usda-crop`.
 
-**Next pickup:** Complete NASS-001 by registering the first bounded crop basket and freezing its Quick Stats query contracts.
+**Next pickup:** Complete NASS-001 by registering the first bounded crop basket
+and freezing its Quick Stats query contracts, then continue through NASS-002.
 
 ### Completed in the current slice
 
