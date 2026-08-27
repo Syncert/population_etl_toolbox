@@ -26,6 +26,30 @@ verify:
 All five phases are implemented, tested, and validated on `feat/fbi-crime`.
 There is no remaining checklist item and no next pickup.
 
+### Final validation checkpoint (2026-08-27)
+
+- `./tests/run.ps1 etl`: **492 passed**.
+- `./tests/run.ps1 dags`: **98 passed, 4 expected integration skips**; the
+  FBI DAG structure tests passed.
+- Focused disposable-PostGIS validation:
+  `python -m pytest -m "integration and database"
+  tests/integration/database/test_fbi_ucr_pipeline.py`: **12 passed**.
+- Aggregation-boundary, catalog-evidence, and repository-hygiene focus:
+  **8 passed**.
+- Ruff on all changed Python files and `git diff --check`: **passed**.
+- The broader `./tests/run.ps1 integration` command did not complete: after
+  the disposable services were configured, failures occurred first in the
+  unrelated API cache and legacy BLS integration tests, before the FBI file;
+  the run was interrupted after the repository's single permitted poll. The
+  FBI database file then passed independently in full against a fresh schema.
+- `./tests/run.ps1 dag-pipeline` could not start a DagRun in this host
+  environment. The installed `apache-airflow` reports 2.11.2 while
+  `apache-airflow-core` is 3.2.2; Airflow initialization loads a 3.0 migration
+  and raises `ImportError: ignore_sqlite_value_error`. `python -m pip check`
+  confirms the mixed Airflow/SQLAlchemy environment. This check is recorded
+  as blocked, not passing; production code was not changed to accommodate the
+  contaminated local installation.
+
 ### Delivered
 
 - [x] Defined the source-native agency model and qualified national/state/county/city-facing publication boundaries.
@@ -414,6 +438,11 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
 - Orchestrated execution: the production DAG runs as a real DagRun against the disposable warehouse via the registered provider stub (DAG-015/DAG-016).
 - Reconciliation: provider totals only for explicitly reconcilable products; categorical marginals with different denominators must not be summed into a total.
 - API: geography filters retain agency grain, county filters cannot emit `county_total`, agency transparency, coverage fields, program isolation, latest/as-released behavior.
+
+The FBI aggregation boundary is cataloged as ETL-042 in
+`docs/reference/TESTING_CONTRACT.md` and guarded by
+`tests/unit/fbi_ucr/test_fbi_aggregation_boundary.py` plus the database
+integration suite.
 
 ## Implementation evidence
 

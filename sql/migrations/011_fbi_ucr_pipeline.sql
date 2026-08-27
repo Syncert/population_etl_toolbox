@@ -514,8 +514,11 @@ SELECT observation.observation_sk, observation.product_id,
 FROM gold_fbi.crime_observation AS observation
 JOIN silver_fbi.agency_geography_relationship AS relationship
   ON relationship.ori = observation.subject_code
- AND relationship.release_key = observation.release_key
  AND relationship.product_id = observation.product_id
+ -- The relationship is effective-dated, so a filter follows the observation's
+ -- period rather than the release it was last confirmed in.
+ AND observation.period_start >= relationship.effective_start
+ AND observation.period_end <= relationship.effective_end
 WHERE observation.subject_type = 'agency'
   AND relationship.resolution_status = 'resolved';
 

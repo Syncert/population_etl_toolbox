@@ -89,10 +89,10 @@ REVIEWED_PLACE_MAPPINGS: tuple[ReviewedPlaceMapping, ...] = (
     ),
 )
 
-_BY_ORI: dict[str, tuple[ReviewedPlaceMapping, ...]] = {}
-for _mapping in REVIEWED_PLACE_MAPPINGS:
-    _BY_ORI.setdefault(_mapping.ori, ())
-    _BY_ORI[_mapping.ori] = (*_BY_ORI[_mapping.ori], _mapping)
+_BY_ORI: dict[str, tuple[ReviewedPlaceMapping, ...]] = {
+    ori: tuple(mapping for mapping in REVIEWED_PLACE_MAPPINGS if mapping.ori == ori)
+    for ori in {mapping.ori for mapping in REVIEWED_PLACE_MAPPINGS}
+}
 
 
 def reviewed_place_mapping(

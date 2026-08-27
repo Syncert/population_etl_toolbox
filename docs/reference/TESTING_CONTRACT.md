@@ -278,7 +278,7 @@ Last audited against the repository on 2026-08-12. **Implemented** means that ch
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-011 | None |
 | Airflow DAGs | DAG-001–DAG-014 | None |
-| ETL and shared units | ETL-001–ETL-037 | None |
+| ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-018 | None |
 | API | API-001–API-027 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
@@ -294,7 +294,7 @@ Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 163-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 188-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -440,6 +440,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-039 | P0 | Unit / `unit` | Dedicated capture commit | Payload plus envelope commit on their own connection; envelope failure rolls back both and closes the connection | Parser transaction can own capture commit or partial capture persists |
 | ETL-040 | P0 | Unit / `unit` | Offline capture loading | Replay returns stored bytes only after checksum verification and performs no network work | Missing checksum verification, changed bytes, or network dependency |
 | ETL-041 | P1 | Unit / `unit` | Gold bootstrap detection | Required-object detection renders valid SQL for every combination of required relations and procedures, including an empty procedure list; a component with no required objects is vacuously bootstrapped | A trailing comma or empty predicate list produces invalid SQL, or bootstrap state is misdetected |
+| ETL-042 | P0 | Contract + database / `unit integration database` | FBI agency aggregation boundary | Gold products retain national/state provider totals and agency observations at their published grain; county/place views only filter effective-dated agency relationships, never aggregate observation values or publish area-total labels | A provider total is reconstructed, an agency value is aggregated or mislabeled as an area total, or a valid historical observation loses its effective area filter after a later refresh |
 
 ### PostgreSQL Integration Tests
 
