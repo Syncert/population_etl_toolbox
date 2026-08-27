@@ -165,9 +165,7 @@ def test_truncated_response_bytes_stop_ingestion() -> None:
         (b'{"data": {"rows": 1}}', "expected_data_list"),
     ],
 )
-def test_malformed_bytes_cannot_become_observations(
-    payload: bytes, code: str
-) -> None:
+def test_malformed_bytes_cannot_become_observations(payload: bytes, code: str) -> None:
     """Covers: RES-002 — malformed USDA NASS bytes cannot become records."""
     response = httpx.Response(
         200,

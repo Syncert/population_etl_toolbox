@@ -114,9 +114,7 @@ def replay_captured_run(
     release_watermark: str,
 ) -> ReplayResult:
     """Replay one complete run solely from durable capture bytes."""
-    slices = load_captured_slices(
-        connection_factory, run_id=run_id, product=product
-    )
+    slices = load_captured_slices(connection_factory, run_id=run_id, product=product)
     if not slices:
         # Every registered slice was empty. That is a real provider outcome and
         # must not masquerade as a publishable release.
@@ -200,8 +198,7 @@ def persist_replay_result(
     if result.input_count != len(result.observations) + len(result.quarantined):
         raise NassReplayError("USDA NASS replay reconciliation failed before write")
     revisions = [
-        _revision_row(observation, run_id=run_id)
-        for observation in result.observations
+        _revision_row(observation, run_id=run_id) for observation in result.observations
     ]
     database_connection = connection_factory()
     try:

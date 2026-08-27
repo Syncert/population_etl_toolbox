@@ -68,9 +68,7 @@ def _resolve_mode(logical_date: str, config: NassConfig) -> str:
     return resolve_slice_mode(moment, config)
 
 
-def _capture_registered_product(
-    product_id: str, logical_date: str
-) -> dict[str, Any]:
+def _capture_registered_product(product_id: str, logical_date: str) -> dict[str, Any]:
     product = get_product(product_id)
     config = NassConfig.from_environment()
     hook = _get_postgres_hook()

@@ -95,11 +95,7 @@ def persist_release_state(
     release: CapturedNassRelease,
 ) -> None:
     """Persist one typed release decision and every slice outcome."""
-    status = (
-        "captured"
-        if release.decision in PUBLISHABLE_DECISIONS
-        else "quarantined"
-    )
+    status = "captured" if release.decision in PUBLISHABLE_DECISIONS else "quarantined"
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
@@ -133,9 +129,7 @@ def persist_release_state(
                     release.contract.parser_contract_version,
                     release.contract.extraction_watermark,
                     release.contract.total_row_count,
-                    json.dumps(
-                        [list(item) for item in release.contract.slice_counts]
-                    ),
+                    json.dumps([list(item) for item in release.contract.slice_counts]),
                     json.dumps(list(release.contract.field_signature)),
                     release.decision.value,
                     status,

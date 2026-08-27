@@ -436,9 +436,7 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
                 f"No USDA NASS fixture registered for {product.product_id} "
                 f"at {item.agg_level_desc}"
             )
-        return [
-            {**row, "year": str(item.year)} for row in level["data"]["data"]
-        ]
+        return [{**row, "year": str(item.year)} for row in level["data"]["data"]]
 
     def count(product: Any, item: Any, **_kwargs: Any) -> NassCountResponse:
         rows = rows_for(product, item)

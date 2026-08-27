@@ -111,7 +111,9 @@ def test_reviewed_county_rows_keep_exact_values_and_suppression() -> None:
     assert len(result.observations) == len(rows)
 
     withheld = [
-        item for item in result.observations if item.value_status == VALUE_STATUS_WITHHELD
+        item
+        for item in result.observations
+        if item.value_status == VALUE_STATUS_WITHHELD
     ]
     assert withheld, "the reviewed county sample must include a withheld value"
     for item in withheld:
@@ -141,7 +143,9 @@ def test_source_rows_survive_parsing_unchanged() -> None:
         slice_key="corn_survey_annual|STATE|2024",
     )
     for original, observation in zip(rows, result.observations, strict=True):
-        assert observation.source_row == {key: original[key] for key in sorted(original)}
+        assert observation.source_row == {
+            key: original[key] for key in sorted(original)
+        }
         assert observation.source_row["Value"] == original["Value"]
         assert observation.source_row["CV (%)"] == original["CV (%)"]
 
@@ -202,9 +206,9 @@ def test_unsupported_aggregate_levels_are_retained_without_a_geography() -> None
         assert observation.geography.geo_type == "unsupported"
         assert observation.geography.geo_id is None
         assert observation.geography.county_fips is None
-        assert observation.source_row["agg_level_desc"] == BOUNDARY[case][
-            "agg_level_desc"
-        ]
+        assert (
+            observation.source_row["agg_level_desc"] == BOUNDARY[case]["agg_level_desc"]
+        )
 
 
 def test_parsing_reconciles_every_input_row() -> None:

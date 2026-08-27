@@ -157,12 +157,16 @@ def statistic_identity(
         )
     if unit_desc not in registered.expected_units:
         raise NassIdentityError(
-            f"unit {unit_desc!r} is not registered for statistic "
-            f"{statisticcat_desc!r}"
+            f"unit {unit_desc!r} is not registered for statistic {statisticcat_desc!r}"
         )
     return StatisticIdentity(
         statistic_sk=_surrogate(
-            "statistic", source_desc, statisticcat_desc, short_desc, unit_desc, freq_desc
+            "statistic",
+            source_desc,
+            statisticcat_desc,
+            short_desc,
+            unit_desc,
+            freq_desc,
         ),
         source_desc=source_desc,
         statisticcat_desc=statisticcat_desc,
@@ -268,7 +272,9 @@ def period_identity(row: Mapping[str, Any]) -> PeriodIdentity:
     try:
         year = int(raw_year)
     except ValueError as exc:
-        raise NassIdentityError(f"record has an unparseable year: {raw_year!r}") from exc
+        raise NassIdentityError(
+            f"record has an unparseable year: {raw_year!r}"
+        ) from exc
     if not 1800 <= year <= 2200:
         raise NassIdentityError(f"record year is outside the warehouse range: {year}")
     freq_desc = _text(row, "freq_desc")

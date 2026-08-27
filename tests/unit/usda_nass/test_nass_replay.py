@@ -44,9 +44,7 @@ def _slice(
 
 def _reviewed_slices(name: str = "corn_survey_annual") -> list[CapturedSlicePayload]:
     document = load_fixture(name)
-    return [
-        _slice(level, envelope) for level, envelope in document["slices"].items()
-    ]
+    return [_slice(level, envelope) for level, envelope in document["slices"].items()]
 
 
 def test_reviewed_slices_replay_losslessly_without_a_network() -> None:
@@ -185,12 +183,16 @@ def test_a_revised_extraction_replays_into_distinct_source_revisions() -> None:
     ]
     assert changed, "the revised sample must change at least one value"
     formerly_withheld = [
-        item for item in changed if by_identity[item.source_record_id].value_source == "(D)"
+        item
+        for item in changed
+        if by_identity[item.source_record_id].value_source == "(D)"
     ]
     assert formerly_withheld
     assert formerly_withheld[0].value_status == "valid"
     assert by_identity[formerly_withheld[0].source_record_id].value is None
-    assert all(item.release_watermark == revised_watermark for item in revised.observations)
+    assert all(
+        item.release_watermark == revised_watermark for item in revised.observations
+    )
 
 
 def test_every_registered_slice_key_is_representable() -> None:

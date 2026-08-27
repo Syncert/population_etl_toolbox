@@ -41,8 +41,7 @@ def _counts(**values: int) -> list[NassSliceCount]:
 def _payloads() -> list[bytes]:
     document = load_fixture("corn_survey_annual.json")
     return [
-        json.dumps(item["data"]).encode("utf-8")
-        for item in document["slices"].values()
+        json.dumps(item["data"]).encode("utf-8") for item in document["slices"].values()
     ]
 
 
@@ -124,8 +123,7 @@ def test_a_first_release_ingests_and_an_identical_preflight_is_unchanged() -> No
 
     previous = summarize_release(PRODUCT, payloads=_payloads(), slice_counts=counts)
     assert (
-        decide_preflight(PRODUCT, config, counts, previous)
-        is ReleaseDecision.UNCHANGED
+        decide_preflight(PRODUCT, config, counts, previous) is ReleaseDecision.UNCHANGED
     )
     assert ReleaseDecision.UNCHANGED in PUBLISHABLE_DECISIONS
 
@@ -134,7 +132,9 @@ def test_a_large_row_count_change_is_quarantined_not_absorbed() -> None:
     """Covers: RES-002 — a large row-count change is quarantined."""
     config = deterministic_config(row_count_change_threshold=0.5)
     previous = summarize_release(
-        PRODUCT, payloads=_payloads(), slice_counts=_counts(NATIONAL=4, STATE=8, COUNTY=8)
+        PRODUCT,
+        payloads=_payloads(),
+        slice_counts=_counts(NATIONAL=4, STATE=8, COUNTY=8),
     )
     modest = decide_preflight(
         PRODUCT, config, _counts(NATIONAL=4, STATE=8, COUNTY=12), previous
@@ -171,9 +171,7 @@ def test_schema_expansion_and_contraction_are_both_quarantined() -> None:
     contracted = json.dumps(document["missing_consumed_field_payload"]).encode("utf-8")
 
     for payload in (expanded, contracted):
-        contract = summarize_release(
-            PRODUCT, payloads=[payload], slice_counts=counts
-        )
+        contract = summarize_release(PRODUCT, payloads=[payload], slice_counts=counts)
         assert (
             decide_release(PRODUCT, contract, None)
             is ReleaseDecision.SCHEMA_CHANGE_QUARANTINE

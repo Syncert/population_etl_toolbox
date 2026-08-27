@@ -183,7 +183,9 @@ def decide_preflight(
     """
     if any(item.provider_count > config.slice_record_limit for item in slice_counts):
         return ReleaseDecision.OVER_LIMIT_QUARANTINE
-    current_counts = tuple((item.slice_key, item.provider_count) for item in slice_counts)
+    current_counts = tuple(
+        (item.slice_key, item.provider_count) for item in slice_counts
+    )
     if previous is None:
         return ReleaseDecision.INGEST
     if previous.parser_contract_version != product.parser_contract_version:

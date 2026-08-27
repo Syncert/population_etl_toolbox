@@ -137,9 +137,7 @@ class RecordingControl:
         class _Request:
             def __init__(self, identifier: UUID) -> None:
                 self.request_id = identifier
-                self.request_fingerprint = hashlib.sha256(
-                    endpoint.encode()
-                ).hexdigest()
+                self.request_fingerprint = hashlib.sha256(endpoint.encode()).hexdigest()
 
         return _Request(request_id)
 
@@ -170,6 +168,4 @@ class RecordingControl:
         self.events.append(("quarantine", error_code))
 
     def request_parameter_sets(self) -> list[dict[str, Any]]:
-        return [
-            payload[1] for name, payload in self.events if name == "start_request"
-        ]
+        return [payload[1] for name, payload in self.events if name == "start_request"]

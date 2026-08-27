@@ -181,9 +181,7 @@ def parse_slice_rows(
                 missing = sorted(
                     field for field in QUICK_STATS_FIELDS if field not in row
                 )
-                raise NassIdentityError(
-                    f"record is missing consumed fields: {missing}"
-                )
+                raise NassIdentityError(f"record is missing consumed fields: {missing}")
             observations.append(
                 _observation(
                     row,
@@ -292,8 +290,7 @@ def replay_slices(
         rows = decode_data_payload(item.payload)
         if len(rows) != item.captured_row_count:
             raise NassReplayError(
-                f"USDA NASS captured row count does not match payload: "
-                f"{item.slice_key}"
+                f"USDA NASS captured row count does not match payload: {item.slice_key}"
             )
         if len(rows) != item.provider_count:
             raise NassReplayError(

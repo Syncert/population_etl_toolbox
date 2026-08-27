@@ -96,33 +96,44 @@ def test_expected_outcomes_reconcile_every_reviewed_fixture_row() -> None:
             assert result.input_count == expectation["row_count"]
 
             observations = result.observations
-            assert dict(
-                sorted(Counter(item.value_status for item in observations).items())
-            ) == expectation["value_status_counts"]
-            assert dict(
-                sorted(Counter(item.cv_status for item in observations).items())
-            ) == expectation["cv_status_counts"]
+            assert (
+                dict(
+                    sorted(Counter(item.value_status for item in observations).items())
+                )
+                == expectation["value_status_counts"]
+            )
+            assert (
+                dict(sorted(Counter(item.cv_status for item in observations).items()))
+                == expectation["cv_status_counts"]
+            )
             assert {item.geography.geo_type for item in observations} == {
                 expectation["geo_type"]
             }
-            assert sorted({item.geography.geo_id for item in observations}) == (
-                expectation["geo_ids"]
+            assert (
+                sorted({item.geography.geo_id for item in observations})
+                == (expectation["geo_ids"])
             )
-            assert sorted(
-                {item.statistic.unit_desc for item in observations}
-            ) == expectation["units"]
-            assert sorted(
-                {item.statistic.short_desc for item in observations}
-            ) == expectation["short_descs"]
-            assert sorted(
-                {item.commodity.class_desc for item in observations}
-            ) == expectation["class_descs"]
-            assert sorted(
-                {
-                    f"{item.domain.domain_desc}|{item.domain.domaincat_desc}"
-                    for item in observations
-                }
-            ) == expectation["domains"]
+            assert (
+                sorted({item.statistic.unit_desc for item in observations})
+                == expectation["units"]
+            )
+            assert (
+                sorted({item.statistic.short_desc for item in observations})
+                == expectation["short_descs"]
+            )
+            assert (
+                sorted({item.commodity.class_desc for item in observations})
+                == expectation["class_descs"]
+            )
+            assert (
+                sorted(
+                    {
+                        f"{item.domain.domain_desc}|{item.domain.domaincat_desc}"
+                        for item in observations
+                    }
+                )
+                == expectation["domains"]
+            )
 
 
 def test_incompatible_units_never_share_an_unlabeled_metric() -> None:

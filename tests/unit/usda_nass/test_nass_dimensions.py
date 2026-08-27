@@ -111,9 +111,15 @@ def test_domain_total_is_an_explicit_source_member() -> None:
     identity = domain_identity(_row(CORN, "COUNTY"))
     assert identity.domain_desc == "TOTAL"
     assert identity.domaincat_desc == "NOT SPECIFIED"
-    assert identity.domain_sk != domain_identity(
-        {**_row(CORN, "COUNTY"), "domaincat_desc": "AREA OPERATED: (1.0 TO 9.9 ACRES)"}
-    ).domain_sk
+    assert (
+        identity.domain_sk
+        != domain_identity(
+            {
+                **_row(CORN, "COUNTY"),
+                "domaincat_desc": "AREA OPERATED: (1.0 TO 9.9 ACRES)",
+            }
+        ).domain_sk
+    )
 
 
 def test_domain_identity_requires_a_domain() -> None:

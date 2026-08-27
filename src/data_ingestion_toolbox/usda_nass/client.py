@@ -133,9 +133,7 @@ def validated_api_key(config: NassConfig) -> str:
     """Return the request-time API key, validating shape but never logging it."""
     key = config.usda_nass_api_key
     if not key.strip():
-        raise NassConfigurationError(
-            "USDA_NASS_API_KEY", code="missing_api_key"
-        )
+        raise NassConfigurationError("USDA_NASS_API_KEY", code="missing_api_key")
     if key != key.strip() or _API_KEY_PATTERN.fullmatch(key) is None:
         raise NassConfigurationError("USDA_NASS_API_KEY", code="invalid_api_key")
     return key
@@ -333,9 +331,7 @@ def fetch_slice_count(
             raise NassPayloadError(API_COUNT_PATH, code="invalid_count") from exc
         if count < 0:
             raise NassPayloadError(API_COUNT_PATH, code="invalid_count")
-        return NassCountResponse(
-            parameters, raw_bytes, response_headers, status, count
-        )
+        return NassCountResponse(parameters, raw_bytes, response_headers, status, count)
     finally:
         if own_client:
             active_client.close()
