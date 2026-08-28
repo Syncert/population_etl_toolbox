@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -141,6 +142,112 @@ def _padded_geoid(entry: dict[str, Any]) -> str:
     if entry["geo_type"] == "county":
         return f"{entry['state_fips']}{entry['county_fips']}"
     return f"{entry['state_fips']}{entry['place_fips']}"
+
+
+#: Deterministic synthetic boundary lattice.
+#
+# Every geography once shared a single polygon. That made every same-state
+# county/place pair intersect, so `reconcile_relationships` published 3.1M
+# bridge rows whose `overlap_weight` was always exactly 1 and whose
+# `overlap_area_m2` had one distinct value across every row -- the ratio, its
+# divide-by-zero guard, and the LEAST() clamp were never exercised at all, and
+# the spatial join paid for a cross product with no production analogue.
+#
+# The lattice keeps the fixture synthetic and deterministic while giving each
+# geography its own footprint: states tile a degree grid, counties tile their
+# state, and places sit on the same cell grid shifted by a fraction of a cell
+# so each one straddles up to four counties. Because the shift is a fraction
+# rather than a whole cell, an interior place's overlap weights are unequal and
+# sum to exactly 1 -- an invariant a wrong denominator or a missing clamp
+# breaks.
+BOUNDARY_ORIGIN_LON = -125.0
+BOUNDARY_ORIGIN_LAT = 25.0
+
+#: 10 x 5 one-degree cells hold the 50 states without leaving the CONUS window.
+BOUNDARY_STATE_COLUMNS = 10
+
+#: 34 x 34 = 1156 county cells per state, comfortably above the 999 a state
+#: level reaches before `build_geography_records` moves to the next state.
+BOUNDARY_COUNTY_GRID = 34
+
+#: Fraction of a county cell by which a place is shifted. Asymmetric on purpose:
+#: equal offsets would give four identical 0.25 weights and prove less.
+BOUNDARY_PLACE_OFFSET_X = 0.3
+BOUNDARY_PLACE_OFFSET_Y = 0.4
+
+
+@lru_cache(maxsize=None)
+def _state_lattice_index() -> dict[str, int]:
+    """Map each state FIPS to its cell in the lattice, in generated order."""
+    return {
+        entry["state_fips"]: index
+        for index, entry in enumerate(build_geography_records("state"))
+    }
+
+
+def _boundary_polygon(lon0: float, lat0: float, lon1: float, lat1: float) -> str:
+    """Return one closed axis-aligned GeoJSON box."""
+    return json.dumps(
+        {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [lon0, lat0],
+                    [lon1, lat0],
+                    [lon1, lat1],
+                    [lon0, lat1],
+                    [lon0, lat0],
+                ]
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def geography_boundary(geo_type: str, entry: dict[str, Any], ordinal: int) -> str:
+    """Return one geography's deterministic boundary within the lattice.
+
+    ``ordinal`` is the geography's position among those of its own type inside
+    its state, so a county and the place that straddles it share a cell index.
+    """
+    index = _state_lattice_index()[entry["state_fips"]]
+    lon0 = BOUNDARY_ORIGIN_LON + (index % BOUNDARY_STATE_COLUMNS)
+    lat0 = BOUNDARY_ORIGIN_LAT + (index // BOUNDARY_STATE_COLUMNS)
+    if geo_type == "state":
+        return _boundary_polygon(lon0, lat0, lon0 + 1.0, lat0 + 1.0)
+
+    cell = 1.0 / BOUNDARY_COUNTY_GRID
+    column = ordinal % BOUNDARY_COUNTY_GRID
+    row = ordinal // BOUNDARY_COUNTY_GRID
+    if geo_type == "county":
+        return _boundary_polygon(
+            lon0 + column * cell,
+            lat0 + row * cell,
+            lon0 + (column + 1) * cell,
+            lat0 + (row + 1) * cell,
+        )
+
+    shifted_column = column + BOUNDARY_PLACE_OFFSET_X
+    shifted_row = row + BOUNDARY_PLACE_OFFSET_Y
+    return _boundary_polygon(
+        lon0 + shifted_column * cell,
+        lat0 + shifted_row * cell,
+        lon0 + (shifted_column + 1) * cell,
+        lat0 + (shifted_row + 1) * cell,
+    )
+
+
+def build_geography_boundaries(geo_type: str) -> list[tuple[dict[str, Any], str]]:
+    """Pair every generated geography of one level with its lattice boundary."""
+    ordinals: dict[str, int] = {}
+    paired = []
+    for entry in build_geography_records(geo_type):
+        state = entry["state_fips"]
+        ordinal = ordinals.get(state, 0)
+        ordinals[state] = ordinal + 1
+        paired.append((entry, geography_boundary(geo_type, entry, ordinal)))
+    return paired
 
 
 def load_fixture(*parts: str) -> Any:
@@ -339,14 +446,6 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     def parse_geometry(
         _payload: bytes, *, geo_type: str, boundary_vintage: int
     ) -> list[Any]:
-        polygon = json.dumps(
-            {
-                "type": "Polygon",
-                "coordinates": [
-                    [[-77.1, 38.8], [-76.9, 38.8], [-76.9, 39.0], [-77.1, 38.8]]
-                ],
-            }
-        )
         return [
             geography_pipeline.GeometryRecord(
                 geography_pipeline.canonical_geo_id(
@@ -356,9 +455,9 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
                     place_fips=entry["place_fips"],
                 ),
                 boundary_vintage,
-                polygon,
+                boundary,
             )
-            for entry in build_geography_records(geo_type)
+            for entry, boundary in build_geography_boundaries(geo_type)
         ]
 
     monkeypatch.setattr(geography_pipeline, "parse_gazetteer_capture", parse_attributes)

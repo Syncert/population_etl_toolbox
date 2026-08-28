@@ -144,3 +144,82 @@ def test_orchestrated_run_populates_shared_dimensions(
             f"orchestrated geography load produced {counts.get(geo_type, 0)} "
             f"{geo_type} rows, below the production guard of {minimum}"
         )
+
+
+@pytest.mark.integration
+@pytest.mark.database
+@pytest.mark.slow
+def test_orchestrated_run_publishes_partial_county_place_overlaps(
+    orchestrated_execution: dict[str, dict[str, str]],
+    orchestrated_warehouse: PostgresTestConfig,
+) -> None:
+    """Covers: DAG-016 — county/place overlap weights are real fractions.
+
+    When every geography shared one polygon, each place covered its counties
+    exactly: `overlap_weight` was 1 on all 3.1M published rows and
+    `overlap_area_m2` had a single distinct value. Nothing in that proved the
+    ratio, its divide-by-zero guard, or the `LEAST()` clamp -- an inverted
+    ratio or a wrong denominator published the same table.
+
+    The boundary lattice makes each place straddle the counties it overlaps, so
+    the weights are genuine fractions. An interior place covers four counties
+    whose weights sum to exactly 1, which is the invariant that pins the
+    arithmetic.
+    """
+    assert orchestrated_execution["silver_ref"], (
+        "the orchestrated run must have executed silver_ref before its "
+        "relationships can be asserted"
+    )
+
+    connection = orchestrated_warehouse.connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*), MIN(overlap_weight), MAX(overlap_weight),
+                       COUNT(DISTINCT overlap_weight),
+                       COUNT(DISTINCT overlap_area_m2)
+                FROM silver_ref.bridge_geo_relationship_version
+                WHERE relationship_type = 'intersects'
+                """
+            )
+            published, lowest, highest, weights, areas = cursor.fetchone()
+            cursor.execute(
+                """
+                SELECT COUNT(*), MIN(total_weight), MAX(total_weight)
+                FROM (
+                    SELECT related_geo_sk, SUM(overlap_weight) AS total_weight
+                    FROM silver_ref.bridge_geo_relationship_version
+                    WHERE relationship_type = 'intersects'
+                    GROUP BY related_geo_sk
+                    HAVING COUNT(*) = 4
+                ) AS interior
+                """
+            )
+            interior, lowest_total, highest_total = cursor.fetchone()
+    finally:
+        connection.close()
+
+    assert published, "the orchestrated run published no county/place overlaps"
+    # Every overlap is partial: a place is never wholly inside one county, and
+    # never outside the county it is bridged to.
+    assert 0 < lowest < 1, f"lowest overlap weight {lowest} is not a fraction"
+    assert 0 < highest < 1, f"highest overlap weight {highest} is not a fraction"
+    assert weights > 1, (
+        f"every published overlap weight is identical ({weights} distinct "
+        "value); the boundaries are not distinct and the ratio is unproven"
+    )
+    assert areas > 1, (
+        f"every published overlap area is identical ({areas} distinct value); "
+        "the boundaries are not distinct"
+    )
+
+    # A place straddling four counties is wholly covered by them, so its
+    # weights sum to one. Tolerance covers geodetic-vs-planar rounding only.
+    assert interior, "no place straddled four counties; the lattice is wrong"
+    assert abs(lowest_total - 1) < 1e-3, (
+        f"a place's four overlap weights sum to {lowest_total}, not 1"
+    )
+    assert abs(highest_total - 1) < 1e-3, (
+        f"a place's four overlap weights sum to {highest_total}, not 1"
+    )
