@@ -280,7 +280,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Data-layer architecture boundaries | ARC-001–ARC-003 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
-| ETL and shared units | ETL-001–ETL-041 | None |
+| ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
 | API | API-001–API-030 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
@@ -290,13 +290,13 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **192 of 192** | **0 of 192** |
+| **Total** | **193 of 193** | **0 of 193** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 188-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 193-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -378,13 +378,13 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
 | DAG-001 | P0 | Structure / `dag` | Import the repository DAG folder with `DagBag` | `import_errors == {}` | Any DAG import error |
-| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present for reference, ACS, BLS, FRED, Census PEP, CDC, FBI UCR, glossary harvest, and glossary reconciliation | Missing, renamed, or duplicate expected DAG |
-| DAG-003 | P0 | Structure / `dag` | DAG IDs are unique | Four expected IDs map to four distinct DAG objects | Duplicate ID or overwritten DAG |
+| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present for reference, ACS, BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS crop, glossary harvest, and glossary reconciliation | Missing, renamed, or duplicate expected DAG |
+| DAG-003 | P0 | Structure / `dag` | DAG IDs are unique | Every expected ID maps to a distinct DAG object | Duplicate ID or overwritten DAG |
 | DAG-004 | P0 | Structure / `dag` | Required DAG metadata | Every DAG has owner `data-eng`, a non-null schedule/start date, non-empty tags, and `catchup is False` | Missing or unintended metadata |
-| DAG-005 | P0 | Structure / `dag` | Schedule contract | Source/reference/glossary schedules match `tests/dags/test_dagbag.py`; CDC checks releases weekly at 09:00 UTC Monday and FBI UCR weekly at 10:00 UTC Monday | Cron differs from the declared contract |
+| DAG-005 | P0 | Structure / `dag` | Schedule contract | Source/reference/glossary schedules match `tests/dags/test_dagbag.py`; CDC checks releases weekly at 09:00 UTC Monday, FBI UCR weekly at 10:00 UTC Monday, and USDA NASS on business days at 10:00 UTC | Cron differs from the declared contract |
 | DAG-006 | P0 | Structure / `dag` | Task ID uniqueness | `len(task_ids) == len(set(task_ids))` in every DAG | Duplicate task ID |
-| DAG-007 | P0 | Structure / `dag` | External API pools | ACS uses `census_api`, BLS uses `bls_api`, FRED uses `fred_api`, CDC uses `cdc_api`, and FBI UCR uses `fbi_cde_api` | Missing or wrong pool assignment |
-| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries match the checked-in per-DAG contract; CDC and FBI UCR use 2 and BLS `ingest_batch` retains the intentional 10-retry override | Retry count is absent or changes without test update |
+| DAG-007 | P0 | Structure / `dag` | External API pools | ACS uses `census_api`, BLS uses `bls_api`, FRED uses `fred_api`, CDC uses `cdc_api`, FBI UCR uses `fbi_cde_api`, and USDA NASS uses `usda_nass_api` | Missing or wrong pool assignment |
+| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries match the checked-in per-DAG contract; CDC, FBI UCR, and USDA NASS use 2 and BLS `ingest_batch` retains the intentional 10-retry override | Retry count is absent or changes without test update |
 | DAG-009 | P0 | Structure / `dag` | Reference dependencies | `ensure_schema` is upstream of both `load_dim_geo` and `load_dim_time` | Either dimension can run before schema creation |
 | DAG-010 | P0 | Structure / `dag` | Source pipeline order | For each source, metadata/planning or capture precedes ingestion/replay; silver reconciliation precedes gold publication | Required stage has no dependency path or order is reversed |
 | DAG-011 | P0 | Import side effect / `dag` | No work during module import | Mock HTTP, database, and Redis call counts all remain zero during `DagBag` construction | Any external call occurs at import time |

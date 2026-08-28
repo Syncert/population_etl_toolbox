@@ -73,6 +73,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
+      USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
     working_dir: /opt/data_ingestion_toolbox

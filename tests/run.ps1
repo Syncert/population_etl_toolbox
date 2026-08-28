@@ -24,7 +24,7 @@ switch ($Tier) {
             "-m", "unit and not api",
             "tests/unit/census", "tests/unit/bls", "tests/unit/fred",
             "tests/unit/cdc",
-            "tests/unit/fbi_ucr", "tests/unit/shared"
+            "tests/unit/fbi_ucr", "tests/unit/usda_nass", "tests/unit/shared"
         )
     }
     "api" {

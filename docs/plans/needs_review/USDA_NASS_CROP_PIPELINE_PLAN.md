@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Proposed; no agricultural adapter is currently implemented
-- **Last updated:** 2026-08-22
+- **Status:** Ready for review; NASS-001 through NASS-005 are implemented on `feat/usda-crop`
+- **Last updated:** 2026-08-27
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
@@ -24,25 +24,232 @@ verify:
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-08-22
+**Last updated:** 2026-08-27
 
-**Current milestone:** Planning complete; implementation has not started
+**Current milestone:** Complete. NASS-001 through NASS-005 are implemented,
+tested, and validated on `feat/usda-crop`. The plan is ready for human review.
 
-**Next pickup:** Complete NASS-001 by registering the first bounded crop basket and freezing its Quick Stats query contracts.
+**Next pickup:** None.
 
-### Completed in the current slice
+### Implementation evidence
 
-- [x] Defined the crop-focused Quick Stats scope and national/state/county geography boundary.
-- [x] Defined registry-driven slicing, full classification identity, suppression, quality, revision, and aggregation contracts.
-- [x] Split delivery into acceptance-tested discovery, capture/replay, silver, publication, and historical-bootstrap phases.
+#### NASS-001 — Product/query contract discovery
 
-### Remaining
+- [x] `src/data_ingestion_toolbox/usda_nass/registry.py` freezes five products:
+  corn, soybeans, wheat, and hay `SURVEY` acreage/yield/production, plus corn
+  `CENSUS` harvested acreage and production. Each entry declares its source
+  program, sector/group/commodity selections, statistic selections with their
+  expected units, national/state/county aggregate levels, frequency, domain,
+  registered year range, request partition fields, parser contract version,
+  incremental field, and release expectation.
+- [x] `QUICK_STATS_FIELDS` freezes the 39 consumed provider fields, and
+  `SUPPRESSION_SYMBOLS` freezes the seven published value symbols.
+- [x] `slice_query_parameters` refuses any partition, aggregate level, or year
+  outside the registry, so a request cannot exist without a registry entry.
+- [x] `tests/fixtures/usda_nass/SOURCE_NOTES.md` records the endpoints, the
+  `key` query-parameter credential handling, the 50,000-record ceiling and its
+  exact refusal text, the field contract, the symbol table with its NASS
+  sources, the geography contract, the period fields, the **observation
+  grain**, release identity and revision semantics, and the survey/census
+  separation.
+- [x] Eight reviewed fixture files cover national/state/county, survey/census,
+  withheld/insufficient/not-applicable/not-available/below-rounding values, CV
+  values and CV symbols, a revised extraction, and ten boundary records.
+- **Acceptance met:** every request is generated from a reviewed registry entry
+  (`test_slice_parameters_refuse_an_unregistered_partition`), and the expected
+  observation grain is documented in `SOURCE_NOTES.md` and enforced by the
+  `UNIQUE (product_id, release_watermark, source_record_id)` constraint.
 
-- [ ] NASS-001 — Freeze the initial product registry, bounded queries, source semantics, and fixtures.
-- [ ] NASS-002 — Implement count-aware capture, deterministic slicing, quarantine, and offline replay.
-- [ ] NASS-003 — Implement commodity/statistic/domain dimensions and crop observation silver data.
-- [ ] NASS-004 — Implement gold products, glossary publisher, DAG, API, and integration coverage, and register the Quick Stats provider stub in `iter_provider_stubs` for orchestrated DAG execution.
-- [ ] NASS-005 — Backfill a bounded history and implement operational reconciliation.
+#### NASS-002 — Capture, slicing, and replay
+
+- [x] `client.py` keeps the registered selections and the transport query
+  apart: `USDA_NASS_API_KEY` is validated at request execution, added only to
+  the outgoing query, and refused if it ever appears in the captured parameters.
+  Errors carry an endpoint path and a typed code, never a URL or query string.
+- [x] `capture.py` preflights every registered slice through `get_counts`,
+  captures the preflight and the retrieval separately, records every slice in
+  `control.usda_nass_slice`, and marks a release incomplete when a retrieval
+  disagrees with its own preflight.
+- [x] An over-limit slice is refused before any data request; a response at the
+  record ceiling is refused as truncated; a zero-count slice issues no data
+  request.
+- [x] `silver_nass/values.replay_slices` replays a complete slice set from
+  capture bytes with checksum, row-count, preflight, and duplicate checks and
+  no network access.
+- [x] A changed provider response is retained as a new release: `decide_release`
+  ingests a forward watermark and quarantines a backward one.
+- **Acceptance met:** `tests/unit/usda_nass/test_nass_replay.py` and
+  `tests/integration/database/test_usda_nass_pipeline.py` replay the reviewed
+  captures without a network and reconcile every source value and quality
+  marker; `test_an_over_limit_slice_cannot_replay_transform_or_publish` proves
+  an over-limit release cannot replay, conform, or publish.
+
+#### NASS-003 — Silver dimensions and values
+
+- [x] `silver_nass/dimensions.py` derives commodity identity from the full
+  classification, statistic identity from `source_desc`/`statisticcat_desc`/
+  `short_desc`/`unit_desc`/`freq_desc` with the registry's declared value kind,
+  calculation basis, and additivity, and domain identity including explicit
+  `TOTAL` members.
+- [x] Geography resolves only from exact ANSI/FIPS codes. Unsupported aggregate
+  levels are retained with `geo_type = 'unsupported'` and no `geo_id`, and a
+  county without an exact code is quarantined rather than name-matched.
+- [x] `silver_nass/values.py` preserves the exact `Value` and `CV (%)` text,
+  parses grouped and decimal numbers without loss, maps every registered symbol
+  to an explicit non-numeric state, and refuses an unregistered symbol.
+- [x] `sql/migrations/012_usda_nass_crop_pipeline.sql` defines
+  `dim_dataset_release`, `dim_commodity`, `dim_statistic`, `dim_domain`, and
+  `fact_crop_observation` with CHECK constraints that make a numeric value
+  impossible for any non-`valid` state.
+- **Acceptance met:** `test_nass_source_contracts.py` reconciles every reviewed
+  fixture row against an independently declared expectation file, and
+  `test_survey_and_census_statistics_never_share_an_identity` proves the two
+  programs stay distinct where the data item label and unit agree.
+
+#### NASS-004 — Gold, glossary publisher, DAG, and API
+
+- [x] `gold_nass.crop_observation`, `crop_series`, `latest_release_observation`,
+  `measure_export`, and `metric_publisher` publish only reconciled, published
+  releases. The migration owns no `gold_glossary` object.
+- [x] `dags/usda_nass_crop_ingest_dag.py` runs on business days at 10:00 UTC,
+  validates shared geography, then captures, replays, and publishes each
+  registered product through the `usda_nass_api` pool.
+- [x] `stub_usda_nass_quick_stats` is registered in `iter_provider_stubs` in
+  `tests/support/dag_pipeline.py`, and `usda_nass_crop_ingest` is registered in
+  `ORDERED_PIPELINE_DAGS`. The stub answers the actual request: it resolves the
+  product and aggregate level from the requested slice and reports a count that
+  matches the rows it serves, so the pipeline's own preflight and completeness
+  guards run unweakened.
+- [x] `apps/api/routers/usda_nass.py` and
+  `apps/api/services/usda_nass_service.py` expose observations, series,
+  measures, and source notes with bound filters for commodity, class,
+  statistic, unit, source program, domain, geography, period, release, and
+  value status, plus `latest` versus as-released reads.
+- [x] Source notes for units, suppression, release status, source program,
+  county coverage, and aggregation are derived from the registry and the parser
+  symbol table, so they cannot drift from the ingested contract.
+- **Acceptance met (contract):** every observation, series, and measure row
+  carries `unit_desc`; a statistic identity can never hold two units
+  (`test_incompatible_units_never_share_an_unlabeled_metric`); and a suppressed
+  value reaches consumers with a NULL numeric value, its exact source text, and
+  its symbol (`test_a_suppressed_value_can_never_be_read_as_zero`).
+- **Acceptance partially environment-limited (orchestrated DagRun):** DAG-015
+  passes — no production DAG escapes the orchestrated suite, and the NASS DAG is
+  covered. DAG-016 cannot execute on this machine; see *Environment-limited
+  checks* below. As substitute evidence within this environment,
+  `tests/integration/database/test_usda_nass_dag_tasks.py` drives the
+  production DAG's own callables, through the registered provider stub and a
+  real warehouse connection, from capture to gold for every registered product,
+  and asserts slice, capture, and credential lineage.
+
+#### NASS-005 — Historical bootstrap and operational reconciliation
+
+- [x] The registered year range is frozen in the registry, so a fresh
+  environment reproduces exactly the same slices and history. A run whose
+  logical date falls on the first of the month sweeps the full registered
+  history; other business days retrieve the bounded recent window
+  (`resolve_slice_mode`).
+- [x] Per-slice baselines: `control.usda_nass_slice` records the provider
+  preflight count and the captured row count for every slice, and
+  `control.usda_nass_release.slice_counts` is the baseline `decide_preflight`
+  compares the next extraction against, with a configurable drift threshold.
+  Per-capture checksums are verified on every replay.
+- [x] `docs/user-guides/USDA_NASS_PIPELINE_OPERATIONS.md` documents deployment,
+  the required secret, the first deployment test, the reconciliation queries,
+  reset and re-ingestion, and a quarantine-decision troubleshooting table.
+  `docs/reference/BETA_RESET_REINGESTION.md` now includes the DAG.
+- **Acceptance met:** `test_reruns_are_idempotent_and_revisions_are_retained`
+  re-runs replay, conformance, and publication over the same captured run with
+  no duplicates, then publishes a revised extraction and proves both releases
+  remain queryable with the formerly withheld value intact in the original.
+
+### Validation
+
+Run on 2026-08-27 from `feat/usda-crop`. Database-backed tiers ran against a
+freshly provisioned pinned disposable PostGIS warehouse
+(`docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`).
+
+| Command | Result |
+| --- | --- |
+| `ruff format --check .` | pass (326 files) |
+| `ruff check .` | pass |
+| `./tests/run.ps1 etl` | exit 0 — 510 passed, 0 skipped |
+| `./tests/run.ps1 api` | exit 0 — 110 passed, 0 skipped |
+| `./tests/run.ps1 dags` | exit 0 — 100 passed, 4 skipped |
+| `./tests/run.ps1 integration` | exit 0 — 67 passed, 8 skipped |
+| `pytest tests/unit` | exit 0 — 883 passed |
+
+The four `dags` skips are the database-backed DAG tests that require
+`TEST_POSTGRES_*`. The eight `integration` skips are the Redis and Compose
+tests that require `TEST_REDIS_URL` or `RUN_COMPOSE_TESTS`; they belong to the
+`martin`, `redis-integration`, and `compose-smoke` tiers. No skip or xfail was
+introduced by this work.
+
+New coverage added by this plan: 140 unit tests in `tests/unit/usda_nass/`, 14
+API unit tests in `tests/unit/api/test_usda_nass_api.py`, 5 DAG structure tests
+in `tests/dags/test_usda_nass_dag.py`, 5 warehouse contract tests in
+`tests/integration/database/test_usda_nass_pipeline.py`, 3 DAG-callable tests in
+`tests/integration/database/test_usda_nass_dag_tasks.py`, and 4 API contract
+tests in `tests/integration/api/test_usda_nass_api_contract.py`.
+
+`tests/unit/usda_nass` was added to the ETL tier in `tests/run.ps1`, the
+`test-etl` Makefile target, and `.github/workflows/etl-unit.yml` together, so
+the tier definition stays synchronized across all three.
+
+### Environment-limited checks
+
+Two checks could not run on this machine. Neither is caused by this work, and
+neither is reported as passing.
+
+1. **DAG-016 orchestrated DagRun.** `airflow.utils.db.initdb()` fails during
+   test setup with `ImportError: cannot import name
+   'ignore_sqlite_value_error' from 'airflow.migrations.utils'`. The installed
+   environment is Airflow 2.11.2 on Python 3.13 whose
+   `airflow/migrations/versions/` directory also holds 97 orphaned Airflow 3
+   migration modules; alembic loads one of them and fails. The repository pins
+   Airflow 2.9.3 on Python 3.11 (`.github/workflows/etl-unit.yml`,
+   `.github/workflows/dag-parse.yml`, `infra/airflow/Dockerfile`).
+
+   This affects `./tests/run.ps1 dag-pipeline`, and it also affects
+   `./tests/run.ps1 dags` whenever `TEST_POSTGRES_*` is configured, because the
+   orchestrated tests then stop skipping: that combination reports
+   `102 passed, 2 errors`, both errors being the `ImportError` above in
+   `tests/dags/test_dag_pipeline_execution.py`. Every other DAG test passes in
+   both configurations.
+
+   **To resume:** run in a clean pinned `airflow-dev` environment or in the
+   scheduler image:
+   `docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`
+   then `./tests/run.ps1 dag-pipeline`. That run is the machine-verifiable
+   precondition of `docs/plans/gates/THREE_SOURCE_REVIEW_GATE.md` and is
+   expected to be produced on the integration branch, where it also covers the
+   CDC and FBI pipelines. DAG-015 — static coverage proving the new DAG does
+   not escape the orchestrated suite — does pass here.
+
+2. **pytest temporary root.** `%LOCALAPPDATA%\Temp\pytest-of-synce` on this
+   machine denies access to its owner, so `tmp_path_factory.mktemp` fails and
+   every tier that uses a temporary path errors before collection. The
+   directory cannot be read, renamed, or removed without elevation. **To
+   resume:** delete that directory from an elevated shell, or set
+   `PYTEST_DEBUG_TEMPROOT` to a writable directory. Every result in the table
+   above was produced with `PYTEST_DEBUG_TEMPROOT` pointing at a writable
+   scratch directory; nothing else about the runs was changed.
+
+### Observations outside this plan's scope
+
+- `tests/integration/database/test_source_capture_cutovers.py::test_census_ingest_captures_array_and_bypasses_legacy_raw`
+  leaves a `silver_census.observation_revision` row for `state:55|county:001`
+  without a matching geography and never removes it. Re-running
+  `./tests/run.ps1 integration` against the *same* database therefore fails
+  `test_census_silver_flow.py::test_census_raw_rows_transform_to_exact_silver_keys`
+  on the historical-geography guard. The tier passes on a freshly provisioned
+  warehouse, which is how CI runs it. This predates this plan and is untouched
+  here.
+- Moving this plan out of `to_do/` leaves one stale relative link in
+  `docs/plans/to_do/DATA_PRODUCT_E2E_COVERAGE_PLAN.md`
+  (`[USDA NASS Crop pipeline](USDA_NASS_CROP_PIPELINE_PLAN.md)`), which now
+  needs `../needs_review/`. This execution was explicitly bounded to not modify
+  other plans, so the link is reported rather than repaired.
 
 ## Objective
 

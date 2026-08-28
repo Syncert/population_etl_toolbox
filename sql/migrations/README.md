@@ -15,3 +15,4 @@ Current sequence:
 7. `009_census_pep_registry.sql` adds the Census PEP registry and control state.
 8. `010_cdc_pipeline.sql` adds the CDC capture, silver, and gold contract.
 9. `011_fbi_ucr_pipeline.sql` adds the FBI UCR capture, silver, and gold contract, including `control.fbi_ucr_release`, the `silver_fbi` release/agency/observation model, and the `gold_fbi` publication views.
+10. `012_usda_nass_crop_pipeline.sql` adds the USDA NASS Quick Stats capture, silver, and gold crop-data contract.

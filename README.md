@@ -429,6 +429,10 @@ export CDC_SOCRATA_APP_TOKEN="your_cdc_socrata_app_token_here"
 
 # Required api.data.gov key for the FBI Crime Data Explorer API.
 export FBI_CDE_API_KEY="your_fbi_cde_api_key_here"
+
+# For USDA NASS Quick Stats (required); inject it into every Airflow container
+# from the deployment secret store, never from a tracked file or an image.
+export USDA_NASS_API_KEY="your_usda_nass_api_key_here"
 ```
 
 ### 3. Configuration Files
