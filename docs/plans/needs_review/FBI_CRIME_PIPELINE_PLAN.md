@@ -42,13 +42,50 @@ There is no remaining checklist item and no next pickup.
   unrelated API cache and legacy BLS integration tests, before the FBI file;
   the run was interrupted after the repository's single permitted poll. The
   FBI database file then passed independently in full against a fresh schema.
-- `./tests/run.ps1 dag-pipeline` could not start a DagRun in this host
-  environment. The installed `apache-airflow` reports 2.11.2 while
-  `apache-airflow-core` is 3.2.2; Airflow initialization loads a 3.0 migration
-  and raises `ImportError: ignore_sqlite_value_error`. `python -m pip check`
-  confirms the mixed Airflow/SQLAlchemy environment. This check is recorded
-  as blocked, not passing; production code was not changed to accommodate the
-  contaminated local installation.
+- `./tests/run.ps1 dag-pipeline` could not start a DagRun on the authoring
+  host. The installed `apache-airflow` reported 2.11.2 while
+  `apache-airflow-core` was 3.2.2; Airflow initialization loaded a 3.0
+  migration and raised `ImportError: ignore_sqlite_value_error`. Production
+  code was not changed to accommodate the contaminated local installation.
+  **This is no longer outstanding** — see the orchestrated evidence below.
+
+### Orchestrated evidence on the integration branch (2026-08-28)
+
+The check recorded as blocked above was produced on `main` after the three
+source branches merged, in the pinned environment the repository actually
+targets rather than on the authoring host.
+
+- `dag-parse` run 102 on `main` at `1f33b38`, Airflow 2.9.3 on Python 3.11
+  against pinned PostGIS 16.14: **113 passed, 0 skipped, 0 errors** in
+  134.35 s. The job sets `RUN_DAG_TESTS=1` and the `TEST_POSTGRES_*` service
+  variables, and its command-line `-m dag` overrides the default marker filter
+  in `pyproject.toml`, so `tests/dags/test_dag_pipeline_execution.py` was
+  selected and executed rather than deselected. Zero skips and zero errors are
+  what distinguish that from a filtered run.
+- That module executes all ten production DAGs as real `DagRun`s in warehouse
+  order and asserts each succeeded, `fbi_ucr_ingest` among them. It also
+  asserts the executed set equals the DagBag, so the FBI DAG could not have
+  been silently omitted.
+- Every other workflow was green on the same commit, including
+  `postgres-integration`, which is the tier the interrupted local `integration`
+  run above could not finish.
+
+This satisfies the machine-verifiable precondition of
+[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md).
+
+### Live provider contract
+
+`tests/external/test_fbi_source_contracts.py` covers the registered product
+release identity, the period window, the actuals/rates separation, the
+registered ORIs in the Wisconsin Agency directory, outage classification, and
+credential handling. The `external-contract` workflow owns it on a daily
+schedule and requires `FBI_CDE_API_KEY`.
+
+**Not yet executed against the provider.** The module's live assertions have
+never run: the repository has no `FBI_CDE_API_KEY` secret configured, and the
+authoring environment's network policy blocks `api.usa.gov`. Its deterministic
+assertions pass and its live assertions skip cleanly on the missing key. The
+first credentialed `external-contract` run is what will close this.
 
 ### Delivered
 

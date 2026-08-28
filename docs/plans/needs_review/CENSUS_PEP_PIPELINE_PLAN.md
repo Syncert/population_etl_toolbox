@@ -256,6 +256,13 @@ Do not repair the existing downstream code around the current invented request m
 
 ### Validation evidence from the assessment
 
+> **Historical, superseded.** This table records the pre-remediation audit that
+> produced the ordered remediation sequence above. Every failure in it was
+> subsequently fixed; see *Completed in the current slice* near the top of this
+> plan and *Orchestrated evidence on the integration branch* below for the
+> current state. It is retained because it is why the remediation sequence
+> exists, not as a description of the pipeline today.
+
 Assessment environment was the Windows host on Python 3.13.5. It is supplementary only; authoritative Airflow validation remains Python 3.11 with Airflow 2.9.3 in the scheduler image.
 
 | Check | Result | Evidence / implication |
@@ -288,8 +295,44 @@ environment-specific steps and record exact commands/results:
 - [x] Database replay, rerun idempotency, rollback, resolved/unmapped geography, atomic publication, and publisher-event tests pass.
 - [x] Default deterministic, ETL unit, repository hygiene, Ruff format/lint, DagBag, and scheduler-image gates pass with zero unexpected skips/xfails.
 - [x] Bounded live requests for every registered current product pass exact endpoint, encoding, schema, and completeness validation without credentials.
+
+#### Operator steps after acceptance
+
+These two are deliberately outside the repository-side acceptance gate: neither
+can be performed from the repository, and both require an operator on the
+external Airflow deployment. They are recorded here so the first external run
+is not improvised, and they do not hold up review.
+
 - [ ] External scheduler and workers stage the same immutable revision, expose the package on `PYTHONPATH`, have the required connection/pool/secret, and report no DAG import errors.
 - [ ] The first external DAG run is limited to the proven narrow slice; capture/control/revision/gold row counts and geography outcomes are reconciled before expanding scope.
+
+### Orchestrated evidence on the integration branch (2026-08-28)
+
+- `dag-parse` run 102 on `main` at `1f33b38`, Airflow 2.9.3 on Python 3.11
+  against pinned PostGIS 16.14: **113 passed, 0 skipped, 0 errors** in
+  134.35 s. The job supplies `RUN_DAG_TESTS=1` and the `TEST_POSTGRES_*`
+  service variables, and its command-line `-m dag` overrides the default marker
+  filter in `pyproject.toml`, so `tests/dags/test_dag_pipeline_execution.py`
+  ran rather than being deselected.
+- The module executes all ten production DAGs as real `DagRun`s in warehouse
+  order and asserts each succeeded, `census_pep_ingest` among them, and asserts
+  the executed set equals the DagBag.
+- Every other workflow was green on the same commit.
+
+PEP is guarded by
+[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md) alongside
+CDC, FBI UCR, and USDA NASS. It resolves the same shared geography dimensions,
+publishes through the same glossary publisher contract, and runs in the same
+orchestrated DAG order, so the cross-source questions that gate asks apply to
+it identically.
+
+### Live provider contract
+
+`tests/external/test_source_contracts.py::test_census_pep_current_bulk_schema_and_completeness`
+(EXT-011) covers the current registered national/state bulk release against the
+frozen parser and completeness contract, and is registered in the scheduled
+`external-contract` workflow. PEP reads credential-free Census bulk transport,
+so it needs no secret of its own.
 
 ## Objective
 
