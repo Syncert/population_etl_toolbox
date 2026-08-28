@@ -99,11 +99,13 @@ def test_national_and_state_totals_are_read_only_from_their_endpoints() -> None:
     """Covers: ETL-042 — provider totals are never reconstructed locally."""
     transform = (PACKAGE / "silver_fbi/transform.py").read_text(encoding="utf-8")
 
-    assert SUMMARIZED_VIOLENT_CRIME.observation_endpoint(
-        FbiSubject("national", "US")
-    ) == "/summarized/national/V"
-    assert SUMMARIZED_VIOLENT_CRIME.observation_endpoint(
-        FbiSubject("state", "WI")
-    ) == "/summarized/state/WI/V"
+    assert (
+        SUMMARIZED_VIOLENT_CRIME.observation_endpoint(FbiSubject("national", "US"))
+        == "/summarized/national/V"
+    )
+    assert (
+        SUMMARIZED_VIOLENT_CRIME.observation_endpoint(FbiSubject("state", "WI"))
+        == "/summarized/state/WI/V"
+    )
     # Conformance never derives one subject's value from another's rows.
     assert "SUM(" not in transform.upper()

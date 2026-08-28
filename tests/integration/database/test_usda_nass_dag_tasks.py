@@ -23,6 +23,15 @@ from tests.support import dag_pipeline
 from tests.support import usda_nass as nass_support
 from tests.support.postgres import PostgresHookStub
 
+# This module imports the production DAG, so it needs Airflow. The warehouse
+# coverage job installs the API extra, whose SQLAlchemy 2 pin cannot coexist
+# with Airflow 2.9.3 (SQLAlchemy < 2), so skip there instead of failing
+# collection. The postgres-integration job installs .[airflow-dev] and runs it.
+pytest.importorskip(
+    "airflow",
+    reason="The production DAG module requires Airflow; install .[airflow-dev].",
+)
+
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 MODULE_NAME = "dags.usda_nass_crop_ingest_dag"
