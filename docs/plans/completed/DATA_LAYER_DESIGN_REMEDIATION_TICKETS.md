@@ -1,3 +1,14 @@
+---
+id: data-layer-remediation
+branch: feat/data-layer-remediation
+depends_on: []
+parallel_safe: false
+complexity: medium
+verify:
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 integration
+---
+
 # Data-layer design investigation and remediation tickets
 
 > **Required parallel work:** This remediation plan must be worked alongside the [CI/CD GitHub Actions migration plan](./CICD_GITHUB_ACTIONS_MIGRATION_PLAN.md), not completed first with CI/CD deferred as a later cleanup. Every ARCH implementation slice must update and validate its corresponding workflow, packaging, coverage, bootstrap, or release-evidence contract in the same change set. Neither plan is complete until the target data-layer contracts pass the authoritative push, scheduled, and release evidence defined there.

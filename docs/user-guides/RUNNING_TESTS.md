@@ -38,6 +38,7 @@ Linux/macOS uses `make`; Windows PowerShell uses the equivalent tier name with
 | ETL units | `make test-etl` | `.\tests\run.ps1 etl` |
 | API units | `make test-api` | `.\tests\run.ps1 api` |
 | Airflow DAGs | `make test-dags` | `.\tests\run.ps1 dags` |
+| Orchestrated DAG execution | `make test-dag-pipeline` | `.\tests\run.ps1 dag-pipeline` |
 | Integration | `make test-integration` | `.\tests\run.ps1 integration` |
 | External contracts | `make test-external` | `.\tests\run.ps1 external` |
 | End-to-end | `make test-e2e` | `.\tests\run.ps1 e2e` |
@@ -70,6 +71,33 @@ make test-dags
 On native Windows, use the pinned scheduler image or WSL2 for the authoritative
 Airflow run. The scheduler workflow runs the same DAG tier in Linux.
 
+## Orchestrated DAG Execution
+
+`make test-dags` proves DAG *shape* — task ordering, pools, import side effects,
+parse budget. It does not run anything.
+
+`make test-dag-pipeline` runs every DAG in `dags/` as a real Airflow `DagRun`
+against the disposable PostGIS warehouse, driving a bounded reviewed provider
+sample from capture through replay to publication:
+
+```bash
+make test-dag-pipeline
+```
+
+```powershell
+.\tests\run.ps1 dag-pipeline
+```
+
+Only the provider HTTP boundary is replaced. Airflow, the operators, the
+`public_data` connection, the provider pools, the capture-control plane, and
+every warehouse write are real, so a failure here is a genuine orchestration
+defect rather than a mocking artifact. This is the closest automated equivalent
+of a first production Airflow run, and it is the required evidence for the
+three-source review gate in `docs/plans/gates/`.
+
+The suite also asserts that the set of DAGs it executes equals the set in the
+DagBag, so a newly added pipeline cannot be silently left uncovered.
+
 ## Database and Redis Tests
 
 General integration, E2E, performance, and resilience tiers expect explicitly
@@ -100,7 +128,8 @@ not end in `_test`.
 External tests make bounded live requests. Census and FRED require
 `CENSUS_API_KEY` and `FRED_API_KEY`; BLS uses `BLS_API_KEY` when available.
 Missing required keys are reported as named skips only in runners that permit a
-partial local run. Never commit credentials.
+partial local run. The scheduled GitHub Actions runner requires all three keys
+before it collects live contract evidence. Never commit credentials.
 
 For frontend tests:
 

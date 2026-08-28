@@ -18,7 +18,9 @@ that all of them mount the same staged revision.
 
 ## 2. Pause ingestion and verify the target
 
-Pause `silver_ref`, `acs_ingest`, `bls_ingest`, and `fred_ingest`. Confirm that
+Pause `silver_ref`, `acs_ingest`, `census_pep_ingest`, `bls_ingest`,
+`fred_ingest`, `cdc_ingest`, `fbi_ucr_ingest`, and
+`usda_nass_crop_ingest`. Confirm that
 `public_data` is the disposable analytics database and not the Airflow metadata
 database. Preserve environment configuration and API keys; the reset does not
 recreate Airflow connections, variables, pools, or secrets.
@@ -116,8 +118,14 @@ FROM silver_ref.dim_geo_geometry_version
 WHERE NOT is_valid OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 4326;
 ```
 
-Then trigger the configured history in `acs_ingest`, `bls_ingest`, and
-`fred_ingest`. Check geography resolution rather than silently accepting misses:
+Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
+`bls_ingest`, and `fred_ingest`, and trigger `cdc_ingest` and
+`fbi_ucr_ingest` and `usda_nass_crop_ingest` after the shared geography
+reference succeeds. A USDA NASS run whose logical date falls on the first of
+the month sweeps the whole registered year range, so a bootstrap should be
+triggered on that date, or with that logical date, to reproduce the reviewed
+history in one run. Check geography resolution rather than silently
+accepting misses:
 
 ```sql
 SELECT provider_source, provider_dataset, source_geo_type, status,
@@ -132,11 +140,15 @@ add an evidence-backed crosswalk, then replay the affected captured observations
 
 ## 6. Completion checks
 
-- All four DAGs parse from the same deployed revision.
+- All ingestion and reference DAGs, including `cdc_ingest` and
+  `fbi_ucr_ingest` and `usda_nass_crop_ingest`, parse from the same deployed
+  revision.
 - `silver_ref` succeeds before ACS/BLS history begins.
 - Capture and control records exist for every provider run.
 - Unmapped geography outcomes are reviewed and no observations disappear
   without a recorded resolution outcome.
-- API catalog and observation smoke requests succeed.
+- API catalog and observation smoke requests succeed, including
+  `GET /api/cdc/observations?dataset=cdi&limit=1` and
+  `GET /api/cdc/observations?dataset=places_county&limit=1`.
 - Martin TileJSON/MVT smoke checks succeed if spatial serving is deployed.
 

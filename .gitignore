@@ -465,3 +465,8 @@ coverage*.info
 # Build artifacts
 dist/
 build/
+
+# Plan dispatcher run state, run transcripts, and worker worktrees
+.claude/plan-runner-state.json
+.claude/plan-runs/
+.worktrees/

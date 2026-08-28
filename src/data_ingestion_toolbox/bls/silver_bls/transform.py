@@ -183,6 +183,13 @@ def _load_time_dim(
     )
 
 
+#: Concrete dtypes for the geography lookup frame. A bare schema list would
+#: give an empty frame Null-typed columns, and joining those against the
+#: observation frame's string keys raises SchemaError instead of leaving the
+#: rows unresolved.
+_GEO_DIM_SCHEMA = {"geo_sk": pl.Int64, "geo_level": pl.String, "geo_id": pl.String}
+
+
 def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
     sql = """
         SELECT geo_sk, geo_level, geo_id
@@ -193,9 +200,9 @@ def _load_geo_dim(hook: PostgresHook) -> pl.DataFrame:
         rows = cur.fetchall()
 
     return (
-        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        pl.DataFrame(rows, orient="row", schema=_GEO_DIM_SCHEMA)
         if rows
-        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+        else pl.DataFrame(schema=_GEO_DIM_SCHEMA)
     )
 
 
@@ -205,15 +212,15 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
     This avoids loading entire dim_geo into memory when dealing with large datasets.
     """
     if geo_df.is_empty():
-        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+        return pl.DataFrame(schema=_GEO_DIM_SCHEMA)
 
     unique_geos = geo_df.select(["geo_level", "geo_id"]).unique()
     if unique_geos.is_empty():
-        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+        return pl.DataFrame(schema=_GEO_DIM_SCHEMA)
 
     geo_tuples = list(unique_geos.iter_rows())
     if not geo_tuples:
-        return pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+        return pl.DataFrame(schema=_GEO_DIM_SCHEMA)
 
     sql = """
         WITH needed(geo_level, geo_id) AS (VALUES %s)
@@ -229,9 +236,9 @@ def _load_geo_dim_for_list(hook: PostgresHook, geo_df: pl.DataFrame) -> pl.DataF
         rows = cur.fetchall()
 
     return (
-        pl.DataFrame(rows, orient="row", schema=["geo_sk", "geo_level", "geo_id"])
+        pl.DataFrame(rows, orient="row", schema=_GEO_DIM_SCHEMA)
         if rows
-        else pl.DataFrame(schema=["geo_sk", "geo_level", "geo_id"])
+        else pl.DataFrame(schema=_GEO_DIM_SCHEMA)
     )
 
 

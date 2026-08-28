@@ -24,6 +24,10 @@ SOURCE_TABLE_MAP = {
         "reporting": "gold_fred.rpt_fred_observations",
         "latest": "gold_fred.mv_fred_latest",
     },
+    "CENSUS_PEP": {
+        "reporting": "gold_pep.rpt_pep_observations",
+        "latest": "gold_pep.mv_pep_latest",
+    },
 }
 
 

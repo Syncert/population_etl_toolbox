@@ -32,4 +32,6 @@ docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler
 docker compose -f infra/docker/docker-compose.airflow.yml exec airflow-scheduler airflow dags test silver_ref
 ```
 
-In the compose environment, `airflow-init` also seeds the `public_data` Airflow connection and ensures the `census_api`, `bls_api`, and `fred_api` pools exist.
+In the compose environment, `airflow-init` also seeds the `public_data` Airflow
+connection and ensures the `census_api`, `bls_api`, `fred_api`, `cdc_api`, and
+`fbi_cde_api` pools exist.

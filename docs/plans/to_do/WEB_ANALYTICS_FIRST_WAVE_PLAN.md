@@ -1,3 +1,16 @@
+---
+id: web-analytics-first-wave
+branch: feat/web-analytics-first-wave
+depends_on:
+  - api-platform
+parallel_safe: true
+complexity: high
+verify:
+  - ./tests/run.ps1 web-unit
+  - ./tests/run.ps1 web-browser
+  - ./tests/run.ps1 web-build
+---
+
 # Web analytics foundation and first-wave products plan
 
 ## Plan status

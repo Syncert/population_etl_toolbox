@@ -11,23 +11,25 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
-    "ENV": 10,
+    "ENV": 11,
     "ARC": 3,
-    "DAG": 14,
-    "ETL": 40,
+    "PLAN": 7,
+    "DAG": 17,
+    "ETL": 42,
     "DB": 23,
-    "API": 27,
+    "API": 30,
     "WEB": 8,
     "DEPLOY": 5,
     "MARTIN": 10,
-    "EXT": 10,
-    "E2E": 6,
+    "EXT": 12,
+    "E2E": 7,
     "PERF": 10,
     "RES": 8,
 }
 EXECUTION_PROFILES = {
     "ENV": ("make test-unit / package build", "lint, package-api, coverage"),
     "ARC": ("make test-etl", "etl-unit"),
+    "PLAN": ("make test-unit", "coverage"),
     "DAG": ("make test-dags", "dag-parse, scheduler-image"),
     "ETL": (
         "make test-etl / test-integration",

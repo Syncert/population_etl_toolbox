@@ -1,3 +1,17 @@
+---
+id: warehouse-data-quality
+branch: feat/warehouse-data-quality
+depends_on:
+  - geography-reference
+  - cicd-actions
+  - three-source-review
+parallel_safe: false
+complexity: high
+verify:
+  - ./tests/run.ps1 etl
+  - ./tests/run.ps1 integration
+---
+
 # Warehouse data-quality assessment plan
 
 ## Plan status

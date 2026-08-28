@@ -110,6 +110,13 @@ def seed_geography(
 def delete_geography(db_cursor: cursor, geo_id: str) -> None:
     """Delete a test-owned geography after dependent facts have been removed."""
     db_cursor.execute(
+        "DELETE FROM silver_ref.bridge_geo_relationship_version WHERE "
+        "parent_geo_sk IN (SELECT geo_sk FROM silver_ref.dim_geo_entity "
+        "WHERE geo_id = %s) OR related_geo_sk IN "
+        "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = %s)",
+        (geo_id, geo_id),
+    )
+    db_cursor.execute(
         "DELETE FROM silver_ref.geography_resolution WHERE geo_sk IN "
         "(SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_id = %s)",
         (geo_id,),

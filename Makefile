@@ -1,16 +1,26 @@
-.PHONY: test-unit test-etl test-api test-dags test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-compose-smoke
+.PHONY: test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-compose-smoke
 
 test-unit:
 	pytest tests/unit
 
 test-etl:
-	pytest -m "unit and not api" tests/unit/census tests/unit/bls tests/unit/fred tests/unit/shared
+	pytest -m "unit and not api" tests/unit/census tests/unit/bls tests/unit/fred tests/unit/cdc tests/unit/fbi_ucr tests/unit/usda_nass tests/unit/shared
 
 test-api:
 	pytest -m "unit and api" tests/unit/api
 
 test-dags:
 	RUN_DAG_TESTS=1 pytest -m dag tests/dags
+
+test-dag-pipeline:
+	@set -e; \
+	  trap 'docker compose -f infra/docker/docker-compose.test.yml down --volumes --remove-orphans' EXIT; \
+	  docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres; \
+	  RUN_DAG_TESTS=1 RUN_INTEGRATION_TESTS=1 \
+	  TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432 \
+	  TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test \
+	  TEST_POSTGRES_DATABASE=population_etl_test \
+	  pytest -m "dag and integration and database" tests/dags/test_dag_pipeline_execution.py
 
 test-integration:
 	RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration

@@ -26,9 +26,15 @@ services:
       - ../../sql/migrations/006_bls_capture_cutover.sql:/docker-entrypoint-initdb.d/025_bls_capture_cutover.sql:ro
       - ../../sql/migrations/007_remove_legacy_parsed_raw.sql:/docker-entrypoint-initdb.d/026_remove_legacy_parsed_raw.sql:ro
       - ../../sql/migrations/008_geography_reference_cutover.sql:/docker-entrypoint-initdb.d/027_geography_reference_cutover.sql:ro
+      - ../../sql/migrations/009_census_pep_registry.sql:/docker-entrypoint-initdb.d/028_census_pep_registry.sql:ro
+      - ../../src/data_ingestion_toolbox/census_pep/DDL/silver_pep.sql:/docker-entrypoint-initdb.d/029_silver_pep.sql:ro
+      - ../../sql/migrations/010_cdc_pipeline.sql:/docker-entrypoint-initdb.d/029a_cdc_pipeline.sql:ro
+      - ../../sql/migrations/011_fbi_ucr_pipeline.sql:/docker-entrypoint-initdb.d/029b_fbi_ucr_pipeline.sql:ro
+      - ../../sql/migrations/012_usda_nass_crop_pipeline.sql:/docker-entrypoint-initdb.d/029c_usda_nass_crop_pipeline.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/030_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/031_gold_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/032_gold_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql:/docker-entrypoint-initdb.d/032a_gold_pep.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/033_census_publisher.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/034_bls_publisher.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/035_fred_publisher.sql:ro

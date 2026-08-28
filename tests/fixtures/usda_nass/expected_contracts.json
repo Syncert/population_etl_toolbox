@@ -1,0 +1,613 @@
+{
+  "description": "Expected parsed outcome for every reviewed USDA NASS fixture row. Derived from the fixture bytes and an independently declared symbol table so a parser change cannot silently redefine the contract.",
+  "symbol_status": {
+    "(D)": "withheld",
+    "(S)": "insufficient_reports",
+    "(X)": "not_applicable",
+    "(NA)": "not_available",
+    "(Z)": "below_rounding_unit",
+    "(H)": "quality_flagged",
+    "(L)": "quality_flagged"
+  },
+  "products": {
+    "corn_census_county": {
+      "source_desc": "CENSUS",
+      "sample_year": 2022,
+      "slices": {
+        "NATIONAL": {
+          "provider_count": 2,
+          "row_count": 2,
+          "geo_type": "nation",
+          "geo_ids": [
+            "us:1"
+          ],
+          "value_status_counts": {
+            "valid": 2
+          },
+          "cv_status_counts": {
+            "valid": 2
+          },
+          "units": [
+            "ACRES",
+            "BU"
+          ],
+          "short_descs": [
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU"
+          ],
+          "class_descs": [
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2024-02-13 09:05:11.500"
+          ]
+        },
+        "STATE": {
+          "provider_count": 4,
+          "row_count": 4,
+          "geo_type": "state",
+          "geo_ids": [
+            "state:01",
+            "state:48"
+          ],
+          "value_status_counts": {
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "valid": 4
+          },
+          "units": [
+            "ACRES",
+            "BU"
+          ],
+          "short_descs": [
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU"
+          ],
+          "class_descs": [
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2024-02-13 09:05:11.500"
+          ]
+        },
+        "COUNTY": {
+          "provider_count": 4,
+          "row_count": 4,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "valid": 2,
+            "withheld": 2
+          },
+          "cv_status_counts": {
+            "valid": 2,
+            "withheld": 2
+          },
+          "units": [
+            "ACRES",
+            "BU"
+          ],
+          "short_descs": [
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU"
+          ],
+          "class_descs": [
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2024-02-13 09:05:11.500"
+          ]
+        }
+      }
+    },
+    "corn_survey_annual": {
+      "source_desc": "SURVEY",
+      "sample_year": 2024,
+      "slices": {
+        "NATIONAL": {
+          "provider_count": 4,
+          "row_count": 4,
+          "geo_type": "nation",
+          "geo_ids": [
+            "us:1"
+          ],
+          "value_status_counts": {
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "missing": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "CORN - ACRES PLANTED",
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU",
+            "CORN, GRAIN - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.123"
+          ]
+        },
+        "STATE": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "state",
+          "geo_ids": [
+            "state:01",
+            "state:48"
+          ],
+          "value_status_counts": {
+            "valid": 8
+          },
+          "cv_status_counts": {
+            "valid": 8
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "CORN - ACRES PLANTED",
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU",
+            "CORN, GRAIN - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.123"
+          ]
+        },
+        "COUNTY": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "valid": 4,
+            "withheld": 4
+          },
+          "cv_status_counts": {
+            "valid": 4,
+            "withheld": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "CORN - ACRES PLANTED",
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU",
+            "CORN, GRAIN - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.123"
+          ]
+        }
+      }
+    },
+    "corn_survey_annual_revised": {
+      "source_desc": "SURVEY",
+      "sample_year": 2024,
+      "slices": {
+        "COUNTY": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "valid": 8
+          },
+          "cv_status_counts": {
+            "valid": 8
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "CORN - ACRES PLANTED",
+            "CORN, GRAIN - ACRES HARVESTED",
+            "CORN, GRAIN - PRODUCTION, MEASURED IN BU",
+            "CORN, GRAIN - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "GRAIN"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-03-04 11:02:44.900"
+          ]
+        }
+      }
+    },
+    "hay_survey_annual": {
+      "source_desc": "SURVEY",
+      "sample_year": 2024,
+      "slices": {
+        "NATIONAL": {
+          "provider_count": 3,
+          "row_count": 3,
+          "geo_type": "nation",
+          "geo_ids": [
+            "us:1"
+          ],
+          "value_status_counts": {
+            "valid": 3
+          },
+          "cv_status_counts": {
+            "missing": 3
+          },
+          "units": [
+            "ACRES",
+            "TONS",
+            "TONS / ACRE"
+          ],
+          "short_descs": [
+            "HAY - ACRES HARVESTED",
+            "HAY - PRODUCTION, MEASURED IN TONS",
+            "HAY - YIELD, MEASURED IN TONS / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:34.001"
+          ]
+        },
+        "STATE": {
+          "provider_count": 6,
+          "row_count": 6,
+          "geo_type": "state",
+          "geo_ids": [
+            "state:01",
+            "state:48"
+          ],
+          "value_status_counts": {
+            "valid": 6
+          },
+          "cv_status_counts": {
+            "valid": 6
+          },
+          "units": [
+            "ACRES",
+            "TONS",
+            "TONS / ACRE"
+          ],
+          "short_descs": [
+            "HAY - ACRES HARVESTED",
+            "HAY - PRODUCTION, MEASURED IN TONS",
+            "HAY - YIELD, MEASURED IN TONS / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:34.001"
+          ]
+        },
+        "COUNTY": {
+          "provider_count": 6,
+          "row_count": 6,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "not_applicable": 1,
+            "valid": 3,
+            "withheld": 2
+          },
+          "cv_status_counts": {
+            "missing": 1,
+            "valid": 3,
+            "withheld": 2
+          },
+          "units": [
+            "ACRES",
+            "TONS",
+            "TONS / ACRE"
+          ],
+          "short_descs": [
+            "HAY - ACRES HARVESTED",
+            "HAY - PRODUCTION, MEASURED IN TONS",
+            "HAY - YIELD, MEASURED IN TONS / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:34.001"
+          ]
+        }
+      }
+    },
+    "soybeans_survey_annual": {
+      "source_desc": "SURVEY",
+      "sample_year": 2024,
+      "slices": {
+        "NATIONAL": {
+          "provider_count": 4,
+          "row_count": 4,
+          "geo_type": "nation",
+          "geo_ids": [
+            "us:1"
+          ],
+          "value_status_counts": {
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "missing": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "SOYBEANS - ACRES HARVESTED",
+            "SOYBEANS - ACRES PLANTED",
+            "SOYBEANS - PRODUCTION, MEASURED IN BU",
+            "SOYBEANS - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.456"
+          ]
+        },
+        "STATE": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "state",
+          "geo_ids": [
+            "state:01",
+            "state:48"
+          ],
+          "value_status_counts": {
+            "valid": 8
+          },
+          "cv_status_counts": {
+            "valid": 8
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "SOYBEANS - ACRES HARVESTED",
+            "SOYBEANS - ACRES PLANTED",
+            "SOYBEANS - PRODUCTION, MEASURED IN BU",
+            "SOYBEANS - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.456"
+          ]
+        },
+        "COUNTY": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "below_rounding_unit": 2,
+            "not_available": 2,
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "missing": 4,
+            "valid": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "SOYBEANS - ACRES HARVESTED",
+            "SOYBEANS - ACRES PLANTED",
+            "SOYBEANS - PRODUCTION, MEASURED IN BU",
+            "SOYBEANS - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.456"
+          ]
+        }
+      }
+    },
+    "wheat_survey_annual": {
+      "source_desc": "SURVEY",
+      "sample_year": 2024,
+      "slices": {
+        "NATIONAL": {
+          "provider_count": 4,
+          "row_count": 4,
+          "geo_type": "nation",
+          "geo_ids": [
+            "us:1"
+          ],
+          "value_status_counts": {
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "missing": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "WHEAT - ACRES PLANTED",
+            "WHEAT, WINTER - ACRES HARVESTED",
+            "WHEAT, WINTER - PRODUCTION, MEASURED IN BU",
+            "WHEAT, WINTER - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "WINTER"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.789"
+          ]
+        },
+        "STATE": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "state",
+          "geo_ids": [
+            "state:01",
+            "state:48"
+          ],
+          "value_status_counts": {
+            "valid": 8
+          },
+          "cv_status_counts": {
+            "valid": 8
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "WHEAT - ACRES PLANTED",
+            "WHEAT, WINTER - ACRES HARVESTED",
+            "WHEAT, WINTER - PRODUCTION, MEASURED IN BU",
+            "WHEAT, WINTER - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "WINTER"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.789"
+          ]
+        },
+        "COUNTY": {
+          "provider_count": 8,
+          "row_count": 8,
+          "geo_type": "county",
+          "geo_ids": [
+            "state:01|county:001",
+            "state:48|county:301"
+          ],
+          "value_status_counts": {
+            "insufficient_reports": 4,
+            "valid": 4
+          },
+          "cv_status_counts": {
+            "missing": 4,
+            "valid": 4
+          },
+          "units": [
+            "ACRES",
+            "BU",
+            "BU / ACRE"
+          ],
+          "short_descs": [
+            "WHEAT - ACRES PLANTED",
+            "WHEAT, WINTER - ACRES HARVESTED",
+            "WHEAT, WINTER - PRODUCTION, MEASURED IN BU",
+            "WHEAT, WINTER - YIELD, MEASURED IN BU / ACRE"
+          ],
+          "class_descs": [
+            "ALL CLASSES",
+            "WINTER"
+          ],
+          "domains": [
+            "TOTAL|NOT SPECIFIED"
+          ],
+          "load_times": [
+            "2025-01-10 15:20:33.789"
+          ]
+        }
+      }
+    }
+  }
+}

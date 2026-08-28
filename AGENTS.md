@@ -1,121 +1,324 @@
-# Repository agent instructions
+# Repository Agent Instructions
 
-## Purpose
+## Purpose and architecture
 
-This repository is the foundation for a public-data analytics website and social hub. The finished product should allow users to explore public datasets integrated into the warehouse, configure and save their own analyses, compare measures across sources and geographies, and communicate what they learn through blog posts, forums, and shared insights.
+This repository is the foundation for a public-data analytics website and social hub. It integrates public datasets into a trustworthy warehouse that will later support APIs, configurable analyses, visualizations, publishing, forums, and shared insights.
 
-The product is delivered through a strict implementation hierarchy. Each layer depends on a stable, validated foundation from the layer before it:
-
-1. **Data warehouse — first:** Build trustworthy ingestion, raw capture, normalization, shared dimensions, quality controls, lineage, and publication-ready warehouse objects for supported public sources. This is the current phase and the present implementation priority. A warehouse object must have a stable grain, identity, semantics, provenance, quality contract, and test evidence before downstream work relies on it.
-2. **API — second:** Build API resources from the respective stable warehouse objects. Each API contract must deliberately map to validated warehouse data products rather than compensate for unfinished schemas, duplicate warehouse logic, or query unstable internals. The API should support discovery, filtering, comparison, analysis configuration, persistence, and future social features. Begin an API surface only after its required warehouse objects are implementation-complete or explicitly approved as stable dependencies.
-3. **Web application and social hub — last:** Build frontend features against stable, documented API contracts. The website must consume the API rather than couple directly to warehouse tables or recreate API and warehouse rules in client code. Analytics configuration and visualization come after their supporting API contracts; blogging, forums, publishing, and insight-sharing workflows build on those stable analytics capabilities.
-
-This order is an architectural dependency, not merely a scheduling preference:
+Implementation follows this dependency order:
 
 ```text
-stable warehouse objects -> stable API contracts -> frontend analytics and social features
+stable warehouse objects -> stable API contracts -> frontend analytics/social features
 ```
 
-Do not implement a downstream layer as a workaround for missing or unstable behavior upstream. When downstream requirements reveal a missing foundation, update or create the appropriate upstream plan and stabilize that layer first. A plan may span layers only when it defines explicit boundaries, orders warehouse work before API work and API work before frontend work, and validates each boundary independently.
+1. **Data warehouse — current priority.** Build trustworthy ingestion, raw capture, normalization, shared dimensions, quality controls, lineage, and publication-ready warehouse objects.
+2. **API — second.** Build API resources only on stable warehouse contracts. Do not use the API to compensate for unfinished warehouse design.
+3. **Web application/social hub — last.** Build frontend behavior against stable API contracts. Do not duplicate warehouse or API rules in client code.
 
-Treat the warehouse, API, analytics UI, and social functionality as connected product layers with explicit contracts. Make current-phase decisions that leave a clear path for later phases, but do not prematurely implement a later phase unless an approved plan places it in scope. Prefer durable data identities, provenance, metadata, and queryable semantics that future API and web clients can safely use.
+When a downstream requirement exposes a missing upstream foundation, fix or plan the upstream contract first.
 
-Throughout every phase, preserve source fidelity, reproducibility, safe replay, explicit data-layer boundaries, privacy and security, and testable evidence. The application must distinguish provider-published facts from derived analysis and retain enough provenance for users to understand and responsibly share results.
+Preserve source fidelity, reproducibility, safe replay, explicit layer boundaries, provenance, privacy/security, and the distinction between provider-published facts and derived analysis.
 
-Read `README.md`, `pyproject.toml`, and the relevant source, tests, and documentation before making architectural changes. Preserve unrelated user changes in the working tree.
+Preserve unrelated user changes in the working tree.
 
-## Reference documentation is part of the contract
+## Canonical repository guidance
 
-Remain actively aware of `docs/reference/`; it is operational and engineering guidance, not background reading. Before planning or changing related behavior, read the applicable reference document in full and reconcile the implementation, tests, and plan with it:
+`AGENTS.md` contains repository-wide operating rules. Detailed contracts live under `docs/reference/`; do not duplicate them here.
 
-- `docs/reference/TESTING_CONTRACT.md` defines test layers, markers, fixtures, isolation, infrastructure expectations, quality gates, and the behavioral catalog. Read it before changing production behavior, test architecture, markers, fixtures, or CI expectations.
-- `docs/reference/ADDING_A_DATA_SOURCE.md` defines the required adapter contract and checklist. Read it before planning, implementing, or reviewing any new public-data source.
-- `docs/reference/BETA_RESET_REINGESTION.md` defines safe warehouse bootstrap, reset, dependency-order ingestion, and completion checks. Read it before changing bootstrap, migrations, manifests, ingestion ordering, replay, or operational re-ingestion behavior.
-- `docs/reference/CI_EVIDENCE_MAP.md` defines which automated checks prove each repository contract. Read it when adding behavior, selecting validation, changing CI, or claiming a plan complete.
+Before changing behavior, read the applicable contract in full:
 
-Treat these documents as living contracts. When implementation intentionally changes a documented contract, update the relevant reference and its tests in the same change. Do not allow plans, code, tests, CI, and reference documentation to silently diverge. If a plan conflicts with a reference contract, investigate the repository evidence and resolve the conflict explicitly before implementation.
+* `docs/reference/TESTING_CONTRACT.md` — test layers, markers, fixtures, isolation, infrastructure, quality gates, and behavioral catalog.
+* `docs/reference/ADDING_A_DATA_SOURCE.md` — required adapter contract and checklist for public-data sources.
+* `docs/reference/BETA_RESET_REINGESTION.md` — warehouse bootstrap, reset, dependency-order ingestion, replay, and re-ingestion.
+* `docs/reference/CI_EVIDENCE_MAP.md` — automated evidence proving repository contracts.
+* `docs/reference/PLAN_DISPATCHER.md` — parallel plan dispatch, worker prompts, verification, and integration.
 
-## Test-driven design
+When implementation intentionally changes a documented contract, update the applicable reference, implementation, and tests together.
 
-Test-driven design is a primary engineering requirement, not a final verification activity. For each behavior or contract change:
+If a plan conflicts with a reference contract, investigate repository evidence and resolve the conflict explicitly before implementing.
 
-1. Identify the applicable behavior and quality gate in `docs/reference/TESTING_CONTRACT.md` and `docs/reference/CI_EVIDENCE_MAP.md`.
-2. Write or update the smallest deterministic test that expresses the required behavior and important failure path. When introducing new behavior, confirm the test fails for the expected reason before implementing it.
-3. Implement the smallest coherent change that satisfies the test.
-4. Run the focused test immediately and do not continue while it is failing.
-5. Run the affected component or contract suite after the focused test passes. Fix regressions before beginning the next implementation step.
-6. Refactor only with passing tests, then rerun the focused and affected suites.
-7. At each plan milestone and before moving a plan to `needs_review/`, run the broadest practical applicable suites and record commands, results, and any environment-limited checks in the plan.
+For architectural work, also inspect the relevant implementation, tests, and repository documentation. Read `README.md` or `pyproject.toml` when they are relevant to the decision; do not repeatedly reread them for routine plan execution.
 
-Maintain a green test state throughout implementation. Never accumulate known failures for cleanup at the end, weaken assertions to make a test pass, or replace meaningful behavioral checks with implementation-detail assertions. A skipped, deselected, quarantined, or unexecuted test is not successful evidence. If a required test cannot run, stop work that depends on its result or document the exact environmental blocker; never assume it passes.
+## Plan workflow
 
-## Implementation plan workflow
+Implementation plans live under `docs/plans/`:
 
-The implementation backlog lives under `docs/plans/`:
+* `to_do/` — approved, unclaimed work.
+* `in_progress/` — currently active or interrupted work.
+* `needs_review/` — implementation complete and awaiting human review.
+* `completed/` — human-accepted work. Agents move plans here only when explicitly asked.
 
-- `to_do/`: approved plans that have not been claimed.
-- `in_progress/`: the plan currently being implemented or a plan that was interrupted.
-- `needs_review/`: implementation the agent judges complete and ready for human review.
-- `completed/`: plans accepted by a human reviewer. Agents do not move plans here unless the user explicitly asks.
+The folder containing a plan is its authoritative workflow state.
 
-The folder containing a plan is its authoritative workflow state. Keep any status, checkpoint, remaining-work checklist, and last-updated date inside the plan consistent with that folder.
+When the user asks to implement the backlog:
 
-When the user asks to implement the plans, work the backlog as a loop rather than stopping after one plan:
+1. Inventory Markdown plans in `in_progress/` and `to_do/`. `docs/plans/README.md` is guidance, not a plan.
+2. Resume `in_progress/` work first. If several plans exist, prefer dependency-unblocking work, then oldest by Git history, then filename order.
+3. Otherwise choose an unblocked `to_do/` plan according to documented dependencies and `docs/plans/README.md`, move exactly one plan to `in_progress/`, and update its status/checkpoint.
+4. Read the selected plan completely and the applicable reference contracts.
+5. Inspect only the implementation and tests needed to establish the current gap.
+6. Implement and validate the plan incrementally.
+7. Keep the active plan current with verified progress, decisions, evidence, remaining work, and blockers.
+8. When the definition of done is satisfied, record concise implementation/validation evidence, mark it ready for review, move it to `needs_review/`, and repair affected plan links.
+9. Re-inventory `in_progress/` and `to_do/` before selecting the next plan.
 
-1. Inventory all Markdown plan files in `docs/plans/in_progress/` and `docs/plans/to_do/`. Do not treat `docs/plans/README.md` as a plan.
-2. Resume plans in `in_progress/` before claiming new work. If more than one exists, prefer a dependency-unblocking plan, then the oldest plan by Git history, then filename order.
-3. If `in_progress/` is empty, select an unblocked plan from `to_do/` using the dependencies and delivery order documented in the plans and `docs/plans/README.md`. Move exactly one selected plan to `in_progress/` before implementation and update its internal status/checkpoint.
-4. Read the entire selected plan. Inspect the repository to confirm its assumptions, dependencies, acceptance criteria, and current implementation state. Existing code is evidence to verify, not proof that a criterion is complete.
-5. Implement the plan end to end using the test-driven design loop above. Keep the plan current as work proceeds: mark only tested and verified items complete, record material decisions, and identify the next pickup when work remains.
-6. Validate at every meaningful implementation step. Do not proceed past a failing focused or affected suite. Before completion, validate using the definition of done below, fix failures that are within the plan's scope, and rerun the relevant focused and broader checks.
-7. When the definition of done is satisfied, add or refresh a concise implementation-evidence section in the plan. Include the delivered behavior, important files or migrations, tests and commands run with their results, and any non-blocking review notes. Set its status to ready for review, clear the next-pickup field, ensure no in-scope checklist item remains open, and move the plan to `needs_review/`.
-8. Repair links affected by a plan move and keep `docs/plans/README.md` accurate when its links or delivery status changed.
-9. Re-inventory both active folders and repeat. Do not rely on an inventory captured before the latest implementation because completing a plan can unblock or change another plan.
+When the user requested the whole backlog, completion of one plan is a checkpoint, not a stopping condition.
 
-The backlog loop is complete only when both `docs/plans/to_do/` and `docs/plans/in_progress/` contain no Markdown plan files and every plan handled by the loop is in `docs/plans/needs_review/`. Report the final inventory and validation results. Do not claim the loop is complete merely because code exists, a checklist is checked, or a plan was already located in `needs_review/`.
+The loop ends only when both active folders contain no Markdown plans and all handled plans have reached `needs_review/`, unless a genuine blocker prevents progress.
 
-## Plan definition of done
+## Implementation discipline
 
-A plan may move to `needs_review/` only when all of the following are true:
+Favor implementation and executable evidence over prolonged repository exploration.
 
-- Every stated acceptance criterion and in-scope deliverable is implemented and backed by inspectable repository evidence.
-- Relevant automated tests were designed alongside or before the implementation, added or updated, and pass. Tests cover meaningful failure paths, replay/idempotency behavior, and contract boundaries where the plan calls for them.
-- Relevant formatting, lint, build, schema, migration, and documentation checks pass.
-- Applicable requirements in `docs/reference/TESTING_CONTRACT.md`, `docs/reference/ADDING_A_DATA_SOURCE.md`, `docs/reference/BETA_RESET_REINGESTION.md`, and `docs/reference/CI_EVIDENCE_MAP.md` are satisfied and remain synchronized with the implementation.
-- Documentation, configuration examples, fixtures, migrations, manifests, and operational instructions affected by the change are current.
-- No unresolved in-scope TODO, placeholder, skipped requirement, or known defect remains.
-- Secrets, credentials, and sensitive source parameters are absent from code, fixtures, logs, captured request metadata, and committed files.
-- The implementation does not silently weaken the plan. Any necessary scope or acceptance-criteria change is explicitly approved by the user and recorded in the plan.
-- Validation evidence is recorded in the plan, including limitations of checks that could not run locally.
+For each problem:
 
-Use judgment to choose evidence, not to waive requirements. If an acceptance criterion is ambiguous, resolve it from repository contracts and documented intent where possible. Ask the user only when the choice would materially change product behavior or scope.
+1. Read the active plan and applicable contract.
+2. Locate the relevant implementation and tests.
+3. Establish the failing or incomplete behavior.
+4. Form the smallest evidence-supported hypothesis.
+5. Write or update the smallest deterministic test that expresses the required behavior and important failure path.
+6. For new behavior, confirm the test fails for the expected reason.
+7. Implement the smallest coherent change.
+8. Run focused validation immediately.
+9. Run the affected component/contract suite after focused validation passes.
+10. Inspect `git diff` after material edits.
 
-If a plan is blocked by a missing decision, credential, unavailable external system, or unmet dependency, do not move it to `needs_review/` and do not mark the backlog complete. Keep it in `in_progress/`, document the blocker and completed evidence, continue with other genuinely independent plans if useful, and report the exact action needed to unblock it.
+Do not continue implementation past a failing focused or affected suite.
 
-## Validation commands
+Tests are executable evidence, not automatically the product specification. Resolve disagreements using the active plan and repository contracts. Fix stale tests when the documented contract proves them wrong; otherwise fix the implementation.
 
-Run the smallest relevant checks while iterating, then the broadest practical suite before moving a plan to `needs_review/`.
+Do not weaken assertions, accumulate known failures for later cleanup, or treat skipped/deselected/unexecuted tests as passing evidence.
 
-- Default Python suite: `pytest`
-- Lint: `ruff check .`
-- Focused suites: use the targets in `Makefile`, including `test-unit`, `test-etl`, `test-api`, `test-dags`, and the relevant integration or end-to-end target.
-- Web unit tests: `npm --prefix apps/web run test:unit`
-- Web lint and build: `npm --prefix apps/web run lint` and `npm --prefix apps/web run build`
+## Tool and context discipline
 
-Integration, database, Redis, Martin, external-source, performance, browser, and composed-service checks may require optional dependencies or disposable services. Run them when the changed contract depends on them. Never treat an unavailable environment as a passing check; record what was and was not executed.
+The repository, plans, Git diff, and tests are persistent project memory. Conversation history is temporary working context.
 
-## Engineering expectations
+Use the shortest evidence-gathering path sufficient to act:
 
-- Preserve raw source evidence before parsing or normalization.
-- Keep raw capture, control state, silver normalization, gold publication, and serving/API responsibilities explicit.
-- Prefer deterministic offline fixtures for source behavior. Live external calls supplement contract tests; they do not replace replayable tests.
-- Preserve idempotency, revision history, geography identity, units, suppression/missing semantics, and lineage.
-- Do not infer geography from names when authoritative codes or mappings are required.
-- Do not silently convert suppressed, missing, invalid, or non-numeric values to zero.
-- Keep provider adapters isolated and shared contracts provider-neutral.
-- Avoid unrelated refactors while implementing a plan.
-- Do not delete or overwrite user work. Do not commit, push, deploy, rotate credentials, or modify external systems unless the user explicitly asks.
+* Prefer `rg`, symbol searches, filename filters, and targeted directories over broad recursive dumps.
+* Read bounded file sections when the whole file is unnecessary.
+* Prefer focused tests while iterating.
+* Capture relevant failures and tracebacks rather than repeatedly printing complete logs.
+* Do not reread an unchanged file unless a new question requires it.
+* Do not dump generated artifacts, datasets, lock files, fixtures, or large logs for orientation.
+* Summarize evidence already established instead of retrieving it again.
 
-## Handoff
+### Anti-loop rule
 
-At the end of each response, state which plan is in progress or was moved to `needs_review/`, summarize implementation and validation evidence, list remaining active plans, and call out blockers or checks not run. Continue the backlog loop in the same run when the user asked for the whole backlog; a plan-sized milestone is a progress update, not a stopping condition.
+Do not repeat a read, search, diagnostic, or tool action unless repository state changed or a specific new question requires it.
+
+If roughly **10–15 diagnostic/read actions** occur on one issue without an implementation change or materially new evidence, stop exploring and do one of:
+
+* make the smallest justified change and test it;
+* run one targeted experiment that distinguishes the remaining hypotheses; or
+* record a concrete blocker.
+
+If the information needed to answer or act has already been found, stop exploring and proceed.
+
+After context condensation or session restart, recover state from the active plan, Git diff, tests, and repository files rather than reconstructing the previous conversation.
+
+### Conflicting filesystem evidence
+
+If tools disagree about file contents:
+
+1. Confirm they reference the same absolute path.
+2. Read the file through the filesystem/runtime used by the application or tests.
+3. If useful, compare size, modification time, or hash.
+4. Run the relevant executable test/import against that filesystem.
+5. Treat the representation consumed by runtime/tests as authoritative.
+
+Once a viewer is proven stale, stop using it as the authoritative reader for that session unless new evidence requires rechecking.
+
+## Definition of done
+
+A plan may move to `needs_review/` only when:
+
+* all acceptance criteria and in-scope deliverables have inspectable repository evidence;
+* required tests were added or updated and pass, including meaningful failure paths and contract boundaries where applicable;
+* relevant formatting, lint, build, schema, migration, and documentation checks pass;
+* applicable requirements in `docs/reference/` remain synchronized with implementation;
+* affected documentation, configuration, fixtures, migrations, manifests, and operational instructions are current;
+* no unresolved in-scope TODO, placeholder, skipped requirement, or known defect remains;
+* secrets and credentials are absent from code, fixtures, logs, request metadata, and committed files;
+* no acceptance criterion or scope has been silently weakened; and
+* validation commands/results and environment-limited checks are recorded in the plan.
+
+If a required check cannot run, record the exact blocker. Do not report it as passing.
+
+If completion requires a user decision, credential, unavailable external system, or unmet dependency, keep the plan in `in_progress/`, record the blocker and completed evidence, and continue only with genuinely independent work.
+
+## Validation
+
+Use the smallest relevant checks while iterating and the broadest practical applicable checks before review.
+
+* Python: `pytest`
+* Lint: `ruff check .`
+* Makefile targets where applicable: `test-unit`, `test-etl`, `test-api`, `test-dags`, and relevant integration/e2e targets.
+* Web unit tests: `npm --prefix apps/web run test:unit`
+* Web lint: `npm --prefix apps/web run lint`
+* Web build: `npm --prefix apps/web run build`
+
+Integration, database, Redis, Martin, external-source, performance, browser, and composed-service checks may require optional infrastructure. Run them when the changed contract depends on them and record unavailable environments explicitly.
+
+## Engineering invariants
+
+* Preserve raw source evidence before parsing or normalization.
+* Keep raw capture, control state, silver normalization, gold publication, and serving/API responsibilities explicit.
+* Prefer deterministic offline fixtures for provider behavior; live calls supplement rather than replace replayable tests.
+* Preserve idempotency, revision history, geography identity, units, suppression/missing semantics, and lineage.
+* Use authoritative geography codes/mappings; do not infer identity from names when authoritative identifiers are required.
+* Never silently convert suppressed, missing, invalid, or non-numeric values to zero.
+* Keep provider adapters isolated and shared contracts provider-neutral.
+* Avoid unrelated refactors.
+* Prefer small, reviewable changes with immediate validation.
+* Never delete or overwrite unrelated user work.
+* Do not commit, push, deploy, rotate credentials, or modify external systems unless explicitly requested.
+
+## Terminal safety
+
+For long-running commands:
+
+1. Use finite timeouts for tests, normally 120 seconds.
+2. A terminal soft timeout does not by itself mean the command failed.
+3. Poll an active command once.
+4. If still stuck, send `Ctrl+C` **once**.
+5. Poll once after the interrupt.
+6. If the terminal remains unavailable, reset the terminal session.
+
+Never send repeated `Ctrl+C` input or repeat an identical terminal action that failed to change state.
+
+For diagnosing a hanging test, prefer:
+
+```text
+python -u -m pytest <path> -vv -s --tb=short --maxfail=1
+```
+
+Do not pipe diagnostic pytest output through PowerShell filtering. If a suite hangs, isolate the last-running test instead of repeatedly rerunning the entire suite.
+
+## Handoff and stopping conditions
+
+At meaningful checkpoints, persist enough state in the active plan for another agent to resume from repository evidence.
+
+User-facing progress reports should state:
+
+* the active or newly completed plan;
+* implemented behavior and validation evidence;
+* remaining active plans; and
+* blockers or checks not run.
+
+When the whole backlog was requested, do not stop merely to provide a progress report if safe actionable work remains.
+
+Stop autonomous execution only when:
+
+1. the requested backlog is complete;
+2. a genuine blocker requires user input, credentials, unavailable infrastructure, or a scope decision;
+3. continuing risks unrelated user work or violates a repository contract; or
+4. the environment can no longer reliably read, modify, or validate the repository.
+
+### Windows terminal rules
+
+The execution environment is Windows PowerShell unless direct evidence shows otherwise.
+
+- Use PowerShell-native syntax and commands.
+- Do not use Bash operators or utilities such as:
+  - `&&`
+  - `grep`
+  - `find`
+  - `cat`
+  - `head`
+  - `tail`
+  - `/dev/null`
+  - Bash-style environment-variable assignment
+- Use PowerShell equivalents:
+  - command sequencing: `;`
+  - search text: `Select-String`
+  - recursive file discovery: `Get-ChildItem -Recurse`
+  - read files: `Get-Content`
+  - change directory: `Set-Location`
+  - suppress output/errors only with PowerShell syntax
+- Prefer running repository Python commands from an explicit working directory rather than embedding shell-specific directory changes when avoidable.
+- Do not repeat an identical terminal command after it hangs or fails unless repository state changed or a specific new hypothesis justifies the rerun.
+
+When a terminal command fails or times out:
+
+1. Poll the existing command once.
+2. If it is still running, send `Ctrl+C` exactly once.
+3. Poll once after the interrupt.
+4. If the process is still running or the terminal remains unavailable, reset the terminal session immediately using the terminal tool's reset capability.
+5. After reset, run a trivial PowerShell health check before executing another repository command.
+6. Do not diagnose Python, pytest, PATH, repository state, or dependency availability until the fresh terminal successfully executes the health check.
+
+**Hard process-management invariant:** Never send `Ctrl+C` more than once for the same running process. After one unsuccessful interrupt and one poll, the only permitted terminal recovery action is a terminal reset.
+
+### Terminal timeout invariants
+
+- Terminal tool `timeout` values are measured in **seconds**, never milliseconds.
+- Never set a terminal timeout above **300 seconds** unless the active plan explicitly requires a known long-running operation.
+- Normal focused test timeout: **120 seconds**.
+- Normal larger-suite timeout: **300 seconds maximum**, unless explicitly justified.
+- Normal non-test command timeout: **30–120 seconds**.
+- Never use values such as `60000`, `120000`, or other millisecond-style timeout values.
+- A terminal soft timeout means the process may still be running; it does not prove the command or test failed.
+
+### Test command invariants
+
+For diagnostic pytest runs, execute pytest directly.
+
+Preferred:
+
+`python -u -m pytest <target> -vv -s --tb=short --maxfail=1`
+
+Do not pipe diagnostic pytest output through `Select-String`, `Select-Object`, `grep`, `head`, `tail`, or equivalent filtering commands.
+
+If pytest exceeds its terminal timeout:
+
+1. Poll once.
+2. Send `Ctrl+C` once if the process is still active.
+3. Poll once.
+4. If it remains active or the terminal remains unavailable, reset the terminal session.
+5. Verify the fresh terminal with a trivial command.
+6. Diagnose the individual hanging test before running another suite.
+7. Do not repeatedly rerun the same hanging test without gathering new diagnostic evidence.
+
+If a direct Python import or test consistently hangs, prefer a bounded diagnostic that produces actionable evidence rather than another blind rerun. For example, use Python `faulthandler` or another finite diagnostic mechanism to capture where execution is blocked.
+
+### Subagent delegation
+
+On Windows, do not delegate terminal execution, test execution, process management, or shell diagnosis to `bash-runner`.
+
+The primary agent is responsible for terminal recovery and diagnosis of hanging or failed test commands.
+
+If terminal work is delegated to another subagent:
+
+- explicitly include the Windows PowerShell rules from this repository;
+- explicitly state that terminal timeout values are in seconds;
+- explicitly state the one-`Ctrl+C` hard limit and required terminal-reset behavior;
+- require direct pytest execution without output-filtering pipelines; and
+- require the subagent to return concrete results rather than silently completing without evidence.
+
+The parent agent remains responsible for ensuring all delegated commands obey repository terminal-safety constraints.
+
+### External research rules
+
+Internet research is permitted and should be used when implementation depends
+on information not reliably established by the repository.
+
+Use authoritative sources before guessing about:
+
+- API endpoints, schemas, parameters, authentication, and rate limits
+- current library/framework behavior
+- external dataset definitions and geographic coverage
+- compatibility or version-specific behavior
+- unfamiliar errors that cannot be resolved from repository context
+
+Prefer primary sources in this order:
+
+1. Official documentation
+2. Official source repositories / release notes
+3. Standards or government documentation
+4. Reputable technical references
+
+Do not repeatedly search the web when the repository or an authoritative
+source already answers the question.
+
+After research, return to implementation. Web research is supporting work,
+not a substitute for modifying and testing the repository.

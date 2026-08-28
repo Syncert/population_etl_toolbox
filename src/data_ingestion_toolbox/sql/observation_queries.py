@@ -18,6 +18,7 @@ SOURCE_SCHEMA_MAP: dict[str, str] = {
     "bls": "gold_bls",
     "census": "gold_census",
     "fred": "gold_fred",
+    "pep": "gold_pep",
 }
 
 # ---------------------------------------------------------------------------

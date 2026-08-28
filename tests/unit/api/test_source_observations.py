@@ -107,6 +107,10 @@ class _SourceSchemaSession:
                 "gold_fred.mv_fred_latest",
                 "gold_fred.rpt_fred_observations",
             ),
+            "gold_pep": (
+                "gold_pep.mv_pep_latest",
+                "gold_pep.rpt_pep_observations",
+            ),
         }
         latest_table, timeseries_table = source_tables[schema]
         latest_relations = (f"{schema}.v_metric_latest_by_geo", latest_table)
@@ -300,6 +304,12 @@ def test_fred_latest_accepts_metric_id_alias() -> None:
         ("bls", "gold_bls", "BLS:LAU:UNEMP_RATE", "BLS"),
         ("census", "gold_census", "ACS:acs5:B01003_001", "CENSUS_ACS"),
         ("fred", "gold_fred", "FRED:UNRATE", "FRED"),
+        (
+            "pep",
+            "gold_pep",
+            "CENSUS_PEP:pep_nst_alldata:POPESTIMATE",
+            "CENSUS_PEP",
+        ),
     ],
 )
 def test_source_timeseries_routes_preserve_source_contract(
@@ -347,6 +357,12 @@ def test_source_timeseries_routes_preserve_source_contract(
             "gold_fred",
             "gold_fred.mv_fred_latest",
             "gold_fred.rpt_fred_observations",
+        ),
+        (
+            "pep",
+            "gold_pep",
+            "gold_pep.mv_pep_latest",
+            "gold_pep.rpt_pep_observations",
         ),
     ],
 )

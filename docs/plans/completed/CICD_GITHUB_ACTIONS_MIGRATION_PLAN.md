@@ -1,3 +1,13 @@
+---
+id: cicd-actions
+branch: feat/cicd-actions
+depends_on: []
+parallel_safe: false
+complexity: medium
+verify:
+  - ./tests/run.ps1 unit
+---
+
 # CI/CD GitHub Actions migration plan
 
 ## Plan status

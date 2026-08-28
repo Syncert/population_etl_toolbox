@@ -1,0 +1,30 @@
+{
+  "id": "swc5-untb",
+  "name": "PLACES: Local Data for Better Health, County Data, 2025 release",
+  "licenseId": "PUBLIC_DOMAIN",
+  "rowsUpdatedAt": 1764844506,
+  "viewLastModified": 1764958362,
+  "columns": [
+    ["year", "text"],
+    ["stateabbr", "text"],
+    ["statedesc", "text"],
+    ["locationname", "text"],
+    ["datasource", "text"],
+    ["category", "text"],
+    ["measure", "text"],
+    ["data_value_unit", "text"],
+    ["data_value_type", "text"],
+    ["data_value", "number"],
+    ["data_value_footnote_symbol", "text"],
+    ["data_value_footnote", "text"],
+    ["low_confidence_limit", "number"],
+    ["high_confidence_limit", "number"],
+    ["totalpopulation", "number"],
+    ["totalpop18plus", "number"],
+    ["locationid", "text"],
+    ["categoryid", "text"],
+    ["measureid", "text"],
+    ["datavaluetypeid", "text"],
+    ["short_question_text", "text"]
+  ]
+}

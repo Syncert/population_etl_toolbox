@@ -24,12 +24,14 @@ SOURCE_LATEST_TABLE_MAP: dict[str, str] = {
     "bls": "gold_bls.mv_bls_latest",
     "census": "gold_census.mv_acs_latest",
     "fred": "gold_fred.mv_fred_latest",
+    "pep": "gold_pep.mv_pep_latest",
 }
 
 SOURCE_TIMESERIES_TABLE_MAP: dict[str, str] = {
     "bls": "gold_bls.rpt_bls_observations",
     "census": "gold_census.rpt_acs_observations",
     "fred": "gold_fred.rpt_fred_observations",
+    "pep": "gold_pep.rpt_pep_observations",
 }
 
 
@@ -101,28 +103,34 @@ def _source_select_sql(source: str) -> str:
         if normalized in {"bls", "fred"}
         else "NULL::TEXT AS seasonal_adjustment_status"
     )
+    has_census_vintage = normalized in {"census", "pep"}
     dataset_expr = (
-        "dataset_code" if normalized == "census" else "NULL::TEXT AS dataset_code"
+        "dataset_code" if has_census_vintage else "NULL::TEXT AS dataset_code"
     )
     vintage_year_expr = (
-        "vintage_year" if normalized == "census" else "NULL::INT AS vintage_year"
+        "vintage_year" if has_census_vintage else "NULL::INT AS vintage_year"
     )
     vintage_expr = (
         "vintage_year::TEXT AS vintage"
-        if normalized == "census"
+        if has_census_vintage
         else "NULL::TEXT AS vintage"
     )
     moe_expr = (
         "margin_of_error::TEXT AS margin_of_error"
-        if normalized == "census"
+        if has_census_vintage
         else "NULL::TEXT AS margin_of_error"
     )
     moe_pct_expr = (
         "margin_of_error_pct::TEXT AS margin_of_error_pct"
-        if normalized == "census"
+        if has_census_vintage
         else "NULL::TEXT AS margin_of_error_pct"
     )
 
+    geo_name_expr = (
+        "COALESCE(place_name, county_name, state_name, geo_id)"
+        if normalized == "pep"
+        else "COALESCE(county_name, state_name, geo_id)"
+    )
     return f"""
         source_code,
         source_code AS source,
@@ -136,7 +144,7 @@ def _source_select_sql(source: str) -> str:
         updated_at,
         geo_id,
         geo_level,
-        COALESCE(county_name, state_name, geo_id) AS geo_name,
+        {geo_name_expr} AS geo_name,
         state_fips,
         county_fips,
         state_name,
@@ -343,7 +351,7 @@ def list_latest_observations_for_source(
 ) -> ObservationListResponse:
     """Return latest observations from a source-specific gold schema.
 
-    ``source`` must be one of "bls", "census", or "fred".
+    ``source`` must be one of "bls", "census", "fred", or "pep".
     Falls back to the cross-source ``gold`` schema when the per-source schema
     does not yet exist.
     """

@@ -1,3 +1,21 @@
+---
+id: api-platform
+branch: feat/api-platform
+depends_on:
+  - census-pep
+  - cdc-illness
+  - fbi-crime
+  - usda-crop
+  - warehouse-data-quality
+  - three-source-review
+parallel_safe: false
+complexity: high
+verify:
+  - ./tests/run.ps1 api
+  - ./tests/run.ps1 integration
+  - ./tests/run.ps1 e2e
+---
+
 # API development plan
 
 ## Plan status

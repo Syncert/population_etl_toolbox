@@ -186,6 +186,23 @@ class CaptureControl:
             (status, summary, str(run_id), self.source_code),
         )
 
+    def set_run_watermark(
+        self,
+        run_id: UUID,
+        *,
+        watermark: Mapping[str, object],
+    ) -> None:
+        """Persist a provider watermark discovered after raw metadata capture."""
+        _reject_sensitive_keys(watermark, path="watermark")
+        self._execute(
+            """
+            UPDATE control.ingestion_run
+               SET source_watermark = %s::JSONB, updated_at = NOW()
+             WHERE run_id = %s AND source_code = %s
+            """,
+            (json.dumps(watermark, sort_keys=True), str(run_id), self.source_code),
+        )
+
     def start_request(
         self,
         *,

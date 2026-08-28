@@ -109,9 +109,24 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                 )
             assert source.status_code == common.status_code == 200
             assert source.json()["total"] == common.json()["total"] == 1
-            assert source.json()["items"][0]["value"] == "4.50"
+            assert source.json()["items"][0]["value"] == "4.5"
             responses.append(source.json())
         assert responses[0] == responses[1]
+
+        source_evidence = postgres_connection_factory()
+        try:
+            with source_evidence.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT value_source
+                    FROM silver_bls.observation_revision
+                    WHERE series_id = %s AND year = 2095 AND period = 'M01'
+                    """,
+                    (series_id,),
+                )
+                assert cursor.fetchall() == [("4.5",)]
+        finally:
+            source_evidence.close()
 
         revised_payload = copy.deepcopy(payload)
         revised_payload["Results"]["series"][0]["data"][0]["value"] = "5.25"

@@ -1,6 +1,6 @@
 # data_ingestion_toolbox
 
-A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for real-time access to Census, BLS, and FRED data in a structured dimensional warehouse.
+A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for access to Census ACS, Census PEP, BLS, and FRED data in a structured dimensional warehouse.
 
 Active architecture changes are tracked in
 [`docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md`](docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md).
@@ -14,6 +14,7 @@ The implemented test contract and longer-term product design live under
 
 **Scope:**
 - **Census Bureau ACS** (American Community Survey): detailed demographic tables (1-year and 5-year) by geography (US, state, county)
+- **Census Bureau PEP** (Population Estimates Program): annual national, state, county, and incorporated-place estimates with immutable release vintages
 - **BLS** (Bureau of Labor Statistics): labor statistics including employment, unemployment, and wage data
 - **FRED** (Federal Reserve Economic Data): macroeconomic time series (employment, inflation, interest rates, etc.)
 
@@ -27,7 +28,7 @@ the linked remediation tickets.
 ## Current State (August 2026)
 
 ### ✅ Completed
-- **Raw Layer Ingestion:** Census ACS (1yr/5yr), BLS (9 programs), FRED (48 domains) with hash-based change detection
+- **Raw Layer Ingestion:** Census ACS, Census PEP bulk releases, BLS, and FRED through immutable response capture
 - **Geographic Master Data:** capture-first, versioned Census nation/state/county/place identities, attributes, boundaries, and relationships
 - **Silver Transformations:** Dimension-matched fact tables with comprehensive metrics logging
 - **Data Quality Monitoring:** TransformMetrics instrumentation logs pre/per-chunk/upsert/summary statistics
@@ -85,6 +86,7 @@ silver_fred.fact_economic_indicators — FRED macro series
 |-----|----------|---------|
 | `silver_ref` | Monthly (1st @ 05:00 UTC) | Capture/replay the latest complete Census geography snapshot and sync time |
 | `acs_ingest` | Monthly (1st @ 06:00 UTC) | Ingest configured ACS history after shared geography is ready |
+| `census_pep_ingest` | Monthly (1st @ 06:00 UTC) | Capture current registered PEP releases after production-scale geography checks |
 | `bls_ingest` | Monthly (1st @ 07:00 UTC) | Ingest configured BLS history after shared geography is ready |
 | `fred_ingest` | Monthly (1st @ 08:00 UTC) | Ingest configured FRED history |
 
@@ -400,6 +402,8 @@ Airflow pools limit concurrent API requests (prevents rate-limiting):
 airflow pools create census_api 4 "Census Bureau API limit"
 airflow pools create bls_api 4 "BLS API limit"
 airflow pools create fred_api 4 "FRED API limit"
+airflow pools create cdc_api 2 "CDC Open Data API limit"
+airflow pools create fbi_cde_api 2 "FBI Crime Data Explorer API limit"
 ```
 
 Sizing guidance:
@@ -419,6 +423,16 @@ export CENSUS_API_KEY="your_census_api_key_here"
 
 # For BLS API (usually not required; BLS allows public access)
 export BLS_API_KEY="your_bls_api_key_here"
+
+# Optional CDC Socrata public-read app token; anonymous reads are supported.
+export CDC_SOCRATA_APP_TOKEN="your_cdc_socrata_app_token_here"
+
+# Required api.data.gov key for the FBI Crime Data Explorer API.
+export FBI_CDE_API_KEY="your_fbi_cde_api_key_here"
+
+# For USDA NASS Quick Stats (required); inject it into every Airflow container
+# from the deployment secret store, never from a tracked file or an image.
+export USDA_NASS_API_KEY="your_usda_nass_api_key_here"
 ```
 
 ### 3. Configuration Files

@@ -4,6 +4,7 @@ from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMid
 from apps.api.routers import (
     bls,
     catalog,
+    cdc,
     census,
     comparison,
     distribution,
@@ -11,6 +12,8 @@ from apps.api.routers import (
     health,
     models,
     observations,
+    pep,
+    usda_nass,
 )
 from data_ingestion_toolbox.config import Settings, get_settings
 
@@ -39,8 +42,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(models.router)
     # Per-source gold schema routers
     application.include_router(bls.router)
+    application.include_router(cdc.router)
     application.include_router(census.router)
     application.include_router(fred.router)
+    application.include_router(pep.router)
+    application.include_router(usda_nass.router)
     return application
 
 

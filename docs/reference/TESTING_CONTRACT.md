@@ -152,6 +152,7 @@ tests/
     census/
     bls/
     fred/
+    fbi_ucr/
     martin/
     shared/
   dags/
@@ -168,6 +169,7 @@ tests/
     census/
     bls/
     fred/
+    fbi_ucr/
   sql/
   support/
 ```
@@ -270,29 +272,31 @@ Unless a row says otherwise, any unmet pass condition is the failure condition a
 
 ### Implementation Status
 
-Last audited against the repository on 2026-08-12. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
+Last audited against the repository on 2026-08-27. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
-| Environment, collection, and package | ENV-001–ENV-010 | None |
-| Airflow DAGs | DAG-001–DAG-014 | None |
-| ETL and shared units | ETL-001–ETL-037 | None |
-| Database integration | DB-001–DB-018 | None |
-| API | API-001–API-027 | None |
+| Environment, collection, and package | ENV-001–ENV-011 | None |
+| Data-layer architecture boundaries | ARC-001–ARC-003 | None |
+| Plan dispatcher | PLAN-001–PLAN-007 | None |
+| Airflow DAGs | DAG-001–DAG-017 | None |
+| ETL and shared units | ETL-001–ETL-042 | None |
+| Database integration | DB-001–DB-023 | None |
+| API | API-001–API-030 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
-| External source contracts | EXT-001–EXT-010 | None |
-| End-to-end | E2E-001–E2E-006 | None |
+| External source contracts | EXT-001–EXT-012 | None |
+| End-to-end | E2E-001–E2E-007 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **163 of 163** | **0 of 163** |
+| **Total** | **193 of 193** | **0 of 193** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 163-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 193-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -338,6 +342,24 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-008 | P1 | Configuration | Service image pin consistency | PostgreSQL/PostGIS and Redis image versions in test support, documentation, and CI agree; live integration services report the expected major versions | Pin drift between configuration surfaces or unexpected runtime service version |
 | ENV-009 | P1 | Isolation | Safe integration target configuration | Redis integration is opt-in and accepts only credential-free loopback database 15 URLs | An unsafe, remote, credential-bearing, or default Redis target is accepted |
 | ENV-010 | P0 | Organization | Catalog traceability | Every Python test has a `Covers:` docstring, frontend tests carry `Covers:` references, and every referenced ID exists in this catalog | Missing attribution, unmapped catalog row, or unknown catalog ID |
+| ENV-011 | P0 | Collection | Checkout-local imports | `apps` and `data_ingestion_toolbox` import from the checkout pytest runs in, not from an editable install's recorded path, so a Git worktree grades its own source | A test imports application code from outside its own checkout |
+
+### Plan Dispatcher Tests
+
+These tests own the scheduling core described in
+[PLAN_DISPATCHER.md](PLAN_DISPATCHER.md). The dispatcher decides, unattended,
+which plans run in parallel and which branches are integrated, so its rules are
+verified here rather than only observed during a live run.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| PLAN-001 | P1 | Static / `unit` | Plan dispatch metadata contract | Frontmatter yields id, branch, dependencies, parallelism, complexity, and verification commands with documented defaults; a `status` key, unknown key, malformed value, or duplicate id is rejected | Invalid metadata is accepted, or workflow state is read from anywhere but the containing folder |
+| PLAN-002 | P1 | Static / `unit` | Plan dependency graph integrity | Unknown dependencies and cycles fail before any worktree exists; topological order is dependency-first and deterministic | An unschedulable backlog dispatches, or ordering varies between runs over one inventory |
+| PLAN-003 | P1 | Static / `unit` | Dispatch selection and concurrency | Only active plans with satisfied dependencies dispatch; the concurrency cap and `parallel_safe` exclusivity hold; resumable and bottleneck plans rank first | The cap is exceeded, an exclusive plan runs beside other work or is starved, or claimed work is not resumed first |
+| PLAN-004 | P1 | Static / `unit` | Blocked propagation and run termination | Blocked and failed statuses propagate to every transitive dependent; the run reports done or stalled deterministically and names plans that ended blocked | Work dispatches behind a blocked dependency, or a run finishing with blockers reports clean success |
+| PLAN-005 | P1 | Isolation / `unit` | Dispatcher run-state durability | Run state round-trips through disk, is replaced atomically, counts one attempt per worker start, and rejects corrupt or unversioned state | State is lost, partially written, miscounts attempts against the retry ceiling, or silently resets |
+| PLAN-006 | P1 | Contract / `unit` | Worker prompt and planner CLI contract | The `/goal` prompt carries verification commands, the `needs_review/` handoff, and the no-progress stand-down ceiling; CLI subcommands emit documented JSON and exit non-zero on unknown plans, live runs, and cycles | An unbounded or unverifiable prompt is issued, or the shell dispatcher cannot detect a planner failure |
+| PLAN-007 | P1 | Contract / `unit` | Human review gate checkpoint | A gate parses only from `gates/` with dependencies and no scheduling keys; it stays shut until everything it guards is satisfied, then opens for review and pauses the run rather than stalling; only a recorded human approval releases dependents, rejection blocks them, and the decision names who and when | A gate is dispatched as work, cleared without a human decision, pre-approved before its dependencies finish, silently reopened, or its dependents proceed past an undecided or rejected checkpoint |
 
 ### Data-layer Architecture Boundary Tests
 
@@ -356,19 +378,22 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
 | DAG-001 | P0 | Structure / `dag` | Import the repository DAG folder with `DagBag` | `import_errors == {}` | Any DAG import error |
-| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present: `silver_ref`, `acs_ingest`, `bls_ingest`, `fred_ingest` | Missing, renamed, or duplicate expected DAG |
-| DAG-003 | P0 | Structure / `dag` | DAG IDs are unique | Four expected IDs map to four distinct DAG objects | Duplicate ID or overwritten DAG |
+| DAG-002 | P0 | Structure / `dag` | Expected DAG inventory | IDs are exactly present for reference, ACS, BLS, FRED, Census PEP, CDC, FBI UCR, USDA NASS crop, glossary harvest, and glossary reconciliation | Missing, renamed, or duplicate expected DAG |
+| DAG-003 | P0 | Structure / `dag` | DAG IDs are unique | Every expected ID maps to a distinct DAG object | Duplicate ID or overwritten DAG |
 | DAG-004 | P0 | Structure / `dag` | Required DAG metadata | Every DAG has owner `data-eng`, a non-null schedule/start date, non-empty tags, and `catchup is False` | Missing or unintended metadata |
-| DAG-005 | P0 | Structure / `dag` | Schedule contract | Schedules are monthly on day 1 at 05:00, 06:00, 07:00, and 08:00 UTC for reference, ACS, BLS, and FRED respectively | Cron differs from the declared contract |
+| DAG-005 | P0 | Structure / `dag` | Schedule contract | Source/reference/glossary schedules match `tests/dags/test_dagbag.py`; CDC checks releases weekly at 09:00 UTC Monday, FBI UCR weekly at 10:00 UTC Monday, and USDA NASS on business days at 10:00 UTC | Cron differs from the declared contract |
 | DAG-006 | P0 | Structure / `dag` | Task ID uniqueness | `len(task_ids) == len(set(task_ids))` in every DAG | Duplicate task ID |
-| DAG-007 | P0 | Structure / `dag` | External API pools | ACS `ingest_batch` uses `census_api`; BLS uses `bls_api`; FRED uses `fred_api` | Missing or wrong pool assignment |
-| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries are 2 for `silver_ref`, 3 for source DAGs, and BLS `ingest_batch` has the intentional 10-retry override | Retry count is absent or changes without test update |
+| DAG-007 | P0 | Structure / `dag` | External API pools | ACS uses `census_api`, BLS uses `bls_api`, FRED uses `fred_api`, CDC uses `cdc_api`, FBI UCR uses `fbi_cde_api`, and USDA NASS uses `usda_nass_api` | Missing or wrong pool assignment |
+| DAG-008 | P0 | Structure / `dag` | Retry policy | Default retries match the checked-in per-DAG contract; CDC, FBI UCR, and USDA NASS use 2 and BLS `ingest_batch` retains the intentional 10-retry override | Retry count is absent or changes without test update |
 | DAG-009 | P0 | Structure / `dag` | Reference dependencies | `ensure_schema` is upstream of both `load_dim_geo` and `load_dim_time` | Either dimension can run before schema creation |
-| DAG-010 | P0 | Structure / `dag` | Source pipeline order | For each source, metadata/planning precedes ingestion; ingestion precedes silver; silver precedes gold refresh | Required stage has no dependency path or order is reversed |
+| DAG-010 | P0 | Structure / `dag` | Source pipeline order | For each source, metadata/planning or capture precedes ingestion/replay; silver reconciliation precedes gold publication | Required stage has no dependency path or order is reversed |
 | DAG-011 | P0 | Import side effect / `dag` | No work during module import | Mock HTTP, database, and Redis call counts all remain zero during `DagBag` construction | Any external call occurs at import time |
 | DAG-012 | P0 | Performance / `dag` | DAG parse time | Each file parses in under 2 seconds and the complete folder in under 10 seconds on the CI runner | Either timing budget is exceeded |
 | DAG-013 | P1 | Compatibility / `dag` | Scheduler-image dependency compatibility | The same DagBag suite passes inside the built Airflow scheduler image | Local pass but scheduler-image import failure |
 | DAG-014 | P1 | Configuration / `dag` | Missing connections/keys fail at task runtime, not import | DAGs still parse; invoked boundary reports a clear sanitized configuration error | Import failure, secret leak, or ambiguous runtime error |
+| DAG-015 | P0 | Coverage / `dag` | Orchestrated pipeline coverage | The set of DAGs executed by the orchestrated suite equals the set of DAGs in the DagBag, and the DagBag has no import errors | A production DAG is added without orchestrated execution coverage, or a stale DAG id lingers in the suite |
+| DAG-016 | P1 | Execution / `dag integration database slow` | Orchestrated pipeline execution | Every DAG in `dags/` completes a real DagRun with all task instances successful against the disposable PostGIS warehouse, driving a bounded reviewed provider sample from capture through replay to publication, with shared geography and time dimensions populated at production scale | Any task instance in any pipeline fails, the DAG-to-function wiring rejects its arguments or connection, or a task reaches a live provider |
+| DAG-017 | P1 | Configuration / `dag` | Warehouse connection resolution | Resolving the warehouse connection from Airflow uses only non-deprecated hook arguments and honors the database override | A provider deprecation warning escalates to a task failure under strict filters, or the override is ignored |
 
 ### ETL and Shared Unit Tests
 
@@ -416,6 +441,8 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-038 | P0 | Unit / `unit` | Request fingerprint safety | Canonical source/endpoint/parameters produce a stable fingerprint and secret-bearing fields are rejected | Equivalent requests drift or credentials enter fingerprint inputs |
 | ETL-039 | P0 | Unit / `unit` | Dedicated capture commit | Payload plus envelope commit on their own connection; envelope failure rolls back both and closes the connection | Parser transaction can own capture commit or partial capture persists |
 | ETL-040 | P0 | Unit / `unit` | Offline capture loading | Replay returns stored bytes only after checksum verification and performs no network work | Missing checksum verification, changed bytes, or network dependency |
+| ETL-041 | P1 | Unit / `unit` | Gold bootstrap detection | Required-object detection renders valid SQL for every combination of required relations and procedures, including an empty procedure list; a component with no required objects is vacuously bootstrapped | A trailing comma or empty predicate list produces invalid SQL, or bootstrap state is misdetected |
+| ETL-042 | P0 | Contract + database / `unit integration database` | FBI agency aggregation boundary | Gold products retain national/state provider totals and agency observations at their published grain; county/place views only filter effective-dated agency relationships, never aggregate observation values or publish area-total labels | A provider total is reconstructed, an agency value is aggregated or mislabeled as an area total, or a valid historical observation loses its effective area filter after a later refresh |
 
 ### PostgreSQL Integration Tests
 
@@ -480,6 +507,9 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-025 | P0 | Router / `unit api` | Catalog sources response | The catalog sources route returns the stable source metadata contract without real database access | Non-200 response, malformed source metadata, or real database access |
 | API-026 | P0 | Router / `unit api` | Model status response | The models status route returns the stable source-model availability contract | Non-200 response or model status contract drift |
 | API-027 | P0 | Service / `unit api` | Latest-view fallback | An empty latest materialized view falls back to the durable report relation while preserving pagination totals and schema | Empty result despite durable rows, wrong total, or response contract drift |
+| API-028 | P0 | Router / `unit api` | CDC source-explorer contract | CDI and PLACES observations return dataset, release, measure, stratum, unit, adjustment, method, population basis, uncertainty, and typed suppression/missing state, and every documented filter binds exactly | Product conflation, dropped filter, missing interpretive field, or suppressed/missing value rendered numerically |
+| API-029 | P0 | Router / `unit api` | CDC release selection | An omitted release reads `gold_cdc.latest_release_observation`; a named release reads `gold_cdc.health_observation` with the same response contract | Wrong relation, silent latest fallback, or lost release identity |
+| API-030 | P0 | Router / `unit api` | CDC filter validation | Unregistered dataset, unsupported geography type, unknown adjustment, and reversed year range return 422 before any database work | Invalid filter reaches the database, returns 500, or degrades to an empty result |
 
 ### Frontend Tests
 
@@ -523,7 +553,7 @@ Martin unit tests are deterministic and require no service. Integration tests us
 
 ### External Source Contract Tests
 
-These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions. Census Data API queries require `CENSUS_API_KEY` under the Census Bureau's [May 2026 authentication policy](https://www.census.gov/library/video/2026/adrm/requesting-a-census-data-api-key.html); FRED queries require `FRED_API_KEY`; BLS uses `BLS_API_KEY` when configured. Missing required live-test credentials are named skips only in runners that explicitly permit and report them.
+These tests use the smallest practical request, are never pull-request gates, and distinguish upstream availability failures from application contract regressions. Census Data API queries require `CENSUS_API_KEY` under the Census Bureau's [May 2026 authentication policy](https://www.census.gov/library/video/2026/adrm/requesting-a-census-data-api-key.html); FRED queries require `FRED_API_KEY`; BLS uses `BLS_API_KEY` when configured; CDC Open Data reads anonymously and uses `CDC_SOCRATA_APP_TOKEN` only to raise rate limits. The scheduled release-evidence runner requires all three credentials before collecting live contracts. Missing required live-test credentials are named skips only in runners that explicitly permit and report partial execution.
 
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
@@ -537,6 +567,8 @@ These tests use the smallest practical request, are never pull-request gates, an
 | EXT-008 | P2 | Provider smoke / `integration database external slow` | FRED live ingestion paths | Representative single-series and configured-domain requests persist expected revisions, including explicit missing values | Live request or capture/replay fails, produces no revisions, or mishandles missing values |
 | EXT-009 | P2 | Legacy metadata / `integration database external slow` | BLS metadata synchronization | Dataset and series metadata synchronization populates the disposable database with required programs, fields, and LAUS geography varieties | Metadata sync fails, required rows/fields are absent, or LAUS geography coverage disappears |
 | EXT-010 | P2 | Legacy metadata / `integration database external slow` | FRED metadata synchronization | Dataset, curated-series, and domain metadata synchronization populates required identifiers and fields in the disposable database | Metadata sync fails or required series/domain fields are absent |
+| EXT-011 | P2 | Contract / `external slow` | Census PEP bulk schema and completeness | The current registered national/state bulk file returns 2xx, parses with its registered encoding/layout, meets coverage thresholds, and contains the vintage population measure | Stable bulk bytes drift from the registered parser or the release is incomplete |
+| EXT-012 | P2 | Contract / `external slow` | CDC registered asset metadata | Each enabled CDC Socrata asset returns its registered identifier, label, positive release watermark, and exactly the registered consumed columns/types within 15 seconds; 429/5xx/timeout classify as upstream-unavailable and the optional app token stays out of logs and errors | Registered CDC identity, label, watermark, or consumed contract drifts; an outage is reported as a contract regression; or the app token appears in telemetry |
 
 ### End-to-End Tests
 
@@ -550,6 +582,7 @@ End-to-end fixtures contain normal rows, duplicates, a revision, a dimension mis
 | E2E-004 | P1 | E2E / `e2e database slow` | Replay safety | Running each complete fixture twice produces zero additional facts and identical API JSON | Natural-key count or response changes |
 | E2E-005 | P1 | E2E / `e2e database slow` | Revision propagation | Revised source observation replaces latest value while prior durable history follows the declared revision policy | Stale latest response, duplicate latest row, or unintended history loss |
 | E2E-006 | P1 | E2E / `e2e database slow` | Invalid/missing data accounting | Invalid row and dimension miss do not corrupt serving data and produce exact expected rejection/miss metrics | Invalid row served, valid row lost, or metrics do not reconcile |
+| E2E-007 | P1 | E2E / `e2e database slow` | CDC fixture to API | Reviewed CDI and PLACES fixtures pass raw capture -> silver -> gold -> CDC API with the exact counts and values in `tests/fixtures/cdc/expected_e2e.json`, retain every published release, keep a county geography miss inspectable, and expose no app token | Any stage loses, duplicates, or mutates an approved row; an incomplete page sequence publishes; a suppressed or missing value becomes numeric; or a token appears in capture, control, log, or API output |
 
 ### Performance, Concurrency, and Resilience Tests
 

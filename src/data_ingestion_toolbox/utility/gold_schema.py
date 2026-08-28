@@ -109,19 +109,20 @@ def _record_hash(cur: Any, component_name: str, ddl_hash: str) -> None:
 def _is_bootstrapped(
     cur: Any, required_relations: tuple[str, ...], required_procedures: tuple[str, ...]
 ) -> bool:
-    relation_checks = ",\n                ".join(
+    predicates = [
         f"to_regclass('{relation_name}') IS NOT NULL"
         for relation_name in required_relations
-    )
-    procedure_checks = ",\n                ".join(
+    ]
+    predicates.extend(
         f"to_regprocedure('{procedure_name}') IS NOT NULL"
         for procedure_name in required_procedures
     )
-    sql = f"""
-        SELECT
-            {relation_checks},
-            {procedure_checks}
-    """
+    if not predicates:
+        # A component with no required objects (e.g. view-only DDL with no
+        # procedures) is vacuously bootstrapped; rendering an empty predicate
+        # list would emit a trailing comma and invalid SQL.
+        return True
+    sql = "SELECT " + ",\n               ".join(predicates)
     cur.execute(sql)
     checks = cur.fetchone()
     return bool(checks and all(checks))

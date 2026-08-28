@@ -1,0 +1,82 @@
+{
+  "BROWN": [
+    {
+      "ori": "WI0050700",
+      "counties": "BROWN",
+      "is_nibrs": false,
+      "latitude": 44.473961,
+      "longitude": -87.995926,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "University of Wisconsin: Green Bay",
+      "agency_type_name": "University or College",
+      "nibrs_start_date": null
+    }
+  ],
+  "DANE": [
+    {
+      "ori": "WI0130000",
+      "counties": "DANE",
+      "is_nibrs": true,
+      "latitude": 43.074104,
+      "longitude": -89.38086,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "Dane County Sheriff's Office",
+      "agency_type_name": "County",
+      "nibrs_start_date": "2004-01-01"
+    },
+    {
+      "ori": "WI0137000",
+      "counties": "DANE",
+      "is_nibrs": true,
+      "latitude": 43.001278,
+      "longitude": -89.42332,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "Fitchburg Police Department",
+      "agency_type_name": "City",
+      "nibrs_start_date": "2021-01-01"
+    }
+  ],
+  "DANE, ROCK": [
+    {
+      "ori": "WI0540300",
+      "counties": "DANE, ROCK",
+      "is_nibrs": true,
+      "latitude": 42.669931,
+      "longitude": -89.075119,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "Edgerton Police Department",
+      "agency_type_name": "City",
+      "nibrs_start_date": "2017-12-01"
+    }
+  ],
+  "NOT SPECIFIED": [
+    {
+      "ori": "WI0400100",
+      "counties": "NOT SPECIFIED",
+      "is_nibrs": true,
+      "latitude": 44.991304,
+      "longitude": -88.669251,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "Menominee Tribal",
+      "agency_type_name": "Tribal",
+      "nibrs_start_date": "2021-01-01"
+    },
+    {
+      "ori": "WIWSP0000",
+      "counties": "NOT SPECIFIED",
+      "is_nibrs": false,
+      "latitude": 43.067468,
+      "longitude": -89.417852,
+      "state_abbr": "WI",
+      "state_name": "Wisconsin",
+      "agency_name": "Wisconsin State Patrol",
+      "agency_type_name": "State Police",
+      "nibrs_start_date": null
+    }
+  ]
+}
