@@ -54,16 +54,35 @@ def orchestrated_warehouse(
     return bootstrapped_postgres
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def stubbed_providers(
-    monkeypatch: pytest.MonkeyPatch,
     orchestrated_warehouse: PostgresTestConfig,
     dagbag: Any,
 ) -> Iterator[None]:
     """Replace every provider HTTP boundary with its reviewed fixture."""
-    dag_pipeline.stub_all_providers(monkeypatch, orchestrated_warehouse)
-    dag_pipeline.disable_task_retries(monkeypatch, dagbag)
-    yield
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        dag_pipeline.stub_all_providers(monkeypatch, orchestrated_warehouse)
+        dag_pipeline.disable_task_retries(monkeypatch, dagbag)
+        yield
+
+
+@pytest.fixture(scope="module")
+def orchestrated_execution(
+    dagbag: Any,
+    orchestrated_warehouse: PostgresTestConfig,
+    stubbed_providers: None,
+) -> dict[str, dict[str, str]]:
+    """Execute every production DAG exactly once, in warehouse order.
+
+    The orchestrated run is the expensive part of this tier: silver_ref alone
+    loads the full geography scale. Both assertions below read from this single
+    run rather than re-running any DAG, so the suite stays inside the CI budget.
+    """
+    executed: dict[str, dict[str, str]] = {}
+    for dag_id in ORDERED_PIPELINE_DAGS:
+        dag_run = dag_pipeline.run_dag(dagbag, dag_id)
+        executed[dag_id] = dag_pipeline.assert_dag_run_succeeded(dag_run, dag_id)
+    return executed
 
 
 def test_every_production_dag_is_covered_by_this_suite(dagbag: Any) -> None:
@@ -84,31 +103,25 @@ def test_every_production_dag_is_covered_by_this_suite(dagbag: Any) -> None:
 @pytest.mark.database
 @pytest.mark.slow
 def test_all_pipelines_execute_end_to_end_through_airflow(
-    dagbag: Any,
-    orchestrated_warehouse: PostgresTestConfig,
-    stubbed_providers: None,
+    orchestrated_execution: dict[str, dict[str, str]],
 ) -> None:
     """Covers: DAG-016 — a provider sample reaches gold through the real DAGs."""
-    executed: dict[str, dict[str, str]] = {}
-    for dag_id in ORDERED_PIPELINE_DAGS:
-        dag_run = dag_pipeline.run_dag(dagbag, dag_id)
-        executed[dag_id] = dag_pipeline.assert_dag_run_succeeded(dag_run, dag_id)
-
-    assert set(executed) == set(ORDERED_PIPELINE_DAGS)
-    assert all(states for states in executed.values())
+    assert set(orchestrated_execution) == set(ORDERED_PIPELINE_DAGS)
+    assert all(states for states in orchestrated_execution.values())
 
 
 @pytest.mark.integration
 @pytest.mark.database
 @pytest.mark.slow
 def test_orchestrated_run_populates_shared_dimensions(
-    dagbag: Any,
+    orchestrated_execution: dict[str, dict[str, str]],
     orchestrated_warehouse: PostgresTestConfig,
-    stubbed_providers: None,
 ) -> None:
     """Covers: DAG-016 — orchestrated geography and time reach the warehouse."""
-    dag_run = dag_pipeline.run_dag(dagbag, "silver_ref")
-    dag_pipeline.assert_dag_run_succeeded(dag_run, "silver_ref")
+    assert orchestrated_execution["silver_ref"], (
+        "the orchestrated run must have executed silver_ref before its "
+        "dimensions can be asserted"
+    )
 
     connection = orchestrated_warehouse.connect()
     try:

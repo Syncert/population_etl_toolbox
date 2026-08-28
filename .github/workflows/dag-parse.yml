@@ -27,7 +27,9 @@ jobs:
   dag-parse:
     name: DAG parse tests (Airflow 2.9.3 + Python 3.11)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The orchestrated tier runs every production DAG against the warehouse;
+    # the budget carries the slower 2-vCPU runner without hiding a regression.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
