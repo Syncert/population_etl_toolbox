@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -520,3 +522,312 @@ def test_sync_captures_every_asset_before_atomic_publication(
         ("run", "success"),
     ]
     assert not any(event[0] == "rollback" for event in events)
+
+
+@dataclass
+class BatchCall:
+    """One recorded ``execute_values`` invocation."""
+
+    statement: str
+    rows: list[Any]
+    template: str | None
+    page_size: int | None
+
+
+class RecordingCursor:
+    """Cursor double answering the loaders' lookups and recording statements."""
+
+    def __init__(self, known_geo_ids: set[str] | None = None) -> None:
+        self.statements: list[tuple[str, Any]] = []
+        self.known_geo_ids = set() if known_geo_ids is None else set(known_geo_ids)
+        self._result: list[tuple[Any, ...]] = []
+        self._geo_sk: dict[str, int] = {}
+
+    def __enter__(self) -> RecordingCursor:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def execute(self, statement: str, parameters: Any = None) -> None:
+        self.statements.append((statement, parameters))
+        if "SELECT geo_id, geo_sk" in statement:
+            self._result = [
+                (geo_id, self._geo_sk_for(geo_id))
+                for geo_id in parameters[0]
+                if geo_id in self.known_geo_ids
+            ]
+        elif "SELECT geo_id FROM silver_ref.dim_geo_entity" in statement:
+            self._result = [
+                (geo_id,) for geo_id in parameters[0] if geo_id in self.known_geo_ids
+            ]
+        else:
+            self._result = []
+
+    def _geo_sk_for(self, geo_id: str) -> int:
+        return self._geo_sk.setdefault(geo_id, 1000 + len(self._geo_sk))
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self._result
+
+
+class RecordingConnection:
+    """Connection double exposing only what the loaders use."""
+
+    def __init__(self, cursor: RecordingCursor) -> None:
+        self._cursor = cursor
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed = False
+
+    def cursor(self) -> RecordingCursor:
+        return self._cursor
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture
+def recorded_batches(monkeypatch: pytest.MonkeyPatch) -> list[BatchCall]:
+    """Record every multi-row statement the loaders submit.
+
+    The batched loaders are a round-trip contract as much as a SQL one, so the
+    tests assert on the statements themselves. ``execute_values`` itself is
+    exercised for real against PostgreSQL by the database and DAG tiers.
+    """
+    calls: list[BatchCall] = []
+
+    def recorder(
+        _cursor: Any,
+        statement: str,
+        rows: Any,
+        template: str | None = None,
+        page_size: int | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        calls.append(BatchCall(statement, list(rows), template, page_size))
+
+    monkeypatch.setattr(geography_pipeline, "execute_values", recorder)
+    return calls
+
+
+def _geography_record(
+    geo_id: str, state_fips: str, vintage: int = 2023, name: str | None = None
+):
+    return geography_pipeline.GeographyRecord(
+        geo_type="state",
+        geo_id=geo_id,
+        census_geoid=state_fips,
+        state_fips=state_fips,
+        county_fips=None,
+        place_fips=None,
+        name=name or f"State {state_fips}",
+        geography_vintage=vintage,
+    )
+
+
+def _polygon_geojson() -> str:
+    return (
+        '{"type": "Polygon", "coordinates": '
+        "[[[-77.1, 38.8], [-76.9, 38.8], [-76.9, 39.0], [-77.1, 38.8]]]}"
+    )
+
+
+def _repository(cursor: RecordingCursor):
+    connection = RecordingConnection(cursor)
+    return geography_pipeline.GeographyRepository(lambda: connection), connection
+
+
+def _batch(calls: list[BatchCall], marker: str) -> BatchCall:
+    matching = [call for call in calls if marker in call.statement]
+    assert len(matching) == 1, f"expected exactly one {marker!r} batch, got {matching}"
+    return matching[0]
+
+
+def test_attribute_load_batches_instead_of_two_statements_per_record(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — attribute loading stays bounded as the snapshot grows.
+
+    The per-row loader issued two statements per record, so a production-scale
+    snapshot cost tens of thousands of sequential round trips. Loading must now
+    cost a fixed number of statements while still returning the row count
+    callers depend on.
+    """
+    records = [
+        _geography_record(f"state:{index:02d}", f"{index:02d}")
+        for index in range(1, 61)
+    ]
+    cursor = RecordingCursor({record.geo_id for record in records})
+    repository, connection = _repository(cursor)
+
+    assert repository.load_attributes(records, capture_id=uuid4()) == 60
+
+    assert len(recorded_batches) == 2
+    # The only per-statement read left is the single surrogate-key lookup.
+    assert len(cursor.statements) == 1
+    assert "SELECT geo_id, geo_sk" in cursor.statements[0][0]
+    assert connection.commits == 1
+    assert connection.closed is True
+
+
+def test_attribute_batch_preserves_upsert_and_version_semantics(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — batching keeps the documented conflict behaviour.
+
+    ``ON CONFLICT DO UPDATE`` on the entity with the ``LEAST``/``GREATEST``
+    vintage merge and the ``updated_at`` touch, and ``ON CONFLICT DO NOTHING``
+    on the version table so a replay stays idempotent.
+    """
+    cursor = RecordingCursor({"state:01"})
+    repository, _ = _repository(cursor)
+    repository.load_attributes(
+        [_geography_record("state:01", "01")], capture_id=uuid4()
+    )
+
+    entity = _batch(recorded_batches, "INSERT INTO silver_ref.dim_geo_entity (")
+    assert "ON CONFLICT (geo_id) DO UPDATE SET" in entity.statement
+    assert "LEAST(" in entity.statement and "GREATEST(" in entity.statement
+    assert "updated_at = NOW()" in entity.statement
+
+    version = _batch(recorded_batches, "INSERT INTO silver_ref.dim_geo_entity_version")
+    assert "ON CONFLICT DO NOTHING" in version.statement
+    # Lineage travels with every version row.
+    assert version.rows[0][2] is not None
+
+
+def test_attribute_batch_folds_repeated_geo_ids_but_keeps_every_version(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — a repeated identity cannot break the batched upsert.
+
+    ``ON CONFLICT DO UPDATE`` refuses to touch a row twice in one command, so
+    duplicates are folded for the entity while the vintage bounds collapse to
+    the same ``LEAST``/``GREATEST`` result the per-row loop produced. Every
+    supplied record still contributes its own attribute version.
+    """
+    records = [
+        _geography_record("state:01", "01", vintage=2020, name="First"),
+        _geography_record("state:01", "01", vintage=2024, name="Second"),
+        _geography_record("state:02", "02", vintage=2023),
+    ]
+    cursor = RecordingCursor({"state:01", "state:02"})
+    repository, _ = _repository(cursor)
+
+    assert repository.load_attributes(records, capture_id=uuid4()) == 3
+
+    entity = _batch(recorded_batches, "INSERT INTO silver_ref.dim_geo_entity (")
+    assert [row[0] for row in entity.rows] == ["state:01", "state:02"]
+    assert (entity.rows[0][6], entity.rows[0][7]) == (2020, 2024)
+
+    version = _batch(recorded_batches, "INSERT INTO silver_ref.dim_geo_entity_version")
+    assert [row[4] for row in version.rows] == ["First", "Second", "State 02"]
+
+
+def test_geometry_load_batches_and_preserves_geometry_handling(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — boundary loading stays bounded and repairs geometry.
+
+    The per-row loader issued up to two statements per boundary. Batching must
+    keep the same ``ST_MakeValid``/``ST_CollectionExtract`` repair, the same
+    ``ST_IsValid`` record of the raw input, and ``ON CONFLICT DO NOTHING`` so a
+    replay stays idempotent.
+    """
+    records = [
+        geography_pipeline.GeometryRecord(
+            f"state:{index:02d}", 2023, _polygon_geojson()
+        )
+        for index in range(1, 61)
+    ]
+    cursor = RecordingCursor({record.geo_id for record in records})
+    repository, connection = _repository(cursor)
+
+    assert repository.load_geometries(records, capture_id=uuid4()) == 60
+
+    geometry = _batch(
+        recorded_batches, "INSERT INTO silver_ref.dim_geo_geometry_version"
+    )
+    assert len(geometry.rows) == 60
+    assert "ST_MakeValid" in geometry.statement
+    assert "ST_CollectionExtract" in geometry.statement
+    assert "ST_IsValid" in geometry.statement
+    assert "ON CONFLICT DO NOTHING" in geometry.statement
+    # Only the single set-based entity probe remains.
+    assert len(cursor.statements) == 1
+    assert connection.commits == 1
+
+
+def test_batched_geometry_load_still_rejects_a_boundary_without_an_entity(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — the missing-entity guard survives set-based loading.
+
+    The guard is a real data-integrity check, not an artefact of the per-row
+    loop. Moving the probe from per-row to set-based must keep it raising for
+    the same inputs, naming the first offending identifier in input order, and
+    must publish nothing.
+    """
+    records = [
+        geography_pipeline.GeometryRecord("state:01", 2023, _polygon_geojson()),
+        geography_pipeline.GeometryRecord("state:77", 2023, _polygon_geojson()),
+        geography_pipeline.GeometryRecord("state:88", 2023, _polygon_geojson()),
+    ]
+    cursor = RecordingCursor({"state:01"})
+    repository, connection = _repository(cursor)
+
+    with pytest.raises(ValueError, match="boundary has no matching entity: state:77"):
+        repository.load_geometries(records, capture_id=uuid4())
+
+    assert recorded_batches == []
+    assert connection.rollbacks == 1
+    assert connection.commits == 0
+    assert connection.closed is True
+
+
+def test_empty_snapshots_issue_no_statement_and_return_zero(
+    recorded_batches: list[BatchCall],
+) -> None:
+    """Covers: ETL-024 — an empty batch is a no-op, not an empty VALUES list."""
+    cursor = RecordingCursor()
+    repository, _ = _repository(cursor)
+    assert repository.load_attributes([], capture_id=uuid4()) == 0
+    assert repository.load_geometries([], capture_id=uuid4()) == 0
+    assert recorded_batches == []
+    assert cursor.statements == []
+
+
+def test_relationship_reconciliation_restricts_pairs_before_intersecting() -> None:
+    """Covers: ETL-024 — the spatial join keeps its candidate set bounded.
+
+    Written as one flat join the planner drove the GiST index with every county
+    boundary against every geometry row in the vintage and applied the
+    same-state restriction only afterwards. The candidate set must be built from
+    the cheap relational restriction first, and each overlap evaluated once.
+    """
+    cursor = RecordingCursor()
+    repository, _ = _repository(cursor)
+    repository.reconcile_relationships(
+        vintage=2023, capture_id=uuid4(), active_geo_ids={"us:1"}
+    )
+
+    spatial = [
+        statement for statement, _ in cursor.statements if "ST_Intersects" in statement
+    ]
+    assert len(spatial) == 1
+    statement = spatial[0]
+    assert "county_boundary AS MATERIALIZED" in statement
+    assert "place_boundary AS MATERIALIZED" in statement
+    assert "overlap AS MATERIALIZED" in statement
+    # The overlap is computed once, not once per output column.
+    assert statement.count("ST_Intersection(") == 1
+    # Each place's own area is computed once per place, not once per pair.
+    assert statement.count("ST_Area(boundary.geom::geography)") == 1
+    assert "ON CONFLICT DO NOTHING" in statement

@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import shapefile
+from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import (
     CaptureControl,
@@ -29,6 +30,10 @@ from data_ingestion_toolbox.silver_ref.geography_contract import canonical_geo_i
 logger = logging.getLogger(__name__)
 
 SOURCE_CODE = "CENSUS_GEO"
+#: Rows per multi-row statement. The loaders are round-trip bound rather
+#: than throughput bound, so this only has to be large enough to amortise
+#: the round trip; oversized pages just grow the statement psycopg2 builds.
+WRITE_PAGE_SIZE = 1000
 PARSER_VERSION = "census-geography-v2"
 HTTP_MAX_ATTEMPTS = 3
 MIN_SUPPORTED_GEOGRAPHY_YEAR = 2013
@@ -359,62 +364,13 @@ class GeographyRepository:
         connection = connection or self.connection_factory()
         try:
             with connection.cursor() as cursor:
-                for row in rows:
-                    cursor.execute(
-                        """
-                        INSERT INTO silver_ref.dim_geo_entity (
-                            geo_id, geo_type, census_geoid, state_fips, county_fips,
-                            place_fips, first_seen_version, last_seen_version
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (geo_id) DO UPDATE SET
-                            first_seen_version = LEAST(
-                                silver_ref.dim_geo_entity.first_seen_version,
-                                EXCLUDED.first_seen_version
-                            ),
-                            last_seen_version = GREATEST(
-                                silver_ref.dim_geo_entity.last_seen_version,
-                                EXCLUDED.last_seen_version
-                            ), updated_at = NOW()
-                        RETURNING geo_sk
-                        """,
-                        (
-                            row.geo_id,
-                            row.geo_type,
-                            row.census_geoid,
-                            row.state_fips,
-                            row.county_fips,
-                            row.place_fips,
-                            row.geography_vintage,
-                            row.geography_vintage,
-                        ),
+                if rows:
+                    self._upsert_entities(cursor, rows)
+                    geo_sk_by_geo_id = self._geo_sk_map(
+                        cursor, [row.geo_id for row in rows]
                     )
-                    geo_sk = cursor.fetchone()[0]
-                    cursor.execute(
-                        """
-                        INSERT INTO silver_ref.dim_geo_entity_version (
-                            geo_sk, geography_vintage, source_snapshot_id, geoidfq,
-                            name, usps, lsad, functional_status, legal_statistical_class,
-                            land_area_m2, water_area_m2, latitude, longitude,
-                            attribute_checksum
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            geo_sk,
-                            row.geography_vintage,
-                            str(capture_id),
-                            row.geoidfq,
-                            row.name,
-                            row.usps,
-                            row.lsad,
-                            row.functional_status,
-                            row.legal_statistical_class,
-                            row.land_area_m2,
-                            row.water_area_m2,
-                            row.latitude,
-                            row.longitude,
-                            row.attribute_checksum,
-                        ),
+                    self._insert_entity_versions(
+                        cursor, rows, geo_sk_by_geo_id, capture_id
                     )
             if owns_connection:
                 connection.commit()
@@ -426,6 +382,130 @@ class GeographyRepository:
             if owns_connection:
                 connection.close()
         return len(rows)
+
+    @staticmethod
+    def _upsert_entities(cursor: Any, rows: list[GeographyRecord]) -> None:
+        """Upsert one entity per distinct ``geo_id`` in a few multi-row statements.
+
+        ``ON CONFLICT DO UPDATE`` refuses to touch the same row twice within one
+        command, so repeated ``geo_id`` values are folded here first. Folding
+        reproduces what the per-row loop did across those duplicates exactly:
+        the first occurrence supplies the immutable identity columns, which only
+        the insert path ever writes, and the vintage bounds collapse to the
+        ``LEAST``/``GREATEST`` merge the conflict clause would have applied one
+        row at a time.
+        """
+        merged: dict[str, list[Any]] = {}
+        for row in rows:
+            existing = merged.get(row.geo_id)
+            if existing is None:
+                merged[row.geo_id] = [
+                    row.geo_id,
+                    row.geo_type,
+                    row.census_geoid,
+                    row.state_fips,
+                    row.county_fips,
+                    row.place_fips,
+                    row.geography_vintage,
+                    row.geography_vintage,
+                ]
+                continue
+            existing[6] = min(existing[6], row.geography_vintage)
+            existing[7] = max(existing[7], row.geography_vintage)
+
+        execute_values(
+            cursor,
+            """
+            INSERT INTO silver_ref.dim_geo_entity (
+                geo_id, geo_type, census_geoid, state_fips, county_fips,
+                place_fips, first_seen_version, last_seen_version
+            ) VALUES %s
+            ON CONFLICT (geo_id) DO UPDATE SET
+                first_seen_version = LEAST(
+                    silver_ref.dim_geo_entity.first_seen_version,
+                    EXCLUDED.first_seen_version
+                ),
+                last_seen_version = GREATEST(
+                    silver_ref.dim_geo_entity.last_seen_version,
+                    EXCLUDED.last_seen_version
+                ), updated_at = NOW()
+            """,
+            list(merged.values()),
+            template=(
+                "(%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,%s::TEXT,"
+                "%s::INTEGER,%s::INTEGER)"
+            ),
+            page_size=WRITE_PAGE_SIZE,
+        )
+
+    @staticmethod
+    def _geo_sk_map(cursor: Any, geo_ids: list[str]) -> dict[str, int]:
+        """Re-read the surrogate keys the batched upsert assigned.
+
+        The per-row loader took these from ``RETURNING``; one indexed read of the
+        distinct identifiers replaces that without changing which key each
+        ``geo_id`` resolves to.
+        """
+        cursor.execute(
+            """
+            SELECT geo_id, geo_sk FROM silver_ref.dim_geo_entity
+            WHERE geo_id = ANY(%s)
+            """,
+            (sorted(set(geo_ids)),),
+        )
+        return {geo_id: geo_sk for geo_id, geo_sk in cursor.fetchall()}
+
+    @staticmethod
+    def _insert_entity_versions(
+        cursor: Any,
+        rows: list[GeographyRecord],
+        geo_sk_by_geo_id: dict[str, int],
+        capture_id: UUID,
+    ) -> None:
+        """Insert every supplied attribute version, duplicates included.
+
+        Only the entity upsert folds duplicates; two records sharing a ``geo_id``
+        still contribute their own version rows here, exactly as the per-row
+        loader did. ``ON CONFLICT DO NOTHING`` tolerates duplicates inside a
+        single command, so replays stay idempotent.
+        """
+        execute_values(
+            cursor,
+            """
+            INSERT INTO silver_ref.dim_geo_entity_version (
+                geo_sk, geography_vintage, source_snapshot_id, geoidfq,
+                name, usps, lsad, functional_status, legal_statistical_class,
+                land_area_m2, water_area_m2, latitude, longitude,
+                attribute_checksum
+            ) VALUES %s
+            ON CONFLICT DO NOTHING
+            """,
+            [
+                (
+                    geo_sk_by_geo_id[row.geo_id],
+                    row.geography_vintage,
+                    str(capture_id),
+                    row.geoidfq,
+                    row.name,
+                    row.usps,
+                    row.lsad,
+                    row.functional_status,
+                    row.legal_statistical_class,
+                    row.land_area_m2,
+                    row.water_area_m2,
+                    row.latitude,
+                    row.longitude,
+                    row.attribute_checksum,
+                )
+                for row in rows
+            ],
+            template=(
+                "(%s::BIGINT,%s::INTEGER,%s::UUID,%s::TEXT,%s::TEXT,%s::TEXT,"
+                "%s::TEXT,%s::TEXT,%s::TEXT,%s::NUMERIC,%s::NUMERIC,"
+                "%s::DOUBLE PRECISION,%s::DOUBLE PRECISION,%s::TEXT)"
+            ),
+            page_size=WRITE_PAGE_SIZE,
+        )
 
     def load_geometries(
         self,
@@ -439,41 +519,9 @@ class GeographyRepository:
         connection = connection or self.connection_factory()
         try:
             with connection.cursor() as cursor:
-                for row in rows:
-                    cursor.execute(
-                        """
-                        INSERT INTO silver_ref.dim_geo_geometry_version (
-                            geo_sk, boundary_vintage, geometry_source, resolution,
-                            source_snapshot_id, geom, geometry_checksum, is_valid
-                        )
-                        SELECT entity.geo_sk, %s, 'census_cartographic_boundary', %s,
-                               %s,
-                               ST_Multi(ST_CollectionExtract(ST_MakeValid(
-                                   ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)
-                               ), 3)), %s,
-                               ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
-                        FROM silver_ref.dim_geo_entity AS entity WHERE entity.geo_id = %s
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            row.boundary_vintage,
-                            row.resolution,
-                            str(capture_id),
-                            row.geojson,
-                            row.geometry_checksum,
-                            row.geojson,
-                            row.geo_id,
-                        ),
-                    )
-                    if cursor.rowcount == 0:
-                        cursor.execute(
-                            "SELECT 1 FROM silver_ref.dim_geo_entity WHERE geo_id = %s",
-                            (row.geo_id,),
-                        )
-                        if cursor.fetchone() is None:
-                            raise ValueError(
-                                f"boundary has no matching entity: {row.geo_id}"
-                            )
+                if rows:
+                    self._reject_boundaries_without_entity(cursor, rows)
+                    self._insert_geometry_versions(cursor, rows, capture_id)
             if owns_connection:
                 connection.commit()
         except BaseException:
@@ -484,6 +532,81 @@ class GeographyRepository:
             if owns_connection:
                 connection.close()
         return len(rows)
+
+    @staticmethod
+    def _reject_boundaries_without_entity(
+        cursor: Any, rows: list[GeometryRecord]
+    ) -> None:
+        """Refuse a boundary whose entity was never loaded.
+
+        The per-row loader detected this by probing after an insert wrote no row,
+        which also fires when ``ON CONFLICT DO NOTHING`` skips an already-present
+        geometry -- so the probe, not the row count, decided. Resolving every
+        identifier in one indexed read preserves that: the guard still raises for
+        a missing entity and stays silent for a duplicate geometry. The offending
+        identifier is chosen in input order so the same batch reports the same
+        ``geo_id`` the loop reached first.
+        """
+        cursor.execute(
+            """
+            SELECT geo_id FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s)
+            """,
+            (sorted({row.geo_id for row in rows}),),
+        )
+        known = {geo_id for (geo_id,) in cursor.fetchall()}
+        for row in rows:
+            if row.geo_id not in known:
+                raise ValueError(f"boundary has no matching entity: {row.geo_id}")
+
+    @staticmethod
+    def _insert_geometry_versions(
+        cursor: Any, rows: list[GeometryRecord], capture_id: UUID
+    ) -> None:
+        """Write every boundary version in a few multi-row statements.
+
+        The projection is the per-row statement unchanged: the same
+        ``ST_MakeValid``/``ST_CollectionExtract`` repair, the same ``ST_IsValid``
+        record of the raw input, the same capture lineage and checksum, and the
+        same join to the entity that supplies ``geo_sk``.
+        """
+        execute_values(
+            cursor,
+            """
+            INSERT INTO silver_ref.dim_geo_geometry_version (
+                geo_sk, boundary_vintage, geometry_source, resolution,
+                source_snapshot_id, geom, geometry_checksum, is_valid
+            )
+            SELECT entity.geo_sk, incoming.boundary_vintage,
+                   'census_cartographic_boundary', incoming.resolution,
+                   incoming.source_snapshot_id,
+                   ST_Multi(ST_CollectionExtract(ST_MakeValid(
+                       ST_SetSRID(ST_GeomFromGeoJSON(incoming.geojson), 4326)
+                   ), 3)), incoming.geometry_checksum,
+                   ST_IsValid(
+                       ST_SetSRID(ST_GeomFromGeoJSON(incoming.geojson), 4326)
+                   )
+            FROM (VALUES %s) AS incoming (
+                geo_id, boundary_vintage, resolution, source_snapshot_id,
+                geojson, geometry_checksum
+            )
+            JOIN silver_ref.dim_geo_entity AS entity
+                 ON entity.geo_id = incoming.geo_id
+            ON CONFLICT DO NOTHING
+            """,
+            [
+                (
+                    row.geo_id,
+                    row.boundary_vintage,
+                    row.resolution,
+                    str(capture_id),
+                    row.geojson,
+                    row.geometry_checksum,
+                )
+                for row in rows
+            ],
+            template=("(%s::TEXT,%s::INTEGER,%s::TEXT,%s::UUID,%s::TEXT,%s::TEXT)"),
+            page_size=WRITE_PAGE_SIZE,
+        )
 
     def retire_missing(
         self,
@@ -582,29 +705,65 @@ class GeographyRepository:
                     """,
                     (vintage, str(capture_id), list(active_geo_ids)),
                 )
+                # Candidate pairs are restricted to same-state county/place
+                # boundaries *before* any spatial predicate runs. Written as one
+                # flat join the planner inverts this: it drives the GiST index
+                # with every county boundary against every geometry row in the
+                # vintage, materialises the resulting cross product, and only
+                # then applies the state_fips equality -- tens of millions of
+                # ST_Intersects calls to keep a few million pairs. Materialising
+                # the two boundary sets first makes the cheap relational
+                # restriction the driver and the spatial predicate the filter.
+                #
+                # The intersection is also evaluated once per pair rather than
+                # twice: the area and the weight both derive from the same
+                # materialised overlap, and each place's own area is computed
+                # once per place instead of once per candidate pair.
                 cursor.execute(
                     """
+                    WITH county_boundary AS MATERIALIZED (
+                        SELECT entity.geo_sk, entity.state_fips, boundary.geom
+                        FROM silver_ref.dim_geo_entity AS entity
+                        JOIN silver_ref.dim_geo_geometry_version AS boundary
+                             ON boundary.geo_sk = entity.geo_sk
+                            AND boundary.boundary_vintage = %s
+                        WHERE entity.geo_type = 'county'
+                    ),
+                    place_boundary AS MATERIALIZED (
+                        SELECT entity.geo_sk, entity.state_fips, boundary.geom,
+                               ST_Area(boundary.geom::geography) AS place_area_m2
+                        FROM silver_ref.dim_geo_entity AS entity
+                        JOIN silver_ref.dim_geo_geometry_version AS boundary
+                             ON boundary.geo_sk = entity.geo_sk
+                            AND boundary.boundary_vintage = %s
+                        WHERE entity.geo_type = 'place'
+                    ),
+                    overlap AS MATERIALIZED (
+                        SELECT county.geo_sk AS parent_geo_sk,
+                               place.geo_sk AS related_geo_sk,
+                               ST_Area(
+                                   ST_Intersection(county.geom, place.geom)::geography
+                               ) AS overlap_area_m2,
+                               place.place_area_m2
+                        FROM county_boundary AS county
+                        JOIN place_boundary AS place
+                             ON place.state_fips = county.state_fips
+                        WHERE ST_Intersects(county.geom, place.geom)
+                    )
                     INSERT INTO silver_ref.bridge_geo_relationship_version (
                         parent_geo_sk, related_geo_sk, relationship_type,
                         geography_vintage, overlap_area_m2, overlap_weight,
                         evidence_source, source_snapshot_id
                     )
-                    SELECT county.geo_sk, place.geo_sk, 'intersects', %s,
-                           ST_Area(ST_Intersection(cg.geom, pg.geom)::geography),
-                           LEAST(1, ST_Area(ST_Intersection(cg.geom, pg.geom)::geography)
-                               / NULLIF(ST_Area(pg.geom::geography), 0)),
+                    SELECT parent_geo_sk, related_geo_sk, 'intersects', %s,
+                           overlap_area_m2,
+                           LEAST(1, overlap_area_m2
+                               / NULLIF(place_area_m2, 0)),
                            'census_boundary_intersection', %s
-                    FROM silver_ref.dim_geo_entity county
-                    JOIN silver_ref.dim_geo_geometry_version cg ON cg.geo_sk = county.geo_sk
-                         AND cg.boundary_vintage = %s
-                    JOIN silver_ref.dim_geo_entity place ON place.geo_type = 'place'
-                         AND place.state_fips = county.state_fips
-                    JOIN silver_ref.dim_geo_geometry_version pg ON pg.geo_sk = place.geo_sk
-                         AND pg.boundary_vintage = %s
-                    WHERE county.geo_type = 'county' AND ST_Intersects(cg.geom, pg.geom)
+                    FROM overlap
                     ON CONFLICT DO NOTHING
                     """,
-                    (vintage, str(capture_id), vintage, vintage),
+                    (vintage, vintage, vintage, str(capture_id)),
                 )
             if owns_connection:
                 connection.commit()
