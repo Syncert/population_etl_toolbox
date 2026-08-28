@@ -126,13 +126,109 @@ Safety guards reject a non-loopback Redis URL, Redis credentials, the default
 Redis database, incomplete PostgreSQL settings, or a database name that does
 not end in `_test`.
 
-## External and Frontend Tests
+## External Source Contract Tests
 
-External tests make bounded live requests. Census and FRED require
-`CENSUS_API_KEY` and `FRED_API_KEY`; BLS uses `BLS_API_KEY` when available.
-Missing required keys are reported as named skips only in runners that permit a
-partial local run. The scheduled GitHub Actions runner requires all three keys
-before it collects live contract evidence. Never commit credentials.
+External tests make bounded live requests against the real providers. Every
+source that needs a credential owns one, and every source is covered: a source
+missing from this tier drops out of live coverage silently, which is why
+`tests/support/external.py::REQUIRED_SCHEDULED_CREDENTIALS` fails a scheduled
+run that is missing any of them rather than skipping it.
+
+### Source credentials
+
+| Source | Variable | Where to register | Provider requires it? |
+|---|---|---|---|
+| Census ACS | `CENSUS_API_KEY` | <https://api.census.gov/data/key_signup.html> | Yes |
+| Census PEP | none | — | No; PEP uses credential-free bulk transport |
+| BLS | `BLS_API_KEY` | <https://data.bls.gov/registrationEngine/> | No; sent as `registrationkey` when present, raising the quota |
+| FRED | `FRED_API_KEY` | <https://fredaccount.stlouisfed.org/apikeys> | Yes |
+| CDC | `CDC_SOCRATA_APP_TOKEN` | <https://data.cdc.gov/profile/edit/developer_settings> | No; anonymous reads work, the token raises Socrata rate limits |
+| FBI UCR | `FBI_CDE_API_KEY` | <https://api.data.gov/signup/> — the CDE API is served through api.data.gov | Yes |
+| USDA NASS | `USDA_NASS_API_KEY` | <https://quickstats.nass.usda.gov/api/> | Yes |
+
+"Provider requires it" and "the scheduled run requires it" are different
+questions. `REQUIRED_SCHEDULED_CREDENTIALS` holds `CENSUS_API_KEY`,
+`BLS_API_KEY`, `FRED_API_KEY`, `FBI_CDE_API_KEY`, and `USDA_NASS_API_KEY`: BLS
+is optional to the provider but required of a scheduled run, because an
+unkeyed BLS run collects weaker evidence than the tier claims to produce.
+`CDC_SOCRATA_APP_TOKEN` is not on that list, since CDC coverage is complete
+without it.
+
+Never commit a credential. Only an empty placeholder belongs in a tracked
+environment example; the real value belongs in an ignored local environment or
+a deployment secret store.
+
+Both provider-required keys are validated for shape at request execution and
+rejected if they carry surrounding whitespace, so a trailing newline from a
+copy-paste fails as `invalid_api_key` rather than as a network error.
+
+### Running one source
+
+Two flags are required and neither is optional:
+
+- `RUN_EXTERNAL_TESTS=1`, because `tests/conftest.py` adds `external` to
+  `collect_ignore` otherwise and the directory is never collected.
+- `-m external` on the command line, because the `addopts` marker filter in
+  `pyproject.toml` deselects `external` and `slow` by default. A command-line
+  `-m` replaces that filter rather than intersecting with it.
+
+```powershell
+$env:FBI_CDE_API_KEY   = "your-api-data-gov-key"
+$env:USDA_NASS_API_KEY = "your-quickstats-key"
+$env:RUN_EXTERNAL_TESTS = "1"
+
+python -m pytest -m external `
+    tests/external/test_fbi_source_contracts.py `
+    tests/external/test_nass_source_contracts.py `
+    -v -ra
+
+Remove-Item Env:RUN_EXTERNAL_TESTS
+```
+
+```bash
+RUN_EXTERNAL_TESTS=1 python -m pytest -m external \
+    tests/external/test_fbi_source_contracts.py \
+    tests/external/test_nass_source_contracts.py \
+    -v -ra
+```
+
+Each module mixes live and deterministic tests. The deterministic ones — outage
+classification, missing-credential refusal, and credential non-leakage — pass
+with no key at all, so a run with no credentials configured is not a smoke test
+of the live contract.
+
+Prefer the direct `pytest` invocation above when checking one source. The
+`external` tier also runs `tests/integration/database/legacy`, which needs the
+disposable PostGIS container from *Database and Redis Tests* to be up.
+
+### Reading an external result
+
+- **Skipped, naming the variable.** The credential did not reach the process.
+  Most often the variable was set in a different shell than the one running
+  pytest.
+- **`failure_class=upstream-unavailable` in the log line.** A provider 429,
+  5xx, or timeout. Not a code failure; re-run later. Every live request is
+  wrapped in `observe_external_call`, which logs `source`, `status`,
+  `latency_seconds`, and `failure_class` without ever emitting a credential.
+- **`failure_class=contract-regression`, or an assertion failure.** This is the
+  real signal: something the registry froze no longer matches what the provider
+  publishes. Each assertion names the exact value that drifted — a retired ORI,
+  a period window the provider no longer covers, a classification selection
+  that vanished from the provider's own domain, or a registered partition that
+  outgrew the provider's record ceiling.
+
+### The scheduled run
+
+`external-contract` runs daily and on manual dispatch, and is never a
+pull-request gate. To dispatch it, add each variable above as a repository
+secret under **Settings -> Secrets and variables -> Actions**, using the exact
+variable name, then use **Actions -> external-contract -> Run workflow**.
+
+Its first step is `python -m tests.support.external`, which fails the run when
+a required credential is absent and names the missing variables without
+printing values.
+
+## Frontend Tests
 
 For frontend tests:
 
