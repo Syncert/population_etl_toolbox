@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review; production-testable totals prototype complete
-- **Last updated:** 2026-08-26
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** U.S. Census Bureau Population Estimates Program
 - **Geography scope:** National, state, county, and city/place; place is the lowest canonical level
 - **Depends on:** New-source expansion gate, shared raw capture/control foundation, and GEO-001 through GEO-004 in the Census geography reference pipeline; resolve its current workflow location through the [plan index](../README.md)
@@ -320,7 +320,7 @@ is not improvised, and they do not hold up review.
 - Every other workflow was green on the same commit.
 
 PEP is guarded by
-[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md) alongside
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md) alongside
 CDC, FBI UCR, and USDA NASS. It resolves the same shared geography dimensions,
 publishes through the same glossary publisher contract, and runs in the same
 orchestrated DAG order, so the cross-source questions that gate asks apply to

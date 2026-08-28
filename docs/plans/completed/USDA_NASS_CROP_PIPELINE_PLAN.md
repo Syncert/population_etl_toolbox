@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review; NASS-001 through NASS-005 are implemented on `feat/usda-crop`
-- **Last updated:** 2026-08-27
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
@@ -247,7 +247,7 @@ below; the second is a host permission quirk with a documented workaround.
 - Every other workflow was green on the same commit.
 
 This satisfies DAG-016 and the machine-verifiable precondition of
-[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md).
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md).
 
 ### Live provider contract
 

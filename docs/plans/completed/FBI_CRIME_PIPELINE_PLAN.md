@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; ready for human review
-- **Last updated:** 2026-08-27
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** Provider-published national and state results plus source-native agency observations; county is an agency relationship/filter, not an FBI observation grain
 - **Depends on:** Completed new-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](../completed/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)
@@ -71,7 +71,7 @@ targets rather than on the authoring host.
   run above could not finish.
 
 This satisfies the machine-verifiable precondition of
-[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md).
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md).
 
 ### Live provider contract
 

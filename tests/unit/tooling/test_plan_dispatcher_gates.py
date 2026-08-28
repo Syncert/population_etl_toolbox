@@ -287,23 +287,31 @@ def test_cli_rejects_an_unknown_gate_id(
     assert "Known gates: review" in capsys.readouterr().err
 
 
-def test_repository_declares_the_four_source_review_gate() -> None:
-    """Covers: PLAN-007 — the four source pipelines stop for human review."""
+def test_repository_graph_carries_no_retired_gate() -> None:
+    """Covers: PLAN-007 — a retired gate leaves no edge behind.
+
+    The four-source review gate was approved and retired on 2026-08-28. Two
+    ways of retiring it would have been wrong and neither is loud on its own:
+    archiving the file with its ``kind: gate`` frontmatter intact leaves a gate
+    that no folder can satisfy, blocking its dependents forever, and deleting
+    the file while a dependent still names it makes ``validate_graph`` reject
+    the entire inventory. This asserts neither happened.
+    """
+    from tools.plan_dispatcher.graph import validate_graph
     from tools.plan_dispatcher.metadata import load_plans
 
     plans = load_plans(REPOSITORY_ROOT / "docs/plans")
-    gate = plans["four-source-review"]
+    validate_graph(plans)
 
-    assert gate.is_gate is True
-    assert set(gate.depends_on) == {
-        "cdc-illness",
-        "fbi-crime",
-        "usda-crop",
-        "census-pep",
+    retired = {"three-source-review", "four-source-review"}
+    assert retired.isdisjoint(plans), (
+        "a retired gate is still parsed as a dispatch node; strip its "
+        "frontmatter when archiving it"
+    )
+    dangling = {
+        plan_id for plan_id, plan in plans.items() if retired & set(plan.depends_on)
     }
-    gated = {
-        plan_id
-        for plan_id, plan in plans.items()
-        if "four-source-review" in plan.depends_on
-    }
-    assert gated == {"warehouse-data-quality", "data-product-e2e", "api-platform"}
+    assert not dangling, f"plans still depend on a retired gate: {sorted(dangling)}"
+
+    accepted = {"cdc-illness", "fbi-crime", "usda-crop", "census-pep"}
+    assert {plans[plan_id].workflow_state for plan_id in accepted} == {"completed"}

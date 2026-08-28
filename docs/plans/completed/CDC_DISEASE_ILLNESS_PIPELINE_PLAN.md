@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; ready for human review
-- **Last updated:** 2026-08-27
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
@@ -179,7 +179,7 @@ Environment-limited checks, not run on the authoring host:
 - Every other workflow was green on the same commit.
 
 This satisfies the machine-verifiable precondition of
-[`FOUR_SOURCE_REVIEW_GATE.md`](../gates/FOUR_SOURCE_REVIEW_GATE.md).
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md).
 
 ### Live provider contract
 

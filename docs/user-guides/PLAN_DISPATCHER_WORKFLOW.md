@@ -238,21 +238,27 @@ exits `2`. That is a deliberate, successful stopping point for an unattended
 overnight run: it did everything it was allowed to do and is now asking a
 question.
 
-This repository declares one gate,
-[`four-source-review`](../plans/gates/FOUR_SOURCE_REVIEW_GATE.md). It guards
-`cdc-illness`, `fbi-crime`, `usda-crop`, and `census-pep`, and holds back
+This repository currently declares no gate. The one it had,
+[`four-source-review`](../plans/completed/FOUR_SOURCE_REVIEW_GATE.md), guarded
+`cdc-illness`, `fbi-crime`, `usda-crop`, and `census-pep`, and held back
 `warehouse-data-quality`, `data-product-e2e`, and `api-platform` until a human
-confirms the four sources are coherent together — shared geography and
+confirmed the four sources were coherent together — shared geography and
 revision semantics, comparability, adapter drift. No single plan's test suite
-can answer those.
+can answer those. It was approved and retired on 2026-08-28; the commands below
+are how you would decide the next one.
 
-The gate also sets a machine-verifiable precondition, so approval is not a
-checklist signed on faith: the orchestrated DAG suite
-(`tests/dags/test_dag_pipeline_execution.py`) must pass on the integration
+A gate can also set a machine-verifiable precondition, so approval is not a
+checklist signed on faith. That one required the orchestrated DAG suite
+(`tests/dags/test_dag_pipeline_execution.py`) to pass on the integration
 branch, running every DAG as a real Airflow `DagRun` against a disposable
 PostGIS warehouse. Run it locally with `./tests/run.ps1 dag-pipeline`, or read
 the `dag-parse` job, which selects the same module on pinned Airflow 2.9.3
 against pinned PostGIS 16. Attach that result to the approval note.
+
+Retiring a decided gate is described in
+[PLAN_DISPATCHER.md](../reference/PLAN_DISPATCHER.md): strip its frontmatter,
+archive it in `completed/`, and remove its id from every dependent in the same
+change.
 
 ```powershell
 ./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate four-source-review `

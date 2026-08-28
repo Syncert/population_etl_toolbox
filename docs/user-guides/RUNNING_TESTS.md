@@ -92,8 +92,11 @@ Only the provider HTTP boundary is replaced. Airflow, the operators, the
 `public_data` connection, the provider pools, the capture-control plane, and
 every warehouse write are real, so a failure here is a genuine orchestration
 defect rather than a mocking artifact. This is the closest automated equivalent
-of a first production Airflow run, and it is the required evidence for the
-four-source review gate in `docs/plans/gates/`.
+of a first production Airflow run. It was the required evidence for the
+four-source review gate, retired on 2026-08-28 and archived at
+[`docs/plans/completed/FOUR_SOURCE_REVIEW_GATE.md`](../plans/completed/FOUR_SOURCE_REVIEW_GATE.md).
+The `dag-parse` job selects the same module as part of the DAG tier, so this
+evidence is produced on every push.
 
 The suite also asserts that the set of DAGs it executes equals the set in the
 DagBag, so a newly added pipeline cannot be silently left uncovered.

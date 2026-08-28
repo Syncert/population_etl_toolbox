@@ -144,15 +144,30 @@ asking a question.
 
 After approving, rerun `-Action run` to continue the same run.
 
-This repository declares one gate,
-[`four-source-review`](../plans/gates/FOUR_SOURCE_REVIEW_GATE.md). It opens
-once the CDC, FBI Crime, USDA NASS Crop, and Census PEP pipelines are all
-integrated, and it holds back the warehouse-quality, end-to-end coverage, and
-API platform plans until a human confirms the four sources are coherent
-together. Those
-questions — shared geography and revision semantics, comparability, adapter
-drift — are not answerable by any one plan's test suite, and this is the
-cheapest point to answer them.
+This repository currently declares no gate. The one it had,
+[`four-source-review`](../plans/completed/FOUR_SOURCE_REVIEW_GATE.md), guarded
+the CDC, FBI Crime, USDA NASS Crop, and Census PEP pipelines and held back the
+warehouse-quality, end-to-end coverage, and API platform plans until a human
+confirmed the four sources were coherent together. Those questions — shared
+geography and revision semantics, comparability, adapter drift — are not
+answerable by any one plan's test suite, which is what a gate is for. It was
+approved and retired on 2026-08-28; its decision record is the worked example.
+
+### Retiring a gate
+
+Once a gate is decided and no longer needed, retire it in one change:
+
+1. Move the file out of `gates/` into `docs/plans/completed/` and **strip its
+   dispatcher frontmatter**. A gate is never satisfied by its folder — only a
+   recorded decision clears one — so an archived gate that still declares
+   `kind: gate` blocks its dependents permanently. Without frontmatter,
+   `parse_plan` returns `None` and the file is readable guidance.
+2. Remove the gate's id from every dependent's `depends_on`. `validate_graph`
+   rejects a dependency naming a plan that no longer exists, so deleting the
+   gate alone fails the whole inventory rather than just that edge.
+3. Write the decision, who made it, when, and the note into the archived
+   document. When a dispatcher run is in flight the run-state file holds this;
+   when none is, the archived document is the only record there will be.
 
 ## Scheduling rules
 
