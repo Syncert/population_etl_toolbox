@@ -5,7 +5,7 @@ depends_on:
   - census-pep
   - fbi-crime
   - usda-crop
-  - three-source-review
+  - four-source-review
 parallel_safe: false
 complexity: medium
 verify:

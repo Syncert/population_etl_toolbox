@@ -287,18 +287,23 @@ def test_cli_rejects_an_unknown_gate_id(
     assert "Known gates: review" in capsys.readouterr().err
 
 
-def test_repository_declares_the_three_source_review_gate() -> None:
-    """Covers: PLAN-007 — the three source pipelines stop for human review."""
+def test_repository_declares_the_four_source_review_gate() -> None:
+    """Covers: PLAN-007 — the four source pipelines stop for human review."""
     from tools.plan_dispatcher.metadata import load_plans
 
     plans = load_plans(REPOSITORY_ROOT / "docs/plans")
-    gate = plans["three-source-review"]
+    gate = plans["four-source-review"]
 
     assert gate.is_gate is True
-    assert set(gate.depends_on) == {"cdc-illness", "fbi-crime", "usda-crop"}
+    assert set(gate.depends_on) == {
+        "cdc-illness",
+        "fbi-crime",
+        "usda-crop",
+        "census-pep",
+    }
     gated = {
         plan_id
         for plan_id, plan in plans.items()
-        if "three-source-review" in plan.depends_on
+        if "four-source-review" in plan.depends_on
     }
     assert gated == {"warehouse-data-quality", "data-product-e2e", "api-platform"}

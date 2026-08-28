@@ -421,7 +421,7 @@ The FBI states that UCR data are released monthly through CDE. A periodic metada
   DAG suite (`tests/dags/test_dag_pipeline_execution.py`). The suite's coverage
   assertion (DAG-015) fails for any DAG in `dags/` without a registered stub,
   and a passing `./tests/run.ps1 dag-pipeline` run is required evidence for the
-  three-source review gate. The stub must answer the actual request (endpoint,
+  four-source review gate. The stub must answer the actual request (endpoint,
   parameters, pagination) at whatever scale the pipeline's own completeness
   guards demand; do not weaken a production guard to make the DAG pass.
 

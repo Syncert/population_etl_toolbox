@@ -26,8 +26,8 @@ authoritative workflow state.
 `gates/` holds human review gates rather than plans. A gate is a checkpoint in
 the same dependency graph: it opens for review once everything it guards is
 integrated, and the dispatcher will not cross it without a recorded human
-decision. `gates/THREE_SOURCE_REVIEW_GATE.md` stops the backlog once the CDC,
-FBI Crime, and USDA NASS Crop pipelines are all complete.
+decision. `gates/FOUR_SOURCE_REVIEW_GATE.md` stops the backlog once the CDC,
+FBI Crime, USDA NASS Crop, and Census PEP pipelines are all complete.
 
 ## Workflow states
 

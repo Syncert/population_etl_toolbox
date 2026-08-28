@@ -221,7 +221,7 @@ neither is reported as passing.
    scheduler image:
    `docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`
    then `./tests/run.ps1 dag-pipeline`. That run is the machine-verifiable
-   precondition of `docs/plans/gates/THREE_SOURCE_REVIEW_GATE.md` and is
+   precondition of `docs/plans/gates/FOUR_SOURCE_REVIEW_GATE.md` and is
    expected to be produced on the integration branch, where it also covers the
    CDC and FBI pipelines. DAG-015 — static coverage proving the new DAG does
    not escape the orchestrated suite — does pass here.
@@ -448,7 +448,7 @@ The final cadence and incremental key must be proven during NASS-001 rather than
   orchestrated DAG suite (`tests/dags/test_dag_pipeline_execution.py`). The
   suite's coverage assertion (DAG-015) fails for any DAG in `dags/` without a
   registered stub, and a passing `./tests/run.ps1 dag-pipeline` run is required
-  evidence for the three-source review gate. The stub must answer the actual
+  evidence for the four-source review gate. The stub must answer the actual
   request (registered slice parameters, counts, pagination) at whatever scale
   the pipeline's own completeness guards demand; do not weaken a production
   guard to make the DAG pass.

@@ -93,7 +93,7 @@ Only the provider HTTP boundary is replaced. Airflow, the operators, the
 every warehouse write are real, so a failure here is a genuine orchestration
 defect rather than a mocking artifact. This is the closest automated equivalent
 of a first production Airflow run, and it is the required evidence for the
-three-source review gate in `docs/plans/gates/`.
+four-source review gate in `docs/plans/gates/`.
 
 The suite also asserts that the set of DAGs it executes equals the set in the
 DagBag, so a newly added pipeline cannot be silently left uncovered.

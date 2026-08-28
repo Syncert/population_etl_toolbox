@@ -239,26 +239,29 @@ overnight run: it did everything it was allowed to do and is now asking a
 question.
 
 This repository declares one gate,
-[`three-source-review`](../plans/gates/THREE_SOURCE_REVIEW_GATE.md). It guards
-`cdc-illness`, `fbi-crime`, and `usda-crop`, and holds back
+[`four-source-review`](../plans/gates/FOUR_SOURCE_REVIEW_GATE.md). It guards
+`cdc-illness`, `fbi-crime`, `usda-crop`, and `census-pep`, and holds back
 `warehouse-data-quality`, `data-product-e2e`, and `api-platform` until a human
-confirms the three sources are coherent together — shared geography and
+confirms the four sources are coherent together — shared geography and
 revision semantics, comparability, adapter drift. No single plan's test suite
 can answer those.
 
 The gate also sets a machine-verifiable precondition, so approval is not a
-checklist signed on faith: `./tests/run.ps1 dag-pipeline` must pass on the
-integration branch, running every DAG as a real Airflow `DagRun` against a
-disposable PostGIS warehouse. Attach that result to the approval note.
+checklist signed on faith: the orchestrated DAG suite
+(`tests/dags/test_dag_pipeline_execution.py`) must pass on the integration
+branch, running every DAG as a real Airflow `DagRun` against a disposable
+PostGIS warehouse. Run it locally with `./tests/run.ps1 dag-pipeline`, or read
+the `dag-parse` job, which selects the same module on pinned Airflow 2.9.3
+against pinned PostGIS 16. Attach that result to the approval note.
 
 ```powershell
-./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
-    -By "your name" -Note "dag-pipeline green; reviewed all three source diffs"
+./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate four-source-review `
+    -By "your name" -Note "dag-pipeline green; reviewed all four source diffs"
 
-./tools/Invoke-ClaudePlans.ps1 -Action reject -Gate three-source-review `
+./tools/Invoke-ClaudePlans.ps1 -Action reject -Gate four-source-review `
     -By "your name" -Note "CDC and PEP disagree on county vintage handling"
 
-./tools/Invoke-ClaudePlans.ps1 -Action reopen -Gate three-source-review
+./tools/Invoke-ClaudePlans.ps1 -Action reopen -Gate four-source-review
 ```
 
 The decision, who made it, when, and the note are written into the run-state

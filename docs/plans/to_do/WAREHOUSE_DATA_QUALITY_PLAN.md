@@ -4,7 +4,7 @@ branch: feat/warehouse-data-quality
 depends_on:
   - geography-reference
   - cicd-actions
-  - three-source-review
+  - four-source-review
 parallel_safe: false
 complexity: high
 verify:

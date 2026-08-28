@@ -99,12 +99,13 @@ under `docs/plans/gates/` and declares what it guards:
 
 ```yaml
 ---
-id: three-source-review
+id: four-source-review
 kind: gate
 depends_on:
   - cdc-illness
   - fbi-crime
   - usda-crop
+  - census-pep
 ---
 ```
 
@@ -132,22 +133,23 @@ unattended overnight run: it did everything it was allowed to do and is now
 asking a question.
 
 ```powershell
-./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
-    -By "your name" -Note "reviewed all three source diffs"
+./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate four-source-review `
+    -By "your name" -Note "reviewed all four source diffs"
 
-./tools/Invoke-ClaudePlans.ps1 -Action reject  -Gate three-source-review `
+./tools/Invoke-ClaudePlans.ps1 -Action reject  -Gate four-source-review `
     -By "your name" -Note "CDC and PEP disagree on county vintage"
 
-./tools/Invoke-ClaudePlans.ps1 -Action reopen  -Gate three-source-review
+./tools/Invoke-ClaudePlans.ps1 -Action reopen  -Gate four-source-review
 ```
 
 After approving, rerun `-Action run` to continue the same run.
 
 This repository declares one gate,
-[`three-source-review`](../plans/gates/THREE_SOURCE_REVIEW_GATE.md). It opens
-once the CDC, FBI Crime, and USDA NASS Crop pipelines are all integrated, and
-it holds back the warehouse-quality, end-to-end coverage, and API platform
-plans until a human confirms the three sources are coherent together. Those
+[`four-source-review`](../plans/gates/FOUR_SOURCE_REVIEW_GATE.md). It opens
+once the CDC, FBI Crime, USDA NASS Crop, and Census PEP pipelines are all
+integrated, and it holds back the warehouse-quality, end-to-end coverage, and
+API platform plans until a human confirms the four sources are coherent
+together. Those
 questions — shared geography and revision semantics, comparability, adapter
 drift — are not answerable by any one plan's test suite, and this is the
 cheapest point to answer them.
