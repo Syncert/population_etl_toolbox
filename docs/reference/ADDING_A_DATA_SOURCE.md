@@ -20,6 +20,7 @@ Begin with the [source-adapter starter](../templates/source-adapter/README.md), 
 - [ ] Keep definitions, approvals, dashboard defaults, ownership commentary, aliases, and user/team preferences outside source ETL and gold data-product tables.
 - [ ] Add checked-in fresh-bootstrap SQL, constraints, validation queries, and reset/re-ingestion instructions for any discarded beta data.
 - [ ] Add unit, contract, integration, replay, malformed-payload/quarantine, bootstrap, rerun, and reconciliation tests.
+- [ ] Add a live source-contract module under `tests/external/` covering the registered identity, the consumed contract, upstream-outage classification, and credential handling; register the source's key in `tests/support/external.py::REQUIRED_SCHEDULED_CREDENTIALS` and in the `external-contract` workflow so a source cannot drop out of live coverage by skipping silently.
 - [ ] Update the testing catalog, operations documentation, and compatibility/deprecation notes.
 
 Copying the current Census, BLS, or FRED raw/gold layout is not an approved shortcut: those packages contain legacy boundaries tracked by ARCH-002 through ARCH-007.
