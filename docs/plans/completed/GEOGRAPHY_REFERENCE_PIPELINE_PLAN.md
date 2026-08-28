@@ -333,5 +333,5 @@ This beta may use a clean database rebuild and re-ingestion. Before reset, expor
 - [Census Gazetteer Files](https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.html)
 - [Census Gazetteer File Record Layouts](https://www.census.gov/programs-surveys/geography/technical-documentation/records-layout/gaz-record-layouts.html)
 - [Census Data API geography guidance](https://www.census.gov/data/developers/geography.html)
-- [ADR-0001 data-layer ownership boundaries](../decisions/0001-data-layer-boundaries.md)
-- [Adding a data source checklist](../reference/ADDING_A_DATA_SOURCE.md)
+- [ADR-0001 data-layer ownership boundaries](../../decisions/0001-data-layer-boundaries.md)
+- [Adding a data source checklist](../../reference/ADDING_A_DATA_SOURCE.md)

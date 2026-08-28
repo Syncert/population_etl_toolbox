@@ -1,6 +1,6 @@
 # Adding a data source
 
-Do not onboard another production source until the expansion gate in the [data-layer remediation plan](../plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md) is satisfied. When the gate opens, every adapter must follow [ADR-0001](../decisions/0001-data-layer-boundaries.md).
+Do not onboard another production source until the expansion gate in the [data-layer remediation plan](../plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md) is satisfied. When the gate opens, every adapter must follow [ADR-0001](../decisions/0001-data-layer-boundaries.md).
 
 Begin with the [source-adapter starter](../templates/source-adapter/README.md), which provides the expected package layout, a `config.py` template, initial milestones, and an agent handoff block.
 

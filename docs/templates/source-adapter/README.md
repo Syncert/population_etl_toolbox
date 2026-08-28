@@ -1,6 +1,6 @@
 # Source-adapter starter
 
-Copy this starter only after the expansion gate in the [data-layer remediation plan](../../plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md) is open. Read [ADR-0001](../../decisions/0001-data-layer-boundaries.md) and complete the [new-source checklist](../../reference/ADDING_A_DATA_SOURCE.md) before implementation.
+Copy this starter only after the expansion gate in the [data-layer remediation plan](../../plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md) is open. Read [ADR-0001](../../decisions/0001-data-layer-boundaries.md) and complete the [new-source checklist](../../reference/ADDING_A_DATA_SOURCE.md) before implementation.
 
 Replace `new_source`, `NEW_SOURCE`, endpoint examples, and placeholder ownership with source-specific values. Do not copy the current Census, BLS, or FRED raw/gold DDL: those packages preserve legacy boundaries while they are migrated.
 

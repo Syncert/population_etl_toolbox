@@ -4,7 +4,7 @@
 - **Date:** 2026-08-17
 - **Accepted:** 2026-08-17
 - **Decision owners:** Data engineering and data-product maintainers
-- **Related work:** ARCH-001 through ARCH-007 in the [data-layer remediation plan](../plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
+- **Related work:** ARCH-001 through ARCH-007 in the [data-layer remediation plan](../plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md)
 
 ## Context
 
