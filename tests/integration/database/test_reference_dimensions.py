@@ -269,3 +269,136 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
             assert cursor.fetchone() == (2095, 2097)
     finally:
         bounds_reader.close()
+
+
+def test_batched_geography_replay_is_idempotent_and_guards_missing_entities(
+    postgres_connection_factory: Callable[[], connection],
+    reference_dimension_scope: None,
+) -> None:
+    """Covers: DB-018 — batched loading replays cleanly and still refuses orphans.
+
+    The loaders write set-based now, so the properties that used to fall out of
+    the per-row loop have to be proved against a real database: a rerun of the
+    identical snapshot must publish nothing new, a repeated identity inside one
+    batch must not break the entity upsert, and a boundary whose entity was
+    never loaded must still be rejected.
+    """
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture = seed_capture(cursor, "CENSUS_GEO", b"batched-snapshot")
+    writer.commit()
+    writer.close()
+
+    repository = GeographyRepository(postgres_connection_factory)
+    records = [
+        GeographyRecord("nation", "us:1", "1", None, None, None, "United States", 2096),
+        GeographyRecord("state", "state:98", "98", "98", None, None, "State", 2096),
+        GeographyRecord(
+            "county", "state:98|county:764", "98764", "98", "764", None, "West", 2096
+        ),
+        GeographyRecord(
+            "county", "state:98|county:765", "98765", "98", "765", None, "East", 2096
+        ),
+        GeographyRecord(
+            "place",
+            "state:98|place:54321",
+            "9854321",
+            "98",
+            None,
+            "54321",
+            "City",
+            2096,
+        ),
+    ]
+    geometries = [
+        GeometryRecord("state:98", 2096, _polygon(-91, -88)),
+        GeometryRecord("state:98|county:764", 2096, _polygon(-91, -89.5)),
+        GeometryRecord("state:98|county:765", 2096, _polygon(-89.5, -88)),
+        GeometryRecord("state:98|place:54321", 2096, _polygon(-90, -89)),
+    ]
+
+    def publish() -> None:
+        assert repository.load_attributes(records, capture_id=capture) == 5
+        assert repository.load_geometries(geometries, capture_id=capture) == 4
+        repository.reconcile_relationships(
+            vintage=2096,
+            capture_id=capture,
+            active_geo_ids={record.geo_id for record in records},
+        )
+
+    def published_counts() -> tuple[int, int, int, int]:
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """SELECT
+                        (SELECT COUNT(*) FROM silver_ref.dim_geo_entity
+                         WHERE geo_id = ANY(%s)),
+                        (SELECT COUNT(*) FROM silver_ref.dim_geo_entity_version v
+                         JOIN silver_ref.dim_geo_entity e USING (geo_sk)
+                         WHERE e.geo_id = ANY(%s)),
+                        (SELECT COUNT(*) FROM silver_ref.dim_geo_geometry_version g
+                         JOIN silver_ref.dim_geo_entity e USING (geo_sk)
+                         WHERE e.geo_id = ANY(%s)),
+                        (SELECT COUNT(*) FROM silver_ref.bridge_geo_relationship_version r
+                         JOIN silver_ref.dim_geo_entity e ON e.geo_sk = r.related_geo_sk
+                         WHERE e.geo_id = ANY(%s))""",
+                    (TEST_IDS, TEST_IDS, TEST_IDS, TEST_IDS),
+                )
+                return cursor.fetchone()
+        finally:
+            reader.close()
+
+    publish()
+    first = published_counts()
+    assert first == (5, 5, 4, 6)
+
+    publish()
+    assert published_counts() == first, "replaying the snapshot published new rows"
+
+    # A repeated identity inside one batch must not break ON CONFLICT DO UPDATE,
+    # and the vintage bounds must merge exactly as the per-row loader merged them.
+    assert (
+        repository.load_attributes(
+            [
+                GeographyRecord(
+                    "state", "state:98", "98", "98", None, None, "Earliest", 2090
+                ),
+                GeographyRecord(
+                    "state", "state:98", "98", "98", None, None, "Latest", 2099
+                ),
+            ],
+            capture_id=capture,
+        )
+        == 2
+    )
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT first_seen_version, last_seen_version "
+                "FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:98'"
+            )
+            assert cursor.fetchone() == (2090, 2099)
+            cursor.execute(
+                "SELECT name FROM silver_ref.dim_geo_entity_version v "
+                "JOIN silver_ref.dim_geo_entity e USING (geo_sk) "
+                "WHERE e.geo_id = 'state:98' ORDER BY geography_vintage, name"
+            )
+            assert cursor.fetchall() == [
+                ("Earliest",),
+                ("State",),
+                ("Latest",),
+            ]
+    finally:
+        reader.close()
+
+    # The orphan guard is a real integrity check, not an artefact of the loop.
+    with pytest.raises(ValueError, match="boundary has no matching entity: state:99"):
+        repository.load_geometries(
+            [
+                GeometryRecord("state:98", 2096, _polygon(-91, -88)),
+                GeometryRecord("state:99", 2096, _polygon(-91, -88)),
+            ],
+            capture_id=capture,
+        )
