@@ -16,7 +16,9 @@ verify:
 ## Plan status
 
 - **Status:** Claimed; implementation in progress
-- **Next pickup:** Execute DQ-001 (inventory grains, scopes, and quality contracts for all seven sources), then DQ-002 (evidence tables and runner).
+- **Next pickup:** Execute DQ-002: add `control.data_quality_run` and `control.data_quality_result` through the warehouse manifest, then the source-neutral rule/result runner.
+- **Completed evidence:**
+  - DQ-001 (2026-08-29): `src/data_ingestion_toolbox/quality/inventory.py` catalogs all 136 manifest-created relations with layer, owner, grain, lineage, expected-scope method, cadence, and empty behavior, and declares 63 rules with stable ids and severities across all seven sources plus the shared reference and glossary. `validate_inventory` enforces the acceptance criterion (every published object has an owner, grain, scope method, and a deterministic rule). Tests: `tests/unit/quality/test_quality_inventory.py` (10 tests, including an exact inventory-vs-manifest cross-check so the catalog cannot drift). Catalog id DQ-001 registered in `docs/reference/TESTING_CONTRACT.md` and the behavioral evidence register (196 rows). Commands: `python -m pytest tests/unit/quality tests/unit/shared tests/unit/tooling` -> 222 passed; `ruff check`/`format --check` clean.
 - **Last updated:** 2026-08-29
 - **Primary owner:** Shared warehouse reliability
 - **Depends on:** Capture/control foundation, shared geography, and source-specific silver and gold contracts (all satisfied: `geography-reference` and `cicd-actions` are in `completed/`, and all seven source pipelines were accepted 2026-08-28)
