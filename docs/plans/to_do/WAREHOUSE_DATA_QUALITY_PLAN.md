@@ -16,9 +16,10 @@ verify:
 ## Plan status
 
 - **Status:** Approved planning artifact; implementation not started
-- **Last updated:** 2026-08-19
+- **Last updated:** 2026-08-29
 - **Primary owner:** Shared warehouse reliability
-- **Depends on:** Capture/control foundation, shared geography, and source-specific silver and gold contracts
+- **Depends on:** Capture/control foundation, shared geography, and source-specific silver and gold contracts (all satisfied: `geography-reference` and `cicd-actions` are in `completed/`, and all seven source pipelines were accepted 2026-08-28)
+- **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. The plan was first drafted against ACS/BLS/FRED only; it was rescoped on 2026-08-29 at user direction to cover all seven, and any source accepted later joins this scope automatically.
 - **Co-delivery requirement:** Every implementation ticket must update the relevant GitHub Actions, scheduled checks, and release evidence defined by the CI/CD migration plan; resolve its current workflow location through the [plan index](../README.md).
 
 ## Objective
@@ -191,6 +192,53 @@ Results are append-only evidence. Re-running a rule creates new evidence rather 
 - Apply freshness windows by frequency; daily, weekly, monthly, quarterly, and annual series cannot share one threshold.
 - Detect unusually large changes as warnings, not automatic invalidation.
 
+### Census PEP
+
+- Reconcile the registered datasets and vintages in `silver_pep.pep_dataset`/`silver_pep.pep_release` to captures, `silver_pep.release_load` completeness, and published observations.
+- Require every published observation to come from a `release_load` row with `completeness_status = 'complete'`; an incomplete load must carry its recorded reason and never feed gold.
+- Validate the frozen Census null-sentinel set and `value_status` semantics (`valid`/`blank`/`sentinel`/`invalid`); only `valid` rows carry a number.
+- Keep `release_vintage` distinct from `observation_year`: verify prior vintages are retained, current-revision selection within a vintage is by capture recency, and latest-vintage selection is a separate projection.
+- Check component-of-change sign rules (estimates non-negative; components such as net migration may be negative) and the July-1 estimate-date convention.
+- Reconcile geography-level and summary-level coverage per dataset against the registry's declared levels, treating registry-excluded levels as valid emptiness.
+- Monitor vintage-over-vintage revisions to the same `(metric, geography, year)` as warnings, never as automatic invalidation.
+
+### CDC (CDI and PLACES)
+
+- Reconcile every `control.cdc_dataset_release` decision (`unchanged`, `ingest`, or a quarantine) to captures, silver revisions, quarantine rows, and release status; a release must not publish while `complete` is false.
+- Require watermark monotonicity per asset: a backward `release_watermark`, schema change, or dataset replacement quarantines rather than overwrites, and every retained `(asset_id, release_watermark)` stays queryable.
+- Preserve suppression semantics exactly: CDI suppression is the absence of `datavalue` with footnotes retained; PLACES `suppressed` requires a null value plus a suppression footnote, otherwise `missing`. Suppressed and missing are never zero.
+- Verify fact uniqueness at `(asset_id, release_watermark, source_record_id)` and that every `source_record_id` traces to its exact provider row payload.
+- Check confidence-interval ordering and PLACES percent-domain quarantine behavior against the declared parser contract versions.
+- Reconcile geography resolution (`resolved`/`unmapped`/`unsupported`) per asset's declared levels; PLACES county basis is 2020 Census counties, CDI is US/state.
+- Evaluate freshness from each asset's declared cadence (CDI irregular, PLACES annual; metadata checked weekly), not one shared threshold.
+
+### FBI UCR
+
+- Reconcile every `control.fbi_ucr_release` to its directory and observation slice counts, silver revisions, quarantines, and participation coverage before publication.
+- Enforce the agency aggregation boundary: agency-grain observations must never be summed into county or city totals, and county/place attribution flows only through `exact_state_code` or reviewed crosswalks with recorded confidence.
+- Keep `reported` and `not_reported` distinct: a published zero is a value, an absent month is NULL, and no check may conflate them.
+- Require every published observation to join a `fact_reporting_participation` row — no crime observation without a coverage interpretation — and verify `coverage_basis` is recorded rather than imputed.
+- Verify measure identity separation (`counted_entity_basis`: offense, clearance, arrest, incident, victim never share a measure) and that only `absolute_total` measures carry the additive-within-subject characteristic.
+- Validate release identity from provider `refresh_date`/`max_data_month`; `/LATEST` is capture input, not release identity, and a backward refresh quarantines.
+- Reconcile the registered product/offense/state/agency scope in `fbi_ucr/registry.py` to expected periods, treating unsupported state codes (`FS`, `GM`) as declared exclusions rather than gaps.
+- Exclude `ambiguous` and `unsupported` geography from gold while keeping the withheld evidence queryable.
+
+### USDA NASS
+
+- Reconcile every `control.usda_nass_release` and its per-slice ledger (`control.usda_nass_slice`) so preflight counts, captured row counts, and slice statuses (`captured`/`empty`/`over_limit`/`partial`/`skipped`) agree before publication.
+- Require the over-limit and partial-slice quarantine paths to hold: a slice that exceeded the provider record limit or captured fewer rows than preflighted must never advance the published watermark.
+- Preserve the full Quick Stats suppression vocabulary: `(D)` withheld, `(S)` insufficient reports, `(X)` not applicable, `(NA)` not available, `(Z)` below rounding unit, `(H)`/`(L)` quality flagged — each mapped to its own `value_status`, applied independently to CV values, with exact provider text retained.
+- Verify fact uniqueness at `(product_id, release_watermark, source_record_id)` — the complete Quick Stats grain, never commodity/year alone.
+- Reconcile the registry allowlist (five registered products, declared year window, national/state/county aggregation levels) to slices and observations, treating registry-excluded aggregation levels and geographies as valid emptiness.
+- Distinguish survey products (revised until final) from the census product (periodic final) in revision and freshness expectations; recent-window pulls and full-reconciliation sweeps must reconcile to the same retained releases.
+- Check `additive_behavior` propagation into series and publisher characteristics; `not_established` must remain visibly unknown, never defaulted to additive.
+
+### Shared geography reference and glossary
+
+- Verify every source's observation geography resolves through `silver_ref` or is explicitly recorded as unresolved/unsupported/quarantined by that source's contract.
+- Validate reference identity and relationship integrity (state/county/place hierarchies, boundary vintages, overlap weights) after any geography reload.
+- Reconcile `gold_glossary.publisher_registry` to each source's `metric_publisher` view: every published source has exactly one registry row and every registry row resolves to a live publisher.
+
 ## Completeness and reconciliation model
 
 Expected scope is derived in this order:
@@ -273,7 +321,7 @@ After bootstrap or a major migration, execute a full bounded-history certificati
 
 - Catalog every raw-capture, control, silver, reference, gold, publisher, and serving object.
 - Record declared grain, stable identity, required lineage, expected-scope source, freshness cadence, and valid empty behavior.
-- Assign stable rule IDs and severities for ACS, BLS, FRED, and shared geography.
+- Assign stable rule IDs and severities for every implemented source — ACS, BLS, FRED, PEP, CDC, FBI UCR, and USDA NASS — plus shared geography and the glossary.
 
 **Acceptance:** Every published object has an owner, declared grain, expected-scope method, and at least one deterministic integrity rule.
 
@@ -298,7 +346,11 @@ After bootstrap or a major migration, execute a full bounded-history certificati
 - Add ACS dataset/year/variable/geography checks.
 - Add BLS program/series/request-chunk/period checks.
 - Add FRED series/domain/frequency/freshness checks.
-- Add shared-reference identity, relationship, resolution, and geometry checks.
+- Add PEP dataset/vintage/release-completeness/sentinel checks.
+- Add CDC asset/release-watermark/suppression/quarantine checks.
+- Add FBI UCR release/participation-coverage/aggregation-boundary/reported-vs-absent checks.
+- Add USDA NASS release/slice-ledger/suppression-vocabulary/grain checks.
+- Add shared-reference identity, relationship, resolution, and geometry checks, and publisher-registry reconciliation.
 
 **Acceptance:** Complete and intentionally incomplete fixtures distinguish valid emptiness from missing configured work.
 

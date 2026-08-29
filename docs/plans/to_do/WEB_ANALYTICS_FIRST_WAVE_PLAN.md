@@ -16,8 +16,14 @@ verify:
 ## Plan status
 
 - **Status:** Approved planning artifact; implementation is blocked by the API completion gate
-- **Last updated:** 2026-08-22
+- **Last updated:** 2026-08-29
 - **Current milestone:** Planning complete; implementation has not started
+- **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
+  PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
+  capability-driven catalog and explorer. Source-specific product bullets below
+  name the primary sources for each product; the catalog, explorer, comparison
+  workspace, and data-quality explorer must cover all seven without a
+  closed client-side source enumeration.
 - **Next pickup:** After the API plan is human-accepted, inventory the frontend and record the accepted API-008 consumer handoff before moving this plan to `in_progress/`.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff
 
@@ -142,6 +148,7 @@ App Router routes and layouts
 ### Community conditions profile
 
 - Select a supported place/geography and display a source-transparent collection of population, demographic, labor, health, safety, and rural/agricultural context where available.
+- Draw health and illness context from CDC, safety context from FBI UCR (respecting its agency reporting and aggregation boundaries), and rural/agricultural context from USDA NASS (respecting its disclosure suppression), alongside ACS, PEP, BLS, and FRED measures.
 - Display every measure independently with its own period, denominator, coverage, source, uncertainty, and caveat.
 - Provide direct paths into the explorer and comparison workspace for every profile measure.
 - Never collapse unlike measures into an unexplained score.

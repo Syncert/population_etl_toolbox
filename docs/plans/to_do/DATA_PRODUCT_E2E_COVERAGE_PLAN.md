@@ -16,21 +16,20 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved to-do; blocked on the PEP, FBI Crime, and USDA Crop
-  implementation gate
-- **Last updated:** 2026-08-27
-- **Current milestone:** Dependency gate; implementation has not started
-- **Next pickup:** Re-inventory the three prerequisite source plans. Claim this
-  plan only after each source has stable raw, silver, gold, source-specific API,
-  deterministic fixture, replay, and cleanup contracts in `needs_review/` or
-  `completed/`.
+- **Status:** Approved to-do; prerequisite source plans are all accepted, so
+  the plan is claimable once the exclusive warehouse-data-quality plan is not
+  running beside it
+- **Last updated:** 2026-08-29
+- **Current milestone:** Dependency gate satisfied on folder state; implementation has not started
+- **Next pickup:** Verify the seven per-source evidence points below against the
+  live repository (folder state alone is not sufficient), then claim this plan.
 - **Depends on:**
-  - [Census PEP pipeline](../completed/CENSUS_PEP_PIPELINE_PLAN.md), currently
-    implemented and awaiting human review;
-  - [FBI Crime pipeline](../completed/FBI_CRIME_PIPELINE_PLAN.md), currently
-    implemented and awaiting human review;
-  - [USDA NASS Crop pipeline](../completed/USDA_NASS_CROP_PIPELINE_PLAN.md), currently
-    unimplemented; and
+  - [Census PEP pipeline](../completed/CENSUS_PEP_PIPELINE_PLAN.md), accepted
+    into `completed/` on 2026-08-28;
+  - [FBI Crime pipeline](../completed/FBI_CRIME_PIPELINE_PLAN.md), accepted
+    into `completed/` on 2026-08-28;
+  - [USDA NASS Crop pipeline](../completed/USDA_NASS_CROP_PIPELINE_PLAN.md), accepted
+    into `completed/` on 2026-08-28; and
   - the existing disposable PostGIS/API test foundation and
     [`e2e-performance`](../../../.github/workflows/e2e-performance.yml) workflow.
 - **Downstream consumers:** The API-platform and web-analytics plans may use
@@ -51,14 +50,18 @@ all of the following in each source:
 6. reviewed deterministic fixtures; and
 7. foreign-key-safe cleanup that leaves no shared test state.
 
-At this checkpoint, PEP and FBI Crime satisfy the implementation portion of
-this gate and are in `needs_review/`; USDA Crop remains in `to_do/`. The gate
-must be re-evaluated from the live plans and repository rather than from this
+At this checkpoint, PEP, FBI Crime, and USDA Crop are all accepted into
+`completed/` (2026-08-28), so every prerequisite satisfies the folder-state
+portion of this gate. The per-source evidence points above must still be
+re-verified from the live plans and repository rather than from this
 checkpoint statement.
 
-The active CDC plan owns CDC's first source-specific API/E2E evidence. This
-plan must include that completed CDC E2E contract in its all-product inventory
-and regression run, but must not duplicate unfinished CDC implementation work.
+The completed CDC plan delivered CDC's first source-specific API/E2E evidence.
+This plan must include that CDC E2E contract in its all-product inventory
+and regression run rather than re-implementing it. The all-product scope of
+this plan is every implemented source: Census ACS, BLS, FRED, Census PEP,
+CDC, FBI Crime, and USDA NASS Crop, plus the shared geography reference —
+without creating a closed production source enumeration.
 
 ## Objective
 
