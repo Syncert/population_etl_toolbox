@@ -50,6 +50,14 @@ to_do/ -> in_progress/ -> needs_review/ -> completed/
 - `needs_review/`: implementation-complete plans awaiting human review.
 - `completed/`: plans accepted by a human reviewer.
 
+Each of those folders, and `gates/`, carries a `.gitkeep`. Git does not track
+empty directories, so a folder whose last plan moves on vanishes from the next
+clone and takes a workflow state with it: an agent inventorying the queue finds
+no `in_progress/` to resume from and no `needs_review/` to hand off to, and the
+dispatcher's own folder-is-the-state contract silently loses a state. Keep the
+`.gitkeep` files, and if a folder is missing, recreate it with one rather than
+filing the plan elsewhere.
+
 Agents may move plans through `to_do/`, `in_progress/`, and `needs_review/` as
 the conditions below are met. They must not move a plan to `completed/` unless
 the user explicitly asks them to record human acceptance.

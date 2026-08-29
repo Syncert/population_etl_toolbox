@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from tools.plan_dispatcher.metadata import (
+    GATES_DIRNAME,
+    WORKFLOW_STATES,
     PlanMetadataError,
     load_plans,
     parse_plan,
@@ -140,3 +142,16 @@ def test_repository_plan_inventory_is_valid() -> None:
             f"{plan.path} depends on unknown plan(s): "
             f"{sorted(set(plan.depends_on) - known)}"
         )
+
+
+def test_every_workflow_folder_survives_being_emptied() -> None:
+    """Covers: PLAN-001 — the folder is the state, so it must exist unoccupied."""
+    plans_root = REPOSITORY_ROOT / "docs/plans"
+
+    for folder in (*WORKFLOW_STATES, GATES_DIRNAME):
+        # Git does not track empty directories: without the .gitkeep, moving the
+        # last plan out of a folder deletes the workflow state itself from the
+        # next clone, and the agent inventorying the queue cannot tell an empty
+        # stage from one that never existed.
+        keep = plans_root / folder / ".gitkeep"
+        assert keep.is_file(), f"docs/plans/{folder}/.gitkeep is missing"
