@@ -5,7 +5,6 @@ depends_on:
   - census-pep
   - fbi-crime
   - usda-crop
-  - three-source-review
 parallel_safe: false
 complexity: medium
 verify:
@@ -26,11 +25,11 @@ verify:
   deterministic fixture, replay, and cleanup contracts in `needs_review/` or
   `completed/`.
 - **Depends on:**
-  - [Census PEP pipeline](../needs_review/CENSUS_PEP_PIPELINE_PLAN.md), currently
+  - [Census PEP pipeline](../completed/CENSUS_PEP_PIPELINE_PLAN.md), currently
     implemented and awaiting human review;
-  - [FBI Crime pipeline](../needs_review/FBI_CRIME_PIPELINE_PLAN.md), currently
+  - [FBI Crime pipeline](../completed/FBI_CRIME_PIPELINE_PLAN.md), currently
     implemented and awaiting human review;
-  - [USDA NASS Crop pipeline](USDA_NASS_CROP_PIPELINE_PLAN.md), currently
+  - [USDA NASS Crop pipeline](../completed/USDA_NASS_CROP_PIPELINE_PLAN.md), currently
     unimplemented; and
   - the existing disposable PostGIS/API test foundation and
     [`e2e-performance`](../../../.github/workflows/e2e-performance.yml) workflow.

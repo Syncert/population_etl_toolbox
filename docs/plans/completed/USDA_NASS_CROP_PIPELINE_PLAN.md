@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review; NASS-001 through NASS-005 are implemented on `feat/usda-crop`
-- **Last updated:** 2026-08-27
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level
@@ -198,8 +198,10 @@ the tier definition stays synchronized across all three.
 
 ### Environment-limited checks
 
-Two checks could not run on this machine. Neither is caused by this work, and
-neither is reported as passing.
+Two checks could not run on the authoring machine. Neither is caused by this
+work, and neither was reported as passing at the time. The first has since been
+produced in the pinned environment on the integration branch, as recorded
+below; the second is a host permission quirk with a documented workaround.
 
 1. **DAG-016 orchestrated DagRun.** `airflow.utils.db.initdb()` fails during
    test setup with `ImportError: cannot import name
@@ -217,14 +219,10 @@ neither is reported as passing.
    `tests/dags/test_dag_pipeline_execution.py`. Every other DAG test passes in
    both configurations.
 
-   **To resume:** run in a clean pinned `airflow-dev` environment or in the
-   scheduler image:
-   `docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres`
-   then `./tests/run.ps1 dag-pipeline`. That run is the machine-verifiable
-   precondition of `docs/plans/gates/THREE_SOURCE_REVIEW_GATE.md` and is
-   expected to be produced on the integration branch, where it also covers the
-   CDC and FBI pipelines. DAG-015 — static coverage proving the new DAG does
-   not escape the orchestrated suite — does pass here.
+   **Resolved on the integration branch.** The run was produced in the pinned
+   environment after the source branches merged; see the orchestrated evidence
+   below. DAG-015 — static coverage proving the new DAG does not escape the
+   orchestrated suite — passed here as well.
 
 2. **pytest temporary root.** `%LOCALAPPDATA%\Temp\pytest-of-synce` on this
    machine denies access to its owner, so `tmp_path_factory.mktemp` fails and
@@ -234,6 +232,38 @@ neither is reported as passing.
    `PYTEST_DEBUG_TEMPROOT` to a writable directory. Every result in the table
    above was produced with `PYTEST_DEBUG_TEMPROOT` pointing at a writable
    scratch directory; nothing else about the runs was changed.
+
+### Orchestrated evidence on the integration branch (2026-08-28)
+
+- `dag-parse` run 102 on `main` at `1f33b38`, Airflow 2.9.3 on Python 3.11
+  against pinned PostGIS 16.14: **113 passed, 0 skipped, 0 errors** in
+  134.35 s. The job supplies `RUN_DAG_TESTS=1` and the `TEST_POSTGRES_*`
+  service variables, and its command-line `-m dag` overrides the default marker
+  filter in `pyproject.toml`, so the orchestrated module was selected and
+  executed. Zero skips and zero errors are what separate that from the
+  `102 passed, 2 errors` recorded on the authoring host above.
+- The module executes all ten production DAGs as real `DagRun`s in warehouse
+  order and asserts each succeeded, `usda_nass_crop_ingest` among them.
+- Every other workflow was green on the same commit.
+
+This satisfies DAG-016 and the machine-verifiable precondition of
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md).
+
+### Live provider contract
+
+`tests/external/test_nass_source_contracts.py` covers the registered slice
+preflight against the provider's 50,000-record ceiling, the survival of every
+registered classification selection in the provider's own `get_param_values`
+domain, outage classification, and credential handling. The
+`external-contract` workflow owns it on a daily schedule and requires
+`USDA_NASS_API_KEY`.
+
+**Not yet executed against the provider.** The module's live assertions have
+never run: the repository has no `USDA_NASS_API_KEY` secret configured, and the
+authoring environment's network policy blocks `quickstats.nass.usda.gov`. Its
+deterministic assertions pass and its live assertions skip cleanly on the
+missing key. The first credentialed `external-contract` run is what will close
+this.
 
 ### Observations outside this plan's scope
 
@@ -448,7 +478,7 @@ The final cadence and incremental key must be proven during NASS-001 rather than
   orchestrated DAG suite (`tests/dags/test_dag_pipeline_execution.py`). The
   suite's coverage assertion (DAG-015) fails for any DAG in `dags/` without a
   registered stub, and a passing `./tests/run.ps1 dag-pipeline` run is required
-  evidence for the three-source review gate. The stub must answer the actual
+  evidence for the four-source review gate. The stub must answer the actual
   request (registered slice parameters, counts, pagination) at whatever scale
   the pipeline's own completeness guards demand; do not weaken a production
   guard to make the DAG pass.

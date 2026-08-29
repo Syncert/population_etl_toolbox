@@ -26,8 +26,16 @@ authoritative workflow state.
 `gates/` holds human review gates rather than plans. A gate is a checkpoint in
 the same dependency graph: it opens for review once everything it guards is
 integrated, and the dispatcher will not cross it without a recorded human
-decision. `gates/THREE_SOURCE_REVIEW_GATE.md` stops the backlog once the CDC,
-FBI Crime, and USDA NASS Crop pipelines are all complete.
+decision. The directory is currently empty: the four-source review gate was
+approved and retired on 2026-08-28, and its decision record is archived at
+[`completed/FOUR_SOURCE_REVIEW_GATE.md`](completed/FOUR_SOURCE_REVIEW_GATE.md).
+
+Retiring a gate is not a delete. A gate is never satisfied by its folder, so an
+archived gate that still carries its `kind: gate` frontmatter would hold its
+dependents forever, and a deleted gate whose id is still named in a dependent's
+`depends_on` makes `validate_graph` reject the entire inventory. Strip the
+frontmatter when archiving it, and remove its id from every dependent in the
+same change.
 
 ## Workflow states
 

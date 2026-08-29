@@ -23,12 +23,12 @@ verify:
 
 ### Completed in the current slice
 
-- [x] Added proposed [ADR-0001](../decisions/0001-data-layer-boundaries.md) with explicit raw, control, silver, gold, semantic/governance, and serving contracts.
+- [x] Added proposed [ADR-0001](../../decisions/0001-data-layer-boundaries.md) with explicit raw, control, silver, gold, semantic/governance, and serving contracts.
 - [x] Added the required ACS/BLS/FRED field-classification matrix and raw-capture metadata rules.
 - [x] Documented the deterministic-decoding exception and review process.
 - [x] Corrected README claims: today's `raw_*.{source}_long` and ingestion-slice relations are now identified as legacy parsed staging/control tables rather than immutable, unmodified raw data.
-- [x] Added the contract-driven [new-source checklist](../reference/ADDING_A_DATA_SOURCE.md) and the expansion-gate warning.
-- [x] Added a reusable [source-adapter starter](../templates/source-adapter/README.md) covering package layout, `config.py`, API-key handling, implementation milestones, and agent handoff state.
+- [x] Added the contract-driven [new-source checklist](../../reference/ADDING_A_DATA_SOURCE.md) and the expansion-gate warning.
+- [x] Added a reusable [source-adapter starter](../../templates/source-adapter/README.md) covering package layout, `config.py`, API-key handling, implementation milestones, and agent handoff state.
 - [x] Added CI-discovered static contracts `ARC-001` through `ARC-003` for shared glossary ownership, lossless raw capture, and gold policy boundaries.
 - [x] Verified the full shared unit suite: 80 tests passed on 2026-08-17.
 - [x] Verified the complete ETL unit selection: 311 tests passed on 2026-08-17.

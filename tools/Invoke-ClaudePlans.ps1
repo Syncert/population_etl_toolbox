@@ -58,7 +58,7 @@
     ./tools/Invoke-ClaudePlans.ps1 -Action run -MaxConcurrency 3
 
 .EXAMPLE
-    ./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate three-source-review `
+    ./tools/Invoke-ClaudePlans.ps1 -Action approve -Gate four-source-review `
         -By 'syncert' -Note 'reviewed all three source diffs'
 #>
 [CmdletBinding()]

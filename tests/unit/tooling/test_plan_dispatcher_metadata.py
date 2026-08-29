@@ -130,4 +130,13 @@ def test_repository_plan_inventory_is_valid() -> None:
         "completed",
         "gate",
     }
-    assert any(plan.is_gate for plan in plans.values())
+    # Not "at least one gate": the four-source review gate was approved and
+    # retired on 2026-08-28, and gates/ is empty until the next checkpoint is
+    # declared. What must always hold is that every declared dependency names
+    # a plan this inventory actually contains.
+    known = set(plans)
+    for plan in plans.values():
+        assert set(plan.depends_on) <= known, (
+            f"{plan.path} depends on unknown plan(s): "
+            f"{sorted(set(plan.depends_on) - known)}"
+        )

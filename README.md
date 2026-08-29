@@ -3,7 +3,7 @@
 A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for access to Census ACS, Census PEP, BLS, and FRED data in a structured dimensional warehouse.
 
 Active architecture changes are tracked in
-[`docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md`](docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md).
+[`docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md`](docs/plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md).
 The implemented test contract and longer-term product design live under
 [`docs/reference`](docs/reference/TESTING_CONTRACT.md) and
 [`docs/product`](docs/product/ECONOMIC_DATA_STUDIO_MANIFESTO.md), respectively.

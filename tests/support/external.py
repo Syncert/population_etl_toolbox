@@ -12,11 +12,25 @@ from typing import Callable, TypeVar
 import httpx
 import pytest
 
+from data_ingestion_toolbox.fbi_ucr.config import (
+    API_KEY_ENVIRONMENT_VARIABLE as FBI_CDE_API_KEY_VARIABLE,
+)
+from data_ingestion_toolbox.usda_nass.config import (
+    API_KEY_ENVIRONMENT_VARIABLE as USDA_NASS_API_KEY_VARIABLE,
+)
+
 T = TypeVar("T")
+
+#: Credentials the scheduled external-contract run must have before it can
+#: claim to cover every source. The two provider-required keys are read from
+#: their adapters so a renamed variable cannot silently drop a source from the
+#: tier. CDC reads anonymously, so its optional rate-limit token is not here.
 REQUIRED_SCHEDULED_CREDENTIALS = (
     "CENSUS_API_KEY",
     "BLS_API_KEY",
     "FRED_API_KEY",
+    FBI_CDE_API_KEY_VARIABLE,
+    USDA_NASS_API_KEY_VARIABLE,
 )
 
 

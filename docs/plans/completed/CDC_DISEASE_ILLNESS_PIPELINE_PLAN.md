@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; ready for human review
-- **Last updated:** 2026-08-27
+- **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
+- **Last updated:** 2026-08-28
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level
@@ -153,17 +153,41 @@ Recorded 2026-08-27 on Windows against the pinned disposable
   --quiet` for all four checked-in Compose variants; and the scheduler-image DAG
   suite.
 
-Environment-limited checks, not run here:
+Environment-limited checks, not run on the authoring host:
 
-- `./tests/run.ps1 dag-pipeline` cannot initialize an Airflow metadata database
-  on this host: `ImportError: cannot import name 'ignore_sqlite_value_error'
-  from 'airflow.migrations.utils'`. This is a local Airflow/alembic
-  incompatibility under Windows Python 3.13, not a repository defect; the
-  `dag-parse` and `scheduler-image` jobs own that evidence.
+- `./tests/run.ps1 dag-pipeline` could not initialize an Airflow metadata
+  database there: `ImportError: cannot import name 'ignore_sqlite_value_error'
+  from 'airflow.migrations.utils'`, a local Airflow/alembic incompatibility
+  under Windows Python 3.13 rather than a repository defect. **This is no
+  longer outstanding** — see the orchestrated evidence below.
 - Redis-backed tiers were not provisioned for the recorded integration run, so
   their tests are reported as skips rather than passes.
 - Production and homelab deployment, and the Review Gate 2 and 3 human runtime
   reviews.
+
+### Orchestrated evidence on the integration branch (2026-08-28)
+
+- `dag-parse` run 102 on `main` at `1f33b38`, Airflow 2.9.3 on Python 3.11
+  against pinned PostGIS 16.14: **113 passed, 0 skipped, 0 errors** in
+  134.35 s. The job supplies `RUN_DAG_TESTS=1` and the `TEST_POSTGRES_*`
+  service variables, and its command-line `-m dag` overrides the default marker
+  filter, so `tests/dags/test_dag_pipeline_execution.py` ran rather than being
+  deselected.
+- That module executes all ten production DAGs as real `DagRun`s in warehouse
+  order and asserts each succeeded, `cdc_ingest` among them, and asserts the
+  executed set equals the DagBag.
+- Every other workflow was green on the same commit.
+
+This satisfies the machine-verifiable precondition of
+[`FOUR_SOURCE_REVIEW_GATE.md`](FOUR_SOURCE_REVIEW_GATE.md).
+
+### Live provider contract
+
+`tests/external/test_cdc_source_contracts.py` is registered in the scheduled
+`external-contract` workflow and has been executed against the live provider:
+**8 passed** for `hksd-2xuw` and `swc5-untb`, recorded above. CDC reads
+anonymously; `CDC_SOCRATA_APP_TOKEN` only raises Socrata rate limits and is not
+required for coverage.
 
 ### Review Gate 1 packet (approved 2026-08-26)
 

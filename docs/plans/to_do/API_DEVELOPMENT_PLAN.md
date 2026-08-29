@@ -7,7 +7,6 @@ depends_on:
   - fbi-crime
   - usda-crop
   - warehouse-data-quality
-  - three-source-review
 parallel_safe: false
 complexity: high
 verify:

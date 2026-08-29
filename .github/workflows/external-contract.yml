@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   source-contracts:
-    name: Census, BLS, FRED, and CDC live contracts
+    name: Census, PEP, BLS, FRED, CDC, FBI UCR, and USDA NASS live contracts
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -38,6 +38,10 @@ jobs:
       CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
       BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      # Required by the providers: the CDE API is keyed through api.data.gov
+      # and Quick Stats refuses an unkeyed request.
+      FBI_CDE_API_KEY: ${{ secrets.FBI_CDE_API_KEY }}
+      USDA_NASS_API_KEY: ${{ secrets.USDA_NASS_API_KEY }}
       # Optional: raises CDC Socrata rate limits; anonymous reads still work.
       CDC_SOCRATA_APP_TOKEN: ${{ secrets.CDC_SOCRATA_APP_TOKEN }}
 

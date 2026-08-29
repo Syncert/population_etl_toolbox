@@ -17,7 +17,7 @@ This register assigns each delivery contract to one authoritative GitHub Actions
 | Spatial configuration | `martin-unit` / `Martin deterministic contracts (Python 3.11)` | Required PR/push | Martin configuration and contracts |
 | Spatial database/proxy behavior | `martin-integration` / `Martin/PostGIS/API/proxy contracts` | Required PR/push | geography, gold serving, Martin, proxy |
 | Deployment startup/readiness/teardown | `deployment-smoke` / `Deployment compose smoke` | Required PR/push | application, SQL, Docker, deployment config |
-| Live provider compatibility | `external-contract` / `Census, BLS, FRED, and CDC live contracts` | Scheduled/manual; fresh within 7 days for release | source adapters and provider fixtures |
+| Live provider compatibility | `external-contract` / `Census, PEP, BLS, FRED, CDC, FBI UCR, and USDA NASS live contracts` | Scheduled/manual; fresh within 7 days for release | source adapters and provider fixtures |
 | Bounded E2E and performance | `e2e-performance` / `Bounded E2E and performance evidence` | Scheduled/manual; fresh within 7 days for release | full source-to-serving behavior |
 
 Branch protection should require the thirteen PR/push jobs above by their displayed job names. A release candidate additionally records successful live-provider and bounded E2E runs no older than seven days. The million-row profile remains opt-in and is required only when a release changes bulk loading, chunking, or serving-query plans.
