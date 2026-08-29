@@ -279,7 +279,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Environment, collection, and package | ENV-001–ENV-011 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-003 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
-| Warehouse data quality | DQ-001–DQ-002 | DQ-003–DQ-007 (plan tickets; cataloged as each lands) |
+| Warehouse data quality | DQ-001–DQ-003 | DQ-004–DQ-007 (plan tickets; cataloged as each lands) |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
@@ -297,7 +297,7 @@ Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 197-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 198-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -380,6 +380,7 @@ through DQ-007 as they are implemented.
 |---|---:|---|---|---|---|
 | DQ-001 | P1 | Static / `unit` | Quality inventory and rule registry | Every relation created by the warehouse manifest is cataloged with layer, owner, grain, lineage, expected-scope method, cadence, and empty behavior; every published object carries at least one deterministic rule; rule ids are stable, unique, and vocabulary-checked | The catalog drifts from the manifest, a published object lacks a deterministic rule, or a rule references an unknown object |
 | DQ-002 | P1 | Isolation / `unit`, `integration` `database` | Quality evidence and runner foundation | `control.data_quality_run` and `control.data_quality_result` persist pass/fail/warn/not-applicable evidence per rule and object/partition on a fresh bootstrap; evidence is append-only (only a warning's review status may change), a failing BLOCK/QUARANTINE rule fails the run, an executor error finalizes the run as errored with a bounded sanitized summary, and re-runs add new evidence rather than rewriting history | Evidence is lost or mutated in place, a broken executor passes silently, a blocking failure does not fail the run, or a summary leaks sensitive content |
+| DQ-003 | P1 | Contract / `integration` `database` | Lineage and layer reconciliation with publication gating | Bounded checksum recomputation, captured-request/capture agreement, finished-run request accounting, and capture-to-silver-to-gold identity reconciliation each fail with exact bounded evidence when corruption, orphan lineage, lost work, loss, or duplication is injected; the publication gate refuses a damaged release so the prior published release keeps serving | Injected loss, duplication, orphan lineage, or partial publication passes silently, evidence is unbounded, or a refused release damages the previously published partition |
 
 ### Data-layer Architecture Boundary Tests
 
