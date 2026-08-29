@@ -15,7 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved planning artifact; implementation not started
+- **Status:** Claimed; implementation in progress
+- **Next pickup:** Execute DQ-001 (inventory grains, scopes, and quality contracts for all seven sources), then DQ-002 (evidence tables and runner).
 - **Last updated:** 2026-08-29
 - **Primary owner:** Shared warehouse reliability
 - **Depends on:** Capture/control foundation, shared geography, and source-specific silver and gold contracts (all satisfied: `geography-reference` and `cicd-actions` are in `completed/`, and all seven source pipelines were accepted 2026-08-28)
