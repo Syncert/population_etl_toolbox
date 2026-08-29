@@ -14,6 +14,7 @@ orchestration defect rather than a mocking artifact.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -316,6 +317,10 @@ def register_airflow_runtime(config: PostgresTestConfig) -> None:
     from airflow.models import Connection, Pool
     from airflow.utils.db import initdb
 
+    # The quality assessment stamps its evidence with the commit under test;
+    # the orchestrated tier pins a deterministic sha for reproducible runs.
+    os.environ.setdefault("DATA_QUALITY_COMMIT_SHA", "0" * 39 + "1")
+
     initdb()
     session = settings.Session()
     try:
@@ -353,6 +358,15 @@ def register_airflow_runtime(config: PostgresTestConfig) -> None:
         session.close()
 
 
+#: Trigger configuration for DAGs whose orchestrated run needs one. The
+#: quality assessment runs its daily sweep here: the weekly/monthly full
+#: reconciliation asserts the complete registered scope, which the bounded
+#: orchestrated fixtures deliberately do not load.
+DAG_RUN_CONF: dict[str, dict[str, Any]] = {
+    "warehouse_data_quality": {"cadence": "daily"},
+}
+
+
 def run_dag(dagbag: Any, dag_id: str, *, logical_date: datetime | None = None) -> Any:
     """Execute one production DAG as a real DagRun and return it.
 
@@ -368,7 +382,8 @@ def run_dag(dagbag: Any, dag_id: str, *, logical_date: datetime | None = None) -
             f"import errors: {dagbag.import_errors}"
         )
     return dag.test(
-        execution_date=logical_date or datetime(2026, 1, 1, tzinfo=timezone.utc)
+        execution_date=logical_date or datetime(2026, 1, 1, tzinfo=timezone.utc),
+        run_conf=DAG_RUN_CONF.get(dag_id),
     )
 
 

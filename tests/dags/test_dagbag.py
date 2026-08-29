@@ -38,6 +38,7 @@ EXPECTED_DAG_IDS = {
     "usda_nass_crop_ingest",
     "glossary_harvest",
     "glossary_reconciliation",
+    "warehouse_data_quality",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -52,6 +53,7 @@ EXPECTED_SCHEDULES = {
     "usda_nass_crop_ingest": "0 10 * * 1-5",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
+    "warehouse_data_quality": "0 11 * * *",
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -66,6 +68,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "usda_nass_crop_ingest": 2,
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
+    "warehouse_data_quality": 1,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks

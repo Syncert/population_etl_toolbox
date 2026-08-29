@@ -123,3 +123,58 @@ DROP TRIGGER IF EXISTS data_quality_result_append_only
 CREATE TRIGGER data_quality_result_append_only
     BEFORE UPDATE OR DELETE ON control.data_quality_result
     FOR EACH ROW EXECUTE FUNCTION control.data_quality_result_guard();
+
+-- Operator summaries: the queryable state of the newest evidence, so a
+-- failing rule, its source/partition, and the latest good run are visible
+-- without reading worker logs.
+CREATE OR REPLACE VIEW control.data_quality_latest_result AS
+SELECT DISTINCT ON (result.rule_id, result.object_name, result.partition_key)
+       result.rule_id,
+       result.severity,
+       result.layer,
+       result.object_name,
+       result.source_code,
+       result.partition_key,
+       result.result,
+       result.observed_count,
+       result.expected_count,
+       result.observed_measure,
+       result.evidence,
+       result.review_status,
+       result.evaluated_at,
+       result.quality_run_id,
+       run.assessment_type,
+       run.code_commit_sha,
+       run.rule_set_version
+FROM control.data_quality_result AS result
+JOIN control.data_quality_run AS run
+  ON run.quality_run_id = result.quality_run_id
+ORDER BY result.rule_id, result.object_name, result.partition_key,
+         result.evaluated_at DESC, result.result_id DESC;
+
+CREATE OR REPLACE VIEW control.data_quality_source_status AS
+SELECT run.source_code,
+       run.quality_run_id,
+       run.assessment_type,
+       run.overall_status,
+       run.rule_set_version,
+       run.code_commit_sha,
+       run.started_at,
+       run.finished_at,
+       run.failure_summary,
+       COUNT(result.result_id) FILTER (WHERE result.result = 'fail'
+           AND result.severity IN ('BLOCK', 'QUARANTINE')) AS blocking_failures,
+       COUNT(result.result_id) FILTER (WHERE result.result = 'fail') AS failures,
+       COUNT(result.result_id) FILTER (WHERE result.result = 'warn') AS warnings,
+       COUNT(result.result_id) FILTER (WHERE result.result = 'warn'
+           AND result.review_status = 'open') AS open_warnings,
+       COUNT(result.result_id) AS results
+FROM control.data_quality_run AS run
+LEFT JOIN control.data_quality_result AS result
+  ON result.quality_run_id = run.quality_run_id
+WHERE run.started_at = (
+    SELECT MAX(latest.started_at)
+    FROM control.data_quality_run AS latest
+    WHERE latest.source_code = run.source_code
+)
+GROUP BY run.source_code, run.quality_run_id;
