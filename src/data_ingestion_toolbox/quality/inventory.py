@@ -1656,6 +1656,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Successful requests reconcile to captures; empty requests reconcile "
         "to explicit empty outcomes; the remainder is quarantined, never lost.",
         (
+            "control.ingestion_run",
             "control.ingestion_request",
             "raw_capture.response_capture",
             "control.capture_quarantine",
@@ -2054,7 +2055,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "conformance",
         "The frozen Census null-sentinel set and value_status semantics hold; "
         "only valid rows carry a number; component sign rules hold.",
-        ("silver_pep.fact_population_estimate", "silver_pep.dim_measure"),
+        (
+            "silver_pep.observation_revision",
+            "silver_pep.fact_population_estimate",
+            "silver_pep.dim_measure",
+        ),
     ),
     _rule(
         "DQ-PEP-005",
@@ -2111,7 +2116,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "completeness",
         "A CDC release publishes only when complete; partial pages cannot "
         "advance the published watermark.",
-        ("control.cdc_dataset_release", "gold_cdc.health_observation"),
+        (
+            "control.cdc_dataset_release",
+            "silver_cdc.fact_health_observation",
+            "gold_cdc.health_observation",
+        ),
     ),
     _rule(
         "DQ-CDC-004",
@@ -2172,6 +2181,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_fbi.fact_crime_observation",
             "silver_fbi.fact_reporting_participation",
+            "gold_fbi.crime_observation",
             "gold_fbi.reporting_coverage",
         ),
     ),

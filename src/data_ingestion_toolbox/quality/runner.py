@@ -225,6 +225,11 @@ def execute_rules(
                 raise QualityInventoryError(
                     f"{rule_id}: outcome names unknown object '{outcome.object_name}'."
                 )
+            if outcome.object_name not in rule.objects:
+                raise QualityInventoryError(
+                    f"{rule_id}: outcome names '{outcome.object_name}', which "
+                    "the rule does not declare."
+                )
             if outcome.result == "fail":
                 failures.append(
                     f"{rule_id} {outcome.object_name}"
