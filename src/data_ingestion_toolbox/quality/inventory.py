@@ -268,6 +268,27 @@ _SHARED_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per publication",
         empty_behavior="empty before the first publication",
     ),
+    _obj(
+        "control.data_quality_run",
+        "control",
+        "SHARED",
+        grain="quality_run_id",
+        lineage="control.ingestion_run, control.publisher_ready_event",
+        scope_method="one row per quality assessment execution",
+        cadence="per inline, scheduled, release, or manual assessment",
+        empty_behavior="empty only before the first assessment",
+    ),
+    _obj(
+        "control.data_quality_result",
+        "control",
+        "SHARED",
+        grain="result_id; unique per (quality_run_id, rule_id, object_name, "
+        "partition_key)",
+        lineage="control.data_quality_run, raw_capture.response_capture",
+        scope_method="one row per rule and evaluated object/partition",
+        cadence="per quality assessment",
+        empty_behavior="empty only before the first assessment",
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -1659,6 +1680,15 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "control.serving_refresh_state",
             "control.serving_refresh_chunk_state",
         ),
+    ),
+    _rule(
+        "DQ-SHARED-006",
+        "BLOCK",
+        "revision_integrity",
+        "Quality evidence is append-only: results never mutate beyond a "
+        "warning's review status, every terminal run records its finish, and "
+        "each run's results are unique per rule, object, and partition.",
+        ("control.data_quality_run", "control.data_quality_result"),
     ),
     # -- shared geography reference ----------------------------------------
     _rule(
