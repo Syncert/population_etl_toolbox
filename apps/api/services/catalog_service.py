@@ -35,6 +35,9 @@ def _relation_exists(db: Session, relation_name: str) -> bool:
     except SQLAlchemyError:
         # Permission errors on optional schemas should not fail the request;
         # treat inaccessible relations as absent and continue fallback probing.
+        # Roll back so the aborted transaction does not poison every statement
+        # that follows on this session (psycopg2 InFailedSqlTransaction).
+        db.rollback()
         return False
     if exists is None:
         return True

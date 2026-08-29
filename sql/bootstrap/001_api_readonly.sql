@@ -17,7 +17,7 @@ DO $$
 DECLARE
     _schema TEXT;
 BEGIN
-    FOREACH _schema IN ARRAY ARRAY['gold', 'gold_glossary', 'gold_bls', 'gold_census', 'gold_fred']
+    FOREACH _schema IN ARRAY ARRAY['gold', 'gold_glossary', 'gold_bls', 'gold_cdc', 'gold_census', 'gold_fbi', 'gold_fred', 'gold_nass', 'gold_pep']
     LOOP
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = _schema) THEN
             EXECUTE format('GRANT USAGE ON SCHEMA %I TO api_reader', _schema);

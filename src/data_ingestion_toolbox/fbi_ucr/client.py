@@ -13,7 +13,7 @@ import httpx
 
 from data_ingestion_toolbox.capture import allowlisted_response_headers
 
-from .config import API_KEY_PARAMETER, CDE_BASE_URL, FbiUcrConfig
+from .config import API_KEY_HEADER, CDE_BASE_URL, FbiUcrConfig
 from .registry import FbiSubject, FbiUcrProduct, agency_directory_endpoint
 
 SOURCE_CODE = "FBI_UCR"
@@ -137,9 +137,10 @@ def _request_bytes(
 ) -> tuple[bytes, dict[str, str], int]:
     api_key = _validated_api_key(config, endpoint)
     url = f"{CDE_BASE_URL}{endpoint}"
-    # The key is added here, to the outgoing request only. ``params`` remains
+    # The key travels only in the request header, never in the query string,
+    # so transport-level logging of URLs cannot leak it. ``params`` remains
     # the redacted identity that reaches the control plane and the capture.
-    outgoing = {**dict(params), API_KEY_PARAMETER: api_key}
+    outgoing = dict(params)
     final_status: int | None = None
     final_error: BaseException | None = None
     for attempt in range(1, config.max_attempts + 1):
@@ -147,7 +148,9 @@ def _request_bytes(
         retry_after: str | None = None
         try:
             response = client.get(
-                url, headers={"Accept": "application/json"}, params=outgoing
+                url,
+                headers={"Accept": "application/json", API_KEY_HEADER: api_key},
+                params=outgoing,
             )
             final_status = response.status_code
             raw_bytes = response.content

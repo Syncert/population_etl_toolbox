@@ -18,7 +18,11 @@ services:
       - ../airflow/airflow.env.example
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-airflow}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      BLS_API_KEY: ${BLS_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
@@ -44,7 +48,8 @@ services:
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
-      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit'
+      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set usda_nass_api 2 'USDA NASS QuickStats API limit'
       "
 
   airflow-webserver:

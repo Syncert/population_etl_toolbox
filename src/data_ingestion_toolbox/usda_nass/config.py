@@ -32,7 +32,9 @@ QUICK_STATS_MAX_RECORDS = 50_000
 API_KEY_ENVIRONMENT_VARIABLE = "USDA_NASS_API_KEY"
 
 # Shared target warehouse database.
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 
 class NassConfig(BaseModel):

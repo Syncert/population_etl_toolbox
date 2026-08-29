@@ -21,8 +21,8 @@ pytestmark = pytest.mark.unit
 def test_frozen_official_base_url_matches_the_documented_surface() -> None:
     """Covers: ETL-030 — the server and mutable base path stay explicit."""
     assert CDE_SERVER_URL == "https://api.usa.gov/crime/fbi/cde"
-    assert CDE_BASE_PATH == "/LATEST"
-    assert CDE_BASE_URL == "https://api.usa.gov/crime/fbi/cde/LATEST"
+    assert CDE_BASE_PATH == ""
+    assert CDE_BASE_URL == "https://api.usa.gov/crime/fbi/cde"
 
 
 def test_configuration_defaults_validate_without_io() -> None:

@@ -84,7 +84,8 @@ def test_synthetic_national_pull_satisfies_the_live_contract_assertions(
     # The transport carried the credential; nothing durable did.
     assert client.calls == 1
     outgoing = client.requests[0][1]["params"]
-    assert outgoing[API_KEY_PARAMETER] == API_KEY
+    assert client.requests[0][1]["headers"]["X-Api-Key"] == API_KEY
+    assert API_KEY_PARAMETER not in outgoing
     assert API_KEY_PARAMETER not in response.request_parameters
     assert response.request_parameters == observation_parameters(product)
     assert response.http_status == 200

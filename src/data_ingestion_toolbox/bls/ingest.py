@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 import random
@@ -36,7 +37,9 @@ from .config import CONFIG
 logger = logging.getLogger(__name__)
 
 # Target database
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 
 # Exception classes for retry logic
@@ -50,6 +53,19 @@ class BlsRetryableHTTP(Exception):
     """Retry-worthy HTTP cases (429 / 5xx)."""
 
     pass
+
+
+def _redact_api_key(value: object) -> str:
+    """Return text with the configured BLS key masked.
+
+    BLS echoes the registration key inside quota error messages, so anything
+    provider-echoed must be scrubbed before it reaches logs or exceptions.
+    """
+    text = str(value)
+    key = CONFIG.bls_api_key
+    if key:
+        text = text.replace(key, "***")
+    return text
 
 
 class BlsDailyThresholdExceeded(Exception):
@@ -227,17 +243,17 @@ def fetch_bls_api(
         # Check BLS API response status
         status = data.get("status")
         if status != "REQUEST_SUCCEEDED":
-            message = data.get("message", ["Unknown error"])
+            message = _redact_api_key(data.get("message", ["Unknown error"]))
             logger.warning(f"BLS API status: {status}, message: {message}")
 
             # Empty results are OK (not an error)
-            if "no data available" in str(message).lower():
+            if "no data available" in message.lower():
                 raise BlsNoContent("No data available for series")
 
             # Daily API quota exhausted — Airflow will retry in 24h; tenacity skips
             if (
                 status == "REQUEST_NOT_PROCESSED"
-                or "daily threshold" in str(message).lower()
+                or "daily threshold" in message.lower()
             ):
                 raise BlsDailyThresholdExceeded(
                     f"BLS daily quota exceeded: {status} - {message}"
