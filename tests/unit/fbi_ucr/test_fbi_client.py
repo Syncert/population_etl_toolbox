@@ -64,7 +64,7 @@ def test_request_applies_the_key_only_to_the_outgoing_request(
     assert _args[0] == f"{CDE_BASE_URL}/summarized/national/V"
     assert kwargs["headers"]["X-Api-Key"] == API_KEY
     assert API_KEY_PARAMETER not in kwargs["params"]
-    assert kwargs["params"]["from"] == "01-2023"
+    assert kwargs["params"]["from"] == "01-1990"
     assert response.request_parameters == observation_parameters(PRODUCT)
     assert API_KEY_PARAMETER not in response.request_parameters
     assert API_KEY not in json.dumps(dict(response.request_parameters))

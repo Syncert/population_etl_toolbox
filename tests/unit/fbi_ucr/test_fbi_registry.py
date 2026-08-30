@@ -27,15 +27,12 @@ def test_registered_product_freezes_the_documented_request_shape() -> None:
 
     assert product.offense_code in SUMMARIZED_OFFENSES
     assert product.offense_label == "Violent Crime"
-    assert product.period_parameters == {"from": "01-2023", "to": "06-2023"}
-    assert product.expected_periods == (
-        "01-2023",
-        "02-2023",
-        "03-2023",
-        "04-2023",
-        "05-2023",
-        "06-2023",
-    )
+    assert product.period_parameters == {"from": "01-1990", "to": "06-2023"}
+    assert product.expected_periods[0] == "01-1990"
+    assert product.expected_periods[-1] == "06-2023"
+    # 33 full years (1990-2022) plus January-June 2023, every month exactly once.
+    assert len(product.expected_periods) == 33 * 12 + 6
+    assert len(set(product.expected_periods)) == len(product.expected_periods)
     assert product.observation_endpoint(FbiSubject("national", "US")) == (
         "/summarized/national/V"
     )

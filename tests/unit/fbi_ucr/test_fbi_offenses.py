@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 from decimal import Decimal
 
 import pytest
@@ -24,7 +25,11 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.participation import (
 
 pytestmark = pytest.mark.unit
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
+# The registered product now reaches back to 1990; these fixtures cover the
+# reviewed six-month 2023 slice, so tests pin a product with that window.
+PRODUCT = dataclasses.replace(
+    SUMMARIZED_VIOLENT_CRIME, period_start="01-2023", period_end="06-2023"
+)
 RELEASE = "2026-08-15"
 NATIONAL = FbiSubject("national", "US")
 STATE = FbiSubject("state", "WI")

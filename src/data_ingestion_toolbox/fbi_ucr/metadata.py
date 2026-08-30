@@ -117,7 +117,14 @@ def load_latest_accepted_release(
     connection_factory: Callable[[], Any],
     product: FbiUcrProduct,
 ) -> FbiRelease | None:
-    """Load the latest safe release identity for revision comparison."""
+    """Load the latest safe release identity for revision comparison.
+
+    Only an actual ingest of the currently registered period window counts
+    as a previous release: widening the window in the registry is a reviewed
+    contract change, and the next run must re-ingest rather than conclude
+    the provider release is unchanged. An ``unchanged`` decision row is not
+    evidence — it stamps the current window without capturing it.
+    """
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
@@ -126,12 +133,14 @@ def load_latest_accepted_release(
                 SELECT refresh_date, max_data_month
                 FROM control.fbi_ucr_release
                 WHERE product_id = %s
-                  AND decision IN ('ingest', 'unchanged')
+                  AND period_start = %s
+                  AND period_end = %s
+                  AND decision = 'ingest'
                   AND status IN ('captured', 'silver_ready', 'published')
                 ORDER BY refresh_date DESC, created_at DESC
                 LIMIT 1
                 """,
-                (product.product_id,),
+                (product.product_id, product.period_start, product.period_end),
             )
             row = cursor.fetchone()
         if row is None:

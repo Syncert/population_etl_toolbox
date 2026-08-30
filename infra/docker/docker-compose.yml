@@ -135,7 +135,7 @@ services:
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
       airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
-      airflow pools set usda_nass_api 2 'USDA NASS QuickStats API limit'
+      airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 
   airflow-webserver:

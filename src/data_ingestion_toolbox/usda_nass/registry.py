@@ -277,8 +277,10 @@ _HAY_STATISTICS: tuple[NassStatistic, ...] = (
 
 #: Reviewed bounded history. The window is frozen so a fresh bootstrap and a
 #: reconciliation sweep reproduce exactly the same slices; widening it is a
-#: registry change with its own review.
-REGISTERED_YEAR_START = 2022
+#: registry change with its own review. Extended to the warehouse-wide 1990
+#: floor on 2026-08-29; Quick Stats serves county survey estimates well before
+#: then, so every registered year returns provider data.
+REGISTERED_YEAR_START = 1990
 REGISTERED_YEAR_END = 2024
 
 _METHODOLOGY_URL = (
