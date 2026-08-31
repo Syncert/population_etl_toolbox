@@ -94,8 +94,12 @@ def provision(values: dict[str, str], role_name: str, role_password: str) -> Non
                 "gold",
                 "gold_glossary",
                 "gold_bls",
+                "gold_cdc",
                 "gold_census",
+                "gold_fbi",
                 "gold_fred",
+                "gold_nass",
+                "gold_pep",
             ):
                 cursor.execute(
                     "SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema,)

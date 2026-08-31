@@ -14,6 +14,7 @@ AUDITED_COUNTS = {
     "ENV": 11,
     "ARC": 3,
     "PLAN": 7,
+    "DQ": 7,
     "DAG": 17,
     "ETL": 42,
     "DB": 23,
@@ -30,6 +31,7 @@ EXECUTION_PROFILES = {
     "ENV": ("make test-unit / package build", "lint, package-api, coverage"),
     "ARC": ("make test-etl", "etl-unit"),
     "PLAN": ("make test-unit", "coverage"),
+    "DQ": ("make test-unit / test-integration", "coverage, postgres-integration"),
     "DAG": ("make test-dags", "dag-parse, scheduler-image"),
     "ETL": (
         "make test-etl / test-integration",

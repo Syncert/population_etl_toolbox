@@ -8,24 +8,32 @@ from pydantic import BaseModel, field_validator
 
 # Official Crime Data Explorer API surface, frozen by FBI-001.
 #
-# ``LATEST`` is a mutable provider alias for the newest published data, not a
-# warehouse release identity. Every capture therefore retains retrieval time,
+# The CDE API serves the newest published data directly at the server root;
+# the former ``/LATEST`` alias segment was removed upstream (requests including
+# it now return 404). The data remains a mutable alias for the newest release,
+# not a warehouse release identity, so every capture retains retrieval time,
 # checksum, request fingerprint, and the provider freshness fields so a release
-# can be identified after the alias moves.
+# can be identified after the published data moves.
 CDE_SERVER_URL = "https://api.usa.gov/crime/fbi/cde"
-CDE_BASE_PATH = "/LATEST"
+CDE_BASE_PATH = ""
 CDE_BASE_URL = f"{CDE_SERVER_URL}{CDE_BASE_PATH}"
 
 #: Documented query-parameter name for the api.data.gov key the CDE API
-#: requires. The value is supplied at request execution and is never written to
+#: requires. Kept for redaction assertions: the value must never appear in
 #: request parameters, fingerprints, captures, logs, or error summaries.
 API_KEY_PARAMETER = "API_KEY"
+
+#: api.data.gov header used to transmit the key. Header auth keeps the secret
+#: out of URLs, so transport logs (httpx request lines, proxies) never see it.
+API_KEY_HEADER = "X-Api-Key"
 
 #: Environment secret holding the api.data.gov key for the CDE API.
 API_KEY_ENVIRONMENT_VARIABLE = "FBI_CDE_API_KEY"
 
 # Shared target warehouse database.
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 
 class FbiUcrConfig(BaseModel):

@@ -146,6 +146,29 @@ def test_a_large_row_count_change_is_quarantined_not_absorbed() -> None:
     assert drastic is ReleaseDecision.ROW_COUNT_DRIFT_QUARANTINE
 
 
+def test_a_registered_window_expansion_is_not_row_count_drift() -> None:
+    """Covers: RES-002 — new registered slices ingest; drift is same-key only."""
+    config = deterministic_config(row_count_change_threshold=0.5)
+    previous = summarize_release(
+        PRODUCT,
+        payloads=_payloads(),
+        slice_counts=_counts(NATIONAL=4, STATE=8, COUNTY=8),
+    )
+    # Ten times the total rows, but every previously registered slice is
+    # unchanged: the growth is entirely newly registered history.
+    expanded = list(_counts(NATIONAL=4, STATE=8, COUNTY=8))
+    expanded.extend(
+        NassSliceCount(
+            f"{PRODUCT.product_id}|COUNTY|{1990 + i}", "COUNTY", 1990 + i, 20
+        )
+        for i in range(10)
+    )
+    assert (
+        decide_preflight(PRODUCT, config, tuple(expanded), previous)
+        is ReleaseDecision.INGEST
+    )
+
+
 def test_a_new_parser_contract_always_reingests() -> None:
     """Covers: ETL-026 — a parser contract change always re-ingests."""
     config = deterministic_config()

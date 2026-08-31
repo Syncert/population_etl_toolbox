@@ -167,7 +167,7 @@ def test_slice_parameters_refuse_an_unregistered_partition() -> None:
     """Covers: ETL-020 — an unregistered partition cannot become a request."""
     product = get_product("corn_survey_annual")
     with pytest.raises(ValueError, match="outside the registered range"):
-        slice_query_parameters(product, NassSlice(product.product_id, "NATIONAL", 1999))
+        slice_query_parameters(product, NassSlice(product.product_id, "NATIONAL", 1989))
     with pytest.raises(ValueError, match="is not registered for product"):
         slice_query_parameters(
             product,

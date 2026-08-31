@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -18,7 +19,9 @@ from .config import CONFIG
 
 # Which database inside the Postgres instance do you want to use?
 # Change this if your metadata lives somewhere else.
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 # When running inside Airflow, you can let CONFIG.postgres_conn_id drive the
 # connection. In local dev (no Airflow), this will be None and the factory

@@ -192,9 +192,19 @@ def decide_preflight(
         return ReleaseDecision.INGEST
     if current_counts == previous.slice_counts:
         return ReleaseDecision.UNCHANGED
-    total = sum(item.provider_count for item in slice_counts)
-    if previous.total_row_count > 0:
-        drift = abs(total - previous.total_row_count) / previous.total_row_count
+    # Drift is only meaningful over slices both contracts registered: a
+    # reviewed window expansion contributes new slice keys, and a recent-mode
+    # run preflights a subset of a full-mode contract; neither is provider
+    # row-count drift. Compare totals over the common slice keys only.
+    previous_counts = dict(previous.slice_counts)
+    overlap_previous = sum(
+        previous_counts[key] for key, _ in current_counts if key in previous_counts
+    )
+    overlap_current = sum(
+        count for key, count in current_counts if key in previous_counts
+    )
+    if overlap_previous > 0:
+        drift = abs(overlap_current - overlap_previous) / overlap_previous
         if drift > config.row_count_change_threshold:
             return ReleaseDecision.ROW_COUNT_DRIFT_QUARANTINE
     return ReleaseDecision.INGEST

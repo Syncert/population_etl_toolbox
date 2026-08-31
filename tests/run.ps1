@@ -1,8 +1,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-build", "compose-smoke")]
-    [string]$Tier = "unit"
+    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "linux", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-build", "compose-smoke")]
+    [string]$Tier = "unit",
+
+    # Extra pytest arguments for the "linux" tier, e.g.
+    #   .\tests\run.ps1 linux -m "integration and database" tests/integration/database
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$PytestArgs = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,6 +76,46 @@ switch ($Tier) {
         $env:RUN_E2E_TESTS = "1"
         try { Invoke-Pytest -Arguments @("-m", "e2e", "tests/e2e") }
         finally { Remove-Item Env:RUN_E2E_TESTS -ErrorAction SilentlyContinue }
+    }
+    "linux" {
+        # Airflow refuses to initialize outside a POSIX-compliant OS, so the
+        # "dags" and "dag-pipeline" tiers above cannot run on a Windows host:
+        # every module importing airflow dies at collection. This tier runs
+        # pytest inside the pinned Airflow 2.9.3 + Python 3.11 image against
+        # the disposable PostGIS service, which is what CI grades.
+        #
+        # Sources are mounted read-only, so an edit needs no rebuild:
+        # Compose builds the image on first use and reuses it after. After a
+        # dependency change, rebuild with:
+        #   docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.pytest.yml build pytest
+        #
+        # Defaults to the DAG tier; pass pytest arguments to run anything else.
+        $compose = @(
+            "compose",
+            "-f", "infra/docker/docker-compose.test.yml",
+            "-f", "infra/docker/docker-compose.pytest.yml"
+        )
+        try {
+            & docker @compose run --rm pytest @PytestArgs
+            if ($LASTEXITCODE -ne 0) {
+                throw "pytest failed for tier 'linux' with exit code $LASTEXITCODE"
+            }
+        }
+        finally {
+            # CI grades these suites in separate jobs against separate
+            # databases; leaving one suite's residue behind reports failures
+            # CI will not reproduce.
+            #
+            # Windows PowerShell wraps a native command's stderr in an
+            # ErrorRecord, so Compose's ordinary teardown progress would
+            # terminate here and replace the pytest verdict this tier exists
+            # to report. Teardown reports through its own exit code instead.
+            $ErrorActionPreference = "Continue"
+            & docker @compose down --volumes --remove-orphans
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Compose teardown exited $LASTEXITCODE; check for leftover population-testing containers."
+            }
+        }
     }
     "martin-unit" {
         Invoke-Pytest -Arguments @("-m", "unit", "tests/unit/martin")

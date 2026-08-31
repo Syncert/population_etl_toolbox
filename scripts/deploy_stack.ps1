@@ -14,6 +14,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The warehouse data-quality assessment stamps evidence with the deployed code
+# commit; default it from the checked-out revision when the host does not set it.
+if ([string]::IsNullOrWhiteSpace($env:DATA_QUALITY_COMMIT_SHA)) {
+    $resolvedSha = (& git rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $resolvedSha) {
+        $env:DATA_QUALITY_COMMIT_SHA = $resolvedSha.Trim()
+    }
+}
+
 function Write-Log {
     param([string]$Message)
     Write-Host "[deploy:$Mode/$Action] $Message"

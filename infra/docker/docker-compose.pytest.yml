@@ -1,0 +1,55 @@
+# Linux test runner for suites that cannot execute on a Windows host.
+#
+# Airflow refuses to initialize outside a POSIX-compliant OS, so every `dag`
+# test and every module that imports `airflow` at collection time fails on a
+# Windows checkout before reaching an assertion. This overlay runs the same
+# suite inside the pinned Airflow 2.9.3 + Python 3.11 image the scheduler
+# deploys from, against the disposable PostGIS service in
+# docker-compose.test.yml, so a developer sees the CI result locally.
+#
+# Always compose both files, so `postgres` and its bootstrap resolve:
+#   docker compose -f docker-compose.test.yml -f docker-compose.pytest.yml ...
+# `make test-linux` wraps that with teardown; see the Makefile.
+#
+# Source directories are mounted read-only over the image copy, so an edit on
+# the host is picked up without a rebuild. `pythonpath = ["src", "."]` in
+# pyproject.toml makes pytest import the mounted checkout rather than the
+# image's editable install. Rebuild only when dependencies change.
+name: population-testing
+
+services:
+  pytest:
+    build:
+      context: ../..
+      dockerfile: infra/airflow/Dockerfile
+      args:
+        INSTALL_EXTRAS: airflow-dev
+    image: population-etl-pytest:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RUN_DAG_TESTS: "1"
+      RUN_INTEGRATION_TESTS: "1"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      # The container talks to the service name on the compose network; the
+      # host port mapping in docker-compose.test.yml is for host-run suites.
+      TEST_POSTGRES_HOST: postgres
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
+      # The mounts are read-only; keep the interpreter from trying to write
+      # bytecode next to the sources it imports.
+      PYTHONDONTWRITEBYTECODE: "1"
+    working_dir: /opt/population_etl_toolbox
+    volumes:
+      - ../../src:/opt/population_etl_toolbox/src:ro
+      - ../../dags:/opt/population_etl_toolbox/dags:ro
+      - ../../tests:/opt/population_etl_toolbox/tests:ro
+      - ../../sql:/opt/population_etl_toolbox/sql:ro
+      - ../../apps:/opt/population_etl_toolbox/apps:ro
+      - ../../docs:/opt/population_etl_toolbox/docs:ro
+      - ../../pyproject.toml:/opt/population_etl_toolbox/pyproject.toml:ro
+    entrypoint: ["pytest"]
+    command: ["-m", "dag", "tests/dags", "--tb=short", "-q", "-p", "no:cacheprovider"]

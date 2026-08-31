@@ -74,11 +74,19 @@ def transform_release(
                     value_type_label, unit, adjustment_status,
                     estimate_method, population_basis
                 )
-                SELECT DISTINCT asset_id, measure_id, value_type_id,
+                SELECT DISTINCT ON (asset_id, measure_id, value_type_id)
+                       asset_id, measure_id, value_type_id,
                        measure_label, topic, value_type_label, unit,
                        adjustment_status, estimate_method, population_basis
                 FROM silver_cdc.observation_revision
                 WHERE run_id = %s
+                -- Live CDI releases can carry variant descriptive metadata for
+                -- one measure key (e.g. MEN04/AGEADJMEAN with unit '%%' and
+                -- 'Number'), so pick one variant deterministically instead of
+                -- letting duplicate keys break the single-command upsert.
+                ORDER BY asset_id, measure_id, value_type_id, measure_label,
+                         topic, value_type_label, unit, adjustment_status,
+                         estimate_method, population_basis
                 ON CONFLICT (asset_id, measure_id, value_type_id) DO UPDATE SET
                     measure_label = EXCLUDED.measure_label,
                     topic = EXCLUDED.topic,

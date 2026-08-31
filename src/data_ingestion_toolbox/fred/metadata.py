@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 from datetime import datetime, timezone
@@ -20,7 +21,9 @@ from .config import CONFIG
 logger = logging.getLogger(__name__)
 
 # Target database
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 # FRED API base URL
 FRED_API_BASE = "https://api.stlouisfed.org/fred"

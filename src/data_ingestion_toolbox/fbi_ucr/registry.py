@@ -293,7 +293,10 @@ SUMMARIZED_VIOLENT_CRIME = FbiUcrProduct(
     label="Summarized violent crime offenses and clearances",
     ucr_program="SRS_AND_SUMMARIZED_NIBRS",
     offense_code="V",
-    period_start="01-2023",
+    # Historical depth extends to 1990 (warehouse-wide floor). The CDE
+    # summarized API serves the whole window in one documented from/to request
+    # per subject; verified live 2026-08-29 (national/state/agency all 200).
+    period_start="01-1990",
     period_end="06-2023",
     state_scope=("WI",),
     agency_scope=(

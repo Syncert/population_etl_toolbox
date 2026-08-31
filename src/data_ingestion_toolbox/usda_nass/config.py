@@ -32,7 +32,9 @@ QUICK_STATS_MAX_RECORDS = 50_000
 API_KEY_ENVIRONMENT_VARIABLE = "USDA_NASS_API_KEY"
 
 # Shared target warehouse database.
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 
 class NassConfig(BaseModel):
@@ -55,7 +57,9 @@ class NassConfig(BaseModel):
 
     # Transport / concurrency controls.
     request_timeout_seconds: float = 120.0
-    request_min_spacing_seconds: float = 0.25
+    # 1s spacing keeps a full-history sweep under Quick Stats' sliding-window
+    # rate limit (403s begin near ~6 req/s across concurrent slice tasks).
+    request_min_spacing_seconds: float = 1.0
     request_max_attempts: int = 6
 
     # Airflow max_active_tis_per_dag for the silver refresh tasks.

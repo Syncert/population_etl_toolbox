@@ -3,6 +3,7 @@
   "assets": [
     {"id": "migration-001", "phase": "foundation", "path": "sql/migrations/001_raw_capture_control_foundation.sql"},
     {"id": "migration-002", "phase": "glossary-migration", "path": "sql/migrations/002_gold_glossary_decoupling.sql"},
+    {"id": "migration-013", "phase": "quality-foundation", "path": "sql/migrations/013_data_quality_evidence.sql"},
     {"id": "reference", "phase": "reference", "path": "src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql"},
     {"id": "raw-census", "phase": "raw", "path": "src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql"},
     {"id": "raw-bls", "phase": "raw", "path": "src/data_ingestion_toolbox/bls/DDL/raw_bls.sql"},

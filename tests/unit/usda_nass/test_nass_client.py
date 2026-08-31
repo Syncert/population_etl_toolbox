@@ -202,7 +202,8 @@ def test_a_no_rows_provider_error_is_a_typed_provider_error() -> None:
 
 def test_terminal_http_failures_do_not_burn_retries() -> None:
     """Covers: ETL-020 — terminal USDA NASS HTTP failures skip the retry budget."""
-    client = RecordingClient([json_response({"detail": "forbidden"}, status=403)])
+    # 403 is Quick Stats' rate-limit signal and retries; 404 stays terminal.
+    client = RecordingClient([json_response({"detail": "not found"}, status=404)])
     with pytest.raises(NassHttpError) as caught:
         fetch_slice_count(PRODUCT, SLICE, config=deterministic_config(), client=client)
     assert caught.value.code == "non_retryable_http"

@@ -16,7 +16,8 @@ verify:
 ## Plan status
 
 - **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
-- **Last updated:** 2026-08-28
+- **Post-acceptance amendment (2026-08-31):** Live internal-stack validation surfaced a provider data shape the transform's uniqueness assumption did not tolerate: a current CDI release publishes one measure key with variant descriptive metadata (`MEN04`/`AGEADJMEAN` with unit `%` and `Number`), which made the single-command `dim_measure` upsert fail with `CardinalityViolation`. The upsert now selects `DISTINCT ON (asset_id, measure_id, value_type_id)` with a deterministic full-column ordering, matching the pattern the same transaction already used for geography resolution. Live evidence: both assets replayed and published (628,091 health observations); anonymous operation and Socrata-token-authenticated operation were each validated against the live API; 80 unit tests pass.
+- **Last updated:** 2026-08-31
 - **Source owner:** Centers for Disease Control and Prevention
 - **Initial products:** U.S. Chronic Disease Indicators (CDI) and PLACES county data
 - **Geography scope:** National, state, and county; county is the lowest initial level

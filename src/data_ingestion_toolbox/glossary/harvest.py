@@ -46,7 +46,10 @@ def discover_publishers(database_connection: Any) -> list[Publisher]:
     with database_connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT table_schema, array_agg(column_name ORDER BY ordinal_position)
+            -- information_schema columns are the sql_identifier domain; cast to
+            -- text so the driver returns a real list instead of a raw array
+            -- literal string (which made every publisher look column-incomplete).
+            SELECT table_schema, array_agg(column_name::text ORDER BY ordinal_position)
             FROM information_schema.columns
             WHERE table_name = %s
               AND table_schema NOT IN ('pg_catalog', 'information_schema')

@@ -11,7 +11,9 @@ from pydantic import BaseModel, field_validator
 SOCRATA_BASE_URL = "https://data.cdc.gov"
 
 # Shared target warehouse database.
-_TARGET_DATABASE = "public_data"
+# Overridable so self-contained stacks can point at their own warehouse
+# database; production deployments default to the shared "public_data".
+_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
 
 
 class CdcConfig(BaseModel):

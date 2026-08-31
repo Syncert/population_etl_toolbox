@@ -255,7 +255,10 @@ def _request_bytes(
                     allowlisted_response_headers(response_headers),
                     response.status_code,
                 )
-            if response.status_code != 429 and response.status_code < 500:
+            # Quick Stats signals rate limiting with 403 (alongside the usual
+            # 429), so both back off and retry; a genuinely bad key exhausts
+            # the retry budget and still fails terminally.
+            if response.status_code not in (403, 429) and response.status_code < 500:
                 # Quick Stats answers an over-limit or malformed selection with
                 # a 400 carrying a JSON error envelope. Read it so the caller
                 # gets a typed reason instead of an opaque status.

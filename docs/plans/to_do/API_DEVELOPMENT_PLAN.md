@@ -19,22 +19,23 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved planning artifact; dedicated API-platform development is blocked by the data-source completion gate
-- **Last updated:** 2026-08-22
+- **Status:** Approved planning artifact; the data-source completion gate is satisfied (all seven source pipelines accepted 2026-08-28) and the remaining blocker is the warehouse data-quality certification
+- **Last updated:** 2026-08-29
 - **Current milestone:** Planning complete; implementation has not started
-- **Next pickup:** Re-inventory the plan workflow and prove the dependency gate before moving this plan to `in_progress/`.
-- **Depends on:** Completion and human acceptance of every planned data-source pipeline in `docs/plans/to_do/`, plus stable warehouse publication and data-quality contracts
+- **Next pickup:** After `WAREHOUSE_DATA_QUALITY_PLAN.md` reaches `needs_review/` or `completed/`, re-inventory the plan workflow, prove the dependency gate, and move this plan to `in_progress/`.
+- **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
+- **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
 ## Non-negotiable data-source completion gate
 
 **Dedicated development under this plan must not begin until every planned data-source plan in `docs/plans/to_do/` has been implemented, reviewed, accepted by a human, and moved to `docs/plans/completed/`.** A source plan in `to_do/`, `in_progress/`, or `needs_review/` is not complete and keeps this plan blocked.
 
-At the time this plan was written, the gate includes at least:
-
-- `CENSUS_PEP_PIPELINE_PLAN.md`;
-- `CDC_DISEASE_ILLNESS_PIPELINE_PLAN.md`;
-- `FBI_CRIME_PIPELINE_PLAN.md`; and
-- `USDA_NASS_CROP_PIPELINE_PLAN.md`.
+At the time this plan was written, the gate included `CENSUS_PEP_PIPELINE_PLAN.md`,
+`CDC_DISEASE_ILLNESS_PIPELINE_PLAN.md`, `FBI_CRIME_PIPELINE_PLAN.md`, and
+`USDA_NASS_CROP_PIPELINE_PLAN.md`. As of 2026-08-28 all four are accepted into
+`completed/`, joining Census ACS, BLS, and FRED; no data-source plan remains in
+`to_do/`, `in_progress/`, or `needs_review/`, so this portion of the gate is
+satisfied.
 
 The list is intentionally dynamic. If another data-source pipeline plan is added to `to_do/` before this plan is claimed, that source also must reach `completed/` first. The implementer must re-inventory `to_do/`, `in_progress/`, `needs_review/`, and `completed/`; an older checklist copied into this document is not sufficient evidence that the gate is open.
 

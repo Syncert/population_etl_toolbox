@@ -62,8 +62,9 @@ def test_request_applies_the_key_only_to_the_outgoing_request(
 
     (_args, kwargs) = client.requests[0]
     assert _args[0] == f"{CDE_BASE_URL}/summarized/national/V"
-    assert kwargs["params"][API_KEY_PARAMETER] == API_KEY
-    assert kwargs["params"]["from"] == "01-2023"
+    assert kwargs["headers"]["X-Api-Key"] == API_KEY
+    assert API_KEY_PARAMETER not in kwargs["params"]
+    assert kwargs["params"]["from"] == "01-1990"
     assert response.request_parameters == observation_parameters(PRODUCT)
     assert API_KEY_PARAMETER not in response.request_parameters
     assert API_KEY not in json.dumps(dict(response.request_parameters))
@@ -248,5 +249,6 @@ def test_agency_directory_request_carries_no_period_parameters(fbi_bytes) -> Non
 
     (_args, kwargs) = client.requests[0]
     assert _args[0] == f"{CDE_BASE_URL}/agency/byStateAbbr/WI"
-    assert set(kwargs["params"]) == {API_KEY_PARAMETER}
+    assert set(kwargs["params"]) == set()
+    assert kwargs["headers"]["X-Api-Key"] == API_KEY
     assert response.request_parameters == {}

@@ -16,7 +16,8 @@ verify:
 ## Plan status
 
 - **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
-- **Last updated:** 2026-08-28
+- **Post-acceptance amendment (2026-08-31):** Live internal-stack validation drove three changes. (1) The provider removed the mutable `/LATEST` base-path segment (requests including it now 404), so `CDE_BASE_PATH` is empty and the frozen base URL is the server root. (2) The registered `summarized_violent_crime` window was widened to `01-1990..06-2023` (warehouse-wide 1990 history floor; the CDE API serves the whole window in one documented from/to request per subject, verified live). To make a reviewed window change re-ingest instead of concluding the provider release is unchanged, the previous-release lookup is now scoped to the registered period window and accepts only `decision = 'ingest'` rows as evidence (an `unchanged` row stamps the current window without capturing it). (3) The API key now travels in the api.data.gov `X-Api-Key` header rather than the `API_KEY` query parameter, keeping the credential out of transport-level URL logging (header auth verified live: 200 with header, 403 without). Fixture-driven tests pin an explicit `01-2023..06-2023` product so the reviewed six-month fixtures stay valid. Live evidence: 11,084 observations spanning 1990-2023 (34 distinct years) published through silver; 125 unit tests pass.
+- **Last updated:** 2026-08-31
 - **Source owner:** FBI Uniform Crime Reporting Program / Crime Data Explorer
 - **Geography scope:** Provider-published national and state results plus source-native agency observations; county is an agency relationship/filter, not an FBI observation grain
 - **Depends on:** Completed new-source expansion gate, shared raw capture/control foundation, and versioned geography identity/relationship work in [GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md](../completed/GEOGRAPHY_REFERENCE_PIPELINE_PLAN.md)

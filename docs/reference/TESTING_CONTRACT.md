@@ -279,6 +279,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Environment, collection, and package | ENV-001–ENV-011 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-003 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
+| Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
@@ -296,7 +297,7 @@ Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 193-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 202-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -360,6 +361,30 @@ verified here rather than only observed during a live run.
 | PLAN-005 | P1 | Isolation / `unit` | Dispatcher run-state durability | Run state round-trips through disk, is replaced atomically, counts one attempt per worker start, and rejects corrupt or unversioned state | State is lost, partially written, miscounts attempts against the retry ceiling, or silently resets |
 | PLAN-006 | P1 | Contract / `unit` | Worker prompt and planner CLI contract | The `/goal` prompt carries verification commands, the `needs_review/` handoff, and the no-progress stand-down ceiling; CLI subcommands emit documented JSON and exit non-zero on unknown plans, live runs, and cycles | An unbounded or unverifiable prompt is issued, or the shell dispatcher cannot detect a planner failure |
 | PLAN-007 | P1 | Contract / `unit` | Human review gate checkpoint | A gate parses only from `gates/` with dependencies and no scheduling keys; it stays shut until everything it guards is satisfied, then opens for review and pauses the run rather than stalling; only a recorded human approval releases dependents, rejection blocks them, and the decision names who and when | A gate is dispatched as work, cleared without a human decision, pre-approved before its dependencies finish, silently reopened, or its dependents proceed past an undecided or rejected checkpoint |
+
+### Warehouse Data-Quality Tests
+
+These tests own the warehouse data-quality plan's contracts (see
+`docs/plans` for the plan's current workflow location). The inventory ties
+every manifest-created relation to a declared grain, lineage, expected scope,
+and at least one deterministic rule, so quality coverage cannot silently rot
+as sources are added.
+
+Catalog rows are added here as each plan ticket lands with executable
+evidence; the remaining tickets (evidence runner, lineage reconciliation,
+source-specific coverage, scheduled assessment, plausibility lifecycle, and
+release certification) are defined in the plan and will register DQ-002
+through DQ-007 as they are implemented.
+
+| ID | Priority | Type / markers | Test | Pass metric | Failure signal |
+|---|---:|---|---|---|---|
+| DQ-001 | P1 | Static / `unit` | Quality inventory and rule registry | Every relation created by the warehouse manifest is cataloged with layer, owner, grain, lineage, expected-scope method, cadence, and empty behavior; every published object carries at least one deterministic rule; rule ids are stable, unique, and vocabulary-checked | The catalog drifts from the manifest, a published object lacks a deterministic rule, or a rule references an unknown object |
+| DQ-002 | P1 | Isolation / `unit`, `integration` `database` | Quality evidence and runner foundation | `control.data_quality_run` and `control.data_quality_result` persist pass/fail/warn/not-applicable evidence per rule and object/partition on a fresh bootstrap; evidence is append-only (only a warning's review status may change), a failing BLOCK/QUARANTINE rule fails the run, an executor error finalizes the run as errored with a bounded sanitized summary, and re-runs add new evidence rather than rewriting history | Evidence is lost or mutated in place, a broken executor passes silently, a blocking failure does not fail the run, or a summary leaks sensitive content |
+| DQ-003 | P1 | Contract / `integration` `database` | Lineage and layer reconciliation with publication gating | Bounded checksum recomputation, captured-request/capture agreement, finished-run request accounting, and capture-to-silver-to-gold identity reconciliation each fail with exact bounded evidence when corruption, orphan lineage, lost work, loss, or duplication is injected; the publication gate refuses a damaged release so the prior published release keeps serving | Injected loss, duplication, orphan lineage, or partial publication passes silently, evidence is unbounded, or a refused release damages the previously published partition |
+| DQ-004 | P1 | Contract / `integration` `database` | Source-specific coverage and validity | Deterministic executors for ACS/BLS/FRED slice ledgers, PEP release completeness/registry/sentinels, CDC watermark monotonicity and suppression, FBI participation coverage/reported-vs-absent/aggregation grain, NASS slice-ledger and suppression vocabulary, shared-reference resolution coherence, and publisher-registry liveness; an empty warehouse yields not_applicable, and injected ledger drift, backward watermarks, sentinel misclassification, incoherent resolutions, and dangling publishers each fail with bounded evidence | A source invariant regresses silently, valid emptiness raises a false alarm, or missing configured work passes as empty |
+| DQ-005 | P2 | Contract / `unit`, `dag`, `integration` `database` | Scheduled warehouse quality assessment | The `warehouse_data_quality` DAG parses with its declared schedule; cadence selection is deterministic (daily control sweep, weekly full reconciliation, monthly plausibility); targeting narrows to one source or rule; a sweep persists operator-queryable summaries in `control.data_quality_source_status` and `control.data_quality_latest_result` without mutating observations | The DAG mutates source data, a cadence runs the wrong executor set, or a failing rule is not observable from persisted summaries |
+| DQ-006 | P2 | Contract / `unit`, `integration` `database` | Plausibility baselines and review lifecycle | Robust per-series baselines require minimum history and flag only genuine outliers; an extreme-but-valid value warns, opens a review, and never mutates the provider value; review transitions are the sole permitted evidence mutation | An anomaly rule mutates or rejects provider values, a short series alarms, or review state rewrites measurement history |
+| DQ-007 | P1 | Contract / `unit`, `integration` `database` | Release certification evidence | `certify_release` runs the full deterministic suite as one release assessment tied to one 40-character commit SHA, reports rule totals by severity/status, and is promotable only when the run finished with no BLOCK/QUARANTINE failure | A release certifies with blocking failures, promotability ignores severity, or certification is not tied to one immutable commit |
 
 ### Data-layer Architecture Boundary Tests
 

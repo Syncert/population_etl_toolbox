@@ -41,6 +41,7 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "usda_nass_crop_ingest",
     "census_pep_ingest",
     "glossary_reconciliation",
+    "warehouse_data_quality",
 )
 
 
