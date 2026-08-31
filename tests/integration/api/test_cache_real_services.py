@@ -16,6 +16,7 @@ from apps.api.dependencies import get_db_session_dep
 from apps.api.main import create_app
 from data_ingestion_toolbox.config import Settings
 from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
+from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support.postgres import PostgresHookStub, PostgresTestConfig
 from tests.support.redis import RedisTestConfig
 
@@ -32,6 +33,20 @@ def _redis_config() -> RedisTestConfig:
     if configured is None:
         pytest.skip("configured cache test requires TEST_REDIS_URL")
     return configured
+
+
+#: The API catalog reads ``gold_glossary.dim_metric_catalog``, which the glossary
+#: harvest owns (ARCH-002). Refreshing the FRED gold elements alone publishes the
+#: series but never the catalog row, so the fixture must run the same harvest the
+#: warehouse runs before a metric is discoverable through ``/api/catalog/metrics``.
+_FRED_PUBLISHER = Publisher(schema="gold_fred")
+
+
+def _publish_fred_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    gold_transform.refresh_fred_elements(PostgresHookStub(postgres_connection_factory))
+    harvest_publisher(postgres_connection_factory, _FRED_PUBLISHER)
 
 
 @pytest.fixture
@@ -83,8 +98,7 @@ def configured_cached_api(
         writer.commit()
     finally:
         writer.close()
-    hook = PostgresHookStub(postgres_connection_factory)
-    gold_transform.refresh_fred_elements(hook)
+    _publish_fred_metric(postgres_connection_factory)
 
     postgres_config = PostgresTestConfig.from_environment()
     assert postgres_config is not None
@@ -124,7 +138,7 @@ def configured_cached_api(
             updater.commit()
         finally:
             updater.close()
-        gold_transform.refresh_fred_elements(hook)
+        _publish_fred_metric(postgres_connection_factory)
 
     try:
         with TestClient(application) as client:
