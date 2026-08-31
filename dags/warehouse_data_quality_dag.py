@@ -13,6 +13,12 @@ verification through ``dag_run.conf``:
 The assessment never mutates source observations: its executors are
 read-only measurements, and the only relations it writes are the
 append-only quality-evidence tables in ``control``.
+
+A separate task ahead of it finalizes the control rows abandoned by runs that
+stopped without finishing. That repair is deliberately its own task rather
+than a step inside the assessment: it changes control state, so it must be
+visible in the Airflow graph and its own log, and the assessment that follows
+stays a read-only measurement.
 """
 
 from __future__ import annotations
@@ -116,6 +122,37 @@ def _log_assessment_report(connection: Any, record: Any, cadence: str) -> None:
         )
 
 
+def _finalize_aborted_runs(**context: Any) -> dict[str, Any]:
+    """Bring aborted runs' control rows to a terminal state before assessment.
+
+    A run that stopped without finishing leaves requests and slice-ledger rows
+    that the completeness rules cannot distinguish from work the warehouse
+    still owes, so a re-driven backfill can publish the full registered window
+    and the sweep still reports red. Runs still in flight are never touched.
+    """
+    from data_ingestion_toolbox.quality.finalization import finalize_aborted_runs
+
+    logger = logging.getLogger("airflow.task")
+    conf = dict(context["dag_run"].conf or {})
+    hook = _get_postgres_hook()
+    connection = hook.get_conn()
+    try:
+        report = finalize_aborted_runs(connection, source_code=conf.get("source_code"))
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    if report.changed:
+        logger.warning(
+            "Finalized aborted control state before assessment: %s", report.as_dict()
+        )
+    else:
+        logger.info("No aborted run left unfinished control rows")
+    return report.as_dict()
+
+
 def _run_assessment(**context: Any) -> dict[str, Any]:
     from data_ingestion_toolbox.quality.assessment import run_scheduled_assessment
 
@@ -165,7 +202,13 @@ with DAG(
     max_active_runs=1,
     tags=["quality", "warehouse", "evidence"],
 ) as dag:
+    finalize = PythonOperator(
+        task_id="finalize_aborted_runs",
+        python_callable=_finalize_aborted_runs,
+    )
     assess = PythonOperator(
         task_id="run_assessment",
         python_callable=_run_assessment,
     )
+
+    finalize >> assess

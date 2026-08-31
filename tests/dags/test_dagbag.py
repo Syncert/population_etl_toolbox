@@ -241,6 +241,24 @@ def test_silver_ref_ensure_schema_upstream_of_both_dims(dagbag) -> None:
     assert ensure.task_id in {t.task_id for t in time_.upstream_list}
 
 
+@pytest.mark.dag
+def test_quality_assessment_finalizes_aborted_runs_first(dagbag) -> None:
+    """Covers: DAG-009 — control repair precedes the read-only assessment.
+
+    An assessment that reads before aborted runs finalize their control rows
+    counts an abandoned attempt as missing work, so a re-driven backfill can
+    publish the complete registered window and the sweep still reports red.
+    The repair is its own task so it is visible in the graph and its own log
+    rather than hidden inside a measurement.
+    """
+    dag = dagbag.dags["warehouse_data_quality"]
+    task_ids = {t.task_id for t in dag.tasks}
+    assert {"finalize_aborted_runs", "run_assessment"} <= task_ids
+
+    assess = dag.get_task("run_assessment")
+    assert "finalize_aborted_runs" in {t.task_id for t in assess.upstream_list}
+
+
 # --------------------------------------------------------------------------
 # DAG-010: Source pipeline ordering
 # --------------------------------------------------------------------------

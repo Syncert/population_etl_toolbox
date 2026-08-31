@@ -126,11 +126,22 @@ def test_injected_lineage_defects_fail_with_bounded_evidence(
             assert failed.result == "fail"
             assert failed.evidence == [str(orphan_request.request_id)]
 
-            # Injected lost work: a run finished while a request stayed planned.
+            # Injected lost work: a run reached a terminal status while a
+            # request stayed unfinished. The run row is written directly rather
+            # than through finish_run, because finish_run now finalizes the
+            # requests an aborted run abandons; this is the state a process
+            # killed mid-run leaves behind, which is what the rule must catch.
             planned_request = control.start_request(
                 run_id=orphan_run, endpoint="/probe", parameters={"page": 3}
             )
-            control.finish_run(orphan_run, status="partial")
+            cursor.execute(
+                # GREATEST because this reader transaction opened before the
+                # control connection committed the run's started_at.
+                "UPDATE control.ingestion_run SET status = 'partial', "
+                "finished_at = GREATEST(started_at, NOW()), updated_at = NOW() "
+                "WHERE run_id = %s",
+                (str(orphan_run),),
+            )
             unfinished = reconcile_requests(cursor, scope)
             run_outcome = {outcome.object_name: outcome for outcome in unfinished}[
                 "control.ingestion_run"

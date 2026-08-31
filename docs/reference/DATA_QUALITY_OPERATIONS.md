@@ -35,6 +35,47 @@ the DAG with configuration:
 {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi", "release_watermark": "1780605223"}}
 ```
 
+### Aborted runs are finalized first
+
+A `finalize_aborted_runs` task runs ahead of the assessment. A run that stops
+without finishing owns the control rows it started, and left unfinished those
+rows are indistinguishable from work the warehouse still owes: the ledger and
+lineage rules count an abandoned attempt as missing forever, so a manually
+re-driven backfill can capture and publish the full registered window while
+the daily sweep still reports red.
+
+The task is deliberately conservative, and everything it changes is logged
+with its run ids:
+
+- only runs already in a terminal aborted status (`failed`, `cancelled`,
+  `partial`) are touched, so a run still in flight is never cancelled;
+- a request that already holds durable bytes finishes as `captured`, because
+  the payload is committed, checksummed, and replayable — provider evidence is
+  never discarded to make a check pass;
+- a request that produced nothing finishes as `failed`, carrying
+  `run aborted before this request reached an outcome`;
+- a USDA NASS slice left `preflighted` becomes `skipped`, while `over_limit`
+  and `partial` slices are left exactly as they are — those are the evidence
+  that the release was quarantined rather than ingested; and
+- a `success` run is never repaired. Unfinished requests under a successful
+  run are a real defect, and DQ-SHARED-003 must keep reporting them.
+
+The ACS, BLS, and FRED slice ledgers are not finalized: they carry no run
+linkage and are declarative registries of configured work, so a `planned` row
+there means the warehouse genuinely still owes that slice. A red DQ-BLS-002
+after a quota-deferred day is therefore correct — the BLS DAG's designed 23h
+retry ingests the deferred chunks on its next run, and the rule goes green
+once the work exists.
+
+Run the same repair by hand with
+`data_ingestion_toolbox.quality.finalization.finalize_aborted_runs`, which
+takes an optional `source_code` and returns what it changed.
+
+A run stuck in `running` because its process was killed outright is *not*
+finalized by this sweep, on purpose: nothing distinguishes it from live work.
+Stop it explicitly with `CaptureControl.finish_run(..., status="cancelled")`,
+which finalizes its requests in the same transaction.
+
 ## Operator queries
 
 What is failing right now, and where:
