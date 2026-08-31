@@ -35,6 +35,47 @@ the DAG with configuration:
 {"rule_id": "DQ-CDC-003", "scope": {"asset_id": "cdi", "release_watermark": "1780605223"}}
 ```
 
+### Aborted runs are finalized first
+
+A `finalize_aborted_runs` task runs ahead of the assessment. A run that stops
+without finishing owns the control rows it started, and left unfinished those
+rows are indistinguishable from work the warehouse still owes: the ledger and
+lineage rules count an abandoned attempt as missing forever, so a manually
+re-driven backfill can capture and publish the full registered window while
+the daily sweep still reports red.
+
+The task is deliberately conservative, and everything it changes is logged
+with its run ids:
+
+- only runs already in a terminal aborted status (`failed`, `cancelled`,
+  `partial`) are touched, so a run still in flight is never cancelled;
+- a request that already holds durable bytes finishes as `captured`, because
+  the payload is committed, checksummed, and replayable — provider evidence is
+  never discarded to make a check pass;
+- a request that produced nothing finishes as `failed`, carrying
+  `run aborted before this request reached an outcome`;
+- a USDA NASS slice left `preflighted` becomes `skipped`, while `over_limit`
+  and `partial` slices are left exactly as they are — those are the evidence
+  that the release was quarantined rather than ingested; and
+- a `success` run is never repaired. Unfinished requests under a successful
+  run are a real defect, and DQ-SHARED-003 must keep reporting them.
+
+The ACS, BLS, and FRED slice ledgers are not finalized: they carry no run
+linkage and are declarative registries of configured work, so a `planned` row
+there means the warehouse genuinely still owes that slice. A red DQ-BLS-002
+after a quota-deferred day is therefore correct — the BLS DAG's designed 23h
+retry ingests the deferred chunks on its next run, and the rule goes green
+once the work exists.
+
+Run the same repair by hand with
+`data_ingestion_toolbox.quality.finalization.finalize_aborted_runs`, which
+takes an optional `source_code` and returns what it changed.
+
+A run stuck in `running` because its process was killed outright is *not*
+finalized by this sweep, on purpose: nothing distinguishes it from live work.
+Stop it explicitly with `CaptureControl.finish_run(..., status="cancelled")`,
+which finalizes its requests in the same transaction.
+
 ## Operator queries
 
 What is failing right now, and where:
@@ -87,6 +128,38 @@ ORDER BY evaluated_at;
    `scope`, above) or `run_scheduled_assessment` directly.
 4. The gate reopens on its own: `evaluate_publication_gate` re-runs at the
    next publication attempt, and a clean run publishes.
+
+## Plausibility baselines follow certification
+
+A baseline is only as trustworthy as the history it learns from. Learning from
+whatever happens to be retained lets material the deterministic rules reject
+teach the baseline what "normal" means, and it fails in the direction that
+matters: a bad value drags the median toward itself, so the *next* bad value
+scores as ordinary and no warning fires.
+
+Baselines are therefore restricted to history a promotable release
+certification already covered:
+
+- an observation ingested at or before the newest promotable `release`
+  assessment joins the baseline; one ingested after it is *scored against*
+  that baseline instead of joining it;
+- if no promotable release certification exists, plausibility reports
+  `not_applicable` with `no promotable release certification exists` — an
+  uncertified warehouse has no baseline, and saying so is more honest than
+  inventing one; and
+- if a BLOCK or QUARANTINE rule currently reports the baseline's object as
+  failing, plausibility reports `not_applicable` for that object. The
+  deterministic suite already says the material is wrong; scoring plausibility
+  against it would be scoring noise.
+
+The practical consequence for operators: **run `certify_release` after a
+re-ingestion or a beta reset**, or the monthly plausibility sweep will report
+`not_applicable` instead of warnings. That is a deliberate default — a silent
+sweep means "not certified", never "nothing anomalous".
+
+Each warning's evidence carries `certified_commit=<sha>`, so a reviewer can
+see exactly which certification defined the baseline the value was judged
+against.
 
 ## Warning review lifecycle
 

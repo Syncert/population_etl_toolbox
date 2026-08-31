@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from uuid import UUID
 from uuid import uuid4
 
 from data_ingestion_toolbox.normalization import sanitize_error_message
+
+logger = logging.getLogger(__name__)
 
 SENSITIVE_NAMES = {
     "api_key",
@@ -33,6 +36,20 @@ ALLOWED_RESPONSE_HEADERS = {
     "retry-after",
     "x-request-id",
 }
+
+#: Run outcomes that mean the run stopped before finishing its registered work.
+#: A run that ends this way owns the state it started: its requests must reach a
+#: terminal status, or the slice-ledger and lineage rules count an abandoned
+#: attempt as missing work forever, and a later successful run cannot clear it.
+#: ``success`` is deliberately absent -- a successful run that still holds
+#: unfinished requests is a defect the assessment must keep reporting.
+ABORTED_RUN_STATUSES: frozenset[str] = frozenset({"failed", "cancelled", "partial"})
+
+#: Request statuses that have not reached an outcome.
+UNFINISHED_REQUEST_STATUSES: tuple[str, ...] = ("planned", "running")
+
+#: Recorded against a request the aborting run never resolved.
+ABORTED_REQUEST_ERROR = "run aborted before this request reached an outcome"
 
 
 def _normalized_name(name: object) -> str:
@@ -126,6 +143,83 @@ class ControlRequest:
     request_fingerprint: str
 
 
+@dataclass(frozen=True, slots=True)
+class RunFinalization:
+    """What finalizing one aborted run's control rows changed."""
+
+    run_id: UUID
+    source_code: str
+    #: Requests whose bytes were already durable when the run stopped.
+    captured: int = 0
+    #: Requests that stopped with nothing captured.
+    failed: int = 0
+
+    @property
+    def changed(self) -> int:
+        return self.captured + self.failed
+
+
+#: Finalize a stopped run's unfinished requests in one statement per outcome.
+#:
+#: A request that already holds durable bytes is finished as ``captured``: the
+#: payload is committed, checksummed, and replayable, so the honest terminal
+#: state is the one the successful path would have written. Everything else is
+#: ``failed`` -- it produced nothing and never will.
+#:
+#: ``started_at`` is coalesced because a request abandoned while ``planned``
+#: may never have started, and the table requires a start before a finish.
+_FINALIZE_CAPTURED_REQUESTS = """
+    UPDATE control.ingestion_request AS request
+       SET status = 'captured',
+           started_at = COALESCE(request.started_at, NOW()),
+           finished_at = NOW(),
+           updated_at = NOW()
+     WHERE request.run_id = %s
+       AND request.source_code = %s
+       AND request.status = ANY(%s)
+       AND EXISTS (
+           SELECT 1 FROM raw_capture.response_capture AS capture
+            WHERE capture.request_id = request.request_id
+       )
+"""
+
+_FINALIZE_FAILED_REQUESTS = """
+    UPDATE control.ingestion_request AS request
+       SET status = 'failed',
+           started_at = COALESCE(request.started_at, NOW()),
+           finished_at = NOW(),
+           last_error = COALESCE(request.last_error, %s),
+           updated_at = NOW()
+     WHERE request.run_id = %s
+       AND request.source_code = %s
+       AND request.status = ANY(%s)
+       AND NOT EXISTS (
+           SELECT 1 FROM raw_capture.response_capture AS capture
+            WHERE capture.request_id = request.request_id
+       )
+"""
+
+
+def finalize_run_requests(
+    cursor: Any, run_id: UUID, source_code: str
+) -> RunFinalization:
+    """Bring one stopped run's unfinished requests to a terminal status.
+
+    The caller owns the transaction, so this composes with the statement that
+    stops the run: a run and the requests it abandons reach their terminal
+    states together, or neither does.
+    """
+    unfinished = list(UNFINISHED_REQUEST_STATUSES)
+    cursor.execute(_FINALIZE_CAPTURED_REQUESTS, (str(run_id), source_code, unfinished))
+    captured = max(cursor.rowcount, 0)
+    cursor.execute(
+        _FINALIZE_FAILED_REQUESTS,
+        (ABORTED_REQUEST_ERROR, str(run_id), source_code, unfinished),
+    )
+    failed = max(cursor.rowcount, 0)
+    return RunFinalization(run_id, source_code, captured=captured, failed=failed)
+
+
 class CaptureControl:
     """Provider-neutral committed run/request/quarantine transitions."""
 
@@ -174,17 +268,53 @@ class CaptureControl:
         *,
         status: str,
         error: BaseException | str | None = None,
-    ) -> None:
+    ) -> RunFinalization:
+        """Stop a run, finalizing the requests an aborted run abandons.
+
+        A run that stops without finishing its work owns the control rows it
+        started. Left unfinished, they are indistinguishable from work the
+        warehouse still owes: the slice-ledger and lineage rules count them as
+        missing forever, so a later successful run over the same partition can
+        never clear the assessment. Finalizing them here, in the transaction
+        that stops the run, keeps the control plane honest without hiding
+        anything -- the run keeps its ``failed`` status and error summary, and
+        the requests keep theirs.
+        """
         summary = sanitize_error_message(error) if error is not None else None
-        self._execute(
-            """
-            UPDATE control.ingestion_run
-               SET status = %s, finished_at = NOW(), error_summary = %s,
-                   updated_at = NOW()
-             WHERE run_id = %s AND source_code = %s
-            """,
-            (status, summary, str(run_id), self.source_code),
-        )
+        finalization = RunFinalization(run_id, self.source_code)
+        database_connection = self.connection_factory()
+        try:
+            with database_connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE control.ingestion_run
+                       SET status = %s, finished_at = NOW(), error_summary = %s,
+                           updated_at = NOW()
+                     WHERE run_id = %s AND source_code = %s
+                    """,
+                    (status, summary, str(run_id), self.source_code),
+                )
+                if status in ABORTED_RUN_STATUSES:
+                    finalization = finalize_run_requests(
+                        cursor, run_id, self.source_code
+                    )
+            database_connection.commit()
+        except BaseException:
+            database_connection.rollback()
+            raise
+        finally:
+            database_connection.close()
+        if finalization.changed:
+            logger.warning(
+                "Run %s stopped as '%s'; finalized %d abandoned request(s) "
+                "(%d already captured, %d failed)",
+                run_id,
+                status,
+                finalization.changed,
+                finalization.captured,
+                finalization.failed,
+            )
+        return finalization
 
     def set_run_watermark(
         self,
