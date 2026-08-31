@@ -50,6 +50,7 @@ Linux/macOS uses `make`; Windows PowerShell uses the equivalent tier name with
 | Frontend browser | `make test-web-browser` | `.\tests\run.ps1 web-browser` |
 | Frontend lint/build | `make test-web-build` | `.\tests\run.ps1 web-build` |
 | Compose smoke | `make test-compose-smoke` | `.\tests\run.ps1 compose-smoke` |
+| Linux container runner | `make test-linux` | `.\tests\run.ps1 linux` |
 
 `martin-integration` and `compose-smoke` start the pinned disposable Compose
 services and remove their containers, network, and test-only volumes when the
@@ -68,8 +69,44 @@ python -m pip check
 make test-dags
 ```
 
-On native Windows, use the pinned scheduler image or WSL2 for the authoritative
-Airflow run. The scheduler workflow runs the same DAG tier in Linux.
+### Native Windows
+
+Airflow refuses to initialize outside a POSIX-compliant OS, so on a Windows
+checkout the `dags` and `dag-pipeline` tiers fail before reaching an assertion,
+as does any other module that imports `airflow` while collecting - notably
+`tests/integration/database/test_usda_nass_dag_tasks.py`, which drops out of a
+host-run `tests/integration/database` selection as a collection error.
+
+The `linux` tier runs pytest inside the pinned Airflow 2.9.3 + Python 3.11
+scheduler image against the disposable PostGIS service, which is what CI
+grades. It defaults to the DAG tier and takes pytest arguments for anything
+else:
+
+```powershell
+.\tests\run.ps1 linux
+.\tests\run.ps1 linux -m "integration and database and not slow" tests/integration/database
+```
+
+```bash
+make test-linux
+make test-linux TEST_ARGS='-m "integration and database and not slow" tests/integration/database'
+```
+
+Sources are mounted read-only into the container, so an edit needs no rebuild.
+Compose builds the image on first use; after a dependency change rebuild it
+with `make test-linux-build`, or:
+
+```bash
+docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.pytest.yml build pytest
+```
+
+Each invocation tears the database down. CI grades these suites in separate
+jobs against separate databases, so reusing one database across two suites
+reports failures CI will not reproduce: the second suite reads the first one's
+committed rows and, for example, sees an already-ingested release as
+`unchanged`.
+
+WSL2 remains a working alternative for an interactive Airflow session.
 
 ## Orchestrated DAG Execution
 
