@@ -97,6 +97,49 @@ _LEGACY_SELECT = """
 """
 
 
+#: Output column names shared by both select lists above, in order. A ranked
+#: fallback must project them explicitly: ``SELECT * EXCEPT(rn)`` is DuckDB and
+#: BigQuery syntax that PostgreSQL rejects outright, so every fallback built
+#: that way raised a ProgrammingError the moment the primary view returned no
+#: rows -- turning "this metric has no observations" into a 503.
+_OBSERVATION_COLUMNS: tuple[str, ...] = (
+    "source_code",
+    "source",
+    "observation_date",
+    "period",
+    "duration_start",
+    "duration_end",
+    "time_sk",
+    "as_of_date",
+    "release_date",
+    "updated_at",
+    "geo_id",
+    "geo_level",
+    "geo_name",
+    "state_fips",
+    "county_fips",
+    "state_name",
+    "county_name",
+    "geo_latitude",
+    "geo_longitude",
+    "metric_code",
+    "metric_display_name",
+    "value",
+    "value_type",
+    "units",
+    "unit",
+    "seasonal_adjustment_status",
+    "dataset_code",
+    "dataset",
+    "vintage_year",
+    "vintage",
+    "margin_of_error",
+    "margin_of_error_pct",
+)
+
+_RANKED_PROJECTION = ", ".join(_OBSERVATION_COLUMNS)
+
+
 def _build_where_latest(
     metric_code: str,
     geo_level: Optional[str],
@@ -212,7 +255,8 @@ def build_latest_rpt_fallback_queries(
     view = "gold.v_metric_timeseries_by_geo"
     cte = f"WITH ranked AS (SELECT {_MVP_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
     list_q = text(
-        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+        f"{cte} SELECT {_RANKED_PROJECTION} FROM ranked WHERE rn = 1 "
+        f"ORDER BY geo_id LIMIT :limit OFFSET :offset"
     )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params
@@ -230,7 +274,8 @@ def build_latest_rpt_fallback_queries_legacy(
     view = "gold.rpt_observation_dashboard"
     cte = f"WITH ranked AS (SELECT {_LEGACY_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
     list_q = text(
-        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+        f"{cte} SELECT {_RANKED_PROJECTION} FROM ranked WHERE rn = 1 "
+        f"ORDER BY geo_id LIMIT :limit OFFSET :offset"
     )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params
@@ -254,7 +299,8 @@ def build_latest_rpt_fallback_queries_for_schema(
     view = f"{schema}.v_metric_timeseries_by_geo"
     cte = f"WITH ranked AS (SELECT {_MVP_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
     list_q = text(
-        f"{cte} SELECT * EXCEPT(rn) FROM ranked WHERE rn = 1 ORDER BY geo_id LIMIT :limit OFFSET :offset"
+        f"{cte} SELECT {_RANKED_PROJECTION} FROM ranked WHERE rn = 1 "
+        f"ORDER BY geo_id LIMIT :limit OFFSET :offset"
     )
     count_q = text(f"{cte} SELECT COUNT(*) FROM ranked WHERE rn = 1")
     return list_q, count_q, params

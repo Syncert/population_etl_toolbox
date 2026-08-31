@@ -41,12 +41,19 @@ from data_ingestion_toolbox.cdc.silver_cdc.replay import (
     persist_replay_result,
     replay_captured_run,
 )
+from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from data_ingestion_toolbox.cdc.silver_cdc.transform import (
     CdcReconciliationError,
     transform_release,
 )
 from tests.support.capture_seed import delete_geography, seed_geography
 from tests.support.postgres import PostgresTestConfig
+from tests.support.warehouse_scope import (
+    delete_capture_graph,
+    delete_harvested_glossary_rows,
+    glossary_registration_exists,
+    source_run_ids,
+)
 from tests.unit.cdc._doubles import ScriptedSocrataClient, socrata_response
 
 pytestmark = [
@@ -256,10 +263,21 @@ def cdc_warehouse(
         "the withheld county must be absent for the geography-miss contract"
     )
 
+    preexisting_glossary = glossary_registration_exists(
+        postgres_connection_factory, "CDC"
+    )
+    baseline_run_ids = source_run_ids(postgres_connection_factory, "CDC")
+
     def cleanup() -> None:
+        owned_runs = sorted(
+            source_run_ids(postgres_connection_factory, "CDC") - baseline_run_ids
+        )
         database_connection = postgres_connection_factory()
         try:
             with database_connection.cursor() as cursor:
+                delete_harvested_glossary_rows(
+                    cursor, "CDC", preexisting=preexisting_glossary
+                )
                 cursor.execute(
                     "DELETE FROM control.publisher_ready_event "
                     "WHERE source_code = 'CDC'"
@@ -275,6 +293,7 @@ def cdc_warehouse(
                 cursor.execute("DELETE FROM silver_cdc.dim_stratum")
                 cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
                 cursor.execute("DELETE FROM control.cdc_dataset_release")
+                delete_capture_graph(cursor, owned_runs)
                 for geo_id in sorted(
                     {"us:1", "state:01", "state:01|county:001"} - preexisting
                 ):
@@ -475,6 +494,20 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         assert {item["release_watermark"] for item in newest["items"]} == {
             EXPECTED["release_watermarks"]["cdi_second_release"]
         }
+
+        # A second published release must not duplicate the publisher rows the
+        # glossary harvests: it upserts on (source_code, source_object_key), so
+        # a per-release row set fails outright and the CDC catalog stops
+        # following the warehouse.
+        publisher_rows = _query(
+            factory,
+            "SELECT COUNT(*), COUNT(DISTINCT source_object_key) "
+            "FROM gold_cdc.metric_publisher",
+        )
+        assert publisher_rows[0][0] == publisher_rows[0][1]
+        assert (
+            harvest_publisher(factory, Publisher("gold_cdc")) == (publisher_rows[0][1])
+        )
 
         prior = client.get(
             "/api/cdc/observations",

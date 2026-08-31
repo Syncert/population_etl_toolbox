@@ -21,6 +21,7 @@
     {"id": "migration-010", "phase": "source", "path": "sql/migrations/010_cdc_pipeline.sql"},
     {"id": "migration-011", "phase": "source", "path": "sql/migrations/011_fbi_ucr_pipeline.sql"},
     {"id": "migration-012", "phase": "source", "path": "sql/migrations/012_usda_nass_crop_pipeline.sql"},
+    {"id": "migration-014", "phase": "source-fix", "path": "sql/migrations/014_release_publisher_measure_identity.sql"},
     {"id": "gold-census", "phase": "gold", "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"},
     {"id": "gold-bls", "phase": "gold", "path": "src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql"},
     {"id": "gold-fred", "phase": "gold", "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql"},

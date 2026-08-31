@@ -276,11 +276,10 @@ this.
   on the historical-geography guard. The tier passes on a freshly provisioned
   warehouse, which is how CI runs it. This predates this plan and is untouched
   here.
-- Moving this plan out of `to_do/` leaves one stale relative link in
-  `docs/plans/to_do/DATA_PRODUCT_E2E_COVERAGE_PLAN.md`
-  (`[USDA NASS Crop pipeline](USDA_NASS_CROP_PIPELINE_PLAN.md)`), which now
-  needs `../needs_review/`. This execution was explicitly bounded to not modify
-  other plans, so the link is reported rather than repaired.
+- Moving this plan out of `to_do/` left one stale relative link in the
+  data-product E2E coverage plan, which that execution was bounded from
+  repairing. It was repaired on 2026-08-31 when that plan was implemented and
+  accepted into `completed/`; the link now resolves through `../completed/`.
 
 ## Objective
 

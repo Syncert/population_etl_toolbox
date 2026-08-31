@@ -32,6 +32,7 @@ services:
       - ../../sql/migrations/010_cdc_pipeline.sql:/docker-entrypoint-initdb.d/029a_cdc_pipeline.sql:ro
       - ../../sql/migrations/011_fbi_ucr_pipeline.sql:/docker-entrypoint-initdb.d/029b_fbi_ucr_pipeline.sql:ro
       - ../../sql/migrations/012_usda_nass_crop_pipeline.sql:/docker-entrypoint-initdb.d/029c_usda_nass_crop_pipeline.sql:ro
+      - ../../sql/migrations/014_release_publisher_measure_identity.sql:/docker-entrypoint-initdb.d/029d_release_publisher_measure_identity.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/030_gold_census.sql:ro
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/031_gold_bls.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/032_gold_fred.sql:ro

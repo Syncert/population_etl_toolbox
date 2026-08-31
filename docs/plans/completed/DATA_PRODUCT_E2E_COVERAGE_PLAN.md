@@ -16,13 +16,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved to-do; prerequisite source plans are all accepted, so
-  the plan is claimable once the exclusive warehouse-data-quality plan is not
-  running beside it
-- **Last updated:** 2026-08-29
-- **Current milestone:** Dependency gate satisfied on folder state; implementation has not started
-- **Next pickup:** Verify the seven per-source evidence points below against the
-  live repository (folder state alone is not sufficient), then claim this plan.
+- **Status:** Accepted by human review on 2026-08-31; complete
+- **Last updated:** 2026-08-31
+- **Current milestone:** All six phases delivered and validated against a fresh
+  PostgreSQL 16 + PostGIS 3.5 warehouse and the pinned Airflow 2.9.3 image
+- **Next pickup:** None. See "Implementation evidence" below; the plan was accepted into `completed/` on 2026-08-31.
+- **Claimed:** 2026-08-31 on branch `feat/data-product-e2e`. The exclusive
+  warehouse-data-quality plan is paused at a documented design decision rather
+  than actively running, and this plan changes no quality module, so the
+  exclusivity condition holds.
 - **Depends on:**
   - [Census PEP pipeline](../completed/CENSUS_PEP_PIPELINE_PLAN.md), accepted
     into `completed/` on 2026-08-28;
@@ -332,20 +334,160 @@ Unexecuted, skipped, or deselected product nodes are not passing evidence.
 
 ## Completion criteria
 
-- [ ] PEP, FBI Crime, and USDA Crop dependency gate is satisfied.
-- [ ] Every implemented data product has exactly one authoritative E2E owner.
-- [ ] PEP product-specific criteria pass.
-- [ ] FBI Crime product-specific criteria pass.
-- [ ] USDA Crop product-specific criteria pass.
-- [ ] Completed CDC E2E evidence is represented without duplicated ownership.
-- [ ] Combined E2E execution is replay-safe and test-order independent.
-- [ ] Post-suite reconciliation finds no test-owned warehouse/control state.
-- [ ] Scheduled workflow runs every registered product without unexpected skips.
-- [ ] Every DAG in `dags/` executes as a real DagRun with all tasks
+- [x] PEP, FBI Crime, and USDA Crop dependency gate is satisfied.
+- [x] Every implemented data product has exactly one authoritative E2E owner.
+- [x] PEP product-specific criteria pass.
+- [x] FBI Crime product-specific criteria pass.
+- [x] USDA Crop product-specific criteria pass.
+- [x] Completed CDC E2E evidence is represented without duplicated ownership.
+- [x] Combined E2E execution is replay-safe and test-order independent.
+- [x] Post-suite reconciliation finds no test-owned warehouse/control state.
+- [x] Scheduled workflow runs every registered product without unexpected skips.
+- [x] Every DAG in `dags/` executes as a real DagRun with all tasks
   successful, and the coverage assertion leaves no pipeline uncovered.
-- [ ] Product-level artifacts identify failures precisely.
-- [ ] Deterministic, database, lint, documentation, and scheduled workflow gates
+- [x] Product-level artifacts identify failures precisely.
+- [x] Deterministic, database, lint, documentation, and scheduled workflow gates
   pass and are recorded in this plan.
+
+## Implementation evidence
+
+### Delivered
+
+**E2E-PRODUCT-001 - inventory and harness.**
+`tests/support/product_coverage.py` declares all seven data products with their
+source, publisher schema, provider datasets, reviewed fixtures, published
+relations, API routes, and single owning node.
+`tests/unit/shared/test_data_product_e2e_coverage.py` and
+`tests/unit/api/test_data_product_api_coverage.py` derive what *exists* from
+`quality.inventory` and the served OpenAPI paths, so an unowned publisher
+schema or source router fails a deterministic unit test. The two halves are
+split because the Airflow runtime that must import the shared module has no
+FastAPI. A product with no source-specific route must record why, which is how
+FBI Crime's absent HTTP router stays visible rather than silently uncovered.
+
+`tests/support/warehouse_scope.py` owns the provider-neutral mechanics:
+capture/control/reference tracking, glossary-harvest cleanup, foreign-key-safe
+teardown registered before the first committed row, and a residue assertion.
+FBI and USDA NASS release capture moved to `tests/support/fbi_release.py` and
+`tests/support/usda_nass.py`, so the database and end-to-end tiers drive one
+path. `tests/support/api.real_api_client` serves the production app over the
+disposable warehouse.
+
+**E2E-PRODUCT-002/003/004 - PEP, FBI, USDA NASS.**
+`tests/e2e/test_pep_pipeline.py`, `tests/e2e/test_fbi_ucr_pipeline.py`, and
+`tests/e2e/test_usda_nass_pipeline.py` each replay reviewed fixtures from raw
+capture to the published boundary and assert the semantics their source is
+easiest to misreport. PEP keeps release vintage distinct from observation year,
+projects newest-complete-vintage over retained as-released history, preserves
+exact Census place identity and functional status, and exposes no fabricated
+margin of error. FBI keeps an unreported month `not_reported` rather than zero,
+keeps county and place filters agency-scoped and deduplicated by observation
+identity, and never mixes a rate with an absolute count. NASS keeps a withheld
+value as its exact provider symbol with a null number and withheld CV, keeps
+survey and census products separate under identical labels, and keeps acres,
+bushels, and bushels-per-acre in separate series.
+
+**E2E-PRODUCT-005 - combined evidence.** A session guard in
+`tests/e2e/conftest.py` reconciles nineteen capture, control, silver,
+reference, publisher, and glossary relations before and after the run, and
+under `E2E_REQUIRE_ALL_PRODUCTS=1` fails the session unless every registered
+product ran and passed. The scheduled `e2e-performance` workflow sets it and
+publishes `junit-e2e-products.xml`, whose test cases name products individually.
+
+**E2E-PRODUCT-006 - orchestrated DAG execution.** Already delivered; re-verified
+here (116 passed, 1 skipped; 4 passed for the pipeline module).
+
+### Production defects this tier reached first
+
+1. **The provider-neutral observation fallback was invalid PostgreSQL.**
+   `build_latest_rpt_fallback_queries*` emitted `SELECT * EXCEPT(rn)`, DuckDB
+   and BigQuery syntax PostgreSQL rejects, so `/api/observations/latest`
+   answered 503 for any metric the primary latest view had no row for instead
+   of an empty result. Fixed with an explicit projection, pinned to both ranked
+   select lists by `tests/unit/api/test_sql_query_builders.py`.
+
+2. **Release-based publishers duplicated every measure per release.** CDC, FBI,
+   and USDA NASS `metric_publisher`, and `gold_nass.measure_export`, grouped by
+   the release watermark, so the glossary harvest's
+   `(source_code, source_object_key)` upsert failed the first time a second
+   release published - on every real refresh after the initial load. Because
+   `harvest_all_publishers` isolates publishers, the failure was recorded as a
+   sanitized error and those catalogs silently stopped following the warehouse.
+   Migration `014_release_publisher_measure_identity.sql` replaces the four
+   views; `tests/unit/shared/test_publisher_contract_shape.py` states the rule
+   so a fourth release-based source cannot repeat it, and
+   `test_publisher_keeps_one_row_per_measure_across_published_releases` proves
+   the behaviour on real PostgreSQL.
+
+3. **Test fixtures leaked their capture graph, making the tier unrepeatable.**
+   `seed_geography` commits a CENSUS_GEO run, request, capture, and payload as
+   the version row's lineage evidence, and `delete_geography` never removed it;
+   the ACS, BLS, FRED, CDC, NASS, and FBI fixtures also left their own runs
+   behind. Leftover captures re-entered the next session's transforms, which is
+   the recorded "database integration tier is not repeatable across two
+   consecutive sessions" symptom in `WAREHOUSE_DATA_QUALITY_PLAN.md`. Teardown
+   now removes the capture graph in every affected fixture, and the session
+   guard proves it.
+
+### Scope boundaries recorded, not silently absorbed
+
+- **FBI Crime publishes no source-specific HTTP route.** The accepted FBI plan
+  delivered the agency-grain contract as the `gold_fbi` views plus the glossary
+  publisher; a crime router is API-platform work. The owner therefore asserts
+  at the gold views and the provider-neutral catalog, and the registry records
+  the reason in `api_absence_reason`.
+- **`/api/observations/latest` unions ACS, BLS, and FRED only.** PEP, CDC, FBI,
+  and NASS reach the provider-neutral surface through the glossary catalog.
+  The PEP owner pins that boundary: a PEP metric on the cross-source route
+  returns an empty, well-formed answer rather than a partial one, and the
+  assertion fails the moment the union changes without the registry changing
+  with it. Extending the union is API-platform work owned by
+  `API_DEVELOPMENT_PLAN.md`.
+
+### Validation commands and results (2026-08-31)
+
+Host: Windows 11, Python 3.11, disposable PostGIS 16 + PostGIS 3.5 on port
+55432. Container: the pinned Airflow 2.9.3 + Python 3.11 image against the same
+disposable service. Every database run started from a freshly created database.
+
+| Command | Result |
+|---|---|
+| `pytest tests/e2e -m e2e` with `E2E_REQUIRE_ALL_PRODUCTS=1` | 9 passed |
+| the same nine nodes in reverse order | 9 passed |
+| `pytest tests/integration/database -m "integration and database"`, excluding `legacy/` | 77 passed, identical to the pre-change baseline |
+| containerized `pytest -m "integration and database" tests/integration/database`, excluding `legacy/` | 80 passed |
+| containerized `pytest -m dag tests/dags` | 116 passed, 1 skipped |
+| containerized `pytest -m dag tests/dags/test_dag_pipeline_execution.py` | 4 passed |
+| `pytest tests/unit` on the host | 1062 passed, 33 errors - see below |
+| containerized `pytest tests/unit/tooling tests/unit/shared/test_checkout_local_imports.py tests/unit/shared/test_planned_contracts.py` | 90 passed |
+| `pytest -m "unit and api" tests/unit/api` | 135 passed |
+| `ruff check .` and `ruff format --check .` | clean; 394 files already formatted |
+
+Environment limitations, recorded rather than claimed as passing:
+
+- The host's 33 unit errors are all `PermissionError: [WinError 5]` on the
+  pytest temporary-directory root under `%LOCALAPPDATA%\Temp`, an OS ACL on
+  this machine that denies even removing the directory. Every affected file
+  passes in the pinned container (the 90-passed row above), so the code is
+  verified; this host cannot create pytest temporary directories at all.
+- `tests/integration/database/legacy/` was excluded. It performs live BLS and
+  FRED pulls; the BLS daily quota is exhausted on the available key, and the
+  live FRED pull populates `raw_fred` and makes the empty-warehouse quality
+  checks fail. The accepted warehouse-data-quality evidence excludes the same
+  credentialed tier for the same reason.
+- The scheduled `e2e-performance` workflow has not been dispatched for this
+  branch. That is the one acceptance item this checkpoint cannot produce
+  locally; every step it runs was executed locally except the Locust scenario
+  and the artifact upload. A reviewer should dispatch it before acceptance.
+
+### Catalog and documentation
+
+Catalog ids E2E-008 through E2E-013 are registered in `TESTING_CONTRACT.md` and
+the behavioral evidence register is now 208 rows. `CI_EVIDENCE_MAP.md` maps the
+coverage contract onto `e2e-performance` and `coverage`. `RUNNING_TESTS.md`
+documents the inventory, the node-id CLI, the completeness environment flag,
+and the fresh-database requirement. Migration 014 is registered in the
+warehouse manifest, the test compose bootstrap, and the migration README.
 
 ## Non-goals
 

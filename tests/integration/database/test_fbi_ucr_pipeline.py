@@ -4,282 +4,38 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
-from psycopg2.errors import ForeignKeyViolation
 from psycopg2.extensions import connection
 
-from data_ingestion_toolbox.capture import (
-    CaptureControl,
-    ResponseCapture,
-    persist_response_capture,
-)
-from data_ingestion_toolbox.fbi_ucr.capture import (
-    CapturedFbiRelease,
-    persist_release_state,
-)
-from data_ingestion_toolbox.fbi_ucr.client import observation_parameters
 from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import (
     FbiPublicationError,
     publish_release,
 )
-from data_ingestion_toolbox.fbi_ucr.metadata import ReleaseDecision, parse_release
-from data_ingestion_toolbox.fbi_ucr.registry import (
-    COUNTED_ENTITY_BASES,
-    MEASURE_FORMS,
-    SUMMARIZED_VIOLENT_CRIME,
-    agency_directory_endpoint,
-)
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     FbiReplayError,
     load_captured_slices,
-    persist_replay_result,
     replay_captured_run,
     replay_slices,
 )
-from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
+from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
+from tests.support import fbi_release
 from tests.support.capture_seed import delete_geography, seed_geography
+from tests.support.fbi_release import (
+    OBSERVATIONS_PER_SUBJECT,
+    PERIODS,
+    PRODUCT,
+    agency_directory_endpoint,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
-PRODUCT = SUMMARIZED_VIOLENT_CRIME
-SOURCE_CODE = "FBI_UCR"
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "fbi_ucr"
 
-PERIODS = len(PRODUCT.expected_periods)
-
-#: Two measure forms x two counted entities, for every registered period. Each
-#: registered period reconciles to exactly one row, so the count follows the
-#: product window rather than the months the reviewed fixture reports: periods
-#: the fixture leaves out land as ``not_reported`` observations.
-OBSERVATIONS_PER_SUBJECT = len(MEASURE_FORMS) * len(COUNTED_ENTITY_BASES) * PERIODS
-
-#: Geographies the reviewed Wisconsin sample resolves against.
-SEEDED_GEOGRAPHIES: tuple[dict[str, object], ...] = (
-    {"geo_type": "nation", "name": "United States"},
-    {"geo_type": "state", "state_fips": "55", "name": "Wisconsin"},
-    {
-        "geo_type": "county",
-        "state_fips": "55",
-        "county_fips": "009",
-        "name": "Brown County",
-    },
-    {
-        "geo_type": "county",
-        "state_fips": "55",
-        "county_fips": "025",
-        "name": "Dane County",
-    },
-    {
-        "geo_type": "county",
-        "state_fips": "55",
-        "county_fips": "105",
-        "name": "Rock County",
-    },
-    {
-        "geo_type": "place",
-        "state_fips": "55",
-        "place_fips": "25950",
-        "name": "Fitchburg city",
-    },
-    {
-        "geo_type": "place",
-        "state_fips": "55",
-        "place_fips": "22575",
-        "name": "Edgerton city",
-    },
-)
-
-SEEDED_GEO_IDS = (
-    "us:1",
-    "state:55",
-    "state:55|county:009",
-    "state:55|county:025",
-    "state:55|county:105",
-    "state:55|place:25950",
-    "state:55|place:22575",
-)
-
-_CLEANUP_STATEMENTS = (
-    "DELETE FROM control.publisher_ready_event WHERE source_code = 'FBI_UCR'",
-    "DELETE FROM silver_fbi.fact_crime_observation",
-    "DELETE FROM silver_fbi.fact_reporting_participation",
-    "DELETE FROM silver_fbi.observation_revision",
-    "DELETE FROM silver_fbi.participation_revision",
-    "DELETE FROM silver_fbi.agency_revision",
-    "DELETE FROM silver_fbi.slice_quarantine",
-    "DELETE FROM silver_fbi.agency_geography_relationship",
-    "DELETE FROM silver_fbi.dim_agency_version",
-    "DELETE FROM silver_fbi.dim_agency",
-    "DELETE FROM silver_fbi.dim_offense_measure",
-    "DELETE FROM silver_fbi.dim_ucr_dataset_release",
-    "DELETE FROM silver_fbi.reviewed_place_crosswalk",
-    "DELETE FROM silver_fbi.dim_state_code",
-    "DELETE FROM control.fbi_ucr_release",
-    "DELETE FROM silver_ref.geography_resolution WHERE provider_source = 'FBI_UCR'",
-    """
-    DELETE FROM silver_ref.bridge_geo_relationship_version
-     WHERE parent_geo_sk IN (
-         SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_type = 'agency'
-     )
-    """,
-    """
-    DELETE FROM silver_ref.dim_geo_entity_version
-     WHERE geo_sk IN (
-         SELECT geo_sk FROM silver_ref.dim_geo_entity WHERE geo_type = 'agency'
-     )
-    """,
-    "DELETE FROM silver_ref.dim_geo_entity WHERE geo_type = 'agency'",
-)
-
-
-def _fixture_for(endpoint: str) -> str:
-    if endpoint.startswith("/agency/"):
-        return f"agency_directory_{endpoint.rsplit('/', 1)[-1]}"
-    kind, value = endpoint.split("/")[2], endpoint.split("/")[3]
-    if kind == "national":
-        return f"summarized_national_{value}"
-    return f"summarized_{kind}_{value}_{endpoint.split('/')[4]}"
-
-
-def _slice_fixtures() -> dict[str, str]:
-    slices = {
-        agency_directory_endpoint(state): f"agency_directory_{state}"
-        for state in PRODUCT.reference_states
-    }
-    for subject in PRODUCT.subjects:
-        endpoint = PRODUCT.observation_endpoint(subject)
-        slices[endpoint] = _fixture_for(endpoint)
-    return slices
-
-
-def _capture_slice(
-    connection_factory: Callable[[], connection],
-    control: CaptureControl,
-    *,
-    run_id,
-    endpoint: str,
-    parameters: dict,
-    payload: bytes,
-    source_revision: str | None,
-):
-    request = control.start_request(
-        run_id=run_id, endpoint=endpoint, parameters=parameters
-    )
-    capture = ResponseCapture(
-        capture_id=uuid4(),
-        request_id=request.request_id,
-        run_id=run_id,
-        source_code=SOURCE_CODE,
-        endpoint=endpoint,
-        request_parameters=parameters,
-        retrieved_at=datetime.now(timezone.utc),
-        http_status=200,
-        response_headers={"content-type": "application/json"},
-        media_type="application/json",
-        payload=payload,
-        payload_schema_version=PRODUCT.parser_contract_version,
-        source_revision=source_revision,
-    )
-    persist_response_capture(connection_factory, capture)
-    control.finish_request(request.request_id, status="captured")
-    return capture.capture_id
-
-
-def _persist_fixture_release(
-    connection_factory: Callable[[], connection],
-    *,
-    national_fixture: str = "summarized_national_V",
-    omit: tuple[str, ...] = (),
-) -> CapturedFbiRelease:
-    """Capture every registered slice from reviewed fixtures, then record it."""
-    slices = _slice_fixtures()
-    slices[PRODUCT.observation_endpoint(PRODUCT.subjects[0])] = national_fixture
-    control = CaptureControl(connection_factory, source_code=SOURCE_CODE)
-    run_id = control.start_run(watermark={"product_id": PRODUCT.product_id})
-    release = parse_release((FIXTURE_DIR / f"{national_fixture}.json").read_bytes())
-
-    directory_captures = []
-    observation_captures = []
-    probe_capture = None
-    for endpoint, fixture in slices.items():
-        if endpoint in omit:
-            continue
-        payload = (FIXTURE_DIR / f"{fixture}.json").read_bytes()
-        is_directory = endpoint.startswith("/agency/")
-        parameters = {} if is_directory else observation_parameters(PRODUCT)
-        capture_id = _capture_slice(
-            connection_factory,
-            control,
-            run_id=run_id,
-            endpoint=endpoint,
-            parameters=parameters,
-            payload=payload,
-            source_revision=release.release_key,
-        )
-        if is_directory:
-            directory_captures.append((endpoint.rsplit("/", 1)[-1], capture_id))
-        else:
-            observation_captures.append((endpoint, capture_id))
-            if probe_capture is None:
-                probe_capture = capture_id
-
-    control.set_run_watermark(
-        run_id,
-        watermark={
-            "product_id": PRODUCT.product_id,
-            "refresh_date": release.release_key,
-            "max_data_month": release.max_data_month,
-        },
-    )
-    control.finish_run(run_id, status="success")
-    captured = CapturedFbiRelease(
-        run_id=run_id,
-        product_id=PRODUCT.product_id,
-        release=release,
-        decision=ReleaseDecision.INGEST,
-        release_capture_id=probe_capture,
-        directory_capture_ids=tuple(directory_captures),
-        observation_capture_ids=tuple(observation_captures),
-        complete=not omit,
-    )
-    persist_release_state(connection_factory, captured, PRODUCT)
-    return captured
-
-
-def _run_pipeline(
-    connection_factory: Callable[[], connection],
-    captured: CapturedFbiRelease,
-) -> tuple[int, int]:
-    result = replay_captured_run(
-        connection_factory,
-        run_id=captured.run_id,
-        product=PRODUCT,
-        release_key=captured.release_key,
-    )
-    persist_replay_result(
-        connection_factory,
-        run_id=captured.run_id,
-        product=PRODUCT,
-        release_key=captured.release_key,
-        result=result,
-    )
-    transformed = transform_release(
-        connection_factory,
-        run_id=captured.run_id,
-        product=PRODUCT,
-        release_key=captured.release_key,
-    )
-    published = publish_release(
-        connection_factory,
-        run_id=captured.run_id,
-        product_id=PRODUCT.product_id,
-        release_key=captured.release_key,
-    )
-    return transformed, published
+_slice_fixtures = fbi_release.slice_fixtures
+_persist_fixture_release = fbi_release.persist_fixture_release
+_run_pipeline = fbi_release.run_pipeline
 
 
 @pytest.fixture
@@ -287,53 +43,7 @@ def fbi_warehouse(
     postgres_connection_factory: Callable[[], connection],
 ) -> Iterator[Callable[[], connection]]:
     """Seed the reviewed geographies and remove all FBI state afterwards."""
-    reader = postgres_connection_factory()
-    try:
-        with reader.cursor() as cursor:
-            cursor.execute(
-                "SELECT geo_id FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s)",
-                (list(SEEDED_GEO_IDS),),
-            )
-            preexisting = {row[0] for row in cursor.fetchall()}
-    finally:
-        reader.close()
-
-    writer = postgres_connection_factory()
-    try:
-        with writer.cursor() as cursor:
-            for entry in SEEDED_GEOGRAPHIES:
-                seed_geography(cursor, vintage=2023, **entry)
-        writer.commit()
-    finally:
-        writer.close()
-
-    yield postgres_connection_factory
-
-    cleanup = postgres_connection_factory()
-    try:
-        with cleanup.cursor() as cursor:
-            for statement in _CLEANUP_STATEMENTS:
-                cursor.execute(statement)
-            for index, geo_id in enumerate(SEEDED_GEO_IDS):
-                if geo_id in preexisting:
-                    continue
-                # The shared reference dimension is not owned by this suite. A
-                # geography another source still references stays in place
-                # rather than aborting the FBI cleanup transaction.
-                savepoint = f"geo_{index}"
-                cursor.execute(f"SAVEPOINT {savepoint}")
-                try:
-                    delete_geography(cursor, geo_id)
-                except ForeignKeyViolation:
-                    cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                else:
-                    cursor.execute(f"RELEASE SAVEPOINT {savepoint}")
-        cleanup.commit()
-    except BaseException:
-        cleanup.rollback()
-        raise
-    finally:
-        cleanup.close()
+    yield from fbi_release.reviewed_warehouse(postgres_connection_factory)
 
 
 def test_fbi_release_replays_reconciles_and_publishes_idempotently(
@@ -827,6 +537,47 @@ def test_release_replays_from_stored_bytes_with_no_provider_access(
     assert set(slices) == set(_slice_fixtures())
     assert result.observations
     assert not result.quarantined
+
+
+def test_publisher_keeps_one_row_per_measure_across_published_releases(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ARC-001 — a second published release adds no publisher row.
+
+    The publisher view once grouped by release key, so a second published
+    release doubled every measure. The glossary harvest upserts on
+    (source_code, source_object_key) and failed outright -- and because
+    ``harvest_all_publishers`` isolates each publisher, the FBI catalog stopped
+    following the warehouse without failing the DAG.
+    """
+    first = _persist_fixture_release(fbi_warehouse)
+    _run_pipeline(fbi_warehouse, first)
+    revised = _persist_fixture_release(
+        fbi_warehouse, national_fixture="summarized_national_V_revised"
+    )
+    _run_pipeline(fbi_warehouse, revised)
+
+    reader = fbi_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT source_object_key),
+                       COUNT(DISTINCT source_watermark)
+                FROM gold_fbi.metric_publisher
+                """
+            )
+            total, distinct_keys, watermarks = cursor.fetchone()
+            assert total == distinct_keys
+            assert watermarks == 1
+            cursor.execute(
+                "SELECT DISTINCT source_watermark FROM gold_fbi.metric_publisher"
+            )
+            assert cursor.fetchall() == [(revised.release_key,)]
+    finally:
+        reader.close()
+
+    assert harvest_publisher(fbi_warehouse, Publisher("gold_fbi")) == 4
 
 
 def test_publisher_contract_exposes_measure_identity(

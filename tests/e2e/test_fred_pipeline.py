@@ -22,6 +22,7 @@ from data_ingestion_toolbox.fred.gold_fred import transform as gold_transform
 from data_ingestion_toolbox.fred.silver_fred import transform as silver_transform
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub, PostgresTestConfig
+from tests.support.warehouse_scope import warehouse_scope
 
 pytestmark = [
     pytest.mark.e2e,
@@ -79,6 +80,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
     caplog: pytest.LogCaptureFixture,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Covers: E2E-003 — FRED fixture flows capture-first through the API exactly.
 
@@ -91,6 +93,15 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
     missing_series = f"{series_id}_MISS"
     domain = f"test_e2e_{token.lower()}"
     metric_code = f"FRED:{series_id}"
+    # The production ingest starts its own runs, so the scope adopts every run
+    # this node adds for the source and removes the capture graph the targeted
+    # deletes below cannot reach.
+    warehouse_scope(
+        postgres_connection_factory,
+        request,
+        source_code="FRED",
+        silver_statements=("DELETE FROM silver_fred.observation_revision",),
+    )
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
