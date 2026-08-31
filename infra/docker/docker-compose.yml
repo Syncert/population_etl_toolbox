@@ -100,6 +100,7 @@ services:
       - ../airflow/airflow.env.example
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      DATA_QUALITY_COMMIT_SHA: ${DATA_QUALITY_COMMIT_SHA:-}
       PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-population_etl}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER:-airflow}:${AIRFLOW_METADATA_DB_PASSWORD:-airflow}@${AIRFLOW_METADATA_DB_HOST:-service_postgres}:${AIRFLOW_METADATA_DB_PORT:-5432}/${AIRFLOW_METADATA_DB_NAME:-airflow}
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}

@@ -16,7 +16,8 @@ verify:
 ## Plan status
 
 - **Status:** Accepted 2026-08-28; human review recorded in [FOUR_SOURCE_REVIEW_GATE.md](FOUR_SOURCE_REVIEW_GATE.md)
-- **Last updated:** 2026-08-28
+- **Post-acceptance amendment (2026-08-31):** Live internal-stack validation widened `REGISTERED_YEAR_START` from 2022 to 1990 for the survey products (the Census of Agriculture keeps its single reviewed 2022 year) and drove three robustness changes. (1) Row-count drift is now computed only over the slice keys both contracts registered: a reviewed window expansion contributes new keys and a recent-mode run preflights a subset of a full-mode contract, and neither is provider drift (previously the 35-year preflight read as a ~10x row explosion and quarantined the release). (2) Quick Stats signals rate limiting with HTTP 403 alongside 429; the client now retries both with backoff (a genuinely bad key still fails terminally through retry exhaustion), default request spacing rose to 1s, and the `usda_nass_api` pool is serialized to 1 slot in the compose init blocks - sustained sweeps above ~1 req/s draw rolling 403s. (3) The steady-state recent-mode cadence was re-validated against the post-backfill contract. Live evidence: 1,086,806 crop observations spanning 1990-2024 at national/state/county levels; 159 unit tests pass. Known residual: aborted backfill iterations left non-terminal slice rows (`preflighted`/`over_limit`/`skipped`) in `control.usda_nass_slice`, which DQ-NASS-002 correctly flags; the design call (aborted runs finalize their slice rows vs. ledger rules assessing only the latest run per partition) is recorded in the warehouse data-quality plan.
+- **Last updated:** 2026-08-31
 - **Source owner:** USDA National Agricultural Statistics Service (NASS)
 - **Initial source:** NASS Quick Stats
 - **Geography scope:** National, state, and county; county is the lowest level

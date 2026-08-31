@@ -18,6 +18,7 @@ services:
       - ../airflow/airflow.env.example
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      DATA_QUALITY_COMMIT_SHA: ${DATA_QUALITY_COMMIT_SHA:-}
       PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-airflow}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
