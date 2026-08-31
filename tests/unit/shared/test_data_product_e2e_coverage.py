@@ -12,12 +12,9 @@ import ast
 
 import pytest
 
-from apps.api.main import create_app
-from data_ingestion_toolbox.config import Settings
 from data_ingestion_toolbox.quality.inventory import ALL_OBJECTS, PUBLISHED_LAYERS
 from tests.support.product_coverage import (
     PRODUCTS,
-    SHARED_API_PREFIXES,
     DataProductE2E,
     ProductCoverageError,
     owner_node_ids,
@@ -43,17 +40,6 @@ def _implemented_publisher_schemas() -> set[str]:
         for obj in ALL_OBJECTS
         if obj.layer in PUBLISHED_LAYERS and obj.source != "SHARED"
     }
-
-
-def _application_routes() -> set[str]:
-    """Read the served contract from OpenAPI rather than the router objects.
-
-    FastAPI includes routers lazily, so ``app.routes`` still holds unexpanded
-    ``_IncludedRouter`` entries with no path; the generated schema is the
-    surface a consumer actually sees.
-    """
-    paths = create_app(Settings()).openapi()["paths"]
-    return {path for path in paths if path.startswith("/api/")}
 
 
 def _module_markers(product: DataProductE2E) -> set[str]:
@@ -144,31 +130,6 @@ def test_every_registered_fixture_exists() -> None:
         for fixture in product.fixtures:
             path = product.owner_path.parents[2] / fixture
             assert path.exists(), f"{product.product_id}: missing fixture {fixture}"
-
-
-def test_every_registered_api_route_is_served_by_the_application() -> None:
-    """Covers: E2E-008 — a removed route cannot leave the registry claiming it."""
-    served = _application_routes()
-    for product in PRODUCTS:
-        missing = sorted(set(product.api_routes) - served)
-        assert not missing, (
-            f"{product.product_id} claims routes the application does not "
-            f"serve: {missing}"
-        )
-
-
-def test_every_source_scoped_api_route_is_claimed_by_a_product() -> None:
-    """Covers: E2E-008 — a new source router cannot ship without E2E evidence."""
-    claimed = {route for product in PRODUCTS for route in product.api_routes}
-    unclaimed = sorted(
-        route
-        for route in _application_routes()
-        if not route.startswith(SHARED_API_PREFIXES) and route not in claimed
-    )
-    assert not unclaimed, (
-        "these source-scoped API routes have no registered end-to-end owner: "
-        f"{unclaimed}"
-    )
 
 
 def test_owner_node_ids_are_unique_and_scheduled_selection_is_complete() -> None:

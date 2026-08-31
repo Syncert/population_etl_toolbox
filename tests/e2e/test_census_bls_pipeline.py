@@ -20,6 +20,7 @@ from tests.e2e.test_fred_pipeline import _real_client
 from tests.integration.database.test_fred_silver_flow import _seed_time
 from tests.support.postgres import PostgresHookStub
 from tests.support.capture_seed import delete_geography, seed_geography
+from tests.support.warehouse_scope import warehouse_scope
 
 pytestmark = [pytest.mark.e2e, pytest.mark.database, pytest.mark.slow]
 
@@ -41,6 +42,7 @@ def _call_refresh(
 def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
 ) -> None:
     """Covers: E2E-002 — BLS capture-to-API rows are exact.
 
@@ -48,6 +50,15 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     """
     series_id = "LAUST970000000000003"
     metric_code = f"BLS:{series_id}"
+    # The production ingest starts its own runs, so the scope adopts every run
+    # this node adds for the source and removes the capture graph the targeted
+    # deletes below cannot reach.
+    warehouse_scope(
+        postgres_connection_factory,
+        request,
+        source_code="BLS",
+        silver_statements=("DELETE FROM silver_bls.observation_revision",),
+    )
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
@@ -185,6 +196,7 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
 def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
 ) -> None:
     """Covers: E2E-001 — ACS capture-to-API rows are exact.
 
@@ -192,6 +204,12 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     """
     variable = "B99998_001"
     metric_code = f"ACS:acs5:{variable}"
+    warehouse_scope(
+        postgres_connection_factory,
+        request,
+        source_code="CENSUS_ACS",
+        silver_statements=("DELETE FROM silver_census.observation_revision",),
+    )
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:

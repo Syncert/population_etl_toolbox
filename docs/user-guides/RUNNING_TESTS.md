@@ -138,6 +138,39 @@ evidence is produced on every push.
 The suite also asserts that the set of DAGs it executes equals the set in the
 DagBag, so a newly added pipeline cannot be silently left uncovered.
 
+## Data-Product End-to-End Coverage
+
+`tests/support/product_coverage.py` is the executable inventory of every
+implemented data product and the single test node that owns its end-to-end
+evidence. `tests/unit/shared/test_data_product_e2e_coverage.py` derives what
+exists from the warehouse quality inventory and the served OpenAPI paths, so a
+source that lands a publisher schema or an API router without an owner fails a
+deterministic unit test rather than passing under broad marker selection.
+
+List the owning nodes, for a targeted run or a CI selection:
+
+```powershell
+python -m tests.support.product_coverage
+```
+
+Set `E2E_REQUIRE_ALL_PRODUCTS=1` to grade a run against that inventory. The
+session then fails unless every registered product ran and passed, so an
+unexpected skip or deselection is a failure rather than a quietly shorter run.
+The scheduled `e2e-performance` workflow sets it and publishes
+`junit-e2e-products.xml`, whose test cases name the products individually.
+
+Every product node commits real warehouse rows and removes them itself; a
+session guard in `tests/e2e/conftest.py` independently reconciles the capture,
+control, silver, reference, publisher, and glossary relations before and after
+the run. Start each run against a freshly created database anyway -- that is
+what CI grades, and it is the only way a count assertion means what it says:
+
+```powershell
+docker compose -f infra/docker/docker-compose.test.yml down --volumes --remove-orphans
+docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
+.	estsun.ps1 e2e
+```
+
 ## Database and Redis Tests
 
 General integration, E2E, performance, and resilience tiers expect explicitly

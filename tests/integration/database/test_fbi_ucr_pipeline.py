@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 from psycopg2.extensions import connection
 
-from data_ingestion_toolbox.fbi_ucr.capture import CapturedFbiRelease
 from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import (
     FbiPublicationError,
     publish_release,
@@ -17,11 +16,9 @@ from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import (
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     FbiReplayError,
     load_captured_slices,
-    persist_replay_result,
     replay_captured_run,
     replay_slices,
 )
-from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support import fbi_release
 from tests.support.capture_seed import delete_geography, seed_geography
@@ -29,7 +26,6 @@ from tests.support.fbi_release import (
     OBSERVATIONS_PER_SUBJECT,
     PERIODS,
     PRODUCT,
-    SOURCE_CODE,
     agency_directory_endpoint,
 )
 

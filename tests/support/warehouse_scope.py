@@ -42,11 +42,30 @@ class WarehouseScope:
     run_ids: set[UUID] = field(default_factory=set)
     geo_ids: set[str] = field(default_factory=set)
     _preexisting_geo_ids: set[str] = field(default_factory=set)
+    #: Whether the glossary already carried this source before the node ran. A
+    #: node that harvests its publisher must remove the catalog rows it
+    #: created, but never a registration another suite depends on.
+    _preexisting_glossary: bool = False
+    #: Runs the source already had. Production ingestion starts its own runs
+    #: deep inside the pipeline, so a node that calls it cannot hand every
+    #: run_id back; anything new for this source is this node's to remove.
+    _baseline_run_ids: frozenset[UUID] = frozenset()
 
     def track_run(self, run_id: UUID) -> UUID:
         """Record a run whose requests, captures, and payloads this node owns."""
         self.run_ids.add(run_id)
         return run_id
+
+    def owned_run_ids(self) -> list[UUID]:
+        """Return every run this node is responsible for removing."""
+        current = {
+            row[0]
+            for row in self.query(
+                "SELECT run_id FROM control.ingestion_run WHERE source_code = %s",
+                (self.source_code,),
+            )
+        }
+        return sorted(self.run_ids | (current - self._baseline_run_ids))
 
     def track_runs(self, run_ids: Iterable[UUID]) -> None:
         for run_id in run_ids:
@@ -114,10 +133,13 @@ class WarehouseScope:
 
     def cleanup(self) -> None:
         """Delete every tracked row in foreign-key-safe order, then prove it."""
-        run_ids = sorted(self.run_ids)
+        run_ids = self.owned_run_ids()
         database_connection = self.connection_factory()
         try:
             with database_connection.cursor() as cursor:
+                delete_harvested_glossary_rows(
+                    cursor, self.source_code, preexisting=self._preexisting_glossary
+                )
                 cursor.execute(
                     "DELETE FROM control.publisher_ready_event WHERE source_code = %s",
                     (self.source_code,),
@@ -142,61 +164,12 @@ class WarehouseScope:
             database_connection.close()
 
     def _delete_capture_graph(self, cursor, run_ids: list[UUID]) -> list[str]:
-        if not run_ids:
-            return []
-        cursor.execute(
-            "DELETE FROM control.capture_quarantine WHERE capture_id IN ("
-            "SELECT capture_id FROM raw_capture.response_capture "
-            "WHERE run_id = ANY(%s))",
-            (run_ids,),
-        )
-        cursor.execute(
-            "SELECT DISTINCT payload_checksum FROM raw_capture.response_capture "
-            "WHERE run_id = ANY(%s)",
-            (run_ids,),
-        )
-        checksums = [row[0] for row in cursor.fetchall()]
-        # Captures and payloads are append-only by trigger; the disposable
-        # database is the only place that guard is lifted, and only to remove
-        # rows this node created.
-        cursor.execute(
-            "ALTER TABLE raw_capture.response_capture "
-            "DISABLE TRIGGER response_capture_reject_mutation"
-        )
-        cursor.execute(
-            "DELETE FROM raw_capture.response_capture WHERE run_id = ANY(%s)",
-            (run_ids,),
-        )
-        cursor.execute(
-            "ALTER TABLE raw_capture.response_capture "
-            "ENABLE TRIGGER response_capture_reject_mutation"
-        )
-        if checksums:
-            cursor.execute(
-                "ALTER TABLE raw_capture.payload_blob "
-                "DISABLE TRIGGER payload_blob_reject_mutation"
-            )
-            cursor.execute(
-                "DELETE FROM raw_capture.payload_blob AS payload "
-                "WHERE payload.payload_checksum = ANY(%s) AND NOT EXISTS ("
-                "SELECT 1 FROM raw_capture.response_capture AS capture "
-                "WHERE capture.payload_checksum = payload.payload_checksum)",
-                (checksums,),
-            )
-            cursor.execute(
-                "ALTER TABLE raw_capture.payload_blob "
-                "ENABLE TRIGGER payload_blob_reject_mutation"
-            )
-        cursor.execute(
-            "DELETE FROM control.ingestion_request WHERE run_id = ANY(%s)", (run_ids,)
-        )
-        cursor.execute(
-            "DELETE FROM control.ingestion_run WHERE run_id = ANY(%s)", (run_ids,)
-        )
-        return checksums
+        return delete_capture_graph(cursor, run_ids)
 
     def _delete_geographies(self, cursor) -> None:
-        for index, geo_id in enumerate(sorted(self.geo_ids - self._preexisting_geo_ids)):
+        for index, geo_id in enumerate(
+            sorted(self.geo_ids - self._preexisting_geo_ids)
+        ):
             # The reference dimension is shared. A geography another source
             # still references stays in place rather than aborting teardown.
             savepoint = f"scope_geo_{index}"
@@ -244,9 +217,128 @@ class WarehouseScope:
         )
         events = cursor.fetchone()[0]
         assert events == 0, (
-            f"{events} publisher-ready events survived teardown for "
-            f"{self.source_code}"
+            f"{events} publisher-ready events survived teardown for {self.source_code}"
         )
+
+
+def delete_capture_graph(cursor, run_ids: list[UUID]) -> list[str]:
+    """Delete the capture graph for a set of runs; return their payload hashes.
+
+    Captures and payload blobs are append-only by trigger. The disposable test
+    database is the only place that guard is lifted, and only for rows a
+    fixture created.
+    """
+    if not run_ids:
+        return []
+    cursor.execute(
+        "DELETE FROM control.capture_quarantine WHERE capture_id IN ("
+        "SELECT capture_id FROM raw_capture.response_capture "
+        "WHERE run_id = ANY(%s))",
+        (run_ids,),
+    )
+    cursor.execute(
+        "SELECT DISTINCT payload_checksum FROM raw_capture.response_capture "
+        "WHERE run_id = ANY(%s)",
+        (run_ids,),
+    )
+    checksums = [row[0] for row in cursor.fetchall()]
+    cursor.execute(
+        "ALTER TABLE raw_capture.response_capture "
+        "DISABLE TRIGGER response_capture_reject_mutation"
+    )
+    cursor.execute(
+        "DELETE FROM raw_capture.response_capture WHERE run_id = ANY(%s)",
+        (run_ids,),
+    )
+    cursor.execute(
+        "ALTER TABLE raw_capture.response_capture "
+        "ENABLE TRIGGER response_capture_reject_mutation"
+    )
+    if checksums:
+        cursor.execute(
+            "ALTER TABLE raw_capture.payload_blob "
+            "DISABLE TRIGGER payload_blob_reject_mutation"
+        )
+        cursor.execute(
+            "DELETE FROM raw_capture.payload_blob AS payload "
+            "WHERE payload.payload_checksum = ANY(%s) AND NOT EXISTS ("
+            "SELECT 1 FROM raw_capture.response_capture AS capture "
+            "WHERE capture.payload_checksum = payload.payload_checksum)",
+            (checksums,),
+        )
+        cursor.execute(
+            "ALTER TABLE raw_capture.payload_blob "
+            "ENABLE TRIGGER payload_blob_reject_mutation"
+        )
+    cursor.execute(
+        "DELETE FROM control.ingestion_request WHERE run_id = ANY(%s)", (run_ids,)
+    )
+    cursor.execute(
+        "DELETE FROM control.ingestion_run WHERE run_id = ANY(%s)", (run_ids,)
+    )
+    return checksums
+
+
+def source_run_ids(
+    connection_factory: Callable[[], connection], source_code: str
+) -> frozenset[UUID]:
+    """Return the runs a source already has, as the baseline a node adds to."""
+    database_connection = connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT run_id FROM control.ingestion_run WHERE source_code = %s",
+                (source_code,),
+            )
+            return frozenset(row[0] for row in cursor.fetchall())
+    finally:
+        database_connection.close()
+
+
+def glossary_registration_exists(
+    connection_factory: Callable[[], connection], source_code: str
+) -> bool:
+    """Report whether the glossary already knows this source.
+
+    Harvesting a publisher registers the source and its measures in the shared
+    glossary. A node that harvests must remove what it created, but a source
+    another suite (or the bootstrap seed) already registered must survive.
+    """
+    database_connection = connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_glossary.dim_source_system "
+                "WHERE source_code = %s",
+                (source_code,),
+            )
+            return bool(cursor.fetchone()[0])
+    finally:
+        database_connection.close()
+
+
+def delete_harvested_glossary_rows(
+    cursor, source_code: str, *, preexisting: bool
+) -> None:
+    """Remove one source's harvested glossary rows in dependency order."""
+    if preexisting:
+        return
+    cursor.execute(
+        "DELETE FROM gold_glossary.dim_metric_catalog WHERE source_code = %s",
+        (source_code,),
+    )
+    cursor.execute(
+        "DELETE FROM gold_glossary.publisher_harvest_state WHERE source_code = %s",
+        (source_code,),
+    )
+    cursor.execute(
+        "DELETE FROM gold_glossary.publisher_registry WHERE source_code = %s",
+        (source_code,),
+    )
+    cursor.execute(
+        "DELETE FROM gold_glossary.dim_source_system WHERE source_code = %s",
+        (source_code,),
+    )
 
 
 def _canonical_geo_id(entry: dict[str, object]) -> str:
@@ -274,6 +366,10 @@ def warehouse_scope(
         source_code=source_code,
         silver_statements=tuple(silver_statements),
         control_statements=tuple(control_statements),
+        _preexisting_glossary=glossary_registration_exists(
+            connection_factory, source_code
+        ),
+        _baseline_run_ids=source_run_ids(connection_factory, source_code),
     )
     request.addfinalizer(scope.cleanup)
     return scope

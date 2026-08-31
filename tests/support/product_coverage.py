@@ -281,6 +281,7 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "/api/usda-nass/observations",
             "/api/usda-nass/series",
             "/api/usda-nass/measures",
+            "/api/usda-nass/source-notes",
         ),
         neutral_api_routes=("/api/catalog/metrics",),
         owner=(

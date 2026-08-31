@@ -188,9 +188,7 @@ def _select_output_names(select_sql: str) -> list[str]:
             current += character
     names.append(current)
     return [
-        entry.strip().rsplit(" AS ", 1)[-1].strip()
-        for entry in names
-        if entry.strip()
+        entry.strip().rsplit(" AS ", 1)[-1].strip() for entry in names if entry.strip()
     ]
 
 

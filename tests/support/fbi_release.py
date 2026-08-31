@@ -42,6 +42,12 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
 )
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
 from tests.support.capture_seed import delete_geography, seed_geography
+from tests.support.warehouse_scope import (
+    delete_capture_graph,
+    delete_harvested_glossary_rows,
+    glossary_registration_exists,
+    source_run_ids,
+)
 
 PRODUCT = SUMMARIZED_VIOLENT_CRIME
 SOURCE_CODE = "FBI_UCR"
@@ -313,14 +319,25 @@ def seed_reviewed_geographies(
 
 
 def remove_fbi_state(
-    connection_factory: Callable[[], connection], preexisting: set[str]
+    connection_factory: Callable[[], connection],
+    preexisting: set[str],
+    *,
+    preexisting_glossary: bool = False,
+    baseline_run_ids: frozenset = frozenset(),
 ) -> None:
     """Delete every FBI-owned row, leaving shared geographies others still use."""
+    owned_runs = sorted(
+        source_run_ids(connection_factory, SOURCE_CODE) - baseline_run_ids
+    )
     cleanup = connection_factory()
     try:
         with cleanup.cursor() as cursor:
+            delete_harvested_glossary_rows(
+                cursor, SOURCE_CODE, preexisting=preexisting_glossary
+            )
             for statement in CLEANUP_STATEMENTS:
                 cursor.execute(statement)
+            delete_capture_graph(cursor, owned_runs)
             for index, geo_id in enumerate(SEEDED_GEO_IDS):
                 if geo_id in preexisting:
                     continue
@@ -347,11 +364,18 @@ def reviewed_warehouse(
     connection_factory: Callable[[], connection],
 ) -> Iterator[Callable[[], connection]]:
     """Yield a factory whose FBI state is removed when the test finishes."""
+    preexisting_glossary = glossary_registration_exists(connection_factory, SOURCE_CODE)
+    baseline_run_ids = source_run_ids(connection_factory, SOURCE_CODE)
     preexisting = seed_reviewed_geographies(connection_factory)
     try:
         yield connection_factory
     finally:
-        remove_fbi_state(connection_factory, preexisting)
+        remove_fbi_state(
+            connection_factory,
+            preexisting,
+            preexisting_glossary=preexisting_glossary,
+            baseline_run_ids=baseline_run_ids,
+        )
 
 
 def fbi_warehouse_fixture() -> Callable:

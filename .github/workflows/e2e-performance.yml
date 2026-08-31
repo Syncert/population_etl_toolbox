@@ -72,9 +72,22 @@ jobs:
           python -m pip install -e ".[api,dev,performance]"
           python -m pip check
 
-      - name: Run end-to-end and resilience contracts
+      # Covers: E2E-008, E2E-012 — the run is graded against the executable
+      # coverage inventory: E2E_REQUIRE_ALL_PRODUCTS fails the session unless
+      # every registered data product ran and passed, so a node that is skipped
+      # or deselected is a failure rather than a quietly shorter run. The
+      # product JUnit file names each product node, so a failure identifies the
+      # product rather than the tier.
+      - name: Run every registered data-product end-to-end node
+        env:
+          E2E_REQUIRE_ALL_PRODUCTS: "1"
         run: >-
-          pytest tests/e2e tests/resilience
+          pytest tests/e2e -m e2e
+          --tb=short -q --junitxml=junit-e2e-products.xml
+
+      - name: Run resilience and operability contracts
+        run: >-
+          pytest tests/resilience
           tests/integration/database/test_database_operability.py
           tests/integration/api/test_connection_capacity.py
           -m "(e2e or integration) and slow"

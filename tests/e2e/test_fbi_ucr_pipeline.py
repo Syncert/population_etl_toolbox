@@ -218,7 +218,9 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         }
         # Rate and absolute-total measures reach the neutral catalog as
         # separate metrics with their own units, so a consumer cannot add them.
-        units = {item["metric_code"]: item["units"] for item in catalog_payload["items"]}
+        units = {
+            item["metric_code"]: item["units"] for item in catalog_payload["items"]
+        }
         assert len(units) == harvested
         assert set(units.values()) == {"count", "per_100000_population"}
         assert all(
