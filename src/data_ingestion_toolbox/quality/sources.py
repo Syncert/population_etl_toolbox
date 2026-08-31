@@ -420,7 +420,12 @@ def fbi_aggregation_boundary(
         """
         SELECT COUNT(*)
           FROM (
-              SELECT DISTINCT ori, source_record_id
+              -- The view legitimately emits one row per associated area for
+              -- a multi-area agency, so the non-fanout grain is observation
+              -- x filter area; observation_sk is the per-fact surrogate the
+              -- view exposes. A duplicate at this grain means overlapping
+              -- effective-dated relationship rows fanned the join out.
+              SELECT DISTINCT ori, observation_sk, filter_geo_id
                 FROM gold_fbi.agency_observation_area_filter
           ) AS grain
         """,

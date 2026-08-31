@@ -170,6 +170,7 @@ def transform_release(
             _load_state_relationships(cursor, scope=scope)
             _load_county_relationships(cursor, scope=scope)
             _load_place_relationships(cursor, scope=scope)
+            _supersede_contained_relationships(cursor, scope=scope)
             _load_shared_bridges(cursor, scope=scope)
             _load_geography_resolution(cursor, scope=scope)
             _load_participation_facts(cursor, scope=scope)
@@ -392,6 +393,35 @@ _RELATIONSHIP_COLUMNS = """
         evidence_capture_id, product_id, release_key
     )
 """
+
+
+def _supersede_contained_relationships(cursor: Any, *, scope: dict) -> None:
+    """Remove relationship rows a wider effective window fully supersedes.
+
+    A reviewed period-window widening re-derives each agency relationship with
+    broader effectivity (and a new vintage year), so the conflict key keeps the
+    narrower row from the earlier window. That row carries no distinct evidence
+    and would double every observation falling inside both ranges in
+    ``gold_fbi.agency_observation_area_filter``. Deletion is restricted to rows
+    whose identity and resolved geography match the wider row exactly.
+    """
+    cursor.execute(
+        """
+        DELETE FROM silver_fbi.agency_geography_relationship AS narrower
+        USING silver_fbi.agency_geography_relationship AS wider
+        WHERE narrower.product_id = %(product_id)s
+          AND wider.product_id = narrower.product_id
+          AND wider.ori = narrower.ori
+          AND wider.relationship_type = narrower.relationship_type
+          AND wider.source_label = narrower.source_label
+          AND wider.geo_id IS NOT DISTINCT FROM narrower.geo_id
+          AND wider.effective_start <= narrower.effective_start
+          AND wider.effective_end >= narrower.effective_end
+          AND (wider.effective_start, wider.effective_end)
+              <> (narrower.effective_start, narrower.effective_end)
+        """,
+        scope,
+    )
 
 
 def _load_state_relationships(cursor: Any, *, scope: dict) -> None:
