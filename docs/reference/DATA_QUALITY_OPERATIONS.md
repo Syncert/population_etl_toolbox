@@ -129,6 +129,38 @@ ORDER BY evaluated_at;
 4. The gate reopens on its own: `evaluate_publication_gate` re-runs at the
    next publication attempt, and a clean run publishes.
 
+## Plausibility baselines follow certification
+
+A baseline is only as trustworthy as the history it learns from. Learning from
+whatever happens to be retained lets material the deterministic rules reject
+teach the baseline what "normal" means, and it fails in the direction that
+matters: a bad value drags the median toward itself, so the *next* bad value
+scores as ordinary and no warning fires.
+
+Baselines are therefore restricted to history a promotable release
+certification already covered:
+
+- an observation ingested at or before the newest promotable `release`
+  assessment joins the baseline; one ingested after it is *scored against*
+  that baseline instead of joining it;
+- if no promotable release certification exists, plausibility reports
+  `not_applicable` with `no promotable release certification exists` — an
+  uncertified warehouse has no baseline, and saying so is more honest than
+  inventing one; and
+- if a BLOCK or QUARANTINE rule currently reports the baseline's object as
+  failing, plausibility reports `not_applicable` for that object. The
+  deterministic suite already says the material is wrong; scoring plausibility
+  against it would be scoring noise.
+
+The practical consequence for operators: **run `certify_release` after a
+re-ingestion or a beta reset**, or the monthly plausibility sweep will report
+`not_applicable` instead of warnings. That is a deliberate default — a silent
+sweep means "not certified", never "nothing anomalous".
+
+Each warning's evidence carries `certified_commit=<sha>`, so a reviewer can
+see exactly which certification defined the baseline the value was judged
+against.
+
 ## Warning review lifecycle
 
 A plausibility warning opens with `review_status = 'open'`. Advance it with

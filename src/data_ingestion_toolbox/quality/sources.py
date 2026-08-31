@@ -342,36 +342,73 @@ def cdc_suppression_conformance(
 def fbi_participation_coverage(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-FBI-002 — no published observation without a coverage row."""
+    """DQ-FBI-002 — no crime observation publishes without its coverage.
+
+    Measured at silver, because that is the only layer where the defect can
+    exist. ``gold_fbi.crime_observation`` *inner joins* participation, so an
+    observation that loses its coverage row does not appear in the view
+    uncovered -- it disappears from the view entirely. Checking the gold view
+    against itself would always pass while published rows silently vanished,
+    so the rule compares the publishable silver population to what gold
+    actually serves.
+    """
     del scope
-    total = _count(cursor, "SELECT COUNT(*) FROM gold_fbi.crime_observation")
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_fbi.fact_crime_observation")
     if total == 0:
-        return [RuleOutcome("gold_fbi.crime_observation", "not_applicable")]
+        return [
+            RuleOutcome("silver_fbi.fact_crime_observation", "not_applicable"),
+            RuleOutcome("gold_fbi.crime_observation", "not_applicable"),
+        ]
+
+    #: An observation on a published release, at a geography grain gold
+    #: serves: exactly the population gold must carry, one for one.
+    publishable = """
+        FROM silver_fbi.fact_crime_observation AS fact
+        JOIN silver_fbi.dim_ucr_dataset_release AS release
+          ON release.product_id = fact.product_id
+         AND release.release_key = fact.release_key
+       WHERE release.status = 'published'
+         AND fact.geography_status NOT IN ('ambiguous', 'unsupported')
+    """
     uncovered = _ids(
         cursor,
         f"""
-        SELECT observation.product_id, observation.release_key,
-               observation.source_record_id
-          FROM gold_fbi.crime_observation AS observation
-          LEFT JOIN gold_fbi.reporting_coverage AS coverage
-            ON coverage.product_id = observation.product_id
-           AND coverage.release_key = observation.release_key
-           AND coverage.subject_type = observation.subject_type
-           AND coverage.subject_code = observation.subject_code
-           AND coverage.period = observation.period
-         WHERE coverage.product_id IS NULL
+        SELECT fact.product_id, fact.release_key, fact.source_record_id
+        {publishable}
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM silver_fbi.fact_reporting_participation AS coverage
+                WHERE coverage.product_id = fact.product_id
+                  AND coverage.release_key = fact.release_key
+                  AND coverage.subject_type = fact.subject_type
+                  AND coverage.subject_code = fact.subject_code
+                  AND coverage.period = fact.period
+           )
          ORDER BY 1, 2, 3
          LIMIT {EVIDENCE_LIMIT + 1}
         """,
     )
+    expected = _count(cursor, f"SELECT COUNT(*) {publishable}")
+    served = _count(cursor, "SELECT COUNT(*) FROM gold_fbi.crime_observation")
     return [
         RuleOutcome(
-            "gold_fbi.crime_observation",
+            "silver_fbi.fact_crime_observation",
             "fail" if uncovered else "pass",
             observed_count=len(uncovered),
             expected_count=0,
             evidence=uncovered[:EVIDENCE_LIMIT],
-        )
+        ),
+        RuleOutcome(
+            "gold_fbi.crime_observation",
+            "pass" if served == expected else "fail",
+            observed_count=served,
+            expected_count=expected,
+            evidence=(
+                []
+                if served == expected
+                else [f"publishable={expected}", f"served={served}"]
+            ),
+        ),
     ]
 
 

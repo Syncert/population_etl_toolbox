@@ -111,8 +111,20 @@ def test_daily_assessment_persists_queryable_summaries(
     postgres_connection.rollback()
 
 
-def _seed_fred_series(cursor, series_id: str, values: list[float]) -> None:
-    """Seed one series through the real silver fact the gold view projects."""
+def _seed_fred_series(
+    cursor,
+    series_id: str,
+    values: list[float],
+    *,
+    ingested_at: str = "NOW()",
+    start_index: int = 0,
+) -> None:
+    """Seed one series through the real silver fact the gold view projects.
+
+    ``ingested_at`` is a SQL expression so a test can place observations on
+    either side of a certification boundary; the gold view projects it as
+    ``updated_at``, which is what the certified-baseline filter reads.
+    """
     cursor.execute(
         """
         INSERT INTO gold_fred.dim_fred_series (series_id, series_title)
@@ -151,27 +163,145 @@ def _seed_fred_series(cursor, series_id: str, values: list[float]) -> None:
             )
             INSERT INTO silver_fred.fact_economic_indicators (
                 time_sk, duration_start, duration_end, observation_date,
-                series_id, value, load_batch_id
+                series_id, value, load_batch_id, ingested_at
             )
             SELECT TO_CHAR(observation_date, 'YYYYMMDD')::INT,
                    observation_date, observation_date, observation_date,
-                   %s, %s, GEN_RANDOM_UUID()
+                   %s, %s, GEN_RANDOM_UUID(), INGESTED_AT
               FROM probe
-            """,
-            (index * 30, series_id, value),
+            """.replace("INGESTED_AT", ingested_at),
+            ((start_index + index) * 30, series_id, value),
         )
+
+
+STEADY_HISTORY = [100.0, 101.0, 99.0, 100.5, 100.2, 99.8, 100.1, 99.9, 100.3]
+
+
+def _certify(postgres_connection: connection):
+    """Certify the current warehouse so a baseline may be built from it."""
+    return certify_release(postgres_connection, code_commit_sha=COMMIT_SHA)
+
+
+def test_plausibility_is_not_applicable_without_a_certified_baseline(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-006 — an uncertified warehouse teaches no baseline.
+
+    Learning "normal" from whatever happens to be retained is the failure that
+    matters: an uncertified value pulls the median toward itself and the next
+    genuine anomaly scores lower. With nothing certified there is no baseline,
+    and the honest verdict is that plausibility cannot be judged.
+    """
+    with postgres_connection.cursor() as cursor:
+        _blank_warehouse(cursor)
+        _seed_fred_series(cursor, "PROBE_SHOCK", STEADY_HISTORY + [250.0])
+
+        [outcome] = fred_change_plausibility(cursor, {})
+        assert outcome.result == "not_applicable"
+        assert outcome.evidence == ["no promotable release certification exists"]
+    postgres_connection.rollback()
+
+
+def test_a_blocking_failure_disqualifies_its_object_as_a_baseline(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-006 — material a blocking rule rejects teaches no baseline."""
+    with postgres_connection.cursor() as cursor:
+        _blank_warehouse(cursor)
+        _seed_fred_series(cursor, "PROBE_SHOCK", STEADY_HISTORY + [250.0])
+    certification = _certify(postgres_connection)
+    assert certification.promotable
+
+    with postgres_connection.cursor() as cursor:
+        [outcome] = fred_change_plausibility(cursor, {})
+        assert outcome.result == "warn"
+
+        # A later sweep finds a blocking failure on the object the baseline
+        # reads. The certification itself stays valid -- it was true when it
+        # ran -- but the material is no longer fit to teach a baseline.
+        cursor.execute(
+            """
+            WITH later_run AS (
+                INSERT INTO control.data_quality_run (
+                    quality_run_id, source_code, assessment_type,
+                    code_commit_sha, rule_set_version, finished_at,
+                    overall_status
+                ) VALUES (GEN_RANDOM_UUID(), 'FRED', 'scheduled', %s,
+                          'probe', NOW(), 'fail')
+                RETURNING quality_run_id
+            )
+            INSERT INTO control.data_quality_result (
+                quality_run_id, rule_id, severity, layer, object_name,
+                source_code, partition_key, result
+            )
+            SELECT quality_run_id, 'DQ-FRED-001', 'BLOCK', 'gold',
+                   'gold_fred.fact_fred_observation', 'FRED', '', 'fail'
+              FROM later_run
+            """,
+            (COMMIT_SHA,),
+        )
+        [refused] = fred_change_plausibility(cursor, {})
+        assert refused.result == "not_applicable"
+        assert refused.evidence == [
+            "gold_fred.fact_fred_observation is failing a blocking deterministic rule"
+        ]
+    postgres_connection.rollback()
+
+
+def test_uncertified_values_cannot_silence_the_alarm_they_caused(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-006 — only certified history teaches the baseline.
+
+    This is the failure mode the restriction exists for. A run of bad values
+    that is not yet certified used to join the baseline, drag the median onto
+    itself, and score the next bad value as ordinary. Restricted to certified
+    history, the same warehouse still warns.
+    """
+    with postgres_connection.cursor() as cursor:
+        _blank_warehouse(cursor)
+        _seed_fred_series(
+            cursor,
+            "PROBE_DRIFT",
+            STEADY_HISTORY,
+            ingested_at="NOW() - INTERVAL '2 days'",
+        )
+    certification = _certify(postgres_connection)
+    assert certification.promotable
+
+    with postgres_connection.cursor() as cursor:
+        # Twelve uncertified values at the anomalous level: enough to become
+        # the majority of a naive baseline built from everything retained.
+        _seed_fred_series(
+            cursor,
+            "PROBE_DRIFT",
+            [250.0] * 12,
+            ingested_at="NOW() + INTERVAL '1 day'",
+            start_index=len(STEADY_HISTORY),
+        )
+
+        [outcome] = fred_change_plausibility(cursor, {})
+        assert outcome.result == "warn"
+        assert outcome.partition_key == "PROBE_DRIFT"
+        # The baseline is the certified history alone, not the 21 retained
+        # observations a naive baseline would have used.
+        assert outcome.observed_count == len(STEADY_HISTORY)
+        assert "latest=250.0" in outcome.evidence
+    postgres_connection.rollback()
 
 
 def test_extreme_but_valid_values_warn_without_mutation(
     postgres_connection: connection,
 ) -> None:
     """Covers: DQ-006 — anomalies warn, open a review, and change nothing."""
-    steady = [100.0, 101.0, 99.0, 100.5, 100.2, 99.8, 100.1, 99.9, 100.3]
+    steady = STEADY_HISTORY
     with postgres_connection.cursor() as cursor:
         _blank_warehouse(cursor)
         _seed_fred_series(cursor, "PROBE_STEADY", steady + [100.2])
         _seed_fred_series(cursor, "PROBE_SHOCK", steady + [250.0])
+    _certify(postgres_connection)
 
+    with postgres_connection.cursor() as cursor:
         outcomes = fred_change_plausibility(cursor, {})
         by_partition = {outcome.partition_key: outcome for outcome in outcomes}
         assert set(by_partition) == {"PROBE_SHOCK"}
