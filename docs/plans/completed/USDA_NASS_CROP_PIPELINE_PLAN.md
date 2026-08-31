@@ -279,7 +279,7 @@ this.
 - Moving this plan out of `to_do/` left one stale relative link in the
   data-product E2E coverage plan, which that execution was bounded from
   repairing. It was repaired on 2026-08-31 when that plan was implemented and
-  moved to `needs_review/`; the link now resolves through `../completed/`.
+  accepted into `completed/`; the link now resolves through `../completed/`.
 
 ## Objective
 

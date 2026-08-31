@@ -16,11 +16,11 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; ready for human review
+- **Status:** Accepted by human review on 2026-08-31; complete
 - **Last updated:** 2026-08-31
 - **Current milestone:** All six phases delivered and validated against a fresh
   PostgreSQL 16 + PostGIS 3.5 warehouse and the pinned Airflow 2.9.3 image
-- **Next pickup:** None. See "Implementation evidence" below.
+- **Next pickup:** None. See "Implementation evidence" below; the plan was accepted into `completed/` on 2026-08-31.
 - **Claimed:** 2026-08-31 on branch `feat/data-product-e2e`. The exclusive
   warehouse-data-quality plan is paused at a documented design decision rather
   than actively running, and this plan changes no quality module, so the
