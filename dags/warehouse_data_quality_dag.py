@@ -85,8 +85,7 @@ def _log_assessment_report(connection: Any, record: Any, cadence: str) -> None:
         record.quality_run_id,
         cadence,
         record.overall_status,
-        ", ".join(f"{key}={value}" for key, value in sorted(totals.items()))
-        or "none",
+        ", ".join(f"{key}={value}" for key, value in sorted(totals.items())) or "none",
     )
     for rule_id, severity, result, obj, partition, observed, expected, evidence in rows:
         if result == "pass":
