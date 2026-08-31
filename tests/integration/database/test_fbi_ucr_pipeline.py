@@ -28,6 +28,8 @@ from data_ingestion_toolbox.fbi_ucr.gold_fbi.publisher import (
 )
 from data_ingestion_toolbox.fbi_ucr.metadata import ReleaseDecision, parse_release
 from data_ingestion_toolbox.fbi_ucr.registry import (
+    COUNTED_ENTITY_BASES,
+    MEASURE_FORMS,
     SUMMARIZED_VIOLENT_CRIME,
     agency_directory_endpoint,
 )
@@ -47,9 +49,13 @@ PRODUCT = SUMMARIZED_VIOLENT_CRIME
 SOURCE_CODE = "FBI_UCR"
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "fbi_ucr"
 
-#: Two measure forms x two counted entities x six months, per subject.
-OBSERVATIONS_PER_SUBJECT = 24
 PERIODS = len(PRODUCT.expected_periods)
+
+#: Two measure forms x two counted entities, for every registered period. Each
+#: registered period reconciles to exactly one row, so the count follows the
+#: product window rather than the months the reviewed fixture reports: periods
+#: the fixture leaves out land as ``not_reported`` observations.
+OBSERVATIONS_PER_SUBJECT = len(MEASURE_FORMS) * len(COUNTED_ENTITY_BASES) * PERIODS
 
 #: Geographies the reviewed Wisconsin sample resolves against.
 SEEDED_GEOGRAPHIES: tuple[dict[str, object], ...] = (
