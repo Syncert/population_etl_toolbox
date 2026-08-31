@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; ready for human review
-- **Next pickup:** None. Every DQ ticket is delivered and both recorded residuals are closed; see the evidence entries below.
+- **Status:** Accepted by human review on 2026-08-31; complete
+- **Next pickup:** None. Every DQ ticket is delivered, both recorded residuals are closed, and the plan was accepted into `completed/` on 2026-08-31.
 - **Resolved (ledger semantics for superseded runs, decided 2026-08-31):** The user decided that **aborted runs finalize their control rows before assessments**, rather than teaching each ledger rule to assess only the latest run per partition. The second option would have given every rule its own notion of supersession and left the control plane permanently inconsistent with itself. Implemented and verified — see the "Aborted-run finalization" evidence entry below.
 - **Resolved (DQ-004 fact-level injections, 2026-08-31):** PEP and FBI fact-level defects are now fixture-driven in `tests/integration/database/test_fact_quality_injections.py`. The separate pre-existing observation stands and is unrelated to this plan: the database integration tier is not repeatable across two consecutive sessions against one persistent local database, because several suites leak committed control rows; CI's fresh disposable container never hits it, and every run recorded here started from a freshly created warehouse.
 - **Completed evidence:**
