@@ -16,3 +16,5 @@ Current sequence:
 8. `010_cdc_pipeline.sql` adds the CDC capture, silver, and gold contract.
 9. `011_fbi_ucr_pipeline.sql` adds the FBI UCR capture, silver, and gold contract, including `control.fbi_ucr_release`, the `silver_fbi` release/agency/observation model, and the `gold_fbi` publication views.
 10. `012_usda_nass_crop_pipeline.sql` adds the USDA NASS Quick Stats capture, silver, and gold crop-data contract.
+11. `013_data_quality_evidence.sql` adds the append-only warehouse data-quality run and result evidence tables.
+12. `014_fbi_publisher_measure_identity.sql` replaces `gold_fbi.metric_publisher` so it exposes one row per measure identity instead of one per published release, which made the glossary harvest fail once a second FBI release was published.

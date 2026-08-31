@@ -171,6 +171,69 @@ def test_latest_fallback_query_builders_rank_each_geography(
     assert params["metric_code"] == "UNEMP"
 
 
+def _select_output_names(select_sql: str) -> list[str]:
+    """Return each select entry's output name, ignoring commas inside calls."""
+    names: list[str] = []
+    depth = 0
+    current = ""
+    for character in select_sql:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        if character == "," and depth == 0:
+            names.append(current)
+            current = ""
+        else:
+            current += character
+    names.append(current)
+    return [
+        entry.strip().rsplit(" AS ", 1)[-1].strip()
+        for entry in names
+        if entry.strip()
+    ]
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        observation_queries.build_latest_rpt_fallback_queries,
+        observation_queries.build_latest_rpt_fallback_queries_legacy,
+        lambda metric_code, geo_level, state_fips, limit, offset: (
+            observation_queries.build_latest_rpt_fallback_queries_for_schema(
+                "gold_fred", metric_code, geo_level, state_fips, limit, offset
+            )
+        ),
+    ],
+)
+def test_latest_fallback_projects_every_column_without_duckdb_syntax(builder) -> None:
+    """Covers: API-027 — the ranked fallback is valid PostgreSQL.
+
+    ``SELECT * EXCEPT(rn)`` parses in DuckDB and BigQuery and nowhere in
+    PostgreSQL, so the fallback raised a ProgrammingError on the exact request
+    it exists to serve: a metric the primary latest view has no row for. The
+    endpoint answered 503 instead of an empty result.
+    """
+    list_query, _count_query, _params = builder("UNEMP", None, None, 5, 0)
+    rendered = str(list_query)
+
+    assert "EXCEPT(" not in rendered
+    projection = rendered.split("FROM ranked", 1)[0].rsplit(" SELECT ", 1)[-1]
+    assert _select_output_names(projection) == list(
+        observation_queries._OBSERVATION_COLUMNS
+    )
+
+
+def test_fallback_projection_matches_both_ranked_select_lists() -> None:
+    """Covers: API-027 — the projection cannot drift from the ranked CTE."""
+    expected = list(observation_queries._OBSERVATION_COLUMNS)
+    for select_sql in (
+        observation_queries._MVP_SELECT,
+        observation_queries._LEGACY_SELECT,
+    ):
+        assert _select_output_names(select_sql) == expected
+
+
 def test_source_latest_fallback_query_targets_source_schema() -> None:
     """Covers: API-027 — source fallback uses the durable source view."""
     list_query, count_query, params = (

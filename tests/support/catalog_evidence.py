@@ -23,7 +23,7 @@ AUDITED_COUNTS = {
     "DEPLOY": 5,
     "MARTIN": 10,
     "EXT": 14,
-    "E2E": 7,
+    "E2E": 13,
     "PERF": 10,
     "RES": 8,
 }
