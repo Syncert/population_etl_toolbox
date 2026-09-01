@@ -25,8 +25,14 @@ from apps.api.schemas.catalog import (
     FreshnessListResponse,
 )
 from apps.api.schemas.observations import (
+    MetricRelease,
+    MetricReleaseListResponse,
+    NeutralObservation,
+    NeutralObservationListResponse,
+    ObservationCoverage,
     ObservationDashboard,
     ObservationListResponse,
+    ObservationUncertainty,
 )
 from apps.api.schemas.cdc import (
     CdcObservation,
@@ -70,6 +76,8 @@ __all__ = [
     "MetricCapability",
     "MetricCatalog",
     "MetricListResponse",
+    "MetricRelease",
+    "MetricReleaseListResponse",
     "ModelSurfaceStatusResponse",
     "NassMeasureListResponse",
     "NassMeasureRow",
@@ -79,7 +87,11 @@ __all__ = [
     "NassSeriesRow",
     "NassSourceNote",
     "NassSourceNotesResponse",
+    "NeutralObservation",
+    "NeutralObservationListResponse",
+    "ObservationCoverage",
     "ObservationDashboard",
     "ObservationListResponse",
+    "ObservationUncertainty",
     "SourceSystem",
 ]

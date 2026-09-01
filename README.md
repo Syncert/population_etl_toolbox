@@ -220,8 +220,18 @@ Provider-neutral endpoints:
   and per-route filter names for every completed source
 - `GET /api/v1/catalog/freshness` — per-source publication and freshness
   state rolled up from the harvested glossary
-- `GET /api/v1/observations/latest`
-- `GET /api/v1/observations/timeseries`
+- `GET /api/v1/observations` — observations for any completed source's metric,
+  dispatched through the reviewed registry to the owning source's serving
+  relations. `scope=latest` (default) serves the source's own latest
+  publication; `scope=as_released` serves every published release, optionally
+  pinned with `release=`. Filters beyond the universal parameters are
+  per-source and declared by `/api/v1/catalog/capabilities`; an unsupported
+  filter is rejected with an explanation
+- `GET /api/v1/observations/releases` — the published release identities
+  holding a metric's observations, newest first
+- `GET /api/v1/observations/latest` — legacy shape; serves the three sources
+  published into the cross-source union views (Census ACS, BLS, FRED)
+- `GET /api/v1/observations/timeseries` — legacy shape; same three sources
 - `GET /api/v1/distribution/bins`
 - `GET /api/v1/comparison`
 - `GET /api/v1/models/status`

@@ -38,9 +38,12 @@ from data_ingestion_toolbox.sql.observation_queries import (
     build_timeseries_queries,
 )
 
-#: The provider-neutral contract views. They union the three sources that
-#: predate the per-source serving contracts; API-004 replaces this pair with
-#: registry dispatch so every source is reachable through the neutral routes.
+#: The cross-source contract views behind the legacy latest/timeseries pair.
+#: They union the three sources that predate the per-source serving contracts.
+#: API-004 did not widen them: every source is reachable through the
+#: registry-dispatched ``/observations`` resource instead
+#: (``neutral_observations_service``), and this pair stays as the compatibility
+#: surface `apps/web` consumes until API-008 retires it.
 CROSS_SOURCE_LATEST_RELATION = "gold.v_metric_latest_by_geo"
 CROSS_SOURCE_HISTORY_RELATION = "gold.v_metric_timeseries_by_geo"
 

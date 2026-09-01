@@ -283,21 +283,21 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-041 | None |
+| API | API-001–API-048 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
-| End-to-end | E2E-001–E2E-007 | None |
+| End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **193 of 193** | **0 of 193** |
+| **Total** | **201 of 201** | **0 of 201** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 219-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 227-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -546,6 +546,13 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-039 | P0 | Router / `unit api` | Source capability metadata | Every completed source appears in the capability resource in stable order with its route segment, neutral-route reachability, registered dataset identities read from the source registries, and per-route filter names read from the served contract; a source with no observation surface reports an empty route list rather than being omitted | A completed source missing from capabilities, an advertised route or filter the application does not serve, dataset identities drifting from the source registries, or an unreachable source presented as queryable |
 | API-040 | P0 | Router / `unit api` | Publication freshness rollup | The freshness resource reports each source's published metric counts by `freshness_state` with latest publication and harvest times from the glossary, in deterministic order, and an unharvested glossary yields an empty list | Freshness recomputed from warehouse internals, a source's published state misreported, or an empty glossary answered with an error |
 | API-041 | P0 | Router / `unit api` | Catalog ordering and empty results | Catalog lists declare deterministic ordering (`metric_code`, `geo_id`, `source_code`) and a filter matching nothing returns a stable empty page with exact totals | Undeclared or unstable ordering, or an empty result surfacing as an error or a malformed page |
+| API-042 | P0 | Registry / `unit api` | Neutral observation registry dispatch | A requested metric resolves to its owning source through `gold_glossary.dim_metric` and is answered from that source's own reviewed relations; lineage-derived identity is always bound, a publication/registry disagreement or missing lineage identity stops the read and answers the sanitized 503, a source without a reviewed dispatch entry is a 422 explanation, and an unknown metric code is a stable 404 | Identity reaching SQL unbound, drifted lineage silently reading the wrong rows, an undeclared source answered from a guessed relation, or an unknown metric surfacing as an empty page or a 500 |
+| API-043 | P0 | Router / `unit api` | Neutral per-source filter contract | A filter the owning source does not declare is rejected with a 422 naming the unsupported and supported filters before any serving query; a declared filter binds its reviewed condition; `release` requires `scope=as_released`; a reversed year window is a 422 | A filter silently ignored into a wrong page, an undeclared filter reaching SQL, or a contradictory release/scope or year window served instead of explained |
+| API-044 | P0 | Service / `unit api` | Neutral envelope fidelity | Suppressed, missing, withheld, and not-reported values keep `value` null with the source's own `value_status`; a source publishing no status vocabulary serves null, distinguishable from `valid`; source dimensions, uncertainty, and FBI participation coverage survive under their published names; a known metric with no rows is a stable empty page | Any coercion of non-numeric values, an invented status, a dropped source dimension or coverage field, or an empty result surfacing as an error |
+| API-045 | P0 | Router / `unit api` | Metric release discovery | `/observations/releases` lists a metric's published release identities newest-first with observation counts and any published as-of date, from the owning source's as-released relation only | Release identities missing, unordered, multi-counted across sources, or served from a relation the registry does not declare |
+| API-046 | P0 | Registry / `unit api` | Declared neutral capability round trip | Every neutral path the discovery registry declares per source is actually served, every completed source has both a discovery and a dispatch entry and reports `served_by_neutral_routes` true, and every declared per-source filter is an accepted query parameter of the neutral route | A declared-but-unserved path, a source discoverable but not dispatchable, or a capability filter the route would reject |
+| API-047 | P0 | Registry / `unit api` | Neutral dispatch allowlist and ordering | Every dispatch relation is in `ALLOWED_OBSERVATION_RELATIONS` inside its own source's schema with exactly one declared metric-identity strategy, and every rendered dispatch query names only allowlisted relations with deterministic `ORDER BY` and bound `LIMIT`/`OFFSET` | A dispatch query naming an undeclared relation, ambiguous identity strategy, or unordered pagination |
+| API-048 | P0 | Contract / `integration api database` | Real-database neutral observation contract | Against the manifest-built warehouse with seeded serving and glossary fixtures, `/api/v1/observations` (latest and as-released) and `/api/v1/observations/releases` return exact identities, values, release identities, and totals for union-family metrics, and repeating an identical request returns byte-identical JSON | Wrong rows, lost release identity, unstable ordering or serialization, or drift between the dispatch SQL and the real serving contracts |
 
 ### Frontend Tests
 
@@ -627,6 +634,7 @@ End-to-end fixtures contain normal rows, duplicates, a revision, a dimension mis
 | E2E-011 | P1 | E2E / `e2e database slow` | USDA NASS crop fixture to API | Reviewed survey, census, suppressed, CV, and revised crop slices pass raw capture -> silver -> gold -> `/api/usda-nass` retaining exact `Value` text, parsed value, unit, CV, suppression, source program, domain, and revision context | A suppressed or non-numeric value becomes zero, a classification dimension is lost, or incompatible units, domains, or programs are combined in one response |
 | E2E-012 | P1 | E2E / `e2e database slow` | Combined product run | Every registered product node executes together in one disposable warehouse, is order independent, and leaves no test-owned capture, control, silver, gold, reference, or publisher row behind | A product passes alone but fails beside another, or post-suite reconciliation finds residual fixture state |
 | E2E-013 | P1 | E2E / `e2e database slow` | Product teardown after failure | Fixture teardown removes every tracked row after a deliberate in-test assertion failure, leaving the shared warehouse usable by any later ordering | Teardown runs only on success, or a failing node leaves capture, control, silver, reference, or publisher rows behind |
+| E2E-014 | P1 | E2E / `e2e database slow` | Neutral observation dispatch end to end | For each dispatch-only source (CDC, FBI UCR, USDA NASS, Census PEP), a glossary-discovered metric queried through `/api/v1/observations` and `/api/v1/observations/releases` returns exact fixture identities, values, release identities, suppression/participation semantics, and — for FBI UCR, its first observation surface — byte-identical JSON on repeat against an unchanged publication | A discovered metric the neutral resource cannot answer, a value or status differing from the source's own route, a lost release identity, or unstable serialization |
 
 ### Performance, Concurrency, and Resilience Tests
 

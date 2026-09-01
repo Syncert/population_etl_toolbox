@@ -11,6 +11,7 @@ bushels, and bushels-per-acre never share one series identity.
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 
 import pytest
 from psycopg2.extensions import connection
@@ -74,6 +75,9 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         the release it supersedes stays queryable as released.
     Covers: E2E-006 — a withheld value keeps its provider symbol and a null
         number rather than becoming a zero.
+    Covers: E2E-014 — a glossary-discovered NASS metric answers through the
+        registry-dispatched neutral resource with the same releases, values,
+        and withheld semantics its own route serves.
     """
     factory = nass_warehouse
 
@@ -283,3 +287,60 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             harvested
         )
         assert {"ACRES", "BU"} <= {item["units"] for item in catalog_payload["items"]}
+
+        # Covers: E2E-014 — the neutral resource answers the same publication
+        # the NASS route serves, resolved through the published lineage.
+        revised_row = as_released[1]
+        production_metrics = [
+            item
+            for item in catalog_payload["items"]
+            if item["physical_lineage"]["product_id"] == REVISED_PRODUCT
+            and item["physical_lineage"]["statisticcat_desc"] == "PRODUCTION"
+            and item["metric_display_name"] == revised_row["short_desc"]
+        ]
+        assert len(production_metrics) == 1
+        production_metric = production_metrics[0]["metric_code"]
+
+        neutral_latest = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": production_metric,
+                "geo_id": REVISED_GEO_ID,
+                "limit": 100,
+            },
+        )
+        assert neutral_latest.status_code == 200
+        neutral_payload = neutral_latest.json()
+        assert neutral_payload["source_code"] == SOURCE_CODE
+        assert neutral_payload["total"] == 1
+        (neutral_row,) = neutral_payload["items"]
+        assert neutral_row["release"] == watermark
+        assert neutral_row["value_status"] == "valid"
+        assert Decimal(neutral_row["value"]) == Decimal(str(revised_row["value"]))
+        assert neutral_row["unit"] == revised_row["unit_desc"]
+        assert neutral_row["dimensions"]["short_desc"] == revised_row["short_desc"]
+        assert neutral_row["dimensions"]["domain_desc"] == "TOTAL"
+
+        neutral_history = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": production_metric,
+                "scope": "as_released",
+                "geo_id": REVISED_GEO_ID,
+                "limit": 100,
+            },
+        ).json()
+        assert neutral_history["total"] == 2
+        withheld_neutral = next(
+            row for row in neutral_history["items"] if row["value_status"] == "withheld"
+        )
+        assert withheld_neutral["value"] is None
+        assert withheld_neutral["dimensions"]["suppression_code"] == "(D)"
+
+        release_listing = client.get(
+            "/api/v1/observations/releases",
+            params={"metric_code": production_metric},
+        ).json()
+        listed = [item["release"] for item in release_listing["items"]]
+        assert listed[0] == watermark
+        assert as_released[0]["release_watermark"] in listed

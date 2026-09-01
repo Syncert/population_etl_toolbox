@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from apps.api.registry import (
     ALLOWED_OBSERVATION_RELATIONS,
+    OBSERVATION_DISPATCH,
     SERVING_CONTRACTS,
     UnknownServingContract,
     serving_contract,
@@ -85,11 +86,20 @@ def test_every_contract_declares_relations_inside_its_own_schema() -> None:
 
 
 def test_allowlist_is_exactly_the_declared_relations() -> None:
-    """Covers: API-034 — no relation reaches SQL without being declared."""
+    """Covers: API-034 — no relation reaches SQL without being declared.
+
+    Since API-004 the allowlist is the union of the per-source serving
+    contracts and the neutral observation dispatch entries; both registries
+    are reviewed constants, and nothing outside them may name a relation.
+    """
     expected = {
         relation
         for contract in SERVING_CONTRACTS.values()
         for relation in (contract.latest_relation, contract.history_relation)
+    } | {
+        relation
+        for dispatch in OBSERVATION_DISPATCH.values()
+        for relation in (dispatch.latest_relation, dispatch.released_relation)
     }
     assert ALLOWED_OBSERVATION_RELATIONS == expected
     assert all(relation.startswith("gold_") for relation in expected)

@@ -20,7 +20,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from apps.api.registry import (
-    NEUTRAL_OBSERVATION_PREFIXES,
+    OBSERVATION_DISPATCH,
     SOURCE_DISCOVERY,
     SourceDiscovery,
 )
@@ -126,22 +126,33 @@ def _versioned_get_operations(openapi_paths: dict[str, Any]) -> dict[str, list[s
 def _routes_for(
     discovery: SourceDiscovery, operations: dict[str, list[str]]
 ) -> list[ObservationRouteCapability]:
-    """The versioned routes that answer queries over one source's data."""
+    """The versioned routes that answer queries over one source's data.
+
+    Neutral routes match by the exact paths the registry declares per source,
+    not by prefix: the legacy latest/timeseries pair and the analysis routes
+    still read the three-source union views, and advertising them for a
+    dispatch-only source would recreate the silent empty page the capability
+    resource exists to prevent.
+    """
     matched: list[str] = []
     if discovery.route_segment is not None:
         segment_prefix = f"{VERSIONED_ROOT}/{discovery.route_segment}/"
         matched.extend(path for path in operations if path.startswith(segment_prefix))
-    if discovery.served_by_neutral_routes:
-        for prefix in NEUTRAL_OBSERVATION_PREFIXES:
-            exact = f"{VERSIONED_ROOT}{prefix.rstrip('/')}"
-            nested = f"{VERSIONED_ROOT}{prefix}"
-            matched.extend(
-                path for path in operations if path == exact or path.startswith(nested)
-            )
+    matched.extend(
+        path
+        for relative in discovery.neutral_paths
+        if (path := f"{VERSIONED_ROOT}{relative}") in operations
+    )
     return [
         ObservationRouteCapability(path=path, parameters=operations[path])
         for path in sorted(set(matched))
     ]
+
+
+def _observation_filters_for(source_code: str) -> list[str]:
+    """The neutral observation filters the source's dispatch entry declares."""
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return list(dispatch.supported_filters()) if dispatch is not None else []
 
 
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
@@ -155,6 +166,7 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             served_by_neutral_routes=discovery.served_by_neutral_routes,
             datasets=list(discovery.registered_datasets()),
             observation_routes=_routes_for(discovery, operations),
+            observation_filters=_observation_filters_for(discovery.source_code),
         )
         for discovery in sorted(
             SOURCE_DISCOVERY.values(), key=lambda entry: entry.source_code
@@ -188,6 +200,7 @@ def get_metric_capability(
         operations = _versioned_get_operations(openapi_paths)
         capability.served_by_neutral_routes = discovery.served_by_neutral_routes
         capability.observation_routes = _routes_for(discovery, operations)
+        capability.observation_filters = _observation_filters_for(discovery.source_code)
     return capability
 
 

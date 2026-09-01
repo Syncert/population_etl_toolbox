@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001, API-002, and API-003 are complete. API-004 is the next ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-004 are complete. API-005 is the next ticket.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-003 delivered — discovery now answers the coverage matrix instead of hiding it: `/api/v1/catalog/capabilities` states, for every completed source, which routes and filters reach it and whether the neutral routes can answer; `/api/v1/catalog/metrics/{metric_code}` gives one metric's published semantics plus its serving routes with a stable 404; `/api/v1/catalog/freshness` serves the glossary's per-source publication state; and the catalog's four-way legacy relation probing is retired for glossary-only reads that fail explicitly. The reviewed OpenAPI snapshot moved additively — 169 inserted lines, zero removed.
-- **Next pickup:** API-004 (observation and revision resources). The registry dispatch decision recorded under API-001 closes the neutral-route gap for the four unreachable sources and gives FBI UCR its first observation surface; when it lands, the `served_by_neutral_routes` flags in `apps/api/registry.py` flip in the same reviewed change and the capability resource reports the new reach without a shape change. The comparison/distribution services' own `_relation_exists` probing is recorded below as API-005's.
+- **Current milestone:** API-004 delivered — the registry dispatch recorded under API-001 is live: `GET /api/v1/observations` and `GET /api/v1/observations/releases` resolve any completed source's metric through the published glossary and answer from that source's own reviewed serving relations, preserving release identity, typed suppression, uncertainty, participation coverage, and source dimensions. All seven sources are now queryable through the neutral surface — FBI UCR for the first time — and the capability resources report the new reach. The reviewed OpenAPI snapshot moved additively — 534 inserted lines, zero removed.
+- **Next pickup:** API-005 (comparison and derived analysis). `list_metric_comparison` still joins any two metric codes on geography with no unit, universe, time-grain, or method check, and the comparison/distribution services still carry their own `_relation_exists` probing over the three-source union views; both are recorded below as API-005's. The declared per-source semantics the dispatch registry now carries (`units`, `measure_kind`, `aggregation_characteristic`, grains) are the inputs the compatibility rules should read.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -598,6 +598,184 @@ resources are two glossary reads and one registry projection — and no existing
 response shape changed, so the browser consumer has nothing new to regress
 against. Both run in their scheduled jobs.
 
+## API-004 delivery record (2026-09-01)
+
+The public contract moved additively: 534 inserted snapshot lines, zero
+removed — four new operations (two resources, each under `/api/v1` and its
+legacy alias), six new response schemas, and one new optional field
+(`observation_filters`) on the two capability schemas. No existing operation,
+bound, or field changed.
+
+### The neutral observation resource
+
+`GET /observations` answers any completed source's metric. The metric resolves
+to its owning source through `gold_glossary.dim_metric` and the read
+dispatches through `apps/api/registry.py::OBSERVATION_DISPATCH` — one reviewed
+entry per source declaring its latest and as-released relations, its
+metric-identity strategy, its projection onto the neutral envelope, its
+supported filters, and its deterministic ordering. The union views were not
+widened; each source is read from its own relations, which is how release
+identity, stratum, agency participation, and typed suppression survive intact.
+The service is `apps/api/services/neutral_observations_service.py`; the legacy
+`/observations/latest` + `/observations/timeseries` pair is untouched and
+stays the `apps/web` compatibility surface until API-008.
+
+`scope=latest` (default) serves the source's own latest semantics —
+`latest_release_observation` for the release-keyed sources,
+`mv_*_latest`/`population_estimate_latest` for the others. `scope=as_released`
+serves every published release with each row carrying its release identity,
+optionally pinned with `release=`; a pin without `as_released` is a 422,
+because "the latest publication, but an old one" is a contradiction, not a
+query. `GET /observations/releases` lists a metric's release identities
+newest-first with observation counts, so a client can discover what to pin.
+
+### Metric identity is published, not parsed
+
+Three declared strategies, exactly one per source, verified by API-047:
+
+- **Requested code binds directly** (BLS, FRED): their serving relations carry
+  the same composed `metric_code` the glossary publishes.
+- **The lineage key bridges a real identity mismatch** (Census ACS, Census
+  PEP). Finding recorded here because nothing else records it: the glossary
+  publishes ACS metrics as `CENSUS_ACS:<dataset>:<variable>` while the ACS
+  serving relations spell the same identity `ACS:<dataset>:<variable>`, and
+  PEP's glossary code (`CENSUS_PEP:<measure>`) omits the dataset its
+  `rpt`/`mv` relations embed. A glossary-discovered ACS or PEP code queried
+  against those relations' `metric_code` column matches nothing — the
+  discovery→query loop was broken for both sources, hidden by fixtures that
+  seeded both sides with the same token. The published `physical_lineage.key`
+  is the bridge (PEP dispatches to `population_estimate_revision`/`_latest`,
+  which carry the bare measure code); renaming published codes would have been
+  a breaking warehouse change and was not made.
+- **Discrete lineage identity fields** (CDC, FBI UCR, USDA NASS):
+  `physical_lineage` carries `asset_id`/`measure_id`/`value_type_id`,
+  `product_id`/`measure_id`, `product_id`/`statistic_sk`/… matching same-named
+  relation columns, bound as parameters.
+
+Whenever lineage is read, its declared `schema`/`relation` must equal the
+registry's; a disagreement (or a missing identity field) stops the read before
+any query and answers the same sanitized 503 as a database outage, with the
+detail in the server log. Drifted lineage must never silently read the wrong
+rows. For the direct-code sources lineage is not read, so an integration
+fixture that seeds no lineage still works and no false fault can be invented
+from an empty `{}`.
+
+### The envelope preserves source semantics
+
+`NeutralObservation` types the core every source can fill honestly —
+source/metric identity, geography, period bounds as text, release identity,
+as-of where published, `value` as text for provider precision, `value_status`
+in the source's own vocabulary (`null` when the source publishes none, which
+is distinguishable from `valid`), unit — and carries everything else under the
+source's published names: `dimensions` (stratum and strata JSON for CDC,
+subject/offense/program for FBI, commodity/domain/practice descriptors for
+NASS, dataset/vintage identity for the Census family), a typed `uncertainty`
+object (MOE, confidence bounds, CV trio) that is `null` when the source
+publishes none, and a typed `coverage` object for FBI participation. A
+suppressed, withheld, missing, or not-reported value keeps `value = null`
+with its status and its context (footnotes, suppression codes, participation)
+— nothing becomes zero.
+
+### The filter contract is declared per source
+
+The route accepts the filter union the completed sources require (`geo_id`,
+`geo_level`, `state_fips`, `county_fips`, `stratum_id`, `adjustment_status`,
+`domain_desc`, `domaincat_desc`, `subject_type`, `subject_code`,
+`year_from`/`year_to`), but each source's dispatch entry declares which of
+them it supports and the exact reviewed condition each binds. An unsupported
+filter is a 422 naming the offending and the supported filters — never
+silently ignored, because an ignored filter is a silently wrong page. The
+capability resources now publish the per-source list as
+`observation_filters`, and API-046 proves every declared filter is a
+parameter the route actually accepts.
+
+### Capabilities now tell the whole truth
+
+`served_by_neutral_routes` is true for all seven sources, and
+`SourceDiscovery` now declares exact neutral paths per source instead of
+shared prefixes: every source lists `/observations` and
+`/observations/releases`; only the three union-published sources also list
+the legacy latest/timeseries pair and `/comparison` + `/distribution/bins`,
+which still read the three-source union until API-005 rebuilds them.
+Advertising those for a dispatch-only source would have recreated the silent
+empty page. FBI UCR now reports a non-empty route list; its `route_segment`
+stays `None` because its observation surface *is* the neutral resource.
+
+### Pagination decision
+
+Bounded offset pagination with declared deterministic ordering per source and
+scope (unique tiebreakers: `observation_sk` for the stratified sources,
+series/date identity for the union family; as-released ordering leads with
+release identity descending). Cursor pagination was evaluated and deferred:
+the plan permits offset where its limits are explicit and tested, no current
+consumer pages past offset depths where keyset pagination wins, and
+introducing a cursor contract now would freeze a shape API-006's cache and
+budget work may want to inform. Recorded as an explicit revisit at API-006.
+
+### Evidence
+
+Unit rows API-042–API-047 (`tests/unit/api/test_neutral_observations.py`)
+cover dispatch and identity binding, the filter contract, envelope fidelity,
+release discovery, the declared-capability round trip, and the allowlist —
+`ALLOWED_OBSERVATION_RELATIONS` is now the union of the serving contracts and
+the dispatch relations, and API-034's pin was extended to match. Integration
+row API-048 (`tests/integration/api/test_real_database_contract.py`) proves
+the dispatch SQL against the real serving contracts, including byte-identical
+JSON on repeated identical requests. E2E row E2E-014 extends all four
+dispatch-only pipelines: CDC (neutral answers match the CDC route's totals
+and values, suppression and stratum intact, both releases listed and
+pinnable), USDA NASS (withheld semantics and the revised release through
+lineage resolution), Census PEP (both vintages of the revised national
+estimate, place identity, no invented uncertainty, and the legacy union route
+still honestly empty), and FBI UCR (its first observation queries: exact
+national values per release, an unreported agency month staying null with
+`no_participation` coverage, and byte-identical JSON on repeat). One fixture
+lesson recorded: the FBI product registers periods back to 1990, so the e2e
+assertions scope with `year_from`/`year_to` — which also exercises the
+date-typed year conditions.
+
+The audited API count moves 41 → 48, E2E 13 → 14, and the evidence register
+219 → 227 (`TESTING_CONTRACT.md`, `tests/support/catalog_evidence.py`,
+`tests/unit/shared/test_catalog_evidence.py`). `CI_EVIDENCE_MAP.md` names the
+observation-dispatch registry and neutral resource under `api-unit` and
+extends the data-product E2E row to E2E-014. `README.md` documents the two
+resources and marks the legacy pair's three-source scope;
+`ADDING_A_DATA_SOURCE.md` adds the dispatch-registry step.
+
+### Deferred, deliberately
+
+- The comparison/distribution rebuild and their `_relation_exists` probing —
+  API-005, unchanged.
+- Widening `/comparison` and `/distribution/bins` beyond the union three —
+  API-005, on declared compatibility rules.
+- Cache freshness tied to publication watermarks, and the cursor-pagination
+  revisit — API-006.
+- The legacy latest/timeseries pair, the `/api` aliases (the new resources
+  ride them by construction, ADR-0002), and `metric_aliases.py` — API-008.
+- The CI evidence gap from API-001 (`redis-integration` claiming rows it does
+  not run) — API-006, unchanged.
+
+### Validation
+
+All commands run on 2026-09-01 against freshly created pinned disposable
+services (PostGIS 16-3.5 on 55432, Redis 7.4.9 on 56379), with
+`TEST_POSTGRES_*` and `TEST_REDIS_URL` (loopback database 15) exported as the
+integration tier requires.
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 192 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1164 passed |
+| API + Redis integration | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis` | 17 passed, 0 skipped |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 68s, freshly recreated warehouse |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean, 410 files |
+
+Not run, and recorded as not run: `make test-performance` and the frontend
+contract commands. The new resources add operations without touching any
+performance-baselined path — the legacy routes issue exactly the queries they
+did — and no existing response shape changed, so the browser consumer has
+nothing new to regress against. Both run in their scheduled jobs.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -640,6 +818,8 @@ against. Both run in their scheduled jobs.
 - Establish bounded cursor or offset pagination and deterministic order for high-cardinality queries.
 
 **Acceptance:** Deterministic fixtures for every completed source return exact expected identities, values, semantics, totals, and revision histories; replay produces byte-equivalent API JSON where the publication is unchanged.
+
+**Status: complete (2026-09-01).** See "API-004 delivery record" above. Every completed source answers through the registry-dispatched `/api/v1/observations` and `/api/v1/observations/releases` with its own release, suppression, uncertainty, coverage, and dimensional semantics; fixture evidence spans unit doubles (API-042–047), the real-database contract (API-048), and all four dispatch-only pipelines end to end (E2E-014), including byte-identical JSON on repeat against unchanged publications.
 
 ### API-005 — Comparison and derived analysis
 

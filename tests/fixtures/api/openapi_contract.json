@@ -837,6 +837,181 @@
         "models"
       ]
     },
+    "GET /api/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "adjustment_status",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 3
+          },
+          "in": "query",
+          "name": "county_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "domaincat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "as_released"
+            ]
+          },
+          "in": "query",
+          "name": "scope",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "stratum_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "subject_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "subject_type",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_from",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_to",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NeutralObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
     "GET /api/observations/latest": {
       "parameters": [
         {
@@ -899,6 +1074,48 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/observations/releases": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricReleaseListResponse",
         "422": "application/json:HTTPValidationError"
       },
       "tags": [
@@ -2258,6 +2475,181 @@
         "models"
       ]
     },
+    "GET /api/v1/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "adjustment_status",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 3
+          },
+          "in": "query",
+          "name": "county_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "domaincat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "as_released"
+            ]
+          },
+          "in": "query",
+          "name": "scope",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "stratum_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "subject_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "subject_type",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_from",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1700
+          },
+          "in": "query",
+          "name": "year_to",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NeutralObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
     "GET /api/v1/observations/latest": {
       "parameters": [
         {
@@ -2320,6 +2712,48 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/v1/observations/releases": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricReleaseListResponse",
         "422": "application/json:HTTPValidationError"
       },
       "tags": [
@@ -3072,6 +3506,7 @@
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
         "physical_lineage": "object | null",
         "publication_time": "string(date-time) | null",
@@ -3125,6 +3560,35 @@
         "items",
         "limit",
         "offset",
+        "total"
+      ]
+    },
+    "MetricRelease": {
+      "properties": {
+        "as_of": "string | null",
+        "observation_count": "integer",
+        "release": "string"
+      },
+      "required": [
+        "observation_count",
+        "release"
+      ]
+    },
+    "MetricReleaseListResponse": {
+      "properties": {
+        "items": "array<MetricRelease>",
+        "limit": "integer",
+        "metric_code": "string",
+        "offset": "integer",
+        "source_code": "string",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "metric_code",
+        "offset",
+        "source_code",
         "total"
       ]
     },
@@ -3376,6 +3840,63 @@
         "total"
       ]
     },
+    "NeutralObservation": {
+      "properties": {
+        "as_of": "string | null",
+        "capture_id": "string | null",
+        "coverage": "ObservationCoverage | null",
+        "dimensions": "object",
+        "geo_id": "string | null",
+        "geo_level": "string | null",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "period_end": "string | null",
+        "period_start": "string | null",
+        "release": "string | null",
+        "source_code": "string",
+        "source_record_id": "string | null",
+        "uncertainty": "ObservationUncertainty | null",
+        "unit": "string | null",
+        "value": "string | null",
+        "value_status": "string | null"
+      },
+      "required": [
+        "metric_code",
+        "source_code"
+      ]
+    },
+    "NeutralObservationListResponse": {
+      "properties": {
+        "items": "array<NeutralObservation>",
+        "limit": "integer",
+        "metric_code": "string",
+        "offset": "integer",
+        "release": "string | null",
+        "scope": "string",
+        "source_code": "string",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "metric_code",
+        "offset",
+        "scope",
+        "source_code",
+        "total"
+      ]
+    },
+    "ObservationCoverage": {
+      "properties": {
+        "coverage_basis": "string | null",
+        "coverage_percent": "string | null",
+        "participated_population": "string | null",
+        "participation_status": "string | null",
+        "population": "string | null",
+        "population_denominator": "string | null"
+      },
+      "required": []
+    },
     "ObservationDashboard": {
       "properties": {
         "as_of_date": "any | null",
@@ -3437,10 +3958,23 @@
         "path"
       ]
     },
+    "ObservationUncertainty": {
+      "properties": {
+        "confidence_lower": "string | null",
+        "confidence_upper": "string | null",
+        "cv_status": "string | null",
+        "cv_symbol": "string | null",
+        "cv_value": "string | null",
+        "margin_of_error": "string | null",
+        "margin_of_error_pct": "string | null"
+      },
+      "required": []
+    },
     "SourceCapability": {
       "properties": {
         "datasets": "array<string>",
         "display_name": "string",
+        "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
         "route_segment": "string | null",
         "served_by_neutral_routes": "boolean",

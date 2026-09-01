@@ -84,13 +84,13 @@ class ObservationRouteCapability(BaseModel):
 class SourceCapability(BaseModel):
     """How a discovering client reaches one completed source's data.
 
-    ``served_by_neutral_routes`` is the honest answer to the coverage gap the
-    API-001 audit recorded: the neutral observation, comparison, and
-    distribution routes answer for a source only when its rows are published
-    into the cross-source contract views. A source with ``false`` here and an
-    empty ``observation_routes`` list -- FBI UCR today -- is discoverable but
-    not yet queryable, which the capability resource states rather than leaving
-    the client to infer it from an empty page.
+    ``served_by_neutral_routes`` answers the coverage gap the API-001 audit
+    recorded. Since API-004's registry dispatch it is true for every completed
+    source: the neutral observation resource reaches each source through its
+    own serving relations. ``observation_routes`` lists exactly the routes
+    that answer for the source -- the legacy latest/timeseries pair and the
+    comparison/distribution routes appear only for the three sources still
+    published into the cross-source union views.
     """
 
     source_code: str
@@ -99,6 +99,11 @@ class SourceCapability(BaseModel):
     served_by_neutral_routes: bool
     datasets: list[str]
     observation_routes: list[ObservationRouteCapability]
+    #: Query parameters of the neutral observation resource that this source
+    #: supports beyond the parameters accepted for every source
+    #: (``metric_code``, ``scope``, ``release``, ``limit``, ``offset``). A
+    #: filter absent here is rejected with an explanation, never ignored.
+    observation_filters: list[str] = []
 
 
 class CapabilityListResponse(BaseModel):
@@ -116,6 +121,7 @@ class MetricCapability(MetricCatalog):
 
     served_by_neutral_routes: bool = False
     observation_routes: list[ObservationRouteCapability] = []
+    observation_filters: list[str] = []
 
 
 class SourceFreshness(BaseModel):

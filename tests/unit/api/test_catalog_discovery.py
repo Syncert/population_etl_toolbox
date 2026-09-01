@@ -203,13 +203,17 @@ def test_metric_detail_returns_published_semantics_and_routes() -> None:
     assert payload["valid_geo_grains"] == ["STATE"]
     assert payload["aggregation_characteristic"] == "not_additive"
     assert payload["freshness_state"] == "current"
-    assert payload["served_by_neutral_routes"] is False
+    assert payload["served_by_neutral_routes"] is True
     assert [route["path"] for route in payload["observation_routes"]] == [
-        "/api/v1/cdc/observations"
+        "/api/v1/cdc/observations",
+        "/api/v1/observations",
+        "/api/v1/observations/releases",
     ]
-    (cdc_route,) = payload["observation_routes"]
+    cdc_route = payload["observation_routes"][0]
     assert "dataset" in cdc_route["parameters"]
     assert "release" in cdc_route["parameters"]
+    assert "stratum_id" in payload["observation_filters"]
+    assert "domain_desc" not in payload["observation_filters"]
 
 
 def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None:
@@ -227,6 +231,8 @@ def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None
     assert payload["served_by_neutral_routes"] is True
     paths = {route["path"] for route in payload["observation_routes"]}
     assert {
+        "/api/v1/observations",
+        "/api/v1/observations/releases",
         "/api/v1/observations/latest",
         "/api/v1/observations/timeseries",
         "/api/v1/comparison",
@@ -268,12 +274,25 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
     neutral = {
         code for code, item in by_code.items() if item["served_by_neutral_routes"]
     }
-    assert neutral == {"BLS", "CENSUS_ACS", "FRED"}
+    assert neutral == set(SOURCE_DISCOVERY), (
+        "since API-004's registry dispatch every completed source is servable"
+    )
 
     fbi = by_code["FBI_UCR"]
     assert fbi["route_segment"] is None
-    assert fbi["observation_routes"] == []
+    assert [route["path"] for route in fbi["observation_routes"]] == [
+        "/api/v1/observations",
+        "/api/v1/observations/releases",
+    ]
     assert fbi["datasets"] == ["summarized_violent_crime"]
+    assert "subject_type" in fbi["observation_filters"]
+
+    # The analysis routes still read the three-source union views (API-005
+    # rebuilds them); advertising them for a dispatch-only source would be the
+    # silent empty page the capability resource exists to prevent.
+    cdc_paths = {route["path"] for route in by_code["CDC"]["observation_routes"]}
+    assert "/api/v1/comparison" not in cdc_paths
+    assert "/api/v1/observations/latest" not in cdc_paths
 
 
 def test_every_advertised_capability_route_is_actually_served() -> None:

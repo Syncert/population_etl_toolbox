@@ -413,3 +413,93 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
     )
     assert comparison.status_code == 200
     assert comparison.json()["items"][0]["difference"] == 105.0
+
+
+def test_real_neutral_observation_dispatch_and_releases(
+    real_api_fixture: tuple[TestClient, str, str],
+) -> None:
+    """Covers: API-048 — registry dispatch against the real serving contracts.
+
+    The neutral resource resolves the seeded FRED metric through the real
+    glossary contract, answers latest from ``gold_fred.mv_fred_latest`` and
+    as-released history from ``gold_fred.rpt_fred_observations``, lists the
+    release identities newest-first, and serializes deterministically:
+    repeating an identical request returns byte-identical JSON.
+    """
+    client, metric_a, _ = real_api_fixture
+
+    latest = client.get("/api/v1/observations", params={"metric_code": metric_a})
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["source_code"] == "FRED"
+    assert payload["scope"] == "latest"
+    assert payload["total"] == 1
+    (row,) = payload["items"]
+    assert row["metric_code"] == metric_a
+    assert row["geo_id"] == "us:1"
+    assert row["geo_level"] == "NATIONAL"
+    assert row["period_start"] == "2097-02-01"
+    assert row["period_end"] == "2097-02-28"
+    assert row["release"] == "2097-03-01"
+    assert row["as_of"] == "2097-03-01"
+    assert row["value"] == "20"
+    assert row["value_status"] is None
+    assert row["unit"] == "Index"
+    assert row["dimensions"]["series_id"].startswith("TEST_API_")
+    assert row["dimensions"]["seasonal_adjustment_status"] is None
+    assert row["uncertainty"] is None
+    assert row["coverage"] is None
+
+    released = client.get(
+        "/api/v1/observations",
+        params={"metric_code": metric_a, "scope": "as_released"},
+    )
+    assert released.status_code == 200
+    history = released.json()
+    assert history["total"] == 2
+    assert [item["value"] for item in history["items"]] == ["10", "20"]
+    assert [item["release"] for item in history["items"]] == [
+        "2097-02-01",
+        "2097-03-01",
+    ]
+
+    pinned = client.get(
+        "/api/v1/observations",
+        params={
+            "metric_code": metric_a,
+            "scope": "as_released",
+            "release": "2097-02-01",
+        },
+    )
+    assert pinned.status_code == 200
+    assert pinned.json()["total"] == 1
+    assert pinned.json()["items"][0]["value"] == "10"
+
+    releases = client.get(
+        "/api/v1/observations/releases", params={"metric_code": metric_a}
+    )
+    assert releases.status_code == 200
+    listing = releases.json()
+    assert listing["source_code"] == "FRED"
+    assert listing["total"] == 2
+    assert [item["release"] for item in listing["items"]] == [
+        "2097-03-01",
+        "2097-02-01",
+    ]
+    assert all(item["observation_count"] == 1 for item in listing["items"])
+
+    replay = client.get(
+        "/api/v1/observations",
+        params={"metric_code": metric_a, "scope": "as_released"},
+    )
+    assert replay.status_code == 200
+    assert replay.content == released.content, (
+        "an unchanged publication must serialize byte-identically"
+    )
+
+    unsupported = client.get(
+        "/api/v1/observations",
+        params={"metric_code": metric_a, "stratum_id": "not-a-fred-filter"},
+    )
+    assert unsupported.status_code == 422
+    assert "stratum_id" in unsupported.json()["detail"]
