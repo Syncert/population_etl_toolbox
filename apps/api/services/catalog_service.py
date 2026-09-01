@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from data_ingestion_toolbox.models import (
+from apps.api.schemas import (
     GeographyLatest,
     GeographyListResponse,
     MetricCatalog,

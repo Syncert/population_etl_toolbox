@@ -17,13 +17,13 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.services.cdc_service import list_cdc_observations
 from data_ingestion_toolbox.cdc.registry import enabled_assets
-from data_ingestion_toolbox.models import CdcObservationListResponse
+from apps.api.schemas import CdcObservationListResponse
 from data_ingestion_toolbox.sql.cdc_queries import (
     ADJUSTMENT_STATUSES,
     GEOGRAPHY_TYPES,
 )
 
-router = APIRouter(prefix="/api/cdc", tags=["cdc"])
+router = APIRouter(prefix="/cdc", tags=["cdc"])
 
 
 def _registered_datasets() -> tuple[str, ...]:

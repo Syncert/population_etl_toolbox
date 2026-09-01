@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from apps.api.main import create_app
+from apps.api.versioning import legacy_path_for
 from data_ingestion_toolbox.config import Settings
 from tests.support.product_coverage import PRODUCTS, SHARED_API_PREFIXES
 
@@ -22,9 +23,16 @@ def _application_routes() -> set[str]:
     FastAPI includes routers lazily, so ``app.routes`` still holds unexpanded
     ``_IncludedRouter`` entries with no path; the generated schema is the
     surface a consumer actually sees.
+
+    Versioned paths collapse to their unversioned form first. A product owns a
+    *resource*, and ``/api/v1/cdc/observations`` is the same resource as
+    ``/api/cdc/observations`` with the same end-to-end owner -- requiring a
+    separate claim per version would make the registry a list of mount points
+    rather than of data products. The collapse hides nothing: a route served only
+    under a version still normalizes into ``/api/...`` and still needs an owner.
     """
     paths = create_app(Settings()).openapi()["paths"]
-    return {path for path in paths if path.startswith("/api/")}
+    return {legacy_path_for(path) for path in paths if path.startswith("/api/")}
 
 
 def test_every_registered_api_route_is_served_by_the_application() -> None:

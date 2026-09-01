@@ -1,0 +1,3333 @@
+{
+  "openapi": "3.1.0",
+  "operations": {
+    "GET /api/bls/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "bls"
+      ]
+    },
+    "GET /api/bls/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "bls"
+      ]
+    },
+    "GET /api/catalog/geographies": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/catalog/metrics": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "active_only",
+          "required": false,
+          "type": "boolean | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "source_code",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/catalog/sources": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:array<SourceSystem>"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/cdc/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "adjustment",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_type",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "measure_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "stratum_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "value_type_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1900
+          },
+          "in": "query",
+          "name": "year_from",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1900
+          },
+          "in": "query",
+          "name": "year_to",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:CdcObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "cdc"
+      ]
+    },
+    "GET /api/census/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census"
+      ]
+    },
+    "GET /api/census/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census"
+      ]
+    },
+    "GET /api/comparison": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id_a",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/distribution/bins": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 7,
+            "maximum": 20,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "bin_count",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DistributionBinsResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "distribution"
+      ]
+    },
+    "GET /api/fred/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "fred"
+      ]
+    },
+    "GET /api/fred/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "fred"
+      ]
+    },
+    "GET /api/health": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:HealthResponse"
+      },
+      "tags": [
+        "health"
+      ]
+    },
+    "GET /api/models/status": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:ModelSurfaceStatusResponse"
+      },
+      "tags": [
+        "models"
+      ]
+    },
+    "GET /api/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/pep/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census-pep"
+      ]
+    },
+    "GET /api/pep/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census-pep"
+      ]
+    },
+    "GET /api/usda-nass/measures": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:NassMeasureListResponse"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/usda-nass/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "agg_level_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "class_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "commodity_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 300
+          },
+          "in": "query",
+          "name": "domaincat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "freq_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "latest",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "product_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "release_watermark",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 300
+          },
+          "in": "query",
+          "name": "short_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "source_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "statisticcat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "unit_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 40
+          },
+          "in": "query",
+          "name": "value_status",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1800
+          },
+          "in": "query",
+          "name": "year_end",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1800
+          },
+          "in": "query",
+          "name": "year_start",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NassObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/usda-nass/series": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "agg_level_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "commodity_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "freq_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "product_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "source_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "statisticcat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "unit_desc",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NassSeriesListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/usda-nass/source-notes": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:NassSourceNotesResponse"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/v1/bls/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "bls"
+      ]
+    },
+    "GET /api/v1/bls/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "bls"
+      ]
+    },
+    "GET /api/v1/catalog/geographies": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:GeographyListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/metrics": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "active_only",
+          "required": false,
+          "type": "boolean | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "source_code",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/sources": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:array<SourceSystem>"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/cdc/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "adjustment",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "dataset",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_type",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "measure_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "release",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "stratum_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "value_type_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1900
+          },
+          "in": "query",
+          "name": "year_from",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1900
+          },
+          "in": "query",
+          "name": "year_to",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:CdcObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "cdc"
+      ]
+    },
+    "GET /api/v1/census/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census"
+      ]
+    },
+    "GET /api/v1/census/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census"
+      ]
+    },
+    "GET /api/v1/comparison": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id_a",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id_b",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/distribution/bins": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 7,
+            "maximum": 20,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "bin_count",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:DistributionBinsResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "distribution"
+      ]
+    },
+    "GET /api/v1/fred/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "fred"
+      ]
+    },
+    "GET /api/v1/fred/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "fred"
+      ]
+    },
+    "GET /api/v1/health": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:HealthResponse"
+      },
+      "tags": [
+        "health"
+      ]
+    },
+    "GET /api/v1/models/status": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:ModelSurfaceStatusResponse"
+      },
+      "tags": [
+        "models"
+      ]
+    },
+    "GET /api/v1/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/v1/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "observations"
+      ]
+    },
+    "GET /api/v1/pep/observations/latest": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census-pep"
+      ]
+    },
+    "GET /api/v1/pep/observations/timeseries": {
+      "parameters": [
+        {
+          "in": "query",
+          "name": "end_date",
+          "required": false,
+          "type": "string(date) | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 1000,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_code",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200
+          },
+          "in": "query",
+          "name": "metric_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "query",
+          "name": "start_date",
+          "required": false,
+          "type": "string(date) | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "census-pep"
+      ]
+    },
+    "GET /api/v1/usda-nass/measures": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:NassMeasureListResponse"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/v1/usda-nass/observations": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "agg_level_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "class_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "commodity_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 300
+          },
+          "in": "query",
+          "name": "domaincat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "freq_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "latest",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "product_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 64
+          },
+          "in": "query",
+          "name": "release_watermark",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 300
+          },
+          "in": "query",
+          "name": "short_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "source_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "statisticcat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "unit_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 40
+          },
+          "in": "query",
+          "name": "value_status",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1800
+          },
+          "in": "query",
+          "name": "year_end",
+          "required": false,
+          "type": "integer | null"
+        },
+        {
+          "constraints": {
+            "maximum": 2200,
+            "minimum": 1800
+          },
+          "in": "query",
+          "name": "year_start",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NassObservationListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/v1/usda-nass/series": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "agg_level_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "commodity_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "domain_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "freq_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "geo_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 5000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "product_id",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 20
+          },
+          "in": "query",
+          "name": "source_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "statisticcat_desc",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 100
+          },
+          "in": "query",
+          "name": "unit_desc",
+          "required": false,
+          "type": "string | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:NassSeriesListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /api/v1/usda-nass/source-notes": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:NassSourceNotesResponse"
+      },
+      "tags": [
+        "usda-nass"
+      ]
+    },
+    "GET /health": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:HealthResponse"
+      },
+      "tags": [
+        "health"
+      ]
+    }
+  },
+  "schemas": {
+    "CdcObservation": {
+      "properties": {
+        "adjustment_status": "string",
+        "confidence_lower": "string | null",
+        "confidence_upper": "string | null",
+        "dataset": "string",
+        "dataset_title": "string",
+        "estimate_method": "string",
+        "footnote_code": "string | null",
+        "footnote_text": "string | null",
+        "geo_id": "string | null",
+        "geo_type": "string",
+        "geography_basis": "string",
+        "geography_status": "string",
+        "measure_id": "string",
+        "measure_label": "string",
+        "methodology_url": "string",
+        "period_end": "integer",
+        "period_start": "integer",
+        "population_18_plus": "string | null",
+        "population_basis": "string",
+        "release_watermark": "string",
+        "source_record_id": "string",
+        "strata": "array<any>",
+        "stratum_id": "string",
+        "topic": "string",
+        "total_population": "string | null",
+        "unit": "string | null",
+        "value": "string | null",
+        "value_source": "string | null",
+        "value_status": "string",
+        "value_type_id": "string",
+        "value_type_label": "string"
+      },
+      "required": [
+        "adjustment_status",
+        "dataset",
+        "dataset_title",
+        "estimate_method",
+        "geo_type",
+        "geography_basis",
+        "geography_status",
+        "measure_id",
+        "measure_label",
+        "methodology_url",
+        "period_end",
+        "period_start",
+        "population_basis",
+        "release_watermark",
+        "source_record_id",
+        "strata",
+        "stratum_id",
+        "topic",
+        "value_status",
+        "value_type_id",
+        "value_type_label"
+      ]
+    },
+    "CdcObservationListResponse": {
+      "properties": {
+        "dataset": "string | null",
+        "items": "array<CdcObservation>",
+        "limit": "integer",
+        "offset": "integer",
+        "release": "string | null",
+        "release_selection": "string",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "release_selection",
+        "total"
+      ]
+    },
+    "ComparisonResponse": {
+      "properties": {
+        "items": "array<ComparisonRow>",
+        "limit": "integer",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "metric_code_a",
+        "metric_code_b",
+        "offset",
+        "total"
+      ]
+    },
+    "ComparisonRow": {
+      "properties": {
+        "county_fips": "string | null",
+        "county_name": "string | null",
+        "difference": "number | null",
+        "geo_id": "string | null",
+        "geo_level": "string | null",
+        "metric_code_a": "string | null",
+        "metric_code_b": "string | null",
+        "ratio": "number | null",
+        "state_fips": "string | null",
+        "state_name": "string | null",
+        "value_a": "number | null",
+        "value_b": "number | null"
+      },
+      "required": []
+    },
+    "DistributionBin": {
+      "properties": {
+        "bin_index": "integer",
+        "count": "integer",
+        "lower_bound": "number",
+        "upper_bound": "number"
+      },
+      "required": [
+        "bin_index",
+        "count",
+        "lower_bound",
+        "upper_bound"
+      ]
+    },
+    "DistributionBinsResponse": {
+      "properties": {
+        "bin_count": "integer",
+        "geo_level": "string | null",
+        "items": "array<DistributionBin>",
+        "max_value": "number | null",
+        "metric_code": "string",
+        "min_value": "number | null",
+        "total": "integer"
+      },
+      "required": [
+        "bin_count",
+        "items",
+        "metric_code",
+        "total"
+      ]
+    },
+    "GeographyLatest": {
+      "properties": {
+        "county_fips": "string | null",
+        "county_name": "string | null",
+        "geo_id": "string",
+        "geo_latitude": "number | null",
+        "geo_level": "string | null",
+        "geo_longitude": "number | null",
+        "geo_name": "string | null",
+        "place_fips": "string | null",
+        "place_name": "string | null",
+        "state_fips": "string | null",
+        "state_name": "string | null"
+      },
+      "required": [
+        "geo_id"
+      ]
+    },
+    "GeographyListResponse": {
+      "properties": {
+        "items": "array<GeographyLatest>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "HTTPValidationError": {
+      "properties": {
+        "detail": "array<ValidationError>"
+      },
+      "required": []
+    },
+    "HealthResponse": {
+      "properties": {
+        "service": "string",
+        "status": "string"
+      },
+      "required": [
+        "service",
+        "status"
+      ]
+    },
+    "MetricCatalog": {
+      "properties": {
+        "aggregation_characteristic": "string | null",
+        "freshness_state": "string | null",
+        "harvested_at": "string(date-time) | null",
+        "measure_kind": "string | null",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "physical_lineage": "object | null",
+        "publication_time": "string(date-time) | null",
+        "publisher_contract_version": "string | null",
+        "source_code": "string | null",
+        "source_object_key": "string | null",
+        "source_object_type": "string | null",
+        "source_run_id": "any | null",
+        "source_watermark": "string | null",
+        "units": "string | null",
+        "valid_geo_grains": "array<string> | null",
+        "valid_time_grains": "array<string> | null"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "MetricListResponse": {
+      "properties": {
+        "items": "array<MetricCatalog>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "ModelSurfaceStatusResponse": {
+      "properties": {
+        "details": "string",
+        "models_enabled": "boolean",
+        "status": "string"
+      },
+      "required": [
+        "details",
+        "models_enabled",
+        "status"
+      ]
+    },
+    "NassMeasureListResponse": {
+      "properties": {
+        "items": "array<NassMeasureRow>",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
+    "NassMeasureRow": {
+      "properties": {
+        "additive_behavior": "string",
+        "additive_behavior_known": "boolean",
+        "calculation_basis": "string",
+        "display_name": "string",
+        "freq_desc": "string",
+        "methodology_url": "string",
+        "schema_version": "string",
+        "source_dataset": "string",
+        "source_measure_code": "string",
+        "source_program": "string",
+        "source_watermark": "string",
+        "statisticcat_desc": "string",
+        "unit": "string",
+        "value_kind": "string"
+      },
+      "required": [
+        "additive_behavior",
+        "additive_behavior_known",
+        "calculation_basis",
+        "display_name",
+        "freq_desc",
+        "methodology_url",
+        "schema_version",
+        "source_dataset",
+        "source_measure_code",
+        "source_program",
+        "source_watermark",
+        "statisticcat_desc",
+        "unit",
+        "value_kind"
+      ]
+    },
+    "NassObservationListResponse": {
+      "properties": {
+        "items": "array<NassObservationRow>",
+        "limit": "integer",
+        "offset": "integer",
+        "release_scope": "string",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "release_scope",
+        "total"
+      ]
+    },
+    "NassObservationRow": {
+      "properties": {
+        "additive_behavior": "string",
+        "additive_behavior_known": "boolean",
+        "agg_level_desc": "string",
+        "calculation_basis": "string",
+        "class_desc": "string",
+        "commodity_desc": "string",
+        "county_fips": "string | null",
+        "cv_source": "string",
+        "cv_status": "string",
+        "cv_symbol": "string | null",
+        "cv_value": "string | null",
+        "domain_desc": "string",
+        "domaincat_desc": "string",
+        "freq_desc": "string",
+        "geo_id": "string | null",
+        "geo_type": "string",
+        "geography_status": "string",
+        "group_desc": "string",
+        "load_time": "string(date-time) | null",
+        "location_desc": "string",
+        "methodology_url": "string",
+        "prodn_practice_desc": "string",
+        "product_id": "string",
+        "product_label": "string",
+        "reference_period_desc": "string",
+        "release_expectation": "string",
+        "release_watermark": "string",
+        "sector_desc": "string",
+        "short_desc": "string",
+        "source_desc": "string",
+        "source_record_id": "string",
+        "state_fips": "string | null",
+        "statisticcat_desc": "string",
+        "suppression_code": "string | null",
+        "unit_desc": "string",
+        "util_practice_desc": "string",
+        "value": "string | null",
+        "value_kind": "string",
+        "value_source": "string",
+        "value_status": "string",
+        "week_ending": "string(date) | null",
+        "year": "integer"
+      },
+      "required": [
+        "additive_behavior",
+        "additive_behavior_known",
+        "agg_level_desc",
+        "calculation_basis",
+        "class_desc",
+        "commodity_desc",
+        "cv_source",
+        "cv_status",
+        "domain_desc",
+        "domaincat_desc",
+        "freq_desc",
+        "geo_type",
+        "geography_status",
+        "group_desc",
+        "location_desc",
+        "methodology_url",
+        "prodn_practice_desc",
+        "product_id",
+        "product_label",
+        "reference_period_desc",
+        "release_expectation",
+        "release_watermark",
+        "sector_desc",
+        "short_desc",
+        "source_desc",
+        "source_record_id",
+        "statisticcat_desc",
+        "unit_desc",
+        "util_practice_desc",
+        "value_kind",
+        "value_source",
+        "value_status",
+        "year"
+      ]
+    },
+    "NassSeriesListResponse": {
+      "properties": {
+        "items": "array<NassSeriesRow>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "NassSeriesRow": {
+      "properties": {
+        "additive_behavior": "string",
+        "additive_behavior_known": "boolean",
+        "agg_level_desc": "string",
+        "class_desc": "string",
+        "commodity_desc": "string",
+        "domain_desc": "string",
+        "domaincat_desc": "string",
+        "first_year": "integer",
+        "freq_desc": "string",
+        "geo_id": "string | null",
+        "geo_type": "string",
+        "group_desc": "string",
+        "last_year": "integer",
+        "latest_release_watermark": "string",
+        "non_numeric_observation_count": "integer",
+        "numeric_observation_count": "integer",
+        "observation_count": "integer",
+        "prodn_practice_desc": "string",
+        "product_id": "string",
+        "sector_desc": "string",
+        "series_id": "string",
+        "short_desc": "string",
+        "source_desc": "string",
+        "statisticcat_desc": "string",
+        "unit_desc": "string",
+        "util_practice_desc": "string",
+        "value_kind": "string"
+      },
+      "required": [
+        "additive_behavior",
+        "additive_behavior_known",
+        "agg_level_desc",
+        "class_desc",
+        "commodity_desc",
+        "domain_desc",
+        "domaincat_desc",
+        "first_year",
+        "freq_desc",
+        "geo_type",
+        "group_desc",
+        "last_year",
+        "latest_release_watermark",
+        "non_numeric_observation_count",
+        "numeric_observation_count",
+        "observation_count",
+        "prodn_practice_desc",
+        "product_id",
+        "sector_desc",
+        "series_id",
+        "short_desc",
+        "source_desc",
+        "statisticcat_desc",
+        "unit_desc",
+        "util_practice_desc",
+        "value_kind"
+      ]
+    },
+    "NassSourceNote": {
+      "properties": {
+        "detail": "string",
+        "summary": "string",
+        "topic": "string"
+      },
+      "required": [
+        "detail",
+        "summary",
+        "topic"
+      ]
+    },
+    "NassSourceNotesResponse": {
+      "properties": {
+        "items": "array<NassSourceNote>",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
+    "ObservationDashboard": {
+      "properties": {
+        "as_of_date": "any | null",
+        "county_fips": "string | null",
+        "county_name": "string | null",
+        "dataset": "string | null",
+        "dataset_code": "string | null",
+        "duration_end": "any | null",
+        "duration_start": "any | null",
+        "geo_id": "string | null",
+        "geo_latitude": "number | null",
+        "geo_level": "string | null",
+        "geo_longitude": "number | null",
+        "geo_name": "string | null",
+        "margin_of_error": "string | null",
+        "margin_of_error_pct": "string | null",
+        "metric_code": "string | null",
+        "metric_display_name": "string | null",
+        "observation_date": "any | null",
+        "period": "string | null",
+        "release_date": "any | null",
+        "seasonal_adjustment_status": "string | null",
+        "source": "string | null",
+        "source_code": "string | null",
+        "state_fips": "string | null",
+        "state_name": "string | null",
+        "time_sk": "integer | null",
+        "unit": "string | null",
+        "units": "string | null",
+        "updated_at": "string(date-time) | null",
+        "value": "string | null",
+        "value_type": "string | null",
+        "vintage": "string | null",
+        "vintage_year": "integer | null"
+      },
+      "required": []
+    },
+    "ObservationListResponse": {
+      "properties": {
+        "items": "array<ObservationDashboard>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "SourceSystem": {
+      "properties": {
+        "reference_url": "string | null",
+        "source_code": "string",
+        "source_name": "string",
+        "source_type": "string | null"
+      },
+      "required": [
+        "source_code",
+        "source_name"
+      ]
+    },
+    "ValidationError": {
+      "properties": {
+        "ctx": "object",
+        "input": "any",
+        "loc": "array<string | integer>",
+        "msg": "string",
+        "type": "string"
+      },
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ]
+    }
+  }
+}

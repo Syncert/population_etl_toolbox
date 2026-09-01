@@ -22,14 +22,14 @@ from apps.api.services.usda_nass_service import (
     list_series,
     source_notes,
 )
-from data_ingestion_toolbox.models import (
+from apps.api.schemas import (
     NassMeasureListResponse,
     NassObservationListResponse,
     NassSeriesListResponse,
     NassSourceNotesResponse,
 )
 
-router = APIRouter(prefix="/api/usda-nass", tags=["usda-nass"])
+router = APIRouter(prefix="/usda-nass", tags=["usda-nass"])
 
 
 @router.get("/observations", response_model=NassObservationListResponse)

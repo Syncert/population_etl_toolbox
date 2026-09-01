@@ -11,9 +11,9 @@ from apps.api.services.observations_service import (
     list_latest_observations,
     list_timeseries_observations,
 )
-from data_ingestion_toolbox.models import ObservationListResponse
+from apps.api.schemas import ObservationListResponse
 
-router = APIRouter(prefix="/api/observations", tags=["observations"])
+router = APIRouter(prefix="/observations", tags=["observations"])
 
 
 @router.get("/latest", response_model=ObservationListResponse)

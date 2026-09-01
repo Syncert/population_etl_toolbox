@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.metric_aliases import resolve_metric_code
 from apps.api.services.comparison_service import list_metric_comparison
-from data_ingestion_toolbox.models import ComparisonResponse
+from apps.api.schemas import ComparisonResponse
 
-router = APIRouter(prefix="/api", tags=["comparison"])
+router = APIRouter(tags=["comparison"])
 
 
 @router.get("/comparison", response_model=ComparisonResponse)

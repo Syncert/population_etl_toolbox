@@ -101,23 +101,15 @@ def test_geography_query_builder_uses_true_for_no_filters() -> None:
     assert params == {"limit": 10, "offset": 0}
 
 
-@pytest.mark.parametrize(
-    ("builder", "expected_view"),
-    [
-        (observation_queries.build_latest_mv_queries, "gold.v_metric_latest_by_geo"),
-        (
-            observation_queries.build_latest_mv_queries_legacy,
-            "gold.mv_latest_dashboard",
-        ),
-    ],
-)
-def test_latest_query_builders_bind_filters(builder, expected_view: str) -> None:
+def test_latest_query_builder_binds_every_filter() -> None:
     """Covers: API-010, API-017 — latest filters are parameterized."""
-    list_query, count_query, params = builder("POP_TOTAL", "state", "06", 5, 10)
+    list_query, count_query, params = observation_queries.build_latest_mv_queries(
+        "POP_TOTAL", "state", "06", 5, 10
+    )
     rendered_list = str(list_query)
 
-    assert f"FROM {expected_view}" in rendered_list
-    assert f"FROM {expected_view}" in str(count_query)
+    assert "FROM gold.v_metric_latest_by_geo" in rendered_list
+    assert "FROM gold.v_metric_latest_by_geo" in str(count_query)
     assert "metric_code = :metric_code" in rendered_list
     assert "UPPER(geo_level) = UPPER(:geo_level)" in rendered_list
     assert "state_fips = :state_fips" in rendered_list
@@ -131,40 +123,16 @@ def test_latest_query_builders_bind_filters(builder, expected_view: str) -> None
     assert "POP_TOTAL" not in rendered_list
 
 
-def test_source_latest_query_builder_uses_allowlisted_schema() -> None:
-    """Covers: API-010 — source-aware latest queries target their schema."""
+def test_latest_fallback_query_builder_ranks_each_geography() -> None:
+    """Covers: API-027 — durable fallback ranks the latest geography row."""
     list_query, count_query, params = (
-        observation_queries.build_latest_mv_queries_for_schema(
-            "gold_bls", "UNEMP", None, None, 10, 0
+        observation_queries.build_latest_rpt_fallback_queries(
+            "UNEMP", "county", "06", 5, 0
         )
     )
-
-    assert "FROM gold_bls.v_metric_latest_by_geo" in str(list_query)
-    assert "FROM gold_bls.v_metric_latest_by_geo" in str(count_query)
-    assert params == {"limit": 10, "offset": 0, "metric_code": "UNEMP"}
-
-
-@pytest.mark.parametrize(
-    ("builder", "expected_view"),
-    [
-        (
-            observation_queries.build_latest_rpt_fallback_queries,
-            "gold.v_metric_timeseries_by_geo",
-        ),
-        (
-            observation_queries.build_latest_rpt_fallback_queries_legacy,
-            "gold.rpt_observation_dashboard",
-        ),
-    ],
-)
-def test_latest_fallback_query_builders_rank_each_geography(
-    builder, expected_view: str
-) -> None:
-    """Covers: API-027 — durable fallback ranks the latest geography row."""
-    list_query, count_query, params = builder("UNEMP", "county", "06", 5, 0)
     rendered_list = str(list_query)
 
-    assert f"FROM {expected_view}" in rendered_list
+    assert "FROM gold.v_metric_timeseries_by_geo" in rendered_list
     assert "ROW_NUMBER() OVER (PARTITION BY geo_id" in rendered_list
     assert "WHERE rn = 1" in rendered_list
     assert "SELECT COUNT(*) FROM ranked WHERE rn = 1" in str(count_query)
@@ -192,19 +160,7 @@ def _select_output_names(select_sql: str) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize(
-    "builder",
-    [
-        observation_queries.build_latest_rpt_fallback_queries,
-        observation_queries.build_latest_rpt_fallback_queries_legacy,
-        lambda metric_code, geo_level, state_fips, limit, offset: (
-            observation_queries.build_latest_rpt_fallback_queries_for_schema(
-                "gold_fred", metric_code, geo_level, state_fips, limit, offset
-            )
-        ),
-    ],
-)
-def test_latest_fallback_projects_every_column_without_duckdb_syntax(builder) -> None:
+def test_latest_fallback_projects_every_column_without_duckdb_syntax() -> None:
     """Covers: API-027 — the ranked fallback is valid PostgreSQL.
 
     ``SELECT * EXCEPT(rn)`` parses in DuckDB and BigQuery and nowhere in
@@ -212,7 +168,9 @@ def test_latest_fallback_projects_every_column_without_duckdb_syntax(builder) ->
     it exists to serve: a metric the primary latest view has no row for. The
     endpoint answered 503 instead of an empty result.
     """
-    list_query, _count_query, _params = builder("UNEMP", None, None, 5, 0)
+    list_query, _count_query, _params = (
+        observation_queries.build_latest_rpt_fallback_queries("UNEMP", None, None, 5, 0)
+    )
     rendered = str(list_query)
 
     assert "EXCEPT(" not in rendered
@@ -222,53 +180,24 @@ def test_latest_fallback_projects_every_column_without_duckdb_syntax(builder) ->
     )
 
 
-def test_fallback_projection_matches_both_ranked_select_lists() -> None:
+def test_fallback_projection_matches_the_ranked_select_list() -> None:
     """Covers: API-027 — the projection cannot drift from the ranked CTE."""
-    expected = list(observation_queries._OBSERVATION_COLUMNS)
-    for select_sql in (
-        observation_queries._MVP_SELECT,
-        observation_queries._LEGACY_SELECT,
-    ):
-        assert _select_output_names(select_sql) == expected
-
-
-def test_source_latest_fallback_query_targets_source_schema() -> None:
-    """Covers: API-027 — source fallback uses the durable source view."""
-    list_query, count_query, params = (
-        observation_queries.build_latest_rpt_fallback_queries_for_schema(
-            "gold_fred", "GDP", None, None, 3, 1
-        )
+    assert _select_output_names(observation_queries._OBSERVATION_SELECT) == list(
+        observation_queries._OBSERVATION_COLUMNS
     )
 
-    assert "FROM gold_fred.v_metric_timeseries_by_geo" in str(list_query)
-    assert "FROM gold_fred.v_metric_timeseries_by_geo" in str(count_query)
-    assert params == {"limit": 3, "offset": 1, "metric_code": "GDP"}
 
-
-@pytest.mark.parametrize(
-    ("builder", "expected_view"),
-    [
-        (
-            observation_queries.build_timeseries_queries,
-            "gold.v_metric_timeseries_by_geo",
-        ),
-        (
-            observation_queries.build_timeseries_queries_legacy,
-            "gold.rpt_observation_dashboard",
-        ),
-    ],
-)
-def test_timeseries_query_builders_bind_date_window(
-    builder, expected_view: str
-) -> None:
+def test_timeseries_query_builder_binds_its_date_window() -> None:
     """Covers: API-010, API-012 — timeseries binds and orders its window."""
     start = date(2024, 1, 1)
     end = date(2024, 12, 31)
-    list_query, count_query, params = builder("UNEMP", "county:06001", start, end, 100)
+    list_query, count_query, params = observation_queries.build_timeseries_queries(
+        "UNEMP", "county:06001", start, end, 100
+    )
     rendered_list = str(list_query)
 
-    assert f"FROM {expected_view}" in rendered_list
-    assert f"FROM {expected_view}" in str(count_query)
+    assert "FROM gold.v_metric_timeseries_by_geo" in rendered_list
+    assert "FROM gold.v_metric_timeseries_by_geo" in str(count_query)
     assert "observation_date >= :start_date" in rendered_list
     assert "observation_date <= :end_date" in rendered_list
     assert "ORDER BY observation_date ASC" in rendered_list
@@ -281,17 +210,13 @@ def test_timeseries_query_builders_bind_date_window(
     }
 
 
-def test_source_timeseries_query_omits_absent_date_filters() -> None:
+def test_timeseries_query_omits_absent_date_filters() -> None:
     """Covers: API-010, API-012 — optional dates stay absent when omitted."""
-    list_query, count_query, params = (
-        observation_queries.build_timeseries_queries_for_schema(
-            "gold_census", "POP_TOTAL", "state:06", None, None, 50
-        )
+    list_query, _count_query, params = observation_queries.build_timeseries_queries(
+        "POP_TOTAL", "state:06", None, None, 50
     )
     rendered_list = str(list_query)
 
-    assert "FROM gold_census.v_metric_timeseries_by_geo" in rendered_list
-    assert "FROM gold_census.v_metric_timeseries_by_geo" in str(count_query)
     assert ":start_date" not in rendered_list
     assert ":end_date" not in rendered_list
     assert params == {

@@ -283,7 +283,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-030 | None |
+| API | API-001–API-036 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-007 | None |
@@ -535,6 +535,12 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-028 | P0 | Router / `unit api` | CDC source-explorer contract | CDI and PLACES observations return dataset, release, measure, stratum, unit, adjustment, method, population basis, uncertainty, and typed suppression/missing state, and every documented filter binds exactly | Product conflation, dropped filter, missing interpretive field, or suppressed/missing value rendered numerically |
 | API-029 | P0 | Router / `unit api` | CDC release selection | An omitted release reads `gold_cdc.latest_release_observation`; a named release reads `gold_cdc.health_observation` with the same response contract | Wrong relation, silent latest fallback, or lost release identity |
 | API-030 | P0 | Router / `unit api` | CDC filter validation | Unregistered dataset, unsupported geography type, unknown adjustment, and reversed year range return 422 before any database work | Invalid filter reaches the database, returns 500, or degrades to an empty result |
+| API-031 | P0 | Contract / `unit api` | Public contract snapshot | Every served operation, parameter bound, response schema, and required-field set matches the reviewed digest in `tests/fixtures/api/openapi_contract.json` | Any operation, validation bound, or schema field changes without the snapshot being reviewed in the same change |
+| API-032 | P0 | Contract / `unit api` | Versioned and legacy route parity | Every unversioned `/api` resource is also served under `/api/v1`, and each pair accepts identical parameters and returns identical response schemas | A resource reachable under only one prefix, or a pair whose request or response contracts have diverged |
+| API-033 | P0 | Middleware / `unit api` | Legacy deprecation signalling | Unversioned `/api` responses carry `Deprecation: true`, a `Sunset` date, and a `Link` naming the versioned successor; versioned routes and the `/health` deployment probe carry none of them | A legacy route that announces nothing, or a retirement signal leaking onto the versioned surface or the infrastructure probe |
+| API-034 | P0 | Registry / `unit api` | Reviewed serving registry | Every serving relation the observation endpoints read is declared in `apps/api/registry.py`, sits inside its own source's schema, and an unregistered source raises instead of resolving to a fallback relation | A relation reaching SQL from outside the registry, a contract pointing at another source's schema, or an unknown source resolving to any relation |
+| API-035 | P0 | Service / `unit api` | Per-source dispatch and projection | A source's latest and history reads target only that source's declared relations, and a field the source does not publish is projected as a typed NULL rather than borrowed from another source's column | Cross-source relation leakage into a source-scoped query, or a projection asserting a field the source does not publish |
+| API-036 | P0 | Service / `unit api` | Absent serving contract fails explicitly | A relation the API declares a dependency on but the warehouse does not have stops the read before any query and answers the sanitized 503, naming the relation only in the server log; a session that cannot answer the probe is not treated as absence | A missing contract degrading to another relation, to an empty page, or to a response that names warehouse objects |
 
 ### Frontend Tests
 

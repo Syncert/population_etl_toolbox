@@ -1,7 +1,7 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from data_ingestion_toolbox.models import ModelSurfaceStatusResponse
+from apps.api.schemas import ModelSurfaceStatusResponse
 
 _MODEL_RELATIONS = [
     "gold.fact_model_output",

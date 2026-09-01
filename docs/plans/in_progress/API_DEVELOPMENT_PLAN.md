@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open and API-001 is complete; API-002 is the next ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 and API-002 are complete. API-003 is the next ticket.
 - **Last updated:** 2026-08-31
-- **Current milestone:** API-001 delivered — dependency proof, current-contract audit, and a green baseline across the unit, real-PostgreSQL, real-Redis, and end-to-end tiers.
-- **Next pickup:** API-002 (versioned contract and internal boundaries). Start from the "API-001 audit findings" section below: it names the compatibility obligations, the transitional behaviors awaiting a decision, and the one structural gap (four of seven sources have no provider-neutral observation contract) that shapes the whole ticket.
+- **Current milestone:** API-002 delivered — `/api/v1` with a bounded, signalled compatibility window; API-owned response schemas; a reviewed serving registry replacing five hard-coded source maps; three unreachable-or-unsafe fallbacks retired; and a reviewed OpenAPI contract snapshot proving none of it changed a consumer-visible byte.
+- **Next pickup:** API-003 (discovery and capability resources). Two things shape it: the "API-001 audit findings" coverage matrix — four of seven sources are advertised by `/api/catalog/metrics` but unreachable through the neutral observation routes — and the deferrals recorded under API-002, chiefly the catalog query builders' own legacy probing, which API-003 owns.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -233,11 +233,17 @@ required and none is in scope.
   four-entry `SOURCE_TABLE_MAP` and a `SOURCE_COMMON_COLUMNS` dictionary that
   falls back to the BLS column list for any unknown source. `metric_aliases.py`
   hard-codes one product alias. Both are closed enumerations the registry
-  replaces in API-002.
+  replaces in API-002. *(Corrected during API-002: that module had no importers
+  at all and is deleted. The live maps were the two in `observations_service.py`
+  and one in the SQL builders.)*
 - **`validate_sources_for_comparison` rejects every cross-source comparison.**
   It fails any request whose measures resolve to more than one source, so the
   comparison endpoint cannot express the plan's central analysis case. API-005
   replaces it with declared compatibility rules, not a source-identity check.
+  *(Corrected during API-002: this validator is dead code and was never wired
+  in. Cross-source comparison is not rejected — `list_metric_comparison` joins
+  any two metric codes on geography with no unit, universe, time-grain, or
+  method check at all. API-005's problem is larger than this bullet said.)*
 - **Permissive response fields.** `ObservationDashboard` is 34 fields, every one
   `Optional[...] = None`, with duplicate aliases for the same fact
   (`source_code`/`source`, `units`/`unit`, `dataset_code`/`dataset`,
@@ -316,6 +322,168 @@ that workflow runs `pytest tests/integration/redis` and never reaches
 only `./tests/run.ps1 integration`, which overrides the marker filter, runs it.
 API-006 owns closing that evidence gap; recorded here so it is not rediscovered.
 
+## API-002 delivery record (2026-08-31)
+
+Every change below is behaviour-preserving on the public contract. That is not a
+claim, it is the reviewed snapshot in `tests/fixtures/api/openapi_contract.json`:
+after moving 23 response models across seven new modules, collapsing four routers
+into a generator, and rewriting the observation service, the digest of every
+served operation, parameter bound, and response schema is byte-identical to the
+one frozen before the work started.
+
+### Characterization first
+
+`tests/support/openapi_contract.py` distills `app.openapi()` to the parts a client
+can break on — operations, parameter types and validation bounds, response
+schemas, required-field sets — and drops descriptions, titles, and examples. The
+snapshot is regenerated only through
+`python -m tests.support.regenerate_openapi_contract`, and API-031 fails with a
+readable per-operation diff when the served contract and the reviewed digest
+disagree.
+
+One correction while building it: bounds on optional string filters were invisible
+at first. OpenAPI 3.1 renders `Optional[str] = Query(None, max_length=200)` as
+`anyOf: [{type: string, maxLength: 200}, {type: null}]`, so reading constraints
+only from the top level dropped `maxLength` from nearly every filter in the API —
+exactly the drift the snapshot exists to catch. Constraints are now collected
+from the schema and its non-null union members.
+
+### Versioning (ADR-0002)
+
+`docs/decisions/0002-api-versioning-and-deprecation.md` records the policy;
+`apps/api/versioning.py` is its implementation. Every resource is served under
+`/api/v1` and under its original `/api` path. The two are the same router object
+mounted twice, so they cannot drift — API-032 proves parity operation by
+operation, and the parity would be meaningless if it compared two hand-written
+copies. Legacy responses carry `Deprecation: true`, a published `Sunset` date, and
+a `Link` naming the successor (RFC 8594); the middleware sits outside the response
+cache so a cached legacy body still carries the signal.
+
+`/health` without the `/api` prefix stays outside the policy. It is the container
+and load-balancer probe named in the deployment files, it carries no data
+contract, and a retirement header on it would be a false signal to infrastructure.
+
+The cache's eligible-path list was a literal tuple of `/api/...` prefixes, so the
+versioned routes would have silently lost their cache. It is now built from
+`API_PREFIXES`, and a future `v2` inherits caching rather than quietly not having
+it.
+
+### Schema ownership
+
+All 23 response models moved from `src/data_ingestion_toolbox/models.py` into
+`apps/api/schemas/`, split by resource group: `health`, `catalog`, `observations`,
+`cdc`, `analysis`, `model_status`, `usda_nass`. The ETL module is deleted, not
+shimmed — nothing outside `apps/api` imported it, so there was no consumer to keep
+whole. `frontend.yml` triggered on the old path, which would have left the browser
+consumer contract unfired on every future response-model change; it now rides the
+`apps/api/**` trigger it should always have used.
+
+### The serving registry
+
+`apps/api/registry.py` declares each source's serving contract once: source code,
+route segment, OpenAPI tag, schema, latest relation, durable history relation, and
+what the source actually publishes (seasonal adjustment, survey vintage and margin
+of error, place names). It replaces five separate spellings of the same four
+sources — a latest-table map, a history-table map, a schema map, a column map, and
+a chain of `if source in {...}` branches inside the select builder — which had
+already drifted to different ideas of which sources existed.
+
+Relation names now reach SQL only from this registry, never from request text,
+which is what makes the remaining string interpolation in the query builders safe.
+`ALLOWED_OBSERVATION_RELATIONS` is the derived allowlist and API-034 pins it to
+exactly the declared relations.
+
+The four per-source routers — `bls`, `census`, `fred`, `pep`, four files that
+differed only in a source token — are generated by
+`apps/api/routers/source_observations.py`. They had already drifted: `pep` passed
+its arguments positionally and raised its date-range error through a different
+call form. API-004 has six more sources to reach, and none of them should be
+another eighty lines of copy-paste.
+
+### Legacy behaviour retired, with evidence
+
+Three fallbacks are gone.
+
+**The MVP-versus-legacy column probe.** The observation service queried
+`information_schema` for four columns to choose between two select lists. It could
+never choose the legacy one: every contract view the bootstrap manifest creates
+carries `dataset_code`, `vintage_year`, `margin_of_error`, and
+`margin_of_error_pct` (`sql/gold_contract/001_gold_contract_views.sql`). The probe,
+the `_LEGACY_SELECT` list, and the three `*_legacy` builders are removed, along
+with their tests.
+
+**Per-source degradation to the cross-source union.** When a source's schema
+looked absent, `/api/bls/observations/latest` answered from `gold.*` — the union
+of BLS, ACS, and FRED — and returned rows from other sources under a route name
+that said otherwise. This was unreachable in a manifest-built warehouse and
+actively wrong when reached. The three `*_for_schema` builders are removed with it.
+
+**Silent absence.** A declared relation the warehouse does not have now raises
+`ServingContractUnavailable` before any query runs. An application-level handler
+answers the same sanitized 503 as a database outage, so a caller cannot use the
+response to probe which warehouse objects exist, while the relation name goes to
+the server log where an operator can act on it. A session that *cannot answer* the
+probe — a deterministic test double, a driver that raises — is deliberately not
+treated as absence; inventing a deployment fault from a test stub would be its own
+bug.
+
+The one fallback that stays is API-027's: when the latest materialized view holds
+no rows for a metric, the cross-source read falls back to the durable reporting
+relation and ranks the newest row per geography. Both relations are declared, so
+this is a refresh window rather than a guess about which relation exists, and
+serving real history beats serving an empty page.
+
+`apps/api/services/source_router.py` — 197 lines including `SOURCE_TABLE_MAP`,
+`SOURCE_COMMON_COLUMNS`, and `validate_sources_for_comparison` — is deleted. It
+had no importers at all. This corrects the API-001 note above: that validator was
+never wired in, so cross-source comparison is not rejected today, it is *silently
+permitted with no compatibility check whatsoever* — `list_metric_comparison` joins
+any two metric codes on geography with no unit, universe, time-grain, or method
+check. That is worse than the audit recorded, and API-005 owns it.
+
+### Deferred to later tickets, deliberately
+
+- The standard pagination, error, provenance, freshness, and derived-result
+  envelopes are defined as policy in ADR-0002 but not yet applied to responses.
+  Applying them would change `v1` shapes, and API-002's acceptance is that
+  existing responses stay compatible. API-003 and API-004 introduce them on the
+  new resources they add.
+- `catalog_queries` still carries `*_legacy` and `*_glossary_legacy` builders with
+  their own probing. Catalog relation selection was not audited here and is not
+  retired on an unexamined assumption; API-003 owns it as part of rebuilding
+  discovery.
+- `models_service`'s `to_regclass` probe over three relations no manifest creates
+  is untouched. It is a status endpoint reporting that modelling surfaces are
+  planned, so the probe is honest about what it does; API-006 decides whether the
+  endpoint survives at all.
+- The CI evidence gap recorded in API-001 — `redis-integration` claiming
+  API-019/021/022 while running only `tests/integration/redis` — remains open and
+  still belongs to API-006.
+
+### Catalog and evidence
+
+API-031 through API-036 are registered in `docs/reference/TESTING_CONTRACT.md`;
+the audited API count moves 30 → 36 and the evidence register 208 → 214.
+`CI_EVIDENCE_MAP.md` now names the serving registry, versioning, and contract
+snapshot under `api-unit`, and the browser-consumer row points at
+`apps/api` response schemas rather than the deleted ETL module.
+
+### Validation
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 151 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1123 passed |
+| API + Redis integration | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis` | 15 passed |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 50s, freshly recreated warehouse |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean, 406 files |
+
+Not run, and recorded as not run: `make test-performance` and the frontend
+contract commands. No performance-sensitive path changed — the generated routers
+issue the same two queries the hand-written ones did — and no response shape
+changed, so the browser consumer contract has nothing new to regress against. Both
+run in their scheduled jobs.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -337,6 +505,8 @@ API-006 owns closing that evidence gap; recorded here so it is not rediscovered.
 - Decide, test, and document the migration of current ETL-owned API models and legacy relation fallbacks.
 
 **Acceptance:** Existing supported responses remain compatible or have an approved migration path, and each versioned contract has strict schemas plus deterministic OpenAPI evidence.
+
+**Status: complete (2026-08-31).** See "API-002 delivery record" above. Compatibility is proven rather than asserted: the reviewed OpenAPI digest is unchanged across the whole refactor, and every legacy route is served by the same router object as its versioned successor.
 
 ### API-003 — Discovery and capability resources
 

@@ -1,0 +1,11 @@
+"""Liveness contract for the API process."""
+
+from __future__ import annotations
+
+
+from pydantic import BaseModel
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str

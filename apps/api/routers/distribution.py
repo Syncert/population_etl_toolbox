@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.metric_aliases import resolve_metric_code
 from apps.api.services.distribution_service import list_distribution_bins
-from data_ingestion_toolbox.models import DistributionBinsResponse
+from apps.api.schemas import DistributionBinsResponse
 
-router = APIRouter(prefix="/api/distribution", tags=["distribution"])
+router = APIRouter(prefix="/distribution", tags=["distribution"])
 
 
 @router.get("/bins", response_model=DistributionBinsResponse)

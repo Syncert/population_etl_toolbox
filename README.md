@@ -203,20 +203,35 @@ Default environment variables (override as needed):
 - `DB_PASSWORD` (default empty)
 - `DB_NAME` (default `population_etl`)
 
-Available endpoints:
-- `GET /health`
-- `GET /api/catalog/sources`
-- `GET /api/catalog/metrics`
-- `GET /api/catalog/geographies`
-- `GET /api/observations/latest`
-- `GET /api/observations/timeseries`
-- `GET /api/distribution/bins`
-- `GET /api/comparison`
-- `GET /api/models/status`
+Every resource is served under `/api/v1`, which is the path new clients should
+use. The same resources also answer on their original unversioned `/api` path
+during a published compatibility window; those responses carry `Deprecation`,
+`Sunset`, and `Link` headers naming the versioned successor. See
+[ADR-0002](docs/decisions/0002-api-versioning-and-deprecation.md).
+
+Provider-neutral endpoints:
+- `GET /api/v1/catalog/sources`
+- `GET /api/v1/catalog/metrics`
+- `GET /api/v1/catalog/geographies`
+- `GET /api/v1/observations/latest`
+- `GET /api/v1/observations/timeseries`
+- `GET /api/v1/distribution/bins`
+- `GET /api/v1/comparison`
+- `GET /api/v1/models/status`
+- `GET /api/v1/health`
+
+Source-scoped endpoints:
+- `GET /api/v1/{bls,census,fred,pep}/observations/latest`
+- `GET /api/v1/{bls,census,fred,pep}/observations/timeseries`
+- `GET /api/v1/cdc/observations`
+- `GET /api/v1/usda-nass/{observations,series,measures,source-notes}`
+
+`GET /health` — without the `/api` prefix — is the container and load-balancer
+probe. It sits outside the version policy and is not deprecated.
 
 Observation endpoint parameter note:
-- `GET /api/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
-- `GET /api/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
+- `GET /api/v1/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
+- `GET /api/v1/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
 
 ### Next.js Web App (Local Iteration)
 

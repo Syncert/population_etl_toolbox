@@ -10,13 +10,13 @@ from apps.api.services.catalog_service import (
     list_metrics,
     list_sources,
 )
-from data_ingestion_toolbox.models import (
+from apps.api.schemas import (
     GeographyListResponse,
     MetricListResponse,
     SourceSystem,
 )
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 
 @router.get("/sources", response_model=list[SourceSystem])

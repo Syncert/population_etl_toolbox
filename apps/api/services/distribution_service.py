@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from data_ingestion_toolbox.models import DistributionBin, DistributionBinsResponse
+from apps.api.schemas import DistributionBin, DistributionBinsResponse
 
 
 def _relation_exists(db: Session, relation_name: str) -> bool:

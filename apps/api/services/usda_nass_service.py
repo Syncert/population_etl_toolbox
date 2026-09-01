@@ -15,7 +15,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from data_ingestion_toolbox.models import (
+from apps.api.schemas import (
     NassMeasureListResponse,
     NassMeasureRow,
     NassObservationListResponse,

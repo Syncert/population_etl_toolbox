@@ -7,16 +7,25 @@ from typing import Any
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from apps.api.versioning import API_PREFIXES
+
 
 Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 
-CACHEABLE_PREFIXES = (
-    "/api/catalog/",
-    "/api/observations/",
-    "/api/distribution/",
-    "/api/comparison",
+#: Version-relative prefixes of the bounded public analytical reads that may be
+#: cached. Building the concrete prefixes from ``API_PREFIXES`` keeps a resource
+#: cacheable under every version it is served on; listing literal paths meant a
+#: new version silently lost its cache.
+CACHEABLE_SUFFIXES = (
+    "/catalog/",
+    "/observations/",
+    "/distribution/",
+    "/comparison",
+)
+CACHEABLE_PREFIXES = tuple(
+    f"{root}{suffix}" for root in API_PREFIXES for suffix in CACHEABLE_SUFFIXES
 )
 MAX_CACHE_BODY_BYTES = 2_000_000
 
