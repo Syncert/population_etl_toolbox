@@ -10,6 +10,7 @@ services:
     volumes:
       - analytics_postgres_data:/var/lib/postgresql/data
       - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/001_api_readonly.sql:ro
+      - ../../sql/bootstrap/002_app_api.sql:/docker-entrypoint-initdb.d/002_app_api.sql:ro
 
   service_postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -30,7 +31,7 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile.api
-    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5 --timeout-graceful-shutdown 10
     environment:
       DB_HOST: ${ANALYTICS_DB_HOST:-analytics_postgres}
       DB_PORT: ${ANALYTICS_DB_PORT:-5432}
@@ -41,6 +42,24 @@ services:
       DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-api_reader}:${ANALYTICS_API_DB_PASSWORD:-api_reader}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
       REDIS_URL: redis://redis:6379/0
       API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+      # Staleness bound after a warehouse publication (API-006): the response
+      # cache re-keys on the published harvest state within this window.
+      API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
+      # API-owned application storage (ADR-0003): a separate role from the
+      # read-only warehouse connection. Unset disables the saved-analysis
+      # routes, which then answer an explicit 503.
+      APP_API_DATABASE_URL: ${APP_API_DATABASE_URL:-postgresql+psycopg2://api_app_writer:${APP_API_DB_PASSWORD:-api_app_writer}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}}
+      # Declared database budgets: fail fast on an exhausted pool, cancel
+      # runaway statements server-side, bound connect attempts.
+      API_DB_POOL_SIZE: ${API_DB_POOL_SIZE:-5}
+      API_DB_MAX_OVERFLOW: ${API_DB_MAX_OVERFLOW:-10}
+      API_DB_POOL_TIMEOUT_SECONDS: ${API_DB_POOL_TIMEOUT_SECONDS:-5}
+      API_DB_CONNECT_TIMEOUT_SECONDS: ${API_DB_CONNECT_TIMEOUT_SECONDS:-5}
+      API_DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-15000}
+      # Per-client budgets by cost class; catalog reads are cheap, analytical
+      # reads reach the warehouse. 0 disables a bucket.
+      API_RATE_LIMIT_CATALOG_PER_MINUTE: ${API_RATE_LIMIT_CATALOG_PER_MINUTE:-600}
+      API_RATE_LIMIT_ANALYSIS_PER_MINUTE: ${API_RATE_LIMIT_ANALYSIS_PER_MINUTE:-240}
     depends_on:
       - analytics_postgres
       - redis
@@ -54,6 +73,20 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    stop_grace_period: 15s
+    healthcheck:
+      # Readiness, not liveness: the probe fails while the database is
+      # unreachable so orchestration stops routing here.
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request, sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready',
+          timeout=3).status == 200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   martin:
     image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b

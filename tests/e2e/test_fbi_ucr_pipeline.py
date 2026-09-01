@@ -2,10 +2,11 @@
 
 FBI Crime publishes no source-specific HTTP route: the accepted FBI plan
 delivered the agency-grain contract as the ``gold_fbi`` views plus the glossary
-publisher, and a crime router belongs to the API platform plan. This node
-therefore drives the reviewed Wisconsin release from raw capture to the two
-surfaces a consumer can actually read today — the published gold views and the
-provider-neutral catalog the glossary harvest feeds — and proves the semantics
+publisher, and its observation surface is the API platform's registry-dispatched
+neutral resource (API-004). This node therefore drives the reviewed Wisconsin
+release from raw capture to the surfaces a consumer can actually read — the
+published gold views, the provider-neutral catalog the glossary harvest feeds,
+and the neutral ``/api/v1/observations`` resource — and proves the semantics
 FBI data is easiest to misreport: a month nobody reported is not zero crime, a
 county filter is not a county total, and a rate is not an absolute count.
 """
@@ -13,6 +14,7 @@ county filter is not a county total, and a rate is not an absolute count.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from decimal import Decimal
 
 import pytest
 from psycopg2.extensions import connection
@@ -70,6 +72,10 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         supersedes while the latest projection advances.
     Covers: E2E-006 — an unreported month stays ``not_reported`` with a null
         value, and a reported zero stays a zero.
+    Covers: E2E-014 — the registry-dispatched neutral observation resource is
+        FBI UCR's first observation surface: a glossary-discovered metric
+        answers with exact values, release identities, participation coverage,
+        and byte-identical JSON on repeat.
     """
     factory = fbi_warehouse
 
@@ -208,7 +214,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         assert harvested == len(measure_identity)
 
         catalog = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
         )
         assert catalog.status_code == 200
         catalog_payload = catalog.json()
@@ -227,7 +233,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
             key.startswith(f"{SOURCE_CODE}:{PRODUCT.product_id}:") for key in units
         )
 
-        sources = client.get("/api/catalog/sources")
+        sources = client.get("/api/v1/catalog/sources")
         assert sources.status_code == 200
         assert SOURCE_CODE in {item["source_code"] for item in sources.json()}
 
@@ -280,9 +286,121 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         # losing a measure identity.
         assert harvest_publisher(factory, Publisher(PUBLISHER_SCHEMA)) == harvested
         refreshed = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
         ).json()
         assert refreshed["total"] == harvested
+
+        # E2E-014: FBI UCR's first observation surface is the neutral
+        # registry-dispatched resource. Resolve the absolute-total offense
+        # measure the release-comparison above already pinned down.
+        ((measure_id,),) = _query(
+            factory,
+            """
+            SELECT DISTINCT measure_id FROM gold_fbi.crime_observation
+            WHERE measure_form = 'absolute_total'
+              AND counted_entity_basis = 'offense'
+            """,
+        )
+        metric_code = f"{SOURCE_CODE}:{PRODUCT.product_id}:{measure_id}"
+        assert metric_code in {item["metric_code"] for item in refreshed["items"]}
+
+        capabilities = client.get("/api/v1/catalog/capabilities").json()
+        fbi_entry = next(
+            item for item in capabilities["items"] if item["source_code"] == SOURCE_CODE
+        )
+        assert fbi_entry["served_by_neutral_routes"] is True
+        assert "/api/v1/observations" in {
+            route["path"] for route in fbi_entry["observation_routes"]
+        }
+
+        latest = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": metric_code,
+                "subject_type": "national",
+                "year_from": 2023,
+                "year_to": 2023,
+            },
+        )
+        assert latest.status_code == 200
+        latest_payload = latest.json()
+        assert latest_payload["source_code"] == SOURCE_CODE
+        assert latest_payload["total"] > 0
+        assert {item["release"] for item in latest_payload["items"]} == {
+            revised.release_key
+        }
+        by_period = {
+            item["dimensions"]["period"]: item for item in latest_payload["items"]
+        }
+        national_january = by_period["01-2023"]
+        assert Decimal(national_january["value"]) == national_by_release[1][1]
+        assert national_january["value_status"] == "reported"
+        assert national_january["coverage"]["participation_status"] is not None
+        assert national_january["dimensions"]["subject_type"] == "national"
+
+        # A pinned earlier release answers the superseded value exactly.
+        pinned = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": metric_code,
+                "scope": "as_released",
+                "release": captured.release_key,
+                "subject_type": "national",
+                "year_from": 2023,
+                "year_to": 2023,
+            },
+        )
+        assert pinned.status_code == 200
+        pinned_by_period = {
+            item["dimensions"]["period"]: item for item in pinned.json()["items"]
+        }
+        assert (
+            Decimal(pinned_by_period["01-2023"]["value"]) == national_by_release[0][1]
+        )
+
+        # An unreported agency month keeps its null value and participation
+        # context through the neutral envelope.
+        agency = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": metric_code,
+                "subject_type": "agency",
+                "subject_code": INTERMITTENT_AGENCY,
+                "year_from": 2023,
+                "year_to": 2023,
+            },
+        )
+        assert agency.status_code == 200
+        agency_by_period = {
+            item["dimensions"]["period"]: item for item in agency.json()["items"]
+        }
+        assert agency_by_period["01-2023"]["value_status"] == "reported"
+        march = agency_by_period["03-2023"]
+        assert march["value"] is None
+        assert march["value_status"] == "not_reported"
+        assert march["coverage"]["participation_status"] == "no_participation"
+
+        releases = client.get(
+            "/api/v1/observations/releases", params={"metric_code": metric_code}
+        )
+        assert releases.status_code == 200
+        release_listing = releases.json()
+        assert [item["release"] for item in release_listing["items"]] == sorted(
+            [captured.release_key, revised.release_key], reverse=True
+        )
+        assert all(item["observation_count"] > 0 for item in release_listing["items"])
+
+        # An unchanged publication serializes byte-identically on repeat.
+        repeat = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": metric_code,
+                "subject_type": "national",
+                "year_from": 2023,
+                "year_to": 2023,
+            },
+        )
+        assert repeat.content == latest.content
 
     # Every registered period is accounted for on every subject, so a fixture
     # that reports fewer months cannot silently shrink the published window.

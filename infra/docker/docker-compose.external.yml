@@ -7,7 +7,7 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile.api
-    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5 --timeout-graceful-shutdown 10
     environment:
       DB_HOST: ${ANALYTICS_DB_HOST}
       DB_PORT: ${ANALYTICS_DB_PORT}
@@ -18,6 +18,14 @@ services:
       DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}
       REDIS_URL: redis://redis:6379/0
       API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+      API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
+      API_DB_POOL_SIZE: ${API_DB_POOL_SIZE:-5}
+      API_DB_MAX_OVERFLOW: ${API_DB_MAX_OVERFLOW:-10}
+      API_DB_POOL_TIMEOUT_SECONDS: ${API_DB_POOL_TIMEOUT_SECONDS:-5}
+      API_DB_CONNECT_TIMEOUT_SECONDS: ${API_DB_CONNECT_TIMEOUT_SECONDS:-5}
+      API_DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-15000}
+      API_RATE_LIMIT_CATALOG_PER_MINUTE: ${API_RATE_LIMIT_CATALOG_PER_MINUTE:-600}
+      API_RATE_LIMIT_ANALYSIS_PER_MINUTE: ${API_RATE_LIMIT_ANALYSIS_PER_MINUTE:-240}
     depends_on:
       - redis
     ports:

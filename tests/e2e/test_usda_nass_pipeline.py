@@ -11,6 +11,7 @@ bushels, and bushels-per-acre never share one series identity.
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 
 import pytest
 from psycopg2.extensions import connection
@@ -74,6 +75,9 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         the release it supersedes stays queryable as released.
     Covers: E2E-006 — a withheld value keeps its provider symbol and a null
         number rather than becoming a zero.
+    Covers: E2E-014 — a glossary-discovered NASS metric answers through the
+        registry-dispatched neutral resource with the same releases, values,
+        and withheld semantics its own route serves.
     """
     factory = nass_warehouse
 
@@ -95,7 +99,9 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
     ]
 
     with real_api_client() as client:
-        observations = client.get("/api/usda-nass/observations", params={"limit": 1000})
+        observations = client.get(
+            "/api/v1/usda-nass/observations", params={"limit": 1000}
+        )
         assert observations.status_code == 200
         payload = observations.json()
         assert payload["total"] == expected_rows
@@ -163,7 +169,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
 
         # Incompatible units never collapse into one series identity, and a
         # non-additive rate is declared as such rather than left to the caller.
-        series = client.get("/api/usda-nass/series", params={"limit": 1000}).json()
+        series = client.get("/api/v1/usda-nass/series", params={"limit": 1000}).json()
         assert series["total"] > 0
         unit_by_series: dict[tuple, set[str]] = {}
         for item in series["items"]:
@@ -176,7 +182,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             unit_by_series.setdefault(key, set()).add(item["unit_desc"])
         assert all(len(units) == 1 for units in unit_by_series.values())
 
-        measures = client.get("/api/usda-nass/measures").json()
+        measures = client.get("/api/v1/usda-nass/measures").json()
         behavior = {
             item["statisticcat_desc"]: (
                 item["additive_behavior"],
@@ -189,7 +195,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
 
         # The source notes a consumer needs to avoid an unsafe comparison are
         # served beside the data rather than left in the repository.
-        notes = client.get("/api/usda-nass/source-notes")
+        notes = client.get("/api/v1/usda-nass/source-notes")
         assert notes.status_code == 200
         notes_payload = notes.json()
         assert notes_payload["total"] == len(notes_payload["items"]) > 0
@@ -201,13 +207,13 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         # A filter that would mix programs or units must be expressible, and
         # the response must stay inside the filter it was given.
         census_only = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={"source_desc": "CENSUS", "limit": 1000},
         ).json()
         assert census_only["total"] > 0
         assert {item["source_desc"] for item in census_only["items"]} == {"CENSUS"}
         acres_only = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={"unit_desc": "ACRES", "limit": 1000},
         ).json()
         assert {item["unit_desc"] for item in acres_only["items"]} == {"ACRES"}
@@ -218,7 +224,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             document = nass_support.load_product_fixture(product.product_id)
             nass_support.run_to_gold(factory, product, document)
         replayed = client.get(
-            "/api/usda-nass/observations", params={"limit": 1000}
+            "/api/v1/usda-nass/observations", params={"limit": 1000}
         ).json()
         assert replayed == payload
 
@@ -234,7 +240,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         watermark = revised.contract.extraction_watermark
 
         history = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={
                 "product_id": REVISED_PRODUCT,
                 "geo_id": REVISED_GEO_ID,
@@ -253,7 +259,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         assert as_released[1]["value"] is not None
 
         latest = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={
                 "product_id": REVISED_PRODUCT,
                 "geo_id": REVISED_GEO_ID,
@@ -271,7 +277,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         harvested = harvest_publisher(factory, Publisher(PUBLISHER_SCHEMA))
         assert harvested > 0
         catalog = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 500}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 500}
         )
         assert catalog.status_code == 200
         catalog_payload = catalog.json()
@@ -283,3 +289,60 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             harvested
         )
         assert {"ACRES", "BU"} <= {item["units"] for item in catalog_payload["items"]}
+
+        # Covers: E2E-014 — the neutral resource answers the same publication
+        # the NASS route serves, resolved through the published lineage.
+        revised_row = as_released[1]
+        production_metrics = [
+            item
+            for item in catalog_payload["items"]
+            if item["physical_lineage"]["product_id"] == REVISED_PRODUCT
+            and item["physical_lineage"]["statisticcat_desc"] == "PRODUCTION"
+            and item["metric_display_name"] == revised_row["short_desc"]
+        ]
+        assert len(production_metrics) == 1
+        production_metric = production_metrics[0]["metric_code"]
+
+        neutral_latest = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": production_metric,
+                "geo_id": REVISED_GEO_ID,
+                "limit": 100,
+            },
+        )
+        assert neutral_latest.status_code == 200
+        neutral_payload = neutral_latest.json()
+        assert neutral_payload["source_code"] == SOURCE_CODE
+        assert neutral_payload["total"] == 1
+        (neutral_row,) = neutral_payload["items"]
+        assert neutral_row["release"] == watermark
+        assert neutral_row["value_status"] == "valid"
+        assert Decimal(neutral_row["value"]) == Decimal(str(revised_row["value"]))
+        assert neutral_row["unit"] == revised_row["unit_desc"]
+        assert neutral_row["dimensions"]["short_desc"] == revised_row["short_desc"]
+        assert neutral_row["dimensions"]["domain_desc"] == "TOTAL"
+
+        neutral_history = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": production_metric,
+                "scope": "as_released",
+                "geo_id": REVISED_GEO_ID,
+                "limit": 100,
+            },
+        ).json()
+        assert neutral_history["total"] == 2
+        withheld_neutral = next(
+            row for row in neutral_history["items"] if row["value_status"] == "withheld"
+        )
+        assert withheld_neutral["value"] is None
+        assert withheld_neutral["dimensions"]["suppression_code"] == "(D)"
+
+        release_listing = client.get(
+            "/api/v1/observations/releases",
+            params={"metric_code": production_metric},
+        ).json()
+        listed = [item["release"] for item in release_listing["items"]]
+        assert listed[0] == watermark
+        assert as_released[0]["release_watermark"] in listed

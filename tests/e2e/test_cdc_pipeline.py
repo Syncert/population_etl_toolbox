@@ -331,6 +331,9 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         geography miss, and suppressed/missing values never become numbers.
     Covers: ETL-038 — the optional app token never reaches captures, control
         state, logs, or API responses.
+    Covers: E2E-014 — a glossary-discovered CDC metric answers through the
+        registry-dispatched neutral resource with the same publication the CDC
+        route serves: exact values, release identities, and suppression intact.
     """
     caplog.set_level(logging.DEBUG)
     factory = cdc_warehouse
@@ -401,7 +404,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
 
     expected_api = EXPECTED["api"]
     with _real_api_client() as client:
-        latest = client.get("/api/cdc/observations", params={"limit": 100})
+        latest = client.get("/api/v1/cdc/observations", params={"limit": 100})
         assert latest.status_code == 200
         latest_payload = latest.json()
         assert latest_payload["total"] == expected_api["latest_total"]
@@ -430,15 +433,15 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
             ({"geo_type": "county"}, expected_api["county_total"]),
             ({"adjustment": "age_adjusted"}, expected_api["age_adjusted_total"]),
         ):
-            filtered = client.get("/api/cdc/observations", params=parameters)
+            filtered = client.get("/api/v1/cdc/observations", params=parameters)
             assert filtered.status_code == 200
             assert filtered.json()["total"] == expected_total
 
         first_page = client.get(
-            "/api/cdc/observations", params={"limit": 3, "offset": 0}
+            "/api/v1/cdc/observations", params={"limit": 3, "offset": 0}
         ).json()
         second_page = client.get(
-            "/api/cdc/observations", params={"limit": 3, "offset": 3}
+            "/api/v1/cdc/observations", params={"limit": 3, "offset": 3}
         ).json()
         assert first_page["total"] == expected_api["latest_total"]
         assert len(first_page["items"]) == 3 and len(second_page["items"]) == 3
@@ -453,7 +456,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
             (PLACES_COUNTY_ASSET, places_release),
         ):
             _replay_and_publish(factory, asset, release)
-        replayed = client.get("/api/cdc/observations", params={"limit": 100}).json()
+        replayed = client.get("/api/v1/cdc/observations", params={"limit": 100}).json()
         assert replayed == latest_payload
         for asset_id, expected_gold in EXPECTED["gold_first_release"].items():
             assert _gold_profile(factory, asset_id)["rows"] == expected_gold["rows"]
@@ -488,7 +491,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         ) == [(expected_history["cdi_latest_rows"],)]
 
         newest = client.get(
-            "/api/cdc/observations", params={"dataset": "cdi", "limit": 100}
+            "/api/v1/cdc/observations", params={"dataset": "cdi", "limit": 100}
         ).json()
         assert newest["total"] == expected_api["cdi_total"]
         assert {item["release_watermark"] for item in newest["items"]} == {
@@ -510,7 +513,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         )
 
         prior = client.get(
-            "/api/cdc/observations",
+            "/api/v1/cdc/observations",
             params={
                 "dataset": "cdi",
                 "release": EXPECTED["release_watermarks"]["cdi"],
@@ -520,6 +523,81 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         assert prior["release_selection"] == "single_release"
         assert prior["total"] == expected_api["cdi_total"]
         assert {item["release_watermark"] for item in prior["items"]} == {
+            EXPECTED["release_watermarks"]["cdi"]
+        }
+
+        # Covers: E2E-014 — the neutral resource answers the same publication.
+        national = _observation(items, dataset="cdi", geo_type="nation")
+        cdi_metric = "CDC:cdi:{}:{}".format(
+            national["measure_id"], national["value_type_id"]
+        )
+        neutral_latest = client.get(
+            "/api/v1/observations", params={"metric_code": cdi_metric, "limit": 100}
+        )
+        assert neutral_latest.status_code == 200
+        neutral_payload = neutral_latest.json()
+        assert neutral_payload["source_code"] == "CDC"
+        source_measure = client.get(
+            "/api/v1/cdc/observations",
+            params={
+                "dataset": "cdi",
+                "measure_id": national["measure_id"],
+                "value_type_id": national["value_type_id"],
+                "limit": 100,
+            },
+        ).json()
+        assert neutral_payload["total"] == source_measure["total"]
+        assert {row["release"] for row in neutral_payload["items"]} == {
+            EXPECTED["release_watermarks"]["cdi_second_release"]
+        }
+        neutral_national = next(
+            row for row in neutral_payload["items"] if row["geo_level"] == "nation"
+        )
+        assert neutral_national["value"] == national["value"]
+        assert neutral_national["unit"] == national["unit"]
+        assert (
+            neutral_national["dimensions"]["measure_label"] == national["measure_label"]
+        )
+
+        # Suppression survives the neutral envelope with its stratum context.
+        suppressed = _observation(
+            items, dataset="places_county", value_status="suppressed"
+        )
+        sup_metric = "CDC:places_county:{}:{}".format(
+            suppressed["measure_id"], suppressed["value_type_id"]
+        )
+        neutral_suppressed = client.get(
+            "/api/v1/observations", params={"metric_code": sup_metric, "limit": 100}
+        ).json()
+        match = next(
+            row
+            for row in neutral_suppressed["items"]
+            if row["source_record_id"] == suppressed["source_record_id"]
+        )
+        assert match["value"] is None
+        assert match["value_status"] == "suppressed"
+        assert match["dimensions"]["stratum_id"] == suppressed["stratum_id"]
+
+        # Release discovery lists both CDI releases newest-first, and pinning
+        # the earlier one answers the superseded publication exactly.
+        release_listing = client.get(
+            "/api/v1/observations/releases", params={"metric_code": cdi_metric}
+        ).json()
+        assert [item["release"] for item in release_listing["items"]] == [
+            EXPECTED["release_watermarks"]["cdi_second_release"],
+            EXPECTED["release_watermarks"]["cdi"],
+        ]
+        neutral_prior = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": cdi_metric,
+                "scope": "as_released",
+                "release": EXPECTED["release_watermarks"]["cdi"],
+                "limit": 100,
+            },
+        ).json()
+        assert neutral_prior["total"] == neutral_payload["total"]
+        assert {row["release"] for row in neutral_prior["items"]} == {
             EXPECTED["release_watermarks"]["cdi"]
         }
         assert APP_TOKEN not in latest.text
@@ -649,7 +727,7 @@ def test_cdc_partial_page_capture_cannot_publish_and_reruns_to_a_clean_state(
     }
     with _real_api_client() as api_client:
         payload = api_client.get(
-            "/api/cdc/observations", params={"dataset": "cdi", "limit": 100}
+            "/api/v1/cdc/observations", params={"dataset": "cdi", "limit": 100}
         ).json()
     assert payload["total"] == EXPECTED["api"]["cdi_total"]
     assert {item["estimate_method"] for item in payload["items"]} == {

@@ -12,7 +12,7 @@ const exampleGeo = "state:55|county:025";
 export default function ArticlesPage() {
   const [history, setHistory] = useState([]);
   useEffect(() => {
-    fetch(`/api/observations/timeseries?metric_code=${encodeURIComponent(metricCode)}&geo_id=${exampleGeo}&limit=1000`)
+    fetch(`/api/v1/observations/timeseries?metric_code=${encodeURIComponent(metricCode)}&geo_id=${exampleGeo}&limit=1000`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("unavailable")))
       .then((payload) => setHistory(payload.items || []))
       .catch(() => setHistory([]));

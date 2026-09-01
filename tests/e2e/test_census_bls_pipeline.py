@@ -112,11 +112,11 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
             )
             with _real_client() as client:
                 source = client.get(
-                    "/api/bls/observations/timeseries",
+                    "/api/v1/bls/observations/timeseries",
                     params={"metric_code": metric_code, "geo_id": "state:97"},
                 )
                 common = client.get(
-                    "/api/observations/latest", params={"metric_code": metric_code}
+                    "/api/v1/observations/latest", params={"metric_code": metric_code}
                 )
             assert source.status_code == common.status_code == 200
             assert source.json()["total"] == common.json()["total"] == 1
@@ -153,7 +153,7 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
         )
         with _real_client() as client:
             revised = client.get(
-                "/api/bls/observations/latest", params={"metric_code": metric_code}
+                "/api/v1/bls/observations/latest", params={"metric_code": metric_code}
             )
         assert revised.status_code == 200
         assert revised.json()["items"][0]["value"] == "5.25"
@@ -268,11 +268,11 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
             )
             with _real_client() as client:
                 source = client.get(
-                    "/api/census/observations/timeseries",
+                    "/api/v1/census/observations/timeseries",
                     params={"metric_code": metric_code, "geo_id": "state:96"},
                 )
                 common = client.get(
-                    "/api/observations/latest", params={"metric_code": metric_code}
+                    "/api/v1/observations/latest", params={"metric_code": metric_code}
                 )
             assert source.status_code == common.status_code == 200
             assert source.json()["total"] == common.json()["total"] == 1
@@ -296,7 +296,8 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
         )
         with _real_client() as client:
             revised = client.get(
-                "/api/census/observations/latest", params={"metric_code": metric_code}
+                "/api/v1/census/observations/latest",
+                params={"metric_code": metric_code},
             )
         assert revised.status_code == 200
         assert revised.json()["items"][0]["value"] == "525.0"

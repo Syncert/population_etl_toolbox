@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from data_ingestion_toolbox.models import (
+from apps.api.schemas import (
     CdcObservation,
     CdcObservationListResponse,
 )

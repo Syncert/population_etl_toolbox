@@ -19,8 +19,8 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/api/catalog/sources").then((response) => response.ok ? response.json() : Promise.reject(new Error("sources unavailable"))),
-      fetch("/api/catalog/metrics?active_only=true&q=population&limit=6").then((response) => response.ok ? response.json() : Promise.reject(new Error("metrics unavailable"))),
+      fetch("/api/v1/catalog/sources").then((response) => response.ok ? response.json() : Promise.reject(new Error("sources unavailable"))),
+      fetch("/api/v1/catalog/metrics?active_only=true&q=population&limit=6").then((response) => response.ok ? response.json() : Promise.reject(new Error("metrics unavailable"))),
     ]).then(([sourceItems, metricPayload]) => {
       if (!cancelled) {
         setSources(sourceItems);

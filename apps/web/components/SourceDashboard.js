@@ -34,7 +34,7 @@ const SOURCE_META = {
     preferredMetric: "BLS:LAU:UNEMP_RATE",
     catalogQuery: "unemployment rate",
     geoLevel: "STATE",
-    endpoint: "/api/bls/observations/latest",
+    endpoint: "/api/v1/bls/observations/latest",
     theme: "dark",
     asOf: "May 2025",
   },
@@ -45,7 +45,7 @@ const SOURCE_META = {
     preferredMetric: "ACS:acs5:B01003_001",
     catalogQuery: "total population",
     geoLevel: "COUNTY",
-    endpoint: "/api/census/observations/latest",
+    endpoint: "/api/v1/census/observations/latest",
     theme: "light",
     asOf: "2023",
   },
@@ -56,7 +56,7 @@ const SOURCE_META = {
     preferredMetric: "FRED:CPIAUCSL",
     catalogQuery: "consumer price index",
     geoLevel: "NATIONAL",
-    endpoint: "/api/fred/observations/latest",
+    endpoint: "/api/v1/fred/observations/latest",
     theme: "light",
     asOf: "May 30, 2025",
   },
@@ -126,7 +126,7 @@ function useSourceObservations(sourceKey) {
           active_only: "true",
           limit: "25",
         });
-        const catalogResponse = await fetch(`/api/catalog/metrics?${catalogParams}`, {
+        const catalogResponse = await fetch(`/api/v1/catalog/metrics?${catalogParams}`, {
           cache: "no-store",
           signal: controller.signal,
         });

@@ -149,6 +149,6 @@ def test_a_product_without_a_source_route_must_record_why() -> None:
             fixtures=("tests/fixtures/cdc/cdi_metadata.json",),
             serving_relations=("gold_example.observation",),
             source_api_routes=(),
-            neutral_api_routes=("/api/catalog/metrics",),
+            neutral_api_routes=("/api/v1/catalog/metrics",),
             owner="tests/e2e/test_cdc_pipeline.py::test_example",
         )

@@ -39,7 +39,9 @@ def _cache_application(
             }
         )
 
-    application = Starlette(routes=[Route("/api/catalog/{resource}", catalog_response)])
+    application = Starlette(
+        routes=[Route("/api/v1/catalog/{resource}", catalog_response)]
+    )
     return (
         RedisResponseCacheMiddleware(
             application,
@@ -63,8 +65,8 @@ def test_cache_miss_then_hit_returns_identical_body(
     application, state = _cache_application(redis_test_config.url)
 
     with TestClient(application) as client:
-        first = client.get("/api/catalog/metrics", params={"limit": 10})
-        second = client.get("/api/catalog/metrics", params={"limit": 10})
+        first = client.get("/api/v1/catalog/metrics", params={"limit": 10})
+        second = client.get("/api/v1/catalog/metrics", params={"limit": 10})
 
     assert first.status_code == second.status_code == 200
     assert first.headers["x-cache"] == "MISS"
@@ -76,8 +78,8 @@ def test_cache_miss_then_hit_returns_identical_body(
 @pytest.mark.parametrize(
     ("first_target", "second_target"),
     [
-        ("/api/catalog/metrics?limit=10", "/api/catalog/metrics?limit=20"),
-        ("/api/catalog/metrics?limit=10", "/api/catalog/sources?limit=10"),
+        ("/api/v1/catalog/metrics?limit=10", "/api/v1/catalog/metrics?limit=20"),
+        ("/api/v1/catalog/metrics?limit=10", "/api/v1/catalog/sources?limit=10"),
     ],
     ids=("query-string", "path"),
 )
@@ -106,10 +108,10 @@ def test_cache_entry_expires_after_configured_ttl(
     application, state = _cache_application(redis_test_config.url, ttl_seconds=1)
 
     with TestClient(application) as client:
-        first = client.get("/api/catalog/metrics")
-        immediate = client.get("/api/catalog/metrics")
+        first = client.get("/api/v1/catalog/metrics")
+        immediate = client.get("/api/v1/catalog/metrics")
         time.sleep(1.1)
-        expired = client.get("/api/catalog/metrics")
+        expired = client.get("/api/v1/catalog/metrics")
 
     assert first.headers["x-cache"] == "MISS"
     assert immediate.headers["x-cache"] == "HIT"
@@ -123,7 +125,7 @@ def test_redis_unavailable_falls_back_within_budget() -> None:
 
     started = time.perf_counter()
     with TestClient(application) as client:
-        response = client.get("/api/catalog/metrics")
+        response = client.get("/api/v1/catalog/metrics")
     elapsed = time.perf_counter() - started
 
     assert response.status_code == 200

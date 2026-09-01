@@ -136,7 +136,7 @@ def test_latest_forwards_filters_and_uses_count_total() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={
                 "metric_code": "POP_TOTAL",
                 "geo_level": "state",
@@ -178,7 +178,7 @@ def test_latest_falls_back_to_rpt_when_mv_empty() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={"metric_code": "UNEMP", "limit": 1, "offset": 0},
         )
     finally:
@@ -204,7 +204,7 @@ def test_timeseries_uses_count_total() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/observations/timeseries",
+            "/api/v1/observations/timeseries",
             params={"metric_code": "UNEMP", "geo_id": "06001", "limit": 1},
         )
     finally:
@@ -229,7 +229,7 @@ def test_timeseries_rejects_invalid_date_range() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/observations/timeseries",
+            "/api/v1/observations/timeseries",
             params={
                 "metric_code": "UNEMP",
                 "geo_id": "06001",
@@ -248,118 +248,51 @@ def test_timeseries_rejects_invalid_date_range() -> None:
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_latest_accepts_metric_id_alias() -> None:
-    """Covers: API-004 — metric_id resolves to metric_code for latest."""
-    fake = _LatestForwardingSession()
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        ("/api/v1/observations/latest", {}),
+        ("/api/v1/observations/timeseries", {"geo_id": "06001"}),
+    ],
+    ids=("latest", "timeseries"),
+)
+def test_metric_code_is_required(path: str, params: dict) -> None:
+    """Covers: API-003 — metric_code is required; the metric_id alias is gone.
 
-    def _override_db():
-        yield fake
-
-    app.dependency_overrides[get_db_session_dep] = _override_db
-    try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/observations/latest",
-            params={
-                "metric_id": "POP_TOTAL",
-                "geo_level": "state",
-                "state_fips": "06",
-                "limit": 1,
-                "offset": 0,
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert fake.params_seen[0]["metric_code"] == "POP_TOTAL"
-
-
-@pytest.mark.unit
-@pytest.mark.api
-def test_latest_resolves_product_friendly_population_alias() -> None:
-    """Covers: API-004 — population resolves to its canonical metric."""
-    fake = _LatestForwardingSession()
-
-    def _override_db():
-        yield fake
-
-    app.dependency_overrides[get_db_session_dep] = _override_db
-    try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/observations/latest",
-            params={"metric_code": "population", "geo_level": "county", "limit": 1},
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert fake.params_seen[0]["metric_code"] == "ACS:acs5:B01003_001"
-
-
-@pytest.mark.unit
-@pytest.mark.api
-def test_timeseries_accepts_metric_id_alias() -> None:
-    """Covers: API-004 — timeseries forwards the metric_id alias."""
-    fake = _TimeseriesSession()
-
-    def _override_db():
-        yield fake
-
-    app.dependency_overrides[get_db_session_dep] = _override_db
-    try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/observations/timeseries",
-            params={"metric_id": "UNEMP", "geo_id": "06001", "limit": 1},
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert fake.params_seen[0]["metric_code"] == "UNEMP"
-
-
-@pytest.mark.unit
-@pytest.mark.api
-def test_latest_requires_metric_code_or_metric_id() -> None:
-    """Covers: API-003 — latest requires one metric identifier."""
+    API-008 retired ``metric_id`` and the ``population`` convenience mapping
+    along with the route aliases. One spelling of a metric identity means a
+    request cannot silently resolve to something the caller did not name.
+    """
 
     def _override_db():
         yield _LatestForwardingSession()
 
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/observations/latest",
-            params={"limit": 1, "offset": 0},
-        )
+        response = TestClient(app).get(path, params=params)
     finally:
         app.dependency_overrides.clear()
-
     assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code or metric_id is required"
+    body = response.json()["detail"]
+    assert any(
+        error["loc"][-1] == "metric_code" and error["type"] == "missing"
+        for error in body
+    ), body
 
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_timeseries_requires_metric_code_or_metric_id() -> None:
-    """Covers: API-003 — timeseries requires one metric identifier."""
+def test_metric_id_alias_is_not_accepted() -> None:
+    """Covers: API-003 — a retired alias cannot resolve a request."""
 
     def _override_db():
-        yield _TimeseriesSession()
+        yield _LatestForwardingSession()
 
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/observations/timeseries",
-            params={"geo_id": "06001", "limit": 1},
+        response = TestClient(app).get(
+            "/api/v1/observations/latest", params={"metric_id": "POP_TOTAL"}
         )
     finally:
         app.dependency_overrides.clear()
-
     assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code or metric_id is required"

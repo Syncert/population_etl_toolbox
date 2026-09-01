@@ -51,7 +51,7 @@ def test_compose_services_are_healthy_and_dependencies_are_reachable() -> None:
     finally:
         redis_client.close()
 
-    assert _json("http://127.0.0.1:33001/api/health") == {
+    assert _json("http://127.0.0.1:33001/api/v1/health") == {
         "service": "api-stub",
         "status": "ok",
     }

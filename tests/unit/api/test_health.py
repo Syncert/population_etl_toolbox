@@ -36,9 +36,9 @@ def test_health_returns_security_headers() -> None:
 @pytest.mark.unit
 @pytest.mark.api
 def test_api_health_alias_returns_ok() -> None:
-    """Covers: API-001 — /api/health returns the healthy contract."""
+    """Covers: API-001 — /api/v1/health returns the healthy contract."""
     client = TestClient(app)
-    response = client.get("/api/health")
+    response = client.get("/api/v1/health")
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"

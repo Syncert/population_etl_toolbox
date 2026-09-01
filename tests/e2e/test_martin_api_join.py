@@ -58,7 +58,7 @@ def test_real_api_county_joins_one_to_one_to_decoded_tile_and_rejects_mismatch(
     app.dependency_overrides[get_db_session_dep] = override_db
     try:
         response = TestClient(app).get(
-            "/api/census/observations/latest",
+            "/api/v1/census/observations/latest",
             params={"metric_code": METRIC_CODE, "geo_level": "COUNTY"},
         )
     finally:

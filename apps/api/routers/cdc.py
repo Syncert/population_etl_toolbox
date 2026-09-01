@@ -17,13 +17,13 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.services.cdc_service import list_cdc_observations
 from data_ingestion_toolbox.cdc.registry import enabled_assets
-from data_ingestion_toolbox.models import CdcObservationListResponse
+from apps.api.schemas import CdcObservationListResponse
 from data_ingestion_toolbox.sql.cdc_queries import (
     ADJUSTMENT_STATUSES,
     GEOGRAPHY_TYPES,
 )
 
-router = APIRouter(prefix="/api/cdc", tags=["cdc"])
+router = APIRouter(prefix="/cdc", tags=["cdc"])
 
 
 def _registered_datasets() -> tuple[str, ...]:
@@ -54,7 +54,7 @@ def get_cdc_observations(
     adjustment: Optional[str] = Query(None, max_length=50),
     release: Optional[str] = Query(None, max_length=64),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> CdcObservationListResponse:
     """Return published CDC observations for the latest or a named release."""

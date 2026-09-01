@@ -22,6 +22,12 @@ def _application_routes() -> set[str]:
     FastAPI includes routers lazily, so ``app.routes`` still holds unexpanded
     ``_IncludedRouter`` entries with no path; the generated schema is the
     surface a consumer actually sees.
+
+    API-008 retired the unversioned aliases, so there is exactly one path per
+    resource and a product claims that path directly. Before then this
+    collapsed versioned paths onto their aliases so a resource was claimed
+    once rather than once per mount point; with a single surface the collapse
+    has nothing left to do.
     """
     paths = create_app(Settings()).openapi()["paths"]
     return {path for path in paths if path.startswith("/api/")}

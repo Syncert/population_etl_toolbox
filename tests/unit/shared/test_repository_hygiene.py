@@ -26,6 +26,9 @@ OPERATIONAL_SCRIPTS = {
     "deploy_stack.ps1",
     "diagnose_geo_missing.py",
     "provision_api_readonly.py",
+    # Provisions API-owned application storage and issues/revokes the
+    # operator-gated access tokens ADR-0003 requires.
+    "provision_app_api.py",
 }
 
 

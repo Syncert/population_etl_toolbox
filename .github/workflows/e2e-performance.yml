@@ -96,8 +96,16 @@ jobs:
       - name: Run real API/database contract
         run: >-
           pytest tests/integration/api/test_real_database_contract.py
+          tests/integration/api/test_usda_nass_api_contract.py
+          tests/integration/api/test_saved_analysis_contract.py
           -m "integration and api and database"
           --tb=short -q --junitxml=junit-api-database.xml
+
+      - name: Run production-app cache freshness contract
+        run: >-
+          pytest tests/integration/api/test_cache_real_services.py
+          -m "integration and api"
+          --tb=short -q --junitxml=junit-api-cache-freshness.xml
 
       - name: Run performance contracts
         run: >-
@@ -115,10 +123,10 @@ jobs:
           API_PID=$!
           trap 'kill "$API_PID" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
-            curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null && break
+            curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null && break
             sleep 1
           done
-          curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null
           locust -f tests/performance/locustfile.py --headless \
             --users 16 --spawn-rate 8 --run-time 30s \
             --host http://127.0.0.1:8000 \

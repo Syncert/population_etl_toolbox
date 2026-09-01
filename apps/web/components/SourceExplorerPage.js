@@ -22,24 +22,24 @@ const SOURCE_CONFIG = {
     key: "census",
     title: "Census",
     sourceCode: "CENSUS_ACS",
-    latestPath: "/api/census/observations/latest",
-    timeseriesPath: "/api/census/observations/timeseries",
+    latestPath: "/api/v1/census/observations/latest",
+    timeseriesPath: "/api/v1/census/observations/timeseries",
     supportsDataset: true,
   },
   fred: {
     key: "fred",
     title: "FRED",
     sourceCode: "FRED",
-    latestPath: "/api/fred/observations/latest",
-    timeseriesPath: "/api/fred/observations/timeseries",
+    latestPath: "/api/v1/fred/observations/latest",
+    timeseriesPath: "/api/v1/fred/observations/timeseries",
     supportsDataset: false,
   },
   bls: {
     key: "bls",
     title: "BLS",
     sourceCode: "BLS",
-    latestPath: "/api/bls/observations/latest",
-    timeseriesPath: "/api/bls/observations/timeseries",
+    latestPath: "/api/v1/bls/observations/latest",
+    timeseriesPath: "/api/v1/bls/observations/timeseries",
     supportsDataset: false,
   },
 };
@@ -881,7 +881,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
   const [apiHealth, setApiHealth] = useState({
     state: "loading",
-    message: "checking /api/health",
+    message: "checking /api/v1/health",
   });
   const [tilesHealth, setTilesHealth] = useState({
     state: "loading",
@@ -1003,7 +1003,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
     async function bootstrap() {
       try {
-        const healthResponse = await fetch("/api/health", { cache: "no-store" });
+        const healthResponse = await fetch("/api/v1/health", { cache: "no-store" });
         if (!healthResponse.ok) {
           throw new Error(`status ${healthResponse.status}`);
         }
@@ -1022,7 +1022,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           source_code: sourceConfig.sourceCode,
           active_only: "true",
         };
-        const items = await fetchAllCatalogItems("/api/catalog/metrics", metricQuery);
+        const items = await fetchAllCatalogItems("/api/v1/catalog/metrics", metricQuery);
 
         if (!cancelled) {
           setMetrics(items);
@@ -1171,7 +1171,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
         if (selectedStateFips && selectedGeoLevel !== "NATIONAL") {
           query.set("state_fips", selectedStateFips);
         }
-        const response = await fetch(`/api/distribution/bins?${query.toString()}`, {
+        const response = await fetch(`/api/v1/distribution/bins?${query.toString()}`, {
           cache: "no-store",
         });
 
@@ -1213,8 +1213,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
       try {
         const [stateItems, countyItems] = await Promise.all([
-          fetchAllCatalogItems("/api/catalog/geographies", { geo_level: "STATE" }),
-          fetchAllCatalogItems("/api/catalog/geographies", { geo_level: "COUNTY" }),
+          fetchAllCatalogItems("/api/v1/catalog/geographies", { geo_level: "STATE" }),
+          fetchAllCatalogItems("/api/v1/catalog/geographies", { geo_level: "COUNTY" }),
         ]);
 
         if (!cancelled) {

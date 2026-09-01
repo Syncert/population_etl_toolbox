@@ -12,4 +12,8 @@ RUN groupadd --system --gid 10001 api \
 
 USER api
 
-CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bounded keep-alive and a graceful-shutdown window: uvicorn drains in-flight
+# requests for up to 10 seconds before the lifespan shutdown disposes the
+# database pool and closes the Redis client (API-006).
+CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--timeout-keep-alive", "5", "--timeout-graceful-shutdown", "10"]

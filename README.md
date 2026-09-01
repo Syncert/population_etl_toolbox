@@ -203,20 +203,89 @@ Default environment variables (override as needed):
 - `DB_PASSWORD` (default empty)
 - `DB_NAME` (default `population_etl`)
 
-Available endpoints:
-- `GET /health`
-- `GET /api/catalog/sources`
-- `GET /api/catalog/metrics`
-- `GET /api/catalog/geographies`
-- `GET /api/observations/latest`
-- `GET /api/observations/timeseries`
-- `GET /api/distribution/bins`
-- `GET /api/comparison`
-- `GET /api/models/status`
+Consumers should start with the
+[API consumer guide](docs/reference/API_CONSUMER_GUIDE.md), which is the stable
+contract for routes, semantics, errors, caching, limits, and version policy.
 
-Observation endpoint parameter note:
-- `GET /api/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
-- `GET /api/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
+Every resource is served under `/api/v1`, and only there. The unversioned
+`/api` aliases that carried the original MVP paths were retired once the API
+had no downstream dependants; an unversioned data path now answers `404`. See
+[ADR-0002](docs/decisions/0002-api-versioning-and-deprecation.md) and its
+2026-09-01 amendment.
+
+Provider-neutral endpoints:
+- `GET /api/v1/catalog/sources`
+- `GET /api/v1/catalog/metrics`
+- `GET /api/v1/catalog/metrics/{metric_code}` — one metric's published
+  semantics plus the versioned routes that can serve it
+- `GET /api/v1/catalog/geographies`
+- `GET /api/v1/catalog/capabilities` — machine-readable per-source capability
+  metadata: route segment, neutral-route reachability, registered datasets,
+  and per-route filter names for every completed source
+- `GET /api/v1/catalog/freshness` — per-source publication and freshness
+  state rolled up from the harvested glossary
+- `GET /api/v1/observations` — observations for any completed source's metric,
+  dispatched through the reviewed registry to the owning source's serving
+  relations. `scope=latest` (default) serves the source's own latest
+  publication; `scope=as_released` serves every published release, optionally
+  pinned with `release=`. Filters beyond the universal parameters are
+  per-source and declared by `/api/v1/catalog/capabilities`; an unsupported
+  filter is rejected with an explanation
+- `GET /api/v1/observations/releases` — the published release identities
+  holding a metric's observations, newest first
+- `GET /api/v1/observations/latest` — legacy shape; serves the three sources
+  published into the cross-source union views (Census ACS, BLS, FRED)
+- `GET /api/v1/observations/timeseries` — legacy shape; same three sources
+- `GET /api/v1/comparison/preflight` — whether two metrics can be compared,
+  and why: the declared compatibility rules (units, time grains, geography
+  grains, aggregation, source analysis readiness) evaluated three-valued,
+  with unpublished semantics reported as caveats rather than assumed
+- `GET /api/v1/comparison` — aligned comparison of two compatible metrics,
+  one newest value per geography per side, with both inputs' periods and
+  identities on every API-derived difference/ratio; an incompatible pair is
+  rejected with the failed rules
+- `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
+  metric's latest values, dispatched to the owning source; stratified
+  sources are declined with their declared restriction
+- `GET /api/v1/health`
+
+Saved analysis configurations (API-owned, authenticated — see
+[ADR-0003](docs/decisions/0003-saved-analysis-authentication-and-persistence.md)):
+- `GET|POST /api/v1/analysis-configurations`
+- `GET|PUT|DELETE /api/v1/analysis-configurations/{configuration_id}`
+
+These require `Authorization: Bearer <token>`, are scoped to the authenticated
+owner, and are never publicly cached. Tokens are operator-provisioned with
+`python scripts/provision_app_api.py --apply-schema --issue-token "<label>"`,
+which prints the token exactly once and stores only its SHA-256 digest;
+`--revoke-token-label "<label>"` revokes it. Storage lives in the `app_api`
+schema under the separate `api_app_writer` role — the warehouse role stays
+read-only — and is configured with `APP_API_DATABASE_URL`. With that unset the
+routes answer an explicit 503 and the rest of the API is unaffected.
+
+Source-scoped endpoints:
+- `GET /api/v1/{bls,census,fred,pep}/observations/latest`
+- `GET /api/v1/{bls,census,fred,pep}/observations/timeseries`
+- `GET /api/v1/cdc/observations`
+- `GET /api/v1/usda-nass/{observations,series,measures,source-notes}`
+
+`GET /health` — without the `/api` prefix — is the container and load-balancer
+liveness probe; `GET /health/ready` is the readiness probe (503 while the
+database is unreachable; Redis never gates readiness). Both sit outside the
+version policy and are not deprecated.
+
+Operational contract (API-006): responses are cached under a key carrying the
+served-contract fingerprint and the warehouse publication epoch, so a
+republication is served within `API_CACHE_FRESHNESS_SECONDS` regardless of the
+TTL; the API engine runs with declared pool, connect, and statement-timeout
+budgets (`API_DB_*`); optional per-client rate limits split catalog from
+analytical cost (`API_RATE_LIMIT_*`, off by default); and every response
+carries an `X-Request-ID` logged with a structured completion line.
+
+Metric identity: `metric_code` is required wherever a metric is named, and is
+its only spelling. The `metric_id` alias and the `population` convenience
+mapping were retired with the route aliases — one spelling means a request
+cannot silently resolve to something the caller did not name.
 
 ### Next.js Web App (Local Iteration)
 

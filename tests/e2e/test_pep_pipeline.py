@@ -166,6 +166,9 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         superseded release stays readable as released.
     Covers: E2E-006 — a population estimate carries no fabricated margin of
         error and cannot be confused with an ACS survey estimate.
+    Covers: E2E-014 — the glossary-discovered PEP measure answers through the
+        registry-dispatched neutral resource with exact vintages and values,
+        while the legacy union routes stay honestly empty for PEP.
     """
     scope = pep_scope
 
@@ -255,7 +258,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
 
     with real_api_client() as client:
         latest = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 100},
         )
         assert latest.status_code == 200
@@ -278,7 +281,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
 
         # As-released history remains addressable through the source route.
         timeseries = client.get(
-            "/api/pep/observations/timeseries",
+            "/api/v1/pep/observations/timeseries",
             params={"metric_code": POPULATION_METRIC, "geo_id": "us:1", "limit": 500},
         )
         assert timeseries.status_code == 200
@@ -294,7 +297,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         }
 
         place = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": PLACE_METRIC, "geo_level": "place", "limit": 100},
         ).json()
         place_item = _observation(
@@ -307,14 +310,14 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         assert place_item["dataset_code"] == "pep_subcounty"
         assert float(place_item["value"]) == PLACE_2025_ESTIMATE
 
-        # The cross-source observation contract unions ACS, BLS, and FRED
-        # only. PEP is served by its own
-        # route and the glossary catalog; a consumer asking the neutral route
-        # for a PEP metric gets an empty, well-formed answer rather than a
-        # partial one. Extending that union is API-platform work, and this
-        # assertion fails the moment it happens without registering the change.
+        # The legacy cross-source views union ACS, BLS, and FRED only, and the
+        # legacy latest route still reads them; PEP's neutral reach is the
+        # registry-dispatched ``/api/v1/observations`` resource (asserted
+        # below), while this legacy route stays an empty, well-formed answer
+        # until API-008 retires it. This assertion fails the moment the union
+        # widens without registering the change.
         neutral = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 10},
         )
         assert neutral.status_code == 200
@@ -323,7 +326,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         # A PEP estimate must never be reachable under an ACS metric identity.
         assert POPULATION_METRIC.startswith(f"{SOURCE_CODE}:")
         acs_shaped = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={"metric_code": "CENSUS_ACS:pep_nst_alldata:POPESTIMATE"},
         )
         assert acs_shaped.status_code == 200
@@ -336,7 +339,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         )
         assert harvested > 0
         catalog = client.get(
-            "/api/catalog/metrics",
+            "/api/v1/catalog/metrics",
             params={"source_code": SOURCE_CODE, "limit": 200},
         )
         assert catalog.status_code == 200
@@ -349,11 +352,83 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
             item["metric_code"].rsplit(":", 1)[-1] for item in catalog_payload["items"]
         }
 
+        # Covers: E2E-014 — the discovered measure answers through the
+        # registry-dispatched neutral resource. One glossary measure spans the
+        # datasets that publish it; each row keeps its dataset identity.
+        glossary_metric = next(
+            item["metric_code"]
+            for item in catalog_payload["items"]
+            if item["metric_code"].endswith(":POPESTIMATE")
+        )
+        neutral_latest = client.get(
+            "/api/v1/observations",
+            params={"metric_code": glossary_metric, "geo_id": "us:1", "limit": 100},
+        )
+        assert neutral_latest.status_code == 200
+        neutral_payload = neutral_latest.json()
+        assert neutral_payload["source_code"] == SOURCE_CODE
+        neutral_national = next(
+            row
+            for row in neutral_payload["items"]
+            if row["period_start"] == "2024-07-01"
+        )
+        assert float(neutral_national["value"]) == NATIONAL_2024_REVISED
+        assert neutral_national["release"] == "2025"
+        assert neutral_national["uncertainty"] is None, (
+            "PEP publishes no survey uncertainty; the envelope must not invent one"
+        )
+        assert neutral_national["dimensions"]["dataset_code"] == "pep_nst_alldata"
+
+        # As-released history serves both vintages of the same estimate date.
+        neutral_history = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": glossary_metric,
+                "scope": "as_released",
+                "geo_id": "us:1",
+                "limit": 500,
+            },
+        ).json()
+        released_neutral_2024 = [
+            row
+            for row in neutral_history["items"]
+            if row["period_start"] == "2024-07-01"
+        ]
+        assert {row["release"] for row in released_neutral_2024} == {"2024", "2025"}
+        assert {float(row["value"]) for row in released_neutral_2024} == {
+            float(NATIONAL_2024_AS_RELEASED),
+            float(NATIONAL_2024_REVISED),
+        }
+
+        release_listing = client.get(
+            "/api/v1/observations/releases",
+            params={"metric_code": glossary_metric},
+        ).json()
+        listed_releases = [item["release"] for item in release_listing["items"]]
+        assert listed_releases[0] == "2025"
+        assert "2024" in listed_releases
+
+        # The place estimate keeps its canonical identity and dataset.
+        neutral_place = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": glossary_metric,
+                "geo_id": PLACE_GEO_ID,
+                "limit": 100,
+            },
+        ).json()
+        place_row = next(
+            row for row in neutral_place["items"] if row["period_start"] == "2025-07-01"
+        )
+        assert place_row["geo_level"] == "place"
+        assert float(place_row["value"]) == PLACE_2025_ESTIMATE
+        assert place_row["dimensions"]["dataset_code"] == "pep_subcounty"
+
         # Covers: E2E-004 — replaying the same captures changes nothing a
         # consumer can observe.
         assert transform_pep_to_silver(PostgresHookStub(scope.connection_factory)) == 0
         replayed = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 100},
         )
         assert replayed.json() == latest_payload

@@ -25,13 +25,18 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 #: these; the coverage test uses them to decide which routes still need an
 #: owner, so a new *source* router cannot slip in unclaimed while the
 #: cross-source platform surface keeps evolving under its own plan.
+#: Routes owned by the API platform rather than by any one data product:
+#: the provider-neutral resources, the deployment probes, and the API-owned
+#: user storage. A data product claims only its own source-scoped routes, so
+#: these need no end-to-end product owner. ``/api/v1/models`` is absent because
+#: API-006 retired that probe endpoint outright.
 SHARED_API_PREFIXES: tuple[str, ...] = (
-    "/api/health",
-    "/api/catalog",
-    "/api/observations",
-    "/api/distribution",
-    "/api/comparison",
-    "/api/models",
+    "/api/v1/health",
+    "/api/v1/catalog",
+    "/api/v1/observations",
+    "/api/v1/distribution",
+    "/api/v1/comparison",
+    "/api/v1/analysis-configurations",
 )
 
 
@@ -122,10 +127,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_census.rpt_acs_observations",
         ),
         source_api_routes=(
-            "/api/census/observations/latest",
-            "/api/census/observations/timeseries",
+            "/api/v1/census/observations/latest",
+            "/api/v1/census/observations/timeseries",
         ),
-        neutral_api_routes=("/api/observations/latest",),
+        neutral_api_routes=("/api/v1/observations/latest",),
         owner=(
             "tests/e2e/test_census_bls_pipeline.py::"
             "test_census_fixture_flows_raw_to_gold_and_replays_identically"
@@ -143,10 +148,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_bls.rpt_bls_observations",
         ),
         source_api_routes=(
-            "/api/bls/observations/latest",
-            "/api/bls/observations/timeseries",
+            "/api/v1/bls/observations/latest",
+            "/api/v1/bls/observations/timeseries",
         ),
-        neutral_api_routes=("/api/observations/latest",),
+        neutral_api_routes=("/api/v1/observations/latest",),
         owner=(
             "tests/e2e/test_census_bls_pipeline.py::"
             "test_bls_fixture_flows_raw_to_gold_and_replays_identically"
@@ -168,10 +173,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_fred.rpt_fred_observations",
         ),
         source_api_routes=(
-            "/api/fred/observations/latest",
-            "/api/fred/observations/timeseries",
+            "/api/v1/fred/observations/latest",
+            "/api/v1/fred/observations/timeseries",
         ),
-        neutral_api_routes=("/api/observations/latest",),
+        neutral_api_routes=("/api/v1/observations/latest",),
         owner=(
             "tests/e2e/test_fred_pipeline.py::"
             "test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end"
@@ -192,8 +197,8 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_cdc.health_observation",
             "gold_cdc.latest_release_observation",
         ),
-        source_api_routes=("/api/cdc/observations",),
-        neutral_api_routes=("/api/catalog/metrics",),
+        source_api_routes=("/api/v1/cdc/observations",),
+        neutral_api_routes=("/api/v1/catalog/metrics",),
         owner=(
             "tests/e2e/test_cdc_pipeline.py::"
             "test_cdc_fixtures_reach_the_api_and_retain_every_published_release"
@@ -216,10 +221,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_pep.rpt_pep_observations",
         ),
         source_api_routes=(
-            "/api/pep/observations/latest",
-            "/api/pep/observations/timeseries",
+            "/api/v1/pep/observations/latest",
+            "/api/v1/pep/observations/timeseries",
         ),
-        neutral_api_routes=("/api/observations/latest", "/api/catalog/metrics"),
+        neutral_api_routes=("/api/v1/observations/latest", "/api/v1/catalog/metrics"),
         owner=(
             "tests/e2e/test_pep_pipeline.py::"
             "test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact"
@@ -243,7 +248,7 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_fbi.agency_observation_area_filter",
         ),
         source_api_routes=(),
-        neutral_api_routes=("/api/catalog/metrics", "/api/catalog/sources"),
+        neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),
         api_absence_reason=(
             "FBI UCR publishes no source-specific HTTP route: the accepted FBI "
             "plan delivered the agency-grain contract as the gold_fbi views and "
@@ -278,12 +283,12 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "gold_nass.latest_release_observation",
         ),
         source_api_routes=(
-            "/api/usda-nass/observations",
-            "/api/usda-nass/series",
-            "/api/usda-nass/measures",
-            "/api/usda-nass/source-notes",
+            "/api/v1/usda-nass/observations",
+            "/api/v1/usda-nass/series",
+            "/api/v1/usda-nass/measures",
+            "/api/v1/usda-nass/source-notes",
         ),
-        neutral_api_routes=("/api/catalog/metrics",),
+        neutral_api_routes=("/api/v1/catalog/metrics",),
         owner=(
             "tests/e2e/test_usda_nass_pipeline.py::"
             "test_nass_fixtures_reach_the_api_without_losing_source_classification"

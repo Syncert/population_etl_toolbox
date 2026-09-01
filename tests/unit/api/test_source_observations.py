@@ -146,7 +146,7 @@ def test_bls_latest_observations_returns_data() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/bls/observations/latest",
+            "/api/v1/bls/observations/latest",
             params={
                 "metric_code": "BLS:LAU:UNEMP_RATE",
                 "geo_level": "STATE",
@@ -173,12 +173,16 @@ def test_bls_latest_requires_metric_code() -> None:
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
         client = TestClient(app)
-        response = client.get("/api/bls/observations/latest", params={"limit": 5})
+        response = client.get("/api/v1/bls/observations/latest", params={"limit": 5})
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code or metric_id is required"
+    body = response.json()["detail"]
+    assert any(
+        error["loc"][-1] == "metric_code" and error["type"] == "missing"
+        for error in body
+    ), body
 
 
 @pytest.mark.unit
@@ -193,7 +197,7 @@ def test_bls_timeseries_rejects_invalid_date_range() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/bls/observations/timeseries",
+            "/api/v1/bls/observations/timeseries",
             params={
                 "metric_code": "BLS:LAU:UNEMP_RATE",
                 "geo_id": "state:06",
@@ -233,7 +237,7 @@ def test_census_latest_observations_returns_data() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/census/observations/latest",
+            "/api/v1/census/observations/latest",
             params={"metric_code": "ACS:acs5:B01003_001", "limit": 10},
         )
     finally:
@@ -261,7 +265,7 @@ def test_fred_latest_observations_returns_data() -> None:
     try:
         client = TestClient(app)
         response = client.get(
-            "/api/fred/observations/latest",
+            "/api/v1/fred/observations/latest",
             params={"metric_code": "FRED:UNRATE", "limit": 10},
         )
     finally:
@@ -271,29 +275,6 @@ def test_fred_latest_observations_returns_data() -> None:
     payload = response.json()
     assert payload["total"] == 1
     assert payload["items"][0]["source"] == "FRED"
-
-
-@pytest.mark.unit
-@pytest.mark.api
-def test_fred_latest_accepts_metric_id_alias() -> None:
-    """Covers: API-004 — FRED latest accepts the metric_id alias."""
-    row = _observation_row(metric_code="FRED:UNRATE", geo_id="us:1")
-    row.update(source_code="FRED", source="FRED")
-
-    def _override_db():
-        yield _SourceSchemaSession("gold_fred", [row])
-
-    app.dependency_overrides[get_db_session_dep] = _override_db
-    try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/fred/observations/latest",
-            params={"metric_id": "FRED:UNRATE", "limit": 10},
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
 
 
 @pytest.mark.unit
@@ -328,7 +309,7 @@ def test_source_timeseries_routes_preserve_source_contract(
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
         response = TestClient(app).get(
-            f"/api/{source_path}/observations/timeseries",
+            f"/api/v1/{source_path}/observations/timeseries",
             params={"metric_code": metric_code, "geo_id": row["geo_id"]},
         )
     finally:
@@ -382,7 +363,7 @@ def test_source_filters_reach_exact_source_queries(
     try:
         client = TestClient(app)
         latest = client.get(
-            f"/api/{source_path}/observations/latest",
+            f"/api/v1/{source_path}/observations/latest",
             params={
                 "metric_code": "METRIC",
                 "geo_level": "STATE",
@@ -392,7 +373,7 @@ def test_source_filters_reach_exact_source_queries(
             },
         )
         history = client.get(
-            f"/api/{source_path}/observations/timeseries",
+            f"/api/v1/{source_path}/observations/timeseries",
             params={
                 "metric_code": "METRIC",
                 "geo_id": "state:06",

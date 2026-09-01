@@ -45,8 +45,8 @@ def test_redis_outage_under_sustained_load_preserves_and_recovers_availability(
     monkeypatch.setattr(Redis, "setex", switched_setex)
 
     with configured_api_client(monkeypatch, redis_url=config.url) as client:
-        warm = client.get("/api/catalog/sources?phase=warm")
-        warm_hit = client.get("/api/catalog/sources?phase=warm")
+        warm = client.get("/api/v1/catalog/sources?phase=warm")
+        warm_hit = client.get("/api/v1/catalog/sources?phase=warm")
         assert warm.headers["x-cache"] == "MISS"
         assert warm_hit.headers["x-cache"] == "HIT"
 
@@ -54,7 +54,7 @@ def test_redis_outage_under_sustained_load_preserves_and_recovers_availability(
 
         def request_once(index: int) -> tuple[int, float, str]:
             started = time.perf_counter()
-            response = client.get(f"/api/catalog/sources?phase=outage-{index}")
+            response = client.get(f"/api/v1/catalog/sources?phase=outage-{index}")
             return (
                 response.status_code,
                 time.perf_counter() - started,
@@ -72,8 +72,8 @@ def test_redis_outage_under_sustained_load_preserves_and_recovers_availability(
         assert p95 < 1.5
 
         outage.clear()
-        recovered = client.get("/api/catalog/sources?phase=recovered")
-        recovered_hit = client.get("/api/catalog/sources?phase=recovered")
+        recovered = client.get("/api/v1/catalog/sources?phase=recovered")
+        recovered_hit = client.get("/api/v1/catalog/sources?phase=recovered")
         assert recovered.status_code == recovered_hit.status_code == 200
         assert recovered.headers["x-cache"] == "MISS"
         assert recovered_hit.headers["x-cache"] == "HIT"

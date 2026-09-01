@@ -171,11 +171,11 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
 
         with _real_client() as client:
             first = client.get(
-                "/api/fred/observations/timeseries",
+                "/api/v1/fred/observations/timeseries",
                 params={"metric_code": metric_code, "geo_id": "us:1"},
             )
             common = client.get(
-                "/api/observations/latest", params={"metric_code": metric_code}
+                "/api/v1/observations/latest", params={"metric_code": metric_code}
             )
         assert first.status_code == common.status_code == 200
         assert [item["value"] for item in first.json()["items"]] == ["10", "20"]
@@ -185,7 +185,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
         _refresh_gold(postgres_connection_factory, "2096-01-01", "2096-02-28")
         with _real_client() as client:
             replay = client.get(
-                "/api/fred/observations/timeseries",
+                "/api/v1/fred/observations/timeseries",
                 params={"metric_code": metric_code, "geo_id": "us:1"},
             )
         assert replay.json() == first.json()
@@ -203,7 +203,7 @@ def test_fred_fixture_replay_revision_and_missing_data_reconcile_end_to_end(
         _refresh_gold(postgres_connection_factory, "2096-01-01", "2096-02-28")
         with _real_client() as client:
             revised = client.get(
-                "/api/fred/observations/timeseries",
+                "/api/v1/fred/observations/timeseries",
                 params={"metric_code": metric_code, "geo_id": "us:1"},
             )
         assert [item["value"] for item in revised.json()["items"]] == ["10", "25"]

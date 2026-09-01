@@ -32,11 +32,11 @@ def test_api_cache_hit_load_meets_latency_and_error_slo(
     finally:
         redis_client.close()
     with configured_api_client(monkeypatch, redis_url=config.url) as client:
-        assert client.get("/api/catalog/sources?load=hit").status_code == 200
+        assert client.get("/api/v1/catalog/sources?load=hit").status_code == 200
 
         def request_once(_: int) -> tuple[int, float]:
             started = time.perf_counter()
-            response = client.get("/api/catalog/sources?load=hit")
+            response = client.get("/api/v1/catalog/sources?load=hit")
             return response.status_code, time.perf_counter() - started
 
         with ThreadPoolExecutor(max_workers=16) as executor:
@@ -62,7 +62,7 @@ def test_api_cache_miss_load_meets_latency_and_error_slo(
 
         def request_once(index: int) -> tuple[int, float]:
             started = time.perf_counter()
-            response = client.get(f"/api/catalog/sources?load=miss-{index}")
+            response = client.get(f"/api/v1/catalog/sources?load=miss-{index}")
             return response.status_code, time.perf_counter() - started
 
         with ThreadPoolExecutor(max_workers=16) as executor:
