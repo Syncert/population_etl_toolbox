@@ -508,6 +508,14 @@ export default function SourceDashboard({ sourceKey }) {
     <main className={`source-dashboard theme-${meta.theme} source-${sourceKey}`}>
       <Sidebar sourceKey={sourceKey} />
       <section className="source-dashboard-main">
+        <p className="demo-banner" role="note" data-testid="demo-banner">
+          <strong>Demonstration layout.</strong> Except for the first KPI and export rows
+          when the status chip reads &ldquo;Live API&rdquo;, the values on this page —
+          trend charts, secondary KPIs, ranked lists, related-indicator tables,
+          demographic breakdowns, stylized maps, and filter options — are illustrative
+          examples, not published data. For live, source-backed analysis use the{" "}
+          <Link href="/explore">Explorer</Link>.
+        </p>
         <DashboardHeader meta={meta} sourceState={sourceState} />
         <FilterBar sourceKey={sourceKey} />
         {content}

@@ -1,0 +1,55 @@
+import { describe, expect, test } from "vitest";
+
+// Covers: WEB-010 — explorer URL-state parse/serialize keeps existing
+// supported links valid and reproduces the same analysis request.
+
+import {
+  explorerHref,
+  parseExplorerState,
+  serializeExplorerState,
+} from "../../../apps/web/lib/urlState";
+
+describe("explorer URL state", () => {
+  test("parses every currently supported link parameter", () => {
+    const parsed = parseExplorerState(
+      "?metric=ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion",
+    );
+    expect(parsed).toEqual({
+      metric: "ACS:acs5:B01003_001",
+      stateFips: "55",
+      geoId: "state:55|county:025",
+      geoLevel: "COUNTY",
+      mapMode: "extrusion",
+    });
+  });
+
+  test("drops invalid values instead of propagating them", () => {
+    expect(
+      parseExplorerState("?geo_level=PLANET&map_mode=hologram&state=5x5"),
+    ).toEqual({});
+    expect(parseExplorerState("")).toEqual({});
+  });
+
+  test("round-trips state through serialize and parse", () => {
+    const state = {
+      metric: "BLS:LAU:UNEMP_RATE",
+      geoLevel: "STATE",
+      mapMode: "extrusion",
+      stateFips: "55",
+      geoId: "state:55",
+    };
+    expect(parseExplorerState(`?${serializeExplorerState(state)}`)).toEqual(state);
+  });
+
+  test("omits defaults so equivalent selections share one URL", () => {
+    const defaults = { geoLevel: "COUNTY", mapMode: "choropleth" };
+    expect(
+      serializeExplorerState(
+        { metric: "M", geoLevel: "COUNTY", mapMode: "choropleth" },
+        defaults,
+      ),
+    ).toBe("metric=M");
+    expect(explorerHref({}, defaults)).toBe("/explore");
+    expect(explorerHref({ metric: "M" }, defaults)).toBe("/explore?metric=M");
+  });
+});

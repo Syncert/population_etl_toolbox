@@ -15,17 +15,17 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved planning artifact; implementation is blocked by the API completion gate
-- **Last updated:** 2026-08-29
-- **Current milestone:** Planning complete; implementation has not started
+- **Status:** Claimed; in progress
+- **Last updated:** 2026-09-01
+- **Current milestone:** WEB-001 dependency proof and frontend audit underway; the API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** After the API plan is human-accepted, inventory the frontend and record the accepted API-008 consumer handoff before moving this plan to `in_progress/`.
-- **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff
+- **Next pickup:** Continue WEB-002: extend the contract client across the remaining explorer/dashboard fetch paths and decompose `SourceExplorerPage.js` behind the characterization tests.
+- **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
 
@@ -177,6 +177,144 @@ App Router routes and layouts
 - Link quality states to the affected source, dataset, release, geography, and measure scope.
 - Keep unknown, suppressed, missing, non-reporting, stale, and failed states distinct.
 - Present data-quality evidence as context for analysis, not as invented provider facts or a universal quality score.
+
+## WEB-001 audit record (2026-09-01)
+
+### Gate evidence
+
+- `docs/plans/completed/API_DEVELOPMENT_PLAN.md` is present in `completed/`
+  with every phase (API-001 through API-008) marked complete and its API-008
+  delivery record dated 2026-09-01.
+- The API-008 frontend handoff is `docs/reference/API_CONSUMER_GUIDE.md`:
+  version policy (`/api/v1` only), discovery/capability routes, observation
+  and release contracts, preflight-then-compare analysis, distribution bins,
+  saved-analysis storage (ADR-0003), the complete error table, and caching,
+  rate-limit, correlation, and pagination behavior. It is pinned by API-065
+  against the served OpenAPI surface, satisfying the "inspectable frontend
+  handoff" requirement.
+- Deterministic API fixtures exist at `tests/fixtures/api/openapi_contract.json`.
+
+### Route, component, and contract inventory
+
+| Route | Component(s) | API/tile calls | Notes |
+| --- | --- | --- | --- |
+| `/` | `app/page.js` | `/api/v1/catalog/sources`, `/api/v1/catalog/metrics` | Live signals; hard-coded 3-source name map as offline fallback |
+| `/catalog` | `app/catalog/page.js` | `/api/v1/catalog/metrics` | Live; **hard-coded source filter list** (Census/BLS/FRED) |
+| `/explore`, `/census`, `/fred`, `/bls` (explorer) | `SourceExplorerPage.js` (2,171 lines) | `/api/v1/health`, `/api/v1/catalog/metrics`, `/api/v1/catalog/geographies`, `/api/v1/{census,fred,bls}/observations/{latest,timeseries}`, `/api/v1/distribution/bins`, `/tiles/catalog`, `/tiles/{id}`, MVT samples | Live; **hard-coded 3-source `SOURCE_CONFIG`**; ad hoc fetch + boolean `cancelled` flags; URL params read once at bootstrap, never serialized back |
+| `/profiles` | `app/profiles/page.js` | `/api/v1/catalog/geographies`, `/api/v1/observations/timeseries` | Live; hard-coded ACS population metric; uses legacy timeseries route |
+| `/articles` | `app/articles/page.js` | `/api/v1/observations/timeseries` | Live; hard-coded metric + Dane County geo; legacy route |
+| `/builder` | `app/builder/page.js`, `lib/savedCharts.js` | none | Browser-local draft/chart persistence only |
+| `/bls`, `/census`, `/fred` (dashboards) | `SourceDashboard.js` (517 lines) | `/api/v1/catalog/metrics`, `/api/v1/{src}/observations/latest` | **Mixes one live KPI with static illustrative series, KPIs, ranked lists, tables, and decorative maps** |
+
+URL parameters (explorer, parse-only today): `metric`, `state`, `geo`,
+`geo_level`, `map_mode`. Local-storage objects:
+`economic-data-studio:saved-charts:v1` (capped 50, versioned) and
+`economic-data-studio:builder-draft:v1` (versioned draft). Exports: explorer
+CSV (geo, name, period, metric, value, unit, source, dataset, MOE) and
+dashboard CSV.
+
+### Analytical value classification
+
+- **Live:** home catalog signals; catalog search results; explorer
+  observations, timeseries, geography selectors, health states; profiles
+  history; articles history; dashboard primary KPI when the API answers.
+- **API-derived (labeled):** `/api/v1/distribution/bins` choropleth bins and
+  legend counts ("API distribution" label).
+- **Client-derived (labeled):** local equal-width fallback bins in the
+  explorer, labeled "local fallback" and reported through the distribution
+  status pill; profile/article growth percentages computed from series ends
+  (displayed beside their source series).
+- **Illustrative/placeholder (SourceDashboard.js):** static line/bar series
+  (`BLS_LINE`, `CENSUS_LINE`, `FRED_LINE`, `FRED_BARS`), static KPI values
+  (payrolls, participation, population change, density, median age, CPI
+  changes), static ranked state/county lists and related-indicator tables,
+  decorative US/Texas SVG maps with invented legends, static demographic
+  donut, non-functional filter bars, and static "as of" dates. The header
+  chip distinguishes "Live API" from "Preview" but static panels render in
+  both modes.
+- **Decision (first pass):** the dashboards now carry an explicit,
+  always-visible demonstration banner naming the illustrative panels, and
+  their replacement by capability-driven products is owned by WEB-003/WEB-005.
+  Removal was not chosen yet because the layouts document target design
+  intent; the label makes them unmistakable as examples per the acceptance
+  criterion.
+
+### Baseline evidence (2026-09-01, this environment)
+
+- `npm --prefix apps/web ci` — clean install.
+- `npm --prefix apps/web run lint` — clean (baseline, before changes).
+- `npm --prefix apps/web run test:unit` — 10 passed (3 files, baseline).
+- Existing characterization coverage: `tests/frontend/unit/*` (formatting,
+  persistence, explorer view models, accessible components) and
+  `tests/frontend/browser/explorer.spec.js` protect the explorer contracts
+  ahead of decomposition. The browser suite requires a Chromium matching the
+  pinned `@playwright/test`; sandboxed environments with a pre-installed
+  build run it via `PLAYWRIGHT_CHROMIUM_EXECUTABLE` (added this pass to
+  `playwright.config.mjs`; resolution is unchanged when unset).
+
+## WEB-002 delivery record (first pass, 2026-09-01)
+
+Delivered the contract-client foundation:
+
+- `apps/web/lib/api/client.js` — the versioned API client. One transport
+  (`apiFetch`) owning request construction against `/api/v1`, `no-store`
+  caching, abort signals, and a stable `ApiError` (status + API `detail` +
+  request context; `kind` classifying unauthorized/forbidden/rate-limited/
+  unavailable/not-found/invalid). Resource helpers for every consumer-guide
+  route the app uses or the first wave needs: sources, metric search/detail,
+  geographies, **capabilities**, freshness, neutral observations + releases,
+  legacy latest/timeseries, source-scoped latest/timeseries, distribution
+  bins, comparison preflight/comparison, and health. `fetchAllPages`
+  centralizes deterministic limit/offset paging with a page-count bound.
+- `apps/web/lib/api/requestState.js` — shared request lifecycle states
+  (`idle/loading/ok/warn/bad` used today plus reserved states the plan
+  requires) and `createRequestTracker()` for stale-response protection.
+- `apps/web/lib/urlState.js` — explorer URL-state parse/serialize with
+  validation (`metric`, `state`, `geo`, `geo_level`, `map_mode`), preserving
+  every existing supported link shape; serialization omits defaults so
+  shared URLs stay minimal and stable.
+- Unit tests: `tests/frontend/unit/api-client.test.js`,
+  `tests/frontend/unit/url-state.test.js` (URL construction, paging
+  termination, error decoding and classification, abort passthrough,
+  stale-response suppression, parse/serialize round-trips).
+- First consumers migrated off ad hoc fetch: `app/page.js`,
+  `app/catalog/page.js` (whose source filter is now **capability-driven**
+  from `/api/v1/catalog/sources` instead of a hard-coded list),
+  `app/profiles/page.js`, `app/articles/page.js`, and the explorer's
+  bootstrap (health, catalog/geography paging, and URL parsing now go
+  through the shared client and `parseExplorerState`). `SourceDashboard.js`
+  carries the demonstration banner.
+- Testing catalog extended per the evidence-ownership contract: WEB-009
+  (versioned API client), WEB-010 (explorer URL state), WEB-011
+  (capability-driven catalog source filter) added to
+  `docs/reference/TESTING_CONTRACT.md` with complete pass metrics; the
+  implementation-status table now reads WEB-001–WEB-011 / 221 of 221; the
+  behavioral register (`tests/support/catalog_evidence.py`) audits 11 WEB
+  items and its guard pins 247 rows, all FULL.
+- One defect found by the new tests and fixed before first use: paging
+  treated a JSON `total: null` as `0` (via `Number(null)`), which would
+  have silently truncated multi-page catalogs.
+
+### Validation (2026-09-01, after changes)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 25 passed (6 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 2 passed (Chromium, real UI against intercepted `/api/v1` + MVT) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 247 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+Remaining for WEB-002 (next pickup): migrate the explorer's observation/
+timeseries/distribution/tile fetch effects onto the client + request
+tracker, serialize explorer state back into the URL on change, decompose
+`SourceExplorerPage.js`/`globals.css`, and establish the shared shell and
+full state-vocabulary components.
 
 ## Implementation phases
 

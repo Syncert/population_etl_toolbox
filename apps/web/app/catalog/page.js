@@ -3,32 +3,42 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Database, Search } from "lucide-react";
+import { getSources, searchMetrics } from "../../lib/api/client";
+import { sourceFilterOptions } from "../../lib/catalog";
 import { displayMetricName } from "../../lib/format";
-
-const sources = [
-  { value: "", label: "All sources" },
-  { value: "CENSUS_ACS", label: "Census" },
-  { value: "BLS", label: "BLS" },
-  { value: "FRED", label: "FRED" },
-];
+import { explorerHref } from "../../lib/urlState";
 
 export default function CatalogPage() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
+  const [sourceItems, setSourceItems] = useState([]);
   const [payload, setPayload] = useState({ total: 0, items: [] });
   const [status, setStatus] = useState("loading");
 
   useEffect(() => {
     const controller = new AbortController();
+    getSources({ signal: controller.signal })
+      .then((items) => setSourceItems(Array.isArray(items) ? items : []))
+      .catch(() => {
+        // The metric list still works without the source filter row.
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setStatus("loading");
-      const params = new URLSearchParams({ active_only: "true", limit: "100" });
-      if (query.trim()) params.set("q", query.trim());
-      if (source) params.set("source_code", source);
       try {
-        const response = await fetch(`/api/v1/catalog/metrics?${params}`, { signal: controller.signal });
-        if (!response.ok) throw new Error(`status ${response.status}`);
-        setPayload(await response.json());
+        setPayload(await searchMetrics(
+          {
+            active_only: "true",
+            limit: "100",
+            q: query.trim() || undefined,
+            source_code: source || undefined,
+          },
+          { signal: controller.signal },
+        ));
         setStatus("ready");
       } catch (error) {
         if (error.name !== "AbortError") setStatus("error");
@@ -36,6 +46,8 @@ export default function CatalogPage() {
     }, 180);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, source]);
+
+  const sources = useMemo(() => sourceFilterOptions(sourceItems), [sourceItems]);
 
   const groups = useMemo(() => {
     const values = new Map();
@@ -78,7 +90,7 @@ export default function CatalogPage() {
               <dl className="inline-metadata"><div><dt>Geographies</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_geo_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Time grain</dt><dd>{[...new Set(group.metrics.flatMap((metric) => metric.valid_time_grains))].join(", ") || "Source-defined"}</dd></div><div><dt>Harvested</dt><dd>{group.metrics[0].harvested_at ? new Date(group.metrics[0].harvested_at).toLocaleDateString() : "Pending"}</dd></div></dl>
               <div className="metric-preview-list">
                 {group.metrics.slice(0, 4).map((metric) => (
-                  <Link href={`/explore?metric=${encodeURIComponent(metric.metric_code)}`} key={metric.metric_code}>
+                  <Link href={explorerHref({ metric: metric.metric_code })} key={metric.metric_code}>
                     <span><strong>{displayMetricName(metric)}</strong><small>{metric.metric_code}</small></span><ArrowRight size={15} />
                   </Link>
                 ))}

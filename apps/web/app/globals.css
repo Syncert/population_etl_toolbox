@@ -655,6 +655,22 @@ body:has(.source-dashboard) .site-footer {
   padding: 0 14px 16px;
 }
 
+.demo-banner {
+  margin: 10px 0 0;
+  border: 1px solid #d9a441;
+  border-radius: 8px;
+  background: rgba(217, 164, 65, 0.14);
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.demo-banner a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 .source-dashboard-header {
   display: flex;
   min-height: 68px;

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
+import { getSources, searchMetrics } from "../lib/api/client";
 import { displayMetricName } from "../lib/format";
+import { explorerHref } from "../lib/urlState";
 
 const sourceNames = {
   CENSUS_ACS: "Census ACS",
@@ -19,8 +21,8 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/api/v1/catalog/sources").then((response) => response.ok ? response.json() : Promise.reject(new Error("sources unavailable"))),
-      fetch("/api/v1/catalog/metrics?active_only=true&q=population&limit=6").then((response) => response.ok ? response.json() : Promise.reject(new Error("metrics unavailable"))),
+      getSources(),
+      searchMetrics({ active_only: "true", q: "population", limit: "6" }),
     ]).then(([sourceItems, metricPayload]) => {
       if (!cancelled) {
         setSources(sourceItems);
@@ -72,7 +74,7 @@ export default function HomePage() {
             <div className="section-kicker">National snapshot</div>
             <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
             <p>Latest source-backed metric metadata and observation coverage.</p>
-            <Link className="text-link" href={`/explore?metric=${encodeURIComponent(featuredMetric?.metric_code || "ACS:acs5:B01003_001")}`}>Open map <ArrowRight size={15} /></Link>
+            <Link className="text-link" href={explorerHref({ metric: featuredMetric?.metric_code || "ACS:acs5:B01003_001" })}>Open map <ArrowRight size={15} /></Link>
           </div>
         </article>
       </section>

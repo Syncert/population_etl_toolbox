@@ -7,8 +7,10 @@ import { Download, Save } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import Protobuf from "pbf";
 import SourceNote from "./SourceNote";
+import { fetchAllPages, getHealth } from "../lib/api/client";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
+import { parseExplorerState } from "../lib/urlState";
 
 const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
 const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
@@ -116,34 +118,8 @@ export function preferredGeoLevelForMetric(metric, fallbackGeoLevel = "COUNTY") 
   return fallbackGeoLevel;
 }
 
-async function fetchAllCatalogItems(path, query = {}) {
-  const items = [];
-  let offset = 0;
-  let total = null;
-
-  do {
-    const params = new URLSearchParams({
-      ...query,
-      limit: String(CATALOG_PAGE_SIZE),
-      offset: String(offset),
-    });
-    const response = await fetch(`${path}?${params.toString()}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`status ${response.status}`);
-    }
-
-    const payload = await response.json();
-    const pageItems = Array.isArray(payload.items) ? payload.items : [];
-    total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : null;
-    items.push(...pageItems);
-    offset += pageItems.length;
-
-    if (pageItems.length === 0) {
-      break;
-    }
-  } while (total === null || items.length < total);
-
-  return items;
+function fetchAllCatalogItems(resource, params = {}) {
+  return fetchAllPages(resource, { params, pageSize: CATALOG_PAGE_SIZE });
 }
 
 function observationToFeature(item) {
@@ -1003,11 +979,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
     async function bootstrap() {
       try {
-        const healthResponse = await fetch("/api/v1/health", { cache: "no-store" });
-        if (!healthResponse.ok) {
-          throw new Error(`status ${healthResponse.status}`);
-        }
-        const payload = await healthResponse.json();
+        const payload = await getHealth();
         if (!cancelled) {
           setApiHealth({ state: "ok", message: payload.status || "ok" });
         }
@@ -1022,32 +994,27 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           source_code: sourceConfig.sourceCode,
           active_only: "true",
         };
-        const items = await fetchAllCatalogItems("/api/v1/catalog/metrics", metricQuery);
+        const items = await fetchAllCatalogItems("/catalog/metrics", metricQuery);
 
         if (!cancelled) {
           setMetrics(items);
-          const params = new URLSearchParams(window.location.search);
-          const requestedMetric = params.get("metric");
-          const requestedState = params.get("state");
-          const requestedGeo = params.get("geo");
-          const requestedGeoLevel = params.get("geo_level");
-          const requestedMapMode = params.get("map_mode");
-          if (requestedMetric && items.some((item) => item.metric_code === requestedMetric)) {
+          const requested = parseExplorerState(window.location.search);
+          if (requested.metric && items.some((item) => item.metric_code === requested.metric)) {
             if (sourceConfig.supportsDataset) {
-              setSelectedDataset(metricDataset(requestedMetric) || DEFAULT_ACS_DATASET);
+              setSelectedDataset(metricDataset(requested.metric) || DEFAULT_ACS_DATASET);
             }
-            setSelectedMetric(requestedMetric);
+            setSelectedMetric(requested.metric);
           } else if (items.length > 0) {
             setSelectedMetric(items[0].metric_code);
           }
-          if (requestedGeoLevel === "STATE" || requestedGeoLevel === "COUNTY") {
-            setSelectedGeoLevel(requestedGeoLevel);
+          if (requested.geoLevel === "STATE" || requested.geoLevel === "COUNTY") {
+            setSelectedGeoLevel(requested.geoLevel);
           }
-          if (requestedMapMode === "extrusion" || requestedMapMode === "choropleth") {
-            setMapMode(requestedMapMode);
+          if (requested.mapMode) {
+            setMapMode(requested.mapMode);
           }
-          if (requestedState) setSelectedStateFips(requestedState);
-          if (requestedGeo) setSelectedGeoId(requestedGeo);
+          if (requested.stateFips) setSelectedStateFips(requested.stateFips);
+          if (requested.geoId) setSelectedGeoId(requested.geoId);
         }
       } catch (error) {
         if (!cancelled) {
@@ -1213,8 +1180,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
       try {
         const [stateItems, countyItems] = await Promise.all([
-          fetchAllCatalogItems("/api/v1/catalog/geographies", { geo_level: "STATE" }),
-          fetchAllCatalogItems("/api/v1/catalog/geographies", { geo_level: "COUNTY" }),
+          fetchAllCatalogItems("/catalog/geographies", { geo_level: "STATE" }),
+          fetchAllCatalogItems("/catalog/geographies", { geo_level: "COUNTY" }),
         ]);
 
         if (!cancelled) {
