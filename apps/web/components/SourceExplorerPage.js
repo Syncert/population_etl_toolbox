@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Save } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import SourceNote from "./SourceNote";
+import StatusPill from "./StatusPill";
 import TimeSeriesChart from "./TimeSeriesChart";
 import {
   apiErrorMessage,
@@ -909,16 +910,6 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     [observations, tileMetadata, distribution, missingValueLabel],
   );
 
-  function pillClass(status) {
-    if (status === "ok") {
-      return "pill ok";
-    }
-    if (status === "warn" || status === "loading" || status === "idle") {
-      return "pill warn";
-    }
-    return "pill bad";
-  }
-
   const apiQuery = selectedMetric
     ? buildApiPath(`/${sourceConfig.segment}/observations/latest`, {
         metric_code: selectedMetric,
@@ -1044,18 +1035,20 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
 
       <section className="status-row">
-        <span className={pillClass(apiHealth.state)} data-testid="api-status">
-          API: <strong>{apiHealth.message}</strong>
-        </span>
-        <span className={pillClass(tilesHealth.state)} data-testid="tiles-status">
-          Tiles: <strong>{tilesHealth.message}</strong>
-        </span>
-        <span className={pillClass(observationStatus.state)} data-testid="observations-status">
-          Observations: <strong>{observationStatus.message}</strong>
-        </span>
-        <span className={pillClass(distributionStatus.state)} data-testid="distribution-status">
-          Distribution: <strong>{distributionStatus.message}</strong>
-        </span>
+        <StatusPill state={apiHealth.state} label="API" message={apiHealth.message} testId="api-status" />
+        <StatusPill state={tilesHealth.state} label="Tiles" message={tilesHealth.message} testId="tiles-status" />
+        <StatusPill
+          state={observationStatus.state}
+          label="Observations"
+          message={observationStatus.message}
+          testId="observations-status"
+        />
+        <StatusPill
+          state={distributionStatus.state}
+          label="Distribution"
+          message={distributionStatus.message}
+          testId="distribution-status"
+        />
       </section>
 
       <div className="workspace-tabs" role="tablist" aria-label="Explorer views">

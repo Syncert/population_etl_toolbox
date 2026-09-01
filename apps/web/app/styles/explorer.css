@@ -1,0 +1,91 @@
+/* Explorer */
+main.dashboard {
+  padding-top: 32px;
+}
+
+.explorer-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.workspace-tabs {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 12px;
+}
+
+.source-page-tabs {
+  width: max-content;
+  margin: 0 0 12px;
+}
+
+.source-tab {
+  min-width: max-content;
+  border-radius: 4px;
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.source-tab.selected {
+  background: var(--ink);
+  color: white;
+}
+
+.workspace-panel[data-active="false"] {
+  display: none;
+}
+
+.save-toast {
+  position: fixed;
+  top: 70px;
+  right: 18px;
+  z-index: 30;
+  border-radius: 6px;
+  background: var(--ink);
+  color: white;
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  font-size: 0.8rem;
+}
+
+.api-query {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f1f4f2;
+  color: var(--accent-strong);
+  padding: 14px;
+  white-space: nowrap;
+}
+
+.source-note {
+  border-top: 3px solid var(--accent);
+  background: white;
+  padding: 20px;
+}
+
+.card .source-note {
+  border-top: 0;
+  padding: 0;
+}
+
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.method-note {
+  max-width: 820px;
+  color: var(--muted);
+  font-size: 0.81rem;
+  line-height: 1.5;
+}

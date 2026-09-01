@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** Finish WEB-002: decompose `globals.css` alongside the shared shell, add the reusable full-state-vocabulary presentation components, and migrate `SourceDashboard.js`'s remaining ad hoc fetches; then begin WEB-003 capability discovery.
+- **Next pickup:** Close WEB-002's recorded TypeScript deviation (adopt TS for the contract-boundary modules or obtain reviewer acceptance), then begin WEB-003: capability discovery from `/api/v1/catalog/capabilities` replacing the explorer's three-source `SOURCE_CONFIG` enumeration.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -313,7 +313,8 @@ contract changed in this pass; they run in their required CI jobs.
 ### WEB-002 second increment (2026-09-01, same day)
 
 - **Explorer decomposition behind characterization tests.**
-  `SourceExplorerPage.js` shrank from 2,171 to ~1,050 lines by extracting:
+  `SourceExplorerPage.js` shrank from 2,171 to 1,384 lines (the commit
+  message for this increment understates it as ~1,050) by extracting:
   `lib/explorerViewModel.js` (all pure view models — metric/dataset/geo
   selection, observation joins, choropleth/legend/extrusion models,
   formatting, margin-of-error vocabulary), `lib/tiles.js` (the Martin
@@ -342,11 +343,44 @@ files); production build clean; browser 2 passed (Chromium, including the
 new URL-reproduction assertions); `pytest tests/unit` 1219 passed; `ruff
 check .` clean.
 
-Remaining for WEB-002 (next pickup): decompose `globals.css` with the
-shared application shell, add reusable presentation components for the
-full loading/empty/partial/stale/suppressed/incompatible/unauthorized/
-rate-limited/unavailable state vocabulary, and migrate
-`SourceDashboard.js`'s fetches onto the client.
+### WEB-002 third increment (2026-09-01, same day)
+
+- **`globals.css` decomposed** into nine ordered section files under
+  `app/styles/` (base, dashboard, shell, home, catalog, explorer,
+  profiles, article, builder); `globals.css` is now the ordered import
+  manifest. The split is whitespace-normalized-identical to the original
+  (verified programmatically: same 407 rules, same normalized bytes), so
+  the cascade is unchanged.
+- **`SourceDashboard.js` migrated** onto `searchMetrics` +
+  `getSourceLatestObservations` with its abort signal passed through; its
+  `SOURCE_META` carries a route segment instead of a hard-coded endpoint.
+- **Shared state-vocabulary component:** `components/StatusPill.js` maps
+  the full request-state vocabulary (current + reserved states) to visual
+  classes — only a completed healthy request renders as ok,
+  failure-shaped states as errors, everything else as caution — and the
+  explorer's four status pills now use it. Cataloged as WEB-012 with a
+  component test; the register is at 248 rows.
+- After this increment no ad hoc `fetch` remains in `apps/web` outside
+  the two client modules (`lib/api/client.js`, `lib/tiles.js`).
+
+Validation for this increment: web lint clean; web unit 30 passed (7
+files); production build clean; browser 2 passed; `pytest tests/unit`
+1219 passed (248-row register guard green); `ruff check .` clean.
+
+**Recorded deviation for review:** the new contract-boundary modules
+(`lib/api/client.js`, `lib/urlState.js`, `lib/tiles.js`,
+`lib/explorerViewModel.js`) are JavaScript, matching the existing all-JS
+application, while the plan's layering principle says new
+contract-boundary code *should* use TypeScript. The TypeScript adoption
+is queued as its own test-led increment rather than mixed into these
+refactors; WEB-002 is not declared complete until that decision is
+either implemented or accepted as-is by review.
+
+Remaining for WEB-002 (next pickup): adopt TypeScript for the
+contract-boundary modules (or record reviewer acceptance of the JS
+deviation), then begin WEB-003 capability discovery
+(`/api/v1/catalog/capabilities`) to replace the explorer's remaining
+three-source `SOURCE_CONFIG` enumeration.
 
 ## Implementation phases
 

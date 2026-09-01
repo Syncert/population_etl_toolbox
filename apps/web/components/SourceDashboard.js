@@ -25,6 +25,7 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
+import { getSourceLatestObservations, searchMetrics } from "../lib/api/client";
 
 const SOURCE_META = {
   bls: {
@@ -34,7 +35,7 @@ const SOURCE_META = {
     preferredMetric: "BLS:LAU:UNEMP_RATE",
     catalogQuery: "unemployment rate",
     geoLevel: "STATE",
-    endpoint: "/api/v1/bls/observations/latest",
+    segment: "bls",
     theme: "dark",
     asOf: "May 2025",
   },
@@ -45,7 +46,7 @@ const SOURCE_META = {
     preferredMetric: "ACS:acs5:B01003_001",
     catalogQuery: "total population",
     geoLevel: "COUNTY",
-    endpoint: "/api/v1/census/observations/latest",
+    segment: "census",
     theme: "light",
     asOf: "2023",
   },
@@ -56,7 +57,7 @@ const SOURCE_META = {
     preferredMetric: "FRED:CPIAUCSL",
     catalogQuery: "consumer price index",
     geoLevel: "NATIONAL",
-    endpoint: "/api/v1/fred/observations/latest",
+    segment: "fred",
     theme: "light",
     asOf: "May 30, 2025",
   },
@@ -120,35 +121,30 @@ function useSourceObservations(sourceKey) {
     async function load() {
       setState((current) => ({ ...current, status: "loading", message: "Connecting" }));
       try {
-        const catalogParams = new URLSearchParams({
-          source_code: meta.sourceCode,
-          q: meta.catalogQuery,
-          active_only: "true",
-          limit: "25",
-        });
-        const catalogResponse = await fetch(`/api/v1/catalog/metrics?${catalogParams}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!catalogResponse.ok) throw new Error(`catalog ${catalogResponse.status}`);
-        const catalog = await catalogResponse.json();
+        const catalog = await searchMetrics(
+          {
+            source_code: meta.sourceCode,
+            q: meta.catalogQuery,
+            active_only: "true",
+            limit: "25",
+          },
+          { signal: controller.signal },
+        );
         const metrics = Array.isArray(catalog.items) ? catalog.items : [];
         const metric =
           metrics.find((item) => item.metric_code === meta.preferredMetric) ||
           metrics.find((item) => String(item.metric_display_name || "").toLowerCase().includes(meta.catalogQuery.split(" ")[0])) ||
           metrics[0];
         const metricCode = metric?.metric_code || meta.preferredMetric;
-        const observationParams = new URLSearchParams({
-          metric_code: metricCode,
-          geo_level: meta.geoLevel,
-          limit: sourceKey === "fred" ? "50" : "500",
-        });
-        const response = await fetch(`${meta.endpoint}?${observationParams}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`observations ${response.status}`);
-        const payload = await response.json();
+        const payload = await getSourceLatestObservations(
+          meta.segment,
+          {
+            metric_code: metricCode,
+            geo_level: meta.geoLevel,
+            limit: sourceKey === "fred" ? "50" : "500",
+          },
+          { signal: controller.signal },
+        );
         const items = Array.isArray(payload.items) ? payload.items : [];
         if (items.length === 0) throw new Error("no observations returned");
         setState({ status: "live", items, metric, message: `${items.length.toLocaleString()} live records` });

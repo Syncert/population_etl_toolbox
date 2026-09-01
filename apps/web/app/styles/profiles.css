@@ -1,0 +1,126 @@
+/* Profiles and charts */
+.profile-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.profile-controls select {
+  min-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  padding: 8px;
+  color: var(--ink);
+}
+
+.profile-controls .button {
+  margin-left: auto;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 26px 0;
+  border-block: 1px solid var(--line);
+  background: white;
+}
+
+.profile-stats > div {
+  display: grid;
+  gap: 5px;
+  border-right: 1px solid var(--line);
+  padding: 18px;
+}
+
+.profile-stats > div:last-child {
+  border-right: 0;
+}
+
+.profile-stats svg {
+  color: var(--accent);
+}
+
+.profile-stats span,
+.profile-stats small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.profile-stats strong {
+  font-size: 1.25rem;
+}
+
+.analysis-panel,
+.embedded-analysis {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 18px;
+}
+
+.analysis-panel + .source-note {
+  margin-top: 22px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-heading h2 {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+}
+
+.panel-heading > span,
+.panel-heading > strong {
+  color: var(--muted);
+  font-size: 0.77rem;
+}
+
+.line-chart {
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.line-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.line-chart line {
+  stroke: #dce2df;
+}
+
+.line-chart path {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 3;
+}
+
+.line-chart circle {
+  fill: white;
+  stroke: var(--gold);
+  stroke-width: 3;
+}
+
+.line-chart text {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: end;
+}
+
+.line-chart .x-label {
+  text-anchor: start;
+}
+
+.line-chart .x-label.end {
+  text-anchor: end;
+}

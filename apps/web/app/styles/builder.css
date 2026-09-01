@@ -1,0 +1,286 @@
+/* Builder */
+.builder-shell {
+  display: grid;
+  min-height: calc(100vh - 58px);
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.builder-library {
+  border-right: 1px solid var(--line);
+  background: white;
+  padding: 24px 16px;
+}
+
+.builder-library h1 {
+  margin: 5px 0 6px;
+  font-size: 1.3rem;
+}
+
+.builder-library > p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.library-heading {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding: 18px 2px 8px;
+  color: var(--muted);
+  font-size: 0.69rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.library-button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  cursor: pointer;
+  margin-bottom: 7px;
+  padding: 10px;
+  text-align: left;
+}
+
+.library-button:hover {
+  border-color: var(--accent);
+}
+
+.library-button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.library-button strong,
+.library-button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-button strong {
+  font-size: 0.76rem;
+}
+
+.library-button small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.builder-workspace {
+  min-width: 0;
+}
+
+.builder-toolbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: white;
+  padding: 10px 18px;
+}
+
+.builder-toolbar > div {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.builder-toolbar small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 400;
+}
+
+.builder-canvas {
+  width: min(760px, calc(100% - 32px));
+  margin: 32px auto 60px;
+}
+
+.builder-title {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 10px 2px 14px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2rem;
+}
+
+.builder-block {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  margin-top: 12px;
+  padding: 18px;
+}
+
+.builder-block textarea {
+  width: calc(100% - 30px);
+  min-height: 120px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  color: #34434e;
+  line-height: 1.65;
+}
+
+.icon-button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: white;
+  color: var(--muted);
+}
+
+.block-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.chart-block-preview h2 {
+  margin: 5px 0;
+  font-size: 1.05rem;
+}
+
+.chart-block-preview > p {
+  color: var(--muted);
+}
+
+.chart-block-preview dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.add-block-button {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed #aab6b0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+    padding: 10px 14px 0;
+  }
+
+  .primary-nav {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .nav-link {
+    padding: 0 9px;
+  }
+
+  .home-grid,
+  .source-band {
+    grid-template-columns: 1fr;
+  }
+
+  .source-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .builder-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-library {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 640px) {
+  .page-shell,
+  .article-shell {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .home-page {
+    padding-top: 30px;
+  }
+
+  .signal-strip,
+  .profile-stats,
+  .path-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .signal-strip div:nth-child(2),
+  .profile-stats > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .snapshot-panel,
+  .dataset-card {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-toolbar > *,
+  .dataset-card,
+  .dataset-title-row,
+  .dataset-body {
+    max-width: 100%;
+  }
+
+  .dataset-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .snapshot-icon {
+    width: 72px;
+    height: 64px;
+  }
+
+  .explorer-heading,
+  .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-controls .button {
+    margin-left: 0;
+  }
+
+  .profile-controls label,
+  .profile-controls select {
+    width: 100%;
+  }
+
+  .source-grid,
+  .chart-block-preview dl {
+    grid-template-columns: 1fr;
+  }
+
+  .site-footer {
+    flex-direction: column;
+  }
+}
