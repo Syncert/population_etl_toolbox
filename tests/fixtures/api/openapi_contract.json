@@ -632,6 +632,37 @@
         "comparison"
       ]
     },
+    "GET /api/comparison/preflight": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonPreflightResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
     "GET /api/distribution/bins": {
       "parameters": [
         {
@@ -2270,6 +2301,37 @@
         "comparison"
       ]
     },
+    "GET /api/v1/comparison/preflight": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonPreflightResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
     "GET /api/v1/distribution/bins": {
       "parameters": [
         {
@@ -3374,14 +3436,38 @@
         "total"
       ]
     },
+    "ComparisonPreflightResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "comparable": "boolean",
+        "derivations": "array<string>",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "rules": "array<CompatibilityFinding>",
+        "source_code_a": "string | null",
+        "source_code_b": "string | null"
+      },
+      "required": [
+        "comparable",
+        "metric_code_a",
+        "metric_code_b",
+        "rules"
+      ]
+    },
     "ComparisonResponse": {
       "properties": {
+        "caveats": "array<string>",
+        "derivations": "array<string>",
         "items": "array<ComparisonRow>",
         "limit": "integer",
         "metric_code_a": "string",
         "metric_code_b": "string",
         "offset": "integer",
-        "total": "integer"
+        "source_code_a": "string | null",
+        "source_code_b": "string | null",
+        "total": "integer",
+        "units_a": "string | null",
+        "units_b": "string | null"
       },
       "required": [
         "items",
@@ -3401,6 +3487,8 @@
         "geo_level": "string | null",
         "metric_code_a": "string | null",
         "metric_code_b": "string | null",
+        "period_a": "string | null",
+        "period_b": "string | null",
         "ratio": "number | null",
         "state_fips": "string | null",
         "state_name": "string | null",
@@ -3408,6 +3496,18 @@
         "value_b": "number | null"
       },
       "required": []
+    },
+    "CompatibilityFinding": {
+      "properties": {
+        "reason": "string",
+        "rule": "string",
+        "status": "string"
+      },
+      "required": [
+        "reason",
+        "rule",
+        "status"
+      ]
     },
     "DistributionBin": {
       "properties": {
@@ -3426,12 +3526,15 @@
     "DistributionBinsResponse": {
       "properties": {
         "bin_count": "integer",
+        "derived": "boolean",
         "geo_level": "string | null",
         "items": "array<DistributionBin>",
         "max_value": "number | null",
         "metric_code": "string",
         "min_value": "number | null",
-        "total": "integer"
+        "source_code": "string | null",
+        "total": "integer",
+        "units": "string | null"
       },
       "required": [
         "bin_count",

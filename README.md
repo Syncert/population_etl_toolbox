@@ -232,8 +232,17 @@ Provider-neutral endpoints:
 - `GET /api/v1/observations/latest` — legacy shape; serves the three sources
   published into the cross-source union views (Census ACS, BLS, FRED)
 - `GET /api/v1/observations/timeseries` — legacy shape; same three sources
-- `GET /api/v1/distribution/bins`
-- `GET /api/v1/comparison`
+- `GET /api/v1/comparison/preflight` — whether two metrics can be compared,
+  and why: the declared compatibility rules (units, time grains, geography
+  grains, aggregation, source analysis readiness) evaluated three-valued,
+  with unpublished semantics reported as caveats rather than assumed
+- `GET /api/v1/comparison` — aligned comparison of two compatible metrics,
+  one newest value per geography per side, with both inputs' periods and
+  identities on every API-derived difference/ratio; an incompatible pair is
+  rejected with the failed rules
+- `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
+  metric's latest values, dispatched to the owning source; stratified
+  sources are declined with their declared restriction
 - `GET /api/v1/models/status`
 - `GET /api/v1/health`
 

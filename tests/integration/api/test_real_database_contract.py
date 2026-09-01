@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from uuid import uuid4
 
@@ -164,12 +165,68 @@ def test_real_catalog_latest_timeseries_distribution_and_comparison(
             "county_name": None,
             "metric_code_a": metric_a,
             "metric_code_b": metric_b,
+            "period_a": "2097-02-01",
+            "period_b": "2097-02-01",
             "value_a": 20.0,
             "value_b": 5.0,
             "difference": 15.0,
             "ratio": 4.0,
         }
     ]
+
+
+def test_real_preflight_and_policy_guarded_analysis(
+    real_api_fixture: tuple[TestClient, str, str],
+) -> None:
+    """Covers: API-053 — the declared analysis policy against the real glossary.
+
+    The seeded FRED pair shares its published grains and publishes no units,
+    so the preflight verdict is comparable-with-caveat; the comparison serves
+    exactly that decision, and the dispatched distribution labels its derived
+    bins with the owning source.
+    """
+    client, metric_a, metric_b = real_api_fixture
+
+    preflight = client.get(
+        "/api/v1/comparison/preflight",
+        params={"metric_code_a": metric_a, "metric_code_b": metric_b},
+    )
+    assert preflight.status_code == 200
+    verdict = preflight.json()
+    assert verdict["comparable"] is True
+    assert verdict["derivations"] == ["difference", "ratio"]
+    assert verdict["source_code_a"] == verdict["source_code_b"] == "FRED"
+    statuses = {rule["rule"]: rule["status"] for rule in verdict["rules"]}
+    assert statuses["time_grains"] == "pass"
+    assert statuses["units"] == "unknown"
+    assert any("units" in caveat for caveat in verdict["caveats"])
+
+    unknown = client.get(
+        "/api/v1/comparison/preflight",
+        params={"metric_code_a": metric_a, "metric_code_b": "NO:SUCH"},
+    )
+    assert unknown.status_code == 404
+    assert unknown.json() == {"detail": "metric_code_b not found"}
+
+    comparison = client.get(
+        "/api/v1/comparison",
+        params={"metric_code_a": metric_a, "metric_code_b": metric_b},
+    )
+    assert comparison.status_code == 200
+    payload = comparison.json()
+    assert payload["derivations"] == ["difference", "ratio"]
+    assert payload["caveats"] == verdict["caveats"]
+    assert payload["total"] == 1
+
+    distribution = client.get(
+        "/api/v1/distribution/bins",
+        params={"metric_code": metric_a, "bin_count": 3},
+    )
+    assert distribution.status_code == 200
+    bins = distribution.json()
+    assert bins["source_code"] == "FRED"
+    assert bins["derived"] is True
+    assert bins["total"] == 1
 
 
 def test_real_discovery_detail_freshness_and_capabilities(
@@ -233,14 +290,29 @@ def census_bls_api_fixture(
                 INSERT INTO gold_glossary.dim_metric_catalog (
                     metric_code, metric_display_name, source_code,
                     source_object_type, source_object_key,
-                    valid_geo_grains, valid_time_grains
+                    valid_geo_grains, valid_time_grains, physical_lineage
                 ) VALUES
                     (%s, 'Census API fixture', 'CENSUS_ACS', 'ACS_VARIABLE', %s,
-                     ARRAY['COUNTY'], ARRAY['ANNUAL']),
+                     ARRAY['COUNTY'], ARRAY['ANNUAL'], %s::jsonb),
                     (%s, 'BLS API fixture', 'BLS', 'BLS_SERIES', %s,
-                     ARRAY['COUNTY'], ARRAY['MONTHLY'])
+                     ARRAY['COUNTY'], ARRAY['MONTHLY'], '{}'::jsonb)
                 """,
-                (census_metric, census_variable, bls_metric, bls_series),
+                (
+                    census_metric,
+                    census_variable,
+                    json.dumps(
+                        {
+                            "schema": "gold_census",
+                            "relation": "fact_acs_observation",
+                            # The serving relations spell this identity with
+                            # the ACS: prefix; the published key bridges it,
+                            # exactly as the production publisher does.
+                            "key": census_metric.removeprefix("ACS:"),
+                        }
+                    ),
+                    bls_metric,
+                    bls_series,
+                ),
             )
             cursor.execute(
                 """
@@ -368,7 +440,12 @@ def census_bls_api_fixture(
 def test_real_database_contract_spans_census_bls_and_cross_source_views(
     census_bls_api_fixture: tuple[TestClient, str, str],
 ) -> None:
-    """Covers: API-024 — all source routers and shared views use the real schema."""
+    """Covers: API-024 — all source routers and shared views use the real schema.
+
+    Covers: API-053 — the declared compatibility policy rejects the
+        annual-versus-monthly pair against the real glossary, with the
+        preflight explaining exactly which rule failed.
+    """
     client, census_metric, bls_metric = census_bls_api_fixture
 
     for source, metric, expected in (
@@ -407,12 +484,25 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
         assert distribution.status_code == 200
         assert distribution.json()["total"] == 1
 
+    # Covers: API-053 — an annual survey estimate and a monthly rate are not
+    # comparable, and the declared policy says so instead of serving a join.
     comparison = client.get(
         "/api/comparison",
         params={"metric_code_a": census_metric, "metric_code_b": bls_metric},
     )
-    assert comparison.status_code == 200
-    assert comparison.json()["items"][0]["difference"] == 105.0
+    assert comparison.status_code == 422
+    assert "time grains" in comparison.json()["detail"]
+
+    preflight = client.get(
+        "/api/v1/comparison/preflight",
+        params={"metric_code_a": census_metric, "metric_code_b": bls_metric},
+    )
+    assert preflight.status_code == 200
+    verdict = preflight.json()
+    assert verdict["comparable"] is False
+    assert verdict["derivations"] == []
+    failed = {rule["rule"] for rule in verdict["rules"] if rule["status"] == "fail"}
+    assert failed == {"time_grains"}
 
 
 def test_real_neutral_observation_dispatch_and_releases(

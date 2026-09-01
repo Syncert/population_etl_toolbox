@@ -111,12 +111,18 @@ def _metric_conditions(
     dispatch: ObservationDispatch,
     metric_code: str,
     metric: Mapping[str, Any],
+    param_prefix: str = "",
 ) -> tuple[list[str], dict[str, Any]]:
-    """The WHERE fragment binding one metric's identity, values always bound."""
+    """The WHERE fragment binding one metric's identity, values always bound.
+
+    ``param_prefix`` namespaces the bound parameters so two metrics can share
+    one statement (the comparison route binds both sides at once).
+    """
     if dispatch.metric_code_column is not None:
+        name = f"{param_prefix}metric_code_value"
         return (
-            [f"{dispatch.metric_code_column} = :metric_code_value"],
-            {"metric_code_value": metric_code},
+            [f"{dispatch.metric_code_column} = :{name}"],
+            {name: metric_code},
         )
 
     lineage = _lineage_of(metric)
@@ -129,9 +135,10 @@ def _metric_conditions(
                 f"physical_lineage for metric '{metric_code}' publishes no "
                 "'key', so its serving rows cannot be identified"
             )
+        name = f"{param_prefix}lineage_key"
         return (
-            [f"{dispatch.lineage_key_column} = :lineage_key"],
-            {"lineage_key": f"{dispatch.lineage_key_prefix}{key}"},
+            [f"{dispatch.lineage_key_column} = :{name}"],
+            {name: f"{dispatch.lineage_key_prefix}{key}"},
         )
 
     conditions: list[str] = []
@@ -143,8 +150,9 @@ def _metric_conditions(
                 f"physical_lineage for metric '{metric_code}' publishes no "
                 f"'{field}', so its serving rows cannot be identified"
             )
-        conditions.append(f"{field} = :identity_{field}")
-        params[f"identity_{field}"] = value
+        name = f"{param_prefix}identity_{field}"
+        conditions.append(f"{field} = :{name}")
+        params[name] = value
     return conditions, params
 
 

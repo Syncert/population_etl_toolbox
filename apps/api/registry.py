@@ -208,6 +208,25 @@ class ObservationDispatch:
     filter_conditions: tuple[tuple[str, str], ...] = ()
     latest_order: tuple[str, ...] = ()
     released_order: tuple[str, ...] = ()
+    # -- aligned analysis (API-005) -----------------------------------------
+    #: True when the comparison and distribution routes can answer for this
+    #: source: its latest surface reduces to one newest value per geography
+    #: without discarding a published dimension. False for the stratified
+    #: sources, whose rows carry strata, domains, or subject grains that an
+    #: aligned single-value analysis would silently collapse.
+    analysis_ready: bool = False
+    #: Why the analysis routes decline, for sources where they do. Served in
+    #: the preflight explanation, never invented at request time.
+    analysis_restriction: str | None = None
+    #: The numeric expression the analysis routes compute over. Only read when
+    #: ``analysis_ready``; the underlying column is numeric for every ready
+    #: source, and derived arithmetic is explicitly API-derived rather than a
+    #: provider fact.
+    analysis_value_expression: str = "value::DOUBLE PRECISION"
+    #: True when the latest relation carries the four geography attribution
+    #: columns (``state_fips``, ``county_fips``, ``state_name``,
+    #: ``county_name``); a relation without them serves typed NULLs.
+    publishes_geo_attribution: bool = False
 
     def supported_filters(self) -> tuple[str, ...]:
         return tuple(sorted(param for param, _ in self.filter_conditions))
@@ -257,6 +276,8 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             latest_order=("geo_id", "observation_date", "series_id"),
             released_order=("observation_date", "geo_id", "as_of_date", "series_id"),
+            analysis_ready=True,
+            publishes_geo_attribution=True,
         ),
         ObservationDispatch(
             source_code="CENSUS_ACS",
@@ -294,6 +315,8 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "vintage_year",
                 "variable_code",
             ),
+            analysis_ready=True,
+            publishes_geo_attribution=True,
         ),
         ObservationDispatch(
             source_code="CDC",
@@ -354,6 +377,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "stratum_id",
                 "observation_sk",
             ),
+            analysis_restriction=(
+                "CDC publishes stratified health observations (stratum, "
+                "adjustment status, multi-year periods) that an aligned "
+                "one-value-per-geography analysis would silently collapse; "
+                "query /observations with stratum_id and adjustment_status "
+                "filters instead"
+            ),
         ),
         ObservationDispatch(
             source_code="CENSUS_PEP",
@@ -388,6 +418,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "pep_vintage",
                 "dataset_code",
             ),
+            analysis_ready=True,
         ),
         ObservationDispatch(
             source_code="FBI_UCR",
@@ -448,6 +479,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "subject_code",
                 "observation_sk",
             ),
+            analysis_restriction=(
+                "FBI UCR publishes agency-grain, participation-qualified "
+                "monthly counts whose subjects are not canonical geographies; "
+                "an aligned per-geography analysis would misstate coverage. "
+                "Query /observations with subject_type and subject_code "
+                "filters instead"
+            ),
         ),
         ObservationDispatch(
             source_code="FRED",
@@ -475,6 +513,8 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             latest_order=("geo_id", "observation_date", "series_id"),
             released_order=("observation_date", "geo_id", "as_of_date", "series_id"),
+            analysis_ready=True,
+            publishes_geo_attribution=True,
         ),
         ObservationDispatch(
             source_code="USDA_NASS",
@@ -535,6 +575,12 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 "year",
                 "domaincat_desc",
                 "observation_sk",
+            ),
+            analysis_restriction=(
+                "USDA NASS publishes multi-dimensional crop statistics "
+                "(domain, class, practice, reference period) that an aligned "
+                "one-value-per-geography analysis would silently collapse; "
+                "query /observations with domain and geography filters instead"
             ),
         ),
     )
@@ -606,15 +652,27 @@ DISPATCH_NEUTRAL_PATHS: tuple[str, ...] = (
     "/observations/releases",
 )
 
-#: Version-relative paths answered only for the three sources published into
-#: the cross-source ``gold.*`` union views. The comparison and distribution
-#: routes still read that union; API-005 rebuilds them around declared
-#: compatibility, and only then do these paths widen.
-UNION_NEUTRAL_PATHS: tuple[str, ...] = DISPATCH_NEUTRAL_PATHS + (
+#: Version-relative paths of the aligned analysis routes (API-005). They
+#: answer only for ``analysis_ready`` dispatch entries; a stratified source
+#: gets a preflight explanation instead of a silently collapsed number.
+ANALYSIS_NEUTRAL_PATHS: tuple[str, ...] = (
+    "/comparison",
+    "/comparison/preflight",
+    "/distribution/bins",
+)
+
+#: Paths answered for an analysis-ready source that is not published into the
+#: legacy cross-source union views (Census PEP).
+DISPATCH_ANALYSIS_PATHS: tuple[str, ...] = (
+    DISPATCH_NEUTRAL_PATHS + ANALYSIS_NEUTRAL_PATHS
+)
+
+#: Paths answered for the three sources also published into the legacy
+#: cross-source ``gold.*`` union views, which still back the legacy
+#: latest/timeseries pair until API-008 retires it.
+UNION_NEUTRAL_PATHS: tuple[str, ...] = DISPATCH_ANALYSIS_PATHS + (
     "/observations/latest",
     "/observations/timeseries",
-    "/comparison",
-    "/distribution/bins",
 )
 
 
@@ -632,12 +690,13 @@ class SourceDiscovery:
 
     API-004 closed the gap with registry dispatch: every source's metrics are
     servable through ``/observations`` and ``/observations/releases``, so
-    ``served_by_neutral_routes`` is now true for all seven. The paths are
-    declared exactly -- not by prefix -- because the legacy
-    ``/observations/latest`` and ``/observations/timeseries`` pair and the
-    comparison/distribution routes still read the three-source union views,
-    and advertising them for a dispatch-only source would recreate the silent
-    empty page this registry exists to prevent.
+    ``served_by_neutral_routes`` is true for all seven. API-005 added the
+    aligned analysis paths for every ``analysis_ready`` dispatch entry. The
+    paths are declared exactly -- not by prefix -- because the legacy
+    ``/observations/latest``/``timeseries`` pair still reads the three-source
+    union views, and the analysis routes decline the stratified sources by
+    declared policy; advertising either for a source it cannot answer would
+    recreate the silent empty page this registry exists to prevent.
     """
 
     #: The glossary's ``source_code``.
@@ -716,7 +775,7 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             source_code=SERVING_CONTRACTS["pep"].source_code,
             display_name=SERVING_CONTRACTS["pep"].display_name,
             route_segment="pep",
-            neutral_paths=DISPATCH_NEUTRAL_PATHS,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="FBI_UCR",

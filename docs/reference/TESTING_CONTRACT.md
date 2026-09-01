@@ -283,7 +283,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-048 | None |
+| API | API-001–API-053 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,13 +291,13 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **201 of 201** | **0 of 201** |
+| **Total** | **206 of 206** | **0 of 206** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 227-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 232-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -553,6 +553,11 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-046 | P0 | Registry / `unit api` | Declared neutral capability round trip | Every neutral path the discovery registry declares per source is actually served, every completed source has both a discovery and a dispatch entry and reports `served_by_neutral_routes` true, and every declared per-source filter is an accepted query parameter of the neutral route | A declared-but-unserved path, a source discoverable but not dispatchable, or a capability filter the route would reject |
 | API-047 | P0 | Registry / `unit api` | Neutral dispatch allowlist and ordering | Every dispatch relation is in `ALLOWED_OBSERVATION_RELATIONS` inside its own source's schema with exactly one declared metric-identity strategy, and every rendered dispatch query names only allowlisted relations with deterministic `ORDER BY` and bound `LIMIT`/`OFFSET` | A dispatch query naming an undeclared relation, ambiguous identity strategy, or unordered pagination |
 | API-048 | P0 | Contract / `integration api database` | Real-database neutral observation contract | Against the manifest-built warehouse with seeded serving and glossary fixtures, `/api/v1/observations` (latest and as-released) and `/api/v1/observations/releases` return exact identities, values, release identities, and totals for union-family metrics, and repeating an identical request returns byte-identical JSON | Wrong rows, lost release identity, unstable ordering or serialization, or drift between the dispatch SQL and the real serving contracts |
+| API-049 | P0 | Service / `unit api` | Declared comparison compatibility policy | Compatibility is evaluated three-valued over published glossary semantics — units, time grains, geography grains, aggregation characteristic, and per-source analysis readiness — with matching semantics passing, contradictions failing, and unpublished semantics reported as unknown caveats rather than assumed; declined sources carry reviewed restriction reasons | A rule inventing a verdict the publication does not support, unknown treated as pass or as fail, a stratified source compared anyway, or an undeclared source crashing instead of failing the rule |
+| API-050 | P0 | Router / `unit api` | Comparison preflight resource | `/comparison/preflight` answers 200 for any known pair with the full rule evaluation, derivations, and caveats — an incompatible pair is a verdict, not an error — and answers a stable 404 naming the unknown metric parameter | A preflight that hides a failed rule, moves observation data, errors on an incompatible pair, or answers an unknown code with an empty verdict |
+| API-051 | P0 | Service / `unit api` | Policy-guarded aligned comparison | The comparison route enforces exactly the preflight verdict before any serving query, dispatches each side to its own reviewed relation reduced to one newest value per geography (no Cartesian rows), binds both metric identities with namespaced parameters, carries `period_a`/`period_b` and both sources' identities on every derived row, and rejects filters either source does not declare | A comparison served against the preflight verdict, a multi-period source multiplying join rows, an identity reaching SQL unbound or colliding across sides, or derived values separated from their input identities |
+| API-052 | P0 | Service / `unit api` | Policy-guarded dispatched distribution | Distribution bins dispatch to the metric's owning source's latest relation with one newest value per geography, decline stratified sources with their declared restriction, answer a stable 404 for unknown codes, exclude null values from exact counts, and label the response as API-derived with its owning source | Bins silently collapsing strata or periods, null values coerced into bins, an unknown metric answered with an empty page, or a relation outside the reviewed allowlist |
+| API-053 | P0 | Contract / `integration api database` | Real-database analysis policy contract | Against the manifest-built warehouse, the preflight verdict, the served comparison (including per-row periods and caveats), and the dispatched distribution agree exactly with the seeded publications, and an annual-versus-monthly pair is rejected with the failed rule named | The served comparison disagreeing with its preflight, an incompatible pair joined anyway, or dispatch drifting from the real serving contracts |
 
 ### Frontend Tests
 

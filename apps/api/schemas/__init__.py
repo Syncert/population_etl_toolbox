@@ -39,6 +39,8 @@ from apps.api.schemas.cdc import (
     CdcObservationListResponse,
 )
 from apps.api.schemas.analysis import (
+    CompatibilityFinding,
+    ComparisonPreflightResponse,
     ComparisonRow,
     ComparisonResponse,
     DistributionBin,
@@ -61,6 +63,8 @@ from apps.api.schemas.usda_nass import (
 __all__ = [
     "CdcObservation",
     "CdcObservationListResponse",
+    "CompatibilityFinding",
+    "ComparisonPreflightResponse",
     "ComparisonResponse",
     "ComparisonRow",
     "DistributionBin",

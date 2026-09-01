@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-004 are complete. API-005 is the next ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-005 are complete. API-006 is the next ticket.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-004 delivered — the registry dispatch recorded under API-001 is live: `GET /api/v1/observations` and `GET /api/v1/observations/releases` resolve any completed source's metric through the published glossary and answer from that source's own reviewed serving relations, preserving release identity, typed suppression, uncertainty, participation coverage, and source dimensions. All seven sources are now queryable through the neutral surface — FBI UCR for the first time — and the capability resources report the new reach. The reviewed OpenAPI snapshot moved additively — 534 inserted lines, zero removed.
-- **Next pickup:** API-005 (comparison and derived analysis). `list_metric_comparison` still joins any two metric codes on geography with no unit, universe, time-grain, or method check, and the comparison/distribution services still carry their own `_relation_exists` probing over the three-source union views; both are recorded below as API-005's. The declared per-source semantics the dispatch registry now carries (`units`, `measure_kind`, `aggregation_characteristic`, grains) are the inputs the compatibility rules should read.
+- **Current milestone:** API-005 delivered — comparison and distribution are policy-guarded and registry-dispatched: a declared three-valued compatibility policy over published glossary semantics decides every pair, `GET /api/v1/comparison/preflight` explains the full verdict up front, the comparison route enforces exactly that verdict with each side reduced to one newest value per geography inside its own reviewed relation, and distribution bins dispatch to the owning source with API-derived labeling. The unguarded any-two-metrics join and the analysis routes' `to_regclass` probing are gone; the analysis reach widened to Census PEP.
+- **Next pickup:** API-006 (cache, resilience, security, and observability). Recorded inputs: cache freshness is still TTL-only while `dim_metric_catalog.publication_time` publishes a watermark; the cursor-pagination revisit from API-004; `models_service`'s `to_regclass` probe over three never-created relations (decide whether the endpoint survives); and the CI evidence gap from API-001 (`redis-integration` claiming API-019/021/022 while running only `tests/integration/redis`).
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -776,6 +776,120 @@ performance-baselined path — the legacy routes issue exactly the queries they
 did — and no existing response shape changed, so the browser consumer has
 nothing new to regress against. Both run in their scheduled jobs.
 
+## API-005 delivery record (2026-09-01)
+
+The reviewed snapshot moved additively again: two new operations
+(`/comparison/preflight` under both prefixes), two new schemas
+(`ComparisonPreflightResponse`, `CompatibilityFinding`), and new optional
+fields on `ComparisonRow`/`ComparisonResponse` (`period_a`/`period_b`,
+sources, units, `derivations`, `caveats`) and `DistributionBinsResponse`
+(`source_code`, `units`, `derived`). No existing field or bound changed.
+Comparison and distribution *behaviour* changed deliberately, which the
+API-001 audit already authorized: neither route had a required consumer
+(`apps/web` calls only distribution, with catalog-discovered codes), and the
+unguarded any-two-metrics join was recorded as the defect API-005 owns.
+
+### The declared compatibility policy
+
+`apps/api/services/compatibility.py` evaluates five rules over published
+contracts only — the glossary row's units, `valid_time_grains`,
+`valid_geo_grains`, `aggregation_characteristic`, and the dispatch registry's
+`analysis_ready` declaration — three-valued:
+
+- **pass** — the published semantics support the comparison.
+- **fail** — they contradict it: differing units, disjoint time or geography
+  grains, or a source the analysis routes decline. Any fail makes the pair
+  incomparable and the comparison route rejects it naming the failed rules.
+- **unknown** — the source publishes nothing to check (ACS publishes no
+  units). Unknown is not incompatibility: the comparison serves, and the
+  unverified rule travels as a caveat instead of being assumed to pass.
+
+Aggregation disagreement is deliberately a caveat, never a rejection — it
+warns against summing derived values, which is a use the API cannot see.
+Every rule finding is served by `GET /comparison/preflight`, and the
+comparison route enforces exactly the preflight decision, so the verdict a
+client checks is the verdict that governs.
+
+### Analysis readiness is declared per source
+
+The dispatch registry gained `analysis_ready`, `analysis_restriction`,
+`analysis_value_expression`, and `publishes_geo_attribution`. BLS, Census
+ACS, FRED, and Census PEP are ready — PEP joining the analysis reach for the
+first time. CDC, USDA NASS, and FBI UCR are declined with reviewed reasons
+(stratified/multi-dimensional/agency-grain publications that a
+one-value-per-geography analysis would silently collapse); the reason is what
+the preflight serves, and the capability resources list the analysis paths
+only for the ready sources.
+
+### Alignment without Cartesian rows
+
+Both analysis routes now dispatch through the registry and rank inside the
+owning source's own latest relation — one newest value per geography
+(`recency_rank = 1`) — before any join or binning. That is what makes PEP's
+multi-year latest surface safe, and it retired the analysis services' private
+`_relation_exists` probing over `gold.v_metric_latest_by_geo` /
+`gold.mv_latest_dashboard`: relation names now come only from the reviewed
+registry, metric identities bind through the same three declared strategies
+as API-004 (with namespaced parameters so two sides share one statement), and
+filters are validated against each side's declared set. Comparison rows carry
+`period_a`/`period_b` so differing as-of context is visible rather than
+implied away; derived `difference`/`ratio` are named in `derivations` and a
+null input yields a null derivation, never a zero. Distribution keeps its
+exact-count equal-width bins, now labeled `derived` with the owning source
+and units, over provider-published numeric values only.
+
+Two behaviour corrections recorded plainly: an unknown metric code now
+answers a stable 404 naming the offending parameter (both routes previously
+served an empty page), and an incompatible pair answers a 422 naming the
+failed rules with a pointer to the preflight (previously a silently
+meaningless join). A real consequence of the dispatch: distribution of a
+catalog-discovered ACS metric now returns data — under the union views the
+glossary-vs-serving identity mismatch made `apps/web`'s ACS distribution
+silently empty.
+
+### Deferred, deliberately
+
+- Ratio-of-unlike-units derivations (per-capita rates) — a legitimate derived
+  analysis the initial release excludes; units must match until a reviewed
+  derived-unit contract exists.
+- Widening the analysis routes to the stratified sources — requires
+  stratum/domain/subject selection parameters, not a collapse; later plan
+  work on the stable observation contract.
+- The legacy `/comparison` + `/distribution/bins` aliases retire with the
+  alias surface in API-008; `metric_aliases.py` likewise.
+- `models_service` probing and the CI evidence gap — API-006, unchanged.
+
+### Catalog and evidence
+
+API-049 through API-053 are registered; the audited API count moves 48 → 53
+and the evidence register 227 → 232. `tests/unit/api/
+test_analysis_compatibility.py` owns the policy and preflight rows; the
+rewritten `test_comparison.py`/`test_distribution.py` own the guarded routes;
+`test_real_database_contract.py` gains the real-warehouse policy contract
+(API-053), where the seeded annual-versus-monthly census/BLS pair is now the
+*rejection* evidence and the FRED pair the served comparable-with-caveat
+case, with the ACS fixture teaching the same lineage bridge production uses.
+`CI_EVIDENCE_MAP.md` names the compatibility policy under `api-unit`;
+`README.md` documents the three analysis resources.
+
+### Validation
+
+All commands run on 2026-09-01 against the pinned disposable services.
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 212 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1184 passed |
+| API + Redis integration | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis` | 18 passed, 0 skipped |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 52s |
+| Web consumer contract | `npm --prefix apps/web run test:unit` / `lint` / `build` | 10 passed / clean / build succeeded |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean |
+
+Not run, and recorded as not run: `make test-performance` — the analysis
+routes' new SQL replaces same-shaped queries over relations of the same size,
+and the performance thresholds bind the cache-hit/miss paths API-006 owns; it
+runs in its scheduled job.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -828,6 +942,8 @@ nothing new to regress against. Both run in their scheduled jobs.
 - Reject or explain incompatible unit, universe, time, geography, method, adjustment, or coverage requests.
 
 **Acceptance:** Same-source and cross-source fixtures never create Cartesian rows, silently coerce missing data, or present incompatible inputs as a valid comparison.
+
+**Status: complete (2026-09-01).** See "API-005 delivery record" above. The declared policy decides every pair before any serving query, the preflight explains the verdict the comparison route enforces, ranked one-per-geography sides make Cartesian rows structurally impossible, null inputs stay null, and incompatible pairs — including the real annual-versus-monthly case against the warehouse — are rejected with the failed rules named.
 
 ### API-006 — Cache, resilience, security, and observability
 
