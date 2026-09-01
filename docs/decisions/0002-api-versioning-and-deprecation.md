@@ -5,7 +5,7 @@
 - **Accepted:** 2026-08-31
 - **Amended:** 2026-09-01 — aliases retired ahead of the published sunset
 - **Decision owners:** API platform maintainers
-- **Related work:** API-002 and API-008 in the [API development plan](../plans/needs_review/API_DEVELOPMENT_PLAN.md)
+- **Related work:** API-002 and API-008 in the [API development plan](../plans/completed/API_DEVELOPMENT_PLAN.md)
 
 ## Context
 

@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** **Ready for review.** Claimed into `in_progress/` on 2026-08-31, delivered through all eight phases, and moved to `needs_review/` on 2026-09-01. Both gates remain proven open. Only a human may accept it into `completed/`.
+- **Status:** **Accepted and complete.** Claimed into `in_progress/` on 2026-08-31, delivered through all eight phases, and accepted into `completed/` on 2026-09-01 by human review. Both non-negotiable gates were proven open at claim time and remained so.
 - **Last updated:** 2026-09-01
 - **Current milestone:** API-008 delivered — the consumer handoff is published and pinned against the application, and the unversioned `/api` aliases, the `metric_id` alias, and the `population` mapping are retired. `/api/v1` is the single public surface; `apps/web` is migrated and verified by its Chromium browser contract suite.
-- **Next pickup:** None — every phase is complete and the plan now sits in `needs_review/` awaiting human acceptance, after which `WEB_ANALYTICS_FIRST_WAVE_PLAN.md` can begin building on the stable contract.
+- **Next pickup:** None — this plan is closed. `WEB_ANALYTICS_FIRST_WAVE_PLAN.md` in `to_do/` is unblocked and builds on the stable `/api/v1` contract documented in `docs/reference/API_CONSUMER_GUIDE.md`.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
