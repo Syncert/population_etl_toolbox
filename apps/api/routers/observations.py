@@ -51,7 +51,7 @@ def get_neutral_observations(
     year_from: Optional[int] = Query(None, ge=1700, le=2200),
     year_to: Optional[int] = Query(None, ge=1700, le=2200),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> NeutralObservationListResponse:
     """Provider-neutral observations, dispatched through the reviewed registry.
@@ -106,7 +106,7 @@ def get_neutral_observations(
 def get_metric_releases(
     metric_code: str = Query(..., min_length=1, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> MetricReleaseListResponse:
     """Release identities a client can pin with ``scope=as_released``."""
@@ -130,7 +130,7 @@ def get_latest_observations(
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> ObservationListResponse:
     resolved_metric_code = resolve_metric_code(

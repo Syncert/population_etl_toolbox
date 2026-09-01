@@ -12,6 +12,7 @@ from psycopg2.extensions import connection
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from apps.api import database as api_database
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import create_app
 from data_ingestion_toolbox.config import Settings
@@ -119,7 +120,21 @@ def configured_cached_api(
             yield session
 
     monkeypatch.setenv("REDIS_URL", redis_config.url)
-    monkeypatch.setenv("API_CACHE_TTL_SECONDS", "1")
+    # A long TTL with a zero freshness window: staleness after a publication
+    # is bounded by the freshness poll, not by waiting out the TTL.
+    monkeypatch.setenv("API_CACHE_TTL_SECONDS", "300")
+    monkeypatch.setenv("API_CACHE_FRESHNESS_SECONDS", "0")
+    # The publication-epoch provider reads through the API-owned engine, so
+    # the production app needs the real DATABASE_URL, not only the overridden
+    # request dependency.
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://"
+        f"{postgres_config.user}:{postgres_config.password}"
+        f"@{postgres_config.host}:{postgres_config.port}"
+        f"/{postgres_config.database}",
+    )
+    api_database.dispose_engine()
     application = create_app(Settings())
     application.dependency_overrides[get_db_session_dep] = database_session
 
@@ -146,6 +161,7 @@ def configured_cached_api(
     finally:
         application.dependency_overrides.clear()
         engine.dispose()
+        api_database.dispose_engine()
         cleanup = postgres_connection_factory()
         try:
             with cleanup.cursor() as cursor:
@@ -173,10 +189,18 @@ def configured_cached_api(
 
 
 @pytest.mark.slow
-def test_configured_app_cache_miss_hit_expiry_and_refresh_policy(
+def test_configured_app_cache_freshness_follows_publication_state(
     configured_cached_api: tuple[TestClient, Callable[[str], None], str],
 ) -> None:
-    """Covers: API-019, API-021, API-022 — real cache honors refresh TTL."""
+    """Covers: API-019, API-021, API-022 — publication state bounds staleness.
+
+    Cache freshness used to be TTL-only, and this test asserted the resulting
+    staleness as the contract. API-006 keyed the cache on the published
+    harvest state: with a 300-second TTL and a zero freshness window, a
+    republication is served on the very next request — the TTL bounds Redis
+    memory, the freshness window bounds staleness. Unchanged publications
+    keep answering as HITs from the same entry.
+    """
     client, refresh_metric, metric_code = configured_cached_api
     target = "/api/catalog/metrics"
     params = {"q": metric_code, "limit": 10}
@@ -189,16 +213,22 @@ def test_configured_app_cache_miss_hit_expiry_and_refresh_policy(
     assert second.content == first.content
     assert first.json()["items"][0]["metric_display_name"] == "Cache version one"
 
-    refresh_metric("Cache version two")
-    within_policy = client.get(target, params=params)
-    assert within_policy.headers["x-cache"] == "HIT"
-    assert within_policy.content == first.content
+    third = client.get(target, params=params)
+    assert third.headers["x-cache"] == "HIT", (
+        "an unchanged publication keeps serving from cache"
+    )
 
-    time.sleep(1.1)
-    after_expiry = client.get(target, params=params)
-    assert after_expiry.status_code == 200
-    assert after_expiry.headers["x-cache"] == "MISS"
-    assert after_expiry.json()["items"][0]["metric_display_name"] == "Cache version two"
+    refresh_metric("Cache version two")
+    republished = client.get(target, params=params)
+    assert republished.status_code == 200
+    assert republished.headers["x-cache"] == "MISS", (
+        "a republication rotates the key well before the TTL"
+    )
+    assert republished.json()["items"][0]["metric_display_name"] == "Cache version two"
+
+    settled = client.get(target, params=params)
+    assert settled.headers["x-cache"] == "HIT"
+    assert settled.content == republished.content
 
 
 def test_configured_app_falls_back_to_database_when_redis_is_unavailable(

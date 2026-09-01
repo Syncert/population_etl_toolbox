@@ -13,12 +13,12 @@ This register assigns each delivery contract to one authoritative GitHub Actions
 | Airflow parsing and task topology | `dag-parse` / `DAG parse tests (Airflow 2.9.3 + Python 3.11)` | Required PR/push | DAGs, orchestration code, bootstrap manifest |
 | Linux scheduler compatibility | `scheduler-image` / `DAG suite in scheduler image` | Required PR/push | scheduler image, DAGs, ETL package, SQL |
 | Browser consumer contract | `frontend` / `Frontend lint, unit, build, and browser` | Required PR/push | web, `apps/api` response schemas, gold contracts, semantic migrations |
-| Redis cache isolation | `redis-integration` / `API cache integration (Redis 7 + Python 3.11)` | Required PR/push | API/cache behavior |
+| Redis cache isolation (synthetic-app mechanics) | `redis-integration` / `API cache integration (Redis 7 + Python 3.11)` | Required PR/push | Cache middleware behavior against a synthetic app plus the deterministic middleware unit file; the production-application cache/freshness contract is owned by `e2e-performance`, which provisions the warehouse it needs |
 | Spatial configuration | `martin-unit` / `Martin deterministic contracts (Python 3.11)` | Required PR/push | Martin configuration and contracts |
 | Spatial database/proxy behavior | `martin-integration` / `Martin/PostGIS/API/proxy contracts` | Required PR/push | geography, gold serving, Martin, proxy |
 | Deployment startup/readiness/teardown | `deployment-smoke` / `Deployment compose smoke` | Required PR/push | application, SQL, Docker, deployment config |
 | Live provider compatibility | `external-contract` / `Census, PEP, BLS, FRED, CDC, FBI UCR, and USDA NASS live contracts` | Scheduled/manual; fresh within 7 days for release | source adapters and provider fixtures |
-| Bounded E2E and performance | `e2e-performance` / `Bounded E2E and performance evidence` | Scheduled/manual; fresh within 7 days for release | full source-to-serving behavior |
+| Bounded E2E and performance | `e2e-performance` / `Bounded E2E and performance evidence` | Scheduled/manual; fresh within 7 days for release | full source-to-serving behavior, the production-application cache/publication-freshness contract (`tests/integration/api/test_cache_real_services.py`), and the NASS API contract (`tests/integration/api/test_usda_nass_api_contract.py`) |
 | Data-product E2E coverage (E2E-008–E2E-014) | `e2e-performance` / `Bounded E2E and performance evidence`, plus `coverage` for the inventory unit test | Inventory unit test required PR/push; product run scheduled/manual | `tests/support/product_coverage.py`, `tests/support/warehouse_scope.py`, `tests/e2e`, source publishers and API routers |
 | Warehouse data-quality contracts (DQ-001–DQ-007) | ride `etl-unit`, `coverage`, `postgres-integration`, `dag-parse`, `scheduler-image` above | Required PR/push | `src/data_ingestion_toolbox/quality`, `sql/migrations/013_data_quality_evidence.sql`, quality tests, `dags/warehouse_data_quality_dag.py` |
 

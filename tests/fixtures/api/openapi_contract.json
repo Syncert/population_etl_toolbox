@@ -44,6 +44,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -173,6 +174,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -229,6 +231,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -354,6 +357,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -460,6 +464,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -607,6 +612,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -764,6 +770,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -859,15 +866,6 @@
         "health"
       ]
     },
-    "GET /api/models/status": {
-      "parameters": [],
-      "responses": {
-        "200": "application/json:ModelSurfaceStatusResponse"
-      },
-      "tags": [
-        "models"
-      ]
-    },
     "GET /api/observations": {
       "parameters": [
         {
@@ -948,6 +946,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1086,6 +1085,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1137,6 +1137,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1257,6 +1258,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1440,6 +1442,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1609,6 +1612,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1713,6 +1717,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1842,6 +1847,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -1898,6 +1904,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2023,6 +2030,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2129,6 +2137,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2276,6 +2285,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2433,6 +2443,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2528,15 +2539,6 @@
         "health"
       ]
     },
-    "GET /api/v1/models/status": {
-      "parameters": [],
-      "responses": {
-        "200": "application/json:ModelSurfaceStatusResponse"
-      },
-      "tags": [
-        "models"
-      ]
-    },
     "GET /api/v1/observations": {
       "parameters": [
         {
@@ -2617,6 +2619,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2755,6 +2758,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2806,6 +2810,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -2926,6 +2931,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -3109,6 +3115,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -3278,6 +3285,7 @@
         {
           "constraints": {
             "default": 0,
+            "maximum": 100000,
             "minimum": 0
           },
           "in": "query",
@@ -3343,6 +3351,15 @@
       "parameters": [],
       "responses": {
         "200": "application/json:HealthResponse"
+      },
+      "tags": [
+        "health"
+      ]
+    },
+    "GET /health/ready": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:ReadinessResponse"
       },
       "tags": [
         "health"
@@ -3693,18 +3710,6 @@
         "offset",
         "source_code",
         "total"
-      ]
-    },
-    "ModelSurfaceStatusResponse": {
-      "properties": {
-        "details": "string",
-        "models_enabled": "boolean",
-        "status": "string"
-      },
-      "required": [
-        "details",
-        "models_enabled",
-        "status"
       ]
     },
     "NassMeasureListResponse": {
@@ -4072,6 +4077,18 @@
         "margin_of_error_pct": "string | null"
       },
       "required": []
+    },
+    "ReadinessResponse": {
+      "properties": {
+        "cache": "string",
+        "database": "string",
+        "status": "string"
+      },
+      "required": [
+        "cache",
+        "database",
+        "status"
+      ]
     },
     "SourceCapability": {
       "properties": {

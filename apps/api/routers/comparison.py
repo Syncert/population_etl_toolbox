@@ -55,7 +55,7 @@ def get_metric_comparison(
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> ComparisonResponse:
     """Aligned comparison of two compatible metrics, latest value per geography.

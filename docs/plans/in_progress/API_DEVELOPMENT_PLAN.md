@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-005 are complete. API-006 is the next ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-006 are complete. API-007 is the next ticket.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-005 delivered — comparison and distribution are policy-guarded and registry-dispatched: a declared three-valued compatibility policy over published glossary semantics decides every pair, `GET /api/v1/comparison/preflight` explains the full verdict up front, the comparison route enforces exactly that verdict with each side reduced to one newest value per geography inside its own reviewed relation, and distribution bins dispatch to the owning source with API-derived labeling. The unguarded any-two-metrics join and the analysis routes' `to_regclass` probing are gone; the analysis reach widened to Census PEP.
-- **Next pickup:** API-006 (cache, resilience, security, and observability). Recorded inputs: cache freshness is still TTL-only while `dim_metric_catalog.publication_time` publishes a watermark; the cursor-pagination revisit from API-004; `models_service`'s `to_regclass` probe over three never-created relations (decide whether the endpoint survives); and the CI evidence gap from API-001 (`redis-integration` claiming API-019/021/022 while running only `tests/integration/redis`).
+- **Current milestone:** API-006 delivered — the cache key now carries the served-contract fingerprint, the warehouse publication epoch (from `gold_glossary.publisher_harvest_state`), and a canonicalized request identity, so a republication is served within the declared freshness window instead of waiting out the TTL; the API owns its engine with fail-fast pool, connect, and statement-timeout budgets and disposes it on graceful shutdown behind a real readiness probe; cost-classed per-client rate limits, request correlation, and structured secret-safe telemetry are in; the permanently-false `/models/status` probe is retired; and the CI evidence gap is closed — the production-app cache contract now runs in `e2e-performance`.
+- **Next pickup:** API-007 (saved analysis configuration API). It begins with the authentication/authorization and application-persistence design review the plan requires before any user-scoped persistence; API-owned tables need their own role and privileges, never warehouse mutation rights, and private responses must stay out of the shared public cache (the cache key work in API-006 deliberately caches only the public analytical GET surface).
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -890,6 +890,139 @@ routes' new SQL replaces same-shaped queries over relations of the same size,
 and the performance thresholds bind the cache-hit/miss paths API-006 owns; it
 runs in its scheduled job.
 
+## API-006 delivery record (2026-09-01)
+
+### Cache identity: versioned, publication-fresh, canonical
+
+The cache key was `sha256(path?querystring)` under a hand-bumped `v3` literal,
+with freshness meaning "wait out the TTL". It is now three-part
+(`apps/api/middleware.py`):
+
+- **A served-contract fingerprint** — `contract_fingerprint(app)` hashes the
+  complete OpenAPI document at startup, so *any* contract change rotates every
+  key. A namespace literal only protects the contract when someone remembers
+  to edit it; this one cannot be forgotten.
+- **A publication epoch** — `apps/api/freshness.py` reads
+  `MAX(last_publication_time)` from `gold_glossary.publisher_harvest_state`,
+  the one-row-per-source serving-side mirror of the publication lifecycle
+  that the read-only role is granted (`control.publisher_ready_event` stays
+  correctly off-limits). The read is memoized for
+  `API_CACHE_FRESHNESS_SECONDS` (default 15), which is therefore the declared
+  staleness bound after a republication — the TTL now bounds Redis memory,
+  not staleness. A failed epoch read keeps the last known epoch: neither
+  Redis nor the epoch may take availability down. The epoch is global rather
+  than per-source — deliberate over-invalidation, because the pure-ASGI
+  middleware cannot know which sources a request touches; per-source
+  granularity would need route-declared scopes and is recorded as a possible
+  later refinement, not a defect.
+- **A canonicalized request identity** — query parameters sorted as pairs, so
+  reordered parameters share one entry while distinct parameter multisets
+  never collide (API-054 proves both directions).
+
+The rewritten production contract (`test_cache_real_services.py`, API-022)
+now proves the opposite of what it used to assert: with a 300-second TTL and
+a zero freshness window, a warehouse republication is served on the next
+request, and unchanged publications keep hitting.
+
+### The API owns its engine, with declared budgets
+
+`apps/api/database.py` replaces the ETL package's bare shared engine (which
+had SQLAlchemy defaults: a 30-second wait on an exhausted pool, no statement
+timeout, no connect timeout, never disposed). The API engine carries
+configured `pool_size`/`max_overflow`, a **5-second fail-fast pool timeout**,
+a **15-second server-side statement timeout** (the cancellation contract for
+a runaway query), a 5-second connect timeout, and pool recycling — all via
+`API_DB_*` env vars, defaulted in code and declared in the deployment files.
+`data_ingestion_toolbox/db.py` is deleted: the API was its only consumer, and
+ETL budgets must never be coupled to API budgets. The lifespan shutdown
+disposes the engine; uvicorn now runs with `--timeout-graceful-shutdown 10`
+and `--timeout-keep-alive 5`, and the compose service gains
+`stop_grace_period` and a healthcheck against the new **readiness probe**
+`GET /health/ready` — 503 while the database is unreachable, with Redis
+reported but never gating (a cache outage must not become an API outage).
+
+### Limits, robustness, and telemetry
+
+- **Rate limits** (`apps/api/ratelimit.py`): per-client token buckets split
+  by declared cost class — catalog vs analytical — with a stable
+  `429 {"detail": ...}` + `Retry-After`, continuous refill, exempt probes,
+  and both buckets off by default (deterministic suites unthrottled;
+  deployment config enables 600/240 per minute). The limiter sits *inside*
+  the cache, so hits cost no budget and the meter counts exactly the requests
+  that reach the warehouse. State is in-process; the single-process
+  deployment makes that exact, and the multi-process caveat is documented in
+  the module rather than hidden.
+- **Cache robustness** (API-055): any cache-side exception class — not just
+  `RedisError` — degrades to serving uncached; previously an unwrapped
+  timeout would have been a 500. The response-size bound now applies to the
+  buffer itself: a body exceeding the 2 MB cacheable bound streams through
+  as a MISS instead of being held whole in memory first.
+- **Telemetry** (`apps/api/telemetry.py`): every response carries
+  `X-Request-ID` (echoed when well-formed, generated otherwise, header-
+  injection rejected) and one structured completion line — method, route
+  path, status, duration, cache disposition. Query values, headers, bodies,
+  and connection details never reach the line (API-057 proves the
+  exclusions).
+- **Query budgets**: every `offset` is now bounded (`le=100000`) — the
+  reviewed reliability bound the plan's "bound all filters before database
+  work" principle requires; recorded as a deliberate narrowing since no
+  consumer pages past it. With deterministic ordering retained, cursor
+  pagination remains unnecessary for current consumers and stays deferred —
+  now with the offset bound making deep-scan cost explicit rather than
+  unbounded.
+
+### Two recorded decisions closed
+
+- **`/models/status` is retired** (API-026 rewritten). It probed three
+  relations no manifest asset ever creates and named whichever existed in its
+  response body — exactly the warehouse-object probing the sanitized-503
+  discipline forbids — and no consumer called it. Removing an operation is
+  normally ADR-0002-breaking; this one was a permanently-false transitional
+  probe with zero consumers, the same class of correction as API-005's, and
+  the snapshot diff records the removal explicitly. A modelling surface, when
+  designed, arrives as a declared contract.
+- **The CI evidence gap is closed.** `redis-integration` claimed
+  API-019/021/022 while `test_cache_real_services.py` — the only file
+  exercising the production application's cache — ran in *no* workflow
+  (`test_usda_nass_api_contract.py` was likewise unrun). Both now run in
+  `e2e-performance`, which has the warehouse they need; `redis-integration`'s
+  claims in `TESTING_CONTRACT.md`/`CI_EVIDENCE_MAP.md` are narrowed to what
+  it actually runs (synthetic-app cache mechanics plus the middleware unit
+  file).
+
+### Catalog and evidence
+
+API-054 through API-058 are new; API-021/022/026 are rewritten in place. The
+audited API count moves 53 → 58 and the register 232 → 237.
+`tests/unit/api/test_operational_hardening.py` owns the new rows;
+`test_database_session.py` is rewritten against the API-owned engine (still
+owning API-016). `README.md` documents the readiness probe and the
+operational contract; the compose files, `stack.env*`, and `Dockerfile.api`
+carry the new configuration.
+
+### Validation
+
+All commands run on 2026-09-01 against the pinned disposable services.
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 227 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1199 passed |
+| API + Redis integration + resilience | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis tests/resilience` | 19 passed, 0 skipped |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 38s |
+| Performance (API-facing) | `pytest tests/performance/test_api_cache_load.py tests/performance/test_api_database_load.py -m performance` | 4 passed — cache-hit/miss p95 and refresh-concurrency budgets hold with the epoch lookup in place |
+| Web consumer contract | `npm --prefix apps/web run test:unit` | 10 passed |
+| Compose validity | `docker compose -f infra/docker/docker-compose.yml config` | parses |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean |
+
+Environment-limited, recorded and not worked around:
+`tests/performance/test_volume_database.py::test_many_small_slices_finish_without_duplicate_keys`
+fails its 10-second budget on this host (25.4s) — an ETL ingestion-throughput
+baseline calibrated for the scheduled CI runner, on a path this ticket does
+not touch; the remaining volume tests pass here and the tier runs on its
+calibrated runner. The full deployment-smoke compose build runs in its
+required CI job and was not rebuilt locally.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -953,6 +1086,8 @@ runs in its scheduled job.
 - Establish controlled cache-hit, cache-miss, high-cardinality, refresh-concurrency, and connection-capacity baselines.
 
 **Acceptance:** Required reliability and performance thresholds pass in controlled environments, failures are bounded and sanitized, and cache behavior cannot return one request's data for another request identity.
+
+**Status: complete (2026-09-01).** See "API-006 delivery record" above. Cache identity is contract-fingerprinted, publication-fresh, and canonical (distinct request identities proven never to collide); the engine, pool, timeouts, readiness, shutdown, rate limits, and telemetry are declared and tested; Redis outage, non-RedisError failure, oversized-body streaming, and secret-safe logging are proven; the API-facing performance budgets hold with the freshness lookup in place; and the models-probe and CI-evidence-gap decisions are closed.
 
 ### API-007 — Saved analysis configuration API
 

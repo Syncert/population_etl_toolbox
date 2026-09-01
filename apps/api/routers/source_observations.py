@@ -51,7 +51,7 @@ def build_source_router(contract: ServingContract) -> APIRouter:
         geo_level: Optional[str] = Query(None, max_length=50),
         state_fips: Optional[str] = Query(None, max_length=2),
         limit: int = Query(100, ge=1, le=5000),
-        offset: int = Query(0, ge=0),
+        offset: int = Query(0, ge=0, le=100000),
         db: Session = Depends(get_db_session_dep),
     ) -> ObservationListResponse:
         resolved = resolve_metric_code(metric_code=metric_code, metric_id=metric_id)

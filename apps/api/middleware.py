@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 
 from redis.asyncio import Redis
-from redis.exceptions import RedisError
 
 from apps.api.versioning import API_PREFIXES
 
+logger = logging.getLogger(__name__)
 
 Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
@@ -62,12 +64,36 @@ class SecurityHeadersMiddleware:
 
 
 class RedisResponseCacheMiddleware:
-    """Cache public analytical GET responses without making Redis a dependency for uptime."""
+    """Cache public analytical GET responses without making Redis a dependency for uptime.
 
-    def __init__(self, app, redis_url: str = "", ttl_seconds: int = 300) -> None:
+    Cache identity (API-006) is three-part:
+
+    - ``contract_fingerprint`` — a digest of the served OpenAPI document,
+      computed by the application factory. Any change to the public contract
+      rotates every key, so a schema change can never serve a body cached
+      under the previous shape. It replaces a hand-bumped namespace literal
+      that only changed when someone remembered it.
+    - a publication ``epoch`` from ``epoch_provider`` — the warehouse's
+      published harvest state, so a republication rotates keys within the
+      declared freshness window instead of waiting out the TTL.
+    - the canonicalized request identity — path plus its query parameters
+      sorted as pairs. Reordered parameters address the same resource and now
+      share one entry; distinct parameter multisets remain distinct keys.
+    """
+
+    def __init__(
+        self,
+        app,
+        redis_url: str = "",
+        ttl_seconds: int = 300,
+        contract_fingerprint: str = "unversioned",
+        epoch_provider: Callable[[], Awaitable[str]] | None = None,
+    ) -> None:
         self.app = app
         self.redis_url = redis_url
         self.ttl_seconds = max(1, ttl_seconds)
+        self.contract_fingerprint = contract_fingerprint
+        self.epoch_provider = epoch_provider
         self._client: Redis | None = None
 
     def _is_cacheable(self, scope: dict[str, Any]) -> bool:
@@ -78,11 +104,15 @@ class RedisResponseCacheMiddleware:
             and str(scope.get("path", "")).startswith(CACHEABLE_PREFIXES)
         )
 
-    def _cache_key(self, scope: dict[str, Any]) -> str:
+    async def _cache_key(self, scope: dict[str, Any]) -> str:
         query = scope.get("query_string", b"").decode("latin-1")
-        request_target = f"{scope.get('path', '')}?{query}"
+        canonical_query = urlencode(sorted(parse_qsl(query, keep_blank_values=True)))
+        request_target = f"{scope.get('path', '')}?{canonical_query}"
         digest = hashlib.sha256(request_target.encode("utf-8")).hexdigest()
-        return f"economic-data-studio:api:v3:{digest}"
+        epoch = "no-epoch"
+        if self.epoch_provider is not None:
+            epoch = await self.epoch_provider()
+        return f"economic-data-studio:api:{self.contract_fingerprint}:{epoch}:{digest}"
 
     def _get_client(self) -> Redis:
         if self._client is None:
@@ -105,7 +135,7 @@ class RedisResponseCacheMiddleware:
                 ):
                     try:
                         await self._client.aclose()
-                    except RedisError:
+                    except Exception:
                         pass
                     finally:
                         self._client = None
@@ -118,11 +148,15 @@ class RedisResponseCacheMiddleware:
             await self.app(scope, receive, send)
             return
 
-        key = self._cache_key(scope)
+        key = await self._cache_key(scope)
         client = self._get_client()
         try:
             cached = await client.get(key)
-        except RedisError:
+        except Exception:
+            # Any cache-side failure -- RedisError, a timeout class the client
+            # library did not wrap, DNS -- degrades to a MISS. Redis is an
+            # optimization and must never take availability down.
+            logger.warning("response cache read failed; serving uncached")
             cached = None
 
         if cached is not None:
@@ -143,12 +177,47 @@ class RedisResponseCacheMiddleware:
             await send({"type": "http.response.body", "body": cached})
             return
 
+        def _decorate_miss(message: Message) -> Message:
+            if message.get("type") == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(
+                    [
+                        (
+                            b"cache-control",
+                            f"public, max-age={self.ttl_seconds}".encode(),
+                        ),
+                        (b"x-cache", b"MISS"),
+                    ]
+                )
+                message["headers"] = headers
+            return message
+
+        # Buffer the response only up to the cacheable bound. A body that
+        # exceeds it streams through decorated as a MISS instead of being
+        # held in memory whole -- the response-size bound applies to the
+        # buffer itself, not just to what is stored afterwards.
         messages: list[Message] = []
+        buffered_bytes = 0
+        streaming = False
 
         async def capture(message: Message) -> None:
+            nonlocal buffered_bytes, streaming
+            if streaming:
+                await send(message)
+                return
             messages.append(message)
+            if message.get("type") == "http.response.body":
+                buffered_bytes += len(message.get("body", b""))
+                if buffered_bytes > MAX_CACHE_BODY_BYTES:
+                    streaming = True
+                    for buffered in messages:
+                        await send(_decorate_miss(buffered))
+                    messages.clear()
 
         await self.app(scope, receive, capture)
+
+        if streaming:
+            return
 
         status = next(
             (
@@ -166,20 +235,8 @@ class RedisResponseCacheMiddleware:
         if status == 200 and 0 < len(body) <= MAX_CACHE_BODY_BYTES:
             try:
                 await client.setex(key, self.ttl_seconds, body)
-            except RedisError:
-                pass
+            except Exception:
+                logger.warning("response cache write failed; response served")
 
         for message in messages:
-            if message.get("type") == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers.extend(
-                    [
-                        (
-                            b"cache-control",
-                            f"public, max-age={self.ttl_seconds}".encode(),
-                        ),
-                        (b"x-cache", b"MISS"),
-                    ]
-                )
-                message["headers"] = headers
-            await send(message)
+            await send(_decorate_miss(message))

@@ -53,7 +53,7 @@ def get_usda_nass_observations(
     year_end: Optional[int] = Query(None, ge=1800, le=2200),
     latest: bool = Query(False),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> NassObservationListResponse:
     """Return crop observations with their full source classification."""
@@ -100,7 +100,7 @@ def get_usda_nass_series(
     geo_id: Optional[str] = Query(None, max_length=100),
     freq_desc: Optional[str] = Query(None, max_length=50),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> NassSeriesListResponse:
     """Return stable series identities for the registered crop products."""

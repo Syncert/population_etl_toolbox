@@ -243,7 +243,6 @@ Provider-neutral endpoints:
 - `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
   metric's latest values, dispatched to the owning source; stratified
   sources are declined with their declared restriction
-- `GET /api/v1/models/status`
 - `GET /api/v1/health`
 
 Source-scoped endpoints:
@@ -253,7 +252,17 @@ Source-scoped endpoints:
 - `GET /api/v1/usda-nass/{observations,series,measures,source-notes}`
 
 `GET /health` — without the `/api` prefix — is the container and load-balancer
-probe. It sits outside the version policy and is not deprecated.
+liveness probe; `GET /health/ready` is the readiness probe (503 while the
+database is unreachable; Redis never gates readiness). Both sit outside the
+version policy and are not deprecated.
+
+Operational contract (API-006): responses are cached under a key carrying the
+served-contract fingerprint and the warehouse publication epoch, so a
+republication is served within `API_CACHE_FRESHNESS_SECONDS` regardless of the
+TTL; the API engine runs with declared pool, connect, and statement-timeout
+budgets (`API_DB_*`); optional per-client rate limits split catalog from
+analytical cost (`API_RATE_LIMIT_*`, off by default); and every response
+carries an `X-Request-ID` logged with a structured completion line.
 
 Observation endpoint parameter note:
 - `GET /api/v1/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.

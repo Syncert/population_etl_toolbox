@@ -39,7 +39,7 @@ def get_metrics(
     active_only: Optional[bool] = None,
     q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> MetricListResponse:
     try:
@@ -61,7 +61,7 @@ def get_geographies(
     state_fips: Optional[str] = Query(None, max_length=2),
     q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> GeographyListResponse:
     try:

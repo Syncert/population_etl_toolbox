@@ -3,7 +3,7 @@ import logging
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
-from data_ingestion_toolbox.db import get_db_session
+from apps.api.database import get_db_session
 
 logger = logging.getLogger(__name__)
 

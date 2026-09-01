@@ -54,7 +54,7 @@ def get_cdc_observations(
     adjustment: Optional[str] = Query(None, max_length=50),
     release: Optional[str] = Query(None, max_length=64),
     limit: int = Query(100, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> CdcObservationListResponse:
     """Return published CDC observations for the latest or a named release."""

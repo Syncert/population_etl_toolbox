@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from apps.api.schemas.health import (
     HealthResponse,
+    ReadinessResponse,
 )
 from apps.api.schemas.catalog import (
     SourceSystem,
@@ -46,9 +47,6 @@ from apps.api.schemas.analysis import (
     DistributionBin,
     DistributionBinsResponse,
 )
-from apps.api.schemas.model_status import (
-    ModelSurfaceStatusResponse,
-)
 from apps.api.schemas.usda_nass import (
     NassObservationRow,
     NassObservationListResponse,
@@ -74,6 +72,7 @@ __all__ = [
     "GeographyLatest",
     "GeographyListResponse",
     "ObservationRouteCapability",
+    "ReadinessResponse",
     "SourceCapability",
     "SourceFreshness",
     "HealthResponse",
@@ -82,7 +81,6 @@ __all__ = [
     "MetricListResponse",
     "MetricRelease",
     "MetricReleaseListResponse",
-    "ModelSurfaceStatusResponse",
     "NassMeasureListResponse",
     "NassMeasureRow",
     "NassObservationListResponse",
