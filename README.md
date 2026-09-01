@@ -203,6 +203,10 @@ Default environment variables (override as needed):
 - `DB_PASSWORD` (default empty)
 - `DB_NAME` (default `population_etl`)
 
+Consumers should start with the
+[API consumer guide](docs/reference/API_CONSUMER_GUIDE.md), which is the stable
+contract for routes, semantics, errors, caching, limits, and version policy.
+
 Every resource is served under `/api/v1`, which is the path new clients should
 use. The same resources also answer on their original unversioned `/api` path
 during a published compatibility window; those responses carry `Deprecation`,

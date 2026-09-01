@@ -283,7 +283,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-064 | None |
+| API | API-001–API-065 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,13 +291,13 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **217 of 217** | **0 of 217** |
+| **Total** | **218 of 218** | **0 of 218** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 243-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 244-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -569,6 +569,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-062 | P0 | Service / `unit api` | Optimistic concurrency and deletion | An update states the version it read and a mismatch answers `409` naming the current version without modifying the stored row; a successful update increments the version; deletion is a hard delete effective immediately and a repeat answers `404` | A silent overwrite of a concurrent edit, a version that does not advance, or a delete that leaves the row readable |
 | API-063 | P0 | Cache / `unit api` | Private content is never publicly cached | Saved-analysis responses carry `Cache-Control: private, no-store`, never carry an `x-cache` header, and their paths lie outside every cacheable public prefix | User content stored in the shared response cache, or a private route made publicly cacheable |
 | API-064 | P0 | Contract / `integration api database` | Real-schema saved-analysis contract | The checked-in `sql/bootstrap/002_app_api.sql` creates exactly the schema the service queries; create, read, list, update, and delete round-trip through PostgreSQL with owner scoping and version conflicts enforced against the real tables; a second account sharing the database sees nothing; an unknown token and a revoked account are both refused | The bootstrap DDL drifting from the service's SQL, cross-account visibility against the real store, a conflicting update applied, or revocation not taking effect |
+| API-065 | P0 | Contract / `unit api` | Consumer guide matches the served contract | Every `/api/v1` route the frontend handoff names is served; the guide publishes the same sunset date the legacy responses send; legacy aliases still carry `Deprecation`, `Sunset`, and `Link` and answer identically to their successors; and the guide's declined-source and neutral-filter claims are derived from the registry rather than a prose copy | The handoff naming an unserved route, publishing a stale sunset date, or describing capabilities the application does not have |
 
 ### Frontend Tests
 

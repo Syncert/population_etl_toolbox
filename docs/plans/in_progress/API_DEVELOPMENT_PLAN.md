@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-007 are complete. API-008 is the final ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-007 are complete, and API-008 is delivered except for legacy alias removal, which is blocked on a consumer-migration decision described below. The plan stays in `in_progress/` until that decision is made.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-007 delivered — saved analysis configurations are stored as API-owned data under ADR-0003 (accepted 2026-09-01): operator-provisioned hashed bearer tokens, an `app_api` schema and `api_app_writer` role separate from the read-only warehouse connection, owner-scoped SQL with non-enumerable 404s, validation against the live capability and compatibility contracts on write with staleness reported (never repaired) on read, optimistic concurrency, hard deletion, and private uncached responses.
-- **Next pickup:** API-008 (compatibility retirement and consumer handoff), the final phase. It is gated on evidence rather than code: `apps/web` still consumes twelve legacy `/api` routes, so the aliases cannot be removed until that consumer migrates to `/api/v1` (a frontend change outside this plan's scope) or the sunset date in `apps/api/versioning.py` is moved in a reviewed change. The deliverable that is unblocked today is the frontend handoff document naming stable routes, schemas, errors, capabilities, caching behaviour, and version policy.
+- **Current milestone:** API-008's consumer handoff delivered — `docs/reference/API_CONSUMER_GUIDE.md` is the stable published contract (routes, value semantics, errors, caching, limits, version policy), pinned against the application by API-065 so it cannot drift. Frontend work can begin against it today.
+- **Next pickup:** A human decision, not a ticket: authorize migrating `apps/web`'s twelve legacy `/api` calls to `/api/v1` (which unblocks alias removal well before the 2027-03-01 sunset), or accept the aliases standing until that published date. Everything else in the plan is complete.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -1127,6 +1127,69 @@ the tier runs on its calibrated runner) and the frontend contract commands
 (no existing response shape changed and `apps/web` calls none of the new
 routes).
 
+## API-008 progress record (2026-09-01)
+
+**Partially delivered; alias removal is deliberately not done.** The
+deliverables split cleanly into what evidence permits today and what it does
+not.
+
+### Delivered: the consumer handoff
+
+`docs/reference/API_CONSUMER_GUIDE.md` is the frontend handoff the phase
+requires: the version policy and migration path, the discovery-first route
+map, the neutral observation contract including how to read a value honestly
+(text values, `value_status`, null-not-zero, dimensions, uncertainty,
+coverage), the release/as-released model, the preflight-then-compare analysis
+contract with the declined sources and their reasons, the saved-analysis
+resource, the complete error table, and the caching, rate-limit, correlation,
+and pagination behaviour. It closes with what the API will not do, because a
+consumer needs the guarantees stated as plainly as the routes.
+
+It is executable evidence rather than prose: API-065 extracts every
+`/api/v1` path the guide names (27 of them) and fails if one is not served,
+pins the published sunset date against the header the API actually sends,
+proves the legacy alias still carries `Deprecation`/`Sunset`/`Link` and
+answers identically to its successor, and derives the guide's declined-source
+and filter claims from the registry so prose cannot drift from the
+application. `AGENTS.md` and `README.md` name it as the consumer contract.
+
+### Not delivered, and why: legacy alias removal
+
+The phase's own wording gates this: remove legacy routes "only after approved
+evidence shows no required consumer depends on them." `apps/web` still calls
+twelve unversioned routes (`/api/health`, the three catalog resources,
+`/api/observations/timeseries`, `/api/distribution/bins`, and the
+latest/timeseries pair for each of `bls`, `census`, `fred`). The evidence
+therefore says the opposite of what removal requires, and the published
+sunset is 2027-03-01 — eighteen months out, deliberately bounded rather than
+imminent.
+
+Migrating `apps/web` to `/api/v1` is the action that would produce the
+evidence, and it is a frontend change this plan explicitly does not authorize
+("This plan does not implement frontend features"; the frontend commands are
+"contract-regression evidence only"). It is also genuinely cheap — a prefix
+change in the fetch paths plus a browser-suite run — so it belongs to whoever
+owns the web application, as a scope decision rather than a technical one.
+
+**What a reviewer should decide:** either (a) authorize the `apps/web` prefix
+migration, after which alias removal becomes a small reviewed change well
+before the sunset, or (b) accept the aliases standing until the published
+sunset date, at which point removal proceeds on the evidence then available.
+Nothing else in the plan depends on the answer: `v1` is the promised contract
+either way, and every new resource since API-002 has been served on both
+surfaces by construction.
+
+### Also current
+
+Local setup, deployment, and operations documentation were updated in the
+phases that changed them rather than deferred to here: `README.md` carries
+the readiness probe, the operational contract, and the saved-analysis
+provisioning flow; the compose files, `Dockerfile.api`, and `stack.env*`
+carry the API-006 and API-007 configuration; `ADDING_A_DATA_SOURCE.md` carries
+the registry steps a new source must complete. OpenAPI examples are generated
+from the served contract and contain no credentials, private hosts, or
+production data.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -1211,6 +1274,8 @@ routes).
 - Produce a frontend handoff that names stable routes, schemas, errors, capabilities, caching behavior, and version policy.
 
 **Acceptance:** The API is independently deployable from checked-in configuration, all required checks pass, and frontend work can begin without direct access to warehouse tables or undocumented behavior.
+
+**Status: partially complete (2026-09-01).** See "API-008 progress record" above. The frontend handoff, consumer guidance, and operational documentation are delivered and pinned by API-065, so frontend work can begin against a stable documented contract today. Legacy alias removal is outstanding by design: `apps/web` still calls twelve unversioned routes, the published sunset is 2027-03-01, and the consumer migration that would produce the required evidence is frontend work this plan does not authorize. A reviewer decides whether to authorize that migration now or let the aliases stand to the published date.
 
 ## Test-driven implementation contract
 
