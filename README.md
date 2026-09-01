@@ -212,7 +212,14 @@ during a published compatibility window; those responses carry `Deprecation`,
 Provider-neutral endpoints:
 - `GET /api/v1/catalog/sources`
 - `GET /api/v1/catalog/metrics`
+- `GET /api/v1/catalog/metrics/{metric_code}` — one metric's published
+  semantics plus the versioned routes that can serve it
 - `GET /api/v1/catalog/geographies`
+- `GET /api/v1/catalog/capabilities` — machine-readable per-source capability
+  metadata: route segment, neutral-route reachability, registered datasets,
+  and per-route filter names for every completed source
+- `GET /api/v1/catalog/freshness` — per-source publication and freshness
+  state rolled up from the harvested glossary
 - `GET /api/v1/observations/latest`
 - `GET /api/v1/observations/timeseries`
 - `GET /api/v1/distribution/bins`

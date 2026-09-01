@@ -6,7 +6,7 @@ This register assigns each delivery contract to one authoritative GitHub Actions
 | --- | --- | --- | --- |
 | Formatting and repository evidence | `lint` / `Lint (ruff)` | Required PR/push | Python, tests, SQL manifests, docs contracts |
 | ETL pure behavior and layer boundaries | `etl-unit` / `ETL unit tests (Python 3.11)` | Required PR/push | `src`, ETL tests, migrations |
-| API contract, models, and query behavior | `api-unit` / `API unit tests (Python 3.11)` | Required PR/push | `apps/api` (routers, schemas, serving registry, versioning), SQL query builders, and the reviewed OpenAPI contract snapshot |
+| API contract, models, and query behavior | `api-unit` / `API unit tests (Python 3.11)` | Required PR/push | `apps/api` (routers, schemas, serving and discovery registries, versioning), SQL query builders, and the reviewed OpenAPI contract snapshot |
 | Overall and changed executable coverage | `coverage` / `Unit + database coverage gates (Python 3.11)` | Required PR/push | Application Python and database replay tests |
 | Runtime package contents and clean install | `package-api` / `Package build and install smoke (Python 3.11)` | Required PR/push | package metadata, runtime SQL, manifests |
 | Ordered empty warehouse bootstrap, rerun, replay | `postgres-integration` / `Warehouse integration (PostGIS 16 + Python 3.11)` | Required PR/push | source DDL, migrations, bootstrap manifest, database tests |

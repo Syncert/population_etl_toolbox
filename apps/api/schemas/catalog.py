@@ -67,3 +67,76 @@ class GeographyListResponse(BaseModel):
     limit: int
     offset: int
     items: list[GeographyLatest]
+
+
+class ObservationRouteCapability(BaseModel):
+    """One route that can answer observation queries for a source.
+
+    ``parameters`` are the route's query parameter names, read from the served
+    contract itself rather than declared a second time, so the list cannot
+    drift from what the route actually accepts.
+    """
+
+    path: str
+    parameters: list[str]
+
+
+class SourceCapability(BaseModel):
+    """How a discovering client reaches one completed source's data.
+
+    ``served_by_neutral_routes`` is the honest answer to the coverage gap the
+    API-001 audit recorded: the neutral observation, comparison, and
+    distribution routes answer for a source only when its rows are published
+    into the cross-source contract views. A source with ``false`` here and an
+    empty ``observation_routes`` list -- FBI UCR today -- is discoverable but
+    not yet queryable, which the capability resource states rather than leaving
+    the client to infer it from an empty page.
+    """
+
+    source_code: str
+    display_name: str
+    route_segment: Optional[str] = None
+    served_by_neutral_routes: bool
+    datasets: list[str]
+    observation_routes: list[ObservationRouteCapability]
+
+
+class CapabilityListResponse(BaseModel):
+    total: int
+    items: list[SourceCapability]
+
+
+class MetricCapability(MetricCatalog):
+    """One metric's published semantics plus the routes that can serve it.
+
+    Extends the catalog row with the same routing capability the source-level
+    resource publishes, so a client that has discovered a metric learns where
+    to query it without maintaining a source enumeration.
+    """
+
+    served_by_neutral_routes: bool = False
+    observation_routes: list[ObservationRouteCapability] = []
+
+
+class SourceFreshness(BaseModel):
+    """Per-source publication state, rolled up from the harvested glossary.
+
+    ``freshness_state`` counts report the warehouse's published data-quality
+    signal for each source's metrics; the API serves the published state and
+    never recomputes quality from warehouse internals.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source_code: str
+    metric_count: int
+    current_count: int
+    stale_count: int
+    retired_count: int
+    latest_publication_time: Optional[datetime] = None
+    latest_harvested_at: Optional[datetime] = None
+
+
+class FreshnessListResponse(BaseModel):
+    total: int
+    items: list[SourceFreshness]

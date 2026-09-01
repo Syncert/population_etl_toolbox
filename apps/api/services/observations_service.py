@@ -24,10 +24,13 @@ from datetime import date
 from typing import Optional
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.registry import ServingContract, serving_contract
+from apps.api.services.contracts import (
+    ServingContractUnavailable as ServingContractUnavailable,  # re-export
+)
+from apps.api.services.contracts import relation_is_absent, require_relation
 from apps.api.schemas import ObservationDashboard, ObservationListResponse
 from data_ingestion_toolbox.sql.observation_queries import (
     build_latest_mv_queries,
@@ -42,43 +45,10 @@ CROSS_SOURCE_LATEST_RELATION = "gold.v_metric_latest_by_geo"
 CROSS_SOURCE_HISTORY_RELATION = "gold.v_metric_timeseries_by_geo"
 
 
-class ServingContractUnavailable(RuntimeError):
-    """A relation the API declares a dependency on is absent from the warehouse.
-
-    This is a deployment fault, not a client error: the bootstrap manifest did
-    not run, ran partially, or ran against a different database than the one the
-    API is pointed at. It is raised rather than absorbed so the failure names the
-    missing relation in the server log instead of surfacing as an empty page that
-    looks like "this metric has no data".
-    """
-
-
-def _relation_is_absent(db: Session, relation_name: str) -> bool:
-    """True only when the database positively reports the relation missing.
-
-    A session that cannot answer the question -- a stub in a deterministic unit
-    test, or a driver that raises -- is not evidence of absence, so the check
-    stays silent rather than inventing a deployment fault from a test double.
-    """
-    if not hasattr(db, "bind"):
-        return False
-    try:
-        exists = db.execute(
-            text("SELECT to_regclass(:relation_name) IS NOT NULL"),
-            {"relation_name": relation_name},
-        ).scalar()
-    except SQLAlchemyError:
-        return False
-    if exists is None:
-        return False
-    return not bool(exists)
-
-
-def _require_relation(db: Session, relation_name: str) -> None:
-    if _relation_is_absent(db, relation_name):
-        raise ServingContractUnavailable(
-            f"required serving relation is not present: {relation_name}"
-        )
+#: Re-exported so existing importers keep working; the guard itself moved to
+#: ``apps.api.services.contracts`` when API-003 extended it to catalog reads.
+_relation_is_absent = relation_is_absent
+_require_relation = require_relation
 
 
 def _source_select_sql(contract: ServingContract) -> str:

@@ -283,7 +283,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-036 | None |
+| API | API-001–API-041 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-007 | None |
@@ -297,7 +297,7 @@ Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 202-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 219-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -541,6 +541,11 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-034 | P0 | Registry / `unit api` | Reviewed serving registry | Every serving relation the observation endpoints read is declared in `apps/api/registry.py`, sits inside its own source's schema, and an unregistered source raises instead of resolving to a fallback relation | A relation reaching SQL from outside the registry, a contract pointing at another source's schema, or an unknown source resolving to any relation |
 | API-035 | P0 | Service / `unit api` | Per-source dispatch and projection | A source's latest and history reads target only that source's declared relations, and a field the source does not publish is projected as a typed NULL rather than borrowed from another source's column | Cross-source relation leakage into a source-scoped query, or a projection asserting a field the source does not publish |
 | API-036 | P0 | Service / `unit api` | Absent serving contract fails explicitly | A relation the API declares a dependency on but the warehouse does not have stops the read before any query and answers the sanitized 503, naming the relation only in the server log; a session that cannot answer the probe is not treated as absence | A missing contract degrading to another relation, to an empty page, or to a response that names warehouse objects |
+| API-037 | P0 | Repository / `unit api` | Glossary-only catalog reads | Catalog queries name only the documented `gold_glossary` contracts with explicit projections, the legacy relation probing and fallback builders are gone, and an absent glossary contract answers the sanitized 503 before any query runs | A catalog read probing for or degrading to an undocumented relation, a `SELECT *` projection, or a missing contract surfacing as an empty page or a response naming warehouse objects |
+| API-038 | P0 | Router / `unit api` | Metric capability detail | A discovered metric code returns its full published semantics — units, measure kind, valid grains, aggregation characteristic, lineage, freshness — plus the versioned routes that can serve it; an unknown code returns a stable 404 explanation | A discoverable metric with no routing answer, a route advertised that the application does not serve, or an unknown identifier answered with an empty page or a 500 |
+| API-039 | P0 | Router / `unit api` | Source capability metadata | Every completed source appears in the capability resource in stable order with its route segment, neutral-route reachability, registered dataset identities read from the source registries, and per-route filter names read from the served contract; a source with no observation surface reports an empty route list rather than being omitted | A completed source missing from capabilities, an advertised route or filter the application does not serve, dataset identities drifting from the source registries, or an unreachable source presented as queryable |
+| API-040 | P0 | Router / `unit api` | Publication freshness rollup | The freshness resource reports each source's published metric counts by `freshness_state` with latest publication and harvest times from the glossary, in deterministic order, and an unharvested glossary yields an empty list | Freshness recomputed from warehouse internals, a source's published state misreported, or an empty glossary answered with an error |
+| API-041 | P0 | Router / `unit api` | Catalog ordering and empty results | Catalog lists declare deterministic ordering (`metric_code`, `geo_id`, `source_code`) and a filter matching nothing returns a stable empty page with exact totals | Undeclared or unstable ordering, or an empty result surfacing as an error or a malformed page |
 
 ### Frontend Tests
 

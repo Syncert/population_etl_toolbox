@@ -130,6 +130,24 @@
         "bls"
       ]
     },
+    "GET /api/catalog/capabilities": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:CapabilityListResponse"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/catalog/freshness": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:FreshnessListResponse"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/catalog/geographies": {
       "parameters": [
         {
@@ -239,6 +257,27 @@
       ],
       "responses": {
         "200": "application/json:MetricListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/catalog/metrics/{metric_code}": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "path",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricCapability",
         "422": "application/json:HTTPValidationError"
       },
       "tags": [
@@ -1512,6 +1551,24 @@
         "bls"
       ]
     },
+    "GET /api/v1/catalog/capabilities": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:CapabilityListResponse"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/freshness": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:FreshnessListResponse"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
     "GET /api/v1/catalog/geographies": {
       "parameters": [
         {
@@ -1621,6 +1678,27 @@
       ],
       "responses": {
         "200": "application/json:MetricListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "catalog"
+      ]
+    },
+    "GET /api/v1/catalog/metrics/{metric_code}": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "path",
+          "name": "metric_code",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "application/json:MetricCapability",
         "422": "application/json:HTTPValidationError"
       },
       "tags": [
@@ -2776,6 +2854,16 @@
     }
   },
   "schemas": {
+    "CapabilityListResponse": {
+      "properties": {
+        "items": "array<SourceCapability>",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
     "CdcObservation": {
       "properties": {
         "adjustment_status": "string",
@@ -2918,6 +3006,16 @@
         "total"
       ]
     },
+    "FreshnessListResponse": {
+      "properties": {
+        "items": "array<SourceFreshness>",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
     "GeographyLatest": {
       "properties": {
         "county_fips": "string | null",
@@ -2964,6 +3062,32 @@
       "required": [
         "service",
         "status"
+      ]
+    },
+    "MetricCapability": {
+      "properties": {
+        "aggregation_characteristic": "string | null",
+        "freshness_state": "string | null",
+        "harvested_at": "string(date-time) | null",
+        "measure_kind": "string | null",
+        "metric_code": "string",
+        "metric_display_name": "string | null",
+        "observation_routes": "array<ObservationRouteCapability>",
+        "physical_lineage": "object | null",
+        "publication_time": "string(date-time) | null",
+        "publisher_contract_version": "string | null",
+        "served_by_neutral_routes": "boolean",
+        "source_code": "string | null",
+        "source_object_key": "string | null",
+        "source_object_type": "string | null",
+        "source_run_id": "any | null",
+        "source_watermark": "string | null",
+        "units": "string | null",
+        "valid_geo_grains": "array<string> | null",
+        "valid_time_grains": "array<string> | null"
+      },
+      "required": [
+        "metric_code"
       ]
     },
     "MetricCatalog": {
@@ -3301,6 +3425,51 @@
         "limit",
         "offset",
         "total"
+      ]
+    },
+    "ObservationRouteCapability": {
+      "properties": {
+        "parameters": "array<string>",
+        "path": "string"
+      },
+      "required": [
+        "parameters",
+        "path"
+      ]
+    },
+    "SourceCapability": {
+      "properties": {
+        "datasets": "array<string>",
+        "display_name": "string",
+        "observation_routes": "array<ObservationRouteCapability>",
+        "route_segment": "string | null",
+        "served_by_neutral_routes": "boolean",
+        "source_code": "string"
+      },
+      "required": [
+        "datasets",
+        "display_name",
+        "observation_routes",
+        "served_by_neutral_routes",
+        "source_code"
+      ]
+    },
+    "SourceFreshness": {
+      "properties": {
+        "current_count": "integer",
+        "latest_harvested_at": "string(date-time) | null",
+        "latest_publication_time": "string(date-time) | null",
+        "metric_count": "integer",
+        "retired_count": "integer",
+        "source_code": "string",
+        "stale_count": "integer"
+      },
+      "required": [
+        "current_count",
+        "metric_count",
+        "retired_count",
+        "source_code",
+        "stale_count"
       ]
     },
     "SourceSystem": {

@@ -172,6 +172,48 @@ def test_real_catalog_latest_timeseries_distribution_and_comparison(
     ]
 
 
+def test_real_discovery_detail_freshness_and_capabilities(
+    real_api_fixture: tuple[TestClient, str, str],
+) -> None:
+    """Covers: API-037, API-038, API-039, API-040 — discovery answers from the
+    real glossary contracts: metric capability detail with a stable 404,
+    per-source freshness rollup, and the capability listing, with no legacy
+    relation probing left to fall back on."""
+    client, metric_a, _ = real_api_fixture
+
+    detail = client.get(f"/api/v1/catalog/metrics/{metric_a}")
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["metric_code"] == metric_a
+    assert payload["source_code"] == "FRED"
+    assert payload["valid_geo_grains"] == ["NATIONAL"]
+    assert payload["freshness_state"] == "current"
+    assert payload["served_by_neutral_routes"] is True
+    served_paths = {route["path"] for route in payload["observation_routes"]}
+    assert "/api/v1/observations/latest" in served_paths
+    assert "/api/v1/fred/observations/latest" in served_paths
+
+    missing = client.get(f"/api/v1/catalog/metrics/NO:SUCH:{metric_a}")
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "metric_code not found"}
+
+    freshness = client.get("/api/v1/catalog/freshness")
+    assert freshness.status_code == 200
+    rollup = freshness.json()
+    by_source = {row["source_code"]: row for row in rollup["items"]}
+    assert [row["source_code"] for row in rollup["items"]] == sorted(by_source)
+    assert by_source["FRED"]["metric_count"] >= 2
+    assert by_source["FRED"]["current_count"] >= 2
+    assert by_source["FRED"]["latest_harvested_at"] is not None
+
+    capabilities = client.get("/api/v1/catalog/capabilities")
+    assert capabilities.status_code == 200
+    items = capabilities.json()["items"]
+    codes = [item["source_code"] for item in items]
+    assert codes == sorted(codes)
+    assert "FBI_UCR" in codes
+
+
 @pytest.fixture
 def census_bls_api_fixture(
     postgres_connection_factory: Callable[[], connection],

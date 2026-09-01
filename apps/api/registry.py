@@ -21,6 +21,7 @@ API development plan forbids.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 #: How a source spells the geography label it prefers. PEP publishes places, so
@@ -157,3 +158,137 @@ def serving_contract(route_segment: str) -> ServingContract:
 def registered_route_segments() -> tuple[str, ...]:
     """Route segments with a serving contract, in registration order."""
     return tuple(SERVING_CONTRACTS)
+
+
+# ---------------------------------------------------------------------------
+# Discovery capabilities (API-003)
+# ---------------------------------------------------------------------------
+
+#: Version-relative path prefixes of the provider-neutral analytical routes.
+#: A source marked ``served_by_neutral_routes`` is answerable through these;
+#: one that is not gets an honest ``false`` instead of a silent empty page.
+NEUTRAL_OBSERVATION_PREFIXES: tuple[str, ...] = (
+    "/observations/",
+    "/comparison",
+    "/distribution/",
+)
+
+
+@dataclass(frozen=True)
+class SourceDiscovery:
+    """What one completed source's API surface looks like to a discovering client.
+
+    This is the reviewed answer to the API-001 coverage matrix: the catalog
+    advertises seven sources while the neutral observation routes serve three,
+    and a client had no way to learn which was which. Each entry names the
+    route segment the source's own observation routes live under (``None`` when
+    the source has no observation surface yet -- FBI UCR until API-004), states
+    whether the neutral routes can answer for it, and lists the provider
+    dataset/product identities its routes accept.
+
+    ``served_by_neutral_routes`` describes ``gold.v_metric_latest_by_geo`` and
+    ``gold.v_metric_timeseries_by_geo`` as they stand: a three-way union over
+    Census ACS, BLS, and FRED. API-004 replaces the union with registry
+    dispatch; when it does, these flags flip to ``True`` in the same reviewed
+    change and the capability resource reports the new reach without a shape
+    change.
+    """
+
+    #: The glossary's ``source_code``.
+    source_code: str
+    #: Human-readable name, aligned with what the source publishes.
+    display_name: str
+    #: URL segment of the source-specific routes, ``None`` when none exist.
+    route_segment: str | None
+    #: True when the neutral observation/comparison/distribution routes can
+    #: answer for this source's metrics today.
+    served_by_neutral_routes: bool
+    #: Registered provider dataset/product identities the source-specific
+    #: routes accept as filters. Empty when dataset identity is embedded in the
+    #: metric itself rather than accepted as a separate filter.
+    dataset_provider: Callable[[], tuple[str, ...]] = tuple
+
+    def registered_datasets(self) -> tuple[str, ...]:
+        """Read the registered dataset identities at call time.
+
+        Reading through the source registries rather than copying their values
+        keeps this declaration from drifting when a product is enabled or
+        retired; it is the same pattern the CDC router already uses for its
+        dataset filter validation.
+        """
+        return tuple(self.dataset_provider())
+
+
+def _cdc_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.cdc.registry import enabled_assets
+
+    return tuple(asset.asset_id for asset in enabled_assets())
+
+
+def _nass_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.usda_nass.registry import enabled_products
+
+    return tuple(product.product_id for product in enabled_products())
+
+
+def _fbi_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
+
+    return tuple(product.product_id for product in enabled_products())
+
+
+#: Every completed source, keyed by glossary source code, in the order the
+#: capability resource serves them. The four sources with a ServingContract
+#: derive their identity from it so the two declarations cannot disagree.
+SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
+    entry.source_code: entry
+    for entry in (
+        SourceDiscovery(
+            source_code=SERVING_CONTRACTS["bls"].source_code,
+            display_name=SERVING_CONTRACTS["bls"].display_name,
+            route_segment="bls",
+            served_by_neutral_routes=True,
+        ),
+        SourceDiscovery(
+            source_code=SERVING_CONTRACTS["census"].source_code,
+            display_name=SERVING_CONTRACTS["census"].display_name,
+            route_segment="census",
+            served_by_neutral_routes=True,
+        ),
+        SourceDiscovery(
+            source_code="CDC",
+            display_name="Centers for Disease Control and Prevention",
+            route_segment="cdc",
+            served_by_neutral_routes=False,
+            dataset_provider=_cdc_datasets,
+        ),
+        SourceDiscovery(
+            source_code=SERVING_CONTRACTS["pep"].source_code,
+            display_name=SERVING_CONTRACTS["pep"].display_name,
+            route_segment="pep",
+            served_by_neutral_routes=False,
+        ),
+        SourceDiscovery(
+            source_code="FBI_UCR",
+            display_name=(
+                "Federal Bureau of Investigation Uniform Crime Reporting Program"
+            ),
+            route_segment=None,
+            served_by_neutral_routes=False,
+            dataset_provider=_fbi_datasets,
+        ),
+        SourceDiscovery(
+            source_code=SERVING_CONTRACTS["fred"].source_code,
+            display_name=SERVING_CONTRACTS["fred"].display_name,
+            route_segment="fred",
+            served_by_neutral_routes=True,
+        ),
+        SourceDiscovery(
+            source_code="USDA_NASS",
+            display_name="USDA National Agricultural Statistics Service",
+            route_segment="usda-nass",
+            served_by_neutral_routes=False,
+            dataset_provider=_nass_datasets,
+        ),
+    )
+}

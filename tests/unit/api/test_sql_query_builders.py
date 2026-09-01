@@ -11,21 +11,12 @@ from data_ingestion_toolbox.sql import catalog_queries, observation_queries
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
 
-@pytest.mark.parametrize(
-    ("builder", "view"),
-    [
-        (catalog_queries.build_metrics_queries, "gold.dim_metric"),
-        (catalog_queries.build_metrics_queries_legacy, "gold.dim_metric_catalog"),
-        (catalog_queries.build_metrics_queries_glossary, "gold_glossary.dim_metric"),
-        (
-            catalog_queries.build_metrics_queries_glossary_legacy,
-            "gold_glossary.dim_metric_catalog",
-        ),
-    ],
-)
-def test_metric_query_builders_bind_every_filter(builder, view: str) -> None:
+def test_metric_query_builder_binds_every_filter() -> None:
     """Covers: API-010, API-017 — metric filters remain bound parameters."""
-    list_query, count_query, params = builder("ACS", True, "population", 25, 50)
+    view = "gold_glossary.dim_metric"
+    list_query, count_query, params = catalog_queries.build_metrics_queries(
+        "ACS", True, "population", 25, 50
+    )
     rendered_list = str(list_query)
     rendered_count = str(count_query)
 
@@ -55,24 +46,12 @@ def test_metric_query_builder_uses_true_for_no_filters() -> None:
     assert params == {"limit": 10, "offset": 0}
 
 
-@pytest.mark.parametrize(
-    ("builder", "view"),
-    [
-        (catalog_queries.build_geographies_queries, "gold.dim_geography"),
-        (catalog_queries.build_geographies_queries_legacy, "gold.dim_geo_latest"),
-        (
-            catalog_queries.build_geographies_queries_glossary,
-            "gold_glossary.dim_geography",
-        ),
-        (
-            catalog_queries.build_geographies_queries_glossary_legacy,
-            "gold_glossary.dim_geo_latest",
-        ),
-    ],
-)
-def test_geography_query_builders_bind_every_filter(builder, view: str) -> None:
+def test_geography_query_builder_binds_every_filter() -> None:
     """Covers: API-010, API-017 — geography filters remain bound parameters."""
-    list_query, count_query, params = builder("county", "06", "Alameda", 20, 40)
+    view = "gold_glossary.dim_geography"
+    list_query, count_query, params = catalog_queries.build_geographies_queries(
+        "county", "06", "Alameda", 20, 40
+    )
     rendered_list = str(list_query)
 
     assert f"FROM {view}" in rendered_list

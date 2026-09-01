@@ -21,6 +21,7 @@ Begin with the [source-adapter starter](../templates/source-adapter/README.md), 
 - [ ] Add checked-in fresh-bootstrap SQL, constraints, validation queries, and reset/re-ingestion instructions for any discarded beta data.
 - [ ] Add unit, contract, integration, replay, malformed-payload/quarantine, bootstrap, rerun, and reconciliation tests.
 - [ ] Add a live source-contract module under `tests/external/` covering the registered identity, the consumed contract, upstream-outage classification, and credential handling; register the source's key in `tests/support/external.py::REQUIRED_SCHEDULED_CREDENTIALS` and in the `external-contract` workflow so a source cannot drop out of live coverage by skipping silently.
+- [ ] Declare the source's API discovery entry in `apps/api/registry.py` (`SOURCE_DISCOVERY`) — and a `ServingContract` if it serves the shared observation shape — so `/api/v1/catalog/capabilities` advertises how clients reach it; a source absent from the registry is discoverable through the glossary but reports no routes.
 - [ ] Update the testing catalog, operations documentation, and compatibility/deprecation notes.
 
 Copying the current Census, BLS, or FRED raw/gold layout is not an approved shortcut: those packages contain legacy boundaries tracked by ARCH-002 through ARCH-007.

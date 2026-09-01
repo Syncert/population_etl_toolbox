@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 and API-002 are complete. API-003 is the next ticket.
-- **Last updated:** 2026-08-31
-- **Current milestone:** API-002 delivered — `/api/v1` with a bounded, signalled compatibility window; API-owned response schemas; a reviewed serving registry replacing five hard-coded source maps; three unreachable-or-unsafe fallbacks retired; and a reviewed OpenAPI contract snapshot proving none of it changed a consumer-visible byte.
-- **Next pickup:** API-003 (discovery and capability resources). Two things shape it: the "API-001 audit findings" coverage matrix — four of seven sources are advertised by `/api/catalog/metrics` but unreachable through the neutral observation routes — and the deferrals recorded under API-002, chiefly the catalog query builders' own legacy probing, which API-003 owns.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001, API-002, and API-003 are complete. API-004 is the next ticket.
+- **Last updated:** 2026-09-01
+- **Current milestone:** API-003 delivered — discovery now answers the coverage matrix instead of hiding it: `/api/v1/catalog/capabilities` states, for every completed source, which routes and filters reach it and whether the neutral routes can answer; `/api/v1/catalog/metrics/{metric_code}` gives one metric's published semantics plus its serving routes with a stable 404; `/api/v1/catalog/freshness` serves the glossary's per-source publication state; and the catalog's four-way legacy relation probing is retired for glossary-only reads that fail explicitly. The reviewed OpenAPI snapshot moved additively — 169 inserted lines, zero removed.
+- **Next pickup:** API-004 (observation and revision resources). The registry dispatch decision recorded under API-001 closes the neutral-route gap for the four unreachable sources and gives FBI UCR its first observation surface; when it lands, the `served_by_neutral_routes` flags in `apps/api/registry.py` flip in the same reviewed change and the capability resource reports the new reach without a shape change. The comparison/distribution services' own `_relation_exists` probing is recorded below as API-005's.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -484,6 +484,120 @@ issue the same two queries the hand-written ones did — and no response shape
 changed, so the browser consumer contract has nothing new to regress against. Both
 run in their scheduled jobs.
 
+## API-003 delivery record (2026-09-01)
+
+Everything below is additive on the public contract or behaviour-preserving on a
+manifest-built warehouse. The reviewed snapshot diff is the proof for the first
+claim: 169 inserted lines, zero removed — six new operations (three resources,
+each under `/api/v1` and its legacy alias) and six new schemas, with no existing
+operation, bound, or field touched.
+
+### The catalog's probing is retired
+
+`catalog_service.py` probed `to_regclass` per request to choose among four
+relation sets — `gold_glossary`, `gold`, and two `*_legacy` variants — and
+`catalog_queries.py` carried eight builders to serve the choice. The bootstrap
+manifest creates `gold_glossary.dim_metric`, `gold_glossary.dim_geography`, and
+`gold_glossary.dim_source_system` unconditionally
+(`sql/gold_contract/002_gold_glossary_schema.sql`), so only the glossary branch
+was ever reachable; the others were the "silently select whichever relation
+happens to exist" pattern the plan forbids. The catalog now reads the three
+glossary contracts only, through explicit column projections rather than
+`SELECT *`, and an absent contract raises `ServingContractUnavailable` before
+any query runs — the same sanitized-503 discipline API-002 gave the observation
+reads. The guard itself moved to `apps/api/services/contracts.py` so the two
+services share one implementation instead of a copy.
+
+`CATALOG_RELATIONS` in `catalog_queries.py` is the derived allowlist; API-037
+pins it to exactly the glossary trio and asserts no rendered catalog query names
+anything else.
+
+### The discovery registry
+
+`apps/api/registry.py` gains `SOURCE_DISCOVERY`: one reviewed entry per
+completed source — all seven — declaring its route segment (`None` for FBI UCR,
+which has no observation surface until API-004), whether the neutral routes can
+answer for it, and its registered provider dataset identities, read through the
+source registries (`enabled_assets`, `enabled_products`) rather than copied, so
+an enabled or retired product cannot drift the declaration. The four sources
+with a `ServingContract` derive their identity from it; the two declarations
+cannot disagree.
+
+### The new resources
+
+- **`GET /catalog/capabilities`** answers the API-001 coverage matrix as data.
+  Each source's entry carries the versioned routes that serve it and each
+  route's query-parameter names — read from the application's own OpenAPI
+  document at request time, not declared a second time, so the capability
+  resource cannot advertise a route or filter the application does not serve
+  (API-039 proves the round trip). FBI UCR appears with an empty route list:
+  discoverable, not yet queryable, stated rather than inferred from an empty
+  page. The resource needs no database read.
+- **`GET /catalog/metrics/{metric_code}`** returns one metric's full published
+  semantics — units, measure kind, valid grains, aggregation characteristic,
+  lineage, contract version, watermark, freshness — plus the same routing
+  capability resolved through its owning source. An unknown code returns a
+  stable `404 {"detail": "metric_code not found"}`. A metric whose source has
+  no discovery entry still returns its published semantics with no routes,
+  which is the honest statement for a source accepted after the registry was
+  last reviewed.
+- **`GET /catalog/freshness`** rolls up `dim_metric` per source: metric counts
+  by `freshness_state`, latest `publication_time`, latest `harvested_at`. This
+  is the warehouse's published data-quality signal served as-is; the DQ
+  evidence tables live in `control.*`, which the API role must not read, so
+  data-quality discovery is deliberately bounded to what the warehouse
+  publishes.
+
+Ordering and empty-result behaviour are now declared and tested (API-041):
+metrics by `metric_code`, geographies by `geo_id`, sources and freshness by
+`source_code`, and a filter matching nothing is a stable empty page.
+
+### Deferred, deliberately
+
+- `comparison_service.py` and `distribution_service.py` carry their own
+  `_relation_exists` probe, falling back from `gold.v_metric_latest_by_geo` to
+  `gold.mv_latest_dashboard`. Both are analysis routes API-005 rebuilds around
+  declared compatibility; retiring their probing is recorded as part of that
+  rebuild rather than done here without auditing the analysis semantics.
+- `apps/api/metric_aliases.py` still maps the single `population` alias into
+  observation-route requests. No known consumer uses it (`apps/web` searches
+  `q=population`, not the alias), but removing it changes existing route
+  behaviour, which is API-008's compatibility-retirement territory.
+- The CI evidence gap from API-001 (`redis-integration` claiming rows it does
+  not run) remains API-006's, unchanged.
+- New resources are served under the legacy `/api` alias as well as `/api/v1`,
+  because the aliases share routers by construction (ADR-0002). They carry the
+  same deprecation headers and retire with the alias in API-008.
+
+### Catalog and evidence
+
+API-037 through API-041 are registered in `docs/reference/TESTING_CONTRACT.md`;
+the audited API count moves 36 → 41 and the evidence register 214 → 219.
+`tests/unit/api/test_catalog_discovery.py` owns the new rows;
+`tests/integration/api/test_real_database_contract.py` gains a discovery test
+against the real glossary contracts. `README.md` documents the three resources,
+`docs/reference/ADDING_A_DATA_SOURCE.md` adds the discovery-registry step, and
+the `api-unit` row in `CI_EVIDENCE_MAP.md` now names the discovery registry.
+
+### Validation
+
+All commands run on 2026-09-01 against freshly created pinned disposable
+services (PostGIS 16-3.5 on 55432, Redis 7.4.9 on 56379).
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 158 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1130 passed |
+| API + Redis integration | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis` | 16 passed |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 90s, freshly recreated warehouse |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean, 408 files |
+
+Not run, and recorded as not run: `make test-performance` and the frontend
+contract commands. No performance-sensitive path changed — the three new
+resources are two glossary reads and one registry projection — and no existing
+response shape changed, so the browser consumer has nothing new to regress
+against. Both run in their scheduled jobs.
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -515,6 +629,8 @@ run in their scheduled jobs.
 - Add stable search, ordering, pagination, empty-result, and unknown-identifier behavior.
 
 **Acceptance:** A client can discover how to form valid requests for every completed source without knowing warehouse schemas or maintaining a source enumeration.
+
+**Status: complete (2026-09-01).** See "API-003 delivery record" above. The one scope note: full request formation for the four sources the neutral routes cannot yet serve is capability metadata pointing at their source-specific routes; the neutral-route reach itself is API-004's registry dispatch.
 
 ### API-004 — Observation and revision resources
 
