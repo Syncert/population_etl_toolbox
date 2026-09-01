@@ -881,7 +881,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
   const [apiHealth, setApiHealth] = useState({
     state: "loading",
-    message: "checking /api/health",
+    message: "checking /api/v1/health",
   });
   const [tilesHealth, setTilesHealth] = useState({
     state: "loading",

@@ -7,10 +7,11 @@ from apps.api.dependencies import get_db_session_dep
 from apps.api.schemas import HealthResponse, ReadinessResponse
 from data_ingestion_toolbox.config import get_settings
 
-#: Mounted under every API prefix, so ``/api/v1/health`` and the legacy
-#: ``/api/health`` both answer. The bare ``/health`` probe is registered
-#: separately by the application factory: it is deployment infrastructure rather
-#: than a versioned resource. See ``apps/api/versioning.py``.
+#: Mounted under the versioned prefix, so ``/api/v1/health`` answers as an
+#: ordinary versioned resource. The bare ``/health`` and ``/health/ready``
+#: probes are registered separately by the application factory: they are
+#: deployment infrastructure rather than versioned resources, and they sit
+#: outside the version policy. See ``apps/api/versioning.py``.
 router = APIRouter(tags=["health"])
 
 probe_router = APIRouter(tags=["health"])

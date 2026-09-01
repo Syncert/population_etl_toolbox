@@ -9,7 +9,7 @@ columns; the other answered a source-specific route from the cross-source schema
 when the source's own schema appeared to be missing. Neither could fire on a
 warehouse built from ``sql/bootstrap/warehouse_manifest.json`` -- the contract
 views it creates carry those four columns for every source -- and the second was
-actively unsafe, because answering ``/api/bls/...`` from the cross-source union
+actively unsafe, because answering ``/api/v1/bls/...`` from the cross-source union
 returns rows the caller did not ask for under a name that says they did. A
 missing serving contract is now a deployment fault that says so.
 
@@ -38,12 +38,13 @@ from data_ingestion_toolbox.sql.observation_queries import (
     build_timeseries_queries,
 )
 
-#: The cross-source contract views behind the legacy latest/timeseries pair.
-#: They union the three sources that predate the per-source serving contracts.
-#: API-004 did not widen them: every source is reachable through the
+#: The cross-source contract views behind the MVP-shaped latest/timeseries
+#: pair. They union the three sources that predate the per-source serving
+#: contracts. API-004 did not widen them: every source is reachable through the
 #: registry-dispatched ``/observations`` resource instead
-#: (``neutral_observations_service``), and this pair stays as the compatibility
-#: surface `apps/web` consumes until API-008 retires it.
+#: (``neutral_observations_service``). This pair remains served under
+#: ``/api/v1`` as the shape ``apps/web`` consumes; API-008 retired the
+#: unversioned prefix aliases, not these resources.
 CROSS_SOURCE_LATEST_RELATION = "gold.v_metric_latest_by_geo"
 CROSS_SOURCE_HISTORY_RELATION = "gold.v_metric_timeseries_by_geo"
 

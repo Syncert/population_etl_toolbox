@@ -40,9 +40,9 @@ The Next.js app uses same-origin rewrites so browser calls stay under the app ho
 - State and county selectors filter the map and drive the selected-county detail panel.
 - Hover a county for value, period, source, and margin-of-error context.
 - Click a county to pin its details and highlight its boundary.
-- The selected-county panel fetches `/api/observations/timeseries` and renders the available trend.
+- The selected-county panel fetches `/api/v1/observations/timeseries` and renders the available trend.
 - Historical requests are backed by durable ACS, BLS, and FRED fact views rather than the rolling latest/dashboard serving tables.
-- Choropleth colors and legend counts come from `/api/distribution/bins`, with a labeled local fallback if the endpoint is unavailable.
+- Choropleth colors and legend counts come from `/api/v1/distribution/bins`, with a labeled local fallback if the endpoint is unavailable.
 - Explorer tabs expose the underlying table, source metadata, exact API query, and interpretation notes.
 - CSV export preserves the canonical metric, geography, source, period, unit, and margin-of-error fields.
 - Saved views flow into the Builder without duplicating chart configuration logic.
