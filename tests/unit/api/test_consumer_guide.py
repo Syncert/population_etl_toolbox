@@ -1,9 +1,9 @@
 """The published consumer guide describes the contract the API actually serves.
 
 Covers: API-065 — every route the frontend handoff names is served, the
-        legacy routes it calls retiring carry their retirement signal with the
-        published sunset date, and the guide's per-source claims match the
-        capability resource rather than a prose copy of it.
+        guide describes the single versioned surface the API actually has,
+        and its per-source claims match the capability registry rather than a
+        prose copy of it.
 
 A handoff document that drifts from the application is worse than none: a
 consumer builds against it. This pins the load-bearing claims.
@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from apps.api.registry import OBSERVATION_DISPATCH
-from apps.api.versioning import LEGACY_SUNSET_DATE, legacy_path_for
+from apps.api.versioning import CURRENT_VERSION
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -60,32 +60,26 @@ def test_every_documented_route_is_actually_served() -> None:
     assert not missing, f"the consumer guide names unserved routes: {missing}"
 
 
-def test_guide_names_the_published_sunset_date() -> None:
-    """Covers: API-065 — the published window matches the served header."""
+def test_guide_describes_one_versioned_surface() -> None:
+    """Covers: API-065 — the guide cannot promise a surface that is gone."""
     text = GUIDE.read_text(encoding="utf-8")
-    assert LEGACY_SUNSET_DATE in text, (
-        "the guide must publish the same sunset date the API sends"
-    )
+
+    assert f"/api/{CURRENT_VERSION}" in text
+    for retired in ("Deprecation:", "Sunset:", "successor-version"):
+        assert retired not in text, (
+            f"the guide still documents the retired alias signal {retired!r}"
+        )
 
 
-def test_legacy_aliases_still_carry_their_retirement_signal() -> None:
-    """Covers: API-065 — a consumer learns to migrate from an ordinary response."""
+def test_retired_aliases_are_not_served() -> None:
+    """Covers: API-065 — an unversioned path is a 404, not a second surface."""
     client = TestClient(app)
-    response = client.get(legacy_path_for("/api/v1/catalog/capabilities"))
+    for legacy in ("/api/health", "/api/catalog/capabilities", "/api/observations"):
+        assert client.get(legacy).status_code == 404, legacy
 
-    assert response.status_code == 200
-    assert response.headers["deprecation"] == "true"
-    assert response.headers["sunset"] == LEGACY_SUNSET_DATE
-    assert response.headers["link"] == (
-        '</api/v1/catalog/capabilities>; rel="successor-version"'
-    )
-
-    versioned = client.get("/api/v1/catalog/capabilities")
+    versioned = client.get(f"/api/{CURRENT_VERSION}/catalog/capabilities")
     assert versioned.status_code == 200
     assert "deprecation" not in versioned.headers
-    assert versioned.json() == response.json(), (
-        "the alias and its successor answer the same contract"
-    )
 
 
 def test_guide_analysis_claims_match_the_capability_registry() -> None:

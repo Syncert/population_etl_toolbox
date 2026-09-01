@@ -57,19 +57,19 @@ const county = {
 
 async function installRoutes(page, { failLatest = false } = {}) {
   let tileRequests = 0;
-  await page.route("**/api/health", (route) => route.fulfill({ json: { status: "ok" } }));
-  await page.route("**/api/catalog/metrics?*", (route) => route.fulfill({
+  await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
+  await page.route("**/api/v1/catalog/metrics?*", (route) => route.fulfill({
     json: { total: metrics.length, limit: 1000, offset: 0, items: metrics },
     headers: { "x-cache": "MISS" },
   }));
-  await page.route("**/api/catalog/geographies?*", (route) => {
+  await page.route("**/api/v1/catalog/geographies?*", (route) => {
     const level = new URL(route.request().url()).searchParams.get("geo_level");
     const items = level === "STATE"
       ? [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }]
       : [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }];
     return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
   });
-  await page.route("**/api/census/observations/latest?*", (route) => {
+  await page.route("**/api/v1/census/observations/latest?*", (route) => {
     if (failLatest) return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
     const metric = new URL(route.request().url()).searchParams.get("metric_code");
     const items = metric?.includes(":acs1:") ? [] : [{ ...county, metric_code: metric }];
@@ -78,7 +78,7 @@ async function installRoutes(page, { failLatest = false } = {}) {
       headers: { "x-cache": "MISS" },
     });
   });
-  await page.route("**/api/census/observations/timeseries?*", (route) => route.fulfill({
+  await page.route("**/api/v1/census/observations/timeseries?*", (route) => route.fulfill({
     json: {
       total: 2,
       limit: 1000,
@@ -89,7 +89,7 @@ async function installRoutes(page, { failLatest = false } = {}) {
       ],
     },
   }));
-  await page.route("**/api/distribution/bins?*", (route) => route.fulfill({
+  await page.route("**/api/v1/distribution/bins?*", (route) => route.fulfill({
     json: {
       total: 1,
       bin_count: 1,

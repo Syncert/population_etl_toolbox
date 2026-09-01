@@ -404,7 +404,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
 
     expected_api = EXPECTED["api"]
     with _real_api_client() as client:
-        latest = client.get("/api/cdc/observations", params={"limit": 100})
+        latest = client.get("/api/v1/cdc/observations", params={"limit": 100})
         assert latest.status_code == 200
         latest_payload = latest.json()
         assert latest_payload["total"] == expected_api["latest_total"]
@@ -433,15 +433,15 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
             ({"geo_type": "county"}, expected_api["county_total"]),
             ({"adjustment": "age_adjusted"}, expected_api["age_adjusted_total"]),
         ):
-            filtered = client.get("/api/cdc/observations", params=parameters)
+            filtered = client.get("/api/v1/cdc/observations", params=parameters)
             assert filtered.status_code == 200
             assert filtered.json()["total"] == expected_total
 
         first_page = client.get(
-            "/api/cdc/observations", params={"limit": 3, "offset": 0}
+            "/api/v1/cdc/observations", params={"limit": 3, "offset": 0}
         ).json()
         second_page = client.get(
-            "/api/cdc/observations", params={"limit": 3, "offset": 3}
+            "/api/v1/cdc/observations", params={"limit": 3, "offset": 3}
         ).json()
         assert first_page["total"] == expected_api["latest_total"]
         assert len(first_page["items"]) == 3 and len(second_page["items"]) == 3
@@ -456,7 +456,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
             (PLACES_COUNTY_ASSET, places_release),
         ):
             _replay_and_publish(factory, asset, release)
-        replayed = client.get("/api/cdc/observations", params={"limit": 100}).json()
+        replayed = client.get("/api/v1/cdc/observations", params={"limit": 100}).json()
         assert replayed == latest_payload
         for asset_id, expected_gold in EXPECTED["gold_first_release"].items():
             assert _gold_profile(factory, asset_id)["rows"] == expected_gold["rows"]
@@ -491,7 +491,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         ) == [(expected_history["cdi_latest_rows"],)]
 
         newest = client.get(
-            "/api/cdc/observations", params={"dataset": "cdi", "limit": 100}
+            "/api/v1/cdc/observations", params={"dataset": "cdi", "limit": 100}
         ).json()
         assert newest["total"] == expected_api["cdi_total"]
         assert {item["release_watermark"] for item in newest["items"]} == {
@@ -513,7 +513,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         )
 
         prior = client.get(
-            "/api/cdc/observations",
+            "/api/v1/cdc/observations",
             params={
                 "dataset": "cdi",
                 "release": EXPECTED["release_watermarks"]["cdi"],
@@ -538,7 +538,7 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         neutral_payload = neutral_latest.json()
         assert neutral_payload["source_code"] == "CDC"
         source_measure = client.get(
-            "/api/cdc/observations",
+            "/api/v1/cdc/observations",
             params={
                 "dataset": "cdi",
                 "measure_id": national["measure_id"],
@@ -727,7 +727,7 @@ def test_cdc_partial_page_capture_cannot_publish_and_reruns_to_a_clean_state(
     }
     with _real_api_client() as api_client:
         payload = api_client.get(
-            "/api/cdc/observations", params={"dataset": "cdi", "limit": 100}
+            "/api/v1/cdc/observations", params={"dataset": "cdi", "limit": 100}
         ).json()
     assert payload["total"] == EXPECTED["api"]["cdi_total"]
     assert {item["estimate_method"] for item in payload["items"]} == {

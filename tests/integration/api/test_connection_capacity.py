@@ -47,9 +47,9 @@ def test_api_fails_fast_safely_and_recovers_after_pool_exhaustion() -> None:
     app.dependency_overrides[get_db_session_dep] = override_db
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            exhausted = client.get("/api/catalog/sources")
+            exhausted = client.get("/api/v1/catalog/sources")
             held_connection.close()
-            recovered = client.get("/api/catalog/sources")
+            recovered = client.get("/api/v1/catalog/sources")
         assert exhausted.status_code == 503
         assert exhausted.json() == {
             "detail": "Database service is temporarily unavailable."

@@ -1,7 +1,8 @@
 """API unit tests: the public OpenAPI contract is pinned to a reviewed snapshot.
 
-Covers: API-031 (public contract snapshot), API-032 (versioned and legacy route
-        parity), API-033 (deprecation signalling on legacy routes).
+Covers: API-031 (public contract snapshot), API-032 (every public resource is
+        served under the current version and nowhere else), API-033 (the
+        unversioned deployment probes stay outside the version policy).
 
 API-002 restructures routers, schemas, and services. That refactor is only safe
 if a consumer-visible change cannot pass unnoticed, so the contract itself is
@@ -22,13 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
-from apps.api.versioning import (
-    CURRENT_VERSION,
-    LEGACY_DEPRECATION_HEADER,
-    LEGACY_SUNSET_HEADER,
-    legacy_path_for,
-    versioned_path_for,
-)
+from apps.api.versioning import CURRENT_VERSION, UNVERSIONED_PATHS
 from tests.support.openapi_contract import contract_digest, describe_difference
 
 SNAPSHOT_PATH = (
@@ -56,79 +51,62 @@ def test_public_contract_matches_the_reviewed_snapshot() -> None:
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_every_public_route_is_served_under_the_current_version() -> None:
-    """Covers: API-032 — the versioned surface is complete, not partial."""
+def test_every_public_resource_is_served_only_under_the_current_version() -> None:
+    """Covers: API-032 — one public surface, no unversioned aliases left.
+
+    API-008 retired the ``/api`` aliases. Every ``/api`` path must now name a
+    supported version; an unversioned data route reappearing would be a second
+    surface that could drift from the promised one.
+    """
     digest = contract_digest(app.openapi())
     served = {key.split(" ", 1)[1] for key in digest["operations"]}
 
-    legacy_paths = {path for path in served if path.startswith("/api/")}
-    legacy_paths -= {path for path in legacy_paths if path.startswith("/api/v")}
+    api_paths = {path for path in served if path.startswith("/api/")}
+    assert api_paths, "no API routes are served"
 
-    missing = {path for path in legacy_paths if versioned_path_for(path) not in served}
-    assert not missing, (
-        f"legacy routes with no /{CURRENT_VERSION} equivalent: {sorted(missing)}"
+    unversioned = sorted(
+        path for path in api_paths if not path.startswith(f"/api/{CURRENT_VERSION}/")
     )
+    assert not unversioned, f"unversioned API routes are served again: {unversioned}"
 
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_versioned_and_legacy_routes_accept_identical_requests() -> None:
-    """Covers: API-032 — an alias is the same operation, not a similar one."""
-    digest = contract_digest(app.openapi())
-    operations = digest["operations"]
-
-    compared = 0
-    for key, versioned in operations.items():
-        method, path = key.split(" ", 1)
-        if not path.startswith(f"/api/{CURRENT_VERSION}/"):
-            continue
-        legacy_key = f"{method} {legacy_path_for(path)}"
-        if legacy_key not in operations:
-            continue
-        legacy = operations[legacy_key]
-        assert versioned["parameters"] == legacy["parameters"], (
-            f"{key} and {legacy_key} disagree on request parameters"
-        )
-        assert versioned["responses"] == legacy["responses"], (
-            f"{key} and {legacy_key} disagree on response schemas"
-        )
-        compared += 1
-
-    assert compared > 0, "no versioned/legacy pair was compared"
-
-
-@pytest.mark.unit
-@pytest.mark.api
-def test_legacy_routes_announce_their_deprecation_and_successor() -> None:
-    """Covers: API-033 — a legacy consumer learns it is on a retiring route."""
+def test_deployment_probes_stay_outside_the_version_policy() -> None:
+    """Covers: API-033 — the container probes are not versioned resources."""
     client = TestClient(app)
 
-    legacy = client.get("/api/health")
-    assert legacy.status_code == 200
-    assert legacy.headers[LEGACY_DEPRECATION_HEADER] == "true"
-    assert legacy.headers[LEGACY_SUNSET_HEADER]
-    assert f"/api/{CURRENT_VERSION}/health" in legacy.headers["link"]
+    for path in sorted(UNVERSIONED_PATHS):
+        probe = client.get(path)
+        assert probe.status_code in {200, 503}, path
+        assert "deprecation" not in probe.headers, path
+        assert "sunset" not in probe.headers, path
+
+    assert client.get("/health").json()["status"] == "ok"
 
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_versioned_routes_are_not_marked_deprecated() -> None:
-    """Covers: API-033 — the successor must not inherit the retirement signal."""
+def test_no_response_carries_a_retirement_signal() -> None:
+    """Covers: API-033 — nothing is deprecated, so nothing announces it."""
     client = TestClient(app)
 
-    versioned = client.get(f"/api/{CURRENT_VERSION}/health")
-    assert versioned.status_code == 200
-    assert LEGACY_DEPRECATION_HEADER not in versioned.headers
-    assert LEGACY_SUNSET_HEADER not in versioned.headers
+    for path in (
+        f"/api/{CURRENT_VERSION}/health",
+        f"/api/{CURRENT_VERSION}/catalog/capabilities",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert "deprecation" not in response.headers, path
+        assert "sunset" not in response.headers, path
+        assert "successor-version" not in response.headers.get("link", ""), path
 
 
 @pytest.mark.unit
 @pytest.mark.api
-def test_unversioned_health_alias_still_serves_deployment_probes() -> None:
-    """Covers: API-033 — the container probe path is outside the version policy."""
+def test_retired_aliases_are_not_served() -> None:
+    """Covers: API-032 — a legacy path is a 404, not a quiet second surface."""
     client = TestClient(app)
 
-    probe = client.get("/health")
-    assert probe.status_code == 200
-    assert probe.json()["status"] == "ok"
-    assert LEGACY_DEPRECATION_HEADER not in probe.headers
+    for legacy in ("/api/health", "/api/catalog/metrics", "/api/observations"):
+        assert client.get(legacy).status_code == 404, legacy

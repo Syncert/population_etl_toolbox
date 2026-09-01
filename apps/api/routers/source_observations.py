@@ -23,7 +23,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
-from apps.api.metric_aliases import resolve_metric_code
 from apps.api.registry import SERVING_CONTRACTS, ServingContract
 from apps.api.schemas import ObservationListResponse
 from apps.api.services.observations_service import (
@@ -46,20 +45,18 @@ def build_source_router(contract: ServingContract) -> APIRouter:
         summary=f"Get {segment} latest observations",
     )
     def get_latest_observations(
-        metric_code: Optional[str] = Query(None, max_length=200),
-        metric_id: Optional[str] = Query(None, max_length=200),
+        metric_code: str = Query(..., min_length=1, max_length=200),
         geo_level: Optional[str] = Query(None, max_length=50),
         state_fips: Optional[str] = Query(None, max_length=2),
         limit: int = Query(100, ge=1, le=5000),
         offset: int = Query(0, ge=0, le=100000),
         db: Session = Depends(get_db_session_dep),
     ) -> ObservationListResponse:
-        resolved = resolve_metric_code(metric_code=metric_code, metric_id=metric_id)
         try:
             return list_latest_observations_for_source(
                 db,
                 source=segment,
-                metric_code=resolved,
+                metric_code=metric_code,
                 geo_level=geo_level,
                 state_fips=state_fips,
                 limit=limit,
@@ -76,8 +73,7 @@ def build_source_router(contract: ServingContract) -> APIRouter:
     )
     def get_timeseries_observations(
         geo_id: str = Query(..., max_length=200),
-        metric_code: Optional[str] = Query(None, max_length=200),
-        metric_id: Optional[str] = Query(None, max_length=200),
+        metric_code: str = Query(..., min_length=1, max_length=200),
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         limit: int = Query(1000, ge=1, le=5000),
@@ -85,12 +81,11 @@ def build_source_router(contract: ServingContract) -> APIRouter:
     ) -> ObservationListResponse:
         if start_date and end_date and start_date > end_date:
             raise HTTPException(status_code=422, detail=REVERSED_RANGE_DETAIL)
-        resolved = resolve_metric_code(metric_code=metric_code, metric_id=metric_id)
         try:
             return list_timeseries_observations_for_source(
                 db,
                 source=segment,
-                metric_code=resolved,
+                metric_code=metric_code,
                 geo_id=geo_id,
                 start_date=start_date,
                 end_date=end_date,

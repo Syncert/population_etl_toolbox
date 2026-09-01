@@ -24,12 +24,12 @@ export default function ProfilesPage() {
   const [status, setStatus] = useState("loading");
 
   useEffect(() => {
-    getItems("/api/catalog/geographies?geo_level=STATE&limit=100").then(setStates).catch(() => setStatus("error"));
+    getItems("/api/v1/catalog/geographies?geo_level=STATE&limit=100").then(setStates).catch(() => setStatus("error"));
   }, []);
 
   useEffect(() => {
     setStatus("loading");
-    getItems(`/api/catalog/geographies?geo_level=COUNTY&state_fips=${stateFips}&limit=1000`).then((items) => {
+    getItems(`/api/v1/catalog/geographies?geo_level=COUNTY&state_fips=${stateFips}&limit=1000`).then((items) => {
       setCounties(items);
       setGeoId((current) => items.some((item) => item.geo_id === current) ? current : items[0]?.geo_id || "");
     }).catch(() => setStatus("error"));
@@ -38,7 +38,7 @@ export default function ProfilesPage() {
   useEffect(() => {
     if (!geoId) return;
     setStatus("loading");
-    getItems(`/api/observations/timeseries?metric_code=${encodeURIComponent(populationMetric)}&geo_id=${encodeURIComponent(geoId)}&limit=1000`).then((items) => {
+    getItems(`/api/v1/observations/timeseries?metric_code=${encodeURIComponent(populationMetric)}&geo_id=${encodeURIComponent(geoId)}&limit=1000`).then((items) => {
       setHistory(items);
       setStatus("ready");
     }).catch(() => { setHistory([]); setStatus("error"); });

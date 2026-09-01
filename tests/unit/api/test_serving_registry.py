@@ -196,7 +196,7 @@ def test_absent_serving_relation_fails_explicitly() -> None:
     """Covers: API-036 — a missing contract is a fault, not an empty page.
 
     The retired behaviour answered a source-specific route from the cross-source
-    union when the source's schema looked absent, so ``/api/bls/...`` could
+    union when the source's schema looked absent, so ``/api/v1/bls/...`` could
     return rows from another source under a name that said otherwise.
     """
     contract = serving_contract("bls")

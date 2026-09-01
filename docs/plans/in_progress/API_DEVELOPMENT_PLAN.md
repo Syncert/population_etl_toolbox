@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-007 are complete, and API-008 is delivered except for legacy alias removal, which is blocked on a consumer-migration decision described below. The plan stays in `in_progress/` until that decision is made.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; **API-001 through API-008 are complete**. Ready for human review.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-008's consumer handoff delivered — `docs/reference/API_CONSUMER_GUIDE.md` is the stable published contract (routes, value semantics, errors, caching, limits, version policy), pinned against the application by API-065 so it cannot drift. Frontend work can begin against it today.
-- **Next pickup:** A human decision, not a ticket: authorize migrating `apps/web`'s twelve legacy `/api` calls to `/api/v1` (which unblocks alias removal well before the 2027-03-01 sunset), or accept the aliases standing until that published date. Everything else in the plan is complete.
+- **Current milestone:** API-008 delivered — the consumer handoff is published and pinned against the application, and the unversioned `/api` aliases, the `metric_id` alias, and the `population` mapping are retired. `/api/v1` is the single public surface; `apps/web` is migrated and verified by its Chromium browser contract suite.
+- **Next pickup:** None — every phase is complete. The plan is ready to move to `needs_review/` for human acceptance, after which the web analytics plan can begin building on the stable contract.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -1127,68 +1127,79 @@ the tier runs on its calibrated runner) and the frontend contract commands
 (no existing response shape changed and `apps/web` calls none of the new
 routes).
 
-## API-008 progress record (2026-09-01)
+## API-008 delivery record (2026-09-01)
 
-**Partially delivered; alias removal is deliberately not done.** The
-deliverables split cleanly into what evidence permits today and what it does
-not.
+### The consumer handoff
 
-### Delivered: the consumer handoff
+`docs/reference/API_CONSUMER_GUIDE.md` is the published contract: version
+policy, discovery-first route map, how to read a value honestly (text values,
+`value_status`, null-not-zero, dimensions, uncertainty, coverage), the
+release/as-released model, preflight-then-compare analysis with the declined
+sources and their reasons, saved-analysis storage, the complete error table,
+and caching, rate-limit, correlation, and pagination behaviour. It closes with
+what the API will not do, because a consumer needs the guarantees stated as
+plainly as the routes.
 
-`docs/reference/API_CONSUMER_GUIDE.md` is the frontend handoff the phase
-requires: the version policy and migration path, the discovery-first route
-map, the neutral observation contract including how to read a value honestly
-(text values, `value_status`, null-not-zero, dimensions, uncertainty,
-coverage), the release/as-released model, the preflight-then-compare analysis
-contract with the declined sources and their reasons, the saved-analysis
-resource, the complete error table, and the caching, rate-limit, correlation,
-and pagination behaviour. It closes with what the API will not do, because a
-consumer needs the guarantees stated as plainly as the routes.
+It is executable evidence, not prose: API-065 extracts all 27 `/api/v1` paths
+the guide names and fails if one is not served, proves the guide describes the
+single surface the API actually has, and derives its declined-source and
+filter claims from the registry so prose cannot drift from the application.
 
-It is executable evidence rather than prose: API-065 extracts every
-`/api/v1` path the guide names (27 of them) and fails if one is not served,
-pins the published sunset date against the header the API actually sends,
-proves the legacy alias still carries `Deprecation`/`Sunset`/`Link` and
-answers identically to its successor, and derives the guide's declined-source
-and filter claims from the registry so prose cannot drift from the
-application. `AGENTS.md` and `README.md` name it as the consumer contract.
+### The aliases are retired
 
-### Not delivered, and why: legacy alias removal
+The owner authorized removal on the evidence that the API has no downstream
+dependants and that the next plan will begin creating them. Retiring the
+aliases while the dependency set was still empty cost a prefix change in one
+in-repo consumer; retiring them after would have been a breaking change
+against real clients on a date guessed eighteen months earlier. ADR-0002
+carries the amendment.
 
-The phase's own wording gates this: remove legacy routes "only after approved
-evidence shows no required consumer depends on them." `apps/web` still calls
-twelve unversioned routes (`/api/health`, the three catalog resources,
-`/api/observations/timeseries`, `/api/distribution/bins`, and the
-latest/timeseries pair for each of `bls`, `census`, `fred`). The evidence
-therefore says the opposite of what removal requires, and the published
-sunset is 2027-03-01 — eighteen months out, deliberately bounded rather than
-imminent.
+Removed in one change:
 
-Migrating `apps/web` to `/api/v1` is the action that would produce the
-evidence, and it is a frontend change this plan explicitly does not authorize
-("This plan does not implement frontend features"; the frontend commands are
-"contract-regression evidence only"). It is also genuinely cheap — a prefix
-change in the fetch paths plus a browser-suite run — so it belongs to whoever
-owns the web application, as a scope decision rather than a technical one.
+- **The unversioned `/api` aliases.** Routers now mount once, under
+  `/api/v1`. The served operation count halves, 66 → 34, which is exactly the
+  duplication disappearing. `LegacyDeprecationMiddleware`, the sunset
+  constant, and the legacy path helpers are gone with them; an unversioned
+  data path answers 404.
+- **`apps/web`, migrated in the same change.** All twelve calls now target
+  `/api/v1`. This was the required-consumer evidence: it is verified by the
+  web unit, lint, production build, and — the load-bearing one — the Chromium
+  browser contract suite, which drives the real UI against intercepted
+  `/api/v1` routes and passed.
+- **`metric_aliases.py`.** The `metric_id` query alias had no consumer, and
+  the `population` mapping pointed at `ACS:acs5:B01003_001` — a code form the
+  glossary does not publish, so it could only ever have resolved to nothing.
+  `metric_code` is now a required parameter and the single spelling of a
+  metric identity.
 
-**What a reviewer should decide:** either (a) authorize the `apps/web` prefix
-migration, after which alias removal becomes a small reviewed change well
-before the sunset, or (b) accept the aliases standing until the published
-sunset date, at which point removal proceeds on the evidence then available.
-Nothing else in the plan depends on the answer: `v1` is the promised contract
-either way, and every new resource since API-002 has been served on both
-surfaces by construction.
+One defect surfaced and was fixed while proving the probes: `/health/ready`
+raised an unhandled `RuntimeError` when `DATABASE_URL` was unset, so a
+misconfigured deployment got a 500 from the probe that exists to report exactly
+that condition. The engine now raises a typed `DatabaseNotConfigured` that the
+application answers as the same sanitized 503 as any other unavailability — a
+readiness probe must *report* an unservable process, never crash on it.
 
-### Also current
+API-032 and API-033 are rewritten in place from parity/deprecation contracts
+to single-surface contracts: every served `/api` path names the current
+version, retired aliases answer 404, the deployment probes stay unversioned,
+and no response anywhere carries a retirement signal because nothing is
+deprecated.
 
-Local setup, deployment, and operations documentation were updated in the
-phases that changed them rather than deferred to here: `README.md` carries
-the readiness probe, the operational contract, and the saved-analysis
-provisioning flow; the compose files, `Dockerfile.api`, and `stack.env*`
-carry the API-006 and API-007 configuration; `ADDING_A_DATA_SOURCE.md` carries
-the registry steps a new source must complete. OpenAPI examples are generated
-from the served contract and contain no credentials, private hosts, or
-production data.
+### Validation
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 247 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1219 passed |
+| API + Redis integration + resilience | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis tests/resilience` | 21 passed |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed |
+| Web consumer contract | `npm --prefix apps/web run test:unit` / `lint` / `build` | 10 passed / clean / built |
+| **Web browser contract** | `npx playwright test` (Chromium) | **2 passed** — the real UI against the migrated routes |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean |
+
+Not run, recorded as not run: `make test-performance` (no performance-sensitive
+path changed; the tier runs on its calibrated runner) and the composed
+deployment smoke, which runs in its required CI job.
 
 ## Implementation phases
 
@@ -1275,7 +1286,7 @@ production data.
 
 **Acceptance:** The API is independently deployable from checked-in configuration, all required checks pass, and frontend work can begin without direct access to warehouse tables or undocumented behavior.
 
-**Status: partially complete (2026-09-01).** See "API-008 progress record" above. The frontend handoff, consumer guidance, and operational documentation are delivered and pinned by API-065, so frontend work can begin against a stable documented contract today. Legacy alias removal is outstanding by design: `apps/web` still calls twelve unversioned routes, the published sunset is 2027-03-01, and the consumer migration that would produce the required evidence is frontend work this plan does not authorize. A reviewer decides whether to authorize that migration now or let the aliases stand to the published date.
+**Status: complete (2026-09-01).** See "API-008 delivery record" above. The consumer handoff is published and pinned by API-065; the unversioned aliases, the `metric_id` alias, and the `population` mapping are retired; `apps/web` is migrated to `/api/v1` and verified by its browser contract suite; and the API is independently deployable from checked-in configuration with every tier green.
 
 ## Test-driven implementation contract
 

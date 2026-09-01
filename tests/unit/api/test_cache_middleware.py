@@ -40,7 +40,7 @@ def _middleware_for(
 
     application = Starlette(
         routes=[
-            Route("/api/catalog/metrics", endpoint, methods=["GET", "POST"]),
+            Route("/api/v1/catalog/metrics", endpoint, methods=["GET", "POST"]),
             Route("/health", endpoint),
         ]
     )
@@ -54,7 +54,7 @@ def _middleware_for(
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [("POST", "/api/catalog/metrics"), ("GET", "/health")],
+    [("POST", "/api/v1/catalog/metrics"), ("GET", "/health")],
     ids=("non-get", "non-cacheable-route"),
 )
 def test_ineligible_request_bypasses_redis(method: str, path: str) -> None:
@@ -83,7 +83,7 @@ def test_ineligible_response_is_not_stored(response: Response) -> None:
     middleware, fake_redis = _middleware_for(response)
 
     with TestClient(middleware) as client:
-        result = client.get("/api/catalog/metrics")
+        result = client.get("/api/v1/catalog/metrics")
 
     assert result.status_code == response.status_code
     assert len(fake_redis.gets) == 1

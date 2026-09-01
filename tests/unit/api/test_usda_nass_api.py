@@ -118,7 +118,7 @@ def _clear_overrides():
 def test_observations_expose_the_complete_source_classification() -> None:
     """Covers: API-013 — a crop observation carries its whole classification."""
     session = _RecordingSession(rows=[_observation_row()], total=1)
-    response = _client(session).get("/api/usda-nass/observations")
+    response = _client(session).get("/api/v1/usda-nass/observations")
 
     assert response.status_code == 200
     body = response.json()
@@ -166,7 +166,7 @@ def test_a_suppressed_value_can_never_be_read_as_zero() -> None:
         ],
         total=1,
     )
-    item = _client(session).get("/api/usda-nass/observations").json()["items"][0]
+    item = _client(session).get("/api/v1/usda-nass/observations").json()["items"][0]
 
     assert item["value"] is None
     assert item["value_status"] == "withheld"
@@ -179,7 +179,7 @@ def test_multidimensional_filters_are_bound_not_interpolated() -> None:
     """Covers: API-014 — every caller filter is a bound query parameter."""
     session = _RecordingSession(rows=[], total=0)
     response = _client(session).get(
-        "/api/usda-nass/observations",
+        "/api/v1/usda-nass/observations",
         params={
             "commodity_desc": "CORN",
             "statisticcat_desc": "YIELD",
@@ -213,7 +213,7 @@ def test_a_sql_injection_attempt_stays_a_bound_literal() -> None:
     session = _RecordingSession(rows=[], total=0)
     hostile = "CORN'; DROP TABLE silver_nass.fact_crop_observation; --"
     response = _client(session).get(
-        "/api/usda-nass/observations", params={"commodity_desc": hostile}
+        "/api/v1/usda-nass/observations", params={"commodity_desc": hostile}
     )
 
     assert response.status_code == 200
@@ -233,7 +233,7 @@ def test_latest_and_as_released_read_from_different_relations() -> None:
     session = _RecordingSession(rows=[_observation_row()], total=1)
     body = (
         _client(session)
-        .get("/api/usda-nass/observations", params={"latest": "true"})
+        .get("/api/v1/usda-nass/observations", params={"latest": "true"})
         .json()
     )
     assert body["release_scope"] == "latest"
@@ -257,7 +257,7 @@ def test_contradictory_or_unmodeled_filters_are_rejected(
 ) -> None:
     """Covers: API-007 — contradictory or unmodeled filters fail explicitly."""
     session = _RecordingSession()
-    response = _client(session).get("/api/usda-nass/observations", params=params)
+    response = _client(session).get("/api/v1/usda-nass/observations", params=params)
 
     assert response.status_code == 422
     assert message in str(response.json())
@@ -304,7 +304,7 @@ def test_series_expose_stable_identity_and_value_completeness() -> None:
         "latest_release_watermark": "2025-01-10 15:20:33.123000",
     }
     session = _RecordingSession(rows=[row], total=1)
-    body = _client(session).get("/api/usda-nass/series").json()
+    body = _client(session).get("/api/v1/usda-nass/series").json()
 
     item = body["items"][0]
     assert item["series_id"] == row["series_id"]
@@ -335,7 +335,7 @@ def test_measures_expose_exact_units_and_declared_additivity() -> None:
         "schema_version": "quickstats-crop-v1",
     }
     session = _RecordingSession(rows=[row])
-    body = _client(session).get("/api/usda-nass/measures").json()
+    body = _client(session).get("/api/v1/usda-nass/measures").json()
 
     assert body["total"] == 1
     assert body["items"][0]["unit"] == "TONS / ACRE"
@@ -345,7 +345,7 @@ def test_measures_expose_exact_units_and_declared_additivity() -> None:
 def test_source_notes_are_derived_from_the_ingested_contract() -> None:
     """Covers: API-013 — source notes cannot drift from the registry."""
     session = _RecordingSession()
-    body = _client(session).get("/api/usda-nass/source-notes").json()
+    body = _client(session).get("/api/v1/usda-nass/source-notes").json()
 
     topics = {item["topic"]: item for item in body["items"]}
     assert {

@@ -26,7 +26,7 @@ export default function CatalogPage() {
       if (query.trim()) params.set("q", query.trim());
       if (source) params.set("source_code", source);
       try {
-        const response = await fetch(`/api/catalog/metrics?${params}`, { signal: controller.signal });
+        const response = await fetch(`/api/v1/catalog/metrics?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error(`status ${response.status}`);
         setPayload(await response.json());
         setStatus("ready");

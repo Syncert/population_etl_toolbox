@@ -39,7 +39,7 @@ def _redis_config() -> RedisTestConfig:
 #: The API catalog reads ``gold_glossary.dim_metric_catalog``, which the glossary
 #: harvest owns (ARCH-002). Refreshing the FRED gold elements alone publishes the
 #: series but never the catalog row, so the fixture must run the same harvest the
-#: warehouse runs before a metric is discoverable through ``/api/catalog/metrics``.
+#: warehouse runs before a metric is discoverable through ``/api/v1/catalog/metrics``.
 _FRED_PUBLISHER = Publisher(schema="gold_fred")
 
 
@@ -202,7 +202,7 @@ def test_configured_app_cache_freshness_follows_publication_state(
     keep answering as HITs from the same entry.
     """
     client, refresh_metric, metric_code = configured_cached_api
-    target = "/api/catalog/metrics"
+    target = "/api/v1/catalog/metrics"
     params = {"q": metric_code, "limit": 10}
 
     first = client.get(target, params=params)
@@ -261,7 +261,7 @@ def test_configured_app_falls_back_to_database_when_redis_is_unavailable(
     started = time.perf_counter()
     try:
         with TestClient(application) as client:
-            response = client.get("/api/catalog/sources")
+            response = client.get("/api/v1/catalog/sources")
     finally:
         application.dependency_overrides.clear()
         engine.dispose()

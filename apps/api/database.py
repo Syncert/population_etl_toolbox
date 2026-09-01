@@ -34,10 +34,20 @@ _engine = None
 _session_factory: sessionmaker | None = None
 
 
+class DatabaseNotConfigured(RuntimeError):
+    """No database URL is configured for this deployment.
+
+    A distinct type because it must answer the same sanitized 503 as any other
+    unavailability rather than escaping as an unhandled error. The readiness
+    probe in particular has to *report* an unservable process; a probe that
+    raises tells orchestration nothing it can act on.
+    """
+
+
 def _build_engine(settings: Settings):
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
-        raise RuntimeError(
+        raise DatabaseNotConfigured(
             "DATABASE_URL environment variable is not set. "
             "Configure it before starting the API server."
         )

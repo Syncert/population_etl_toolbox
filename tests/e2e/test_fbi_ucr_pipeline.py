@@ -214,7 +214,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         assert harvested == len(measure_identity)
 
         catalog = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
         )
         assert catalog.status_code == 200
         catalog_payload = catalog.json()
@@ -233,7 +233,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
             key.startswith(f"{SOURCE_CODE}:{PRODUCT.product_id}:") for key in units
         )
 
-        sources = client.get("/api/catalog/sources")
+        sources = client.get("/api/v1/catalog/sources")
         assert sources.status_code == 200
         assert SOURCE_CODE in {item["source_code"] for item in sources.json()}
 
@@ -286,7 +286,7 @@ def test_fbi_fixtures_reach_the_published_boundary_without_inventing_totals(
         # losing a measure identity.
         assert harvest_publisher(factory, Publisher(PUBLISHER_SCHEMA)) == harvested
         refreshed = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 100}
         ).json()
         assert refreshed["total"] == harvested
 

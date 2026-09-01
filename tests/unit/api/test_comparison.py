@@ -1,7 +1,6 @@
 """API unit tests: the aligned, policy-guarded comparison endpoint.
 
-Covers: API-003 (required metric input), API-004 (metric aliases),
-        API-015 (comparison results),
+Covers: API-003 (required metric input), API-015 (comparison results),
         API-051 (registry-dispatched alignment: each side reduces to one
         newest value per geography inside its own reviewed relation before
         the join, incompatible pairs are rejected with the failed rules,
@@ -115,30 +114,6 @@ def _relations_in(sql: str) -> set[str]:
     return set(re.findall(r"(?:FROM|JOIN)\s+([a-z_]+\.[a-z_]+)", sql))
 
 
-def test_comparison_requires_metric_a() -> None:
-    """Covers: API-003 — comparison requires its first metric."""
-    client = _client_with(_ComparisonSession({}))
-    try:
-        response = client.get("/api/comparison", params={"metric_id_b": "X"})
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code_a or metric_id_a is required"
-
-
-def test_comparison_requires_metric_b() -> None:
-    """Covers: API-003 — comparison requires its second metric."""
-    client = _client_with(_ComparisonSession({}))
-    try:
-        response = client.get("/api/comparison", params={"metric_id_a": "X"})
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code_b or metric_id_b is required"
-
-
 def test_unknown_comparison_metric_is_a_stable_404() -> None:
     """Covers: API-051 — an unknown code names its parameter, no query runs."""
     session = _ComparisonSession({"FRED:UNRATE": _metric("FRED:UNRATE", "FRED")})
@@ -206,8 +181,8 @@ def test_stratified_source_comparison_is_declined_with_its_reason() -> None:
     assert not _dispatched(session)
 
 
-def test_comparison_accepts_metric_id_aliases() -> None:
-    """Covers: API-004, API-015 — comparison aliases return paired values."""
+def test_comparison_returns_paired_values() -> None:
+    """Covers: API-015 — a compatible pair returns both inputs per geography."""
     rows = {
         "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
         "FRED:CIVPART": _metric("FRED:CIVPART", "FRED"),
@@ -216,10 +191,10 @@ def test_comparison_accepts_metric_id_aliases() -> None:
     client = _client_with(session)
     try:
         response = client.get(
-            "/api/comparison",
+            "/api/v1/comparison",
             params={
                 "metric_code_a": "FRED:UNRATE",
-                "metric_id_b": "FRED:CIVPART",
+                "metric_code_b": "FRED:CIVPART",
                 "limit": 10,
                 "offset": 0,
             },
@@ -346,3 +321,14 @@ def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
     bound = session.parameters[-1]
     assert bound["a_lineage_key"] == "ACS:acs5:B01003_001E"
     assert bound["b_lineage_key"] == "POP"
+
+
+def test_both_metric_codes_are_required() -> None:
+    """Covers: API-003 — the metric_id_a/metric_id_b aliases are retired."""
+    client = _client_with(_ComparisonSession({}))
+    try:
+        for params in ({"metric_code_b": "X"}, {"metric_code_a": "X"}, {}):
+            response = client.get("/api/v1/comparison", params=params)
+            assert response.status_code == 422, params
+    finally:
+        app.dependency_overrides.clear()

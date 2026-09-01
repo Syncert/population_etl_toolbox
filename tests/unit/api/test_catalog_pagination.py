@@ -61,7 +61,7 @@ def test_catalog_metrics_total_comes_from_count_query() -> None:
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
         client = TestClient(app)
-        response = client.get("/api/catalog/metrics?limit=1&offset=0")
+        response = client.get("/api/v1/catalog/metrics?limit=1&offset=0")
     finally:
         app.dependency_overrides.clear()
 

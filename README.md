@@ -207,11 +207,11 @@ Consumers should start with the
 [API consumer guide](docs/reference/API_CONSUMER_GUIDE.md), which is the stable
 contract for routes, semantics, errors, caching, limits, and version policy.
 
-Every resource is served under `/api/v1`, which is the path new clients should
-use. The same resources also answer on their original unversioned `/api` path
-during a published compatibility window; those responses carry `Deprecation`,
-`Sunset`, and `Link` headers naming the versioned successor. See
-[ADR-0002](docs/decisions/0002-api-versioning-and-deprecation.md).
+Every resource is served under `/api/v1`, and only there. The unversioned
+`/api` aliases that carried the original MVP paths were retired once the API
+had no downstream dependants; an unversioned data path now answers `404`. See
+[ADR-0002](docs/decisions/0002-api-versioning-and-deprecation.md) and its
+2026-09-01 amendment.
 
 Provider-neutral endpoints:
 - `GET /api/v1/catalog/sources`
@@ -282,9 +282,10 @@ budgets (`API_DB_*`); optional per-client rate limits split catalog from
 analytical cost (`API_RATE_LIMIT_*`, off by default); and every response
 carries an `X-Request-ID` logged with a structured completion line.
 
-Observation endpoint parameter note:
-- `GET /api/v1/observations/latest` accepts `metric_code` and `metric_id` as equivalent aliases.
-- `GET /api/v1/observations/timeseries` accepts `metric_code` and `metric_id` as equivalent aliases.
+Metric identity: `metric_code` is required wherever a metric is named, and is
+its only spelling. The `metric_id` alias and the `population` convenience
+mapping were retired with the route aliases — one spelling means a request
+cannot silently resolve to something the caller did not name.
 
 ### Next.js Web App (Local Iteration)
 

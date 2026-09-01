@@ -99,7 +99,9 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
     ]
 
     with real_api_client() as client:
-        observations = client.get("/api/usda-nass/observations", params={"limit": 1000})
+        observations = client.get(
+            "/api/v1/usda-nass/observations", params={"limit": 1000}
+        )
         assert observations.status_code == 200
         payload = observations.json()
         assert payload["total"] == expected_rows
@@ -167,7 +169,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
 
         # Incompatible units never collapse into one series identity, and a
         # non-additive rate is declared as such rather than left to the caller.
-        series = client.get("/api/usda-nass/series", params={"limit": 1000}).json()
+        series = client.get("/api/v1/usda-nass/series", params={"limit": 1000}).json()
         assert series["total"] > 0
         unit_by_series: dict[tuple, set[str]] = {}
         for item in series["items"]:
@@ -180,7 +182,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             unit_by_series.setdefault(key, set()).add(item["unit_desc"])
         assert all(len(units) == 1 for units in unit_by_series.values())
 
-        measures = client.get("/api/usda-nass/measures").json()
+        measures = client.get("/api/v1/usda-nass/measures").json()
         behavior = {
             item["statisticcat_desc"]: (
                 item["additive_behavior"],
@@ -193,7 +195,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
 
         # The source notes a consumer needs to avoid an unsafe comparison are
         # served beside the data rather than left in the repository.
-        notes = client.get("/api/usda-nass/source-notes")
+        notes = client.get("/api/v1/usda-nass/source-notes")
         assert notes.status_code == 200
         notes_payload = notes.json()
         assert notes_payload["total"] == len(notes_payload["items"]) > 0
@@ -205,13 +207,13 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         # A filter that would mix programs or units must be expressible, and
         # the response must stay inside the filter it was given.
         census_only = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={"source_desc": "CENSUS", "limit": 1000},
         ).json()
         assert census_only["total"] > 0
         assert {item["source_desc"] for item in census_only["items"]} == {"CENSUS"}
         acres_only = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={"unit_desc": "ACRES", "limit": 1000},
         ).json()
         assert {item["unit_desc"] for item in acres_only["items"]} == {"ACRES"}
@@ -222,7 +224,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
             document = nass_support.load_product_fixture(product.product_id)
             nass_support.run_to_gold(factory, product, document)
         replayed = client.get(
-            "/api/usda-nass/observations", params={"limit": 1000}
+            "/api/v1/usda-nass/observations", params={"limit": 1000}
         ).json()
         assert replayed == payload
 
@@ -238,7 +240,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         watermark = revised.contract.extraction_watermark
 
         history = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={
                 "product_id": REVISED_PRODUCT,
                 "geo_id": REVISED_GEO_ID,
@@ -257,7 +259,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         assert as_released[1]["value"] is not None
 
         latest = client.get(
-            "/api/usda-nass/observations",
+            "/api/v1/usda-nass/observations",
             params={
                 "product_id": REVISED_PRODUCT,
                 "geo_id": REVISED_GEO_ID,
@@ -275,7 +277,7 @@ def test_nass_fixtures_reach_the_api_without_losing_source_classification(
         harvested = harvest_publisher(factory, Publisher(PUBLISHER_SCHEMA))
         assert harvested > 0
         catalog = client.get(
-            "/api/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 500}
+            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 500}
         )
         assert catalog.status_code == 200
         catalog_payload = catalog.json()

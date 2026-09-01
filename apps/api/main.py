@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 
-from apps.api.database import dispose_engine
+from apps.api.database import DatabaseNotConfigured, dispose_engine
 from apps.api.dependencies import serving_contract_unavailable
 from apps.api.freshness import PublicationEpochProvider
 from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMiddleware
@@ -23,11 +23,7 @@ from apps.api.routers import (
 from apps.api.routers.source_observations import SOURCE_ROUTERS
 from apps.api.services.observations_service import ServingContractUnavailable
 from apps.api.telemetry import RequestTelemetryMiddleware
-from apps.api.versioning import (
-    API_ROOT,
-    VERSIONED_ROOT,
-    LegacyDeprecationMiddleware,
-)
+from apps.api.versioning import VERSIONED_ROOT
 from data_ingestion_toolbox.config import Settings, get_settings
 
 #: Every public resource, in the order it appears in the generated documentation.
@@ -95,20 +91,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _handle_missing_serving_contract(_request, exc):
         return serving_contract_unavailable(exc)
 
+    @application.exception_handler(DatabaseNotConfigured)
+    async def _handle_unconfigured_database(_request, exc):
+        # Same sanitized 503 as any other unavailability: a caller cannot tell
+        # a misconfiguration from an outage, and the readiness probe reports
+        # an unservable process instead of raising.
+        return serving_contract_unavailable(exc)
+
     # Routers first: the cache middleware's contract fingerprint is computed
     # from the served OpenAPI document, which must be complete when hashed.
+    # Each router is mounted once, under the versioned prefix. API-008 retired
+    # the unversioned aliases; /api/v1 is the whole public surface.
     for router in PUBLIC_ROUTERS:
         application.include_router(router, prefix=VERSIONED_ROOT)
-        application.include_router(router, prefix=API_ROOT)
 
     application.include_router(health.probe_router)
 
     # Middleware executes outermost-last-added: telemetry wraps everything
     # (every response carries a request id and is logged, cached or not),
-    # then the deprecation signal, then security headers -- all applied to
-    # cached bodies too -- then the cache, and innermost the rate limiter, so
-    # a cache hit costs no budget and the limits meter exactly the requests
-    # that reach the database.
+    # then security headers -- applied to cached bodies too -- then the cache,
+    # and innermost the rate limiter, so a cache hit costs no budget and the
+    # limits meter exactly the requests that reach the database.
     application.add_middleware(
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
@@ -122,7 +125,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         epoch_provider=PublicationEpochProvider(configured.api_cache_freshness_seconds),
     )
     application.add_middleware(SecurityHeadersMiddleware)
-    application.add_middleware(LegacyDeprecationMiddleware)
     application.add_middleware(RequestTelemetryMiddleware)
 
     return application

@@ -70,7 +70,7 @@ def test_observations_read_the_published_views_with_exact_semantics(
 ) -> None:
     """Covers: API-013 — the observation SQL matches the published views."""
     response = published_nass_api.get(
-        "/api/usda-nass/observations",
+        "/api/v1/usda-nass/observations",
         params={"commodity_desc": "CORN", "limit": 500},
     )
     assert response.status_code == 200
@@ -105,11 +105,11 @@ def test_latest_release_hides_superseded_values_without_deleting_them(
 ) -> None:
     """Covers: API-013 — latest and as-released differ on a revised release."""
     latest = published_nass_api.get(
-        "/api/usda-nass/observations",
+        "/api/v1/usda-nass/observations",
         params={"commodity_desc": "CORN", "latest": "true", "limit": 500},
     ).json()
     as_released = published_nass_api.get(
-        "/api/usda-nass/observations",
+        "/api/v1/usda-nass/observations",
         params={"commodity_desc": "CORN", "limit": 500},
     ).json()
 
@@ -123,7 +123,7 @@ def test_geography_and_period_filters_narrow_the_published_result(
 ) -> None:
     """Covers: API-013 — multidimensional filters reach the real views."""
     county = published_nass_api.get(
-        "/api/usda-nass/observations",
+        "/api/v1/usda-nass/observations",
         params={
             "agg_level_desc": "COUNTY",
             "geo_id": "state:01|county:001",
@@ -148,7 +148,7 @@ def test_series_and_measures_read_the_published_views(
 ) -> None:
     """Covers: API-013 — series and measure SQL match the published views."""
     series = published_nass_api.get(
-        "/api/usda-nass/series", params={"commodity_desc": "CORN", "limit": 500}
+        "/api/v1/usda-nass/series", params={"commodity_desc": "CORN", "limit": 500}
     ).json()
     assert series["total"] > 0
     for item in series["items"]:
@@ -159,6 +159,6 @@ def test_series_and_measures_read_the_published_views(
             == item["observation_count"]
         )
 
-    measures = published_nass_api.get("/api/usda-nass/measures").json()
+    measures = published_nass_api.get("/api/v1/usda-nass/measures").json()
     assert measures["total"] > 0
     assert all(item["unit"] for item in measures["items"])

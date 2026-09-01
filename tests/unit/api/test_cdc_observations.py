@@ -169,7 +169,7 @@ def test_cdc_observations_expose_dataset_method_and_uncertainty_context() -> Non
     """Covers: API-028 — CDI and PLACES rows keep their interpretive context."""
     session = _RecordingSession([_cdi_row(), _places_row()], total=2)
 
-    response = _client(session).get("/api/cdc/observations")
+    response = _client(session).get("/api/v1/cdc/observations")
 
     assert response.status_code == 200
     payload = response.json()
@@ -191,7 +191,7 @@ def test_cdc_suppressed_values_stay_null_and_typed() -> None:
     """Covers: API-028 — suppression is never rendered as a numeric value."""
     session = _RecordingSession([_places_row()], total=1)
 
-    payload = _client(session).get("/api/cdc/observations").json()
+    payload = _client(session).get("/api/v1/cdc/observations").json()
 
     suppressed = payload["items"][0]
     assert suppressed["value"] is None
@@ -215,7 +215,7 @@ def test_cdc_missing_values_remain_distinct_from_suppressed_values() -> None:
         total=1,
     )
 
-    payload = _client(session).get("/api/cdc/observations").json()
+    payload = _client(session).get("/api/v1/cdc/observations").json()
 
     assert payload["items"][0]["value_status"] == "missing"
     assert payload["items"][0]["value"] is None
@@ -226,7 +226,7 @@ def test_cdc_filters_reach_the_query_as_bound_parameters() -> None:
     session = _RecordingSession([_places_row()], total=1)
 
     response = _client(session).get(
-        "/api/cdc/observations",
+        "/api/v1/cdc/observations",
         params={
             "dataset": "places_county",
             "measure_id": "DIABETES",
@@ -267,7 +267,9 @@ def test_cdc_dataset_filter_cannot_mix_products() -> None:
     session = _RecordingSession([_cdi_row()], total=1)
 
     payload = (
-        _client(session).get("/api/cdc/observations", params={"dataset": "cdi"}).json()
+        _client(session)
+        .get("/api/v1/cdc/observations", params={"dataset": "cdi"})
+        .json()
     )
 
     assert session.list_params["dataset"] == "cdi"
@@ -278,7 +280,7 @@ def test_cdc_default_request_uses_the_latest_release_projection() -> None:
     """Covers: API-029 — an omitted release reads the latest projection."""
     session = _RecordingSession([_cdi_row()], total=1)
 
-    payload = _client(session).get("/api/cdc/observations").json()
+    payload = _client(session).get("/api/v1/cdc/observations").json()
 
     assert "gold_cdc.latest_release_observation" in session.list_sql
     assert "gold_cdc.health_observation" not in session.list_sql
@@ -292,7 +294,7 @@ def test_cdc_named_release_reads_published_release_history() -> None:
 
     payload = (
         _client(session)
-        .get("/api/cdc/observations", params={"release": "1740787200"})
+        .get("/api/v1/cdc/observations", params={"release": "1740787200"})
         .json()
     )
 
@@ -309,7 +311,7 @@ def test_cdc_pagination_total_is_independent_of_page_length() -> None:
 
     payload = (
         _client(session)
-        .get("/api/cdc/observations", params={"limit": 1, "offset": 0})
+        .get("/api/v1/cdc/observations", params={"limit": 1, "offset": 0})
         .json()
     )
 
@@ -323,7 +325,7 @@ def test_cdc_empty_result_returns_the_stable_empty_contract() -> None:
     session = _RecordingSession([], total=0)
 
     response = _client(session).get(
-        "/api/cdc/observations", params={"measure_id": "NOT_PUBLISHED"}
+        "/api/v1/cdc/observations", params={"measure_id": "NOT_PUBLISHED"}
     )
 
     assert response.status_code == 200
@@ -358,7 +360,7 @@ def test_cdc_invalid_filters_fail_before_any_database_work(
     """Covers: API-030 — unknown CDC filters are rejected before the query."""
     session = _RecordingSession([_cdi_row()], total=1)
 
-    response = _client(session).get("/api/cdc/observations", params=params)
+    response = _client(session).get("/api/v1/cdc/observations", params=params)
 
     assert response.status_code == 422
     assert response.json()["detail"] == expected_detail
@@ -373,7 +375,7 @@ def test_cdc_pagination_and_period_bounds_are_enforced(params: dict) -> None:
     """Covers: API-005 — out-of-range CDC paging and periods return 422."""
     session = _RecordingSession([_cdi_row()], total=1)
 
-    response = _client(session).get("/api/cdc/observations", params=params)
+    response = _client(session).get("/api/v1/cdc/observations", params=params)
 
     assert response.status_code == 422
     assert session.calls == []
@@ -385,7 +387,7 @@ def test_cdc_injection_input_remains_a_bound_parameter() -> None:
     injection = "cdi'; DROP TABLE silver_cdc.fact_health_observation; --"
 
     response = _client(session).get(
-        "/api/cdc/observations", params={"measure_id": injection}
+        "/api/v1/cdc/observations", params={"measure_id": injection}
     )
 
     assert response.status_code == 200
@@ -395,7 +397,7 @@ def test_cdc_injection_input_remains_a_bound_parameter() -> None:
 
 def test_cdc_database_failure_returns_a_sanitized_503() -> None:
     """Covers: API-016 — CDC database failure never leaks connection detail."""
-    response = _client(_FailingSession()).get("/api/cdc/observations")
+    response = _client(_FailingSession()).get("/api/v1/cdc/observations")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Database service is temporarily unavailable."}

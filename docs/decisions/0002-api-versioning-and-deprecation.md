@@ -1,10 +1,11 @@
 # ADR-0002: API versioning and deprecation policy
 
-- **Status:** Accepted
+- **Status:** Accepted; the compatibility window closed early (see *Amendment*)
 - **Date:** 2026-08-31
 - **Accepted:** 2026-08-31
+- **Amended:** 2026-09-01 — aliases retired ahead of the published sunset
 - **Decision owners:** API platform maintainers
-- **Related work:** API-002 in the [API development plan](../plans/in_progress/API_DEVELOPMENT_PLAN.md)
+- **Related work:** API-002 and API-008 in the [API development plan](../plans/in_progress/API_DEVELOPMENT_PLAN.md)
 
 ## Context
 
@@ -102,3 +103,36 @@ where the surfaces are identical by construction. When API-003 through API-007
 begin changing `v1` shapes, a resource whose legacy shape must be held still gets
 its own frozen legacy router at that point, and API-032's parity assertion is
 narrowed to the pairs that are still meant to match.
+
+## Amendment (2026-09-01): the aliases are retired
+
+The unversioned `/api` aliases were removed in API-008, well before the
+published `2027-03-01` sunset. The owner's decision, recorded here because it
+changes what this ADR promised:
+
+- The API had **no downstream dependants**. The only consumer was this
+  repository's own `apps/web`, migrated to `/api/v1` in the same change and
+  verified by its unit, lint, build, and browser contract suites.
+- The next plan in the queue begins creating real dependencies on the API.
+  Retiring the aliases *before* those dependencies exist costs a prefix
+  change in one in-repo consumer; retiring them afterwards would have been a
+  breaking change against real clients, on a schedule set eighteen months
+  earlier by a guess about who might be depending on them.
+
+A bounded window is worth publishing precisely so it can be closed as soon as
+the evidence allows, rather than waited out for its own sake. The window did
+its job: it let API-002 through API-007 change shapes freely while the MVP
+paths kept working, and it ended the moment nothing needed it.
+
+The same reasoning retired the `metric_id` query alias and the `population`
+metric mapping in `metric_aliases.py`: no consumer used either, and the
+`population` mapping pointed at `ACS:acs5:B01003_001`, a code form the
+glossary does not publish — so it could only ever have resolved to nothing.
+`metric_code` is now required and is the single spelling of a metric
+identity.
+
+**What this does not change.** `/api/v1` remains the promised contract under
+the same rules: additive changes land in `v1`, breaking changes require `v2`,
+and a future `v2` introduction would reinstate a dual-surface window under
+exactly the policy above — now with real consumers to notify, which is when
+that machinery earns its keep.

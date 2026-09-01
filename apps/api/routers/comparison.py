@@ -5,7 +5,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
-from apps.api.metric_aliases import resolve_metric_code
 from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
     list_metric_comparison,
@@ -48,10 +47,8 @@ def get_comparison_preflight(
 
 @router.get("/comparison", response_model=ComparisonResponse)
 def get_metric_comparison(
-    metric_code_a: Optional[str] = Query(None, max_length=200),
-    metric_id_a: Optional[str] = Query(None, max_length=200),
-    metric_code_b: Optional[str] = Query(None, max_length=200),
-    metric_id_b: Optional[str] = Query(None, max_length=200),
+    metric_code_a: str = Query(..., min_length=1, max_length=200),
+    metric_code_b: str = Query(..., min_length=1, max_length=200),
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
     limit: int = Query(100, ge=1, le=1000),
@@ -63,22 +60,11 @@ def get_metric_comparison(
     An incompatible pair is rejected with the failed rules;
     ``/comparison/preflight`` explains the full evaluation.
     """
-    resolved_metric_code_a = resolve_metric_code(
-        metric_code_a,
-        metric_id_a,
-        detail="metric_code_a or metric_id_a is required",
-    )
-    resolved_metric_code_b = resolve_metric_code(
-        metric_code_b,
-        metric_id_b,
-        detail="metric_code_b or metric_id_b is required",
-    )
-
     try:
         return list_metric_comparison(
             db,
-            metric_code_a=resolved_metric_code_a,
-            metric_code_b=resolved_metric_code_b,
+            metric_code_a=metric_code_a,
+            metric_code_b=metric_code_b,
             geo_level=geo_level,
             state_fips=state_fips,
             limit=limit,

@@ -127,31 +127,31 @@ def test_real_catalog_latest_timeseries_distribution_and_comparison(
     """Covers: API-024 — real-schema API calls return exact seeded results."""
     client, metric_a, metric_b = real_api_fixture
 
-    catalog = client.get("/api/catalog/metrics", params={"q": metric_a, "limit": 10})
+    catalog = client.get("/api/v1/catalog/metrics", params={"q": metric_a, "limit": 10})
     assert catalog.status_code == 200
     assert [item["metric_code"] for item in catalog.json()["items"]] == [metric_a]
 
-    latest = client.get("/api/observations/latest", params={"metric_code": metric_a})
+    latest = client.get("/api/v1/observations/latest", params={"metric_code": metric_a})
     assert latest.status_code == 200
     assert latest.json()["total"] == 1
     assert latest.json()["items"][0]["value"] == "20"
 
     timeseries = client.get(
-        "/api/observations/timeseries",
+        "/api/v1/observations/timeseries",
         params={"metric_code": metric_a, "geo_id": "us:1"},
     )
     assert timeseries.status_code == 200
     assert [item["value"] for item in timeseries.json()["items"]] == ["10", "20"]
 
     distribution = client.get(
-        "/api/distribution/bins", params={"metric_code": metric_a, "bin_count": 5}
+        "/api/v1/distribution/bins", params={"metric_code": metric_a, "bin_count": 5}
     )
     assert distribution.status_code == 200
     assert distribution.json()["total"] == 1
     assert distribution.json()["items"][0]["count"] == 1
 
     comparison = client.get(
-        "/api/comparison",
+        "/api/v1/comparison",
         params={"metric_code_a": metric_a, "metric_code_b": metric_b},
     )
     assert comparison.status_code == 200
@@ -452,19 +452,21 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
         ("census", census_metric, ["100", "110"]),
         ("bls", bls_metric, ["4", "5"]),
     ):
-        catalog = client.get("/api/catalog/metrics", params={"q": metric, "limit": 10})
+        catalog = client.get(
+            "/api/v1/catalog/metrics", params={"q": metric, "limit": 10}
+        )
         assert catalog.status_code == 200
         assert [row["metric_code"] for row in catalog.json()["items"]] == [metric]
 
         latest = client.get(
-            f"/api/{source}/observations/latest", params={"metric_code": metric}
+            f"/api/v1/{source}/observations/latest", params={"metric_code": metric}
         )
         assert latest.status_code == 200
         assert latest.json()["total"] == 1
         assert latest.json()["items"][0]["source"] in {"CENSUS_ACS", "BLS"}
 
         history = client.get(
-            f"/api/{source}/observations/timeseries",
+            f"/api/v1/{source}/observations/timeseries",
             params={
                 "metric_code": metric,
                 "geo_id": latest.json()["items"][0]["geo_id"],
@@ -473,12 +475,14 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
         assert history.status_code == 200
         assert [row["value"] for row in history.json()["items"]] == expected
 
-        common = client.get("/api/observations/latest", params={"metric_code": metric})
+        common = client.get(
+            "/api/v1/observations/latest", params={"metric_code": metric}
+        )
         assert common.status_code == 200
         assert common.json()["total"] == 1
 
         distribution = client.get(
-            "/api/distribution/bins",
+            "/api/v1/distribution/bins",
             params={"metric_code": metric, "bin_count": 1},
         )
         assert distribution.status_code == 200
@@ -487,7 +491,7 @@ def test_real_database_contract_spans_census_bls_and_cross_source_views(
     # Covers: API-053 — an annual survey estimate and a monthly rate are not
     # comparable, and the declared policy says so instead of serving a join.
     comparison = client.get(
-        "/api/comparison",
+        "/api/v1/comparison",
         params={"metric_code_a": census_metric, "metric_code_b": bls_metric},
     )
     assert comparison.status_code == 422

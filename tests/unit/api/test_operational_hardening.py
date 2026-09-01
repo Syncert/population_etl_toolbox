@@ -76,7 +76,7 @@ def _cache_app(
         return response_factory(request)
 
     application = Starlette(
-        routes=[Route("/api/catalog/metrics", endpoint, methods=["GET"])]
+        routes=[Route("/api/v1/catalog/metrics", endpoint, methods=["GET"])]
     )
     middleware = RedisResponseCacheMiddleware(
         application,
@@ -108,16 +108,16 @@ def test_cache_key_carries_fingerprint_epoch_and_canonical_identity() -> None:
         epoch_provider=epoch_provider,
     )
 
-    client.get("/api/catalog/metrics?a=1&b=2")
-    client.get("/api/catalog/metrics?b=2&a=1")
+    client.get("/api/v1/catalog/metrics?a=1&b=2")
+    client.get("/api/v1/catalog/metrics?b=2&a=1")
     assert len(set(fake.gets)) == 1, "reordered parameters are one identity"
     assert fake.gets[0].startswith("economic-data-studio:api:fp-abc:epoch-1:")
 
-    client.get("/api/catalog/metrics?a=1&b=3")
+    client.get("/api/v1/catalog/metrics?a=1&b=3")
     assert len(set(fake.gets)) == 2, "distinct parameters stay distinct keys"
 
     epochs.append("epoch-2")
-    client.get("/api/catalog/metrics?a=1&b=2")
+    client.get("/api/v1/catalog/metrics?a=1&b=2")
     assert len(set(fake.gets)) == 3, "a republication rotates every key"
     assert fake.gets[-1].startswith("economic-data-studio:api:fp-abc:epoch-2:")
 
@@ -191,7 +191,7 @@ def test_non_redis_error_failures_degrade_to_serving_uncached() -> None:
         fail_with=TimeoutError("socket timed out outside RedisError"),
     )
 
-    response = client.get("/api/catalog/metrics")
+    response = client.get("/api/v1/catalog/metrics")
     assert response.status_code == 200
     assert response.content == b"served"
     assert response.headers["x-cache"] == "MISS"
@@ -210,7 +210,7 @@ def test_oversized_response_streams_through_uncached() -> None:
         return StreamingResponse(stream(), media_type="application/json")
 
     client, fake = _cache_app(factory)
-    response = client.get("/api/catalog/metrics")
+    response = client.get("/api/v1/catalog/metrics")
 
     assert response.status_code == 200
     assert len(response.content) == chunk_count * len(chunk)
@@ -408,7 +408,7 @@ def test_model_status_probe_is_fully_retired() -> None:
     non-goal; when one is designed it arrives as a declared contract.
     """
     paths = app.openapi()["paths"]
-    assert "/api/models/status" not in paths
+    assert "/api/v1/models/status" not in paths
     assert "/api/v1/models/status" not in paths
     assert importlib.util.find_spec("apps.api.services.models_service") is None
     assert importlib.util.find_spec("apps.api.routers.models") is None

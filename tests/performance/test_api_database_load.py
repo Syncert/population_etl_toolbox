@@ -63,7 +63,7 @@ def test_high_cardinality_catalog_filter_stays_within_regression_budget(
             for _ in range(30):
                 started = time.perf_counter()
                 response = client.get(
-                    "/api/catalog/metrics",
+                    "/api/v1/catalog/metrics",
                     params={"q": prefix, "limit": 100, "offset": 1900},
                 )
                 durations.append(time.perf_counter() - started)
@@ -168,7 +168,7 @@ def test_api_traffic_during_atomic_gold_refresh_stays_consistent(
             while not stop.is_set() or len(statuses) < 40:
                 started = time.perf_counter()
                 response = client.get(
-                    "/api/fred/observations/latest",
+                    "/api/v1/fred/observations/latest",
                     params={"metric_code": metric_code},
                 )
                 durations.append(time.perf_counter() - started)

@@ -13,15 +13,15 @@ may not read).
 
 ## Versioning
 
-**Target `/api/v1`.** Every resource is also served on its original
-unversioned `/api` path during a published compatibility window. Those legacy
-responses carry `Deprecation: true`, `Sunset: Mon, 01 Mar 2027 00:00:00 GMT`,
-and `Link: </api/v1/...>; rel="successor-version"` (RFC 8594). Migrating is a
-prefix change and nothing else: the two surfaces are the same router object,
-so parameters and response schemas are identical by construction.
+**Every resource is served under `/api/v1`, and only there.** The unversioned
+`/api` aliases that carried the original MVP paths were retired in API-008,
+while the API had no downstream dependants; an unversioned data path now
+answers `404`. There is exactly one public surface, so nothing can drift
+between two of them.
 
 `GET /health` and `GET /health/ready` (no `/api` prefix) are deployment
-probes, outside the version policy and not deprecated.
+probes. They sit outside the version policy: they carry no data contract, and
+versioning them would put a data-contract promise on infrastructure.
 
 A `v1` change that would break a client belongs in `v2`; additive changes —
 a new optional parameter, a new response field, a new operation, a relaxed

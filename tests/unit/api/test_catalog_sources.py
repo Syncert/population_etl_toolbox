@@ -53,7 +53,7 @@ def test_catalog_sources_route_without_real_db() -> None:
     app.dependency_overrides[get_db_session_dep] = _override_db
     try:
         client = TestClient(app)
-        response = client.get("/api/catalog/sources")
+        response = client.get("/api/v1/catalog/sources")
     finally:
         app.dependency_overrides.clear()
 
@@ -74,7 +74,7 @@ def test_catalog_sources_db_error_is_sanitized() -> None:
     app.dependency_overrides[get_db_session_dep] = _failing_override_db
     try:
         client = TestClient(app)
-        response = client.get("/api/catalog/sources")
+        response = client.get("/api/v1/catalog/sources")
     finally:
         app.dependency_overrides.clear()
 

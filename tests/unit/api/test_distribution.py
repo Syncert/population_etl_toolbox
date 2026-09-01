@@ -1,7 +1,6 @@
 """API unit tests: the registry-dispatched distribution endpoint.
 
-Covers: API-003 (required metric input), API-004 (metric aliases),
-        API-014 (distribution bins),
+Covers: API-003 (required metric input), API-014 (distribution bins),
         API-052 (distribution dispatches to the metric's owning source's
         latest relation with one newest value per geography, declines
         stratified sources with their declared restriction, answers a
@@ -125,34 +124,20 @@ def _relations_in(sql: str) -> set[str]:
     return set(re.findall(r"(?:FROM|JOIN)\s+([a-z_]+\.[a-z_]+)", sql))
 
 
-def test_distribution_requires_metric_code_or_metric_id() -> None:
-    """Covers: API-003 — distribution requires a metric identifier."""
+def test_distribution_requires_metric_code() -> None:
+    """Covers: API-003 — metric_code is required; the metric_id alias is gone."""
     client = _client_with(_DistributionSession())
     try:
-        response = client.get("/api/distribution/bins", params={"bin_count": 7})
+        response = client.get("/api/v1/distribution/bins", params={"bin_count": 7})
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "metric_code or metric_id is required"
-
-
-def test_distribution_accepts_metric_id_alias() -> None:
-    """Covers: API-004, API-014 — a metric alias returns distribution bins."""
-    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
-    client = _client_with(session)
-    try:
-        response = client.get(
-            "/api/distribution/bins",
-            params={"metric_id": "FRED:UNRATE", "bin_count": 7},
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["total"] == 3
-    assert len(payload["items"]) == 2
+    body = response.json()["detail"]
+    assert any(
+        error["loc"][-1] == "metric_code" and error["type"] == "missing"
+        for error in body
+    ), body
 
 
 @pytest.mark.parametrize("bin_count", [1, 20])
@@ -162,7 +147,7 @@ def test_distribution_bin_boundaries_and_counts(bin_count: int) -> None:
     client = _client_with(session)
     try:
         response = client.get(
-            "/api/distribution/bins",
+            "/api/v1/distribution/bins",
             params={"metric_code": "FRED:UNRATE", "bin_count": bin_count},
         )
     finally:
@@ -182,7 +167,7 @@ def test_distribution_invalid_bin_counts_are_rejected(bin_count: int) -> None:
     client = _client_with(_DistributionSession(metric_row=dict(_FRED_METRIC)))
     try:
         response = client.get(
-            "/api/distribution/bins",
+            "/api/v1/distribution/bins",
             params={"metric_code": "FRED:UNRATE", "bin_count": bin_count},
         )
     finally:

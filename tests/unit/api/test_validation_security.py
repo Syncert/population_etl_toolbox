@@ -69,12 +69,12 @@ def _client_for(session) -> Iterator[TestClient]:
 @pytest.mark.parametrize(
     ("path", "params"),
     [
-        ("/api/catalog/metrics", {"limit": 0}),
-        ("/api/catalog/metrics", {"limit": 1001}),
-        ("/api/catalog/metrics", {"offset": -1}),
-        ("/api/observations/latest", {"metric_code": "POP", "limit": 5001}),
+        ("/api/v1/catalog/metrics", {"limit": 0}),
+        ("/api/v1/catalog/metrics", {"limit": 1001}),
+        ("/api/v1/catalog/metrics", {"offset": -1}),
+        ("/api/v1/observations/latest", {"metric_code": "POP", "limit": 5001}),
         (
-            "/api/comparison",
+            "/api/v1/comparison",
             {"metric_code_a": "A", "metric_code_b": "B", "limit": 1001},
         ),
     ],
@@ -90,10 +90,10 @@ def test_pagination_out_of_bounds_is_rejected_before_database(
 @pytest.mark.parametrize(
     ("path", "params"),
     [
-        ("/api/catalog/metrics", {"limit": 1, "offset": 0}),
-        ("/api/catalog/metrics", {"limit": 1000, "offset": 0}),
-        ("/api/observations/latest", {"metric_code": "UNKNOWN", "limit": 1}),
-        ("/api/observations/latest", {"metric_code": "UNKNOWN", "limit": 5000}),
+        ("/api/v1/catalog/metrics", {"limit": 1, "offset": 0}),
+        ("/api/v1/catalog/metrics", {"limit": 1000, "offset": 0}),
+        ("/api/v1/observations/latest", {"metric_code": "UNKNOWN", "limit": 1}),
+        ("/api/v1/observations/latest", {"metric_code": "UNKNOWN", "limit": 5000}),
     ],
 )
 def test_pagination_boundaries_succeed(path: str, params: dict) -> None:
@@ -106,7 +106,7 @@ def test_empty_latest_results_have_stable_contract() -> None:
     """Covers: API-008 — empty latest results return the stable contract."""
     with _client_for(_RecordingEmptySession()) as client:
         response = client.get(
-            "/api/observations/latest", params={"metric_code": "UNKNOWN"}
+            "/api/v1/observations/latest", params={"metric_code": "UNKNOWN"}
         )
     assert response.status_code == 200
     assert response.json()["items"] == []
@@ -118,10 +118,10 @@ def test_unknown_metric_is_consistently_empty_for_latest_and_history() -> None:
     session = _RecordingEmptySession()
     with _client_for(session) as client:
         latest = client.get(
-            "/api/observations/latest", params={"metric_code": "UNKNOWN"}
+            "/api/v1/observations/latest", params={"metric_code": "UNKNOWN"}
         )
         history = client.get(
-            "/api/observations/timeseries",
+            "/api/v1/observations/timeseries",
             params={"metric_code": "UNKNOWN", "geo_id": "state:00"},
         )
     assert latest.status_code == history.status_code == 200
@@ -133,11 +133,11 @@ def test_unknown_geography_is_consistently_empty_for_history() -> None:
     """Covers: API-009 — an unknown geography returns the empty contract."""
     with _client_for(_RecordingEmptySession()) as client:
         common = client.get(
-            "/api/observations/timeseries",
+            "/api/v1/observations/timeseries",
             params={"metric_code": "POP_TOTAL", "geo_id": "state:00"},
         )
         census = client.get(
-            "/api/census/observations/timeseries",
+            "/api/v1/census/observations/timeseries",
             params={"metric_code": "POP_TOTAL", "geo_id": "state:00"},
         )
     assert common.status_code == census.status_code == 200
@@ -151,7 +151,7 @@ def test_sql_metacharacters_remain_bound_parameters() -> None:
     session = _RecordingEmptySession()
     with _client_for(session) as client:
         response = client.get(
-            "/api/observations/latest", params={"metric_code": attack}
+            "/api/v1/observations/latest", params={"metric_code": attack}
         )
     assert response.status_code == 200
     assert session.calls
@@ -164,7 +164,7 @@ def test_oversized_metric_is_rejected_before_database() -> None:
     """Covers: API-018 — oversized metrics fail before database work."""
     with _client_for(_NoExecuteSession()) as client:
         response = client.get(
-            "/api/observations/latest", params={"metric_code": "X" * 201}
+            "/api/v1/observations/latest", params={"metric_code": "X" * 201}
         )
     assert response.status_code == 422
 
@@ -172,23 +172,23 @@ def test_oversized_metric_is_rejected_before_database() -> None:
 @pytest.mark.parametrize(
     ("path", "params"),
     [
-        ("/api/observations/latest", {"metric_id": "X" * 201}),
+        ("/api/v1/observations/latest", {"metric_id": "X" * 201}),
         (
-            "/api/observations/timeseries",
+            "/api/v1/observations/timeseries",
             {"metric_code": "POP", "geo_id": "X" * 201},
         ),
         (
-            "/api/census/observations/latest",
+            "/api/v1/census/observations/latest",
             {"metric_code": "POP", "geo_level": "X" * 51},
         ),
         (
-            "/api/bls/observations/latest",
+            "/api/v1/bls/observations/latest",
             {"metric_code": "UNEMP", "state_fips": "123"},
         ),
-        ("/api/catalog/metrics", {"source_code": "X" * 51}),
-        ("/api/catalog/metrics", {"q": "X" * 201}),
+        ("/api/v1/catalog/metrics", {"source_code": "X" * 51}),
+        ("/api/v1/catalog/metrics", {"q": "X" * 201}),
         (
-            "/api/comparison",
+            "/api/v1/comparison",
             {
                 "metric_code_a": "A",
                 "metric_code_b": "B",
@@ -196,7 +196,7 @@ def test_oversized_metric_is_rejected_before_database() -> None:
             },
         ),
         (
-            "/api/distribution/bins",
+            "/api/v1/distribution/bins",
             {"metric_code": "POP", "state_fips": "123"},
         ),
     ],
@@ -224,7 +224,7 @@ def test_endpoint_specific_query_size_limits_precede_database(
 def test_database_timeout_and_disconnect_are_sanitized(error: Exception) -> None:
     """Covers: API-016 — timeout and disconnect return a sanitized 503."""
     with _client_for(_FailingSession(error)) as client:
-        response = client.get("/api/catalog/sources")
+        response = client.get("/api/v1/catalog/sources")
     assert response.status_code == 503
     assert response.json() == {"detail": "Database service is temporarily unavailable."}
     assert "do-not-leak" not in response.text
@@ -235,8 +235,8 @@ def test_database_timeout_and_disconnect_are_sanitized(error: Exception) -> None
     ("path", "params"),
     [
         ("/health", {}),
-        ("/api/observations/latest", {}),
-        ("/api/observations/latest", {"metric_code": "X" * 201}),
+        ("/api/v1/observations/latest", {}),
+        ("/api/v1/observations/latest", {"metric_code": "X" * 201}),
     ],
 )
 def test_security_headers_are_present_on_success_and_error_responses(

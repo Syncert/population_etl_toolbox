@@ -258,7 +258,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
 
     with real_api_client() as client:
         latest = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 100},
         )
         assert latest.status_code == 200
@@ -281,7 +281,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
 
         # As-released history remains addressable through the source route.
         timeseries = client.get(
-            "/api/pep/observations/timeseries",
+            "/api/v1/pep/observations/timeseries",
             params={"metric_code": POPULATION_METRIC, "geo_id": "us:1", "limit": 500},
         )
         assert timeseries.status_code == 200
@@ -297,7 +297,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         }
 
         place = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": PLACE_METRIC, "geo_level": "place", "limit": 100},
         ).json()
         place_item = _observation(
@@ -317,7 +317,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         # until API-008 retires it. This assertion fails the moment the union
         # widens without registering the change.
         neutral = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 10},
         )
         assert neutral.status_code == 200
@@ -326,7 +326,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         # A PEP estimate must never be reachable under an ACS metric identity.
         assert POPULATION_METRIC.startswith(f"{SOURCE_CODE}:")
         acs_shaped = client.get(
-            "/api/observations/latest",
+            "/api/v1/observations/latest",
             params={"metric_code": "CENSUS_ACS:pep_nst_alldata:POPESTIMATE"},
         )
         assert acs_shaped.status_code == 200
@@ -339,7 +339,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         )
         assert harvested > 0
         catalog = client.get(
-            "/api/catalog/metrics",
+            "/api/v1/catalog/metrics",
             params={"source_code": SOURCE_CODE, "limit": 200},
         )
         assert catalog.status_code == 200
@@ -428,7 +428,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         # consumer can observe.
         assert transform_pep_to_silver(PostgresHookStub(scope.connection_factory)) == 0
         replayed = client.get(
-            "/api/pep/observations/latest",
+            "/api/v1/pep/observations/latest",
             params={"metric_code": POPULATION_METRIC, "limit": 100},
         )
         assert replayed.json() == latest_payload
