@@ -1,8 +1,8 @@
 # ADR-0003: Saved-analysis authentication and persistence
 
-- **Status:** Proposed — requires human approval before any user-scoped
-  persistence is implemented (API-007's explicit precondition)
+- **Status:** Accepted
 - **Date:** 2026-09-01
+- **Accepted:** 2026-09-01 (human review; API-007's explicit precondition)
 - **Decision owners:** API platform maintainers
 - **Related work:** API-007 in the [API development plan](../plans/in_progress/API_DEVELOPMENT_PLAN.md)
 

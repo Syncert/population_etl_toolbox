@@ -10,6 +10,7 @@ services:
     volumes:
       - analytics_postgres_data:/var/lib/postgresql/data
       - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/001_api_readonly.sql:ro
+      - ../../sql/bootstrap/002_app_api.sql:/docker-entrypoint-initdb.d/002_app_api.sql:ro
 
   service_postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -44,6 +45,10 @@ services:
       # Staleness bound after a warehouse publication (API-006): the response
       # cache re-keys on the published harvest state within this window.
       API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
+      # API-owned application storage (ADR-0003): a separate role from the
+      # read-only warehouse connection. Unset disables the saved-analysis
+      # routes, which then answer an explicit 503.
+      APP_API_DATABASE_URL: ${APP_API_DATABASE_URL:-postgresql+psycopg2://api_app_writer:${APP_API_DB_PASSWORD:-api_app_writer}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}}
       # Declared database budgets: fail fast on an exhausted pool, cancel
       # runaway statements server-side, bound connect attempts.
       API_DB_POOL_SIZE: ${API_DB_POOL_SIZE:-5}

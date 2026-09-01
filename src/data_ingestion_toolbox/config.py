@@ -33,6 +33,10 @@ class Settings:
             os.environ.get("API_CACHE_FRESHNESS_SECONDS", "15")
         )
         self.database_url: str = os.environ.get("DATABASE_URL", "")
+        #: API-owned application storage (ADR-0003). Separate URL and role from
+        #: the read-only warehouse connection; empty disables the saved-analysis
+        #: routes, which then answer an explicit 503.
+        self.app_api_database_url: str = os.environ.get("APP_API_DATABASE_URL", "")
         # -- API-owned database limits (API-006). These configure the API's
         # engine only; ETL connections are owned elsewhere and keep their own
         # budgets.

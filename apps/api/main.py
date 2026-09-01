@@ -9,6 +9,7 @@ from apps.api.dependencies import serving_contract_unavailable
 from apps.api.freshness import PublicationEpochProvider
 from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMiddleware
 from apps.api.ratelimit import RateLimitMiddleware
+from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
     catalog,
     cdc,
@@ -16,6 +17,7 @@ from apps.api.routers import (
     distribution,
     health,
     observations,
+    saved_analysis,
     usda_nass,
 )
 from apps.api.routers.source_observations import SOURCE_ROUTERS
@@ -49,6 +51,9 @@ PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
     *SOURCE_ROUTERS,
     cdc.router,
     usda_nass.router,
+    # API-owned, user-scoped storage (ADR-0003). Authenticated and never
+    # publicly cached; its paths sit outside the cacheable prefixes.
+    saved_analysis.router,
 )
 
 
@@ -73,6 +78,7 @@ async def _lifespan(application: FastAPI):
     # the deployment); the cache middleware closes its Redis client on the
     # same lifespan signal.
     dispose_engine()
+    dispose_app_engine()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

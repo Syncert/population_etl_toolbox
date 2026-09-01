@@ -25,13 +25,18 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 #: these; the coverage test uses them to decide which routes still need an
 #: owner, so a new *source* router cannot slip in unclaimed while the
 #: cross-source platform surface keeps evolving under its own plan.
+#: Routes owned by the API platform rather than by any one data product:
+#: the provider-neutral resources, the deployment probes, and the API-owned
+#: user storage. A data product claims only its own source-scoped routes, so
+#: these need no end-to-end product owner. ``/api/models`` is absent because
+#: API-006 retired that probe endpoint outright.
 SHARED_API_PREFIXES: tuple[str, ...] = (
     "/api/health",
     "/api/catalog",
     "/api/observations",
     "/api/distribution",
     "/api/comparison",
-    "/api/models",
+    "/api/analysis-configurations",
 )
 
 

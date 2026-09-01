@@ -245,6 +245,20 @@ Provider-neutral endpoints:
   sources are declined with their declared restriction
 - `GET /api/v1/health`
 
+Saved analysis configurations (API-owned, authenticated — see
+[ADR-0003](docs/decisions/0003-saved-analysis-authentication-and-persistence.md)):
+- `GET|POST /api/v1/analysis-configurations`
+- `GET|PUT|DELETE /api/v1/analysis-configurations/{configuration_id}`
+
+These require `Authorization: Bearer <token>`, are scoped to the authenticated
+owner, and are never publicly cached. Tokens are operator-provisioned with
+`python scripts/provision_app_api.py --apply-schema --issue-token "<label>"`,
+which prints the token exactly once and stores only its SHA-256 digest;
+`--revoke-token-label "<label>"` revokes it. Storage lives in the `app_api`
+schema under the separate `api_app_writer` role — the warehouse role stays
+read-only — and is configured with `APP_API_DATABASE_URL`. With that unset the
+routes answer an explicit 503 and the rest of the API is unaffected.
+
 Source-scoped endpoints:
 - `GET /api/v1/{bls,census,fred,pep}/observations/latest`
 - `GET /api/v1/{bls,census,fred,pep}/observations/timeseries`

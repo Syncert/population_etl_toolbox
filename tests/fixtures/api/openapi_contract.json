@@ -1,6 +1,99 @@
 {
   "openapi": "3.1.0",
   "operations": {
+    "DELETE /api/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "204": "no-content",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "DELETE /api/v1/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "204": "no-content",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "GET /api/analysis-configurations": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "GET /api/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
     "GET /api/bls/observations/latest": {
       "parameters": [
         {
@@ -1672,6 +1765,59 @@
       },
       "tags": [
         "usda-nass"
+      ]
+    },
+    "GET /api/v1/analysis-configurations": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "GET /api/v1/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
       ]
     },
     "GET /api/v1/bls/observations/latest": {
@@ -3364,9 +3510,85 @@
       "tags": [
         "health"
       ]
+    },
+    "POST /api/analysis-configurations": {
+      "parameters": [],
+      "responses": {
+        "201": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "POST /api/v1/analysis-configurations": {
+      "parameters": [],
+      "responses": {
+        "201": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "PUT /api/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
+    },
+    "PUT /api/v1/analysis-configurations/{configuration_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "configuration_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:SavedAnalysisConfiguration",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "analysis-configurations"
+      ]
     }
   },
   "schemas": {
+    "AnalysisDocument": {
+      "properties": {
+        "bin_count": "integer | null",
+        "filters": "object",
+        "kind": "string",
+        "metric_code": "string | null",
+        "metric_code_a": "string | null",
+        "metric_code_b": "string | null",
+        "release": "string | null",
+        "scope": "string",
+        "visualization": "object"
+      },
+      "required": [
+        "kind"
+      ]
+    },
     "CapabilityListResponse": {
       "properties": {
         "items": "array<SourceCapability>",
@@ -3524,6 +3746,15 @@
         "reason",
         "rule",
         "status"
+      ]
+    },
+    "ConfigurationValidation": {
+      "properties": {
+        "reason": "string | null",
+        "valid": "boolean"
+      },
+      "required": [
+        "valid"
       ]
     },
     "DistributionBin": {
@@ -4088,6 +4319,79 @@
         "cache",
         "database",
         "status"
+      ]
+    },
+    "SavedAnalysisConfiguration": {
+      "properties": {
+        "configuration_id": "integer",
+        "created_at": "string(date-time)",
+        "document": "AnalysisDocument",
+        "name": "string",
+        "updated_at": "string(date-time)",
+        "validation": "ConfigurationValidation",
+        "version": "integer"
+      },
+      "required": [
+        "configuration_id",
+        "created_at",
+        "document",
+        "name",
+        "updated_at",
+        "validation",
+        "version"
+      ]
+    },
+    "SavedAnalysisCreateRequest": {
+      "properties": {
+        "document": "AnalysisDocument",
+        "name": "string"
+      },
+      "required": [
+        "document",
+        "name"
+      ]
+    },
+    "SavedAnalysisListResponse": {
+      "properties": {
+        "items": "array<SavedAnalysisSummary>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "SavedAnalysisSummary": {
+      "properties": {
+        "configuration_id": "integer",
+        "created_at": "string(date-time)",
+        "kind": "string | null",
+        "name": "string",
+        "updated_at": "string(date-time)",
+        "version": "integer"
+      },
+      "required": [
+        "configuration_id",
+        "created_at",
+        "name",
+        "updated_at",
+        "version"
+      ]
+    },
+    "SavedAnalysisUpdateRequest": {
+      "properties": {
+        "document": "AnalysisDocument",
+        "expected_version": "integer",
+        "name": "string"
+      },
+      "required": [
+        "document",
+        "expected_version",
+        "name"
       ]
     },
     "SourceCapability": {

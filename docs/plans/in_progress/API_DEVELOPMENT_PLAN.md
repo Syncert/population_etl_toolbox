@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-006 are complete. API-007 is the next ticket.
+- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; API-001 through API-007 are complete. API-008 is the final ticket.
 - **Last updated:** 2026-09-01
-- **Current milestone:** API-006 delivered — the cache key now carries the served-contract fingerprint, the warehouse publication epoch (from `gold_glossary.publisher_harvest_state`), and a canonicalized request identity, so a republication is served within the declared freshness window instead of waiting out the TTL; the API owns its engine with fail-fast pool, connect, and statement-timeout budgets and disposes it on graceful shutdown behind a real readiness probe; cost-classed per-client rate limits, request correlation, and structured secret-safe telemetry are in; the permanently-false `/models/status` probe is retired; and the CI evidence gap is closed — the production-app cache contract now runs in `e2e-performance`.
-- **Next pickup:** API-007 (saved analysis configuration API). **Blocked on a human decision:** the plan requires an approved authentication/authorization, ownership, privacy, retention, and deletion contract before user-scoped persistence begins. The proposed contract is drafted as [ADR-0003](../../decisions/0003-saved-analysis-authentication-and-persistence.md) (operator-provisioned hashed bearer tokens, an `app_api` schema under a separate `api_app_writer` role, owner-scoped SQL with 404 non-enumeration, validation-at-write, optimistic concurrency, hard deletion). Implementation starts once a human accepts or amends it. API-008 is additionally gated on the published Sunset window and evidence that no required consumer still calls the legacy aliases — `apps/web` still consumes twelve `/api` routes today, so consumer migration precedes retirement.
+- **Current milestone:** API-007 delivered — saved analysis configurations are stored as API-owned data under ADR-0003 (accepted 2026-09-01): operator-provisioned hashed bearer tokens, an `app_api` schema and `api_app_writer` role separate from the read-only warehouse connection, owner-scoped SQL with non-enumerable 404s, validation against the live capability and compatibility contracts on write with staleness reported (never repaired) on read, optimistic concurrency, hard deletion, and private uncached responses.
+- **Next pickup:** API-008 (compatibility retirement and consumer handoff), the final phase. It is gated on evidence rather than code: `apps/web` still consumes twelve legacy `/api` routes, so the aliases cannot be removed until that consumer migrates to `/api/v1` (a frontend change outside this plan's scope) or the sunset date in `apps/api/versioning.py` is moved in a reviewed change. The deliverable that is unblocked today is the frontend handoff document naming stable routes, schemas, errors, capabilities, caching behaviour, and version policy.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
@@ -1023,6 +1023,110 @@ not touch; the remaining volume tests pass here and the tier runs on its
 calibrated runner. The full deployment-smoke compose build runs in its
 required CI job and was not rebuilt locally.
 
+## API-007 delivery record (2026-09-01)
+
+ADR-0003 was accepted by human review on 2026-09-01; this implements exactly
+what it specifies. The contract moved additively — ten new operations (five
+resources under both prefixes) and seven new schemas, 304 inserted snapshot
+lines with zero removals. No public analytical route changed.
+
+### The persistence boundary holds
+
+`sql/bootstrap/002_app_api.sql` creates the `app_api` schema, its two tables,
+and the `api_app_writer` role that owns them. `api_reader` receives nothing
+there and keeps its read-only warehouse grants, and `app_api` is deliberately
+absent from the warehouse manifest: it is user content, not warehouse
+content, and no ETL process touches it. The API reaches it through a second
+engine (`apps/api/appdb.py`) with its own pool, so a warehouse read and an
+application write can never share a transaction or a privilege. Both engines
+are disposed on graceful shutdown.
+
+One correction while building it: the DDL first hardcoded
+`GRANT CONNECT ON DATABASE population_etl`, copying the pattern in
+`001_api_readonly.sql`. That makes the file unusable against any
+differently-named database — including the disposable test one — so the grant
+now resolves `current_database()`. One reviewed bootstrap now serves the
+Compose stack, an external deployment, and the test database without a
+hardcoded name drifting between them.
+
+### Authentication is operator-gated and revocable
+
+`apps/api/auth.py` verifies `Authorization: Bearer <token>` by hashing the
+presentation and comparing digests in constant time. Only the SHA-256 digest
+is stored, so a database or backup leak yields nothing presentable.
+`scripts/provision_app_api.py` applies the schema, issues a token (printed
+once, never recoverable), and revokes by label.
+
+Three refusal decisions are deliberate and tested. Absent, malformed,
+unknown, and revoked credentials answer the *same* 401 — distinguishing them
+would let a holder of a cancelled credential probe account state.
+Unconfigured storage answers 503 rather than 401, because telling a caller
+their token is invalid when no token could be verified is a false statement
+about their credential. And another owner's configuration id answers 404
+rather than 403, so ids cannot be enumerated across accounts.
+
+### Storage is scoped, validated, and versioned
+
+Every statement is scoped by `owner_user_id` in SQL — another owner's row is
+never selected, not filtered out afterwards (API-060 asserts the scoping
+appears in every rendered configuration statement). Documents are validated
+on write against the same registry and compatibility policy the live routes
+enforce, so persistence cannot become a back door for a request the API would
+refuse: unknown metrics, undeclared per-source filters, contradictory
+scope/release, analysis-declined sources, and incompatible comparison pairs
+are all 422s. On read the document is re-validated and the verdict *reported*
+— a configuration that has gone stale returns `validation.valid = false` with
+its reason and the user's document intact, because rewriting it would
+substitute the API's guess for their intent. The `visualization` block is
+opaque throughout. Updates state the version they read; a mismatch is a 409
+naming the current version, and deletion is a hard delete effective
+immediately.
+
+Privacy holds by construction as well as by header: the paths lie outside
+every cacheable prefix (API-063 asserts this against the live prefix list),
+responses carry `Cache-Control: private, no-store` and never an `x-cache`
+header, and the API-006 telemetry already logs no headers or bodies, so no
+token or configuration content can reach a log.
+
+### Catalog and evidence
+
+API-059 through API-064 are new; the audited API count moves 58 → 64 and the
+register 237 → 243. `tests/unit/api/test_saved_analysis.py` owns the
+deterministic rows (21 tests); `tests/integration/api/
+test_saved_analysis_contract.py` runs the checked-in bootstrap DDL as written
+and exercises the full lifecycle, cross-account isolation, version conflicts,
+and revocation against real PostgreSQL — and is wired into `e2e-performance`
+in the same change, not left claimed-but-unrun. `SHARED_API_PREFIXES` gains
+the new resource and drops the retired `/api/models`; the operational-scripts
+registry gains the provisioning tool.
+
+### Deferred, deliberately
+
+- Sharing, public configurations, and any social surface: out of scope by
+  plan non-goal; the ownership model is single-owner on purpose.
+- Self-service signup, passwords, and OIDC: deferred until a real consumer
+  needs them, and addable behind the same `Authorization` boundary without
+  moving stored data.
+- Per-account rate budgets: the API-006 limiter meters per client address;
+  metering per account is a refinement once real usage exists.
+
+### Validation
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| API unit | `pytest -m "unit and api" tests/unit/api` | 248 passed |
+| Full unit | `pytest tests/unit --basetemp=<writable>` | 1220 passed |
+| API + Redis integration + resilience | `RUN_INTEGRATION_TESTS=1 pytest -m "integration and not e2e" tests/integration/api tests/integration/redis tests/resilience` | 21 passed, 0 skipped |
+| End-to-end | `RUN_E2E_TESTS=1 pytest -m e2e tests/e2e` | 9 passed in 40s |
+| Compose validity | `docker compose -f infra/docker/docker-compose.yml config` | parses |
+| Lint/format | `ruff check .`, `ruff format --check .` | clean |
+
+Not run, recorded as not run: `make test-performance` (no performance-
+sensitive path changed; the new routes are authenticated and uncached, and
+the tier runs on its calibrated runner) and the frontend contract commands
+(no existing response shape changed and `apps/web` calls none of the new
+routes).
+
 ## Implementation phases
 
 ### API-001 — Dependency proof and current-contract audit
@@ -1097,6 +1201,8 @@ required CI job and was not rebuilt locally.
 - Define retention, export, and deletion behavior before storing user-owned content.
 
 **Acceptance:** Cross-user access is denied, private content is not publicly cached or logged, configuration versions are reproducible, and invalid or stale source capabilities fail with actionable responses.
+
+**Status: complete (2026-09-01).** See "API-007 delivery record" above. ADR-0003 was accepted by human review before implementation began. Cross-user access answers a non-enumerable 404, private content is never publicly cached or logged, versions advance under optimistic concurrency with conflicts refused, and invalid or stale capabilities fail with actionable 422s on write and reported (never repaired) validation state on read.
 
 ### API-008 — Compatibility retirement and consumer handoff
 

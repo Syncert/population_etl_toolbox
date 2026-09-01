@@ -47,6 +47,15 @@ from apps.api.schemas.analysis import (
     DistributionBin,
     DistributionBinsResponse,
 )
+from apps.api.schemas.saved_analysis import (
+    AnalysisDocument,
+    ConfigurationValidation,
+    SavedAnalysisConfiguration,
+    SavedAnalysisCreateRequest,
+    SavedAnalysisListResponse,
+    SavedAnalysisSummary,
+    SavedAnalysisUpdateRequest,
+)
 from apps.api.schemas.usda_nass import (
     NassObservationRow,
     NassObservationListResponse,
@@ -59,10 +68,12 @@ from apps.api.schemas.usda_nass import (
 )
 
 __all__ = [
+    "AnalysisDocument",
     "CdcObservation",
     "CdcObservationListResponse",
     "CompatibilityFinding",
     "ComparisonPreflightResponse",
+    "ConfigurationValidation",
     "ComparisonResponse",
     "ComparisonRow",
     "DistributionBin",
@@ -73,6 +84,11 @@ __all__ = [
     "GeographyListResponse",
     "ObservationRouteCapability",
     "ReadinessResponse",
+    "SavedAnalysisConfiguration",
+    "SavedAnalysisCreateRequest",
+    "SavedAnalysisListResponse",
+    "SavedAnalysisSummary",
+    "SavedAnalysisUpdateRequest",
     "SourceCapability",
     "SourceFreshness",
     "HealthResponse",

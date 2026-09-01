@@ -97,6 +97,7 @@ jobs:
         run: >-
           pytest tests/integration/api/test_real_database_contract.py
           tests/integration/api/test_usda_nass_api_contract.py
+          tests/integration/api/test_saved_analysis_contract.py
           -m "integration and api and database"
           --tb=short -q --junitxml=junit-api-database.xml
 

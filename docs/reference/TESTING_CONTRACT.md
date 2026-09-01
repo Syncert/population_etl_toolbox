@@ -283,7 +283,7 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
 | Database integration | DB-001–DB-023 | None |
-| API | API-001–API-058 | None |
+| API | API-001–API-064 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,13 +291,13 @@ Last audited against the repository on 2026-08-27. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-008 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **211 of 211** | **0 of 211** |
+| **Total** | **217 of 217** | **0 of 217** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 237-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 243-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -563,6 +563,12 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-056 | P0 | Middleware / `unit api` | Cost-classed per-client rate limits | Catalog and analytical requests spend independent per-client budgets; a limited request answers a stable `429 {"detail": ...}` with `Retry-After`; budgets refill continuously; probes are exempt; both buckets are off by default and enabled by deployment configuration; the limiter sits inside the cache so hits cost no budget | One cost class spending the other's budget, an unstable 429 shape, a fixed-window cliff, a throttled probe, or limits on by default in deterministic suites |
 | API-057 | P0 | Middleware / `unit api` | Request correlation and secret-safe telemetry | Every response carries an `X-Request-ID` (echoed when well-formed, generated otherwise, never header-injectable), and one structured completion line records method, route path, status, duration, and cache disposition — never query values, headers, bodies, or credentials | A response without correlation, an injectable id, or a log line carrying parameter values or connection details |
 | API-058 | P0 | Config / `unit api` | Declared engine limits, readiness, and shutdown | The API-owned engine carries the configured pool size/overflow, fail-fast pool timeout, connect timeout, and server-side statement timeout; `/health/ready` answers 503 while the database is unreachable and never gates on Redis; the lifespan shutdown disposes the engine | Default unbounded budgets, a pool exhaustion queueing instead of failing fast, readiness lying about the database or gating on the cache, or connections leaked at shutdown |
+| API-059 | P0 | Security / `unit api` | Saved-analysis bearer authentication | Tokens are stored only as SHA-256 digests and compared in constant time; absent, malformed, unknown, and revoked credentials all answer the same `401` with `WWW-Authenticate: Bearer`; unconfigured storage answers `503` rather than claiming an invalid token; no token value or digest reaches a response body, header, or log line | A credential distinguishable from another by its refusal, a revoked token still accepted, an unverifiable credential reported as invalid, or a token reaching a response or log |
+| API-060 | P0 | Security / `unit api` | Owner scoping and non-enumeration | Every storage statement is scoped by `owner_user_id` in SQL; another owner's configuration id answers the same `404` as one that never existed, on read, update, and delete; another owner's rows never appear in a listing | Cross-user read, write, or delete; a `403` that confirms an id exists; or ownership filtered after the query instead of within it |
+| API-061 | P0 | Service / `unit api` | Configuration validation against live contracts | A document is validated on write against the same capability registry and compatibility policy the live routes enforce — unknown metrics, undeclared filters, contradictory scope/release, incompatible comparison pairs, and analysis-declined sources are refused with actionable 422s; on read a stale configuration is reported as invalid with its reason while the user's document is returned verbatim; the visualization block is stored and returned uninterpreted | Persistence accepting a request the live routes would refuse, a stale configuration silently repaired or hidden, or user content rewritten by the API |
+| API-062 | P0 | Service / `unit api` | Optimistic concurrency and deletion | An update states the version it read and a mismatch answers `409` naming the current version without modifying the stored row; a successful update increments the version; deletion is a hard delete effective immediately and a repeat answers `404` | A silent overwrite of a concurrent edit, a version that does not advance, or a delete that leaves the row readable |
+| API-063 | P0 | Cache / `unit api` | Private content is never publicly cached | Saved-analysis responses carry `Cache-Control: private, no-store`, never carry an `x-cache` header, and their paths lie outside every cacheable public prefix | User content stored in the shared response cache, or a private route made publicly cacheable |
+| API-064 | P0 | Contract / `integration api database` | Real-schema saved-analysis contract | The checked-in `sql/bootstrap/002_app_api.sql` creates exactly the schema the service queries; create, read, list, update, and delete round-trip through PostgreSQL with owner scoping and version conflicts enforced against the real tables; a second account sharing the database sees nothing; an unknown token and a revoked account are both refused | The bootstrap DDL drifting from the service's SQL, cross-account visibility against the real store, a conflicting update applied, or revocation not taking effect |
 
 ### Frontend Tests
 
