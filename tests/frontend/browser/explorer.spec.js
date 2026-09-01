@@ -1,6 +1,7 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-004, WEB-005, WEB-006 — browser catalog/tile/selection/failure flows.
+// Covers: WEB-004, WEB-005, WEB-006, WEB-010 — browser catalog/tile/selection/
+// failure flows and URL reproduction of the selected exploration state.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -145,6 +146,11 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
   await expect(page.getByText("2 historical observations")).toBeVisible();
   await expect(page.getByText("Dane County, Wisconsin")).toBeVisible();
+
+  // The URL reproduces the selected exploration state without navigation.
+  await expect(page).toHaveURL(/metric=ACS%3Aacs5%3AB01003_001/);
+  await expect(page).toHaveURL(/state=55/);
+  await expect(page).toHaveURL(/geo=state%3A55%7Ccounty%3A025/);
 
   const map = page.getByTestId("map-canvas");
   await map.focus();

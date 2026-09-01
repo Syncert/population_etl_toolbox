@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** Continue WEB-002: extend the contract client across the remaining explorer/dashboard fetch paths and decompose `SourceExplorerPage.js` behind the characterization tests.
+- **Next pickup:** Finish WEB-002: decompose `globals.css` alongside the shared shell, add the reusable full-state-vocabulary presentation components, and migrate `SourceDashboard.js`'s remaining ad hoc fetches; then begin WEB-003 capability discovery.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -310,11 +310,43 @@ Not run, recorded as not run: composed-service suites (`make test-api`,
 `make test-martin-*`, deployment smoke) — no API, Martin, or deployment
 contract changed in this pass; they run in their required CI jobs.
 
-Remaining for WEB-002 (next pickup): migrate the explorer's observation/
-timeseries/distribution/tile fetch effects onto the client + request
-tracker, serialize explorer state back into the URL on change, decompose
-`SourceExplorerPage.js`/`globals.css`, and establish the shared shell and
-full state-vocabulary components.
+### WEB-002 second increment (2026-09-01, same day)
+
+- **Explorer decomposition behind characterization tests.**
+  `SourceExplorerPage.js` shrank from 2,171 to ~1,050 lines by extracting:
+  `lib/explorerViewModel.js` (all pure view models — metric/dataset/geo
+  selection, observation joins, choropleth/legend/extrusion models,
+  formatting, margin-of-error vocabulary), `lib/tiles.js` (the Martin
+  boundary: tile discovery, TileJSON template normalization, MVT preview
+  decoding), and `components/TimeSeriesChart.js`. The component re-exports
+  the view models so existing consumers and tests are unchanged.
+- **All explorer data effects now use the contract client** with
+  per-effect `createRequestTracker()` stale-response protection:
+  observations (`getSourceLatestObservations`), distribution bins
+  (`getDistributionBins`), and history (`getSourceTimeseries`).
+  `SOURCE_CONFIG` carries a route `segment` instead of hard-coded paths.
+  Status pills render `apiErrorMessage()` — the HTTP status plus the API's
+  own `detail` (`status 503: fallback unavailable`), keeping the failure
+  vocabulary stable and richer than before.
+- **URL state is now serialized back on change** via
+  `serializeExplorerState` + `history.replaceState`, so the address bar
+  reproduces metric, geography level, map mode, state, and selected
+  geography at all times; defaults are omitted. The browser suite asserts
+  the URL reproduces the pinned selection (spec extended under WEB-010).
+- The reproducible "API Query" tab now reports the same `limit=4000` the
+  map actually requests (it previously displayed `limit=5000`, which did
+  not reproduce the observation set), built by `buildApiPath`.
+
+Validation for this increment: web lint clean; web unit 26 passed (6
+files); production build clean; browser 2 passed (Chromium, including the
+new URL-reproduction assertions); `pytest tests/unit` 1219 passed; `ruff
+check .` clean.
+
+Remaining for WEB-002 (next pickup): decompose `globals.css` with the
+shared application shell, add reusable presentation components for the
+full loading/empty/partial/stale/suppressed/incompatible/unauthorized/
+rate-limited/unavailable state vocabulary, and migrate
+`SourceDashboard.js`'s fetches onto the client.
 
 ## Implementation phases
 

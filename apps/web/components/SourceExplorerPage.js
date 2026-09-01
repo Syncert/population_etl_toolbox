@@ -2,21 +2,63 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { VectorTile } from "@mapbox/vector-tile";
 import { Download, Save } from "lucide-react";
 import maplibregl from "maplibre-gl";
-import Protobuf from "pbf";
 import SourceNote from "./SourceNote";
-import { fetchAllPages, getHealth } from "../lib/api/client";
+import TimeSeriesChart from "./TimeSeriesChart";
+import {
+  apiErrorMessage,
+  buildApiPath,
+  fetchAllPages,
+  getDistributionBins,
+  getHealth,
+  getSourceLatestObservations,
+  getSourceTimeseries,
+} from "../lib/api/client";
+import { createRequestTracker } from "../lib/api/requestState";
+import {
+  CHOROPLETH_PALETTE,
+  buildChoroplethMatchExpression,
+  buildChoroplethModel,
+  buildExtrusionHeightExpression,
+  buildObservationIndex,
+  buildSelectionFilter,
+  distributionBins,
+  formatObservationValue,
+  marginOfErrorText,
+  metricDataset,
+  metricOptions,
+  metricSupportedGeoLevels,
+  metricVariable,
+  normalizeGeoLevel,
+  observationJoinValue,
+  observationName,
+  observationToFeature,
+  observationUnit,
+  pickPreferredMetric,
+  preferredGeoLevelForMetric,
+  tileFilterForGeoLevel,
+} from "../lib/explorerViewModel";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
-import { parseExplorerState } from "../lib/urlState";
+import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
+import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
 
-const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
-const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
+// The pure view models moved to ../lib/explorerViewModel; existing consumers
+// (tests included) keep importing them from here.
+export {
+  buildChoroplethMatchExpression,
+  buildChoroplethModel,
+  buildObservationIndex,
+  buildSelectionFilter,
+  distributionBins,
+  metricOptions,
+  pickPreferredMetric,
+  preferredGeoLevelForMetric,
+} from "../lib/explorerViewModel";
+
 const CATALOG_PAGE_SIZE = 1000;
 const DEFAULT_ACS_DATASET = "acs5";
-const DEFAULT_POPULATION_VARIABLE = "B01003_001";
 const DEFAULT_SOURCE_KEY = "census";
 
 const SOURCE_CONFIG = {
@@ -24,836 +66,36 @@ const SOURCE_CONFIG = {
     key: "census",
     title: "Census",
     sourceCode: "CENSUS_ACS",
-    latestPath: "/api/v1/census/observations/latest",
-    timeseriesPath: "/api/v1/census/observations/timeseries",
+    segment: "census",
     supportsDataset: true,
   },
   fred: {
     key: "fred",
     title: "FRED",
     sourceCode: "FRED",
-    latestPath: "/api/v1/fred/observations/latest",
-    timeseriesPath: "/api/v1/fred/observations/timeseries",
+    segment: "fred",
     supportsDataset: false,
   },
   bls: {
     key: "bls",
     title: "BLS",
     sourceCode: "BLS",
-    latestPath: "/api/v1/bls/observations/latest",
-    timeseriesPath: "/api/v1/bls/observations/timeseries",
+    segment: "bls",
     supportsDataset: false,
   },
 };
 
-function metricDataset(metricCode) {
-  const parts = typeof metricCode === "string" ? metricCode.split(":") : [];
-  return parts.length >= 3 ? parts[1].toLowerCase() : "";
-}
-
-function metricVariable(metricCode) {
-  const parts = typeof metricCode === "string" ? metricCode.split(":") : [];
-  return parts.length >= 3 ? parts.slice(2).join(":") : "";
-}
-
-export function pickPreferredMetric(metrics, dataset, preferredVariable = DEFAULT_POPULATION_VARIABLE) {
-  if (!Array.isArray(metrics) || metrics.length === 0) {
-    return "";
-  }
-
-  const datasetMetrics = metrics.filter(
-    (item) => metricDataset(item.metric_code) === dataset,
-  );
-  const candidates = datasetMetrics.length > 0 ? datasetMetrics : metrics;
-  const matchingVariable = candidates.find(
-    (item) => metricVariable(item.metric_code) === preferredVariable,
-  );
-  const canonicalPopulation = candidates.find(
-    (item) => metricVariable(item.metric_code) === DEFAULT_POPULATION_VARIABLE,
-  );
-
-  return (matchingVariable || canonicalPopulation || candidates[0]).metric_code;
-}
-
-export function metricOptions(metrics) {
-  return (metrics || []).map((metric) => ({
-    value: metric.metric_code,
-    label: `${metric.metric_display_name.replaceAll("!!", " › ")} (${metric.metric_code})`,
-    source: metric.source_code,
-  }));
-}
-
-function normalizeGeoLevel(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-  return value.trim().toUpperCase();
-}
-
-function metricSupportedGeoLevels(metric) {
-  const grains = Array.isArray(metric?.valid_geo_grains)
-    ? metric.valid_geo_grains
-    : [];
-  return grains
-    .map((value) => normalizeGeoLevel(value))
-    .filter(Boolean);
-}
-
-export function preferredGeoLevelForMetric(metric, fallbackGeoLevel = "COUNTY") {
-  const supported = metricSupportedGeoLevels(metric);
-  if (supported.length === 0) {
-    return fallbackGeoLevel;
-  }
-
-  if (supported.includes("COUNTY")) {
-    return "COUNTY";
-  }
-  if (supported.includes("STATE")) {
-    return "STATE";
-  }
-  if (supported.includes("NATIONAL")) {
-    return "NATIONAL";
-  }
-
-  return fallbackGeoLevel;
-}
-
 function fetchAllCatalogItems(resource, params = {}) {
   return fetchAllPages(resource, { params, pageSize: CATALOG_PAGE_SIZE });
-}
-
-function observationToFeature(item) {
-  const longitude = Number(item?.geo_longitude);
-  const latitude = Number(item?.geo_latitude);
-
-  if (!item || !Number.isFinite(longitude) || !Number.isFinite(latitude)) {
-    return null;
-  }
-
-  return {
-    type: "Feature",
-    properties: {
-      geo_id: item.geo_id,
-      geo_level: item.geo_level,
-      metric_code: item.metric_code,
-      value: item.value,
-      name: item.county_name || item.state_name || item.geo_id,
-    },
-    geometry: {
-      type: "Point",
-      coordinates: [longitude, latitude],
-    },
-  };
-}
-
-function isCountyObservation(item) {
-  if (!item) {
-    return false;
-  }
-
-  if (typeof item.geo_level === "string" && item.geo_level.toUpperCase() === "COUNTY") {
-    return true;
-  }
-
-  if (item.county_fips) {
-    return true;
-  }
-
-  return typeof item.geo_id === "string" && item.geo_id.toLowerCase().includes("|county:");
-}
-
-function tileFilterForGeoLevel(geoLevel) {
-  if (geoLevel === "NATIONAL") {
-    return true;
-  }
-  return geoLevel === "STATE"
-    ? ["!", ["has", "county_fips"]]
-    : ["has", "county_fips"];
-}
-
-function collectTileCandidates(catalogPayload) {
-  const candidates = [];
-
-  if (Array.isArray(catalogPayload)) {
-    for (const entry of catalogPayload) {
-      if (typeof entry === "string") {
-        candidates.push(entry);
-      } else if (entry && typeof entry.id === "string") {
-        candidates.push(entry.id);
-      }
-    }
-  } else if (catalogPayload && typeof catalogPayload === "object") {
-    if (Array.isArray(catalogPayload.collections)) {
-      for (const entry of catalogPayload.collections) {
-        if (entry && typeof entry.id === "string") {
-          candidates.push(entry.id);
-        }
-      }
-    }
-
-    for (const key of Object.keys(catalogPayload)) {
-      if (key !== "collections") {
-        candidates.push(key);
-      }
-    }
-  }
-
-  return [...new Set(candidates)].filter(Boolean);
-}
-
-function prioritizeTileCandidates(candidates) {
-  const preferredOrder = ["dim_geo", "dim_geo_latest", "counties"];
-  const remaining = [];
-  const seen = new Set();
-
-  for (const candidate of Array.isArray(candidates) ? candidates : []) {
-    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) {
-      continue;
-    }
-    seen.add(candidate);
-    remaining.push(candidate);
-  }
-
-  const prioritized = [];
-  for (const preferred of preferredOrder) {
-    if (seen.has(preferred)) {
-      prioritized.push(preferred);
-    }
-  }
-
-  for (const candidate of remaining) {
-    if (!prioritized.includes(candidate)) {
-      prioritized.push(candidate);
-    }
-  }
-
-  return prioritized;
-}
-
-function pickJoinKey(fields = {}) {
-  const fieldKeys = Array.isArray(fields)
-    ? fields
-    : Object.keys(fields || {});
-  const preferred = ["geo_id", "geoid", "GEOID", "county_fips", "state_fips"];
-
-  for (const preferredKey of preferred) {
-    const matched = fieldKeys.find(
-      (key) => typeof key === "string" && key.toLowerCase() === preferredKey.toLowerCase(),
-    );
-    if (matched) {
-      return matched;
-    }
-  }
-
-  return "geo_id";
-}
-
-function normalizeTileTemplate(layerId) {
-  return `/tiles/${layerId}/{z}/{x}/{y}`;
-}
-
-function normalizeTileJsonUrl(layerId) {
-  return `/tiles/${layerId}`;
-}
-
-function isVectorTileContentType(contentType) {
-  const normalized = (contentType || "").toLowerCase();
-  return (
-    normalized.includes("application/x-protobuf") ||
-    normalized.includes("application/vnd.mapbox-vector-tile") ||
-    normalized.includes("application/octet-stream")
-  );
-}
-
-function normalizeTileTemplateFromTileJson(rawTemplate) {
-  if (typeof rawTemplate !== "string" || !rawTemplate) {
-    return "";
-  }
-
-  let path = rawTemplate;
-
-  if (rawTemplate.startsWith("http://") || rawTemplate.startsWith("https://")) {
-    try {
-      const parsed = new URL(rawTemplate);
-      path = `${parsed.pathname}${parsed.search}`;
-    } catch {
-      return "";
-    }
-  }
-
-  if (!path.startsWith("/")) {
-    path = `/${path}`;
-  }
-
-  if (path.startsWith("/tiles/")) {
-    return path;
-  }
-
-  return `/tiles${path}`;
-}
-
-function buildSampleUrlFromTemplate(tileTemplate) {
-  return tileTemplate
-    .replaceAll("{z}", "0")
-    .replaceAll("{x}", "0")
-    .replaceAll("{y}", "0")
-    .replaceAll(
-      "{bbox-epsg-3857}",
-      "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
-    );
-}
-
-async function discoverTileMetadata() {
-  const discoveryPaths = ["/tiles/catalog", "/tiles/"];
-  let prioritizedCandidates = [];
-
-  for (const path of discoveryPaths) {
-    try {
-      const response = await fetch(path, { cache: "no-store" });
-      if (!response.ok) {
-        continue;
-      }
-
-      const payload = await response.json();
-      const candidates = collectTileCandidates(payload);
-      if (candidates.length > 0) {
-        prioritizedCandidates = prioritizeTileCandidates(candidates);
-        break;
-      }
-    } catch {
-      // Continue to fallback discovery endpoint.
-    }
-  }
-
-  if (prioritizedCandidates.length === 0) {
-    throw new Error("No tile layer ids discovered from /tiles/catalog or /tiles/");
-  }
-
-  for (const id of prioritizedCandidates) {
-    try {
-      const tileJsonResponse = await fetch(`/tiles/${id}`, { cache: "no-store" });
-      if (!tileJsonResponse.ok) {
-        continue;
-      }
-
-      const tileJson = await tileJsonResponse.json();
-      const vectorLayer =
-        Array.isArray(tileJson.vector_layers) && tileJson.vector_layers.length > 0
-          ? tileJson.vector_layers[0]
-          : null;
-      const sourceLayerCandidates = [];
-
-      if (Array.isArray(tileJson.vector_layers)) {
-        for (const item of tileJson.vector_layers) {
-          if (item && typeof item.id === "string") {
-            sourceLayerCandidates.push(item.id);
-          }
-        }
-      }
-
-      if (typeof tileJson.name === "string") {
-        sourceLayerCandidates.push(tileJson.name);
-      }
-
-      sourceLayerCandidates.push(id);
-
-      const dedupedSourceLayerCandidates = [];
-      const seenCandidates = new Set();
-      for (const candidate of sourceLayerCandidates) {
-        if (!candidate || seenCandidates.has(candidate)) {
-          continue;
-        }
-        seenCandidates.add(candidate);
-        dedupedSourceLayerCandidates.push(candidate);
-      }
-
-      const tileTemplateCandidates = [];
-
-      if (Array.isArray(tileJson.tiles)) {
-        for (const rawTemplate of tileJson.tiles) {
-          const normalizedTemplate = normalizeTileTemplateFromTileJson(rawTemplate);
-          if (normalizedTemplate) {
-            tileTemplateCandidates.push(normalizedTemplate);
-          }
-        }
-      }
-
-      tileTemplateCandidates.push(normalizeTileTemplate(id));
-      tileTemplateCandidates.push(`/${id}/{z}/{x}/{y}`);
-      tileTemplateCandidates.push(`/${id}/{z}/{x}/{y}.pbf`);
-      tileTemplateCandidates.push(`/tiles/${id}/{z}/{x}/{y}`);
-      tileTemplateCandidates.push(`/tiles/${id}/{z}/{x}/{y}.pbf`);
-
-      const dedupedTileTemplateCandidates = [];
-      const seenTileTemplates = new Set();
-      for (const candidateTemplate of tileTemplateCandidates) {
-        if (!candidateTemplate || seenTileTemplates.has(candidateTemplate)) {
-          continue;
-        }
-        seenTileTemplates.add(candidateTemplate);
-        dedupedTileTemplateCandidates.push(candidateTemplate);
-      }
-
-      let selectedTileTemplate = null;
-      for (const candidateTemplate of dedupedTileTemplateCandidates) {
-        const sampleUrl = buildSampleUrlFromTemplate(candidateTemplate);
-        const sampleTileResponse = await fetch(sampleUrl, { cache: "no-store" });
-        const sampleContentType = sampleTileResponse.headers.get("content-type") || "";
-
-        if (sampleTileResponse.ok && isVectorTileContentType(sampleContentType)) {
-          selectedTileTemplate = candidateTemplate;
-          break;
-        }
-      }
-
-      if (!selectedTileTemplate) {
-        continue;
-      }
-
-      const sourceLayerId = dedupedSourceLayerCandidates[0] || id;
-      const joinKey = pickJoinKey(vectorLayer?.fields || {});
-
-      return {
-        layerId: id,
-        sourceLayer: sourceLayerId,
-        sourceLayerCandidates: dedupedSourceLayerCandidates,
-        joinKey,
-        tileJsonUrl: normalizeTileJsonUrl(id),
-        tileTemplate: selectedTileTemplate,
-      };
-    } catch {
-      // Try next layer id.
-    }
-  }
-
-  throw new Error("No healthy vector tile endpoint found from discovered /tiles/{id} candidates");
-}
-
-async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLevel) {
-  const sampleUrl = buildSampleUrlFromTemplate(tileTemplate);
-  const response = await fetch(sampleUrl, { cache: "no-store" });
-
-  if (!response.ok) {
-    throw new Error(`tile sample status ${response.status}`);
-  }
-
-  const tile = new VectorTile(new Protobuf(new Uint8Array(await response.arrayBuffer())));
-  const layer = tile.layers[sourceLayer] || tile.layers[Object.keys(tile.layers)[0]];
-
-  if (!layer) {
-    throw new Error("tile sample contained no vector layers");
-  }
-
-  const features = [];
-  for (let index = 0; index < layer.length; index += 1) {
-    const feature = layer.feature(index).toGeoJSON(0, 0, 0);
-    const isCounty = isCountyObservation(feature.properties);
-    if (
-      geoLevel === "NATIONAL" ||
-      (geoLevel === "COUNTY" && isCounty) ||
-      (geoLevel === "STATE" && !isCounty)
-    ) {
-      features.push(feature);
-    }
-  }
-
-  return {
-    type: "FeatureCollection",
-    features,
-  };
-}
-
-function buildExtrusionHeightExpression(observations, joinKey) {
-  if (!Array.isArray(observations) || observations.length === 0) {
-    return ["literal", 0];
-  }
-
-  const keyedValues = [];
-  const values = observations
-    .map((item) => Number(item.value))
-    .filter((value) => Number.isFinite(value));
-
-  if (values.length === 0) {
-    return ["literal", 0];
-  }
-
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const span = maxValue - minValue || 1;
-
-  for (const item of observations) {
-    const joinValue = observationJoinValue(item, joinKey);
-    const numericValue = Number(item.value);
-    if (!joinValue || !Number.isFinite(numericValue)) {
-      continue;
-    }
-
-    const normalized = (numericValue - minValue) / span;
-    const height = Math.round(200 + normalized * 12000);
-    keyedValues.push(String(joinValue), height);
-  }
-
-  if (keyedValues.length === 0) {
-    return ["literal", 0];
-  }
-
-  return ["match", ["to-string", ["get", joinKey]], ...keyedValues, 0];
-}
-
-function observationJoinValue(item, joinKey) {
-  const normalizedJoinKey = typeof joinKey === "string" ? joinKey.toLowerCase() : "geo_id";
-
-  if (normalizedJoinKey === "geo_id") {
-    return item.geo_id || null;
-  }
-
-  if (normalizedJoinKey === "geoid") {
-    if (item.state_fips && item.county_fips) {
-      return `${item.state_fips}${item.county_fips}`;
-    }
-    if (item.state_fips) {
-      return item.state_fips;
-    }
-    if (typeof item.geo_id === "string") {
-      const countyMatch = item.geo_id.match(/^state:(\d{2})\|county:(\d{3})$/i);
-      if (countyMatch) {
-        return `${countyMatch[1]}${countyMatch[2]}`;
-      }
-
-      const stateMatch = item.geo_id.match(/^state:(\d{2})$/i);
-      if (stateMatch) {
-        return stateMatch[1];
-      }
-    }
-  }
-
-  if (normalizedJoinKey === "county_fips") {
-    return item.county_fips || null;
-  }
-
-  if (normalizedJoinKey === "state_fips") {
-    return item.state_fips || null;
-  }
-
-  return item[joinKey] || item.geo_id || null;
-}
-
-function colorForValue(value, minValue, maxValue) {
-  if (!Number.isFinite(value) || !Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
-    return CHOROPLETH_FALLBACK_COLOR;
-  }
-
-  const span = maxValue - minValue;
-  const ratio = span <= 0 ? 0 : (value - minValue) / span;
-  const index = Math.max(0, Math.min(CHOROPLETH_PALETTE.length - 1, Math.floor(ratio * CHOROPLETH_PALETTE.length)));
-  return CHOROPLETH_PALETTE[index];
-}
-
-export function distributionBins(payload) {
-  const minValue = Number(payload?.min_value);
-  const maxValue = Number(payload?.max_value);
-  const binCount = Number(payload?.bin_count);
-
-  if (
-    !Number.isFinite(minValue) ||
-    !Number.isFinite(maxValue) ||
-    !Number.isInteger(binCount) ||
-    binCount < 1 ||
-    binCount > CHOROPLETH_PALETTE.length ||
-    Number(payload?.total) < 1
-  ) {
-    return [];
-  }
-
-  const counts = new Map(
-    (payload.items || []).map((item) => [Number(item.bin_index), Number(item.count) || 0]),
-  );
-  const width = (maxValue - minValue) / binCount;
-
-  return CHOROPLETH_PALETTE.slice(0, binCount).map((color, index) => ({
-    binIndex: index + 1,
-    color,
-    lowerBound: minValue + index * width,
-    upperBound: index === binCount - 1 ? maxValue : minValue + (index + 1) * width,
-    count: counts.get(index + 1) || 0,
-  }));
-}
-
-function colorForDistributionValue(value, bins) {
-  if (!Number.isFinite(value) || bins.length === 0) {
-    return CHOROPLETH_FALLBACK_COLOR;
-  }
-
-  const matched = bins.find(
-    (bin, index) => index === bins.length - 1 || value < bin.upperBound,
-  );
-  return matched?.color || CHOROPLETH_FALLBACK_COLOR;
-}
-
-function formatLegendValue(value) {
-  if (!Number.isFinite(value)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    notation: Math.abs(value) >= 10000 ? "compact" : "standard",
-    maximumFractionDigits: Math.abs(value) >= 10000 ? 1 : 0,
-  }).format(value);
-}
-
-function formatObservationValue(value, maximumFractionDigits = 1) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits,
-  }).format(numericValue);
-}
-
-function observationName(item) {
-  if (!item) {
-    return "Unknown county";
-  }
-
-  const county = item.geo_name || item.county_name || item.geo_id || "Unknown county";
-  return item.state_name ? `${county}, ${item.state_name}` : county;
-}
-
-function observationUnit(item) {
-  return item?.unit || item?.units || "value";
-}
-
-function marginOfErrorText(item) {
-  const marginOfError = Number(item?.margin_of_error);
-  if (Number.isFinite(marginOfError) && marginOfError >= 0) {
-    const marginPct = Number(item?.margin_of_error_pct);
-    const pctText = Number.isFinite(marginPct) && marginPct >= 0
-      ? ` (${formatObservationValue(marginPct, 2)}%)`
-      : "";
-    return `±${formatObservationValue(marginOfError)}${pctText}`;
-  }
-
-  if (marginOfError === -555555555) {
-    return "0 (Census-controlled estimate)";
-  }
-  if (marginOfError === -222222222) {
-    return "Not computed (insufficient sample)";
-  }
-  if (marginOfError === -333333333) {
-    return "Not computed (open-ended median)";
-  }
-  if (marginOfError === -666666666 || marginOfError === -888888888) {
-    return "Not applicable";
-  }
-  if (marginOfError === -999999999) {
-    return "Suppressed (sample too small)";
-  }
-
-  return "Not provided";
-}
-
-export function buildObservationIndex(observations, joinKey) {
-  const index = new Map();
-
-  for (const item of observations || []) {
-    const joinValue = observationJoinValue(item, joinKey);
-    if (joinValue !== null && joinValue !== undefined && joinValue !== "") {
-      index.set(String(joinValue), item);
-    }
-  }
-
-  return index;
-}
-
-export function buildSelectionFilter(joinValue, joinKey) {
-  return [
-    "==",
-    ["to-string", ["get", joinKey]],
-    joinValue === null || joinValue === undefined ? "__no_selected_county__" : String(joinValue),
-  ];
-}
-
-function TimeSeriesChart({ items }) {
-  const series = (items || [])
-    .map((item) => ({ ...item, numericValue: Number(item.value) }))
-    .filter((item) => Number.isFinite(item.numericValue))
-    .sort((left, right) => String(left.observation_date).localeCompare(String(right.observation_date)));
-
-  if (series.length === 0) {
-    return <p className="subtle chart-empty">No time-series observations are available.</p>;
-  }
-
-  const width = 640;
-  const height = 190;
-  const paddingX = 26;
-  const paddingTop = 18;
-  const paddingBottom = 34;
-  const values = series.map((item) => item.numericValue);
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const valueSpan = maxValue - minValue || 1;
-  const chartWidth = width - paddingX * 2;
-  const chartHeight = height - paddingTop - paddingBottom;
-  const points = series.map((item, index) => {
-    const x = series.length === 1
-      ? width / 2
-      : paddingX + (index / (series.length - 1)) * chartWidth;
-    const y = paddingTop + ((maxValue - item.numericValue) / valueSpan) * chartHeight;
-    return { ...item, x, y };
-  });
-
-  return (
-    <div className="timeseries-chart">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`${series.length} time-series observations from ${series[0].observation_date} to ${series[series.length - 1].observation_date}`}
-      >
-        <line className="chart-gridline" x1={paddingX} x2={width - paddingX} y1={paddingTop} y2={paddingTop} />
-        <line className="chart-gridline" x1={paddingX} x2={width - paddingX} y1={paddingTop + chartHeight} y2={paddingTop + chartHeight} />
-        {points.length > 1 ? (
-          <polyline
-            className="chart-line"
-            points={points.map((point) => `${point.x},${point.y}`).join(" ")}
-          />
-        ) : null}
-        {points.map((point) => (
-          <circle key={`${point.observation_date}-${point.value}`} className="chart-point" cx={point.x} cy={point.y} r="4">
-            <title>{`${point.observation_date}: ${formatObservationValue(point.numericValue)}`}</title>
-          </circle>
-        ))}
-        <text className="chart-label" x={paddingX} y={height - 8}>{series[0].observation_date}</text>
-        <text className="chart-label chart-label-end" x={width - paddingX} y={height - 8}>{series[series.length - 1].observation_date}</text>
-        <text className="chart-value-label" x={paddingX} y={paddingTop - 5}>{formatObservationValue(maxValue)}</text>
-        <text className="chart-value-label" x={paddingX} y={paddingTop + chartHeight - 5}>{formatObservationValue(minValue)}</text>
-      </svg>
-    </div>
-  );
-}
-
-export function buildChoroplethModel(
-  observations,
-  joinKey,
-  distribution = null,
-  missingValueLabel = "No observation",
-) {
-  if (!Array.isArray(observations) || observations.length === 0) {
-    return {
-      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
-      minValue: null,
-      maxValue: null,
-      usesDistribution: false,
-      valueCount: 0,
-    };
-  }
-
-  const keyedValues = [];
-  const keyedMap = new Map();
-
-  for (const item of observations) {
-    const joinValue = observationJoinValue(item, joinKey);
-    const numericValue = Number(item.value);
-    if (!joinValue || !Number.isFinite(numericValue)) {
-      continue;
-    }
-
-    keyedMap.set(String(joinValue), numericValue);
-  }
-
-  const values = [...keyedMap.values()];
-  if (values.length === 0) {
-    return {
-      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
-      minValue: null,
-      maxValue: null,
-      usesDistribution: false,
-      valueCount: 0,
-    };
-  }
-
-  const apiBins = distributionBins(distribution);
-  const usesDistribution = apiBins.length > 0;
-  const minValue = usesDistribution ? apiBins[0].lowerBound : Math.min(...values);
-  const maxValue = usesDistribution ? apiBins[apiBins.length - 1].upperBound : Math.max(...values);
-  const span = maxValue - minValue;
-
-  for (const [key, numericValue] of keyedMap.entries()) {
-    keyedValues.push(
-      key,
-      usesDistribution
-        ? colorForDistributionValue(numericValue, apiBins)
-        : colorForValue(numericValue, minValue, maxValue),
-    );
-  }
-
-  const legendItems = usesDistribution
-    ? apiBins.map((bin, index) => ({
-        color: bin.color,
-        label: apiBins.length === 1
-          ? "All numeric values"
-          : index === 0
-            ? `Up to ${formatLegendValue(bin.upperBound)}`
-            : index === apiBins.length - 1
-              ? `${formatLegendValue(bin.lowerBound)} and above`
-              : `${formatLegendValue(bin.lowerBound)} - ${formatLegendValue(bin.upperBound)}`,
-        count: bin.count,
-      }))
-    : CHOROPLETH_PALETTE.map((color, index) => {
-    if (span <= 0) {
-      return {
-        color,
-        label: formatLegendValue(minValue),
-      };
-    }
-
-    const start = minValue + (span * index) / CHOROPLETH_PALETTE.length;
-    const end = index === CHOROPLETH_PALETTE.length - 1
-      ? maxValue
-      : minValue + (span * (index + 1)) / CHOROPLETH_PALETTE.length;
-
-    return {
-      color,
-      label: `${formatLegendValue(start)} - ${formatLegendValue(end)}`,
-    };
-  });
-
-  legendItems.push({
-    color: CHOROPLETH_FALLBACK_COLOR,
-    label: missingValueLabel,
-  });
-
-  return {
-    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
-    legendItems,
-    minValue,
-    maxValue,
-    usesDistribution,
-    valueCount: values.length,
-  };
-}
-
-export function buildChoroplethMatchExpression(
-  observations,
-  joinKey,
-  distribution = null,
-  missingValueLabel = "No observation",
-) {
-  return buildChoroplethModel(
-    observations,
-    joinKey,
-    distribution,
-    missingValueLabel,
-  ).expression;
 }
 
 export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
   const sourceConfig = SOURCE_CONFIG[sourceKey] || SOURCE_CONFIG[DEFAULT_SOURCE_KEY];
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
+  const observationTracker = useRef(createRequestTracker()).current;
+  const distributionTracker = useRef(createRequestTracker()).current;
+  const timeseriesTracker = useRef(createRequestTracker()).current;
 
   const [apiHealth, setApiHealth] = useState({
     state: "loading",
@@ -1071,31 +313,21 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       return;
     }
 
-    let cancelled = false;
+    const request = observationTracker.begin();
     setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
 
     async function loadObservations() {
       try {
-        const query = new URLSearchParams({
+        const payload = await getSourceLatestObservations(sourceConfig.segment, {
           metric_code: selectedMetric,
           geo_level: selectedGeoLevel,
           limit: "4000",
+          state_fips:
+            selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
         });
-        if (selectedStateFips && selectedGeoLevel !== "NATIONAL") {
-          query.set("state_fips", selectedStateFips);
-        }
-        const response = await fetch(`${sourceConfig.latestPath}?${query.toString()}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`status ${response.status}`);
-        }
-
-        const payload = await response.json();
         const items = Array.isArray(payload.items) ? payload.items : [];
 
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setObservations(items);
           setObservationStatus({
             state: "ok",
@@ -1105,9 +337,9 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setObservations([]);
-          setObservationStatus({ state: "bad", message: error.message });
+          setObservationStatus({ state: "bad", message: apiErrorMessage(error) });
         }
       }
     }
@@ -1115,40 +347,30 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     loadObservations();
 
     return () => {
-      cancelled = true;
+      observationTracker.invalidate();
     };
-  }, [selectedMetric, selectedStateFips, selectedGeoLevel, sourceConfig.latestPath]);
+  }, [observationTracker, selectedMetric, selectedStateFips, selectedGeoLevel, sourceConfig.segment]);
 
   useEffect(() => {
     if (!selectedMetric) {
       return;
     }
 
-    let cancelled = false;
+    const request = distributionTracker.begin();
     setDistribution(null);
     setDistributionStatus({ state: "loading", message: "loading API bins" });
 
     async function loadDistribution() {
       try {
-        const query = new URLSearchParams({
+        const payload = await getDistributionBins({
           metric_code: selectedMetric,
           geo_level: selectedGeoLevel,
           bin_count: String(CHOROPLETH_PALETTE.length),
+          state_fips:
+            selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
         });
-        if (selectedStateFips && selectedGeoLevel !== "NATIONAL") {
-          query.set("state_fips", selectedStateFips);
-        }
-        const response = await fetch(`/api/v1/distribution/bins?${query.toString()}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`status ${response.status}`);
-        }
-
-        const payload = await response.json();
         if (Number(payload.total) === 0) {
-          if (!cancelled) {
+          if (request.isCurrent()) {
             setDistribution(null);
             setDistributionStatus({
               state: "ok",
@@ -1161,7 +383,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           throw new Error("no distribution values");
         }
 
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setDistribution(payload);
           setDistributionStatus({
             state: "ok",
@@ -1169,11 +391,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setDistribution(null);
           setDistributionStatus({
             state: "warn",
-            message: `${error.message}; using local fallback`,
+            message: `${apiErrorMessage(error)}; using local fallback`,
           });
         }
       }
@@ -1184,7 +406,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           fetchAllCatalogItems("/catalog/geographies", { geo_level: "COUNTY" }),
         ]);
 
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setStates(
             stateItems.sort((left, right) =>
               String(left.state_name).localeCompare(String(right.state_name))),
@@ -1195,8 +417,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           );
         }
       } catch (error) {
-        if (!cancelled) {
-          setGeographiesError(error.message || "Unable to load geography selectors.");
+        if (request.isCurrent()) {
+          setGeographiesError(apiErrorMessage(error) || "Unable to load geography selectors.");
         }
       }
     }
@@ -1204,9 +426,9 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     loadDistribution();
 
     return () => {
-      cancelled = true;
+      distributionTracker.invalidate();
     };
-  }, [selectedMetric, selectedStateFips, selectedGeoLevel]);
+  }, [distributionTracker, selectedMetric, selectedStateFips, selectedGeoLevel]);
 
   useEffect(() => {
     if (!selectedMetric || !selectedGeoId) {
@@ -1218,28 +440,19 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       return;
     }
 
-    let cancelled = false;
+    const request = timeseriesTracker.begin();
     setTimeseries([]);
     setTimeseriesStatus({ state: "loading", message: "Loading history..." });
 
     async function loadTimeseries() {
       try {
-        const query = new URLSearchParams({
+        const payload = await getSourceTimeseries(sourceConfig.segment, {
           metric_code: selectedMetric,
           geo_id: selectedGeoId,
           limit: "1000",
         });
-        const response = await fetch(`${sourceConfig.timeseriesPath}?${query.toString()}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`status ${response.status}`);
-        }
-
-        const payload = await response.json();
         const items = Array.isArray(payload.items) ? payload.items : [];
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setTimeseries(items);
           setTimeseriesStatus({
             state: "ok",
@@ -1247,11 +460,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (request.isCurrent()) {
           setTimeseries([]);
           setTimeseriesStatus({
             state: "bad",
-            message: error.message || "Unable to load history.",
+            message: apiErrorMessage(error) || "Unable to load history.",
           });
         }
       }
@@ -1260,9 +473,9 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     loadTimeseries();
 
     return () => {
-      cancelled = true;
+      timeseriesTracker.invalidate();
     };
-  }, [selectedMetric, selectedGeoId, sourceConfig.timeseriesPath]);
+  }, [timeseriesTracker, selectedMetric, selectedGeoId, sourceConfig.segment]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -1707,8 +920,41 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
   }
 
   const apiQuery = selectedMetric
-    ? `${sourceConfig.latestPath}?metric_code=${encodeURIComponent(selectedMetric)}&geo_level=${selectedGeoLevel}${selectedStateFips && selectedGeoLevel !== "NATIONAL" ? `&state_fips=${selectedStateFips}` : ""}&limit=5000`
+    ? buildApiPath(`/${sourceConfig.segment}/observations/latest`, {
+        metric_code: selectedMetric,
+        geo_level: selectedGeoLevel,
+        state_fips:
+          selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
+        limit: "4000",
+      })
     : "Select a metric to generate an API query.";
+
+  // Keep the URL a shareable reproduction of the current exploration state.
+  useEffect(() => {
+    if (!selectedMetric) {
+      return;
+    }
+
+    const query = serializeExplorerState(
+      {
+        metric: selectedMetric,
+        geoLevel: selectedGeoLevel,
+        mapMode,
+        stateFips: selectedStateFips,
+        geoId: selectedGeoId,
+      },
+      {
+        geoLevel: sourceConfig.key === "fred" ? "NATIONAL" : "COUNTY",
+        mapMode: "choropleth",
+      },
+    );
+    const nextUrl = query
+      ? `${window.location.pathname}?${query}`
+      : window.location.pathname;
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.replaceState(null, "", nextUrl);
+    }
+  }, [selectedMetric, selectedGeoLevel, mapMode, selectedStateFips, selectedGeoId, sourceConfig.key]);
 
   function handleSaveChart() {
     if (!selectedMetric || !selectedMetricMeta) return;

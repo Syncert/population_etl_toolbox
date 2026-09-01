@@ -29,6 +29,15 @@ export class ApiError extends Error {
   }
 }
 
+// Status-first message for UI state pills: the HTTP status stays visible
+// and the API's own `detail` travels with it when present.
+export function apiErrorMessage(error) {
+  if (error instanceof ApiError) {
+    return `status ${error.status}${error.detail ? `: ${error.detail}` : ""}`;
+  }
+  return error?.message || "request failed";
+}
+
 function buildQuery(params = {}) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

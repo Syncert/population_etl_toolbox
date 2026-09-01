@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   ApiError,
+  apiErrorMessage,
   apiFetch,
   buildApiPath,
   fetchAllPages,
@@ -91,6 +92,19 @@ describe("versioned API client", () => {
       (caught) => caught,
     );
     expect(down.kind).toBe("unavailable");
+  });
+
+  test("renders status-first user-facing error messages", () => {
+    expect(
+      apiErrorMessage(
+        new ApiError({ status: 503, detail: "fallback unavailable", path: "/api/v1/x" }),
+      ),
+    ).toBe("status 503: fallback unavailable");
+    expect(
+      apiErrorMessage(new ApiError({ status: 404, detail: null, path: "/api/v1/x" })),
+    ).toBe("status 404");
+    expect(apiErrorMessage(new Error("network down"))).toBe("network down");
+    expect(apiErrorMessage(undefined)).toBe("request failed");
   });
 
   test("pages deterministically until the reported total is reached", async () => {
