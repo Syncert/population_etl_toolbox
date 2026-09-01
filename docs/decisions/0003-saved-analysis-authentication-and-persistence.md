@@ -4,7 +4,7 @@
 - **Date:** 2026-09-01
 - **Accepted:** 2026-09-01 (human review; API-007's explicit precondition)
 - **Decision owners:** API platform maintainers
-- **Related work:** API-007 in the [API development plan](../plans/in_progress/API_DEVELOPMENT_PLAN.md)
+- **Related work:** API-007 in the [API development plan](../plans/needs_review/API_DEVELOPMENT_PLAN.md)
 
 ## Context
 
@@ -29,7 +29,7 @@ Constraints already in force:
   non-goal); whatever identity ships here must not overreach into a social
   account system it cannot yet justify.
 
-## Decision (proposed)
+## Decision
 
 ### Identity and authentication
 

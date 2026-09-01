@@ -19,10 +19,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed into `in_progress/` on 2026-08-31. Both gates are proven open; **API-001 through API-008 are complete**. Ready for human review.
+- **Status:** **Ready for review.** Claimed into `in_progress/` on 2026-08-31, delivered through all eight phases, and moved to `needs_review/` on 2026-09-01. Both gates remain proven open. Only a human may accept it into `completed/`.
 - **Last updated:** 2026-09-01
 - **Current milestone:** API-008 delivered — the consumer handoff is published and pinned against the application, and the unversioned `/api` aliases, the `metric_id` alias, and the `population` mapping are retired. `/api/v1` is the single public surface; `apps/web` is migrated and verified by its Chromium browser contract suite.
-- **Next pickup:** None — every phase is complete. The plan is ready to move to `needs_review/` for human acceptance, after which the web analytics plan can begin building on the stable contract.
+- **Next pickup:** None — every phase is complete and the plan now sits in `needs_review/` awaiting human acceptance, after which `WEB_ANALYTICS_FIRST_WAVE_PLAN.md` can begin building on the stable contract.
 - **Depends on:** Completion and human acceptance of every planned data-source pipeline (all seven are accepted), plus stable warehouse publication and the data-quality certification owned by `WAREHOUSE_DATA_QUALITY_PLAN.md`
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census PEP, CDC, FBI UCR Crime, and USDA NASS Crop — plus the shared geography reference and glossary. "Completed source" below means these seven and any source accepted later.
 
