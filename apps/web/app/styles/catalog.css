@@ -194,3 +194,45 @@
   color: var(--muted);
   font-size: 0.67rem;
 }
+
+.catalog-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.metric-row {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.metric-row:last-child {
+  border-bottom: 0;
+}
+
+.metric-row a {
+  border-bottom: 0;
+}
+
+.metric-row .inline-metadata {
+  margin: 8px 0 0;
+  gap: 8px 22px;
+}
+
+.metric-row .subtle {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+}
+
+.catalog-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px 0 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
