@@ -1,8 +1,10 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013 — browser catalog/tile/
-// selection/failure flows, URL reproduction of the selected exploration
-// state, and capability-driven source discovery and switching.
+// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014 — browser
+// catalog/tile/selection/failure flows, URL reproduction of the selected
+// exploration state, capability-driven source discovery and switching, and
+// dispatch-shaped sources reached through the neutral /observations
+// resource with capability-declared filters.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -34,9 +36,23 @@ const pepMetric = {
   valid_time_grains: ["ANNUAL"],
 };
 
-// Shaped like the served CapabilityListResponse: the explorer derives its
-// source tabs from the declared routes, so USDA NASS (no source-scoped
-// latest/timeseries pair) must not become a tab.
+const cdcMetric = {
+  metric_code: "CDC:cdc_places_county:OBESITY",
+  metric_display_name: "Obesity prevalence",
+  source_code: "CDC",
+  valid_geo_grains: ["COUNTY"],
+  valid_time_grains: ["ANNUAL"],
+};
+
+// Shaped like the served CapabilityListResponse. The explorer derives both
+// its source tabs and how it reaches each source from these declarations:
+// a source-scoped latest/timeseries pair, or the neutral /observations
+// resource for a dispatch-shaped source.
+const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
+  { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+];
+
 const capabilityRoutes = (segment) => [
   {
     path: `/api/v1/${segment}/observations/latest`,
@@ -46,10 +62,12 @@ const capabilityRoutes = (segment) => [
     path: `/api/v1/${segment}/observations/timeseries`,
     parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
   },
+  ...neutralRoutes,
+  { path: "/api/v1/distribution/bins", parameters: ["metric_code"] },
 ];
 
 const capabilities = {
-  total: 3,
+  total: 4,
   items: [
     {
       source_code: "CENSUS_ACS",
@@ -77,11 +95,47 @@ const capabilities = {
       datasets: ["nass_crops_county"],
       observation_filters: ["domain_desc", "geo_id"],
       observation_routes: [
+        ...neutralRoutes,
         { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
       ],
     },
+    {
+      source_code: "CDC",
+      display_name: "Centers for Disease Control and Prevention",
+      route_segment: "cdc",
+      served_by_neutral_routes: true,
+      datasets: ["cdc_places_county"],
+      // No state_fips and no distribution route: the explorer must send
+      // neither, and must not present a failed bins request as a fallback.
+      observation_filters: [
+        "adjustment_status",
+        "geo_id",
+        "geo_level",
+        "stratum_id",
+        "year_from",
+        "year_to",
+      ],
+      observation_routes: neutralRoutes,
+    },
   ],
 };
+
+// Provider-neutral envelope rows (NeutralObservation): period bounds rather
+// than one date, `unit`, nested `dimensions`, and a suppressed value that
+// must never render as a number.
+const cdcRow = (stratumId, value, extra = {}) => ({
+  metric_code: cdcMetric.metric_code,
+  source_code: "CDC",
+  geo_id: "state:55|county:025",
+  geo_level: "COUNTY",
+  value,
+  value_status: value === null ? "suppressed" : "valid",
+  unit: "percent",
+  period_start: "2021-01-01",
+  period_end: "2022-12-31",
+  dimensions: { stratum_id: stratumId, adjustment_status: "age-adjusted" },
+  ...extra,
+});
 
 const county = {
   source_code: "CENSUS_ACS",
@@ -114,8 +168,27 @@ const county = {
   margin_of_error_pct: "0.21",
 };
 
-async function installRoutes(page, { failLatest = false } = {}) {
+async function installRoutes(page, { failLatest = false, neutralRequests = [] } = {}) {
   let tileRequests = 0;
+  await page.route("**/api/v1/observations?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    neutralRequests.push(Object.fromEntries(params));
+    const stratum = params.get("stratum_id");
+    const rows = [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
+    const items = stratum ? rows.filter((row) => row.dimensions.stratum_id === stratum) : rows;
+    return route.fulfill({
+      json: {
+        total: items.length,
+        limit: Number(params.get("limit") || 100),
+        offset: 0,
+        scope: params.get("scope") || "latest",
+        metric_code: params.get("metric_code"),
+        source_code: "CDC",
+        items,
+      },
+      headers: { "x-cache": "MISS" },
+    });
+  });
   await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
   await page.route("**/api/v1/catalog/capabilities", (route) => route.fulfill({
     json: capabilities,
@@ -123,7 +196,8 @@ async function installRoutes(page, { failLatest = false } = {}) {
   }));
   await page.route("**/api/v1/catalog/metrics?*", (route) => {
     const sourceCode = new URL(route.request().url()).searchParams.get("source_code");
-    const items = sourceCode === "CENSUS_PEP" ? [pepMetric] : metrics;
+    const bySource = { CENSUS_PEP: [pepMetric], CDC: [cdcMetric] };
+    const items = bySource[sourceCode] || metrics;
     return route.fulfill({
       json: { total: items.length, limit: 1000, offset: 0, items },
       headers: { "x-cache": "MISS" },
@@ -250,12 +324,18 @@ test("source tabs derive from capability discovery and switch the explored sourc
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  // Only the sources whose declared routes carry the explorer workflow
-  // become tabs; USDA NASS is declared but differently shaped.
-  await expect(dashboard).toHaveAttribute("data-source-count", "2");
+  // Every source whose declarations carry an access shape becomes a tab —
+  // the source-scoped pair or the neutral /observations resource — and the
+  // tab records which shape reaches it.
+  await expect(dashboard).toHaveAttribute("data-source-count", "4");
   await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("source-tab-census"))
+    .toHaveAttribute("data-access-shape", "source-scoped");
   await expect(page.getByTestId("source-tab-pep")).toBeVisible();
-  await expect(page.getByTestId("source-tab-usda-nass")).toHaveCount(0);
+  await expect(page.getByTestId("source-tab-usda-nass"))
+    .toHaveAttribute("data-access-shape", "neutral");
+  await expect(page.getByTestId("source-tab-cdc"))
+    .toHaveAttribute("data-access-shape", "neutral");
 
   await page.getByTestId("source-tab-pep").click();
   await expect(dashboard).toHaveAttribute("data-source-key", "pep");
@@ -290,4 +370,49 @@ test("ACS1 partial/no-data and API fallback states remain explicit", async ({ pa
   await expect(failing.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "0");
   await expect(failing.getByText("No observations available for selected metric.")).toHaveCount(1);
   await failing.close();
+});
+
+test("a dispatch-shaped source is explored through the neutral resource", async ({ page }) => {
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto("/explore");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-source-count", "4");
+
+  await page.getByTestId("source-tab-cdc").click();
+  await expect(dashboard).toHaveAttribute("data-access-shape", "neutral");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", cdcMetric.metric_code);
+  await expect(dashboard).toHaveAttribute("data-observation-count", "2");
+
+  // The request went to /observations with scope=latest, and carried only the
+  // filters CDC declares — no state_fips, which would be a 422.
+  const request = neutralRequests.at(-1);
+  expect(request.metric_code).toBe(cdcMetric.metric_code);
+  expect(request.scope).toBe("latest");
+  expect(request.geo_level).toBe("COUNTY");
+  expect(request.state_fips).toBeUndefined();
+
+  // /distribution/bins is not declared for CDC, so it is not requested and
+  // not reported as a failure.
+  await expect(page.getByTestId("distribution-status")).toContainText("not declared for this source");
+
+  // Two declared-dimension series per geography: the map declines to color
+  // rather than keeping whichever row arrived last.
+  await expect(dashboard).toHaveAttribute("data-stratified", "true");
+  await expect(dashboard).toHaveAttribute("data-series-count", "2");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "0");
+  await expect(page.getByTestId("stratification-note")).toContainText("stratum_id");
+
+  // The published period range and the suppressed value stay exact.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("cell", { name: "2021-01-01 – 2022-12-31" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "suppressed" })).toBeVisible();
+
+  // Narrowing the declared dimension filter resolves it to one series and
+  // the map colors again.
+  await page.getByTestId("dimension-select-stratum_id").selectOption("overall");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  expect(neutralRequests.at(-1).stratum_id).toBe("overall");
 });

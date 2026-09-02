@@ -11,7 +11,7 @@ export type GeoLevel = (typeof GEO_LEVELS)[number];
 export type MapMode = (typeof MAP_MODES)[number];
 
 export interface ExplorerState {
-  /** API route segment of the explored source, from capability discovery. */
+  /** Published identity of the explored source, from capability discovery. */
   source?: string;
   metric?: string;
   geoLevel?: GeoLevel;
@@ -27,8 +27,10 @@ export type ExplorerStateDefaults = Pick<
 >;
 
 const STATE_FIPS_PATTERN = /^\d{2}$/;
-// Route segments as the API spells them (e.g. "census", "usda-nass").
-const SOURCE_SEGMENT_PATTERN = /^[a-z][a-z0-9-]{0,49}$/;
+// Published source identities as the API spells them: a route segment
+// ("census", "usda-nass") or, for a source that publishes none, its
+// glossary source code ("FBI_UCR").
+const SOURCE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,49}$/;
 
 function isGeoLevel(value: string): value is GeoLevel {
   return (GEO_LEVELS as readonly string[]).includes(value);
@@ -43,7 +45,7 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
   const state: ExplorerState = {};
 
   const source = params.get("source");
-  if (source && SOURCE_SEGMENT_PATTERN.test(source)) {
+  if (source && SOURCE_KEY_PATTERN.test(source)) {
     state.source = source;
   }
 
@@ -85,7 +87,7 @@ export function serializeExplorerState(
 
   if (
     state.source &&
-    SOURCE_SEGMENT_PATTERN.test(state.source) &&
+    SOURCE_KEY_PATTERN.test(state.source) &&
     state.source !== defaults.source
   ) {
     params.set("source", state.source);

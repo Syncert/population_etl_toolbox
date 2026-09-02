@@ -14,20 +14,21 @@ import StatusPill from "./StatusPill";
 import TimeSeriesChart from "./TimeSeriesChart";
 import {
   apiErrorMessage,
+  apiFetch,
   buildApiPath,
   fetchAllPages,
   getCapabilities,
   getDistributionBins,
   getHealth,
-  getSourceLatestObservations,
-  getSourceTimeseries,
 } from "../lib/api/client";
 import type { QueryParams } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
 import type {
+  CollectionResponse,
   DistributionResponse,
   GeographySummary,
   MetricSummary,
+  Observation,
 } from "../lib/api/types";
 import {
   CHOROPLETH_PALETTE,
@@ -62,6 +63,15 @@ import {
   sourceSupportsParameter,
 } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
+import {
+  buildHistoryObservationRequest,
+  buildLatestObservationRequest,
+  describeStratification,
+  normalizeObservationRows,
+  observationDimensionOptions,
+  observationDimensionValue,
+  observationPeriodLabel,
+} from "../lib/observationAccess";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
@@ -140,6 +150,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [countyGeographies, setCountyGeographies] = useState<GeographySummary[]>([]);
   const [geographiesError, setGeographiesError] = useState("");
   const [selectedStateFips, setSelectedStateFips] = useState("");
+  // Selected values for the active source's own declared dimension filters
+  // (CDC strata/adjustment, FBI UCR subject, USDA NASS domain). Keyed by the
+  // filter name the capability declares; nothing here enumerates sources.
+  const [dimensionSelections, setDimensionSelections] = useState<Record<string, string>>({});
 
   const [observationStatus, setObservationStatus] = useState<RequestStatus>({
     state: "idle",
@@ -179,6 +193,49 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     );
   }, [explorerSources, activeSourceKey, sourceKey]);
 
+  // Only the filters the active source's capability entry declares reach a
+  // request; the builders drop the rest rather than sending one the resource
+  // would reject, or silently widening the answer by omitting it.
+  const supportsStateFilter = sourceSupportsParameter(activeSource, "state_fips");
+  const supportsGeoLevelFilter = sourceSupportsParameter(activeSource, "geo_level");
+  const dimensionFilters = useMemo(
+    () => activeSource?.dimensionFilters || [],
+    [activeSource],
+  );
+  // Keyed by value so the observation effect re-runs on a real selection
+  // change rather than on every render.
+  const dimensionKey = JSON.stringify(
+    dimensionFilters.map((name) => [name, dimensionSelections[name] || ""]),
+  );
+  const latestQuery = useMemo(
+    () => ({
+      metricCode: selectedMetric,
+      geoLevel: selectedGeoLevel,
+      stateFips: selectedGeoLevel === "NATIONAL" ? "" : selectedStateFips,
+      limit: "4000",
+      dimensions: Object.fromEntries(
+        JSON.parse(dimensionKey) as [string, string][],
+      ) as Record<string, string>,
+    }),
+    [selectedMetric, selectedGeoLevel, selectedStateFips, dimensionKey],
+  );
+
+  // A stratified source publishes several declared-dimension series per
+  // geography. Joining them to one polygon or one line would keep whichever
+  // row arrived last, so the map declines and says so instead.
+  const stratification = useMemo(
+    () => describeStratification(observations, dimensionFilters),
+    [observations, dimensionFilters],
+  );
+  const mappableObservations = useMemo(
+    () => (stratification.stratified ? [] : observations),
+    [observations, stratification.stratified],
+  );
+  const historyStratification = useMemo(
+    () => describeStratification(timeseries, dimensionFilters),
+    [timeseries, dimensionFilters],
+  );
+
   const facetOptions = useMemo(() => datasetFacetOptions(metrics), [metrics]);
   const showDatasetSelector = facetOptions.length >= 2;
   const datasetMetrics = useMemo(() => {
@@ -210,8 +267,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     [selectedGeoLevel, states, countyGeographies],
   );
   const observationIndex = useMemo(
-    () => buildObservationIndex(observations, tileMetadata?.joinKey || "geo_id"),
-    [observations, tileMetadata],
+    () => buildObservationIndex(mappableObservations, tileMetadata?.joinKey || "geo_id"),
+    [mappableObservations, tileMetadata],
   );
   const selectedObservation = useMemo(
     () => observations.find((item) => item.geo_id === selectedGeoId) || null,
@@ -409,18 +466,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     async function loadObservations(source: ExplorerSource) {
       try {
-        const payload = await getSourceLatestObservations(source.segment, {
-          metric_code: selectedMetric,
-          geo_level: selectedGeoLevel,
-          limit: "4000",
-          state_fips:
-            selectedStateFips &&
-            selectedGeoLevel !== "NATIONAL" &&
-            sourceSupportsParameter(source, "state_fips")
-              ? selectedStateFips
-              : undefined,
-        });
-        const items = Array.isArray(payload.items) ? payload.items : [];
+        const { resource, params } = buildLatestObservationRequest(source, latestQuery);
+        const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
+        const items = normalizeObservationRows(
+          source,
+          Array.isArray(payload.items) ? payload.items : [],
+        );
 
         if (request.isCurrent()) {
           setObservations(items);
@@ -444,18 +495,33 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       observationTracker.invalidate();
     };
-  }, [observationTracker, selectedMetric, selectedStateFips, selectedGeoLevel, activeSource]);
+  }, [observationTracker, selectedMetric, latestQuery, selectedGeoLevel, activeSource]);
 
   useEffect(() => {
-    if (!selectedMetric) {
+    if (!selectedMetric || !activeSource) {
       return;
     }
 
     const request = distributionTracker.begin();
     setDistribution(null);
-    setDistributionStatus({ state: "loading", message: "loading API bins" });
+    // /distribution/bins answers only for the sources whose capability
+    // entry declares it; for the rest the honest state is "the API does not
+    // serve this here", not a failed request retried as a fallback.
+    const servesDistribution = activeSource.servesDistribution;
+    setDistributionStatus(
+      servesDistribution
+        ? { state: "loading", message: "loading API bins" }
+        : {
+            state: "warn",
+            message: "not declared for this source; using local fallback bins",
+          },
+    );
 
     async function loadDistribution() {
+      if (!servesDistribution) {
+        await loadGeographies();
+        return;
+      }
       try {
         const payload = await getDistributionBins({
           metric_code: selectedMetric,
@@ -495,6 +561,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         }
       }
 
+      await loadGeographies();
+    }
+
+    async function loadGeographies() {
       try {
         const [stateItems, countyItems] = await Promise.all([
           fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "STATE" }),
@@ -523,7 +593,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       distributionTracker.invalidate();
     };
-  }, [distributionTracker, selectedMetric, selectedStateFips, selectedGeoLevel]);
+  }, [distributionTracker, selectedMetric, selectedStateFips, selectedGeoLevel, activeSource]);
 
   useEffect(() => {
     if (!selectedMetric || !selectedGeoId || !activeSource) {
@@ -541,12 +611,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     async function loadTimeseries(source: ExplorerSource) {
       try {
-        const payload = await getSourceTimeseries(source.segment, {
-          metric_code: selectedMetric,
-          geo_id: selectedGeoId,
+        const { resource, params } = buildHistoryObservationRequest(source, {
+          metricCode: selectedMetric,
+          geoId: selectedGeoId,
           limit: "1000",
+          dimensions: dimensionSelections,
         });
-        const items = Array.isArray(payload.items) ? payload.items : [];
+        const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
+        const items = normalizeObservationRows(
+          source,
+          Array.isArray(payload.items) ? payload.items : [],
+        );
         if (request.isCurrent()) {
           setTimeseries(items);
           setTimeseriesStatus({
@@ -570,7 +645,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       timeseriesTracker.invalidate();
     };
-  }, [timeseriesTracker, selectedMetric, selectedGeoId, activeSource]);
+  }, [timeseriesTracker, selectedMetric, selectedGeoId, activeSource, dimensionSelections]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -738,7 +813,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           filter: geoFilter,
           paint: {
             "fill-color": buildChoroplethMatchExpression(
-              observations,
+              mappableObservations,
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
@@ -760,13 +835,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           },
           paint: {
             "fill-extrusion-color": buildChoroplethMatchExpression(
-              observations,
+              mappableObservations,
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
             ) as unknown as ExpressionSpecification,
             "fill-extrusion-height": buildExtrusionHeightExpression(
-              observations,
+              mappableObservations,
               tileMetadata.joinKey,
             ) as unknown as ExpressionSpecification,
             "fill-extrusion-opacity": 0.92,
@@ -790,7 +865,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         "obs-points",
       );
 
-      const selectedItem = observations.find((item) => item.geo_id === selectedGeoId);
+      const selectedItem = mappableObservations.find((item) => item.geo_id === selectedGeoId);
       const selectedJoinValue = selectedItem
         ? observationJoinValue(selectedItem, tileMetadata.joinKey)
         : null;
@@ -844,7 +919,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     activeSourceLayer,
     selectedGeoLevel,
     mapMode,
-    observations,
+    mappableObservations,
     observationIndex,
     geographyIndex,
     distribution,
@@ -863,7 +938,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       return;
     }
 
-    const features = observations
+    const features = mappableObservations
       .map((item) => observationToFeature(item))
       .filter((feature) => feature !== null);
 
@@ -877,7 +952,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         "choropleth-fill",
         "fill-color",
         buildChoroplethMatchExpression(
-          observations,
+          mappableObservations,
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
@@ -890,7 +965,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         "choropleth-extrusion",
         "fill-extrusion-color",
         buildChoroplethMatchExpression(
-          observations,
+          mappableObservations,
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
@@ -900,7 +975,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         "choropleth-extrusion",
         "fill-extrusion-height",
         buildExtrusionHeightExpression(
-          observations,
+          mappableObservations,
           tileMetadata.joinKey,
         ) as unknown as ExpressionSpecification,
       );
@@ -916,7 +991,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     } else if (!selectedStateFips) {
       map.easeTo({ center: [-98.5, 38.5], zoom: 3.05, duration: 800 });
     }
-  }, [mapReady, observations, tileMetadata, distribution, missingValueLabel, selectedStateFips]);
+  }, [mapReady, mappableObservations, tileMetadata, distribution, missingValueLabel, selectedStateFips]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -968,7 +1043,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     const selectedItem =
-      observations.find((item) => item.geo_id === selectedGeoId) || selectedCountyGeography;
+      mappableObservations.find((item) => item.geo_id === selectedGeoId) || selectedCountyGeography;
     const selectedJoinValue = selectedItem
       ? observationJoinValue(selectedItem, tileMetadata.joinKey)
       : null;
@@ -979,7 +1054,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         tileMetadata.joinKey,
       ) as unknown as FilterSpecification,
     );
-  }, [mapReady, observations, selectedCountyGeography, selectedGeoId, tileMetadata]);
+  }, [mapReady, mappableObservations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
 
@@ -1004,22 +1079,21 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   const choroplethModel = useMemo(
     () => buildChoroplethModel(
-      observations,
+      mappableObservations,
       tileMetadata?.joinKey || "geo_id",
       distribution,
       missingValueLabel,
     ),
-    [observations, tileMetadata, distribution, missingValueLabel],
+    [mappableObservations, tileMetadata, distribution, missingValueLabel],
   );
 
+  // The exact request the observation effect issues, built by the same
+  // capability-bounded builder, so the displayed path reproduces the set.
   const apiQuery = selectedMetric && activeSource
-    ? buildApiPath(`/${activeSource.segment}/observations/latest`, {
-        metric_code: selectedMetric,
-        geo_level: selectedGeoLevel,
-        state_fips:
-          selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
-        limit: "4000",
-      })
+    ? (() => {
+        const { resource, params } = buildLatestObservationRequest(activeSource, latestQuery);
+        return buildApiPath(resource, params);
+      })()
     : "Select a metric to generate an API query.";
 
   // Keep the URL a shareable reproduction of the current exploration state.
@@ -1030,7 +1104,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     const query = serializeExplorerState(
       {
-        source: activeSource.segment,
+        source: activeSource.key,
         metric: selectedMetric,
         geoLevel: selectedGeoLevel as ExplorerState["geoLevel"],
         mapMode: mapMode as ExplorerState["mapMode"],
@@ -1051,12 +1125,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
   }, [selectedMetric, selectedGeoLevel, mapMode, selectedStateFips, selectedGeoId, activeSource, sourceKey]);
 
-  function handleSourceChange(segment: string) {
-    if (!segment || segment === activeSource?.segment) {
+  function handleSourceChange(key: string) {
+    if (!key || key === activeSource?.key) {
       return;
     }
     initialStateRef.current = null;
-    setActiveSourceKey(segment);
+    setActiveSourceKey(key);
+    setDimensionSelections({});
     setObservations([]);
     setDistribution(null);
     setTimeseries([]);
@@ -1089,8 +1164,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   }
 
   function exportCsv() {
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "unit", "source", "dataset", "margin_of_error"];
-    const rows = observations.map((item) => [item.geo_id, observationName(item), item.period || item.observation_date, item.metric_code, item.value, observationUnit(item), item.source || item.source_code, item.dataset || item.dataset_code, item.margin_of_error]);
+    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", ...dimensionFilters];
+    const rows = observations.map((item) => [
+      item.geo_id,
+      observationName(item),
+      observationPeriodLabel(item),
+      item.metric_code,
+      item.value,
+      item.value_status,
+      observationUnit(item),
+      item.source || item.source_code,
+      item.dataset || item.dataset_code,
+      item.margin_of_error,
+      ...dimensionFilters.map((name) => observationDimensionValue(item, name)),
+    ]);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
@@ -1136,8 +1223,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       data-county-count={countyGeographies.length}
       data-selected-geo-id={selectedGeoId}
       data-observation-count={observations.length}
-      data-source-key={activeSource?.segment || ""}
+      data-source-key={activeSource?.key || ""}
       data-source-count={explorerSources.length}
+      data-access-shape={activeSource?.accessShape || ""}
+      data-dimension-filters={dimensionFilters.join(",")}
+      data-series-count={stratification.seriesCount}
+      data-stratified={stratification.stratified ? "true" : "false"}
     >
       <header className="explorer-heading">
         <div>
@@ -1153,11 +1244,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             key={source.key}
             type="button"
             role="tab"
-            aria-selected={activeSource?.segment === source.segment}
-            className={activeSource?.segment === source.segment ? "source-tab selected" : "source-tab"}
-            data-testid={`source-tab-${source.segment}`}
-            title={source.title}
-            onClick={() => handleSourceChange(source.segment)}
+            aria-selected={activeSource?.key === source.key}
+            className={activeSource?.key === source.key ? "source-tab selected" : "source-tab"}
+            data-testid={`source-tab-${source.key}`}
+            data-access-shape={source.accessShape}
+            title={`${source.title} (${source.accessShape === "neutral" ? "neutral /observations resource" : "source-scoped routes"})`}
+            onClick={() => handleSourceChange(source.key)}
           >
             {source.tabLabel}
           </button>
@@ -1201,6 +1293,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 data-testid="geo-level-select"
                 value={selectedGeoLevel}
                 onChange={(event) => setSelectedGeoLevel(event.target.value)}
+                disabled={!supportsGeoLevelFilter}
               >
                 <option value="NATIONAL">National</option>
                 <option value="STATE">State</option>
@@ -1259,6 +1352,41 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </select>
             </div>
 
+            {dimensionFilters.map((name) => {
+              const options = observationDimensionOptions(observations, name);
+              return (
+                <div className="control-group" key={name}>
+                  <label htmlFor={`dimension-${name}`}>
+                    {name.replaceAll("_", " ")}
+                  </label>
+                  <select
+                    id={`dimension-${name}`}
+                    className="select"
+                    data-testid={`dimension-select-${name}`}
+                    value={dimensionSelections[name] || ""}
+                    onChange={(event) =>
+                      setDimensionSelections((current) => ({
+                        ...current,
+                        [name]: event.target.value,
+                      }))
+                    }
+                    disabled={options.length === 0}
+                  >
+                    <option value="">
+                      {options.length === 0
+                        ? `No ${name.replaceAll("_", " ")} values loaded`
+                        : `All published ${name.replaceAll("_", " ")}`}
+                    </option>
+                    {options.map((option) => (
+                      <option value={option} key={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+
             <div className="control-group">
               <label htmlFor="state-select">State</label>
               <select
@@ -1270,7 +1398,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   setSelectedStateFips(event.target.value);
                   setSelectedGeoId("");
                 }}
-                disabled={selectedGeoLevel === "NATIONAL"}
+                disabled={selectedGeoLevel === "NATIONAL" || !supportsStateFilter}
               >
                 <option value="">All states</option>
                 {states.map((state) => (
@@ -1315,6 +1443,31 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           {sourcesError ? (
             <p className="subtle">
               Sources error: {sourcesError} (offline fallback source in use)
+            </p>
+          ) : null}
+          {stratification.stratified ? (
+            <p className="coverage-note partial" data-testid="stratification-note">
+              {activeSource?.title} publishes {stratification.seriesCount} series per
+              geography for this selection
+              {stratification.varyingDimensions.length > 0
+                ? ` (${stratification.varyingDimensions.join(", ")})`
+                : ""}
+              . The map and history chart stay blank rather than showing one of them
+              as the value; narrow the{" "}
+              {stratification.varyingDimensions.join(", ") || "source"} filter to chart
+              a single series.
+            </p>
+          ) : null}
+          {!supportsGeoLevelFilter ? (
+            <p className="subtle" data-testid="geo-level-note">
+              {activeSource?.title} declares no geography-level filter, so this source
+              is explored at the grain it publishes.
+            </p>
+          ) : null}
+          {!supportsStateFilter && supportsGeoLevelFilter ? (
+            <p className="subtle" data-testid="state-filter-note">
+              {activeSource?.title} declares no state filter; the state selector scopes
+              the geography list only, not the request.
             </p>
           ) : null}
           {metricsError ? <p className="subtle">Metrics error: {metricsError}</p> : null}
@@ -1362,7 +1515,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <dt>Period</dt>
                     <dd>
                       {selectedCountyHasObservation
-                        ? String(selectedCounty.period || selectedCounty.observation_date || "-")
+                        ? observationPeriodLabel(selectedCounty) || "-"
                         : "Not published"}
                     </dd>
                   </div>
@@ -1391,7 +1544,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <strong>History</strong>
                   <span className={`inline-status ${timeseriesStatus.state}`}>{timeseriesStatus.message}</span>
                 </div>
-                <TimeSeriesChart items={timeseries} />
+                {historyStratification.stratified ? (
+                  <p className="subtle" data-testid="history-stratification-note">
+                    {historyStratification.seriesCount} published series for this
+                    geography
+                    {historyStratification.varyingDimensions.length > 0
+                      ? ` (${historyStratification.varyingDimensions.join(", ")})`
+                      : ""}
+                    . Narrow the filter above to chart one; the table below lists every
+                    row as published.
+                  </p>
+                ) : (
+                  <TimeSeriesChart items={timeseries} />
+                )}
               </>
             ) : (
               <p className="subtle county-prompt">
@@ -1480,26 +1645,38 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 <tr>
                   <th>Geo</th>
                   <th>Level</th>
-                  <th>Date</th>
+                  <th>Period</th>
                   <th>Metric</th>
                   <th>Value</th>
+                  <th>Status</th>
                   <th>Units</th>
+                  {dimensionFilters.map((name) => (
+                    <th key={name}>{name.replaceAll("_", " ")}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {observations.slice(0, 12).map((item) => (
-                  <tr key={`${item.geo_id}-${item.observation_date}-${item.metric_code}`}>
+                {observations.slice(0, 12).map((item, index) => (
+                  <tr
+                    key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${index}`}
+                  >
                     <td>{String(item.county_name || item.state_name || item.geo_id || "-")}</td>
                     <td>{String(item.geo_level || "-")}</td>
-                    <td>{String(item.observation_date ?? "-")}</td>
+                    <td>{observationPeriodLabel(item) || "-"}</td>
                     <td>{item.metric_code}</td>
+                    {/* A missing or suppressed value is never rendered as a
+                        number; the source's own status says why. */}
                     <td>{item.value ?? "-"}</td>
-                    <td>{String(item.units || "-")}</td>
+                    <td>{String(item.value_status || (item.value === null ? "not published" : "-"))}</td>
+                    <td>{observationUnit(item)}</td>
+                    {dimensionFilters.map((name) => (
+                      <td key={name}>{observationDimensionValue(item, name) || "-"}</td>
+                    ))}
                   </tr>
                 ))}
                 {observations.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="subtle">
+                    <td colSpan={7 + dimensionFilters.length} className="subtle">
                       No observations available for selected metric.
                     </td>
                   </tr>

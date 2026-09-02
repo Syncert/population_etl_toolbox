@@ -31,6 +31,14 @@ describe("explorer URL state", () => {
     expect(parseExplorerState("")).toEqual({});
   });
 
+  test("carries the published identity of a source with no route segment", () => {
+    // FBI UCR publishes no route segment, so its glossary source code is the
+    // shareable identity; a link naming it must survive the round trip.
+    expect(parseExplorerState("?source=FBI_UCR")).toEqual({ source: "FBI_UCR" });
+    expect(serializeExplorerState({ source: "FBI_UCR" }, { source: "census" }))
+      .toBe("source=FBI_UCR");
+  });
+
   test("round-trips state through serialize and parse", () => {
     const state = {
       source: "usda-nass",

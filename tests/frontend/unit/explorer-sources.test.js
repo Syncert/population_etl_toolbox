@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 
 // Covers: WEB-013 — explorer sources derive from /catalog/capabilities
 // observation routes; no closed client-side source enumeration decides
-// which sources the explorer can drive.
+// which sources the explorer can drive. WEB-014 owns the neutral access
+// shape those declarations select; this file owns membership, identity,
+// parameter derivation, and the labeled offline fallback.
 
 import {
   FALLBACK_EXPLORER_SOURCES,
@@ -47,6 +49,7 @@ const capabilities = [
     datasets: ["cdc_places_county"],
     observation_filters: ["adjustment_status", "geo_id", "stratum_id"],
     observation_routes: [
+      { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
       { path: "/api/v1/cdc/observations", parameters: ["geo_id", "limit"] },
     ],
   },
@@ -96,37 +99,51 @@ const capabilities = [
     datasets: ["nass_crops_county"],
     observation_filters: ["domain_desc", "geo_id"],
     observation_routes: [
+      { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
       { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
     ],
   },
 ];
 
 describe("capability-derived explorer sources", () => {
-  test("includes exactly the sources whose declared routes carry the explorer workflow", () => {
+  test("membership comes from the declared routes, in the served order", () => {
     const sources = buildExplorerSources(capabilities);
-    // The pair of source-scoped latest + timeseries routes is the
-    // explorer's requirement; membership is decided by the declared
-    // routes, never by a source-code list.
-    expect(sources.map((source) => source.segment)).toEqual([
+    // A source is explorable when its declarations carry either the
+    // source-scoped latest + timeseries pair or the neutral /observations
+    // resource. Every completed source declares one of the two, so all
+    // seven appear — and none of them appears because of a source-code list.
+    expect(sources.map((source) => source.key)).toEqual([
       "bls",
+      "cdc",
       "census",
       "pep",
+      "FBI_UCR",
       "fred",
+      "usda-nass",
     ]);
-    const pep = findExplorerSource(sources, "pep");
-    expect(pep).toMatchObject({
+    expect(findExplorerSource(sources, "pep")).toMatchObject({
       key: "pep",
+      segment: "pep",
       sourceCode: "CENSUS_PEP",
       title: "Census Population Estimates Program",
       tabLabel: "PEP",
+      accessShape: "source-scoped",
     });
   });
 
-  test("excludes dispatch-only and differently-shaped sources without naming them", () => {
-    const sources = buildExplorerSources(capabilities);
-    expect(findExplorerSource(sources, "cdc")).toBeNull();
-    expect(findExplorerSource(sources, "usda-nass")).toBeNull();
-    expect(sources.some((source) => source.sourceCode === "FBI_UCR")).toBe(false);
+  test("a source declaring neither access shape is left out", () => {
+    const undeclared = {
+      source_code: "FUTURE_SOURCE",
+      display_name: "A source whose serving contract is not declared yet",
+      route_segment: "future",
+      served_by_neutral_routes: false,
+      datasets: [],
+      observation_filters: ["geo_id"],
+      observation_routes: [{ path: "/api/v1/future/measures", parameters: [] }],
+    };
+    const sources = buildExplorerSources([...capabilities, undeclared]);
+    expect(findExplorerSource(sources, "future")).toBeNull();
+    expect(sources.some((source) => source.sourceCode === "FUTURE_SOURCE")).toBe(false);
   });
 
   test("parameter support comes from the declared route parameters", () => {
@@ -147,12 +164,20 @@ describe("capability-derived explorer sources", () => {
     expect(sourceSupportsParameter(trimmed[0], "state_fips")).toBe(false);
   });
 
+  test("source keys resolve case-insensitively so shared links stay valid", () => {
+    const sources = buildExplorerSources(capabilities);
+    expect(findExplorerSource(sources, "fbi_ucr")?.sourceCode).toBe("FBI_UCR");
+    expect(findExplorerSource(sources, "CENSUS")?.sourceCode).toBe("CENSUS_ACS");
+    expect(findExplorerSource(sources, "missing")).toBeNull();
+  });
+
   test("degrades to the labeled offline fallback when discovery is unavailable", () => {
     expect(buildExplorerSources([])).toEqual([]);
     expect(buildExplorerSources(null)).toEqual([]);
-    expect(FALLBACK_EXPLORER_SOURCES.map((source) => source.segment)).toEqual(["census"]);
+    expect(FALLBACK_EXPLORER_SOURCES.map((source) => source.key)).toEqual(["census"]);
     expect(findExplorerSource(FALLBACK_EXPLORER_SOURCES, "census")).toMatchObject({
       sourceCode: "CENSUS_ACS",
+      accessShape: "source-scoped",
     });
     expect(findExplorerSource(FALLBACK_EXPLORER_SOURCES, "missing")).toBeNull();
   });
