@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-02
-- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 first increment delivered — the explorer's `SOURCE_CONFIG` enumeration is replaced by capability discovery from `/api/v1/catalog/capabilities` (gaining Census PEP without a source branch), and the explorer view model and component are TypeScript. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second and third increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-003 continued — reach the dispatch-shaped sources (CDC, FBI UCR, USDA NASS) through the neutral `/observations` resource with capability-declared `observation_filters` driving the filter controls, and complete catalog search filters/pagination/provenance per the WEB-003 acceptance criteria.
+- **Next pickup:** WEB-003 remaining acceptance criteria — (a) as-released exploration: surface `/observations/releases` and the `scope=as_released` revision surface in the explorer so a pinned release reproduces an as-released analysis; (b) render map, trend, table, metadata, quality, and export modes only where the selected measure supports them, and provide the explicit non-spatial experience for national or otherwise unmappable series (the map currently renders for every selection and merely declines to colour); (c) retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -487,6 +487,105 @@ Census PEP with zero source-specific code.
 | Web build | `npm --prefix apps/web run build` | production build succeeded |
 | Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 3 passed (Chromium) |
 | Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 249 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (second increment — neutral access, 2026-09-02)
+
+Every completed source now reaches the explorer. Membership and access are
+both read from `/catalog/capabilities`; nothing enumerates sources.
+
+- **Two declared access shapes (`lib/explorerSources.ts`).** A source is
+  explorable when its capability entry carries either the source-scoped
+  `latest` + `timeseries` route pair or the neutral `/observations` route.
+  All seven completed sources qualify, and a source declaring neither is
+  still left out. A segment-less source (FBI UCR publishes no
+  `route_segment`) keeps its published `source_code` as its tab and URL
+  identity, so `/explore?source=FBI_UCR` resolves; keys resolve
+  case-insensitively, so existing `?source=pep` links stay valid.
+- **Requests are bounded by the declaration (`lib/observationAccess.ts`,
+  new).** Source-scoped requests carry only their route's declared
+  parameters; neutral requests carry only the capability's own
+  `observation_filters` plus the universal parameter set. The resource
+  rejects an undeclared filter with a 422 precisely so it is never
+  silently ignored, and dropping one client-side would silently widen the
+  answer instead — CDC declares no `state_fips`, so a selected state is
+  neither sent nor quietly ignored.
+- **The neutral envelope maps on without invention.** Published period
+  bounds render as a range (CDC's multi-year periods keep both bounds
+  rather than being narrowed to one), `unit` and `source_code` fill display
+  fields only when absent, and `value`/`value_status` are untouched. The
+  observation table gained a status column, so a suppressed value cannot
+  read as a number.
+- **Stratified answers are reported, not collapsed.** CDC strata and
+  adjustment statuses, FBI UCR subject types, and USDA NASS domains return
+  several declared-dimension series per geography; the choropleth join and a
+  single-line chart would each have kept whichever row arrived last. The map
+  now declines to colour, the history panel declines to chart, and both name
+  the series count and the declared filter that would narrow them. The
+  generated dimension controls offer the values the source actually
+  published in the answer, never a client-authored option list.
+- **Analysis routes are requested only where declared.** `/distribution/bins`
+  answers for the four analysis-ready sources; for the rest the pill reads
+  "not declared for this source" instead of presenting a failed request as a
+  fallback. The reproducible "API Query" tab is built by the same
+  capability-bounded builder the effect uses.
+- **Evidence:** WEB-014 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner). New `tests/frontend/unit/observation-access.test.js`
+  (15 tests); `explorer-sources` and `url-state` tests extended; a fourth
+  browser spec drives CDC end to end through the intercepted neutral
+  resource, asserting the request carried `scope=latest` and no
+  `state_fips`, the map stayed uncoloured while stratified, the published
+  period range and suppressed status rendered exactly, and narrowing the
+  declared `stratum_id` filter resolved it to one series.
+
+## WEB-003 delivery record (third increment — catalog, 2026-09-02)
+
+- **Deterministic paging over the published total.** The catalog paged with
+  a fixed `limit=100` and presented that page as the result. `lib/catalog.ts`
+  now owns the search state, request parameters, and page model: the page
+  count, display range, and `hasNext` come from the API's own `total`, so a
+  short last page is recognised rather than guessed, and when no total is
+  published the client does not invent one.
+- **A defect the new browser test found before it shipped:** the range was
+  computed from the requested page, so between a page click and its answer
+  the previous page's rows were relabelled with the new range — stale rows
+  presented as current. The range is now anchored to the offset the response
+  published, and the list is marked busy while a page or filter is in flight.
+- **Filters are only the ones the resource declares** (`q`, `source_code`,
+  `active_only`, `limit`, `offset`); filtering a loaded page client-side
+  would report a total the API never published. `active_only` is dropped
+  rather than sent as false, so "include retired metrics" falls through to
+  the resource's own default. Any filter change returns to the first page.
+- **Published provenance and quality context.** Each metric carries its
+  units, measure kind, aggregation characteristic, grains, source object,
+  publisher contract version, source watermark, publication and harvest
+  times, and serving relation, in a fixed order — and a field the publisher
+  did not publish is omitted rather than filled in. The previous "Pending"
+  beside an absent harvest time stated something the source did not.
+  Published freshness renders through the shared status pill; an unpublished
+  one reads as unknown, never as healthy.
+- **Catalog state is URL-reproducible** (`q`, `source`, `include_retired`,
+  `page`) and every metric keeps its direct explorer link.
+- **Evidence:** WEB-015 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 225 of 225 and the
+  behavioral register is at 251 rows, all FULL. `catalog-view-model` tests
+  extended to 12; new `tests/frontend/browser/catalog.spec.js` drives paging,
+  filter reset, provenance, and freshness against intercepted responses.
+
+### Validation (2026-09-02, after both increments)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 64 passed (9 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 7 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 251 rows) |
 | Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
 
 Not run, recorded as not run: composed-service suites (`make test-api`,
