@@ -218,8 +218,12 @@ export function fetchAllGeographies(
   return fetchAllPages<GeographySummary>("/catalog/geographies", { ...options, params });
 }
 
-export function getCapabilities(options?: RequestOptions): Promise<SourceCapability[]> {
-  return apiFetch<SourceCapability[]>("/catalog/capabilities", options);
+// The capability resource answers with the standard `{total, items}`
+// collection envelope (CapabilityListResponse), not a bare array.
+export function getCapabilities(
+  options?: RequestOptions,
+): Promise<CollectionResponse<SourceCapability>> {
+  return apiFetch<CollectionResponse<SourceCapability>>("/catalog/capabilities", options);
 }
 
 export function getFreshness(options?: RequestOptions): Promise<unknown> {

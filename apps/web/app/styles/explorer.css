@@ -24,12 +24,16 @@ main.dashboard {
 
 .source-tab {
   min-width: max-content;
+  border: 0;
   border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   padding: 7px 10px;
+  font-family: inherit;
   font-size: 0.74rem;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .source-tab.selected {

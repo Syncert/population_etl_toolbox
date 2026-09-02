@@ -1,7 +1,8 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-004, WEB-005, WEB-006, WEB-010 — browser catalog/tile/selection/
-// failure flows and URL reproduction of the selected exploration state.
+// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013 — browser catalog/tile/
+// selection/failure flows, URL reproduction of the selected exploration
+// state, and capability-driven source discovery and switching.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -24,6 +25,63 @@ const metrics = [
     valid_time_grains: ["ANNUAL"],
   },
 ];
+
+const pepMetric = {
+  metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  metric_display_name: "Resident population estimate",
+  source_code: "CENSUS_PEP",
+  valid_geo_grains: ["STATE", "COUNTY"],
+  valid_time_grains: ["ANNUAL"],
+};
+
+// Shaped like the served CapabilityListResponse: the explorer derives its
+// source tabs from the declared routes, so USDA NASS (no source-scoped
+// latest/timeseries pair) must not become a tab.
+const capabilityRoutes = (segment) => [
+  {
+    path: `/api/v1/${segment}/observations/latest`,
+    parameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
+  },
+  {
+    path: `/api/v1/${segment}/observations/timeseries`,
+    parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+  },
+];
+
+const capabilities = {
+  total: 3,
+  items: [
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["county_fips", "geo_id", "geo_level", "state_fips"],
+      observation_routes: capabilityRoutes("census"),
+    },
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: capabilityRoutes("pep"),
+    },
+    {
+      source_code: "USDA_NASS",
+      display_name: "USDA National Agricultural Statistics Service",
+      route_segment: "usda-nass",
+      served_by_neutral_routes: true,
+      datasets: ["nass_crops_county"],
+      observation_filters: ["domain_desc", "geo_id"],
+      observation_routes: [
+        { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
+      ],
+    },
+  ],
+};
 
 const county = {
   source_code: "CENSUS_ACS",
@@ -59,10 +117,18 @@ const county = {
 async function installRoutes(page, { failLatest = false } = {}) {
   let tileRequests = 0;
   await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
-  await page.route("**/api/v1/catalog/metrics?*", (route) => route.fulfill({
-    json: { total: metrics.length, limit: 1000, offset: 0, items: metrics },
+  await page.route("**/api/v1/catalog/capabilities", (route) => route.fulfill({
+    json: capabilities,
     headers: { "x-cache": "MISS" },
   }));
+  await page.route("**/api/v1/catalog/metrics?*", (route) => {
+    const sourceCode = new URL(route.request().url()).searchParams.get("source_code");
+    const items = sourceCode === "CENSUS_PEP" ? [pepMetric] : metrics;
+    return route.fulfill({
+      json: { total: items.length, limit: 1000, offset: 0, items },
+      headers: { "x-cache": "MISS" },
+    });
+  });
   await page.route("**/api/v1/catalog/geographies?*", (route) => {
     const level = new URL(route.request().url()).searchParams.get("geo_level");
     const items = level === "STATE"
@@ -79,6 +145,25 @@ async function installRoutes(page, { failLatest = false } = {}) {
       headers: { "x-cache": "MISS" },
     });
   });
+  await page.route("**/api/v1/pep/observations/latest?*", (route) => {
+    const metric = new URL(route.request().url()).searchParams.get("metric_code");
+    const items = [{
+      ...county,
+      metric_code: metric,
+      source_code: "CENSUS_PEP",
+      source: "CENSUS_PEP",
+      dataset_code: "pep_cty_alldata",
+      dataset: "pep_cty_alldata",
+      value: "561800",
+    }];
+    return route.fulfill({
+      json: { total: items.length, limit: 4000, offset: 0, items },
+      headers: { "x-cache": "MISS" },
+    });
+  });
+  await page.route("**/api/v1/pep/observations/timeseries?*", (route) => route.fulfill({
+    json: { total: 0, limit: 1000, offset: 0, items: [] },
+  }));
   await page.route("**/api/v1/census/observations/timeseries?*", (route) => route.fulfill({
     json: {
       total: 2,
@@ -158,6 +243,34 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", "");
   await page.keyboard.press("Enter");
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
+});
+
+test("source tabs derive from capability discovery and switch the explored source", async ({ page }) => {
+  await installRoutes(page);
+  await page.goto("/explore");
+
+  const dashboard = page.getByTestId("dashboard");
+  // Only the sources whose declared routes carry the explorer workflow
+  // become tabs; USDA NASS is declared but differently shaped.
+  await expect(dashboard).toHaveAttribute("data-source-count", "2");
+  await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("source-tab-pep")).toBeVisible();
+  await expect(page.getByTestId("source-tab-usda-nass")).toHaveCount(0);
+
+  await page.getByTestId("source-tab-pep").click();
+  await expect(dashboard).toHaveAttribute("data-source-key", "pep");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", pepMetric.metric_code);
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  await expect(page).toHaveURL(/source=pep/);
+
+  await page.getByTestId("source-tab-census").click();
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(page).not.toHaveURL(/source=/);
+
+  // A shared URL reproduces the non-default source directly.
+  await page.goto("/explore?source=pep");
+  await expect(dashboard).toHaveAttribute("data-source-key", "pep");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", pepMetric.metric_code);
 });
 
 test("ACS1 partial/no-data and API fallback states remain explicit", async ({ page }) => {

@@ -1,9 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Download, Save } from "lucide-react";
 import maplibregl from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  FilterSpecification,
+  MapLayerMouseEvent,
+} from "maplibre-gl";
 import SourceNote from "./SourceNote";
 import StatusPill from "./StatusPill";
 import TimeSeriesChart from "./TimeSeriesChart";
@@ -11,12 +16,19 @@ import {
   apiErrorMessage,
   buildApiPath,
   fetchAllPages,
+  getCapabilities,
   getDistributionBins,
   getHealth,
   getSourceLatestObservations,
   getSourceTimeseries,
 } from "../lib/api/client";
+import type { QueryParams } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
+import type {
+  DistributionResponse,
+  GeographySummary,
+  MetricSummary,
+} from "../lib/api/types";
 import {
   CHOROPLETH_PALETTE,
   buildChoroplethMatchExpression,
@@ -24,6 +36,7 @@ import {
   buildExtrusionHeightExpression,
   buildObservationIndex,
   buildSelectionFilter,
+  datasetFacetOptions,
   distributionBins,
   formatObservationValue,
   marginOfErrorText,
@@ -37,13 +50,23 @@ import {
   observationToFeature,
   observationUnit,
   pickPreferredMetric,
+  preferredDatasetFacet,
   preferredGeoLevelForMetric,
   tileFilterForGeoLevel,
 } from "../lib/explorerViewModel";
+import type { ObservationRow } from "../lib/explorerViewModel";
+import {
+  FALLBACK_EXPLORER_SOURCES,
+  buildExplorerSources,
+  findExplorerSource,
+  sourceSupportsParameter,
+} from "../lib/explorerSources";
+import type { ExplorerSource } from "../lib/explorerSources";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
+import type { ExplorerState } from "../lib/urlState";
 
 // The pure view models moved to ../lib/explorerViewModel; existing consumers
 // (tests included) keep importing them from here.
@@ -59,95 +82,111 @@ export {
 } from "../lib/explorerViewModel";
 
 const CATALOG_PAGE_SIZE = 1000;
-const DEFAULT_ACS_DATASET = "acs5";
-const DEFAULT_SOURCE_KEY = "census";
+const DEFAULT_GEO_LEVEL = "COUNTY";
+const DEFAULT_MAP_MODE = "choropleth";
 
-const SOURCE_CONFIG = {
-  census: {
-    key: "census",
-    title: "Census",
-    sourceCode: "CENSUS_ACS",
-    segment: "census",
-    supportsDataset: true,
-  },
-  fred: {
-    key: "fred",
-    title: "FRED",
-    sourceCode: "FRED",
-    segment: "fred",
-    supportsDataset: false,
-  },
-  bls: {
-    key: "bls",
-    title: "BLS",
-    sourceCode: "BLS",
-    segment: "bls",
-    supportsDataset: false,
-  },
-};
+type TileMetadata = Awaited<ReturnType<typeof discoverTileMetadata>>;
 
-function fetchAllCatalogItems(resource, params = {}) {
-  return fetchAllPages(resource, { params, pageSize: CATALOG_PAGE_SIZE });
+interface RequestStatus {
+  state: string;
+  message: string;
 }
 
-export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
-  const sourceConfig = SOURCE_CONFIG[sourceKey] || SOURCE_CONFIG[DEFAULT_SOURCE_KEY];
-  const mapContainerRef = useRef(null);
-  const mapRef = useRef(null);
+interface HoveredCounty {
+  observation: ObservationRow;
+  hasObservation: boolean;
+  x: number;
+  y: number;
+  alignRight: boolean;
+}
+
+function fetchAllCatalogItems<T>(resource: string, params: QueryParams = {}): Promise<T[]> {
+  return fetchAllPages<T>(resource, { params, pageSize: CATALOG_PAGE_SIZE });
+}
+
+export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey?: string }) {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const metricsTracker = useRef(createRequestTracker()).current;
   const observationTracker = useRef(createRequestTracker()).current;
   const distributionTracker = useRef(createRequestTracker()).current;
   const timeseriesTracker = useRef(createRequestTracker()).current;
+  // The initially requested URL state, applied once when the first metric
+  // catalog for the resolved source arrives.
+  const initialStateRef = useRef<ExplorerState | null>(null);
 
-  const [apiHealth, setApiHealth] = useState({
+  const [apiHealth, setApiHealth] = useState<RequestStatus>({
     state: "loading",
     message: "checking /api/v1/health",
   });
-  const [tilesHealth, setTilesHealth] = useState({
+  const [tilesHealth, setTilesHealth] = useState<RequestStatus>({
     state: "loading",
     message: "checking /tiles/catalog",
   });
-  const [metrics, setMetrics] = useState([]);
+  // Explorer sources come from /api/v1/catalog/capabilities: the sources
+  // whose declared routes carry the explorer's latest + timeseries
+  // workflow. There is no client-side source enumeration; the fallback is
+  // the labeled offline entry for the mounted default source.
+  const [explorerSources, setExplorerSources] = useState<ExplorerSource[]>([]);
+  const [sourcesError, setSourcesError] = useState("");
+  const [activeSourceKey, setActiveSourceKey] = useState(sourceKey);
+  const [metrics, setMetrics] = useState<MetricSummary[]>([]);
   const [metricsError, setMetricsError] = useState("");
-  const [selectedDataset, setSelectedDataset] = useState(DEFAULT_ACS_DATASET);
-  const [selectedGeoLevel, setSelectedGeoLevel] = useState(
-    sourceConfig.key === "fred" ? "NATIONAL" : "COUNTY",
-  );
-  const [mapMode, setMapMode] = useState("choropleth");
+  const [selectedDataset, setSelectedDataset] = useState("");
+  const [selectedGeoLevel, setSelectedGeoLevel] = useState(DEFAULT_GEO_LEVEL);
+  const [mapMode, setMapMode] = useState(DEFAULT_MAP_MODE);
   const [selectedMetric, setSelectedMetric] = useState("");
-  const [states, setStates] = useState([]);
-  const [countyGeographies, setCountyGeographies] = useState([]);
+  const [states, setStates] = useState<GeographySummary[]>([]);
+  const [countyGeographies, setCountyGeographies] = useState<GeographySummary[]>([]);
   const [geographiesError, setGeographiesError] = useState("");
   const [selectedStateFips, setSelectedStateFips] = useState("");
 
-  const [observationStatus, setObservationStatus] = useState({
+  const [observationStatus, setObservationStatus] = useState<RequestStatus>({
     state: "idle",
     message: "selecting metric",
   });
-  const [observations, setObservations] = useState([]);
-  const [distribution, setDistribution] = useState(null);
-  const [distributionStatus, setDistributionStatus] = useState({
+  const [observations, setObservations] = useState<ObservationRow[]>([]);
+  const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
+  const [distributionStatus, setDistributionStatus] = useState<RequestStatus>({
     state: "idle",
     message: "waiting for metric",
   });
-  const [tileMetadata, setTileMetadata] = useState(null);
-  const [activeSourceLayer, setActiveSourceLayer] = useState(null);
+  const [tileMetadata, setTileMetadata] = useState<TileMetadata | null>(null);
+  const [activeSourceLayer, setActiveSourceLayer] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [hoveredCounty, setHoveredCounty] = useState(null);
+  const [hoveredCounty, setHoveredCounty] = useState<HoveredCounty | null>(null);
   const [selectedGeoId, setSelectedGeoId] = useState("");
-  const [timeseries, setTimeseries] = useState([]);
-  const [timeseriesStatus, setTimeseriesStatus] = useState({
+  const [timeseries, setTimeseries] = useState<ObservationRow[]>([]);
+  const [timeseriesStatus, setTimeseriesStatus] = useState<RequestStatus>({
     state: "idle",
     message: "Click a geography to load its history.",
   });
   const [activeTab, setActiveTab] = useState("chart");
   const [saveStatus, setSaveStatus] = useState("");
 
+  // The active source resolves against discovery; an unknown requested
+  // segment degrades to the mounted default, then to the first discovered
+  // source, and is reflected back into the shareable URL below.
+  const activeSource = useMemo<ExplorerSource | null>(() => {
+    if (explorerSources.length === 0) {
+      return null;
+    }
+    return (
+      findExplorerSource(explorerSources, activeSourceKey) ||
+      findExplorerSource(explorerSources, sourceKey) ||
+      explorerSources[0] ||
+      null
+    );
+  }, [explorerSources, activeSourceKey, sourceKey]);
+
+  const facetOptions = useMemo(() => datasetFacetOptions(metrics), [metrics]);
+  const showDatasetSelector = facetOptions.length >= 2;
   const datasetMetrics = useMemo(() => {
-    if (!sourceConfig.supportsDataset) {
+    if (!showDatasetSelector || !selectedDataset) {
       return metrics;
     }
     return metrics.filter((metric) => metricDataset(metric.metric_code) === selectedDataset);
-  }, [metrics, selectedDataset, sourceConfig.supportsDataset]);
+  }, [metrics, selectedDataset, showDatasetSelector]);
   const options = useMemo(
     () => metricOptions(datasetMetrics),
     [datasetMetrics],
@@ -182,21 +221,22 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     () => allGeographies.find((item) => item.geo_id === selectedGeoId) || null,
     [allGeographies, selectedGeoId],
   );
-  const selectedCounty =
+  const selectedCounty: ObservationRow | null =
     selectedObservation || timeseries[timeseries.length - 1] || selectedCountyGeography || null;
   const selectedCountyHasObservation = Boolean(selectedObservation || timeseries.length > 0);
   const geographyIndex = useMemo(
     () => buildObservationIndex(allGeographies, tileMetadata?.joinKey || "geo_id"),
     [allGeographies, tileMetadata],
   );
-  const missingValueLabel = sourceConfig.supportsDataset && selectedDataset === "acs1"
+  const missingValueLabel = selectedDataset === "acs1"
     ? "Not published in ACS1"
     : "No observation";
 
+  // Keep the selected metric consistent with the selected dataset facet.
   useEffect(() => {
-    if (!sourceConfig.supportsDataset) {
+    if (!showDatasetSelector || !selectedDataset) {
       if (!selectedMetric && metrics.length > 0) {
-        setSelectedMetric(metrics[0].metric_code);
+        setSelectedMetric(pickPreferredMetric(metrics, selectedDataset));
       }
       return;
     }
@@ -215,53 +255,44 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     setSelectedMetric(
       pickPreferredMetric(metrics, selectedDataset, metricVariable(selectedMetric)),
     );
-  }, [datasetMetrics, metrics, selectedDataset, selectedMetric, sourceConfig.supportsDataset]);
+  }, [datasetMetrics, metrics, selectedDataset, selectedMetric, showDatasetSelector]);
 
+  // One-time bootstrap: health, capability discovery, URL state, tiles.
   useEffect(() => {
     let cancelled = false;
+    const requested = parseExplorerState(window.location.search);
+    initialStateRef.current = requested;
+    if (requested.source) {
+      setActiveSourceKey(requested.source);
+    }
 
     async function bootstrap() {
       try {
         const payload = await getHealth();
         if (!cancelled) {
-          setApiHealth({ state: "ok", message: payload.status || "ok" });
+          setApiHealth({ state: "ok", message: String(payload.status || "ok") });
         }
       } catch (error) {
         if (!cancelled) {
-          setApiHealth({ state: "bad", message: error.message });
+          setApiHealth({ state: "bad", message: apiErrorMessage(error) });
         }
       }
 
       try {
-        const metricQuery = {
-          source_code: sourceConfig.sourceCode,
-          active_only: "true",
-        };
-        const items = await fetchAllCatalogItems("/catalog/metrics", metricQuery);
-
+        const payload = await getCapabilities();
+        const sources = buildExplorerSources(payload.items);
         if (!cancelled) {
-          setMetrics(items);
-          const requested = parseExplorerState(window.location.search);
-          if (requested.metric && items.some((item) => item.metric_code === requested.metric)) {
-            if (sourceConfig.supportsDataset) {
-              setSelectedDataset(metricDataset(requested.metric) || DEFAULT_ACS_DATASET);
-            }
-            setSelectedMetric(requested.metric);
-          } else if (items.length > 0) {
-            setSelectedMetric(items[0].metric_code);
+          if (sources.length > 0) {
+            setExplorerSources(sources);
+          } else {
+            setSourcesError("capability discovery returned no explorable sources");
+            setExplorerSources(FALLBACK_EXPLORER_SOURCES);
           }
-          if (requested.geoLevel === "STATE" || requested.geoLevel === "COUNTY") {
-            setSelectedGeoLevel(requested.geoLevel);
-          }
-          if (requested.mapMode) {
-            setMapMode(requested.mapMode);
-          }
-          if (requested.stateFips) setSelectedStateFips(requested.stateFips);
-          if (requested.geoId) setSelectedGeoId(requested.geoId);
         }
       } catch (error) {
         if (!cancelled) {
-          setMetricsError(error.message || "Unable to load metrics.");
+          setSourcesError(apiErrorMessage(error));
+          setExplorerSources(FALLBACK_EXPLORER_SOURCES);
         }
       }
 
@@ -275,7 +306,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
         if (!cancelled) {
           setTilesHealth({
             state: "warn",
-            message: error.message || "catalog unavailable",
+            message: error instanceof Error ? error.message : "catalog unavailable",
           });
         }
       }
@@ -286,7 +317,66 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     return () => {
       cancelled = true;
     };
-  }, [sourceConfig.sourceCode, sourceConfig.supportsDataset]);
+  }, []);
+
+  // Per-source metric catalog; re-runs when the active source changes.
+  useEffect(() => {
+    if (!activeSource) {
+      return;
+    }
+
+    const request = metricsTracker.begin();
+    setMetrics([]);
+    setMetricsError("");
+    setSelectedMetric("");
+    setSelectedDataset("");
+
+    async function loadMetrics(source: ExplorerSource) {
+      try {
+        const items = await fetchAllCatalogItems<MetricSummary>("/catalog/metrics", {
+          source_code: source.sourceCode,
+          active_only: "true",
+        });
+
+        if (!request.isCurrent()) {
+          return;
+        }
+
+        setMetrics(items);
+        const requested = initialStateRef.current;
+        initialStateRef.current = null;
+        if (
+          requested?.metric &&
+          items.some((item) => item.metric_code === requested.metric)
+        ) {
+          setSelectedDataset(metricDataset(requested.metric));
+          setSelectedMetric(requested.metric);
+        } else if (items.length > 0) {
+          const facet = preferredDatasetFacet(items);
+          setSelectedDataset(facet);
+          setSelectedMetric(pickPreferredMetric(items, facet));
+        }
+        if (requested?.geoLevel === "STATE" || requested?.geoLevel === "COUNTY") {
+          setSelectedGeoLevel(requested.geoLevel);
+        }
+        if (requested?.mapMode) {
+          setMapMode(requested.mapMode);
+        }
+        if (requested?.stateFips) setSelectedStateFips(requested.stateFips);
+        if (requested?.geoId) setSelectedGeoId(requested.geoId);
+      } catch (error) {
+        if (request.isCurrent()) {
+          setMetricsError(apiErrorMessage(error) || "Unable to load metrics.");
+        }
+      }
+    }
+
+    loadMetrics(activeSource);
+
+    return () => {
+      metricsTracker.invalidate();
+    };
+  }, [metricsTracker, activeSource]);
 
   useEffect(() => {
     setSelectedGeoId("");
@@ -310,21 +400,25 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
   }, [tileMetadata, activeSourceLayer]);
 
   useEffect(() => {
-    if (!selectedMetric) {
+    if (!selectedMetric || !activeSource) {
       return;
     }
 
     const request = observationTracker.begin();
     setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
 
-    async function loadObservations() {
+    async function loadObservations(source: ExplorerSource) {
       try {
-        const payload = await getSourceLatestObservations(sourceConfig.segment, {
+        const payload = await getSourceLatestObservations(source.segment, {
           metric_code: selectedMetric,
           geo_level: selectedGeoLevel,
           limit: "4000",
           state_fips:
-            selectedStateFips && selectedGeoLevel !== "NATIONAL" ? selectedStateFips : undefined,
+            selectedStateFips &&
+            selectedGeoLevel !== "NATIONAL" &&
+            sourceSupportsParameter(source, "state_fips")
+              ? selectedStateFips
+              : undefined,
         });
         const items = Array.isArray(payload.items) ? payload.items : [];
 
@@ -345,12 +439,12 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       }
     }
 
-    loadObservations();
+    loadObservations(activeSource);
 
     return () => {
       observationTracker.invalidate();
     };
-  }, [observationTracker, selectedMetric, selectedStateFips, selectedGeoLevel, sourceConfig.segment]);
+  }, [observationTracker, selectedMetric, selectedStateFips, selectedGeoLevel, activeSource]);
 
   useEffect(() => {
     if (!selectedMetric) {
@@ -403,8 +497,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
       try {
         const [stateItems, countyItems] = await Promise.all([
-          fetchAllCatalogItems("/catalog/geographies", { geo_level: "STATE" }),
-          fetchAllCatalogItems("/catalog/geographies", { geo_level: "COUNTY" }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "STATE" }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "COUNTY" }),
         ]);
 
         if (request.isCurrent()) {
@@ -432,7 +526,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
   }, [distributionTracker, selectedMetric, selectedStateFips, selectedGeoLevel]);
 
   useEffect(() => {
-    if (!selectedMetric || !selectedGeoId) {
+    if (!selectedMetric || !selectedGeoId || !activeSource) {
       setTimeseries([]);
       setTimeseriesStatus({
         state: "idle",
@@ -445,9 +539,9 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     setTimeseries([]);
     setTimeseriesStatus({ state: "loading", message: "Loading history..." });
 
-    async function loadTimeseries() {
+    async function loadTimeseries(source: ExplorerSource) {
       try {
-        const payload = await getSourceTimeseries(sourceConfig.segment, {
+        const payload = await getSourceTimeseries(source.segment, {
           metric_code: selectedMetric,
           geo_id: selectedGeoId,
           limit: "1000",
@@ -471,12 +565,12 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       }
     }
 
-    loadTimeseries();
+    loadTimeseries(activeSource);
 
     return () => {
       timeseriesTracker.invalidate();
     };
-  }, [timeseriesTracker, selectedMetric, selectedGeoId, sourceConfig.segment]);
+  }, [timeseriesTracker, selectedMetric, selectedGeoId, activeSource]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -504,7 +598,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
-    map.on("load", async () => {
+    map.on("load", () => {
       map.addSource("obs", {
         type: "geojson",
         data: {
@@ -547,7 +641,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     let interactionHandlersAttached = false;
     const currentSourceLayer = activeSourceLayer || tileMetadata.sourceLayer;
 
-    const handleCountyMove = (event) => {
+    const handleCountyMove = (event: MapLayerMouseEvent) => {
       const feature = event.features?.[0];
       const rawJoinValue = feature?.properties?.[tileMetadata.joinKey];
       const observation = rawJoinValue === null || rawJoinValue === undefined
@@ -580,7 +674,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       map.getCanvas().style.cursor = "";
     };
 
-    const handleCountyClick = (event) => {
+    const handleCountyClick = (event: MapLayerMouseEvent) => {
       const feature = event.features?.[0];
       const rawJoinValue = feature?.properties?.[tileMetadata.joinKey];
       const observation = rawJoinValue === null || rawJoinValue === undefined
@@ -592,7 +686,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       const county = observation || geography;
 
       if (county?.geo_id) {
-        setSelectedGeoId(county.geo_id);
+        setSelectedGeoId(String(county.geo_id));
       }
     };
 
@@ -614,7 +708,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       }
     };
 
-    const addChoropleth = async (sourceLayer) => {
+    const addChoropleth = async (sourceLayer: string) => {
       if (!sourceLayer) {
         return;
       }
@@ -629,11 +723,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       }
 
       removeChoropleth();
-      const geoFilter = tileFilterForGeoLevel(selectedGeoLevel);
+      const geoFilter = tileFilterForGeoLevel(selectedGeoLevel) as FilterSpecification;
 
       map.addSource("choropleth", {
         type: "geojson",
-        data: featureCollection,
+        data: featureCollection as GeoJSON.FeatureCollection,
       });
 
       map.addLayer(
@@ -648,7 +742,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
-            ),
+            ) as unknown as ExpressionSpecification,
             "fill-opacity": mapMode === "choropleth" ? 0.95 : 0.08,
           },
         },
@@ -670,11 +764,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
-            ),
+            ) as unknown as ExpressionSpecification,
             "fill-extrusion-height": buildExtrusionHeightExpression(
               observations,
               tileMetadata.joinKey,
-            ),
+            ) as unknown as ExpressionSpecification,
             "fill-extrusion-opacity": 0.92,
           },
         },
@@ -706,7 +800,10 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           id: "choropleth-selected",
           type: "line",
           source: "choropleth",
-          filter: buildSelectionFilter(selectedJoinValue, tileMetadata.joinKey),
+          filter: buildSelectionFilter(
+            selectedJoinValue,
+            tileMetadata.joinKey,
+          ) as unknown as FilterSpecification,
           paint: {
             "line-color": "#d96b2b",
             "line-width": 3,
@@ -722,11 +819,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       interactionHandlersAttached = true;
     };
 
-    addChoropleth(currentSourceLayer).catch((error) => {
+    addChoropleth(currentSourceLayer).catch((error: unknown) => {
       if (!cancelled) {
         setTilesHealth({
           state: "warn",
-          message: error.message || "tile preview render failed",
+          message: error instanceof Error ? error.message : "tile preview render failed",
         });
       }
     });
@@ -761,19 +858,19 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       return;
     }
 
-    const source = map.getSource("obs");
+    const source = map.getSource("obs") as maplibregl.GeoJSONSource | undefined;
     if (!source) {
       return;
     }
 
     const features = observations
       .map((item) => observationToFeature(item))
-      .filter(Boolean);
+      .filter((feature) => feature !== null);
 
     source.setData({
       type: "FeatureCollection",
       features,
-    });
+    } as GeoJSON.FeatureCollection);
 
     if (map.getLayer("choropleth-fill") && tileMetadata?.joinKey) {
       map.setPaintProperty(
@@ -784,7 +881,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
-        ),
+        ) as unknown as ExpressionSpecification,
       );
     }
 
@@ -797,12 +894,15 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
-        ),
+        ) as unknown as ExpressionSpecification,
       );
       map.setPaintProperty(
         "choropleth-extrusion",
         "fill-extrusion-height",
-        buildExtrusionHeightExpression(observations, tileMetadata.joinKey),
+        buildExtrusionHeightExpression(
+          observations,
+          tileMetadata.joinKey,
+        ) as unknown as ExpressionSpecification,
       );
     }
 
@@ -874,7 +974,10 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       : null;
     map.setFilter(
       "choropleth-selected",
-      buildSelectionFilter(selectedJoinValue, tileMetadata.joinKey),
+      buildSelectionFilter(
+        selectedJoinValue,
+        tileMetadata.joinKey,
+      ) as unknown as FilterSpecification,
     );
   }, [mapReady, observations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
@@ -885,8 +988,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       return;
     }
 
-    const fallbackGeoLevel = sourceConfig.key === "fred" ? "NATIONAL" : "COUNTY";
-    const preferredGeoLevel = preferredGeoLevelForMetric(selectedMetricMeta, fallbackGeoLevel);
+    const preferredGeoLevel = preferredGeoLevelForMetric(selectedMetricMeta, DEFAULT_GEO_LEVEL);
     const supported = metricSupportedGeoLevels(selectedMetricMeta);
     const currentLevel = normalizeGeoLevel(selectedGeoLevel);
 
@@ -898,7 +1000,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     if (!currentLevel) {
       setSelectedGeoLevel(preferredGeoLevel);
     }
-  }, [selectedMetricMeta, selectedGeoLevel, sourceConfig.key]);
+  }, [selectedMetricMeta, selectedGeoLevel]);
 
   const choroplethModel = useMemo(
     () => buildChoroplethModel(
@@ -910,8 +1012,8 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     [observations, tileMetadata, distribution, missingValueLabel],
   );
 
-  const apiQuery = selectedMetric
-    ? buildApiPath(`/${sourceConfig.segment}/observations/latest`, {
+  const apiQuery = selectedMetric && activeSource
+    ? buildApiPath(`/${activeSource.segment}/observations/latest`, {
         metric_code: selectedMetric,
         geo_level: selectedGeoLevel,
         state_fips:
@@ -922,21 +1024,23 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
 
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
-    if (!selectedMetric) {
+    if (!selectedMetric || !activeSource) {
       return;
     }
 
     const query = serializeExplorerState(
       {
+        source: activeSource.segment,
         metric: selectedMetric,
-        geoLevel: selectedGeoLevel,
-        mapMode,
+        geoLevel: selectedGeoLevel as ExplorerState["geoLevel"],
+        mapMode: mapMode as ExplorerState["mapMode"],
         stateFips: selectedStateFips,
         geoId: selectedGeoId,
       },
       {
-        geoLevel: sourceConfig.key === "fred" ? "NATIONAL" : "COUNTY",
-        mapMode: "choropleth",
+        source: sourceKey,
+        geoLevel: DEFAULT_GEO_LEVEL,
+        mapMode: DEFAULT_MAP_MODE,
       },
     );
     const nextUrl = query
@@ -945,7 +1049,21 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [selectedMetric, selectedGeoLevel, mapMode, selectedStateFips, selectedGeoId, sourceConfig.key]);
+  }, [selectedMetric, selectedGeoLevel, mapMode, selectedStateFips, selectedGeoId, activeSource, sourceKey]);
+
+  function handleSourceChange(segment: string) {
+    if (!segment || segment === activeSource?.segment) {
+      return;
+    }
+    initialStateRef.current = null;
+    setActiveSourceKey(segment);
+    setObservations([]);
+    setDistribution(null);
+    setTimeseries([]);
+    setSelectedGeoId("");
+    setObservationStatus({ state: "idle", message: "selecting metric" });
+    setDistributionStatus({ state: "idle", message: "waiting for metric" });
+  }
 
   function handleSaveChart() {
     if (!selectedMetric || !selectedMetricMeta) return;
@@ -957,7 +1075,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       metricCode: selectedMetric,
       metricName: displayMetricName(selectedMetricMeta),
       source: selectedMetricMeta.source_code,
-      dataset: sourceConfig.supportsDataset ? selectedDataset : null,
+      dataset: selectedDataset || null,
       geoLevel: selectedGeoLevel,
       stateFips: selectedStateFips || null,
       geoId: selectedGeoId || null,
@@ -973,7 +1091,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
   function exportCsv() {
     const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "unit", "source", "dataset", "margin_of_error"];
     const rows = observations.map((item) => [item.geo_id, observationName(item), item.period || item.observation_date, item.metric_code, item.value, observationUnit(item), item.source || item.source_code, item.dataset || item.dataset_code, item.margin_of_error]);
-    const escape = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -982,7 +1100,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
     URL.revokeObjectURL(link.href);
   }
 
-  function handleMapKeyDown(event) {
+  function handleMapKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const selectable = (observations.length > 0 ? observations : allGeographies)
       .filter((item) => item?.geo_id);
     if (event.key === "Escape") {
@@ -1005,7 +1123,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       return;
     }
     event.preventDefault();
-    setSelectedGeoId(selectable[next].geo_id);
+    setSelectedGeoId(String(selectable[next]!.geo_id));
   }
 
   return (
@@ -1018,19 +1136,35 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
       data-county-count={countyGeographies.length}
       data-selected-geo-id={selectedGeoId}
       data-observation-count={observations.length}
+      data-source-key={activeSource?.segment || ""}
+      data-source-count={explorerSources.length}
     >
       <header className="explorer-heading">
         <div>
           <div className="section-kicker">Analytical workbench</div>
-          <h1>{sourceConfig.title} Explorer</h1>
+          <h1>{activeSource ? activeSource.title : "Source"} Explorer</h1>
           <p>Build a source-visible geography view, inspect observations, and validate data availability for this MVP.</p>
         </div>
         <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={observations.length === 0}><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric}><Save size={15} /> Save view</button></div>
       </header>
-      <div className="segmented-control source-page-tabs" aria-label="Source pages">
-        <Link className={sourceConfig.key === "census" ? "source-tab selected" : "source-tab"} href="/census">Census</Link>
-        <Link className={sourceConfig.key === "fred" ? "source-tab selected" : "source-tab"} href="/fred">FRED</Link>
-        <Link className={sourceConfig.key === "bls" ? "source-tab selected" : "source-tab"} href="/bls">BLS</Link>
+      <div className="segmented-control source-page-tabs" role="tablist" aria-label="Explorable sources">
+        {explorerSources.map((source) => (
+          <button
+            key={source.key}
+            type="button"
+            role="tab"
+            aria-selected={activeSource?.segment === source.segment}
+            className={activeSource?.segment === source.segment ? "source-tab selected" : "source-tab"}
+            data-testid={`source-tab-${source.segment}`}
+            title={source.title}
+            onClick={() => handleSourceChange(source.segment)}
+          >
+            {source.tabLabel}
+          </button>
+        ))}
+        {explorerSources.length === 0 ? (
+          <span className="source-tab" aria-live="polite">Discovering sources…</span>
+        ) : null}
       </div>
       {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
 
@@ -1088,9 +1222,9 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               </select>
             </div>
 
-            {sourceConfig.supportsDataset ? (
+            {showDatasetSelector ? (
               <div className="control-group">
-                <label htmlFor="dataset-select">ACS dataset</label>
+                <label htmlFor="dataset-select">Dataset</label>
                 <select
                   id="dataset-select"
                   className="select"
@@ -1098,8 +1232,11 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
                   value={selectedDataset}
                   onChange={(event) => setSelectedDataset(event.target.value)}
                 >
-                  <option value="acs5">ACS 5-year — complete county coverage</option>
-                  <option value="acs1">ACS 1-year — partial county coverage</option>
+                  {facetOptions.map((facet) => (
+                    <option value={facet.value} key={facet.value}>
+                      {facet.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : null}
@@ -1137,7 +1274,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               >
                 <option value="">All states</option>
                 {states.map((state) => (
-                  <option value={state.state_fips} key={state.geo_id}>
+                  <option value={state.state_fips || ""} key={state.geo_id}>
                     {state.state_name}
                   </option>
                 ))}
@@ -1175,16 +1312,21 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               </select>
             </div>
           </div>
+          {sourcesError ? (
+            <p className="subtle">
+              Sources error: {sourcesError} (offline fallback source in use)
+            </p>
+          ) : null}
           {metricsError ? <p className="subtle">Metrics error: {metricsError}</p> : null}
           {geographiesError ? <p className="subtle">Geographies error: {geographiesError}</p> : null}
           {selectedMetricMeta ? (
             <p className="metric-meta">
               Source: {selectedMetricMeta.source_code}
-              {sourceConfig.supportsDataset ? ` | Dataset: ${selectedDataset.toUpperCase()}` : ""}
+              {selectedDataset ? ` | Dataset: ${selectedDataset.toUpperCase()}` : ""}
               {` | Loaded catalog: ${metrics.length.toLocaleString()} metrics`}
             </p>
           ) : null}
-          {sourceConfig.supportsDataset ? (
+          {selectedDataset === "acs1" || selectedDataset === "acs5" ? (
             <p className={`coverage-note ${selectedDataset === "acs1" ? "partial" : "complete"}`}>
               {selectedDataset === "acs1"
                 ? "ACS 1-year county coverage is partial: Census publishes counties with populations of 65,000 or more. Uncolored counties are not published in ACS1."
@@ -1220,17 +1362,21 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
                     <dt>Period</dt>
                     <dd>
                       {selectedCountyHasObservation
-                        ? selectedCounty.period || selectedCounty.observation_date || "-"
+                        ? String(selectedCounty.period || selectedCounty.observation_date || "-")
                         : "Not published"}
                     </dd>
                   </div>
                   <div>
                     <dt>Source</dt>
-                    <dd>{selectedCountyHasObservation ? selectedCounty.source || selectedCounty.source_code || "-" : "CENSUS_ACS"}</dd>
+                    <dd>
+                      {selectedCountyHasObservation
+                        ? String(selectedCounty.source || selectedCounty.source_code || "-")
+                        : activeSource?.sourceCode || "-"}
+                    </dd>
                   </div>
                   <div>
                     <dt>Dataset</dt>
-                    <dd>{selectedCounty.dataset || selectedCounty.dataset_code || (sourceConfig.supportsDataset ? selectedDataset : "Source default")}</dd>
+                    <dd>{String(selectedCounty.dataset || selectedCounty.dataset_code || selectedDataset || "Source default")}</dd>
                   </div>
                   <div>
                     <dt>Margin of error</dt>
@@ -1238,7 +1384,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
                   </div>
                   <div>
                     <dt>Geography ID</dt>
-                    <dd>{selectedCounty.geo_id}</dd>
+                    <dd>{String(selectedCounty.geo_id ?? "-")}</dd>
                   </div>
                 </dl>
                 <div className="timeseries-heading">
@@ -1289,7 +1435,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
                       {formatObservationValue(hoveredCounty.observation.value)} {observationUnit(hoveredCounty.observation)}
                     </span>
                     <small>
-                      {hoveredCounty.observation.period || hoveredCounty.observation.observation_date} · {hoveredCounty.observation.source || hoveredCounty.observation.source_code}
+                      {String(hoveredCounty.observation.period || hoveredCounty.observation.observation_date || "")} · {String(hoveredCounty.observation.source || hoveredCounty.observation.source_code || "")}
                     </small>
                     <small>
                       MOE: {marginOfErrorText(hoveredCounty.observation)}
@@ -1299,7 +1445,7 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
                   <>
                     <span>{missingValueLabel}</span>
                     <small>
-                      {sourceConfig.supportsDataset && selectedDataset === "acs1"
+                      {selectedDataset === "acs1"
                         ? "ACS1 publishes county estimates only for areas meeting its population threshold."
                         : "No value was returned for the selected metric and vintage."}
                     </small>
@@ -1343,12 +1489,12 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
               <tbody>
                 {observations.slice(0, 12).map((item) => (
                   <tr key={`${item.geo_id}-${item.observation_date}-${item.metric_code}`}>
-                    <td>{item.county_name || item.state_name || item.geo_id}</td>
-                    <td>{item.geo_level || "-"}</td>
-                    <td>{item.observation_date}</td>
+                    <td>{String(item.county_name || item.state_name || item.geo_id || "-")}</td>
+                    <td>{String(item.geo_level || "-")}</td>
+                    <td>{String(item.observation_date ?? "-")}</td>
                     <td>{item.metric_code}</td>
                     <td>{item.value ?? "-"}</td>
-                    <td>{item.units || "-"}</td>
+                    <td>{String(item.units || "-")}</td>
                   </tr>
                 ))}
                 {observations.length === 0 ? (
@@ -1363,13 +1509,13 @@ export default function SourceExplorerPage({ sourceKey = DEFAULT_SOURCE_KEY }) {
           </div>
         </article>
         <article className="card span-2 workspace-panel" data-active={activeTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} dataset={sourceConfig.supportsDataset ? selectedDataset.toUpperCase() : sourceConfig.title} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={sourceConfig.supportsDataset && selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
+          <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
         </article>
         <article className="card span-2 workspace-panel" data-active={activeTab === "api query"}>
           <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>
         </article>
         <article className="card span-2 workspace-panel" data-active={activeTab === "notes"}>
-          <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {sourceConfig.supportsDataset ? selectedDataset.toUpperCase() : sourceConfig.title}. Color treatment: five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable.</p>
+          <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable.</p>
         </article>
       </section>
     </main>

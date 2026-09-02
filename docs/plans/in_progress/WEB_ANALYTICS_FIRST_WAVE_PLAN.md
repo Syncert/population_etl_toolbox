@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-02
-- **Current milestone:** WEB-001 complete (audit and gate evidence recorded below); WEB-002 foundation delivered across four increments — contract client, explorer decomposition, CSS/shell decomposition, and TypeScript adoption — with WEB-003 next. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 first increment delivered — the explorer's `SOURCE_CONFIG` enumeration is replaced by capability discovery from `/api/v1/catalog/capabilities` (gaining Census PEP without a source branch), and the explorer view model and component are TypeScript. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-003 — capability discovery from `/api/v1/catalog/capabilities` replacing the explorer's three-source `SOURCE_CONFIG` enumeration, converting the explorer view model and component to TypeScript as that change lands.
+- **Next pickup:** WEB-003 continued — reach the dispatch-shaped sources (CDC, FBI UCR, USDA NASS) through the neutral `/observations` resource with capability-declared `observation_filters` driving the filter controls, and complete catalog search filters/pagination/provenance per the WEB-003 acceptance criteria.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -415,10 +415,83 @@ web unit 30 passed; production build clean (with Next type checking);
 browser 2 passed (Chromium); `pytest tests/unit` 1219 passed; `ruff check
 .` clean.
 
-Remaining for WEB-002 (next pickup): begin WEB-003 capability discovery
-(`/api/v1/catalog/capabilities`) to replace the explorer's remaining
-three-source `SOURCE_CONFIG` enumeration, converting the explorer view
-model and component to TypeScript as that change lands.
+WEB-002 is complete as of this increment; the remaining pickup it named
+(capability discovery replacing `SOURCE_CONFIG`) is delivered by the
+WEB-003 first increment below.
+
+## WEB-003 delivery record (first increment, 2026-09-02)
+
+Capability discovery now decides which sources the explorer can drive; the
+three-source `SOURCE_CONFIG` enumeration is gone, and the explorer gains
+Census PEP with zero source-specific code.
+
+- **Contract fix found by inspection before first use:** the web client
+  typed `/catalog/capabilities` as a bare array with invented field names
+  (`neutral_routes_supported`, `routes`). The served contract is the
+  `{total, items}` `CapabilityListResponse` whose items carry
+  `display_name`, `served_by_neutral_routes`, `observation_filters`, and
+  `observation_routes` (`{path, parameters}`). `lib/api/types.ts` and
+  `getCapabilities` now match the OpenAPI snapshot exactly.
+- **`lib/explorerSources.ts` (new, typed):** derives explorer sources from
+  the capability entries — a source is explorable exactly when its declared
+  routes carry the source-scoped latest + timeseries pair the explorer's
+  workflow needs, so membership comes from route declarations, never a
+  source-code list. Census ACS, BLS, FRED, and Census PEP qualify today;
+  CDC, FBI UCR, and USDA NASS are honestly excluded until the explorer
+  understands the neutral dispatch shape (next pickup). Parameter support
+  (`state_fips`) is read from the declared route parameters; tab labels
+  derive from the API's own route segment; titles are the published
+  `display_name`. Discovery failure degrades to a single labeled offline
+  fallback entry for the mounted default source (surfaced as a visible
+  "Sources error … offline fallback in use" message), mirroring the
+  WEB-011 catalog degradation pattern.
+- **Dataset facets from published metric identity:** the ACS-only
+  `supportsDataset` flag is replaced by `datasetFacetOptions` /
+  `preferredDatasetFacet` over the loaded metrics' own
+  `SOURCE:dataset:variable` codes. The selector renders only when a source
+  publishes at least two facets; acs1/acs5 keep their documented coverage
+  labels and caveats (keyed by facet value, not by source branch), and
+  unlisted facets fall back to their published spelling.
+- **Explorer migration:** `SourceExplorerPage` bootstraps by reading
+  capabilities once (per the consumer guide), renders its source tabs from
+  discovery, and switches sources in place; `?source=<segment>` joins the
+  URL-state contract (parse, validated serialize, defaults omitted) so a
+  shared link reproduces a non-default source. Metric loading gained its
+  own request tracker so a fast source switch cannot commit a stale
+  catalog. The FRED-specific geography default branch is gone — metric
+  `valid_geo_grains` already snap the level.
+- **TypeScript:** `lib/explorerViewModel.ts` and
+  `components/SourceExplorerPage.tsx` are converted under the strict
+  config as the change landed, with typed view-model contracts
+  (`ObservationRow.value` stays `string | number | null`, never coerced)
+  and MapLibre expression casts confined to the map boundary. Re-exports
+  are unchanged, so existing consumers and tests are untouched.
+- **Evidence:** WEB-013 added to `docs/reference/TESTING_CONTRACT.md`
+  (unit + browser owner) with the implementation-status table at 223 of
+  223 and the behavioral register at 249 rows, all FULL. New
+  `tests/frontend/unit/explorer-sources.test.js` (7 tests: membership from
+  routes, exclusion without naming, parameter derivation, labeled
+  fallback, facet options/labels/preference); URL-state tests extended for
+  `source`; the browser suite gained a third spec proving the tabs render
+  from discovery (PEP present, USDA NASS absent), switching sources loads
+  that source's catalog and observations, and `?source=pep` deep-links
+  reproduce the source.
+
+### Validation (2026-09-02, after changes)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 37 passed (8 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 3 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 249 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
 
 ## Implementation phases
 

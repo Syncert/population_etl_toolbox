@@ -289,15 +289,15 @@ Last audited against the repository on 2026-09-01. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-012 | None |
+| Frontend | WEB-001–WEB-013 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **222 of 222** | **0 of 222** |
+| **Total** | **223 of 223** | **0 of 223** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 248-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 249-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -584,9 +584,10 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-007 | P0 | Static | Frontend dependency/build gate | `npm ci`, production audit, lint, `tsc --noEmit` strict typecheck, unit tests, and production Next.js build all exit zero with exact lockfile versions | Audit, lint, type, test, or build failure |
 | WEB-008 | P0 | CI | Frontend browser gate | Chromium installs and the browser suite runs from a fresh checkout with artifacts retained on failure | Missing runner, browser failure, or unavailable diagnostic artifact |
 | WEB-009 | P0 | Unit / `frontend` | Versioned API client | Requests are constructed against `/api/v1` with `no-store` and empty parameters omitted; limit/offset paging is deterministic and bounded; the `{"detail": ...}` error envelope decodes into a stable classified `ApiError` preserving `Retry-After`; abort signals pass through to the transport; and the request tracker suppresses stale async completions | A malformed request URL, an unbounded paging loop, a swallowed error detail, a lost cancellation, or a stale response committed as current |
-| WEB-010 | P0 | Unit / `frontend` | Explorer URL state | Every supported explorer link parameter (`metric`, `state`, `geo`, `geo_level`, `map_mode`) parses to validated state, invalid values are dropped rather than propagated into requests, serialization omits defaults, and parse/serialize round-trips reproduce the same analysis request | A supported link breaking, an invalid parameter reaching a request, or two equivalent selections producing different URLs |
+| WEB-010 | P0 | Unit / `frontend` | Explorer URL state | Every supported explorer link parameter (`source`, `metric`, `state`, `geo`, `geo_level`, `map_mode`) parses to validated state, invalid values are dropped rather than propagated into requests, serialization omits defaults, and parse/serialize round-trips reproduce the same analysis request | A supported link breaking, an invalid parameter reaching a request, or two equivalent selections producing different URLs |
 | WEB-011 | P0 | Unit / `frontend` | Capability-driven catalog source filter | Catalog source filter options derive from the API's published source list and degrade to the all-sources option when discovery is unavailable | A closed client-side source enumeration, or a catalog broken by unavailable discovery |
 | WEB-012 | P0 | Component / `frontend` | Shared request-state pill | Every state in the shared request vocabulary maps to a deliberate visual class — only a completed healthy request renders as ok, failure-shaped states (bad/unauthorized/forbidden/rate-limited/unavailable/incompatible) render as errors, and everything else renders as caution — with the label and message visible | An unproven, stale, or failing state presented as healthy, or a state string with no deliberate mapping |
+| WEB-013 | P0 | Unit + Browser / `frontend` | Capability-driven explorer sources | Explorer source membership derives from the `/catalog/capabilities` route declarations (the source-scoped latest + timeseries pair), parameter support comes from the declared route parameters, dataset facets derive from published metric identity, discovery failure degrades to the labeled offline fallback, and in the browser the tabs render from discovery, switching sources loads that source's catalog and observations, and `?source=` URLs reproduce the non-default source | A closed client-side source enumeration deciding membership, a tab for a source whose declared routes cannot answer the workflow, an explorer broken by unavailable discovery, or a source switch presenting another source's results |
 
 ### Deployment Tests
 

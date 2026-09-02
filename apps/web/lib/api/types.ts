@@ -44,18 +44,27 @@ export interface GeographySummary {
   [key: string]: unknown;
 }
 
+/** One versioned route that answers for a source, with its query parameters. */
+export interface ObservationRouteCapability {
+  path: string;
+  parameters: string[];
+}
+
 /**
  * Per-source capability entry from `/catalog/capabilities` — the route map.
- * `observation_filters` is the contract for per-source filtering: a filter a
- * source does not declare is rejected with a 422, never silently ignored.
+ * `observation_routes` lists the exact versioned routes that serve the
+ * source (never inferred by prefix), and `observation_filters` is the
+ * contract for per-source filtering: a filter a source does not declare is
+ * rejected with a 422, never silently ignored.
  */
 export interface SourceCapability {
   source_code: string;
+  display_name: string;
   route_segment?: string | null;
-  neutral_routes_supported?: boolean | null;
+  served_by_neutral_routes: boolean;
   datasets?: string[] | null;
   observation_filters?: string[] | null;
-  routes?: unknown;
+  observation_routes?: ObservationRouteCapability[] | null;
   [key: string]: unknown;
 }
 
