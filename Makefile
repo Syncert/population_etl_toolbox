@@ -58,6 +58,7 @@ test-web-browser:
 
 test-web-build:
 	npm --prefix apps/web run lint
+	npm --prefix apps/web run typecheck
 	npm --prefix apps/web run build
 
 test-compose-smoke:

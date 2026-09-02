@@ -16,15 +16,15 @@ verify:
 ## Plan status
 
 - **Status:** Claimed; in progress
-- **Last updated:** 2026-09-01
-- **Current milestone:** WEB-001 dependency proof and frontend audit underway; the API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Last updated:** 2026-09-02
+- **Current milestone:** WEB-001 complete (audit and gate evidence recorded below); WEB-002 foundation delivered across four increments — contract client, explorer decomposition, CSS/shell decomposition, and TypeScript adoption — with WEB-003 next. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** Close WEB-002's recorded TypeScript deviation (adopt TS for the contract-boundary modules or obtain reviewer acceptance), then begin WEB-003: capability discovery from `/api/v1/catalog/capabilities` replacing the explorer's three-source `SOURCE_CONFIG` enumeration.
+- **Next pickup:** WEB-003 — capability discovery from `/api/v1/catalog/capabilities` replacing the explorer's three-source `SOURCE_CONFIG` enumeration, converting the explorer view model and component to TypeScript as that change lands.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -367,20 +367,58 @@ Validation for this increment: web lint clean; web unit 30 passed (7
 files); production build clean; browser 2 passed; `pytest tests/unit`
 1219 passed (248-row register guard green); `ruff check .` clean.
 
-**Recorded deviation for review:** the new contract-boundary modules
-(`lib/api/client.js`, `lib/urlState.js`, `lib/tiles.js`,
-`lib/explorerViewModel.js`) are JavaScript, matching the existing all-JS
-application, while the plan's layering principle says new
-contract-boundary code *should* use TypeScript. The TypeScript adoption
-is queued as its own test-led increment rather than mixed into these
-refactors; WEB-002 is not declared complete until that decision is
-either implemented or accepted as-is by review.
+**The TypeScript deviation recorded here is now closed** — the owner
+chose TypeScript as the long-term direction, and it is implemented in the
+fourth increment below.
 
-Remaining for WEB-002 (next pickup): adopt TypeScript for the
-contract-boundary modules (or record reviewer acceptance of the JS
-deviation), then begin WEB-003 capability discovery
+### WEB-002 fourth increment — TypeScript adoption (2026-09-02)
+
+The owner chose TypeScript as the long-term direction, closing the
+deviation recorded above. Adoption is incremental and test-led, exactly
+as the plan's layering principle prescribes; the framework is unchanged
+(Next.js 15 App Router, React 18, same proxy rewrites).
+
+- **Toolchain:** `typescript` 6.0.3, `@types/node`, `@types/react`, and
+  `@types/react-dom` pinned exactly, matching the repo's devDependency
+  convention. `tsconfig.json` replaces `jsconfig.json` with `strict` plus
+  `noUncheckedIndexedAccess`, `allowJs: true`, and `checkJs: false`, so
+  typed and untyped modules live in one graph and conversion can proceed
+  file by file. `baseUrl` is deliberately omitted (deprecated in TS 6);
+  the `@/*` mapping resolves relative to the config under
+  `moduleResolution: "bundler"`.
+- **Converted (the contract boundary the principle names):**
+  `lib/api/client.ts`, `lib/api/requestState.ts`, `lib/urlState.ts`,
+  `lib/catalog.ts`, plus a new `lib/api/types.ts` carrying the response
+  contracts from the consumer guide. The typed contracts encode the
+  guide's guarantees a consumer must not violate — above all that
+  `Observation.value` is `string | null`, never a number, so no call site
+  can quietly treat a suppressed or missing value as zero. `apiFetch<T>`
+  and `fetchAllPages<T>` are generic, so every resource helper returns
+  its own typed shape, and `ApiErrorKind` is a closed union.
+- **Not converted yet, deliberately:** route and component files, and
+  `lib/explorerViewModel.js` / `lib/tiles.js`. They are unchanged in this
+  increment, so converting them now would be a rewrite rather than a
+  test-led migration; they convert as they are next materially changed.
+- **A real regression was caught by an existing test:** `as const` is
+  compile-time only, so the first port silently dropped the runtime
+  `Object.freeze` on the shared state vocabulary. Both guarantees are now
+  in place (`Object.freeze({...} as const)`).
+- **Gates:** `npm run typecheck` (`tsc --noEmit`) is a new script wired
+  into `make test-web-build` and the `frontend` CI job as its own step;
+  `next build` type-checks as well. WEB-007's pass metric now names the
+  strict typecheck, and the CI job is renamed to "Frontend lint,
+  typecheck, unit, build, and browser" consistently across the workflow,
+  `tests/support/ci_evidence_manifest.json`, and `CI_EVIDENCE_MAP.md`.
+
+Validation for this increment: `npm run typecheck` clean; web lint clean;
+web unit 30 passed; production build clean (with Next type checking);
+browser 2 passed (Chromium); `pytest tests/unit` 1219 passed; `ruff check
+.` clean.
+
+Remaining for WEB-002 (next pickup): begin WEB-003 capability discovery
 (`/api/v1/catalog/capabilities`) to replace the explorer's remaining
-three-source `SOURCE_CONFIG` enumeration.
+three-source `SOURCE_CONFIG` enumeration, converting the explorer view
+model and component to TypeScript as that change lands.
 
 ## Implementation phases
 

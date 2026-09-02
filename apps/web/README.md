@@ -24,6 +24,21 @@ npm run dev
 
 Open `http://localhost:3100`.
 
+## TypeScript
+
+The app is incrementally typed. Contract-boundary modules — the versioned
+API client (`lib/api/`), URL state (`lib/urlState.ts`), and catalog view
+models (`lib/catalog.ts`) — are TypeScript under `strict` plus
+`noUncheckedIndexedAccess`; route and component files remain `.js` and are
+converted as they are materially changed. `allowJs` keeps both in one
+graph, so no rewrite is required.
+
+```bash
+npm run typecheck   # tsc --noEmit
+```
+
+`npm run build` also checks types, and CI runs `typecheck` as its own step.
+
 ## Proxy Rewrites
 
 The Next.js app uses same-origin rewrites so browser calls stay under the app host:

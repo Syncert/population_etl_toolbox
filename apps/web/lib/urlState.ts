@@ -3,14 +3,36 @@
 // (`metric`, `state`, `geo`, `geo_level`, `map_mode`) stays valid; unknown
 // or invalid values are dropped rather than propagated into requests.
 
-export const GEO_LEVELS = Object.freeze(["NATIONAL", "STATE", "COUNTY"]);
-export const MAP_MODES = Object.freeze(["choropleth", "extrusion"]);
+export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY"] as const;
+export const MAP_MODES = ["choropleth", "extrusion"] as const;
+
+export type GeoLevel = (typeof GEO_LEVELS)[number];
+export type MapMode = (typeof MAP_MODES)[number];
+
+export interface ExplorerState {
+  metric?: string;
+  geoLevel?: GeoLevel;
+  mapMode?: MapMode;
+  stateFips?: string;
+  geoId?: string;
+}
+
+/** Defaults are omitted from serialized links. */
+export type ExplorerStateDefaults = Pick<ExplorerState, "metric" | "geoLevel" | "mapMode">;
 
 const STATE_FIPS_PATTERN = /^\d{2}$/;
 
-export function parseExplorerState(search) {
+function isGeoLevel(value: string): value is GeoLevel {
+  return (GEO_LEVELS as readonly string[]).includes(value);
+}
+
+function isMapMode(value: string | null): value is MapMode {
+  return value !== null && (MAP_MODES as readonly string[]).includes(value);
+}
+
+export function parseExplorerState(search: string | null | undefined): ExplorerState {
   const params = new URLSearchParams(search || "");
-  const state = {};
+  const state: ExplorerState = {};
 
   const metric = params.get("metric");
   if (metric) {
@@ -18,12 +40,12 @@ export function parseExplorerState(search) {
   }
 
   const geoLevel = (params.get("geo_level") || "").toUpperCase();
-  if (GEO_LEVELS.includes(geoLevel)) {
+  if (isGeoLevel(geoLevel)) {
     state.geoLevel = geoLevel;
   }
 
   const mapMode = params.get("map_mode");
-  if (MAP_MODES.includes(mapMode)) {
+  if (isMapMode(mapMode)) {
     state.mapMode = mapMode;
   }
 
@@ -42,24 +64,19 @@ export function parseExplorerState(search) {
 
 // Serializes only non-default values so shared URLs stay minimal and two
 // equivalent selections produce the same link.
-export function serializeExplorerState(state = {}, defaults = {}) {
+export function serializeExplorerState(
+  state: ExplorerState = {},
+  defaults: ExplorerStateDefaults = {},
+): string {
   const params = new URLSearchParams();
 
   if (state.metric && state.metric !== defaults.metric) {
     params.set("metric", state.metric);
   }
-  if (
-    state.geoLevel &&
-    GEO_LEVELS.includes(state.geoLevel) &&
-    state.geoLevel !== defaults.geoLevel
-  ) {
+  if (state.geoLevel && isGeoLevel(state.geoLevel) && state.geoLevel !== defaults.geoLevel) {
     params.set("geo_level", state.geoLevel);
   }
-  if (
-    state.mapMode &&
-    MAP_MODES.includes(state.mapMode) &&
-    state.mapMode !== defaults.mapMode
-  ) {
+  if (state.mapMode && isMapMode(state.mapMode) && state.mapMode !== defaults.mapMode) {
     params.set("map_mode", state.mapMode);
   }
   if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
@@ -72,7 +89,10 @@ export function serializeExplorerState(state = {}, defaults = {}) {
   return params.toString();
 }
 
-export function explorerHref(state = {}, defaults = {}) {
+export function explorerHref(
+  state: ExplorerState = {},
+  defaults: ExplorerStateDefaults = {},
+): string {
   const query = serializeExplorerState(state, defaults);
   return query ? `/explore?${query}` : "/explore";
 }
