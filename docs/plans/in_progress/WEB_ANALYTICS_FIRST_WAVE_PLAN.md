@@ -1,6 +1,6 @@
 ---
 id: web-analytics-first-wave
-branch: feat/web-analytics-first-wave
+branch: feat/web_dev_first_wave
 depends_on:
   - api-platform
 parallel_safe: true
