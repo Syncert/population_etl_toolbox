@@ -1,10 +1,11 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014 — browser
-// catalog/tile/selection/failure flows, URL reproduction of the selected
-// exploration state, capability-driven source discovery and switching, and
-// dispatch-shaped sources reached through the neutral /observations
-// resource with capability-declared filters.
+// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016 —
+// browser catalog/tile/selection/failure flows, URL reproduction of the
+// selected exploration state, capability-driven source discovery and
+// switching, dispatch-shaped sources reached through the neutral
+// /observations resource with capability-declared filters, and as-released
+// exploration over the published release listing.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -49,8 +50,31 @@ const cdcMetric = {
 // a source-scoped latest/timeseries pair, or the neutral /observations
 // resource for a dispatch-shaped source.
 const neutralRoutes = [
-  { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
-  { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+  {
+    path: "/api/v1/observations",
+    // The served parameter list (tests/fixtures/api/openapi_contract.json):
+    // `scope` and `release` are what make the as-released surface reachable.
+    parameters: [
+      "adjustment_status",
+      "county_fips",
+      "domain_desc",
+      "domaincat_desc",
+      "geo_id",
+      "geo_level",
+      "limit",
+      "metric_code",
+      "offset",
+      "release",
+      "scope",
+      "state_fips",
+      "stratum_id",
+      "subject_code",
+      "subject_type",
+      "year_from",
+      "year_to",
+    ],
+  },
+  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const capabilityRoutes = (segment) => [
@@ -168,11 +192,71 @@ const county = {
   margin_of_error_pct: "0.21",
 };
 
-async function installRoutes(page, { failLatest = false, neutralRequests = [] } = {}) {
+// Census ACS published releases, as /observations/releases lists them:
+// newest first, each with the identity `release=` accepts.
+const acsReleases = [
+  { release: "2023", as_of: "2024-01-01", observation_count: 3143 },
+  { release: "2022", as_of: "2023-01-01", observation_count: 3142 },
+];
+
+// The same county as each release published it. Under scope=as_released
+// both rows answer, so the geography carries one row per release.
+const acsReleasedRow = (release, value) => ({
+  ...county,
+  release,
+  as_of: release === "2023" ? "2024-01-01" : "2023-01-01",
+  period_start: `${release}-01-01`,
+  period_end: `${release}-12-31`,
+  value,
+});
+
+async function installRoutes(
+  page,
+  { failLatest = false, neutralRequests = [], releaseRequests = [] } = {},
+) {
   let tileRequests = 0;
+  await page.route("**/api/v1/observations/releases?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    releaseRequests.push(Object.fromEntries(params));
+    const items = params.get("metric_code")?.startsWith("ACS:") ? acsReleases : [];
+    return route.fulfill({
+      json: {
+        metric_code: params.get("metric_code"),
+        source_code: "CENSUS_ACS",
+        total: items.length,
+        limit: Number(params.get("limit") || 100),
+        offset: 0,
+        items,
+      },
+      headers: { "x-cache": "MISS" },
+    });
+  });
   await page.route("**/api/v1/observations?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     neutralRequests.push(Object.fromEntries(params));
+    const metric = params.get("metric_code") || "";
+
+    if (params.get("scope") === "as_released") {
+      const pinned = params.get("release");
+      const rows = [acsReleasedRow("2023", "561504"), acsReleasedRow("2022", "555000")];
+      const items = metric.startsWith("ACS:")
+        ? rows.filter((row) => !pinned || row.release === pinned)
+        : [];
+      return route.fulfill({
+        json: {
+          total: items.length,
+          limit: Number(params.get("limit") || 100),
+          offset: 0,
+          scope: "as_released",
+          release: pinned,
+          metric_code: metric,
+          source_code: "CENSUS_ACS",
+          items,
+        },
+        headers: { "x-cache": "MISS" },
+      });
+    }
+
     const stratum = params.get("stratum_id");
     const rows = [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
     const items = stratum ? rows.filter((row) => row.dimensions.stratum_id === stratum) : rows;
@@ -182,7 +266,7 @@ async function installRoutes(page, { failLatest = false, neutralRequests = [] } 
         limit: Number(params.get("limit") || 100),
         offset: 0,
         scope: params.get("scope") || "latest",
-        metric_code: params.get("metric_code"),
+        metric_code: metric,
         source_code: "CDC",
         items,
       },
@@ -415,4 +499,82 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   await expect(dashboard).toHaveAttribute("data-observation-count", "1");
   await expect(dashboard).toHaveAttribute("data-stratified", "false");
   expect(neutralRequests.at(-1).stratum_id).toBe("overall");
+});
+
+test("as-released exploration pins a published release and reproduces it", async ({ page }) => {
+  const neutralRequests = [];
+  const releaseRequests = [];
+  await installRoutes(page, { neutralRequests, releaseRequests });
+  await page.goto("/explore");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-scope", "latest");
+
+  // The release identities come from /observations/releases for the selected
+  // metric; nothing infers them from a period or a vintage.
+  await expect(page.getByTestId("releases-status")).toContainText("2 published releases");
+  await expect(dashboard).toHaveAttribute("data-release-count", "2");
+  expect(releaseRequests.at(-1).metric_code).toBe("ACS:acs5:B01003_001");
+
+  // Reading every published release: the request moves to the neutral
+  // resource with scope=as_released, and the geography now carries one row
+  // per release, so the map declines to colour rather than showing whichever
+  // release sorted last.
+  await page.getByTestId("publication-select").selectOption("as_released");
+  await expect(dashboard).toHaveAttribute("data-scope", "as_released");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "2");
+  await expect(dashboard).toHaveAttribute("data-stratified", "true");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "0");
+  await expect(page.getByTestId("stratification-note")).toContainText("release");
+  await expect(page.getByTestId("as-released-note")).toContainText("every published release");
+
+  let request = neutralRequests.at(-1);
+  expect(request.scope).toBe("as_released");
+  expect(request.release).toBeUndefined();
+  expect(request.metric_code).toBe("ACS:acs5:B01003_001");
+
+  // /distribution/bins declares no scope: its bins describe the latest
+  // publication, so they are not requested for an as-released read and the
+  // legend is not labelled with them.
+  await expect(page.getByTestId("distribution-status"))
+    .toContainText("API bins describe the latest publication only");
+
+  // Pinning one release resolves it to a single series and reproduces the
+  // analysis as that release published it.
+  await page.getByTestId("publication-select").selectOption("release:2022");
+  await expect(dashboard).toHaveAttribute("data-release", "2022");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  request = neutralRequests.at(-1);
+  expect(request.scope).toBe("as_released");
+  expect(request.release).toBe("2022");
+
+  // The pinned row is the value that release published, with its own release
+  // identity visible in the table.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("cell", { name: "555000" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "2022", exact: true }).first()).toBeVisible();
+
+  // The link carries the scope and the pin, so it reproduces the same
+  // as-released analysis.
+  await expect(page).toHaveURL(/scope=as_released/);
+  await expect(page).toHaveURL(/release=2022/);
+
+  const shared = await page.context().newPage();
+  const sharedNeutral = [];
+  await installRoutes(shared, { neutralRequests: sharedNeutral });
+  await shared.goto("/explore?metric=ACS%3Aacs5%3AB01003_001&scope=as_released&release=2022");
+  await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-scope", "as_released");
+  await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-release", "2022");
+  await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  expect(sharedNeutral.at(-1).release).toBe("2022");
+  await shared.close();
+
+  // Returning to the latest publication drops both from the request and the
+  // link: `release` without `scope=as_released` is a 422 by contract.
+  await page.getByTestId("publication-select").selectOption("latest");
+  await expect(dashboard).toHaveAttribute("data-scope", "latest");
+  await expect(dashboard).toHaveAttribute("data-release", "");
+  await expect(page).not.toHaveURL(/release=/);
 });

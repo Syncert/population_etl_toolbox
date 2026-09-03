@@ -5,20 +5,58 @@ import { describe, expect, test } from "vitest";
 // declared observation_filters, the neutral envelope maps onto the explorer
 // row shape without invention, and a stratified answer is reported rather
 // than collapsed to one value per geography.
+//
+// Covers: WEB-016 — the as-released surface. `scope=as_released` and a
+// pinned `release` are sent only where the capability declares them, they
+// always answer on the neutral resource, and an unpinned as-released read is
+// reported as one series per release rather than collapsed.
 
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
 import {
+  RELEASE_DIMENSION,
+  SCOPE_AS_RELEASED,
+  SCOPE_LATEST,
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
+  buildReleaseListRequest,
   describeStratification,
   normalizeObservationRows,
   observationDimensionOptions,
   observationDimensionValue,
   observationPeriodLabel,
+  scopedDimensionFilters,
+  servesAsReleased,
+  stratificationDimensions,
 } from "../../../apps/web/lib/observationAccess";
 
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot).
+// The served neutral parameter list (tests/fixtures/api/openapi_contract.json).
+const NEUTRAL_PARAMETERS = [
+  "adjustment_status",
+  "county_fips",
+  "domain_desc",
+  "domaincat_desc",
+  "geo_id",
+  "geo_level",
+  "limit",
+  "metric_code",
+  "offset",
+  "release",
+  "scope",
+  "state_fips",
+  "stratum_id",
+  "subject_code",
+  "subject_type",
+  "year_from",
+  "year_to",
+];
+
+const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: NEUTRAL_PARAMETERS },
+  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
+];
+
 const sourceScopedRoutes = (segment) => [
   {
     path: `/api/v1/${segment}/observations/latest`,
@@ -28,15 +66,10 @@ const sourceScopedRoutes = (segment) => [
     path: `/api/v1/${segment}/observations/timeseries`,
     parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
   },
-  { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
-  { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+  ...neutralRoutes,
   { path: "/api/v1/distribution/bins", parameters: ["metric_code"] },
 ];
 
-const neutralRoutes = [
-  { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
-  { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
-];
 
 const capabilities = [
   {
@@ -348,5 +381,199 @@ describe("stratified answers are reported, never collapsed", () => {
       stratified: false,
       varyingDimensions: [],
     });
+  });
+});
+
+describe("as-released reads", () => {
+  test("the release listing is requested only where the route is declared", () => {
+    expect(buildReleaseListRequest(cdc, { metricCode: "CDC:x", limit: "200" })).toEqual({
+      resource: "/observations/releases",
+      params: { metric_code: "CDC:x", limit: "200" },
+    });
+    // A source whose capability entry omits the release listing gets null —
+    // the honest "this source publishes none here". Nothing may guess an
+    // identity that /observations/releases never published.
+    const [undeclared] = buildExplorerSources([
+      {
+        ...capabilities[0],
+        observation_routes: [{ path: "/api/v1/observations", parameters: ["metric_code"] }],
+      },
+    ]);
+    expect(servesAsReleased(undeclared)).toBe(false);
+    expect(buildReleaseListRequest(undeclared, { metricCode: "CDC:x" })).toBeNull();
+    expect(buildReleaseListRequest(null, { metricCode: "CDC:x" })).toBeNull();
+  });
+
+  test("an as-released read answers on the neutral resource, source-scoped or not", () => {
+    // Census reaches its latest values through its own route...
+    expect(
+      buildLatestObservationRequest(census, {
+        metricCode: "ACS:acs5:B01003_001",
+        geoLevel: "COUNTY",
+        stateFips: "55",
+        limit: "4000",
+      }).resource,
+    ).toBe("/census/observations/latest");
+
+    // ...but `scope=as_released` lives only on /observations, so the request
+    // moves there and carries the neutral filters the capability declares
+    // rather than the parameters of the route it left behind.
+    expect(
+      buildLatestObservationRequest(census, {
+        metricCode: "ACS:acs5:B01003_001",
+        geoLevel: "COUNTY",
+        stateFips: "55",
+        limit: "4000",
+        scope: SCOPE_AS_RELEASED,
+        release: "2022",
+      }),
+    ).toEqual({
+      resource: "/observations",
+      params: {
+        metric_code: "ACS:acs5:B01003_001",
+        scope: "as_released",
+        release: "2022",
+        limit: "4000",
+        geo_level: "COUNTY",
+        state_fips: "55",
+      },
+    });
+  });
+
+  test("a pinned release travels only with scope=as_released", () => {
+    // `release` without `scope=as_released` is a 422 by contract, so a
+    // release carried alone is never sent.
+    const latest = buildLatestObservationRequest(cdc, {
+      metricCode: "CDC:cdc_places_county:OBESITY",
+      geoLevel: "COUNTY",
+      limit: "4000",
+      release: "20240115",
+    });
+    expect(latest.params.scope).toBe(SCOPE_LATEST);
+    expect(latest.params.release).toBeUndefined();
+
+    // A source whose neutral route declares no `release` can read as
+    // released but cannot pin one; sending it would be a 422.
+    const [unpinnable] = buildExplorerSources([
+      {
+        ...capabilities[0],
+        observation_routes: [
+          { path: "/api/v1/observations", parameters: ["geo_id", "metric_code", "scope"] },
+          { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+        ],
+      },
+    ]);
+    const pinned = buildLatestObservationRequest(unpinnable, {
+      metricCode: "CDC:cdc_places_county:OBESITY",
+      limit: "4000",
+      scope: SCOPE_AS_RELEASED,
+      release: "20240115",
+    });
+    expect(pinned.params.scope).toBe(SCOPE_AS_RELEASED);
+    expect(pinned.params.release).toBeUndefined();
+  });
+
+  test("a source with no as-released surface falls back to its latest scope", () => {
+    const [undeclared] = buildExplorerSources([
+      {
+        ...capabilities[0],
+        observation_routes: [
+          { path: "/api/v1/observations", parameters: ["geo_id", "metric_code"] },
+        ],
+      },
+    ]);
+    const request = buildLatestObservationRequest(undeclared, {
+      metricCode: "CDC:cdc_places_county:OBESITY",
+      limit: "4000",
+      scope: SCOPE_AS_RELEASED,
+      release: "20240115",
+    });
+    expect(request.params.scope).toBe(SCOPE_LATEST);
+    expect(request.params.release).toBeUndefined();
+  });
+
+  test("history reads carry the same scope so a pinned release reproduces", () => {
+    expect(
+      buildHistoryObservationRequest(census, {
+        metricCode: "ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+        scope: SCOPE_AS_RELEASED,
+        release: "2022",
+      }),
+    ).toEqual({
+      resource: "/observations",
+      params: {
+        metric_code: "ACS:acs5:B01003_001",
+        scope: "as_released",
+        release: "2022",
+        limit: "1000",
+        geo_id: "state:55|county:025",
+      },
+    });
+
+    // Without the as-released scope the source-scoped route still answers.
+    expect(
+      buildHistoryObservationRequest(census, {
+        metricCode: "ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }).resource,
+    ).toBe("/census/observations/timeseries");
+  });
+
+  test("dimension controls under as-released are the neutral declared ones", () => {
+    // A source-scoped source declares none of its own; the neutral filters
+    // it carries into an as-released read are all shared vocabulary.
+    expect(scopedDimensionFilters(census, SCOPE_LATEST)).toEqual([]);
+    expect(scopedDimensionFilters(census, SCOPE_AS_RELEASED)).toEqual([]);
+    expect(scopedDimensionFilters(cdc, SCOPE_AS_RELEASED)).toEqual([
+      "adjustment_status",
+      "stratum_id",
+    ]);
+    expect(scopedDimensionFilters(null, SCOPE_AS_RELEASED)).toEqual([]);
+  });
+
+  test("an unpinned as-released answer is one series per release, not one value", () => {
+    const rows = [
+      { geo_id: "state:55|county:025", release: "2022", value: "555000" },
+      { geo_id: "state:55|county:025", release: "2023", value: "561504" },
+    ];
+    expect(stratificationDimensions(census.dimensionFilters, SCOPE_LATEST)).toEqual([]);
+    expect(stratificationDimensions(census.dimensionFilters, SCOPE_AS_RELEASED)).toEqual([
+      RELEASE_DIMENSION,
+    ]);
+
+    // Two releases for one geography: the caller declines to colour or chart
+    // rather than keeping whichever release sorted last.
+    expect(
+      describeStratification(
+        rows,
+        stratificationDimensions(census.dimensionFilters, SCOPE_AS_RELEASED),
+      ),
+    ).toEqual({
+      seriesCount: 2,
+      stratified: true,
+      varyingDimensions: [RELEASE_DIMENSION],
+    });
+
+    // Pinning one resolves it to a single series.
+    expect(
+      describeStratification(
+        rows.filter((row) => row.release === "2023"),
+        stratificationDimensions(census.dimensionFilters, SCOPE_AS_RELEASED),
+      ),
+    ).toEqual({
+      seriesCount: 1,
+      stratified: false,
+      varyingDimensions: [],
+    });
+
+    // The release axis composes with a source's own declared dimensions.
+    expect(stratificationDimensions(cdc.dimensionFilters, SCOPE_AS_RELEASED)).toEqual([
+      "adjustment_status",
+      "stratum_id",
+      RELEASE_DIMENSION,
+    ]);
   });
 });

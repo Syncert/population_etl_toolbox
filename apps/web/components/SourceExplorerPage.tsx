@@ -27,6 +27,8 @@ import type {
   CollectionResponse,
   DistributionResponse,
   GeographySummary,
+  MetricRelease,
+  MetricReleaseListResponse,
   MetricSummary,
   Observation,
 } from "../lib/api/types";
@@ -64,14 +66,22 @@ import {
 } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
+  RELEASE_DIMENSION,
+  SCOPE_AS_RELEASED,
+  SCOPE_LATEST,
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
+  buildReleaseListRequest,
   describeStratification,
   normalizeObservationRows,
   observationDimensionOptions,
   observationDimensionValue,
   observationPeriodLabel,
+  scopedDimensionFilters,
+  servesAsReleased,
+  stratificationDimensions,
 } from "../lib/observationAccess";
+import type { ObservationScope } from "../lib/observationAccess";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
@@ -94,6 +104,11 @@ export {
 const CATALOG_PAGE_SIZE = 1000;
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const DEFAULT_MAP_MODE = "choropleth";
+const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
+// The release listing is a bounded, deterministic page; a metric with more
+// published releases than this is reported as such rather than truncated
+// into a silently partial option list.
+const RELEASE_PAGE_SIZE = 200;
 
 type TileMetadata = Awaited<ReturnType<typeof discoverTileMetadata>>;
 
@@ -121,6 +136,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const observationTracker = useRef(createRequestTracker()).current;
   const distributionTracker = useRef(createRequestTracker()).current;
   const timeseriesTracker = useRef(createRequestTracker()).current;
+  const releasesTracker = useRef(createRequestTracker()).current;
+  // The metric a pinned release was chosen for. A release identity belongs
+  // to one metric, so the pin is dropped when the metric changes — but not
+  // when a shared link selects the metric and its pin together.
+  const releaseMetricRef = useRef("");
   // The initially requested URL state, applied once when the first metric
   // catalog for the resolved source arrives.
   const initialStateRef = useRef<ExplorerState | null>(null);
@@ -154,6 +174,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // (CDC strata/adjustment, FBI UCR subject, USDA NASS domain). Keyed by the
   // filter name the capability declares; nothing here enumerates sources.
   const [dimensionSelections, setDimensionSelections] = useState<Record<string, string>>({});
+  // Which publication the explorer is reading: the source's own latest, or
+  // the published releases with one optionally pinned. Both come from the
+  // API's declared vocabulary, never from a client-authored list.
+  const [observationScope, setObservationScope] = useState<ObservationScope>(DEFAULT_SCOPE);
+  const [selectedRelease, setSelectedRelease] = useState("");
+  const [releases, setReleases] = useState<MetricRelease[]>([]);
+  const [releasesStatus, setReleasesStatus] = useState<RequestStatus>({
+    state: "idle",
+    message: "waiting for metric",
+  });
 
   const [observationStatus, setObservationStatus] = useState<RequestStatus>({
     state: "idle",
@@ -198,10 +228,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // would reject, or silently widening the answer by omitting it.
   const supportsStateFilter = sourceSupportsParameter(activeSource, "state_fips");
   const supportsGeoLevelFilter = sourceSupportsParameter(activeSource, "geo_level");
+  // As-released reads answer on the neutral resource, so the dimension
+  // controls under that scope are the neutral ones the capability declares.
   const dimensionFilters = useMemo(
-    () => activeSource?.dimensionFilters || [],
-    [activeSource],
+    () => scopedDimensionFilters(activeSource, observationScope),
+    [activeSource, observationScope],
   );
+  const releasesDeclared = servesAsReleased(activeSource);
+  const asReleased = observationScope === SCOPE_AS_RELEASED && releasesDeclared;
   // Keyed by value so the observation effect re-runs on a real selection
   // change rather than on every render.
   const dimensionKey = JSON.stringify(
@@ -213,27 +247,43 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       geoLevel: selectedGeoLevel,
       stateFips: selectedGeoLevel === "NATIONAL" ? "" : selectedStateFips,
       limit: "4000",
+      scope: observationScope,
+      release: selectedRelease,
       dimensions: Object.fromEntries(
         JSON.parse(dimensionKey) as [string, string][],
       ) as Record<string, string>,
     }),
-    [selectedMetric, selectedGeoLevel, selectedStateFips, dimensionKey],
+    [
+      selectedMetric,
+      selectedGeoLevel,
+      selectedStateFips,
+      dimensionKey,
+      observationScope,
+      selectedRelease,
+    ],
   );
 
   // A stratified source publishes several declared-dimension series per
   // geography. Joining them to one polygon or one line would keep whichever
   // row arrived last, so the map declines and says so instead.
+  // Under an unpinned as-released read the release is one more axis: every
+  // published release answers, and colouring the join would show whichever
+  // release sorted last as the value.
+  const seriesDimensions = useMemo(
+    () => stratificationDimensions(dimensionFilters, observationScope),
+    [dimensionFilters, observationScope],
+  );
   const stratification = useMemo(
-    () => describeStratification(observations, dimensionFilters),
-    [observations, dimensionFilters],
+    () => describeStratification(observations, seriesDimensions),
+    [observations, seriesDimensions],
   );
   const mappableObservations = useMemo(
     () => (stratification.stratified ? [] : observations),
     [observations, stratification.stratified],
   );
   const historyStratification = useMemo(
-    () => describeStratification(timeseries, dimensionFilters),
-    [timeseries, dimensionFilters],
+    () => describeStratification(timeseries, seriesDimensions),
+    [timeseries, seriesDimensions],
   );
 
   const facetOptions = useMemo(() => datasetFacetOptions(metrics), [metrics]);
@@ -421,6 +471,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         }
         if (requested?.stateFips) setSelectedStateFips(requested.stateFips);
         if (requested?.geoId) setSelectedGeoId(requested.geoId);
+        // The requested scope is applied only where the source declares it;
+        // a link asking for an as-released read of a source that publishes
+        // none resolves to the latest publication rather than a 422.
+        if (requested?.scope === SCOPE_AS_RELEASED && servesAsReleased(source)) {
+          setObservationScope(SCOPE_AS_RELEASED);
+          if (requested.release && source.supportsReleasePin) {
+            releaseMetricRef.current = requested.metric || "";
+            setSelectedRelease(requested.release);
+          }
+        }
       } catch (error) {
         if (request.isCurrent()) {
           setMetricsError(apiErrorMessage(error) || "Unable to load metrics.");
@@ -455,6 +515,72 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       message: `layer=${tileMetadata.layerId}; chosen_layer=${activeSourceLayer || tileMetadata.sourceLayer}; configured_source=${tileMetadata.sourceLayer}; active_source=${activeSourceLayer || tileMetadata.sourceLayer}; join=${tileMetadata.joinKey}; healthy_tile=true`,
     });
   }, [tileMetadata, activeSourceLayer]);
+
+  // The releases a metric published, from /observations/releases. This is
+  // the only source of a release identity; nothing here may infer one from a
+  // period, a vintage, or an observation row.
+  useEffect(() => {
+    if (!selectedMetric || !activeSource) {
+      return;
+    }
+
+    const listRequest = buildReleaseListRequest(activeSource, {
+      metricCode: selectedMetric,
+      limit: String(RELEASE_PAGE_SIZE),
+    });
+    setReleases([]);
+    if (!listRequest || !releasesDeclared) {
+      setReleasesStatus({
+        state: "warn",
+        message: "as-released reads are not declared for this source",
+      });
+      return;
+    }
+
+    const request = releasesTracker.begin();
+    setReleasesStatus({ state: "loading", message: "loading published releases" });
+
+    async function loadReleases() {
+      try {
+        const payload = await apiFetch<MetricReleaseListResponse>(listRequest!.resource, {
+          params: listRequest!.params,
+        });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!request.isCurrent()) {
+          return;
+        }
+        setReleases(items);
+        const total = typeof payload.total === "number" ? payload.total : items.length;
+        setReleasesStatus({
+          state: "ok",
+          message:
+            items.length < total
+              ? `${items.length} of ${total} published releases listed`
+              : `${items.length} published release${items.length === 1 ? "" : "s"}`,
+        });
+      } catch (error) {
+        if (request.isCurrent()) {
+          setReleases([]);
+          setReleasesStatus({ state: "bad", message: apiErrorMessage(error) });
+        }
+      }
+    }
+
+    loadReleases();
+
+    return () => {
+      releasesTracker.invalidate();
+    };
+  }, [releasesTracker, selectedMetric, activeSource, releasesDeclared]);
+
+  // A release identity belongs to one metric; carrying a pin across a metric
+  // change would send an identity that metric never published.
+  useEffect(() => {
+    if (!selectedRelease || releaseMetricRef.current === selectedMetric) {
+      return;
+    }
+    setSelectedRelease("");
+  }, [selectedMetric, selectedRelease]);
 
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
@@ -507,14 +633,25 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // /distribution/bins answers only for the sources whose capability
     // entry declares it; for the rest the honest state is "the API does not
     // serve this here", not a failed request retried as a fallback.
-    const servesDistribution = activeSource.servesDistribution;
+    //
+    // The route also declares no `scope`: its bins are computed over the
+    // metric's latest values. Under an as-released read they would describe
+    // a different answer than the one on screen, so the request is not made
+    // and the legend says the bins are local to the loaded rows.
+    const servesDistribution = activeSource.servesDistribution && !asReleased;
     setDistributionStatus(
-      servesDistribution
-        ? { state: "loading", message: "loading API bins" }
-        : {
+      activeSource.servesDistribution && asReleased
+        ? {
             state: "warn",
-            message: "not declared for this source; using local fallback bins",
-          },
+            message:
+              "API bins describe the latest publication only; local bins over the released rows",
+          }
+        : servesDistribution
+          ? { state: "loading", message: "loading API bins" }
+          : {
+              state: "warn",
+              message: "not declared for this source; using local fallback bins",
+            },
     );
 
     async function loadDistribution() {
@@ -593,7 +730,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       distributionTracker.invalidate();
     };
-  }, [distributionTracker, selectedMetric, selectedStateFips, selectedGeoLevel, activeSource]);
+  }, [
+    distributionTracker,
+    selectedMetric,
+    selectedStateFips,
+    selectedGeoLevel,
+    activeSource,
+    asReleased,
+  ]);
 
   useEffect(() => {
     if (!selectedMetric || !selectedGeoId || !activeSource) {
@@ -615,6 +759,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           metricCode: selectedMetric,
           geoId: selectedGeoId,
           limit: "1000",
+          scope: observationScope,
+          release: selectedRelease,
           dimensions: dimensionSelections,
         });
         const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
@@ -645,7 +791,15 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       timeseriesTracker.invalidate();
     };
-  }, [timeseriesTracker, selectedMetric, selectedGeoId, activeSource, dimensionSelections]);
+  }, [
+    timeseriesTracker,
+    selectedMetric,
+    selectedGeoId,
+    activeSource,
+    dimensionSelections,
+    observationScope,
+    selectedRelease,
+  ]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -1110,11 +1264,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         mapMode: mapMode as ExplorerState["mapMode"],
         stateFips: selectedStateFips,
         geoId: selectedGeoId,
+        scope: observationScope,
+        release: selectedRelease,
       },
       {
         source: sourceKey,
         geoLevel: DEFAULT_GEO_LEVEL,
         mapMode: DEFAULT_MAP_MODE,
+        scope: DEFAULT_SCOPE,
       },
     );
     const nextUrl = query
@@ -1123,7 +1280,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [selectedMetric, selectedGeoLevel, mapMode, selectedStateFips, selectedGeoId, activeSource, sourceKey]);
+  }, [
+    selectedMetric,
+    selectedGeoLevel,
+    mapMode,
+    selectedStateFips,
+    selectedGeoId,
+    activeSource,
+    sourceKey,
+    observationScope,
+    selectedRelease,
+  ]);
 
   function handleSourceChange(key: string) {
     if (!key || key === activeSource?.key) {
@@ -1132,6 +1299,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     initialStateRef.current = null;
     setActiveSourceKey(key);
     setDimensionSelections({});
+    setObservationScope(DEFAULT_SCOPE);
+    setSelectedRelease("");
+    setReleases([]);
     setObservations([]);
     setDistribution(null);
     setTimeseries([]);
@@ -1164,7 +1334,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   }
 
   function exportCsv() {
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", ...dimensionFilters];
+    // The export carries its own reproducibility envelope: which scope and
+    // release answered, and each row's own published release identity.
+    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", "scope", "release", "as_of", ...dimensionFilters];
     const rows = observations.map((item) => [
       item.geo_id,
       observationName(item),
@@ -1176,13 +1348,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       item.source || item.source_code,
       item.dataset || item.dataset_code,
       item.margin_of_error,
+      observationScope,
+      item.release,
+      item.as_of,
       ...dimensionFilters.map((name) => observationDimensionValue(item, name)),
     ]);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `${selectedMetric.replaceAll(":", "-")}-${selectedGeoLevel.toLowerCase()}-latest.csv`;
+    const scopeSuffix = asReleased
+      ? `as-released${selectedRelease ? `-${selectedRelease.replaceAll(":", "-")}` : ""}`
+      : "latest";
+    link.download = `${selectedMetric.replaceAll(":", "-")}-${selectedGeoLevel.toLowerCase()}-${scopeSuffix}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -1229,6 +1407,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       data-dimension-filters={dimensionFilters.join(",")}
       data-series-count={stratification.seriesCount}
       data-stratified={stratification.stratified ? "true" : "false"}
+      data-scope={observationScope}
+      data-release={selectedRelease}
+      data-release-count={releases.length}
     >
       <header className="explorer-heading">
         <div>
@@ -1274,6 +1455,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           label="Distribution"
           message={distributionStatus.message}
           testId="distribution-status"
+        />
+        <StatusPill
+          state={releasesStatus.state}
+          label="Releases"
+          message={releasesStatus.message}
+          testId="releases-status"
         />
       </section>
 
@@ -1351,6 +1538,50 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ))}
               </select>
             </div>
+
+            {releasesDeclared ? (
+              <div className="control-group">
+                <label htmlFor="publication-select">Publication</label>
+                <select
+                  id="publication-select"
+                  className="select"
+                  data-testid="publication-select"
+                  value={
+                    observationScope === SCOPE_AS_RELEASED && selectedRelease
+                      ? `release:${selectedRelease}`
+                      : observationScope
+                  }
+                  onChange={(event) => {
+                    const choice = event.target.value;
+                    if (choice.startsWith("release:")) {
+                      setObservationScope(SCOPE_AS_RELEASED);
+                      releaseMetricRef.current = selectedMetric;
+                      setSelectedRelease(choice.slice("release:".length));
+                      return;
+                    }
+                    setObservationScope(choice as ObservationScope);
+                    setSelectedRelease("");
+                  }}
+                >
+                  <option value={SCOPE_LATEST}>Latest published</option>
+                  <option value={SCOPE_AS_RELEASED}>All published releases</option>
+                  {/* Release identities as /observations/releases published
+                      them, with the counts it published; a pin is offered
+                      only where the resource declares `release`. */}
+                  {activeSource?.supportsReleasePin
+                    ? releases.map((release) => (
+                        <option value={`release:${release.release}`} key={release.release}>
+                          {`As released: ${release.release}`}
+                          {release.as_of ? ` (as of ${release.as_of})` : ""}
+                          {typeof release.observation_count === "number"
+                            ? ` — ${release.observation_count.toLocaleString()} observations`
+                            : ""}
+                        </option>
+                      ))
+                    : null}
+                </select>
+              </div>
+            ) : null}
 
             {dimensionFilters.map((name) => {
               const options = observationDimensionOptions(observations, name);
@@ -1456,6 +1687,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               as the value; narrow the{" "}
               {stratification.varyingDimensions.join(", ") || "source"} filter to chart
               a single series.
+            </p>
+          ) : null}
+          {asReleased ? (
+            <p className="coverage-note partial" data-testid="as-released-note">
+              Reading {selectedRelease
+                ? `release ${selectedRelease} as it was published`
+                : "every published release"}
+              . Values are as that publication stated them, not the source&apos;s current
+              latest{selectedRelease ? "" : ", so a geography carries one row per release"}.
+              API-derived distribution bins are not requested for an as-released read;
+              the legend&apos;s bins are local to the loaded rows.
+            </p>
+          ) : null}
+          {!releasesDeclared && activeSource ? (
+            <p className="subtle" data-testid="releases-note">
+              {activeSource.title} declares no as-released surface, so this source is
+              explored at its latest publication only.
             </p>
           ) : null}
           {!supportsGeoLevelFilter ? (
@@ -1650,6 +1898,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <th>Value</th>
                   <th>Status</th>
                   <th>Units</th>
+                  {asReleased ? <th>Release</th> : null}
                   {dimensionFilters.map((name) => (
                     <th key={name}>{name.replaceAll("_", " ")}</th>
                   ))}
@@ -1658,7 +1907,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               <tbody>
                 {observations.slice(0, 12).map((item, index) => (
                   <tr
-                    key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${index}`}
+                    key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${String(item.release ?? "")}-${index}`}
                   >
                     <td>{String(item.county_name || item.state_name || item.geo_id || "-")}</td>
                     <td>{String(item.geo_level || "-")}</td>
@@ -1669,6 +1918,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{item.value ?? "-"}</td>
                     <td>{String(item.value_status || (item.value === null ? "not published" : "-"))}</td>
                     <td>{observationUnit(item)}</td>
+                    {asReleased ? (
+                      <td>{observationDimensionValue(item, RELEASE_DIMENSION) || "-"}</td>
+                    ) : null}
                     {dimensionFilters.map((name) => (
                       <td key={name}>{observationDimensionValue(item, name) || "-"}</td>
                     ))}
@@ -1676,7 +1928,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ))}
                 {observations.length === 0 ? (
                   <tr>
-                    <td colSpan={7 + dimensionFilters.length} className="subtle">
+                    <td
+                      colSpan={7 + (asReleased ? 1 : 0) + dimensionFilters.length}
+                      className="subtle"
+                    >
                       No observations available for selected metric.
                     </td>
                   </tr>

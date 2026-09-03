@@ -93,6 +93,26 @@ export interface Observation {
   [key: string]: unknown;
 }
 
+/**
+ * One published release holding a metric's observations, from
+ * `/observations/releases`. `release` is the source's own release identity
+ * (a CDC/NASS release watermark, an FBI release key, a Census vintage, a
+ * BLS/FRED as-of date) and is what `release=` accepts alongside
+ * `scope=as_released`.
+ */
+export interface MetricRelease {
+  release: string;
+  as_of?: string | null;
+  observation_count?: number | null;
+  [key: string]: unknown;
+}
+
+/** `/observations/releases`: a metric's published releases, newest first. */
+export interface MetricReleaseListResponse extends CollectionResponse<MetricRelease> {
+  metric_code?: string;
+  source_code?: string;
+}
+
 export interface DistributionBin {
   bin_index: number;
   count: number;

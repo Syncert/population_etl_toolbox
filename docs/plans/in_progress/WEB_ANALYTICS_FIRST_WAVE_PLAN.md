@@ -16,15 +16,15 @@ verify:
 ## Plan status
 
 - **Status:** Claimed; in progress
-- **Last updated:** 2026-09-02
-- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second and third increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Last updated:** 2026-09-03
+- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second, third, and fourth increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-003 remaining acceptance criteria — (a) as-released exploration: surface `/observations/releases` and the `scope=as_released` revision surface in the explorer so a pinned release reproduces an as-released analysis; (b) render map, trend, table, metadata, quality, and export modes only where the selected measure supports them, and provide the explicit non-spatial experience for national or otherwise unmappable series (the map currently renders for every selection and merely declines to colour); (c) retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
+- **Next pickup:** WEB-003 remaining acceptance criteria — (a) render map, trend, table, metadata, quality, and export modes only where the selected measure supports them, and provide the explicit non-spatial experience for national or otherwise unmappable series (the map currently renders for every selection and merely declines to colour); (b) retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -591,6 +591,76 @@ both read from `/catalog/capabilities`; nothing enumerates sources.
 Not run, recorded as not run: composed-service suites (`make test-api`,
 `make test-martin-*`, deployment smoke) — no API, Martin, or deployment
 contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (fourth increment — as-released, 2026-09-03)
+
+The explorer could only ask what a source publishes *now*. WEB-003's
+as-released criterion is closed: a pinned release reproduces the analysis as
+that release published it.
+
+- **The surface is read, not assumed (`lib/explorerSources.ts`).** Three
+  declarations decide it: `/observations/releases` (the releases are
+  listable), the neutral route's `scope` parameter (an as-released read is a
+  request the API accepts), and its `release` parameter (one can be pinned).
+  The registry declares all three for every completed source, so the control
+  appears for all seven — but it appears because the capability entry says
+  so, and a source published without them gets an explicit "declares no
+  as-released surface" note instead. The offline fallback claims none:
+  with discovery unavailable nothing has declared one.
+- **An as-released read always answers on the neutral resource
+  (`lib/observationAccess.ts`).** `scope` lives only on `/observations`, so a
+  source-scoped source moves there for the released question and carries the
+  neutral filters its capability declares — not the parameters of the route
+  it left behind, which the neutral resource would reject with a 422. A
+  `release` is sent only alongside `scope=as_released`; carried alone the API
+  answers 422, because "the latest publication, but an older one" is a
+  contradiction rather than a query.
+- **Release identities come from the API.** The `Publication` control is
+  built from `/observations/releases` — the identity, its published `as_of`,
+  and its observation count, exactly as listed. Nothing infers a release from
+  a period, a vintage, or an observation row, and a page shorter than the
+  published total says so rather than presenting itself as the whole list.
+- **An unpinned as-released answer is one series per release.** Every
+  published release answers at once, so a geography carries several rows and
+  the choropleth join and the history chart would each have kept whichever
+  release sorted last. The release becomes one more stratification axis: the
+  map declines to colour, the history panel declines to chart, and both name
+  the release control as the filter that resolves it. Pinning one resolves it
+  to a single series.
+- **A defect this found before it shipped:** the pin is cleared when the
+  metric changes, because a release identity belongs to one metric — but that
+  reset also fired when a shared link selected a metric and its pin together,
+  silently widening the link's analysis to every release. The reset now
+  compares against the metric the pin was chosen for.
+- **`/distribution/bins` is not requested for an as-released read.** The
+  route declares no `scope`: its bins are computed over the metric's latest
+  values, and colouring released rows with them would label the legend with a
+  distribution of a different answer. The pill says so and the legend falls
+  back to bins local to the loaded rows.
+- **Reproducible and exportable.** `scope` and `release` round-trip through
+  the shareable URL (a `release` without the scope is dropped on both parse
+  and serialize), the observation table gains a release column while reading
+  as released, and the CSV export carries `scope`, each row's own `release`,
+  and its `as_of`.
+- **Evidence:** WEB-016 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 226 of 226 and the
+  behavioral register is at 252 rows, all FULL. The unit fixtures now carry
+  the served neutral parameter list from
+  `tests/fixtures/api/openapi_contract.json` rather than an abbreviated one.
+  `explorer-sources` extended to 10 tests, `observation-access` to 22,
+  `url-state` to 7; a fifth browser spec drives Census ACS end to end through
+  the release listing, the unpinned decline, the pin, the shared link, and the
+  return to the latest publication.
+
+### Validation (2026-09-03, after the fourth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 75 passed (9 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 8 passed (Chromium) |
 
 ## Implementation phases
 

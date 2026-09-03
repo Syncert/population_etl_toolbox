@@ -13,10 +13,17 @@
 //    publishes several series per geography; this module reports that fact
 //    so the caller can decline to map or chart them as one, rather than
 //    keeping whichever row happened to arrive last.
+//
+// Scope is part of the same discipline. `scope=latest` is the source's own
+// latest publication; `scope=as_released` reads every published release and
+// is offered only where the capability entry declares `/observations/releases`
+// and the neutral `scope` parameter. An unpinned as-released answer carries
+// one series per release, which is reported as a stratification rather than
+// collapsed to whichever release sorted last.
 
 import type { QueryParams } from "./api/client";
 import type { ExplorerSource } from "./explorerSources";
-import { NEUTRAL_OBSERVATIONS_PATH } from "./explorerSources";
+import { NEUTRAL_OBSERVATIONS_PATH, RELEASES_PATH } from "./explorerSources";
 import type { ObservationRow } from "./explorerViewModel";
 
 export interface ObservationRequest {
@@ -24,7 +31,29 @@ export interface ObservationRequest {
   params: QueryParams;
 }
 
-export interface LatestObservationQuery {
+/** `scope=latest` reads the source's own declared latest semantics. */
+export const SCOPE_LATEST = "latest";
+/**
+ * `scope=as_released` reads every published release, each row carrying its
+ * release identity. Pinning one with `release=` reproduces the analysis as
+ * that release published it.
+ */
+export const SCOPE_AS_RELEASED = "as_released";
+
+export type ObservationScope = typeof SCOPE_LATEST | typeof SCOPE_AS_RELEASED;
+
+interface ScopedQuery {
+  /** Defaults to `latest`; `as_released` only where the source declares it. */
+  scope?: ObservationScope;
+  /**
+   * A release identity from `/observations/releases`. Sent only alongside
+   * `scope=as_released` — the API answers `release` without it with a 422,
+   * because "the latest publication, but an older one" is a contradiction.
+   */
+  release?: string;
+}
+
+export interface LatestObservationQuery extends ScopedQuery {
   metricCode: string;
   geoLevel?: string;
   stateFips?: string;
@@ -33,15 +62,17 @@ export interface LatestObservationQuery {
   dimensions?: Record<string, string>;
 }
 
-export interface HistoryObservationQuery {
+export interface HistoryObservationQuery extends ScopedQuery {
   metricCode: string;
   geoId: string;
   limit?: string | number;
   dimensions?: Record<string, string>;
 }
 
-/** `scope=latest` reads the source's own declared latest semantics. */
-export const SCOPE_LATEST = "latest";
+export interface ReleaseListQuery {
+  metricCode: string;
+  limit?: string | number;
+}
 
 function declaredOnly(
   source: ExplorerSource,
@@ -61,17 +92,98 @@ function declaredOnly(
 }
 
 function dimensionParams(
-  source: ExplorerSource,
+  names: string[],
   dimensions: Record<string, string> | undefined,
 ): QueryParams {
   const params: QueryParams = {};
-  for (const name of source.dimensionFilters) {
+  for (const name of names) {
     const value = dimensions?.[name];
     if (value) {
       params[name] = value;
     }
   }
   return params;
+}
+
+/**
+ * Whether this source can answer an as-released question at all: the release
+ * listing and the neutral `scope` parameter must both be declared for it.
+ */
+export function servesAsReleased(source: ExplorerSource | null | undefined): boolean {
+  return Boolean(source?.servesReleases && source.supportsAsReleased);
+}
+
+/** The dimension controls that apply under one scope. */
+export function scopedDimensionFilters(
+  source: ExplorerSource | null | undefined,
+  scope: ObservationScope,
+): string[] {
+  if (!source) {
+    return [];
+  }
+  // An as-released read always goes through the neutral resource, so the
+  // filters it accepts are the neutral ones even for a source-scoped source.
+  return scope === SCOPE_AS_RELEASED && servesAsReleased(source)
+    ? source.neutralDimensionFilters
+    : source.dimensionFilters;
+}
+
+/**
+ * The `/observations/releases` request for one metric, or `null` when the
+ * source's capability entry does not declare that route. A null answer is
+ * the honest "this source publishes no release listing here"; nothing here
+ * may guess a release identity.
+ */
+export function buildReleaseListRequest(
+  source: ExplorerSource | null | undefined,
+  query: ReleaseListQuery,
+): ObservationRequest | null {
+  if (!source?.servesReleases) {
+    return null;
+  }
+  return {
+    resource: RELEASES_PATH,
+    params: { metric_code: query.metricCode, limit: query.limit },
+  };
+}
+
+/**
+ * The scope parameters a neutral request carries. `release` travels only
+ * with `scope=as_released`, and only when the source declares that it can
+ * be pinned.
+ */
+function scopeParams(source: ExplorerSource, query: ScopedQuery): QueryParams {
+  if (query.scope !== SCOPE_AS_RELEASED || !servesAsReleased(source)) {
+    return { scope: SCOPE_LATEST };
+  }
+  return {
+    scope: SCOPE_AS_RELEASED,
+    release: source.supportsReleasePin ? query.release : undefined,
+  };
+}
+
+/** True when this query asks the neutral resource for an as-released read. */
+function asReleased(source: ExplorerSource, query: ScopedQuery): boolean {
+  return query.scope === SCOPE_AS_RELEASED && servesAsReleased(source);
+}
+
+/** The row field carrying a row's own release identity. */
+export const RELEASE_DIMENSION = "release";
+
+/**
+ * The axes along which a loaded answer can carry more than one series per
+ * geography. Under `scope=as_released` the release is one of them: every
+ * published release answers, so a choropleth join or a single-line chart
+ * would keep whichever release arrived last unless one is pinned. Adding it
+ * here lets the caller decline for the same reason, and name the release
+ * control as the filter that resolves it.
+ */
+export function stratificationDimensions(
+  dimensionFilters: string[] | null | undefined,
+  scope: ObservationScope,
+): string[] {
+  const names = dimensionFilters || [];
+  return scope === SCOPE_AS_RELEASED ? [...names, RELEASE_DIMENSION] : [...names];
 }
 
 /**
@@ -89,8 +201,9 @@ export function buildLatestObservationRequest(
     geo_level: query.geoLevel,
     state_fips: query.stateFips,
   };
+  const released = asReleased(source, query);
 
-  if (source.accessShape === "source-scoped") {
+  if (source.accessShape === "source-scoped" && !released) {
     return {
       resource: `/${source.segment}/observations/latest`,
       params: {
@@ -101,14 +214,18 @@ export function buildLatestObservationRequest(
     };
   }
 
+  // Both the neutral shape and every as-released read answer here; the
+  // filters a source-scoped source may carry across are its declared
+  // neutral ones, not the parameters of the route it left behind.
+  const allowed = released ? source.neutralFilters : source.requestFilters;
   return {
     resource: NEUTRAL_OBSERVATIONS_PATH,
     params: {
       metric_code: query.metricCode,
-      scope: SCOPE_LATEST,
+      ...scopeParams(source, query),
       limit: query.limit,
-      ...declaredOnly(source, shared, source.requestFilters),
-      ...dimensionParams(source, query.dimensions),
+      ...declaredOnly(source, shared, allowed),
+      ...dimensionParams(scopedDimensionFilters(source, query.scope || SCOPE_LATEST), query.dimensions),
     },
   };
 }
@@ -124,7 +241,9 @@ export function buildHistoryObservationRequest(
   source: ExplorerSource,
   query: HistoryObservationQuery,
 ): ObservationRequest {
-  if (source.accessShape === "source-scoped") {
+  const released = asReleased(source, query);
+
+  if (source.accessShape === "source-scoped" && !released) {
     return {
       resource: `/${source.segment}/observations/timeseries`,
       params: {
@@ -135,14 +254,15 @@ export function buildHistoryObservationRequest(
     };
   }
 
+  const allowed = released ? source.neutralFilters : source.requestFilters;
   return {
     resource: NEUTRAL_OBSERVATIONS_PATH,
     params: {
       metric_code: query.metricCode,
-      scope: SCOPE_LATEST,
+      ...scopeParams(source, query),
       limit: query.limit,
-      ...declaredOnly(source, { geo_id: query.geoId }, source.requestFilters),
-      ...dimensionParams(source, query.dimensions),
+      ...declaredOnly(source, { geo_id: query.geoId }, allowed),
+      ...dimensionParams(scopedDimensionFilters(source, query.scope || SCOPE_LATEST), query.dimensions),
     },
   };
 }

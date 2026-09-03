@@ -20,6 +20,36 @@ import {
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot): every
 // completed source, with the exact versioned routes that answer for it.
+// The registry declares both neutral routes for every completed source, so
+// every capability entry carries them alongside whatever source-scoped
+// routes it also publishes. Parameter lists are the served ones (see
+// tests/fixtures/api/openapi_contract.json).
+const neutralRoutes = [
+  {
+    path: "/api/v1/observations",
+    parameters: [
+      "adjustment_status",
+      "county_fips",
+      "domain_desc",
+      "domaincat_desc",
+      "geo_id",
+      "geo_level",
+      "limit",
+      "metric_code",
+      "offset",
+      "release",
+      "scope",
+      "state_fips",
+      "stratum_id",
+      "subject_code",
+      "subject_type",
+      "year_from",
+      "year_to",
+    ],
+  },
+  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
+];
+
 const sourceRoutes = (segment) => [
   {
     path: `/api/v1/${segment}/observations/latest`,
@@ -29,6 +59,7 @@ const sourceRoutes = (segment) => [
     path: `/api/v1/${segment}/observations/timeseries`,
     parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
   },
+  ...neutralRoutes,
 ];
 
 const capabilities = [
@@ -49,7 +80,7 @@ const capabilities = [
     datasets: ["cdc_places_county"],
     observation_filters: ["adjustment_status", "geo_id", "stratum_id"],
     observation_routes: [
-      { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
+      ...neutralRoutes,
       { path: "/api/v1/cdc/observations", parameters: ["geo_id", "limit"] },
     ],
   },
@@ -78,9 +109,7 @@ const capabilities = [
     served_by_neutral_routes: true,
     datasets: ["fbi_ucr_srs_estimates"],
     observation_filters: ["geo_id", "subject_code", "subject_type"],
-    observation_routes: [
-      { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
-    ],
+    observation_routes: [...neutralRoutes],
   },
   {
     source_code: "FRED",
@@ -99,7 +128,7 @@ const capabilities = [
     datasets: ["nass_crops_county"],
     observation_filters: ["domain_desc", "geo_id"],
     observation_routes: [
-      { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
+      ...neutralRoutes,
       { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
     ],
   },
@@ -171,6 +200,78 @@ describe("capability-derived explorer sources", () => {
     expect(findExplorerSource(sources, "missing")).toBeNull();
   });
 
+  test("the as-released surface is read from the declared neutral routes", () => {
+    const sources = buildExplorerSources(capabilities);
+    // Every completed source declares /observations/releases and the neutral
+    // `scope`/`release` parameters, so the as-released surface is reachable
+    // for the source-scoped sources too — it lives only on that resource.
+    for (const source of sources) {
+      expect(source.servesReleases).toBe(true);
+      expect(source.supportsAsReleased).toBe(true);
+      expect(source.supportsReleasePin).toBe(true);
+    }
+
+    // A source-scoped source keeps its own route parameters for a latest
+    // read, and carries its declared neutral filters for an as-released one.
+    const census = findExplorerSource(sources, "census");
+    expect(census.accessShape).toBe("source-scoped");
+    expect(census.requestFilters).toEqual([
+      "geo_level",
+      "limit",
+      "metric_code",
+      "offset",
+      "state_fips",
+    ]);
+    expect(census.neutralFilters).toEqual([
+      "county_fips",
+      "geo_id",
+      "geo_level",
+      "limit",
+      "metric_code",
+      "offset",
+      "release",
+      "scope",
+      "state_fips",
+    ]);
+    expect(census.neutralDimensionFilters).toEqual([]);
+
+    // The neutral shape's dimension filters are the same list it already
+    // uses, so a stratified source keeps its controls under either scope.
+    const cdc = findExplorerSource(sources, "cdc");
+    expect(cdc.neutralDimensionFilters).toEqual(["adjustment_status", "stratum_id"]);
+    expect(cdc.neutralFilters).toEqual(cdc.requestFilters);
+  });
+
+  test("a source whose neutral route declares no scope gets no as-released surface", () => {
+    // The declaration decides, not the source's identity: a neutral route
+    // published without `scope` cannot answer an as-released question, and a
+    // route published without `release` cannot have one pinned.
+    const [scopeless] = buildExplorerSources([
+      {
+        ...capabilities[1],
+        observation_routes: [
+          { path: "/api/v1/observations", parameters: ["metric_code", "limit"] },
+        ],
+      },
+    ]);
+    expect(scopeless.servesReleases).toBe(false);
+    expect(scopeless.supportsAsReleased).toBe(false);
+    expect(scopeless.supportsReleasePin).toBe(false);
+
+    const [unpinnable] = buildExplorerSources([
+      {
+        ...capabilities[1],
+        observation_routes: [
+          { path: "/api/v1/observations", parameters: ["metric_code", "scope"] },
+          { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+        ],
+      },
+    ]);
+    expect(unpinnable.servesReleases).toBe(true);
+    expect(unpinnable.supportsAsReleased).toBe(true);
+    expect(unpinnable.supportsReleasePin).toBe(false);
+  });
+
   test("degrades to the labeled offline fallback when discovery is unavailable", () => {
     expect(buildExplorerSources([])).toEqual([]);
     expect(buildExplorerSources(null)).toEqual([]);
@@ -178,6 +279,10 @@ describe("capability-derived explorer sources", () => {
     expect(findExplorerSource(FALLBACK_EXPLORER_SOURCES, "census")).toMatchObject({
       sourceCode: "CENSUS_ACS",
       accessShape: "source-scoped",
+      // Discovery is unavailable, so nothing has declared an as-released
+      // surface; offering one anyway would be an invented contract.
+      servesReleases: false,
+      supportsAsReleased: false,
     });
     expect(findExplorerSource(FALLBACK_EXPLORER_SOURCES, "missing")).toBeNull();
   });

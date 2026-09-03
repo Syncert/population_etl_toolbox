@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 
 // Covers: WEB-010 — explorer URL-state parse/serialize keeps existing
 // supported links valid and reproduces the same analysis request.
+// Covers: WEB-016 — the scope and pinned release travel in the link, so a
+// shared as-released URL reproduces the same as-released analysis.
 
 import {
   explorerHref,
@@ -51,11 +53,43 @@ describe("explorer URL state", () => {
     expect(parseExplorerState(`?${serializeExplorerState(state)}`)).toEqual(state);
   });
 
+  test("carries the scope and a pinned release so an as-released link reproduces", () => {
+    expect(parseExplorerState("?scope=as_released&release=2022")).toEqual({
+      scope: "as_released",
+      release: "2022",
+    });
+    expect(
+      parseExplorerState(`?${serializeExplorerState({ scope: "as_released", release: "2022" })}`),
+    ).toEqual({ scope: "as_released", release: "2022" });
+  });
+
+  test("a release without the as-released scope is dropped, not propagated", () => {
+    // The API answers `release` without `scope=as_released` with a 422, so a
+    // link carrying one alone must not reproduce that request.
+    expect(parseExplorerState("?release=2022")).toEqual({});
+    expect(parseExplorerState("?scope=latest&release=2022")).toEqual({ scope: "latest" });
+    expect(serializeExplorerState({ release: "2022" })).toBe("");
+    expect(serializeExplorerState({ scope: "latest", release: "2022" }, { scope: "latest" }))
+      .toBe("");
+    expect(parseExplorerState("?scope=whenever")).toEqual({});
+  });
+
   test("omits defaults so equivalent selections share one URL", () => {
-    const defaults = { source: "census", geoLevel: "COUNTY", mapMode: "choropleth" };
+    const defaults = {
+      source: "census",
+      geoLevel: "COUNTY",
+      mapMode: "choropleth",
+      scope: "latest",
+    };
     expect(
       serializeExplorerState(
-        { source: "census", metric: "M", geoLevel: "COUNTY", mapMode: "choropleth" },
+        {
+          source: "census",
+          metric: "M",
+          geoLevel: "COUNTY",
+          mapMode: "choropleth",
+          scope: "latest",
+        },
         defaults,
       ),
     ).toBe("metric=M");

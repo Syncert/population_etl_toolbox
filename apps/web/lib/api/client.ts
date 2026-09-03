@@ -11,6 +11,7 @@ import type {
   DistributionResponse,
   GeographySummary,
   HealthResponse,
+  MetricReleaseListResponse,
   MetricSummary,
   Observation,
   SourceCapability,
@@ -239,11 +240,14 @@ export function getObservations(
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
 }
 
+// The release identities `scope=as_released` accepts for one metric,
+// newest first. This is the only way to learn what `release=` accepts; a
+// client must not invent or infer a release identity.
 export function getObservationReleases(
   params: QueryParams,
   options: RequestOptions = {},
-): Promise<CollectionResponse<Record<string, unknown>>> {
-  return apiFetch<CollectionResponse<Record<string, unknown>>>("/observations/releases", {
+): Promise<MetricReleaseListResponse> {
+  return apiFetch<MetricReleaseListResponse>("/observations/releases", {
     ...options,
     params,
   });

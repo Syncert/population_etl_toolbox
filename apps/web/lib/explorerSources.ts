@@ -17,6 +17,12 @@
 //
 // A source that declares neither shape is not explorable and is left out;
 // membership is never a source-code list.
+//
+// The as-released surface is read from the same declarations. Every release
+// question lives on the neutral resource — `scope=as_released` over
+// `/observations`, with the identities `/observations/releases` publishes —
+// so a source-scoped source reaches it there too, and only when its own
+// capability entry declares those routes and parameters.
 
 import { API_BASE } from "./api/client";
 import type { SourceCapability } from "./api/types";
@@ -53,6 +59,26 @@ export interface ExplorerSource {
   servesDistribution: boolean;
   latestParameters: string[];
   timeseriesParameters: string[];
+  /**
+   * Filters a request to the neutral `/observations` resource may carry —
+   * the capability's own `observation_filters` plus the universal parameter
+   * set. Populated for every source the neutral resource answers for,
+   * including the source-scoped ones, because the as-released surface lives
+   * only on that resource.
+   */
+  neutralFilters: string[];
+  /** The neutral shape's own dimension filters, by the same subtraction. */
+  neutralDimensionFilters: string[];
+  /** True when `/observations/releases` is declared: releases are listable. */
+  servesReleases: boolean;
+  /**
+   * True when the neutral resource declares `scope` for this source, so
+   * `scope=as_released` is a request the API accepts rather than one this
+   * client invented.
+   */
+  supportsAsReleased: boolean;
+  /** True when the neutral resource declares `release`, so one can be pinned. */
+  supportsReleasePin: boolean;
 }
 
 const LATEST_SUFFIX = "/observations/latest";
@@ -60,6 +86,8 @@ const TIMESERIES_SUFFIX = "/observations/timeseries";
 
 /** The registry-dispatched provider-neutral observation resource. */
 export const NEUTRAL_OBSERVATIONS_PATH = "/observations";
+/** The release listing that says what `release=` accepts for a metric. */
+export const RELEASES_PATH = "/observations/releases";
 const DISTRIBUTION_PATH = "/distribution/bins";
 
 /**
@@ -114,6 +142,14 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     servesDistribution: true,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     timeseriesParameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+    // The offline fallback claims no neutral surface: with discovery
+    // unavailable nothing has declared one, and an as-released control the
+    // API never declared would be this client inventing a contract.
+    neutralFilters: [],
+    neutralDimensionFilters: [],
+    servesReleases: false,
+    supportsAsReleased: false,
+    supportsReleasePin: false,
   },
 ];
 
@@ -143,7 +179,10 @@ export function buildExplorerSources(
       (route) => route.path === routePath(capability, TIMESERIES_SUFFIX),
     );
     const sourceScoped = Boolean(latest && timeseries);
-    const neutral = declaredPaths.has(`${API_BASE}${NEUTRAL_OBSERVATIONS_PATH}`);
+    const neutralRoute = routes.find(
+      (route) => route.path === `${API_BASE}${NEUTRAL_OBSERVATIONS_PATH}`,
+    );
+    const neutral = Boolean(neutralRoute);
 
     if (!sourceScoped && !neutral) {
       continue;
@@ -156,14 +195,20 @@ export function buildExplorerSources(
     // Source-scoped requests are bounded by the parameters their own routes
     // declare; neutral requests by the capability's declared filters plus
     // the universal parameter set the resource always accepts.
-    const requestFilters = sourceScoped
-      ? [...latestParameters]
-      : [
+    const neutralFilters = neutral
+      ? [
           ...new Set([
             ...(capability.observation_filters || []),
             ...UNIVERSAL_OBSERVATION_PARAMETERS,
           ]),
-        ].sort();
+        ].sort()
+      : [];
+    const requestFilters = sourceScoped ? [...latestParameters] : neutralFilters;
+    // `scope` and `release` are read from the neutral route's own declared
+    // parameters. A source whose route declares neither cannot answer an
+    // as-released question, and offering the control anyway would be this
+    // client asserting a contract the API did not publish.
+    const neutralParameters = neutralRoute?.parameters || [];
 
     sources.push({
       key,
@@ -177,6 +222,11 @@ export function buildExplorerSources(
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
       latestParameters,
       timeseriesParameters,
+      neutralFilters,
+      neutralDimensionFilters: dimensionFiltersOf(neutralFilters),
+      servesReleases: declaredPaths.has(`${API_BASE}${RELEASES_PATH}`),
+      supportsAsReleased: neutralParameters.includes("scope"),
+      supportsReleasePin: neutralParameters.includes("release"),
     });
   }
 
