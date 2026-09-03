@@ -1,11 +1,13 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016 —
+// Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
+// WEB-017 —
 // browser catalog/tile/selection/failure flows, URL reproduction of the
 // selected exploration state, capability-driven source discovery and
 // switching, dispatch-shaped sources reached through the neutral
-// /observations resource with capability-declared filters, and as-released
-// exploration over the published release listing.
+// /observations resource with capability-declared filters, as-released
+// exploration over the published release listing, and presentation modes
+// offered only where the selection can answer them.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -26,6 +28,17 @@ const metrics = [
     source_code: "CENSUS_ACS",
     valid_geo_grains: ["STATE", "COUNTY"],
     valid_time_grains: ["ANNUAL"],
+  },
+  // A measure published only at the national grain. The vector boundary
+  // publishes no national geometry, so this series has no map at all.
+  {
+    metric_code: "ACS:acs5:B01003_001_US",
+    metric_display_name: "Total population, United States",
+    source_code: "CENSUS_ACS",
+    valid_geo_grains: ["NATIONAL"],
+    valid_time_grains: ["ANNUAL"],
+    units: "people",
+    freshness_state: "fresh",
   },
 ];
 
@@ -377,7 +390,7 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  await expect(dashboard).toHaveAttribute("data-metric-count", "2");
+  await expect(dashboard).toHaveAttribute("data-metric-count", "3");
   await expect(dashboard).toHaveAttribute("data-observation-count", "1");
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
   await expect(page.getByLabel("Choropleth value legend")).toContainText("API distribution");
@@ -440,7 +453,7 @@ test("source tabs derive from capability discovery and switch the explored sourc
 test("ACS1 partial/no-data and API fallback states remain explicit", async ({ page }) => {
   await installRoutes(page);
   await page.goto("/explore");
-  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-metric-count", "2");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-metric-count", "3");
   await page.getByTestId("dataset-select").selectOption("acs1");
   await expect(page.getByText(/ACS 1-year county coverage is partial/)).toBeVisible();
   await expect(page.getByTestId("observations-status")).toContainText("0 county records published");
@@ -577,4 +590,53 @@ test("as-released exploration pins a published release and reproduces it", async
   await expect(dashboard).toHaveAttribute("data-scope", "latest");
   await expect(dashboard).toHaveAttribute("data-release", "");
   await expect(page).not.toHaveURL(/release=/);
+});
+
+test("a national series gets the explicit non-spatial experience, not an empty map", async ({ page }) => {
+  await installRoutes(page);
+  await page.goto("/explore");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-metric-count", "3");
+  // The default county selection is mappable and offers every mode.
+  await expect(dashboard).toHaveAttribute("data-map-supported", "true");
+  await expect(page.getByRole("tab", { name: "map" })).toBeVisible();
+  await expect(page.getByTestId("map-canvas")).toBeVisible();
+
+  // A measure published only at the national grain resolves the geography
+  // level to NATIONAL, and the tile boundary publishes no national geometry.
+  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001_US");
+  await expect(dashboard).toHaveAttribute("data-map-supported", "false");
+
+  // The map is not rendered at all: an uncoloured map reads as "no data",
+  // which is a different fact from "this series is not spatial".
+  await expect(page.getByTestId("map-canvas")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
+  await expect(dashboard).not.toHaveAttribute("data-view-modes", /(^|,)map(,|$)/);
+
+  // The reason is stated, and the alternative paths to the same values are named.
+  const note = page.getByTestId("non-spatial-note");
+  await expect(note).toContainText("no national geometry");
+  await expect(note).toContainText("observation table");
+  await expect(page.getByTestId("unsupported-modes")).toContainText("map —");
+
+  // Returning to a mappable measure brings the map back as the rendered
+  // view without the user re-choosing it: the tab the user asked for is
+  // remembered, so a mode that is briefly unavailable is not a lost one.
+  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-map-supported", "true");
+  await expect(page.getByTestId("map-canvas")).toBeVisible();
+
+  // Every non-spatial mode still answers, and the value is still retrievable.
+  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001_US");
+  await expect(page.getByRole("tab", { name: "table" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "quality" })).toBeVisible();
+  await expect(page.getByTestId("export-csv")).toBeEnabled();
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("cell", { name: "561504" })).toBeVisible();
+
+  // Quality is the measure's own published freshness and provenance.
+  await page.getByRole("tab", { name: "quality" }).click();
+  await expect(page.getByTestId("explorer-freshness")).toContainText("fresh");
+  await expect(page.getByTestId("explorer-provenance")).toContainText("people");
 });

@@ -246,13 +246,18 @@ export async function discoverTileMetadata() {
       }
 
       const sourceLayerId = dedupedSourceLayerCandidates[0] || id;
-      const joinKey = pickJoinKey(vectorLayer?.fields || {});
+      const layerFields = vectorLayer?.fields || {};
+      const joinKey = pickJoinKey(layerFields);
 
       return {
         layerId: id,
         sourceLayer: sourceLayerId,
         sourceLayerCandidates: dedupedSourceLayerCandidates,
         joinKey,
+        // The field names the layer publishes. They are what says which
+        // geography grains this boundary can actually draw; a grain it
+        // publishes nothing to identify has no spatial presentation.
+        fields: Array.isArray(layerFields) ? [...layerFields] : Object.keys(layerFields),
         tileJsonUrl: normalizeTileJsonUrl(id),
         tileTemplate: selectedTileTemplate,
       };

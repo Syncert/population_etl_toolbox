@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second, third, and fourth increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second through fifth increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-003 remaining acceptance criteria — (a) render map, trend, table, metadata, quality, and export modes only where the selected measure supports them, and provide the explicit non-spatial experience for national or otherwise unmappable series (the map currently renders for every selection and merely declines to colour); (b) retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
+- **Next pickup:** WEB-003's last remaining acceptance criterion — retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -661,6 +661,68 @@ that release published it.
 | Web unit | `npm --prefix apps/web run test:unit` | 75 passed (9 files) |
 | Web build | `npm --prefix apps/web run build` | production build succeeded |
 | Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 8 passed (Chromium) |
+
+## WEB-003 delivery record (fifth increment — capability-gated modes, 2026-09-03)
+
+The explorer rendered every presentation for every selection. The map drew
+for a national series the tile boundary has no polygon for and merely
+declined to colour, which reads as "no data" rather than "not spatial" —
+different facts. WEB-003's mode criterion is closed.
+
+- **A support model over published evidence (`lib/viewModes.ts`, new).**
+  Map, trend, table, metadata, quality, and export each get a verdict and,
+  when unsupported, the published reason. Nothing consults a source name or
+  a client-authored list of mappable measures: the map reads the vector
+  layer's own published fields, the trend reads the source's declared
+  observation routes, quality and metadata read the measure's catalog row,
+  and table and export read what is loaded.
+- **The spatial grains come from the boundary itself.** `discoverTileMetadata`
+  now returns the vector layer's published field names; a feature carrying
+  `county_fips` is a county and one without it is a state, which is the
+  filter the map already applied. Nothing the boundary publishes identifies
+  a national geometry, so a national series has no map at all — the canvas
+  is not mounted, the tab is absent, and the panel states the reason and
+  names the observation table and CSV export as the paths to the same
+  values, both of which carry the geography, period, unit, and status
+  context.
+- **A trend is not requested where no route answers one.** A source
+  declaring neither a timeseries route nor the neutral resource previously
+  issued a request and reported its failure; it now says the source
+  publishes no per-geography history here.
+- **Quality became a real view.** A `quality` tab renders the measure's own
+  published freshness and provenance through the same `lib/catalog.ts`
+  models the catalog uses — an unpublished field omitted, an unpublished
+  freshness read as unknown. A measure publishing neither gets no quality
+  tab, because an empty one could read as "nothing is wrong".
+- **A defect the new browser test found before it shipped:** the first
+  attempt reset the selected tab whenever it left the supported set. While
+  tile discovery was in flight the map was briefly unsupported, so the reset
+  moved the user to another panel and never moved them back — the map stayed
+  hidden for the rest of the session. The rendered tab is now derived from
+  the requested one rather than overwriting it, so a briefly unavailable
+  mode is restored rather than lost.
+- **Evidence:** WEB-017 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 227 of 227 and the
+  behavioral register is at 253 rows, all FULL. New
+  `tests/frontend/unit/view-modes.test.js` (10 tests); a sixth browser spec
+  drives a national-grain measure end to end — no map, the stated reason,
+  the remaining modes still answering, and the map restored on return.
+
+### Validation (2026-09-03, after the fifth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 85 passed (10 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 9 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 253 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
 
 ## Implementation phases
 

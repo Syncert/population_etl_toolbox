@@ -82,6 +82,13 @@ import {
   stratificationDimensions,
 } from "../lib/observationAccess";
 import type { ObservationScope } from "../lib/observationAccess";
+import { metricProvenance, metricQualityState } from "../lib/catalog";
+import {
+  describeViewModes,
+  servesHistory,
+  supportedViewModes,
+  unsupportedViewModes,
+} from "../lib/viewModes";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
@@ -104,6 +111,9 @@ export {
 const CATALOG_PAGE_SIZE = 1000;
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const DEFAULT_MAP_MODE = "choropleth";
+// Presentation panels that are not measure-dependent: they describe the
+// request and how to read it, and answer for every selection.
+const PRESENTATION_TABS = ["api query", "notes"] as const;
 const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // The release listing is a bounded, deterministic page; a metric with more
 // published releases than this is reported as such rather than truncated
@@ -205,7 +215,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     state: "idle",
     message: "Click a geography to load its history.",
   });
-  const [activeTab, setActiveTab] = useState("chart");
+  const [activeTab, setActiveTab] = useState("map");
   const [saveStatus, setSaveStatus] = useState("");
 
   // The active source resolves against discovery; an unknown requested
@@ -338,6 +348,42 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const missingValueLabel = selectedDataset === "acs1"
     ? "Not published in ACS1"
     : "No observation";
+
+  const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
+
+  // Which presentations this selection can actually answer, read from the
+  // measure's catalog row, the source's declared routes, and the vector
+  // layer's published fields. A mode is rendered only where it is supported;
+  // the rest are named with their published reason rather than going missing.
+  const viewModes = useMemo(
+    () => describeViewModes({
+      metric: selectedMetricMeta,
+      source: activeSource,
+      geoLevel: selectedGeoLevel,
+      tileFields: tileMetadata?.fields,
+      rowCount: observations.length,
+    }),
+    [selectedMetricMeta, activeSource, selectedGeoLevel, tileMetadata, observations.length],
+  );
+  const mapSupported = viewModes.map.supported;
+  const trendSupported = viewModes.trend.supported;
+  const unavailableModes = useMemo(() => unsupportedViewModes(viewModes), [viewModes]);
+  const workspaceTabs = useMemo(
+    () => [
+      ...supportedViewModes(viewModes).filter((mode) => mode !== "trend" && mode !== "export"),
+      ...PRESENTATION_TABS,
+    ],
+    [viewModes],
+  );
+
+  // `activeTab` is the tab the user asked for; the one actually rendered is
+  // that tab when the selection can answer it, and the first available one
+  // otherwise. Deriving rather than rewriting the request means a mode that
+  // is briefly unavailable — while discovery or the first page is in flight —
+  // does not permanently move the user off it.
+  const effectiveTab = workspaceTabs.includes(activeTab as (typeof workspaceTabs)[number])
+    ? activeTab
+    : workspaceTabs[0] || "";
 
   // Keep the selected metric consistent with the selected dataset facet.
   useEffect(() => {
@@ -740,6 +786,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   ]);
 
   useEffect(() => {
+    // No declared history route means no trend to request. Asking anyway
+    // would present a route error where the honest answer is that this
+    // source publishes no per-geography history here.
+    if (!servesHistory(activeSource)) {
+      setTimeseries([]);
+      setTimeseriesStatus({
+        state: "warn",
+        message: `${activeSource?.title || "This source"} declares no history route`,
+      });
+      return;
+    }
+
     if (!selectedMetric || !selectedGeoId || !activeSource) {
       setTimeseries([]);
       setTimeseriesStatus({
@@ -802,7 +860,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   ]);
 
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) {
+    // The canvas exists only while the boundary can draw the selection, so
+    // this re-runs when that changes rather than keeping a hidden map alive.
+    if (!mapSupported || !mapContainerRef.current || mapRef.current) {
       return;
     }
 
@@ -857,8 +917,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       map.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
-  }, []);
+  }, [mapSupported]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1210,7 +1271,6 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     );
   }, [mapReady, mappableObservations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
-  const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
 
   useEffect(() => {
     if (!selectedMetricMeta) {
@@ -1410,6 +1470,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       data-scope={observationScope}
       data-release={selectedRelease}
       data-release-count={releases.length}
+      data-view-modes={supportedViewModes(viewModes).join(",")}
+      data-map-supported={mapSupported ? "true" : "false"}
     >
       <header className="explorer-heading">
         <div>
@@ -1417,7 +1479,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           <h1>{activeSource ? activeSource.title : "Source"} Explorer</h1>
           <p>Build a source-visible geography view, inspect observations, and validate data availability for this MVP.</p>
         </div>
-        <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={observations.length === 0}><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric}><Save size={15} /> Save view</button></div>
+        <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={!viewModes.export.supported} title={viewModes.export.reason} data-testid="export-csv"><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric}><Save size={15} /> Save view</button></div>
       </header>
       <div className="segmented-control source-page-tabs" role="tablist" aria-label="Explorable sources">
         {explorerSources.map((source) => (
@@ -1465,8 +1527,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       </section>
 
       <div className="workspace-tabs" role="tablist" aria-label="Explorer views">
-        {["chart", "table", "metadata", "api query", "notes"].map((tab) => <button role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} type="button" onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}
+        {workspaceTabs.map((tab) => <button role="tab" aria-selected={effectiveTab === tab} className={effectiveTab === tab ? "active" : ""} type="button" onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}
       </div>
+      {unavailableModes.length > 0 ? (
+        <p className="subtle" data-testid="unsupported-modes">
+          Not available for this selection:{" "}
+          {unavailableModes
+            .map((entry) => `${entry.mode} — ${entry.reason}`)
+            .join("; ")}
+          .
+        </p>
+      ) : null}
 
       <section className="grid">
         <article className="card">
@@ -1689,6 +1760,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               a single series.
             </p>
           ) : null}
+          {!mapSupported ? (
+            <p className="coverage-note partial" data-testid="non-spatial-note">
+              No map for this selection: {viewModes.map.reason}. Every loaded value
+              stays available in the observation table and the CSV export, which
+              carry the same geography, period, unit, and status context.
+            </p>
+          ) : null}
           {asReleased ? (
             <p className="coverage-note partial" data-testid="as-released-note">
               Reading {selectedRelease
@@ -1792,7 +1870,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <strong>History</strong>
                   <span className={`inline-status ${timeseriesStatus.state}`}>{timeseriesStatus.message}</span>
                 </div>
-                {historyStratification.stratified ? (
+                {!trendSupported ? (
+                  <p className="subtle" data-testid="trend-unsupported-note">
+                    {viewModes.trend.reason}, so no trend is shown for this geography.
+                  </p>
+                ) : historyStratification.stratified ? (
                   <p className="subtle" data-testid="history-stratification-note">
                     {historyStratification.seriesCount} published series for this
                     geography
@@ -1814,7 +1896,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           </section>
         </article>
 
-        <article className="card workspace-panel" data-active={activeTab === "chart"}>
+        {mapSupported ? (
+        <article className="card workspace-panel" data-active={effectiveTab === "map"}>
           <h2>{selectedMetricMeta ? displayMetricName(selectedMetricMeta) : `${selectedGeoLevel.toLowerCase()} map`}</h2>
           <p className="subtle">Latest {selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.</p>
           <div className="map-shell">
@@ -1884,8 +1967,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             ) : null}
           </div>
         </article>
+        ) : null}
 
-        <article className="card span-2 workspace-panel" data-active={activeTab === "table"}>
+        <article className="card span-2 workspace-panel" data-active={effectiveTab === "table"}>
           <h2>Observation Sample</h2>
           <div className="table-wrap">
             <table>
@@ -1940,13 +2024,38 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </table>
           </div>
         </article>
-        <article className="card span-2 workspace-panel" data-active={activeTab === "metadata"}>
+        <article className="card span-2 workspace-panel" data-active={effectiveTab === "metadata"}>
           <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
         </article>
-        <article className="card span-2 workspace-panel" data-active={activeTab === "api query"}>
+        {viewModes.quality.supported ? (
+          <article className="card span-2 workspace-panel" data-active={effectiveTab === "quality"}>
+            <div className="section-kicker">Published quality context</div>
+            <h2>Freshness and provenance</h2>
+            <p className="subtle">
+              Everything below is published by the measure&apos;s own catalog entry. A
+              field the publisher did not publish is omitted rather than filled in,
+              and an unpublished freshness reads as unknown — never as healthy.
+            </p>
+            <StatusPill
+              state={metricQualityState(selectedMetricMeta).state}
+              label="Freshness"
+              message={metricQualityState(selectedMetricMeta).label}
+              testId="explorer-freshness"
+            />
+            <dl className="county-details" data-testid="explorer-provenance">
+              {metricProvenance(selectedMetricMeta).map((entry) => (
+                <div key={entry.label}>
+                  <dt>{entry.label}</dt>
+                  <dd>{entry.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+        ) : null}
+        <article className="card span-2 workspace-panel" data-active={effectiveTab === "api query"}>
           <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>
         </article>
-        <article className="card span-2 workspace-panel" data-active={activeTab === "notes"}>
+        <article className="card span-2 workspace-panel" data-active={effectiveTab === "notes"}>
           <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable.</p>
         </article>
       </section>
