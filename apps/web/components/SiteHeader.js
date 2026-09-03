@@ -15,13 +15,6 @@ const navigation = [
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  const isSourceDashboard = ["/bls", "/census", "/fred"].some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
-  );
-
-  if (isSourceDashboard) {
-    return null;
-  }
 
   return (
     <header className="site-header">

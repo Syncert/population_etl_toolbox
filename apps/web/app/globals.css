@@ -2,7 +2,6 @@
    single-file cascade exactly; keep the order when adding files. */
 
 @import "./styles/base.css";
-@import "./styles/dashboard.css";
 @import "./styles/shell.css";
 @import "./styles/home.css";
 @import "./styles/catalog.css";

@@ -68,9 +68,11 @@
 
 .panel-heading {
   display: flex;
+  min-height: 43px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 10px 12px 0;
 }
 
 .panel-heading h2 {

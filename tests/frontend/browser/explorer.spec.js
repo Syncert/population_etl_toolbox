@@ -1,13 +1,14 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
 // Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
-// WEB-017 —
+// WEB-017, WEB-018 —
 // browser catalog/tile/selection/failure flows, URL reproduction of the
 // selected exploration state, capability-driven source discovery and
 // switching, dispatch-shaped sources reached through the neutral
 // /observations resource with capability-declared filters, as-released
-// exploration over the published release listing, and presentation modes
-// offered only where the selection can answer them.
+// exploration over the published release listing, presentation modes
+// offered only where the selection can answer them, and the retired
+// demonstration dashboards redirecting into the live explorer.
 
 const MVT = Buffer.from(
   "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
@@ -639,4 +640,28 @@ test("a national series gets the explicit non-spatial experience, not an empty m
   await page.getByRole("tab", { name: "quality" }).click();
   await expect(page.getByTestId("explorer-freshness")).toContainText("fresh");
   await expect(page.getByTestId("explorer-provenance")).toContainText("people");
+});
+
+test("the retired source dashboards land on the live explorer for their source", async ({ page }) => {
+  await installRoutes(page);
+
+  // These routes rendered demonstration dashboards whose charts, secondary
+  // KPIs, ranked lists, and stylized maps were illustrative examples. They
+  // are retired: the link stays valid and reaches the capability-driven
+  // explorer for the same source, which answers from published data only.
+  await page.goto("/census");
+  await expect(page).toHaveURL(/\/explore/);
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-source-key", "census");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  // Nothing illustrative survives the retirement.
+  await expect(page.getByTestId("demo-banner")).toHaveCount(0);
+  // The site navigation, which the dashboards suppressed, is back.
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+
+  // Each retired route keeps its own source identity through the redirect.
+  await page.goto("/fred");
+  await expect(page).toHaveURL(/source=fred/);
+  await page.goto("/bls");
+  await expect(page).toHaveURL(/source=bls/);
 });

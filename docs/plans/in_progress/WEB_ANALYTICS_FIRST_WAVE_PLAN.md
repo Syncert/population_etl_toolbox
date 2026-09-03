@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001 and WEB-002 complete; WEB-003 second through fifth increments delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete; WEB-003 delivered across six increments — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-003's last remaining acceptance criterion — retire or relabel the remaining static `SourceDashboard.js` panels, whose replacement WEB-003/WEB-005 own. Then WEB-004 (comparison workspace) over `/comparison/preflight`, which the capability entries already declare per source.
+- **Next pickup:** WEB-004 (comparison workspace) over `/comparison/preflight` and `/comparison`, which the capability entries already declare per source — preflight before querying, derived differences/ratios labelled as derived, and an actionable explanation for an incompatible pair. WEB-003 is complete.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -72,7 +72,7 @@ The repository already contains a meaningful frontend MVP that should be charact
 - Existing routes include the home page, catalog, explorer, profiles, articles, builder, and Census/BLS/FRED source dashboards.
 - `SourceExplorerPage.js` already loads catalog, geography, latest observation, timeseries, distribution, TileJSON, and vector-tile data; supports county selection, accessible keyboard interaction, CSV export, and browser-local saved views.
 - MapLibre and Martin provide the current spatial path, with API `geo_id` values reconciled to decoded MVT features in automated tests.
-- `SourceDashboard.js` demonstrates source-specific layouts, but it currently mixes live API values with static chart series, example values, hard-coded definitions, and presentation fallbacks.
+- `SourceDashboard.js` demonstrates source-specific layouts, but it currently mixes live API values with static chart series, example values, hard-coded definitions, and presentation fallbacks. *(Baseline as of 2026-09-01; retired 2026-09-03 — see the WEB-003 sixth increment.)*
 - `savedCharts.js` and the builder currently persist versioned chart and draft objects in browser local storage. Accounts, server persistence, ownership, collaboration, and publishing are not implemented.
 - The metric catalog and several source choices are hard-coded in UI modules, and the primary explorer remains strongest for ACS county workflows.
 - `SourceExplorerPage.js` and `globals.css` are large, multi-responsibility files whose behavior must be protected by characterization tests before decomposition.
@@ -204,7 +204,7 @@ App Router routes and layouts
 | `/profiles` | `app/profiles/page.js` | `/api/v1/catalog/geographies`, `/api/v1/observations/timeseries` | Live; hard-coded ACS population metric; uses legacy timeseries route |
 | `/articles` | `app/articles/page.js` | `/api/v1/observations/timeseries` | Live; hard-coded metric + Dane County geo; legacy route |
 | `/builder` | `app/builder/page.js`, `lib/savedCharts.js` | none | Browser-local draft/chart persistence only |
-| `/bls`, `/census`, `/fred` (dashboards) | `SourceDashboard.js` (517 lines) | `/api/v1/catalog/metrics`, `/api/v1/{src}/observations/latest` | **Mixes one live KPI with static illustrative series, KPIs, ranked lists, tables, and decorative maps** |
+| `/bls`, `/census`, `/fred` (dashboards) | `SourceDashboard.js` (517 lines) | `/api/v1/catalog/metrics`, `/api/v1/{src}/observations/latest` | **Mixes one live KPI with static illustrative series, KPIs, ranked lists, tables, and decorative maps** — retired 2026-09-03; these routes redirect into the explorer |
 
 URL parameters (explorer, parse-only today): `metric`, `state`, `geo`,
 `geo_level`, `map_mode`. Local-storage objects:
@@ -238,6 +238,12 @@ dashboard CSV.
   Removal was not chosen yet because the layouts document target design
   intent; the label makes them unmistakable as examples per the acceptance
   criterion.
+- **Decision (superseded 2026-09-03, WEB-003 sixth increment):** the
+  replacement shipped, so the labelled examples were retired rather than kept
+  labelled. `/bls`, `/census`, and `/fred` now redirect into the
+  capability-driven explorer for the same source; `SourceDashboard.js` and
+  `app/styles/dashboard.css` are deleted. No illustrative analytical value
+  remains anywhere in the application.
 
 ### Baseline evidence (2026-09-01, this environment)
 
@@ -718,6 +724,57 @@ different facts. WEB-003's mode criterion is closed.
 | Web build | `npm --prefix apps/web run build` | production build succeeded |
 | Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 9 passed (Chromium) |
 | Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 253 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (sixth increment — dashboards retired, 2026-09-03)
+
+WEB-001 labelled the demonstration dashboards rather than removing them,
+because their replacement did not exist yet. It does now, so the label is no
+longer the honest option: a page whose trend charts, secondary KPIs, ranked
+lists, related-indicator tables, demographic breakdowns, stylized maps, and
+filter options are invented examples has no place in an application whose
+whole contract is that displayed values are provider-published facts.
+
+- **The routes are retired, not broken.** `/bls`, `/census`, and `/fred`
+  redirect into `/explore?source=<key>` — the same source, reached through
+  whichever access shape its capability entry declares. Every existing link
+  stays valid and lands on live, source-backed analysis.
+- **Nothing illustrative survives.** `components/SourceDashboard.js` (521
+  lines) and `app/styles/dashboard.css` (988 lines) are deleted, along with
+  the demonstration banner that named them. The two declarations
+  `dashboard.css` contributed to the shared `.panel-heading` used by the
+  profiles and articles routes moved into `profiles.css`, which already owned
+  the rest of that rule, so those layouts are unchanged.
+- **The site navigation is back.** `SiteHeader` suppressed itself on the
+  three dashboard paths; with the dashboards gone the special case is gone
+  too.
+- **Evidence:** WEB-018 added to `docs/reference/TESTING_CONTRACT.md`
+  (browser owner); the implementation-status table reads 228 of 228 and the
+  behavioral register is at 254 rows, all FULL. A seventh browser spec
+  follows each retired route to the explorer, asserts it keeps its own source
+  identity, and asserts no demonstration banner and a present primary
+  navigation.
+
+With this increment every WEB-003 acceptance criterion is met: capability
+discovery decides membership and access, catalog search/paging/provenance is
+deterministic against the published total, latest and as-released exploration
+both answer for every completed source, presentation modes are offered only
+where the selection can answer them, and no static analytical value remains.
+
+### Validation (2026-09-03, after the sixth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 85 passed (10 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 10 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 254 rows) |
 | Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
 
 Not run, recorded as not run: composed-service suites (`make test-api`,
