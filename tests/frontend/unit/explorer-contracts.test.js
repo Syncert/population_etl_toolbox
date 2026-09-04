@@ -12,6 +12,10 @@ import {
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
+import {
+  buildExtrusionHeightExpression,
+  formatObservationValue,
+} from "../../../apps/web/lib/explorerViewModel";
 
 const metrics = [
   { metric_code: "ACS:acs1:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
@@ -72,5 +76,47 @@ describe("explorer metric, selection, and legend contracts", () => {
     const model = buildChoroplethModel([], "geo_id", null, "Not published in ACS1");
     expect(model.valueCount).toBe(0);
     expect(model.legendItems).toEqual([{ color: "#9fb0ba", label: "Not published in ACS1" }]);
+  });
+});
+
+describe("a value the source did not publish is never a zero", () => {
+  // The API publishes `value: null` whenever a source published no usable
+  // number, with `value_status` saying why. `Number(null)` is 0 and
+  // `Number.isFinite(0)` is true, so every numeric path has to reject the
+  // absent value explicitly or it silently becomes a published zero.
+  const suppressed = [
+    { geo_id: "state:55|county:025", value: "561504" },
+    { geo_id: "state:55|county:001", value: null, value_status: "suppressed" },
+    { geo_id: "state:55|county:003", value: "", value_status: "missing" },
+  ];
+
+  test("the choropleth colours only the geography that published a number", () => {
+    const model = buildChoroplethModel(suppressed, "geo_id");
+    expect(model.valueCount).toBe(1);
+    // A suppressed geography must not appear in the colour expression at
+    // all; leaving it out is what makes the map render it as no-data.
+    expect(JSON.stringify(model.expression)).not.toContain("county:001");
+    expect(JSON.stringify(model.expression)).not.toContain("county:003");
+    // Its absence must not drag the scale to zero either.
+    expect(model.minValue).toBe(561504);
+  });
+
+  test("extrusion heights exclude the geographies with no published value", () => {
+    const expression = JSON.stringify(
+      buildExtrusionHeightExpression(suppressed, "geo_id"),
+    );
+    expect(expression).toContain("county:025");
+    expect(expression).not.toContain("county:001");
+    expect(expression).not.toContain("county:003");
+  });
+
+  test("formatting an absent value states its absence rather than zero", () => {
+    expect(formatObservationValue(null)).toBe("-");
+    expect(formatObservationValue("")).toBe("-");
+    expect(formatObservationValue(undefined)).toBe("-");
+    // A published zero is still a published zero.
+    expect(formatObservationValue(0)).toBe("0");
+    expect(formatObservationValue("0")).toBe("0");
+    expect(formatObservationValue("561504")).toBe("561,504");
   });
 });

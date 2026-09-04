@@ -236,6 +236,24 @@ export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
     : ["has", "county_fips"];
 }
 
+/**
+ * A published number, or `null` when the source published none.
+ *
+ * The API publishes `value: null` whenever a source published no usable
+ * number, with `value_status` saying why, and an empty string carries the
+ * same meaning. `Number(null)` and `Number("")` are both `0`, and
+ * `Number.isFinite(0)` is true — so every numeric path has to reject the
+ * absent value before coercing, or a suppressed observation silently
+ * becomes a published zero on a map, in a height, or in a formatted label.
+ */
+export function publishedNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 export function buildExtrusionHeightExpression(
   observations: ObservationRow[] | null | undefined,
   joinKey: string,
@@ -246,8 +264,8 @@ export function buildExtrusionHeightExpression(
 
   const keyedValues: (string | number)[] = [];
   const values = observations
-    .map((item) => Number(item.value))
-    .filter((value) => Number.isFinite(value));
+    .map((item) => publishedNumber(item.value))
+    .filter((value): value is number => value !== null);
 
   if (values.length === 0) {
     return ["literal", 0];
@@ -259,8 +277,8 @@ export function buildExtrusionHeightExpression(
 
   for (const item of observations) {
     const joinValue = observationJoinValue(item, joinKey);
-    const numericValue = Number(item.value);
-    if (!joinValue || !Number.isFinite(numericValue)) {
+    const numericValue = publishedNumber(item.value);
+    if (!joinValue || numericValue === null) {
       continue;
     }
 
@@ -389,8 +407,8 @@ export function formatObservationValue(
   value: unknown,
   maximumFractionDigits: number = 1,
 ): string {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
+  const numericValue = publishedNumber(value);
+  if (numericValue === null) {
     return "-";
   }
 
@@ -490,8 +508,8 @@ export function buildChoroplethModel(
 
   for (const item of observations) {
     const joinValue = observationJoinValue(item, joinKey);
-    const numericValue = Number(item.value);
-    if (!joinValue || !Number.isFinite(numericValue)) {
+    const numericValue = publishedNumber(item.value);
+    if (!joinValue || numericValue === null) {
       continue;
     }
 

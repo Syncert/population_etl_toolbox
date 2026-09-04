@@ -1,17 +1,21 @@
 import { describe, expect, test } from "vitest";
 
-// Covers: WEB-017 — presentation modes are offered only where the selected
+// Covers: WEB-017 and WEB-020 — presentation modes are offered only where the selected
 // measure, its source's declared routes, and the discovered tile boundary
 // can answer them, and every mode that is not offered names the published
 // reason. A national or otherwise unmappable series gets an explicit
 // non-spatial statement rather than a map that draws and declines to colour.
 
 import {
+  COMPARISON_VIEW_MODES,
   EXPLORER_VIEW_MODES,
+  describeComparisonViewModes,
   describeViewModes,
   servesHistory,
   spatialGrains,
+  supportedComparisonModes,
   supportedViewModes,
+  unsupportedComparisonModes,
   unsupportedViewModes,
 } from "../../../apps/web/lib/viewModes";
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
@@ -210,5 +214,67 @@ describe("view-mode support", () => {
       ...EXPLORER_VIEW_MODES,
     ]);
     expect(unsupportedViewModes(support).every((entry) => entry.reason)).toBe(true);
+  });
+});
+
+describe("comparison view-mode support", () => {
+  const comparable = {
+    comparable: true,
+    rowCount: 12,
+    plottablePoints: 11,
+    derivations: ["difference", "ratio"],
+    geoLevel: "COUNTY",
+    tileFields: TILE_FIELDS,
+  };
+
+  test("a comparable pair with rows and a mappable grain answers every mode", () => {
+    const support = describeComparisonViewModes(comparable);
+    expect(supportedComparisonModes(support)).toEqual([...COMPARISON_VIEW_MODES]);
+    expect(unsupportedComparisonModes(support)).toEqual([]);
+  });
+
+  test("a blocked pair presents nothing, with the policy as the stated reason", () => {
+    const support = describeComparisonViewModes({ ...comparable, comparable: false });
+    expect(supportedComparisonModes(support)).toEqual([]);
+    for (const { reason } of unsupportedComparisonModes(support)) {
+      expect(reason).toContain("declared compatibility policy blocks this pair");
+    }
+    // The default input set is a blocked pair: nothing renders until the
+    // API has said the comparison may be made.
+    expect(supportedComparisonModes(describeComparisonViewModes())).toEqual([]);
+  });
+
+  test("a national comparison is explicitly non-spatial", () => {
+    const support = describeComparisonViewModes({ ...comparable, geoLevel: "NATIONAL" });
+    expect(support.map.supported).toBe(false);
+    expect(support.map.reason).toContain("no national geometry");
+    expect(support.map.reason).toContain("not spatial");
+    expect(supportedComparisonModes(support)).toEqual(["chart", "table", "export"]);
+  });
+
+  test("a single plottable pair is not a plot", () => {
+    // One point states nothing about how two measures relate across places.
+    const support = describeComparisonViewModes({ ...comparable, plottablePoints: 1 });
+    expect(support.chart.supported).toBe(false);
+    expect(support.chart.reason).toContain("fewer than two geographies");
+    // The table and map still answer: the values are there.
+    expect(support.table.supported).toBe(true);
+    expect(support.map.supported).toBe(true);
+  });
+
+  test("no derived field means nothing for a map to colour", () => {
+    const support = describeComparisonViewModes({ ...comparable, derivations: [] });
+    expect(support.map).toEqual({
+      supported: false,
+      reason: "the response named no derived field for a map to colour",
+    });
+  });
+
+  test("no aligned geographies removes every presentation with one reason", () => {
+    const support = describeComparisonViewModes({ ...comparable, rowCount: 0 });
+    expect(supportedComparisonModes(support)).toEqual([]);
+    for (const { reason } of unsupportedComparisonModes(support)) {
+      expect(reason).toBe("no aligned geographies were published for this selection");
+    }
   });
 });

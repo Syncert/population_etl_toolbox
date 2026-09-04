@@ -1,21 +1,27 @@
 import { describe, expect, test } from "vitest";
 
-// Covers: WEB-019 — the comparison workspace presents the API's own
+// Covers: WEB-019 and WEB-020 — the comparison workspace presents the API's own
 // compatibility verdict and never substitutes its own. A pair the declared
 // policy blocks is explained and never queried; an unverifiable rule is a
 // caution rather than a rejection; each side's published value, period, and
 // identity survive into the table and the export; and every API-computed
-// field is labelled derived wherever it appears.
+// field is labelled derived wherever it appears. WEB-020 adds the aligned
+// presentations: a scatter of the two published inputs and a choropleth of
+// one API-derived field, each offered only where the pair can answer it, and
+// neither plotting nor colouring a geography whose side published nothing.
 
 import {
   DEFAULT_COMPARISON_SELECTION,
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonMapRows,
   comparisonRequestParams,
   comparisonRowName,
+  comparisonScatterModel,
   comparisonValueText,
   compatibilityState,
+  defaultDerivedField,
   describePreflight,
   incompatibleAlternatives,
   isDerivedField,
@@ -333,5 +339,54 @@ describe("the export carries its own interpretation envelope", () => {
     const exported = comparisonExport(null, null);
     expect(exported.rows).toEqual([]);
     expect(exported.headings).toContain("caveats");
+  });
+});
+
+describe("aligned presentations read the same rows without inventing values", () => {
+  test("the scatter plots each geography's own published pair", () => {
+    const model = comparisonScatterModel(comparison);
+    // A scatter of the two inputs needs no shared axis or unit, and shows
+    // each geography's own pair rather than a series implying one scale.
+    expect(model.points).toEqual([
+      { geoId: "state:55|county:025", name: "Dane County, Wisconsin", x: 561504, y: 568203 },
+    ]);
+    // The geography missing measure A is excluded and counted — plotting it
+    // at zero would state a value neither source published.
+    expect(model.excluded).toBe(1);
+    expect(model.minX).toBe(561504);
+    expect(model.maxY).toBe(568203);
+  });
+
+  test("a response with no plottable pair yields no points, not a zeroed one", () => {
+    const nonePlottable = {
+      ...comparison,
+      items: comparison.items.map((row) => ({ ...row, value_a: null })),
+    };
+    const model = comparisonScatterModel(nonePlottable);
+    expect(model.points).toEqual([]);
+    expect(model.excluded).toBe(2);
+    expect(comparisonScatterModel(null).points).toEqual([]);
+    expect(comparisonScatterModel({ items: [] }).excluded).toBe(0);
+  });
+
+  test("map rows carry one derived field, and only a field the API named", () => {
+    expect(defaultDerivedField(comparison)).toBe("difference");
+    const rows = comparisonMapRows(comparison, "difference");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      geo_id: "state:55|county:025",
+      geo_level: "COUNTY",
+      value: "-6699",
+    });
+    // A geography the API could not derive stays null, so the shared
+    // choropleth model leaves it uncoloured rather than colouring a zero.
+    expect(rows[1].value).toBeNull();
+    expect(rows[1].value_status).toBe("not published on both sides");
+
+    // A field the response never named as derived is not mappable: colouring
+    // by a published input would present one side as the comparison.
+    expect(comparisonMapRows(comparison, "value_a")).toEqual([]);
+    expect(comparisonMapRows(comparison, "")).toEqual([]);
+    expect(defaultDerivedField({ ...comparison, derivations: [] })).toBe("");
   });
 });

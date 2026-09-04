@@ -161,3 +161,102 @@ export function unsupportedViewModes(
     reason: support[mode].reason,
   }));
 }
+
+// --- Comparison workspace modes ---
+//
+// A comparison answers a different set of presentations than a single
+// measure: its metadata is the compatibility verdict, which the workspace
+// always shows, and its quality context belongs to each input measure
+// separately. What varies is whether the pair can be tabulated, plotted,
+// mapped, or exported at all — and, as above, each answer is read from
+// published evidence rather than assumed.
+
+export const COMPARISON_VIEW_MODES = ["map", "chart", "table", "export"] as const;
+
+export type ComparisonViewMode = (typeof COMPARISON_VIEW_MODES)[number];
+
+export type ComparisonViewSupport = Record<ComparisonViewMode, ViewModeState>;
+
+export interface ComparisonViewInputs {
+  /** The API's compatibility verdict. Nothing renders for a blocked pair. */
+  comparable?: boolean;
+  /** Aligned geographies the response carried. */
+  rowCount?: number;
+  /** Geographies where both sides published a usable number. */
+  plottablePoints?: number;
+  /** Fields the response named as API-derived; a map colours one of them. */
+  derivations?: string[] | null;
+  geoLevel?: string | null;
+  tileFields?: string[] | null;
+}
+
+export function describeComparisonViewModes({
+  comparable = false,
+  rowCount = 0,
+  plottablePoints = 0,
+  derivations = null,
+  geoLevel = "",
+  tileFields = null,
+}: ComparisonViewInputs = {}): ComparisonViewSupport {
+  if (!comparable) {
+    const blocked = unsupported(
+      "the declared compatibility policy blocks this pair, so no comparison was requested",
+    );
+    return { map: blocked, chart: blocked, table: blocked, export: blocked };
+  }
+
+  const hasRows = rowCount > 0;
+  const noRows = unsupported("no aligned geographies were published for this selection");
+  const table = hasRows ? SUPPORTED : noRows;
+  const exportMode = hasRows ? SUPPORTED : noRows;
+
+  // One point states nothing about how two measures relate across places,
+  // and a plot of zero points is not a plot.
+  let chart: ViewModeState;
+  if (!hasRows) {
+    chart = noRows;
+  } else if (plottablePoints < 2) {
+    chart = unsupported(
+      "fewer than two geographies published a usable value on both sides, so there is no pair to plot",
+    );
+  } else {
+    chart = SUPPORTED;
+  }
+
+  const level = String(geoLevel || "").toUpperCase();
+  const grains = spatialGrains(tileFields);
+  const derivedFields = derivations || [];
+  let map: ViewModeState;
+  if (!hasRows) {
+    map = noRows;
+  } else if (derivedFields.length === 0) {
+    map = unsupported("the response named no derived field for a map to colour");
+  } else if (grains.length === 0) {
+    map = unsupported("no vector tile layer with published geography fields was discovered");
+  } else if (!grains.includes(level)) {
+    map = unsupported(
+      `the tile boundary publishes no ${level.toLowerCase()} geometry, so this comparison is not spatial`,
+    );
+  } else {
+    map = SUPPORTED;
+  }
+
+  return { map, chart, table, export: exportMode };
+}
+
+/** The comparison modes to present, in the declared order. */
+export function supportedComparisonModes(
+  support: ComparisonViewSupport,
+): ComparisonViewMode[] {
+  return COMPARISON_VIEW_MODES.filter((mode) => support[mode].supported);
+}
+
+/** The comparison modes that are not presented, each with its reason. */
+export function unsupportedComparisonModes(
+  support: ComparisonViewSupport,
+): { mode: ComparisonViewMode; reason: string }[] {
+  return COMPARISON_VIEW_MODES.filter((mode) => !support[mode].supported).map((mode) => ({
+    mode,
+    reason: support[mode].reason,
+  }));
+}

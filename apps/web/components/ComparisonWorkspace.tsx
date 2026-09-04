@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Save } from "lucide-react";
+import ChoroplethMap from "./ChoroplethMap";
+import ScatterChart from "./ScatterChart";
 import StatusPill from "./StatusPill";
 import {
   apiErrorMessage,
@@ -26,9 +28,12 @@ import {
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonMapRows,
   comparisonMetricOptions,
   comparisonRequestParams,
+  comparisonScatterModel,
   compatibilityState,
+  defaultDerivedField,
   describePreflight,
   incompatibleAlternatives,
   mayRequestComparison,
@@ -38,6 +43,12 @@ import {
 } from "../lib/comparison";
 import type { ComparisonSelection, ComparisonSide } from "../lib/comparison";
 import { saveChart } from "../lib/savedCharts";
+import { discoverTileMetadata } from "../lib/tiles";
+import {
+  describeComparisonViewModes,
+  supportedComparisonModes,
+  unsupportedComparisonModes,
+} from "../lib/viewModes";
 import {
   comparisonHref,
   explorerHref,
@@ -69,6 +80,7 @@ export default function ComparisonWorkspace() {
   const preflightTracker = useRef(createRequestTracker()).current;
   const comparisonTracker = useRef(createRequestTracker()).current;
   const geographyTracker = useRef(createRequestTracker()).current;
+  const tileTracker = useRef(createRequestTracker()).current;
   // The requested link state, applied once each side's catalog arrives so a
   // shared link reopens the same pair rather than a default one.
   const requestedRef = useRef<ReturnType<typeof parseComparisonState> | null>(null);
@@ -81,6 +93,9 @@ export default function ComparisonWorkspace() {
   const [metrics, setMetrics] = useState<Record<SideKey, MetricSummary[]>>({ a: [], b: [] });
   const [metricsError, setMetricsError] = useState<Record<SideKey, string>>({ a: "", b: "" });
   const [states, setStates] = useState<GeographySummary[]>([]);
+  const [tileMetadata, setTileMetadata] = useState<Awaited<
+    ReturnType<typeof discoverTileMetadata>
+  > | null>(null);
 
   const [preflight, setPreflight] = useState<ComparisonPreflight | null>(null);
   const [preflightStatus, setPreflightStatus] = useState<RequestStatus>({
@@ -222,6 +237,26 @@ export default function ComparisonWorkspace() {
     };
   }, [geographyTracker]);
 
+  // The vector boundary decides whether this comparison is spatial at all;
+  // its absence is a stated reason, not a blank map.
+  useEffect(() => {
+    const request = tileTracker.begin();
+    (async () => {
+      try {
+        const discovered = await discoverTileMetadata();
+        if (request.isCurrent()) {
+          setTileMetadata(discovered);
+        }
+      } catch {
+        // Leaving this null makes the map mode unsupported with the
+        // published reason, which the mode notes render.
+      }
+    })();
+    return () => {
+      tileTracker.invalidate();
+    };
+  }, [tileTracker]);
+
   const complete = selectionIsComplete(selection);
   const metricCodeA = selection.a.metricCode;
   const metricCodeB = selection.b.metricCode;
@@ -349,6 +384,33 @@ export default function ComparisonWorkspace() {
     () => (Array.isArray(comparison?.items) ? comparison.items : []),
     [comparison],
   );
+  const scatter = useMemo(() => comparisonScatterModel(comparison), [comparison]);
+  const derivedField = useMemo(() => defaultDerivedField(comparison), [comparison]);
+  const mapRows = useMemo(
+    () => comparisonMapRows(comparison, derivedField),
+    [comparison, derivedField],
+  );
+
+  // Which aligned presentations this comparison can answer, from the same
+  // published evidence the explorer's modes read: the verdict, the rows the
+  // response carried, the pairs that are actually plottable, the fields the
+  // API named as derived, and the vector layer's published geography fields.
+  const viewModes = useMemo(
+    () => describeComparisonViewModes({
+      comparable,
+      rowCount: rows.length,
+      plottablePoints: scatter.points.length,
+      derivations: comparison?.derivations,
+      geoLevel: selection.geoLevel,
+      tileFields: tileMetadata?.fields,
+    }),
+    [comparable, rows.length, scatter.points.length, comparison, selection.geoLevel, tileMetadata],
+  );
+  const unavailableModes = useMemo(
+    () => unsupportedComparisonModes(viewModes),
+    [viewModes],
+  );
+
   const options: Record<SideKey, { value: string; label: string }[]> = useMemo(
     () => ({
       a: comparisonMetricOptions(metrics.a),
@@ -417,6 +479,8 @@ export default function ComparisonWorkspace() {
       data-blocking-rules={model.blocking.map((rule) => rule.rule).join(",")}
       data-unverified-rules={model.unverified.map((rule) => rule.rule).join(",")}
       data-row-count={rows.length}
+      data-view-modes={supportedComparisonModes(viewModes).join(",")}
+      data-plottable-points={scatter.points.length}
     >
       <header className="explorer-heading">
         <div>
@@ -432,7 +496,8 @@ export default function ComparisonWorkspace() {
             className="button secondary"
             type="button"
             onClick={exportCsv}
-            disabled={rows.length === 0}
+            disabled={!viewModes.export.supported}
+            title={viewModes.export.reason}
             data-testid="comparison-export"
           >
             <Download size={15} /> Export CSV
@@ -633,6 +698,49 @@ export default function ComparisonWorkspace() {
             </>
           )}
         </article>
+
+        {comparable && comparison && unavailableModes.length > 0 ? (
+          <article className="card span-2">
+            <p className="subtle" data-testid="comparison-unsupported-modes">
+              Not available for this comparison:{" "}
+              {unavailableModes.map((entry) => `${entry.mode} — ${entry.reason}`).join("; ")}.
+            </p>
+          </article>
+        ) : null}
+
+        {viewModes.chart.supported && comparison ? (
+          <article className="card span-2" data-testid="comparison-chart-panel">
+            <h2>Aligned scatter</h2>
+            <p className="subtle">
+              Both axes are published values, each on its own scale; the plot asserts no
+              shared unit and no relationship beyond what the two publishers stated. Every
+              value it shows is also in the table below.
+            </p>
+            <ScatterChart
+              model={scatter}
+              labelX={String(comparison.metric_code_a || "measure A")}
+              labelY={String(comparison.metric_code_b || "measure B")}
+            />
+          </article>
+        ) : null}
+
+        {viewModes.map.supported && comparison ? (
+          <article className="card span-2" data-testid="comparison-map-panel">
+            <h2>Comparison map</h2>
+            <p className="subtle" data-testid="map-derived-note">
+              Coloured by <strong>{derivedField}</strong>, which the API derived from the two
+              published inputs — it is not a value either source published. A geography
+              where one side published nothing stays uncoloured rather than being coloured
+              as zero, and every value remains in the table below.
+            </p>
+            <ChoroplethMap
+              rows={mapRows}
+              tileMetadata={tileMetadata}
+              geoLevel={selection.geoLevel}
+              legendTitle={`${derivedField} · API-derived`}
+            />
+          </article>
+        ) : null}
 
         {comparable && comparison ? (
           <article className="card span-2" data-testid="comparison-table-panel">

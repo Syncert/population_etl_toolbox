@@ -20,6 +20,7 @@ import type {
   ComparisonRule,
   MetricSummary,
 } from "./api/types";
+import type { ObservationRow } from "./explorerViewModel";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -409,4 +410,135 @@ export function comparisonMetricOptions(
       ? `${metric.metric_display_name} (${metric.metric_code})`
       : metric.metric_code,
   }));
+}
+
+// --- Aligned presentations ---
+//
+// A comparison can be shown as a table, a scatter of the two published
+// inputs, and a choropleth of one API-derived field. All three read the same
+// rows; none of them may invent a value the response did not carry, and a
+// geography missing a value on either side is excluded and counted rather
+// than plotted at zero.
+
+export interface ScatterPoint {
+  geoId: string;
+  name: string;
+  /** Measure A's published value. */
+  x: number;
+  /** Measure B's published value. */
+  y: number;
+}
+
+export interface ScatterModel {
+  points: ScatterPoint[];
+  /** Geographies left out because one side published no usable number. */
+  excluded: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+const EMPTY_SCATTER: ScatterModel = Object.freeze({
+  points: [],
+  excluded: 0,
+  minX: 0,
+  maxX: 0,
+  minY: 0,
+  maxY: 0,
+}) as ScatterModel;
+
+/**
+ * The two published inputs plotted against each other, one point per
+ * geography.
+ *
+ * A scatter of the inputs is the honest aligned chart for a two-measure
+ * comparison: it needs no shared axis or unit, and it shows each geography's
+ * own pair rather than a series that would imply the two measures share a
+ * scale. A geography whose either side published no usable number cannot be
+ * a point — plotting it at zero would state a value neither source
+ * published — so it is excluded and counted.
+ */
+export function comparisonScatterModel(
+  response: ComparisonResponse | null | undefined,
+): ScatterModel {
+  const items = Array.isArray(response?.items) ? response.items : [];
+  if (items.length === 0) {
+    return EMPTY_SCATTER;
+  }
+
+  const points: ScatterPoint[] = [];
+  let excluded = 0;
+  for (const row of items) {
+    const x = Number(row.value_a);
+    const y = Number(row.value_b);
+    if (
+      row.value_a === null ||
+      row.value_a === undefined ||
+      row.value_b === null ||
+      row.value_b === undefined ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    ) {
+      excluded += 1;
+      continue;
+    }
+    points.push({ geoId: String(row.geo_id ?? ""), name: comparisonRowName(row), x, y });
+  }
+
+  if (points.length === 0) {
+    return { ...EMPTY_SCATTER, excluded };
+  }
+
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    points,
+    excluded,
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+/** The derived field a comparison map colours: the first the API named. */
+export function defaultDerivedField(
+  response: ComparisonResponse | null | undefined,
+): string {
+  const derivations = Array.isArray(response?.derivations) ? response.derivations : [];
+  return derivations[0] || "";
+}
+
+/**
+ * Comparison rows projected onto the observation row shape the shared
+ * choropleth model reads, carrying one API-derived field as the value.
+ *
+ * The projection is deliberately thin: the geography attribution the map
+ * joins on and the single derived value, as a string, exactly as the shared
+ * model expects. A row whose derived field is null carries a null value and
+ * is left uncoloured by that model rather than coloured as zero.
+ */
+export function comparisonMapRows(
+  response: ComparisonResponse | null | undefined,
+  field: string,
+): ObservationRow[] {
+  if (!field || !isDerivedField(response, field)) {
+    return [];
+  }
+  const items = Array.isArray(response?.items) ? response.items : [];
+  return items.map((row) => {
+    const value = row[field];
+    const usable = value !== null && value !== undefined && Number.isFinite(Number(value));
+    return {
+      geo_id: row.geo_id,
+      geo_level: row.geo_level,
+      state_fips: row.state_fips,
+      county_fips: row.county_fips,
+      state_name: row.state_name,
+      county_name: row.county_name,
+      value: usable ? String(value) : null,
+      value_status: usable ? null : "not published on both sides",
+    } as ObservationRow;
+  });
 }

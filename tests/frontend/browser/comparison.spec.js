@@ -1,11 +1,18 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
-// Covers: WEB-019 — the comparison workspace in the browser. The declared
+// Covers: WEB-019 and WEB-020 — the comparison workspace in the browser. The declared
 // compatibility verdict is presented before any comparison data is
 // requested, a blocked pair is explained with alternatives and never
 // queried, each side's published value and period survive into the table
 // alongside the API-derived fields it labels as derived, and the link
-// reproduces the pair without carrying a verdict.
+// reproduces the pair without carrying a verdict. WEB-020 adds the aligned
+// presentations: the scatter and the derived-value choropleth appear only
+// where the comparison can answer them, and each names what it leaves out.
+
+const MVT = Buffer.from(
+  "GvEBCghjb3VudGllcxImEhAAAAEBAgIDAwQEBQUGBgcHGAMiEAm+FMQFGgDDBtQNAADEBg8aC2NvdW50eV9maXBzGgtjb3VudHlfbmFtZRoGZ2VvX2lkGglnZW9fbGV2ZWwaCGxhdGl0dWRlGglsb25naXR1ZGUaCnN0YXRlX2ZpcHMaCnN0YXRlX25hbWUiBQoDMDI1Ig0KC0RhbmUgQ291bnR5IhUKE3N0YXRlOjU1fGNvdW50eTowMjUiCAoGQ09VTlRZIgkZVFInoImIRUAiCRmamZmZmVlWwCIECgI1NSILCglXaXNjb25zaW4ogCB4Ag==",
+  "base64",
+);
 
 const analysisRoutes = [
   {
@@ -218,6 +225,44 @@ async function installRoutes(page, { preflightRequests = [], comparisonRequests 
     comparisonRequests.push(Object.fromEntries(params));
     return route.fulfill({ json: comparisonPayload });
   });
+
+  // The Martin boundary. Its published fields are what decide whether this
+  // comparison is spatial at all.
+  await page.route("**/tiles/catalog", (route) => route.fulfill({ json: { counties: {} } }));
+  await page.route(/\/tiles\/counties$/, (route) =>
+    route.fulfill({
+      json: {
+        name: "counties",
+        tiles: ["http://internal-martin:3000/counties/{z}/{x}/{y}"],
+        vector_layers: [
+          {
+            id: "counties",
+            fields: {
+              geo_id: "String",
+              geo_level: "String",
+              state_fips: "String",
+              county_fips: "String",
+              county_name: "String",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.route(/\/tiles\/counties\/\d+\/\d+\/\d+(?:\.pbf)?$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/vnd.mapbox-vector-tile",
+      body: MVT,
+    }),
+  );
+  await page.route("**/tiles/counties/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/vnd.mapbox-vector-tile",
+      body: MVT,
+    }),
+  );
 }
 
 test("a comparable pair is preflighted, then compared with inputs and derivations distinct", async ({
@@ -357,4 +402,70 @@ test("the comparison link reproduces the pair and carries no verdict", async ({ 
   // Reopening re-asks the verdict rather than trusting the link.
   expect(preflightRequests.length).toBeGreaterThan(0);
   await reopened.close();
+});
+
+test("the aligned presentations appear only where the comparison can answer them", async ({
+  page,
+}) => {
+  await installRoutes(page);
+  await page.goto("/compare");
+
+  const workspace = page.getByTestId("comparison-workspace");
+  await expect(workspace).toHaveAttribute("data-comparable", "true");
+  await expect(workspace).toHaveAttribute("data-row-count", "2");
+
+  // Only one of the two geographies published a usable value on both sides,
+  // so there is no pair to plot: one point states nothing about how two
+  // measures relate across places.
+  await expect(workspace).toHaveAttribute("data-plottable-points", "1");
+  await expect(page.getByTestId("comparison-chart-panel")).toHaveCount(0);
+  await expect(page.getByTestId("comparison-unsupported-modes")).toContainText(
+    "fewer than two geographies",
+  );
+
+  // The map does answer: the boundary publishes county geometry and the
+  // response named a derived field to colour.
+  await expect(page.getByTestId("comparison-map-panel")).toBeVisible();
+  await expect(page.getByTestId("map-derived-note")).toContainText("difference");
+  await expect(page.getByTestId("map-derived-note")).toContainText(
+    "not a value either source published",
+  );
+  const map = page.getByTestId("comparison-map");
+  await expect(map).toHaveAttribute("data-map-ready", "true");
+  // Exactly one geography could be coloured; the one missing a side stays
+  // uncoloured rather than being coloured as zero.
+  await expect(map).toHaveAttribute("data-colored-values", "1");
+  await expect(page.getByLabel("difference · API-derived legend")).toBeVisible();
+
+  // A national comparison has no geometry to draw at all, and says so
+  // instead of rendering an empty map.
+  await page.getByTestId("comparison-geo-level").selectOption("NATIONAL");
+  await expect(page.getByTestId("comparison-map-panel")).toHaveCount(0);
+  await expect(page.getByTestId("comparison-unsupported-modes")).toContainText(
+    "no national geometry",
+  );
+  // The table and export still answer: the values are there, only the map
+  // and the plot are not.
+  await expect(page.getByTestId("comparison-table-panel")).toBeVisible();
+  await expect(page.getByTestId("comparison-export")).toBeEnabled();
+});
+
+test("a blocked pair presents no aligned view at all", async ({ page }) => {
+  await installRoutes(page);
+  await page.goto("/compare");
+  await expect(page.getByTestId("comparison-workspace")).toHaveAttribute(
+    "data-comparable",
+    "true",
+  );
+
+  await page.getByTestId("comparison-source-a").selectOption("cdc");
+  await expect(page.getByTestId("comparison-workspace")).toHaveAttribute(
+    "data-comparable",
+    "false",
+  );
+  await expect(page.getByTestId("comparison-workspace")).toHaveAttribute("data-view-modes", "");
+  await expect(page.getByTestId("comparison-map-panel")).toHaveCount(0);
+  await expect(page.getByTestId("comparison-chart-panel")).toHaveCount(0);
+  await expect(page.getByTestId("comparison-table-panel")).toHaveCount(0);
+  await expect(page.getByTestId("comparison-export")).toBeDisabled();
 });

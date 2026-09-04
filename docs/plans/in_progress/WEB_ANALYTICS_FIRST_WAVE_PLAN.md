@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004's preflight-first comparison workspace delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations) — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-004's remaining scope — aligned chart and map presentations for a comparable pair, gated by the same `lib/viewModes.ts` support model, and reopening a saved comparison from the builder. Then WEB-005 (community profile and reusable product templates).
+- **Next pickup:** WEB-005 (community profile and reusable product templates) — the first complete cross-source product over the capability-driven explorer, comparison, and quality surfaces now in place.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -858,6 +858,73 @@ explorer uses, and reopening a saved comparison from the builder.
 Not run, recorded as not run: composed-service suites (`make test-api`,
 `make test-martin-*`, deployment smoke) — no API, Martin, or deployment
 contract changed in this pass; they run in their required CI jobs.
+
+## WEB-004 delivery record (second increment — aligned presentations, 2026-09-03)
+
+The comparison's table, scatter, and choropleth, each offered only where the
+comparison can answer it. WEB-004's acceptance criteria are met.
+
+- **Comparison modes over the same support model (`lib/viewModes.ts`).**
+  `describeComparisonViewModes` reuses `spatialGrains` and the explorer's
+  `ViewModeState` shape, reading the verdict, the rows the response carried,
+  the geographies plottable on both sides, the fields the response named as
+  derived, and the vector layer's published fields. A blocked pair presents
+  no aligned view at all, with the policy as the stated reason; a national
+  comparison is explicitly non-spatial; a single plottable pair is not a
+  plot, because one point states nothing about how two measures relate
+  across places.
+- **A scatter of the two published inputs (`components/ScatterChart.tsx`).**
+  Independent axes, so the plot asserts no shared unit and no relationship
+  beyond what the two publishers stated, and each point is one geography's
+  own pair. A geography missing a value on either side cannot be a point —
+  plotting it at zero would state a value neither source published — so it
+  is excluded, counted, and named in the caption, and it stays in the table.
+- **A choropleth of one API-derived field (`components/ChoroplethMap.tsx`).**
+  The colouring logic is not new: it renders `buildChoroplethModel` from
+  `lib/explorerViewModel`, the same model the explorer uses. Only a field the
+  response named in `derivations` may be mapped — colouring by a published
+  input would present one side as the comparison — and the legend and panel
+  both say the value is API-derived rather than published. Neither the map
+  nor the scatter is ever the only way to read a value; the full table sits
+  beside them.
+- **A defect this increment found in existing shared code:** `Number(null)`
+  and `Number("")` are both `0`, and `Number.isFinite(0)` is true. The
+  choropleth model, the extrusion heights, and `formatObservationValue` all
+  coerced before rejecting, so a value the API published as `null` — its
+  contract for "the source published no usable number", with `value_status`
+  saying why — was coloured, sized, and formatted as a published zero. This
+  affected the explorer as well as the new comparison map: a suppressed CDC
+  observation read as `0` in the selected-geography panel and the hover
+  tooltip. A shared `publishedNumber` guard now rejects the absent value
+  before coercion, and a genuine published `0` still renders. Three
+  regression tests pin it under WEB-002, whose pass metric now states the
+  guarantee.
+- **Evidence:** WEB-020 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner) and WEB-002's pass metric strengthened; the
+  implementation-status table reads 230 of 230 and the behavioral register is
+  at 256 rows, all FULL. `comparison` unit tests extended to 16,
+  `view-modes` to 16, `explorer-contracts` to 8; the comparison browser spec
+  extended to 5 specs covering the offered and withheld presentations.
+
+### Validation (2026-09-03, after the WEB-004 second increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 114 passed (11 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 15 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 256 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+**Known follow-on:** the comparison map and the explorer map are separate
+MapLibre wirings over one shared colouring model. Unifying the two
+presentations is a consolidation task for WEB-009, not a contract gap.
 
 ## Implementation phases
 
