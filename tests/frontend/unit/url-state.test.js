@@ -4,10 +4,15 @@ import { describe, expect, test } from "vitest";
 // supported links valid and reproduces the same analysis request.
 // Covers: WEB-016 — the scope and pinned release travel in the link, so a
 // shared as-released URL reproduces the same as-released analysis.
+// Covers: WEB-019 — the comparison link names both measures and the scope,
+// and deliberately carries no compatibility verdict.
 
 import {
+  comparisonHref,
   explorerHref,
+  parseComparisonState,
   parseExplorerState,
+  serializeComparisonState,
   serializeExplorerState,
 } from "../../../apps/web/lib/urlState";
 
@@ -98,5 +103,43 @@ describe("explorer URL state", () => {
     ).toBe("source=pep&metric=M");
     expect(explorerHref({}, defaults)).toBe("/explore");
     expect(explorerHref({ metric: "M" }, defaults)).toBe("/explore?metric=M");
+  });
+});
+
+describe("comparison URL state", () => {
+  test("names both measures, their sources, and the scope", () => {
+    const state = {
+      metricA: "ACS:acs5:B01003_001",
+      metricB: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      sourceA: "census",
+      sourceB: "pep",
+      geoLevel: "STATE",
+      stateFips: "55",
+    };
+    expect(parseComparisonState(`?${serializeComparisonState(state)}`)).toEqual(state);
+    expect(comparisonHref(state, { geoLevel: "COUNTY" })).toContain("/compare?a=ACS");
+    expect(comparisonHref({}, { geoLevel: "COUNTY" })).toBe("/compare");
+  });
+
+  test("carries no compatibility verdict", () => {
+    // The verdict belongs to the API and is re-asked on open, so a link can
+    // never reproduce a stale "comparable" for a pair whose published
+    // semantics have since changed.
+    const query = serializeComparisonState({
+      metricA: "A",
+      metricB: "B",
+      geoLevel: "COUNTY",
+    });
+    expect(query).not.toContain("comparable");
+    expect(parseComparisonState("?a=A&b=B&comparable=true")).toEqual({
+      metricA: "A",
+      metricB: "B",
+    });
+  });
+
+  test("drops invalid scope values instead of propagating them", () => {
+    expect(parseComparisonState("?geo_level=PLANET&state=5x5&source_a=Not%2FValid")).toEqual({});
+    expect(parseComparisonState("")).toEqual({});
+    expect(serializeComparisonState({ geoLevel: "COUNTY" }, { geoLevel: "COUNTY" })).toBe("");
   });
 });

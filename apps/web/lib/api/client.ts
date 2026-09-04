@@ -8,6 +8,7 @@
 import type {
   CollectionResponse,
   ComparisonPreflight,
+  ComparisonResponse,
   DistributionResponse,
   GeographySummary,
   HealthResponse,
@@ -313,14 +314,14 @@ export function getComparisonPreflight(
   return apiFetch<ComparisonPreflight>("/comparison/preflight", { ...options, params });
 }
 
+// Preflight before you compare: `/comparison` enforces exactly the verdict
+// `/comparison/preflight` publishes, and answers an incompatible pair with a
+// 422 naming the failed rules.
 export function getComparison(
   params: QueryParams,
   options: RequestOptions = {},
-): Promise<CollectionResponse<Record<string, unknown>>> {
-  return apiFetch<CollectionResponse<Record<string, unknown>>>("/comparison", {
-    ...options,
-    params,
-  });
+): Promise<ComparisonResponse> {
+  return apiFetch<ComparisonResponse>("/comparison", { ...options, params });
 }
 
 // --- Health ---

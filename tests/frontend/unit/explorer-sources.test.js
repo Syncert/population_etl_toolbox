@@ -272,6 +272,25 @@ describe("capability-derived explorer sources", () => {
     expect(unpinnable.supportsReleasePin).toBe(false);
   });
 
+  test("comparison support is read from the declared analysis routes", () => {
+    // Declaring the analysis routes does not make a source comparable with
+    // any other — /comparison/preflight decides each pair — but a source
+    // declaring none is one the analysis routes have already declined.
+    const analysisRoutes = [
+      { path: "/api/v1/comparison/preflight", parameters: ["metric_code_a", "metric_code_b"] },
+      { path: "/api/v1/comparison", parameters: ["metric_code_a", "metric_code_b"] },
+    ];
+    const [ready] = buildExplorerSources([
+      { ...capabilities[2], observation_routes: [...capabilities[2].observation_routes, ...analysisRoutes] },
+    ]);
+    expect(ready.servesComparison).toBe(true);
+
+    // CDC declares no analysis routes in these capabilities.
+    const sources = buildExplorerSources(capabilities);
+    expect(findExplorerSource(sources, "cdc").servesComparison).toBe(false);
+    expect(FALLBACK_EXPLORER_SOURCES[0].servesComparison).toBe(false);
+  });
+
   test("degrades to the labeled offline fallback when discovery is unavailable", () => {
     expect(buildExplorerSources([])).toEqual([]);
     expect(buildExplorerSources(null)).toEqual([]);

@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete; WEB-003 delivered across six increments — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004's preflight-first comparison workspace delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-004 (comparison workspace) over `/comparison/preflight` and `/comparison`, which the capability entries already declare per source — preflight before querying, derived differences/ratios labelled as derived, and an actionable explanation for an incompatible pair. WEB-003 is complete.
+- **Next pickup:** WEB-004's remaining scope — aligned chart and map presentations for a comparable pair, gated by the same `lib/viewModes.ts` support model, and reopening a saved comparison from the builder. Then WEB-005 (community profile and reusable product templates).
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -776,6 +776,84 @@ where the selection can answer them, and no static analytical value remains.
 | Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 10 passed (Chromium) |
 | Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 254 rows) |
 | Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-004 delivery record (first increment — preflight-first workspace, 2026-09-03)
+
+The comparison workspace at `/compare`. Its governing rule is that the API
+owns the compatibility decision and this client only presents it: the point
+of asking first is that no incompatible data ever moves.
+
+- **Preflight before anything is compared (`lib/comparison.ts`, new).**
+  `/comparison/preflight` is asked as soon as both sides name a measure and
+  re-asked whenever the pair changes. `comparable` is read from the response
+  rather than inferred from the rule list, so a rule this client has never
+  heard of cannot flip the decision. `/comparison` is requested only when the
+  verdict allows it — it answers a blocked pair with a 422, so asking anyway
+  would turn a stated explanation into a request failure and move data the
+  policy rejected.
+- **Three-valued rules are presented as three values.** A `fail` blocks; an
+  `unknown` is a caution and a caveat, never a pass — where a source
+  publishes nothing to check (Census ACS publishes no units) the comparison
+  is served and the unverified rule travels with it. A comparable pair
+  carrying unverified rules never reaches the `ok` pill; a blocked pair reads
+  as `incompatible`, which the shared pill already treats as failure-shaped.
+- **A blocked pair is explained, not just refused.** Every failed rule shows
+  its own published reason, and the failed rule names drive actionable
+  alternatives — each measure stays fully explorable on its own, and a
+  stratified source is pointed at the explorer's declared filters rather than
+  a weakened comparison. Per-measure explorer links are offered directly, and
+  a blocked pair is not saveable as an analysis.
+- **Published inputs and API-derived values never blur.** Each side's column
+  is headed by its own metric code, so the two inputs cannot be read as one
+  measure; every field the response names in `derivations` is labelled
+  API-derived in the table header, in a prose note, and in the export
+  heading. A derivation this client has not heard of is labelled rather than
+  dropped.
+- **Nothing is silently aligned.** The API combines each side's own newest
+  value per geography rather than aligning them to a shared period, so each
+  row states whether the two periods it combined are the same. A side that
+  published nothing for a geography reads "Not published" — never zero, and
+  never a value borrowed from the other side.
+- **Reproducible and exportable.** The link names both measures, both
+  sources, the grain, and the state scope, and deliberately carries no
+  verdict: the verdict belongs to the API and is re-asked on open, so a link
+  can never reproduce a stale "comparable". The CSV export carries both
+  identities, sources, units, each row's own periods and values, the derived
+  fields marked derived in the heading itself, and every caveat the verdict
+  and the response published.
+- **`servesComparison` added to the capability model.** Declaring the
+  analysis routes does not make a source comparable with any other — each
+  pair is still decided by preflight — but a source declaring none is one the
+  analysis routes have already declined, which the source picker says before
+  a reader chooses it.
+- **Evidence:** WEB-019 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 229 of 229 and the
+  behavioral register is at 255 rows, all FULL. New
+  `tests/frontend/unit/comparison.test.js` (13 tests), `url-state` extended
+  to 10, `explorer-sources` to 11, and a new
+  `tests/frontend/browser/comparison.spec.js` (3 specs) driving the
+  comparable pair, the blocked pair with its unissued request, and the link
+  round trip.
+
+**Remaining for WEB-004:** aligned chart and map presentations for a
+comparable pair, gated by the same `lib/viewModes.ts` support model the
+explorer uses, and reopening a saved comparison from the builder.
+
+### Validation (2026-09-03, after the WEB-004 first increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 102 passed (11 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 13 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 255 rows) |
+| Python lint | `ruff check .` | clean |
 
 Not run, recorded as not run: composed-service suites (`make test-api`,
 `make test-martin-*`, deployment smoke) — no API, Martin, or deployment

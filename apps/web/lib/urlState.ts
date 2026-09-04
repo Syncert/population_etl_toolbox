@@ -1,5 +1,10 @@
-// Explorer URL-state contract: parse and serialize the shareable public
-// exploration state. Every link shape supported by the current explorer
+// URL-state contract for the public analysis surfaces: parse and serialize
+// the shareable exploration and comparison state.
+//
+// Explorer state comes first; the comparison workspace's own state is at the
+// bottom of the file and shares this module's validation vocabulary.
+//
+// Explorer: parse and serialize the shareable public exploration state. Every link shape supported by the current explorer
 // (`source`, `metric`, `state`, `geo`, `geo_level`, `map_mode`, `scope`,
 // `release`) stays valid; unknown or invalid values are dropped rather than
 // propagated into requests.
@@ -150,4 +155,96 @@ export function explorerHref(
 ): string {
   const query = serializeExplorerState(state, defaults);
   return query ? `/explore?${query}` : "/explore";
+}
+
+// --- Comparison workspace ---
+//
+// The comparison link names both measures, the geography grain, and the
+// state scope. It deliberately does not carry a compatibility verdict: the
+// verdict belongs to the API and is re-asked on open, so a link can never
+// reproduce a stale "comparable" for a pair whose published semantics have
+// since changed.
+
+export interface ComparisonUrlState {
+  metricA?: string;
+  metricB?: string;
+  sourceA?: string;
+  sourceB?: string;
+  geoLevel?: GeoLevel;
+  stateFips?: string;
+}
+
+export type ComparisonUrlDefaults = Pick<ComparisonUrlState, "geoLevel">;
+
+export function parseComparisonState(
+  search: string | null | undefined,
+): ComparisonUrlState {
+  const params = new URLSearchParams(search || "");
+  const state: ComparisonUrlState = {};
+
+  const metricA = params.get("a");
+  if (metricA) {
+    state.metricA = metricA;
+  }
+  const metricB = params.get("b");
+  if (metricB) {
+    state.metricB = metricB;
+  }
+
+  const sourceA = params.get("source_a");
+  if (sourceA && SOURCE_KEY_PATTERN.test(sourceA)) {
+    state.sourceA = sourceA;
+  }
+  const sourceB = params.get("source_b");
+  if (sourceB && SOURCE_KEY_PATTERN.test(sourceB)) {
+    state.sourceB = sourceB;
+  }
+
+  const geoLevel = (params.get("geo_level") || "").toUpperCase();
+  if (isGeoLevel(geoLevel)) {
+    state.geoLevel = geoLevel;
+  }
+
+  const stateFips = params.get("state");
+  if (stateFips && STATE_FIPS_PATTERN.test(stateFips)) {
+    state.stateFips = stateFips;
+  }
+
+  return state;
+}
+
+export function serializeComparisonState(
+  state: ComparisonUrlState = {},
+  defaults: ComparisonUrlDefaults = {},
+): string {
+  const params = new URLSearchParams();
+
+  if (state.metricA) {
+    params.set("a", state.metricA);
+  }
+  if (state.metricB) {
+    params.set("b", state.metricB);
+  }
+  if (state.sourceA && SOURCE_KEY_PATTERN.test(state.sourceA)) {
+    params.set("source_a", state.sourceA);
+  }
+  if (state.sourceB && SOURCE_KEY_PATTERN.test(state.sourceB)) {
+    params.set("source_b", state.sourceB);
+  }
+  if (state.geoLevel && isGeoLevel(state.geoLevel) && state.geoLevel !== defaults.geoLevel) {
+    params.set("geo_level", state.geoLevel);
+  }
+  if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
+    params.set("state", state.stateFips);
+  }
+
+  return params.toString();
+}
+
+export function comparisonHref(
+  state: ComparisonUrlState = {},
+  defaults: ComparisonUrlDefaults = {},
+): string {
+  const query = serializeComparisonState(state, defaults);
+  return query ? `/compare?${query}` : "/compare";
 }

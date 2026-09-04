@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BookOpen, Database, FilePenLine, MapPinned } from "lucide-react";
+import { BarChart3, BookOpen, Columns3, Database, FilePenLine, MapPinned } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home" },
   { href: "/catalog", label: "Data Catalog", icon: Database },
   { href: "/explore", label: "Explore", icon: BarChart3 },
+  { href: "/compare", label: "Compare", icon: Columns3 },
   { href: "/profiles", label: "Profiles", icon: MapPinned },
   { href: "/articles", label: "Articles", icon: BookOpen },
   { href: "/builder", label: "Builder", icon: FilePenLine },

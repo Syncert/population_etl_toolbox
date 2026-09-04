@@ -132,19 +132,81 @@ export interface DistributionResponse {
   [key: string]: unknown;
 }
 
+/**
+ * One declared compatibility rule's three-valued verdict.
+ *
+ * `unknown` is not incompatibility: where a source publishes nothing to
+ * check (Census ACS publishes no units), the comparison is still served and
+ * the unverified rule travels as a caveat. Only `fail` blocks a pair.
+ */
 export interface ComparisonRule {
-  rule?: string;
-  status?: "pass" | "fail" | "unknown" | string;
-  reason?: string | null;
+  rule: string;
+  status: "pass" | "fail" | "unknown" | string;
+  reason: string;
   [key: string]: unknown;
 }
 
-/** The compatibility verdict; an incompatible pair is a 200 explanation. */
+/**
+ * The compatibility verdict from `/comparison/preflight`. An incompatible
+ * pair is a 200 explanation, not an error; only an unknown metric code is a
+ * 404. `/comparison` enforces exactly this verdict, so a client that
+ * preflights first can trust it.
+ */
 export interface ComparisonPreflight {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  source_code_a?: string | null;
+  source_code_b?: string | null;
   comparable?: boolean;
+  /** The fields `/comparison` would compute, each explicitly API-derived. */
   derivations?: string[];
   rules?: ComparisonRule[];
   caveats?: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * One geography's paired inputs and their API-derived combinations.
+ *
+ * `value_a`/`value_b` are the provider-published inputs — each side's newest
+ * value for that geography — and `period_a`/`period_b` carry the period each
+ * input actually describes, so a differing as-of context stays visible
+ * instead of being implied away. `difference` and `ratio` are API-derived
+ * and named in the response's `derivations`. A `null` value means that side
+ * published nothing for the geography; it is never zero.
+ */
+export interface ComparisonRow {
+  geo_id?: string | null;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  county_fips?: string | null;
+  state_name?: string | null;
+  county_name?: string | null;
+  metric_code_a?: string | null;
+  metric_code_b?: string | null;
+  period_a?: string | null;
+  period_b?: string | null;
+  value_a?: number | null;
+  value_b?: number | null;
+  difference?: number | null;
+  ratio?: number | null;
+  [key: string]: unknown;
+}
+
+/** An aligned comparison, served only for pairs the policy accepts. */
+export interface ComparisonResponse {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  source_code_a?: string | null;
+  source_code_b?: string | null;
+  units_a?: string | null;
+  units_b?: string | null;
+  derivations?: string[];
+  caveats?: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  items: ComparisonRow[];
   [key: string]: unknown;
 }
 

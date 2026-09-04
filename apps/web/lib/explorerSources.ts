@@ -57,6 +57,14 @@ export interface ExplorerSource {
   dimensionFilters: string[];
   /** True when `/distribution/bins` is declared for this source. */
   servesDistribution: boolean;
+  /**
+   * True when the aligned comparison routes are declared for this source.
+   * A source that declares them is not thereby comparable with any other —
+   * `/comparison/preflight` decides each pair — but a source that declares
+   * none is one the analysis routes have already declined, which is worth
+   * saying before a reader picks it.
+   */
+  servesComparison: boolean;
   latestParameters: string[];
   timeseriesParameters: string[];
   /**
@@ -89,6 +97,7 @@ export const NEUTRAL_OBSERVATIONS_PATH = "/observations";
 /** The release listing that says what `release=` accepts for a metric. */
 export const RELEASES_PATH = "/observations/releases";
 const DISTRIBUTION_PATH = "/distribution/bins";
+const COMPARISON_PREFLIGHT_PATH = "/comparison/preflight";
 
 /**
  * Parameters the neutral resource accepts for every source regardless of
@@ -140,6 +149,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     requestFilters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     dimensionFilters: [],
     servesDistribution: true,
+    servesComparison: false,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     timeseriesParameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
     // The offline fallback claims no neutral surface: with discovery
@@ -220,6 +230,7 @@ export function buildExplorerSources(
       requestFilters,
       dimensionFilters: dimensionFiltersOf(requestFilters),
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
+      servesComparison: declaredPaths.has(`${API_BASE}${COMPARISON_PREFLIGHT_PATH}`),
       latestParameters,
       timeseriesParameters,
       neutralFilters,
