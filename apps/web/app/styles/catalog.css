@@ -236,3 +236,36 @@
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* Coverage composition bar: a visual reading of published counts. Each
+   segment carries its own count in the title and the container's aria-label,
+   so the bar is never the only way to read the number. */
+.coverage-bar {
+  display: flex;
+  overflow: hidden;
+  width: 120px;
+  height: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.coverage-bar span {
+  display: block;
+  height: 100%;
+}
+
+.coverage-bar span[data-segment="current"] {
+  background: var(--ok);
+}
+
+.coverage-bar span[data-segment="stale"] {
+  background: var(--warn);
+}
+
+.coverage-bar span[data-segment="retired"] {
+  background: var(--muted);
+}
+
+.coverage-bar span[data-segment="no published state"] {
+  background: repeating-linear-gradient(45deg, var(--line), var(--line) 3px, white 3px, white 6px);
+}

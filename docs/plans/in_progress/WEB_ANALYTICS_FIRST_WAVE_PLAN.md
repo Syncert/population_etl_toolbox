@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005, WEB-006, and WEB-007 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 through WEB-008 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-008 (source coverage and data-quality explorer), then WEB-009.
+- **Next pickup:** WEB-009 (accessibility, performance, operations, and API handoff verification).
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1050,6 +1050,41 @@ The evidence packet composer at `/builder`, replacing the block builder.
 rather than the account, and the `/articles` route still carries its own
 hand-written example. Public publishing and social interaction are
 explicitly outside this phase.
+
+## WEB-008 delivery record (first pass, 2026-09-03)
+
+The source coverage and data-quality explorer at `/quality`.
+
+- **The published signal is presented, never recomputed.** `/catalog/freshness`
+  gives per-source counts and publication/harvest times; each metric's own
+  freshness, watermark, and publisher contract version come from its catalog
+  row. There is no score, index, grade, or percentage anywhere: one number
+  over unlike measures would be a client-authored judgement wearing the
+  appearance of a published fact, and the page says so explicitly.
+- **Four distinct facts stay distinct.** Current, stale, and retired are the
+  warehouse's own counts; metrics the rollup places in none of them are
+  counted separately as carrying no published freshness state, because an
+  unknown state is not thereby current. A source with metrics but no
+  published publication time never reads as healthy — nothing establishes
+  that its current count describes a recent publication — and a source with
+  nothing published is distinct again.
+- **Unpublished fields read as unpublished.** A publisher that published no
+  watermark or contract version gets "Not published", never a placeholder
+  that would state something the source did not.
+- **Evidence the rollup does not carry is pointed at, not fabricated.**
+  Revisions live on `/observations/releases`, suppression on each row's
+  `value_status`, reporting participation on the FBI UCR `coverage` object,
+  definition changes on `publisher_contract_version`. Each is named with the
+  resource that publishes it, where to inspect it here, and what it means —
+  including that a suppressed value is never a zero and an unreported month
+  is not zero crime. Questions the API answers with nothing are stated so
+  absence is not read as a clean bill of health.
+- **Quality links back to the context it affects**, per metric, into the
+  explorer.
+- **Evidence:** WEB-024 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 234 of 234, register at 260 rows, all FULL.
+  New `tests/frontend/unit/data-quality.test.js` (10 tests) and
+  `tests/frontend/browser/data-quality.spec.js` (3 specs).
 
 ## Implementation phases
 
