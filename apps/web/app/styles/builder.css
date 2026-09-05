@@ -284,3 +284,27 @@
     flex-direction: column;
   }
 }
+
+/* Evidence packet print behavior: the packet is the shareable artifact, so
+   printing drops the composer chrome and keeps every block's envelope. */
+.packet-document {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .packet-document {
+    border: 0;
+    padding: 0;
+  }
+
+  .builder-block {
+    page-break-inside: avoid;
+  }
+}

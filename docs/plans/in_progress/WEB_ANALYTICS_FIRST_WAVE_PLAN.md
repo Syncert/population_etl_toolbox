@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 and WEB-006 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005, WEB-006, and WEB-007 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-007 (grant evidence composition), then WEB-008 and WEB-009.
+- **Next pickup:** WEB-008 (source coverage and data-quality explorer), then WEB-009.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1012,6 +1012,44 @@ Accounts and saved analyses at `/saved`, over the authenticated
 the browser-local store rather than the account; moving their save buttons
 onto the authenticated contract is the natural follow-on, and the import
 path above already bridges what they wrote.
+
+## WEB-007 delivery record (first pass, 2026-09-03)
+
+The evidence packet composer at `/builder`, replacing the block builder.
+
+- **Composition is the risk this phase manages.** A chart lifted out of the
+  explorer into a document keeps its shape and loses which measure it was,
+  for where, over what period, at what publication, and with what caveats.
+  So `lib/evidencePackets.ts` gives every analytical block a reproducibility
+  envelope — measures, sources, geography, scope and pinned release, period,
+  units, transformation, the exact request, and caveats — and an analytical
+  block can only be filled from a saved view that already recorded one.
+- **Gaps are reported, never filled.** `packetIssues` names each analytical
+  block whose envelope is incomplete and exactly which fields it lacks; a
+  field a saved view never captured stays empty rather than being guessed.
+  The packet refuses to call itself complete while any such block remains.
+- **Live and frozen are distinguished.** A block replaying the latest
+  publication is live and says its values change when the source
+  republishes; a block pinned to a release is frozen and says it will not.
+  Both are legitimate and they mean different things in a proposal.
+- **The grant needs-assessment template ships with its methodology and
+  limits blocks already present**, so a packet cannot be assembled without
+  them, and its closing note states that the measures do not establish that
+  a program caused a change — associations stay associations.
+- **Preview, print, and export.** The preview drops the composer chrome and
+  keeps every envelope; a print stylesheet makes the packet itself the
+  shareable artifact; the CSV export carries each block's full envelope and
+  live status so the evidence can be re-derived without this application.
+  Each analytical block reopens into the analysis it replays.
+- **Evidence:** WEB-023 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 233 of 233, register at 259 rows, all FULL.
+  New `tests/frontend/unit/evidence-packets.test.js` (10 tests) and
+  `tests/frontend/browser/evidence-packet.spec.js` (3 specs).
+
+**Not in this pass:** packets persist to the existing browser-local draft
+rather than the account, and the `/articles` route still carries its own
+hand-written example. Public publishing and social interaction are
+explicitly outside this phase.
 
 ## Implementation phases
 
