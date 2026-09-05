@@ -248,3 +248,60 @@ export function comparisonHref(
   const query = serializeComparisonState(state, defaults);
   return query ? `/compare?${query}` : "/compare";
 }
+
+// --- Product profiles ---
+//
+// A profile link names the template and the place. It carries no measure
+// values: reopening it re-asks the catalog and the observations, so a shared
+// profile can never show what a place looked like when the link was made
+// while presenting it as current.
+
+export interface ProfileUrlState {
+  template?: string;
+  geoId?: string;
+}
+
+export type ProfileUrlDefaults = Pick<ProfileUrlState, "template">;
+
+const TEMPLATE_ID_PATTERN = /^[a-z][a-z0-9-]{0,49}$/;
+
+export function parseProfileState(search: string | null | undefined): ProfileUrlState {
+  const params = new URLSearchParams(search || "");
+  const state: ProfileUrlState = {};
+
+  const template = params.get("template");
+  if (template && TEMPLATE_ID_PATTERN.test(template)) {
+    state.template = template;
+  }
+  const geoId = params.get("place");
+  if (geoId) {
+    state.geoId = geoId;
+  }
+  return state;
+}
+
+export function serializeProfileState(
+  state: ProfileUrlState = {},
+  defaults: ProfileUrlDefaults = {},
+): string {
+  const params = new URLSearchParams();
+  if (
+    state.template &&
+    TEMPLATE_ID_PATTERN.test(state.template) &&
+    state.template !== defaults.template
+  ) {
+    params.set("template", state.template);
+  }
+  if (state.geoId) {
+    params.set("place", state.geoId);
+  }
+  return params.toString();
+}
+
+export function profileHref(
+  state: ProfileUrlState = {},
+  defaults: ProfileUrlDefaults = {},
+): string {
+  const query = serializeProfileState(state, defaults);
+  return query ? `/profiles?${query}` : "/profiles";
+}

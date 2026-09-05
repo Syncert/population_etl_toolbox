@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations) — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 first pass delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-005 (community profile and reusable product templates) — the first complete cross-source product over the capability-driven explorer, comparison, and quality surfaces now in place.
+- **Next pickup:** WEB-006 (accounts and saved analyses) over `/analysis-configurations`, then WEB-007, WEB-008, and WEB-009.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -925,6 +925,45 @@ contract changed in this pass; they run in their required CI jobs.
 **Known follow-on:** the comparison map and the explorer map are separate
 MapLibre wirings over one shared colouring model. Unifying the two
 presentations is a consolidation task for WEB-009, not a contract gap.
+
+## WEB-005 delivery record (first pass, 2026-09-03)
+
+Three first-wave products over one screen, all configuration.
+
+- **Templates reference catalog identities (`lib/productTemplates.ts`).**
+  Each slot names candidate metric codes in preference order and resolves to
+  the first one the live catalog publishes, via `/catalog/metrics/{code}`
+  whose 404 is the API's stable "not published". The resolved identity and
+  the publisher's own display name are always shown, so a reader sees which
+  measure answered rather than trusting the slot's label. A slot no candidate
+  satisfies reports the identities it looked for; it is never filled by a
+  similar measure, which would silently answer a different question.
+- **Partial coverage leaves a stated gap.** Unfilled slots and their sections
+  stay rendered and are counted in a coverage note. A profile that quietly
+  dropped them would read as though the place had no such conditions, when
+  the truth is that this warehouse publishes no such measure for it.
+- **Every measure stands on its own.** Value, source, period, unit,
+  uncertainty, published value status, and freshness travel with each answer,
+  plus a direct explorer link. Nothing is combined: no score, no index, no
+  ranking, no cross-measure arithmetic. Each product states its own limits in
+  the header — the ACS/PEP method difference, the household-versus-payroll
+  universe split — rather than leaving a reader to infer them.
+- **Three distinct absences stay distinct:** a slot the catalog cannot fill,
+  a measure that published nothing for this place, and a value the source
+  suppressed. None renders as a number and none renders as zero.
+- **Requests go through each source's own declared access shape**, reusing
+  `buildHistoryObservationRequest`, so a filter a source does not declare is
+  never sent.
+- **The link reproduces the product and the place** and carries no values, so
+  a shared profile re-asks the catalog and the observations rather than
+  presenting a stale reading as current.
+- The previous `/profiles` route — hard-coded to one ACS metric, with a
+  client-computed percentage change and a Census-only source note applied to
+  every source — is replaced.
+- **Evidence:** WEB-021 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 231 of 231, register at 257 rows, all FULL.
+  New `tests/frontend/unit/product-templates.test.js` (9 tests) and
+  `tests/frontend/browser/profiles.spec.js` (2 specs).
 
 ## Implementation phases
 
