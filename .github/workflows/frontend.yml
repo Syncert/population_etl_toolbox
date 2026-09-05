@@ -44,6 +44,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run build
+      - name: Check route bundle budgets
+        run: npm run check:bundle
       - name: Install Chromium runtime
         run: npx playwright install --with-deps chromium
       - run: npm run test:browser

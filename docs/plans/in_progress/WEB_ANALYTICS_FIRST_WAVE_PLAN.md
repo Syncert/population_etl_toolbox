@@ -15,16 +15,16 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; in progress
+- **Status:** First pass complete across WEB-001 through WEB-009; ready for review
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 through WEB-008 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-009 (accessibility, performance, operations, and API handoff verification).
+- **Next pickup:** human review. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; the per-phase delivery records name the follow-ons each pass deliberately left, and `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects them.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1085,6 +1085,70 @@ The source coverage and data-quality explorer at `/quality`.
   browser owner); status table 234 of 234, register at 260 rows, all FULL.
   New `tests/frontend/unit/data-quality.test.js` (10 tests) and
   `tests/frontend/browser/data-quality.spec.js` (3 specs).
+
+## WEB-009 delivery record (first pass, 2026-09-03)
+
+The cross-workflow accessibility, performance, security, and operations
+gate, plus the handoff for later plans.
+
+- **A single audit spec covers every core workflow**
+  (`tests/frontend/browser/accessibility-operations.spec.js`): one `main`
+  landmark and one level-1 heading per route with a named navigation
+  landmark; a sweep asserting every form control on the explorer,
+  comparison, profile, and quality workflows carries an accessible name;
+  map and chart alternatives; keyboard-only selection announced through a
+  live region; a 390px viewport that keeps source and coverage context and
+  scrolls only vertically; and a 503 that leaves a named, recoverable state
+  rather than a blank page.
+- **Security headers gained a Content-Security-Policy.** Same-origin only —
+  the API and tiles arrive through this server's own rewrites, so nothing
+  needs a third-party script or connect origin — with `object-src 'none'`,
+  `base-uri`, `form-action`, and `frame-ancestors` locked to self, and the
+  `blob:` worker and image sources MapLibre genuinely requires.
+  `'unsafe-eval'` is development-only. `Cross-Origin-Opener-Policy` added.
+  Script `'unsafe-inline'` remains Next's own bootstrap; removing it needs a
+  per-request nonce and is recorded as a follow-on rather than switched on
+  untested.
+- **Route bundle budgets are measured, not estimated.**
+  `scripts/check-bundle-budget.mjs` reads the production build manifest and
+  sums the real byte size of every chunk each route loads, against explicit
+  per-route budgets in `scripts/bundle-budgets.json`. A route with no
+  declared budget fails rather than passing silently, because a new route
+  nobody set a threshold for is exactly the one that grows unnoticed. Wired
+  into the `frontend` workflow after `build`.
+- **Documentation now states the policies a consumer needs**: the route
+  inventory, the supported-browser policy (evergreen; WebGL is required only
+  for the map, which is never the sole path to a value), the API
+  compatibility policy (v1 only, capability-driven, undeclared filters never
+  sent, unknown fields ignored and absent fields read as not published),
+  performance budgets, the security headers, the accessibility commitments
+  that are actually gated, the privacy boundary, and operational
+  diagnostics.
+- **`docs/reference/WEB_FIRST_WAVE_HANDOFF.md`** names the stable modules a
+  later publishing or social plan may build on, the saved-analysis contract
+  and its three preserved properties, the privacy boundaries, the invariants
+  that must not break, the explicit non-goals, and the known follow-ons.
+- **Evidence:** WEB-025 added to `docs/reference/TESTING_CONTRACT.md`
+  (browser + static owner); status table 235 of 235, register at 261 rows,
+  all FULL.
+
+### Validation (2026-09-03, after WEB-009)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 154 passed (17 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Route bundle budgets | `npm --prefix apps/web run check:bundle` | every route within budget |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 34 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 261 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) and the `npm audit --omit=dev` gate
+were exercised earlier in this branch; no API, Martin, or deployment
+contract changed in this pass, and they run in their required CI jobs.
 
 ## Implementation phases
 
