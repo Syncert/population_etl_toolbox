@@ -22,6 +22,7 @@ export const RESERVED_REQUEST_STATES = Object.freeze([
   "stale",
   "suppressed",
   "incompatible",
+  "conflict",
   "unauthorized",
   "forbidden",
   "rate-limited",

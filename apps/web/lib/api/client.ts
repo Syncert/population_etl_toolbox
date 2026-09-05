@@ -12,9 +12,12 @@ import type {
   DistributionResponse,
   GeographySummary,
   HealthResponse,
+  AnalysisDocument,
   MetricReleaseListResponse,
   MetricSummary,
   Observation,
+  SavedAnalysisConfiguration,
+  SavedAnalysisListResponse,
   SourceCapability,
   SourceSummary,
 } from "./types";
@@ -50,6 +53,16 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Injectable transport, for deterministic tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * Operator-provisioned bearer token for the user-scoped routes. It is
+   * sent only as an `Authorization` header — never as a query parameter,
+   * because a URL travels into history, referrers, and server logs.
+   */
+  token?: string | null;
+  /** HTTP method; defaults to GET. */
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  /** JSON request body, for the write routes. */
+  body?: unknown;
 }
 
 export interface PageOptions extends RequestOptions {
@@ -123,22 +136,41 @@ async function decodeErrorDetail(response: Response): Promise<string | null> {
 
 export async function apiFetch<T>(
   resource: string,
-  { params = {}, signal, fetchImpl }: RequestOptions = {},
+  { params = {}, signal, fetchImpl, token, method = "GET", body }: RequestOptions = {},
 ): Promise<T> {
   const path = buildApiPath(resource, params);
   const doFetch = fetchImpl || fetch;
-  const response = await doFetch(path, { cache: "no-store", signal });
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await doFetch(path, {
+    cache: "no-store",
+    signal,
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
 
   if (!response.ok) {
     const retryAfterHeader = response.headers?.get?.("retry-after");
     throw new ApiError({
       status: response.status,
       detail: await decodeErrorDetail(response),
+      // The path is kept for diagnostics; it never carries a token, because
+      // the token travels only in the Authorization header.
       path,
       retryAfter: retryAfterHeader ? Number(retryAfterHeader) || null : null,
     });
   }
 
+  // 204 No Content: a successful delete has no body to decode.
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
 
@@ -328,4 +360,73 @@ export function getComparison(
 
 export function getHealth(options?: RequestOptions): Promise<HealthResponse> {
   return apiFetch<HealthResponse>("/health", options);
+}
+
+// --- Saved analysis configurations (ADR-0003) ---
+//
+// Every route here is user-scoped and requires a bearer token. The API
+// answers `private, no-store`, and these paths sit outside the cacheable
+// public prefixes, so user content has no path into a shared cache. Nothing
+// here may place a configuration's content or its owner's token into a URL.
+
+export function listSavedAnalyses(
+  token: string,
+  params: QueryParams = {},
+  options: RequestOptions = {},
+): Promise<SavedAnalysisListResponse> {
+  return apiFetch<SavedAnalysisListResponse>("/analysis-configurations", {
+    ...options,
+    params,
+    token,
+  });
+}
+
+export function getSavedAnalysis(
+  token: string,
+  configurationId: number,
+  options: RequestOptions = {},
+): Promise<SavedAnalysisConfiguration> {
+  return apiFetch<SavedAnalysisConfiguration>(
+    `/analysis-configurations/${configurationId}`,
+    { ...options, token },
+  );
+}
+
+export function createSavedAnalysis(
+  token: string,
+  payload: { name: string; document: AnalysisDocument },
+  options: RequestOptions = {},
+): Promise<SavedAnalysisConfiguration> {
+  return apiFetch<SavedAnalysisConfiguration>("/analysis-configurations", {
+    ...options,
+    token,
+    method: "POST",
+    body: payload,
+  });
+}
+
+// An update states the version it read; a mismatch is a 409 naming the
+// current version, which the caller resolves rather than overwriting.
+export function updateSavedAnalysis(
+  token: string,
+  configurationId: number,
+  payload: { name: string; document: AnalysisDocument; expected_version: number },
+  options: RequestOptions = {},
+): Promise<SavedAnalysisConfiguration> {
+  return apiFetch<SavedAnalysisConfiguration>(
+    `/analysis-configurations/${configurationId}`,
+    { ...options, token, method: "PUT", body: payload },
+  );
+}
+
+export function deleteSavedAnalysis(
+  token: string,
+  configurationId: number,
+  options: RequestOptions = {},
+): Promise<void> {
+  return apiFetch<void>(`/analysis-configurations/${configurationId}`, {
+    ...options,
+    token,
+    method: "DELETE",
+  });
 }

@@ -21,7 +21,15 @@ describe("shared status pill", () => {
   });
 
   test("failure-shaped states render as errors and the rest as caution", () => {
-    for (const state of ["bad", "unauthorized", "forbidden", "rate-limited", "unavailable", "incompatible"]) {
+    for (const state of [
+      "bad",
+      "unauthorized",
+      "forbidden",
+      "rate-limited",
+      "unavailable",
+      "incompatible",
+      "conflict",
+    ]) {
       expect(pillClass(state)).toBe("pill bad");
     }
     for (const state of ["empty", "partial", "stale", "suppressed"]) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BookOpen, Columns3, Database, FilePenLine, MapPinned } from "lucide-react";
+import { BarChart3, BookOpen, Bookmark, Columns3, Database, FilePenLine, MapPinned } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home" },
@@ -12,6 +12,7 @@ const navigation = [
   { href: "/profiles", label: "Profiles", icon: MapPinned },
   { href: "/articles", label: "Articles", icon: BookOpen },
   { href: "/builder", label: "Builder", icon: FilePenLine },
+  { href: "/saved", label: "Saved", icon: Bookmark },
 ];
 
 export default function SiteHeader() {

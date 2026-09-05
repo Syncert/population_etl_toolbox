@@ -214,3 +214,66 @@ export interface HealthResponse {
   status?: string;
   [key: string]: unknown;
 }
+
+// --- Saved analysis configurations (ADR-0003) ---
+
+/** The resources a saved configuration may describe. */
+export type ConfigurationKind = "observations" | "comparison" | "distribution";
+
+/**
+ * One saved analysis intent, validated at write time against the same
+ * contracts the live routes enforce — so a stored configuration can never
+ * encode a request the API would refuse. It is deliberately not a copy of
+ * observation data: it is replayed against live publications, so a saved
+ * analysis follows the warehouse instead of freezing a snapshot of it.
+ * `visualization` is opaque user content the API stores verbatim.
+ */
+export interface AnalysisDocument {
+  kind: ConfigurationKind;
+  metric_code?: string | null;
+  metric_code_a?: string | null;
+  metric_code_b?: string | null;
+  scope?: "latest" | "as_released";
+  release?: string | null;
+  filters?: Record<string, unknown>;
+  bin_count?: number | null;
+  visualization?: Record<string, unknown>;
+}
+
+/**
+ * Whether a stored document still matches live capabilities. Reported on
+ * read rather than repaired: a stale configuration is returned unmodified,
+ * because rewriting it would substitute the API's guess for the user's
+ * intent.
+ */
+export interface ConfigurationValidation {
+  valid: boolean;
+  reason?: string | null;
+}
+
+export interface SavedAnalysisSummary {
+  configuration_id: number;
+  name: string;
+  kind?: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
+export interface SavedAnalysisListResponse {
+  total: number;
+  limit?: number;
+  offset?: number;
+  items: SavedAnalysisSummary[];
+}
+
+export interface SavedAnalysisConfiguration {
+  configuration_id: number;
+  name: string;
+  version: number;
+  document: AnalysisDocument;
+  validation: ConfigurationValidation;
+  created_at: string;
+  updated_at: string;
+}

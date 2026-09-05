@@ -17,14 +17,14 @@ verify:
 
 - **Status:** Claimed; in progress
 - **Last updated:** 2026-09-03
-- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 first pass delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Current milestone:** WEB-001, WEB-002, and WEB-003 complete (WEB-003 across six increments); WEB-004 complete across two increments (preflight-first workspace, then the aligned presentations); WEB-005 and WEB-006 first passes delivered — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
   capability-driven catalog and explorer. Source-specific product bullets below
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** WEB-006 (accounts and saved analyses) over `/analysis-configurations`, then WEB-007, WEB-008, and WEB-009.
+- **Next pickup:** WEB-007 (grant evidence composition), then WEB-008 and WEB-009.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -964,6 +964,54 @@ Three first-wave products over one screen, all configuration.
   browser owner); status table 231 of 231, register at 257 rows, all FULL.
   New `tests/frontend/unit/product-templates.test.js` (9 tests) and
   `tests/frontend/browser/profiles.spec.js` (2 specs).
+
+## WEB-006 delivery record (first pass, 2026-09-03)
+
+Accounts and saved analyses at `/saved`, over the authenticated
+`/analysis-configurations` contract (ADR-0003).
+
+- **A configuration is intent, not data (`lib/savedAnalysis.ts`).** An
+  explorer or comparison selection saves its resource, measures, and
+  filters — never an observation value — so a saved analysis follows the
+  warehouse instead of freezing a snapshot. A `release` is stored only under
+  `scope=as_released`, the only scope the API accepts it with.
+- **Privacy is structural.** The token travels only as an `Authorization`
+  header, held in component state and, at the user's explicit choice,
+  `sessionStorage` (tab-lifetime, cleared on sign-out). It never reaches a
+  URL, a link, or the address bar — and neither does any configuration's
+  name, id, version, or owner. The reopen link carries the document's own
+  public selection and nothing else. The screen writes nothing to the
+  address bar at all.
+- **Stale is reported, not repaired.** A configuration whose measure was
+  retired comes back unmodified with `validation.valid = false` and the
+  API's reason; the screen shows the document exactly as saved and never
+  renders it as healthy, because replaying it would not produce the analysis
+  it describes.
+- **A conflict is refused, not merged.** Updates send `expected_version`; a
+  `409` surfaces the API's own explanation naming the current version.
+  Overwriting a version this client never read would discard a change made
+  elsewhere, so nothing is merged.
+- **Failures stay as indistinguishable as the API made them.** A `401` is
+  reported without guessing which of missing, malformed, unknown, or revoked
+  applies; another owner's identifier answers exactly like one that never
+  existed.
+- **Local views migrate only where the contract describes them.** Charts and
+  comparisons become documents; a saved profile is a reading order the
+  configuration contract does not describe and is listed as skipped with
+  that reason rather than coerced into a document the API would refuse. The
+  local store is never cleared, so importing loses nothing.
+- **`conflict` added to the shared request-state vocabulary** as a
+  deliberate failure-shaped pill state rather than an unmapped string;
+  WEB-012's pass metric now names it.
+- **Evidence:** WEB-022 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 232 of 232, register at 258 rows, all FULL.
+  New `tests/frontend/unit/saved-analysis.test.js` (11 tests) and
+  `tests/frontend/browser/saved-analyses.spec.js` (4 specs).
+
+**Not in this pass:** the explorer and comparison workspaces still save to
+the browser-local store rather than the account; moving their save buttons
+onto the authenticated contract is the natural follow-on, and the import
+path above already bridges what they wrote.
 
 ## Implementation phases
 

@@ -10,6 +10,7 @@ const ERROR_STATES = new Set([
   "rate-limited",
   "unavailable",
   "incompatible",
+  "conflict",
 ]);
 
 export function pillClass(state) {
