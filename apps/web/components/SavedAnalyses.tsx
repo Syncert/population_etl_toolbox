@@ -100,8 +100,20 @@ export default function SavedAnalyses() {
         setItems([]);
         // A 401 is identical for a missing, malformed, unknown, or revoked
         // token by design; the screen says so rather than guessing which.
+        //
+        // Every other refusal keeps the classification the transport boundary
+        // already made, rather than being flattened to a generic failure. A
+        // deployment that has not configured saved-analysis storage answers
+        // 503, and "unavailable" is a different fact from "something went
+        // wrong here" — the feature is switched off, not broken, and the
+        // API's own detail says so.
         setListStatus({
-          state: error instanceof ApiError && error.status === 401 ? "unauthorized" : "bad",
+          state:
+            error instanceof ApiError
+              ? error.status === 401
+                ? "unauthorized"
+                : error.kind
+              : "bad",
           message:
             error instanceof ApiError && error.status === 401
               ? "the token was not accepted"

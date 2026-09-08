@@ -239,3 +239,34 @@ test("browser-local views migrate only where the contract describes them", async
   );
   expect(stored).toHaveLength(2);
 });
+
+// Covers: WEB-022 — a deployment that has not configured saved-analysis
+// storage is a distinct fact from a broken one and from a bad credential.
+//
+// The API answers 503 with its own explanation in that case. Reporting it as
+// a generic failure would tell a reader something went wrong when nothing
+// did: the feature is switched off for this deployment, and that is knowable.
+test("storage that is not configured reports unavailable, not a generic failure", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/analysis-configurations*", (route) =>
+    route.fulfill({
+      status: 503,
+      json: {
+        detail: "saved analysis configuration storage is not configured for this deployment",
+      },
+    }),
+  );
+  await page.goto("/saved");
+
+  await page.getByTestId("token-input").fill(TOKEN);
+  await page.getByTestId("token-submit").click();
+
+  const status = page.getByTestId("saved-list-status");
+  // The API's own explanation travels with the status, so the reader learns
+  // the feature is unconfigured rather than that their token failed.
+  await expect(status).toContainText("503");
+  await expect(status).toContainText("not configured");
+  // Distinctly not the credential refusal.
+  await expect(status).not.toContainText("was not accepted");
+});
