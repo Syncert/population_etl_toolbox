@@ -44,6 +44,7 @@ services:
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/041_semantic_policy.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/042_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro
+      - ../../tests/sql/frontend_smoke_seed.sql:/docker-entrypoint-initdb.d/051_frontend_smoke_seed.sql:ro
     healthcheck:
       test:
         - CMD-SHELL

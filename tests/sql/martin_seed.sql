@@ -45,8 +45,16 @@ INSERT INTO gold_glossary.dim_metric_catalog (
     'ACS:acs5:B01003_001_MARTIN_TEST', 'Martin county population fixture',
     'CENSUS_ACS', 'ACS_VARIABLE', 'acs5:B01003_001_MARTIN_TEST',
     ARRAY['COUNTY'], ARRAY['ANNUAL'], 'people', 'estimate', 'non-additive',
-    '{"relation":"silver_census.fact_demographics"}'::JSONB
-) ON CONFLICT (metric_code) DO NOTHING;
+    -- The lineage the reviewed dispatch declares for CENSUS_ACS
+    -- (apps.api.registry.OBSERVATION_DISPATCH). It named
+    -- silver_census.fact_demographics, which the neutral resource rejects as a
+    -- publication/registry disagreement, so this metric was reachable only
+    -- through the legacy route. `key` is the publisher's lineage key; the
+    -- dispatch composes it under the `ACS:` prefix its serving relations use.
+    '{"schema":"gold_census","relation":"fact_acs_observation",'
+    '"key":"acs5:B01003_001_MARTIN_TEST"}'::JSONB
+) ON CONFLICT (metric_code) DO UPDATE SET
+    physical_lineage = EXCLUDED.physical_lineage;
 
 INSERT INTO gold_census.rpt_acs_observations (
     source_code, observation_date, duration_start, duration_end, time_sk,
