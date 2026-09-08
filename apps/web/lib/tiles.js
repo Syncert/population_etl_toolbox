@@ -133,13 +133,19 @@ export function normalizeTileTemplateFromTileJson(rawTemplate) {
 
   let path = rawTemplate;
 
-  if (rawTemplate.startsWith("http://") || rawTemplate.startsWith("https://")) {
-    try {
-      const parsed = new URL(rawTemplate);
-      path = `${parsed.pathname}${parsed.search}`;
-    } catch {
-      return "";
-    }
+  // The origin is stripped textually rather than by parsing the URL.
+  //
+  // A TileJSON `tiles` entry is a *template*, and `new URL(...).pathname`
+  // percent-encodes its `{z}/{x}/{y}` placeholders into `%7Bz%7D/...`. The
+  // result still looks like a template and still yields a URL, but the
+  // substitution that builds a real tile request matches literal braces, so
+  // it silently fills nothing and asks the tile server for the row `{y}`.
+  // Martin answers that with a 404, discovery rejects a layer that was
+  // healthy, and the map is empty on exactly the deployments whose TileJSON
+  // was telling the truth about where its tiles live.
+  const absolute = /^https?:\/\/[^/?#]*(.*)$/i.exec(rawTemplate);
+  if (absolute) {
+    path = absolute[1] || "/";
   }
 
   if (!path.startsWith("/")) {
