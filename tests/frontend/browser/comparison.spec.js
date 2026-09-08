@@ -228,7 +228,23 @@ async function installRoutes(page, { preflightRequests = [], comparisonRequests 
 
   // The Martin boundary. Its published fields are what decide whether this
   // comparison is spatial at all.
-  await page.route("**/tiles/catalog", (route) => route.fulfill({ json: { counties: {} } }));
+  await page.route("**/tiles/catalog", (route) =>
+    route.fulfill({
+      // Martin's real catalog shape: sources sit under section keys.
+      json: {
+        tiles: {
+          counties: {
+            content_type: "application/x-protobuf",
+            description: "gold.dim_geo_latest.geo_geom",
+          },
+        },
+        sprites: {},
+        fonts: {},
+        styles: {},
+        settings: { rendering: false },
+      },
+    }),
+  );
   await page.route(/\/tiles\/counties$/, (route) =>
     route.fulfill({
       json: {

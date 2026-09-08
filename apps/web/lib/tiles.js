@@ -6,6 +6,21 @@ import { VectorTile } from "@mapbox/vector-tile";
 import Protobuf from "pbf";
 import { isCountyObservation } from "./explorerViewModel";
 
+/**
+ * Catalog keys that name a section of the catalog rather than a source.
+ *
+ * Martin groups what it serves into sections — `tiles`, `sprites`, `fonts`,
+ * `styles` — beside a `settings` object, so source ids live one level down.
+ * Treating these as layer ids makes discovery probe the catalog's own
+ * structure, find nothing, and report that the deployment publishes no
+ * spatial layer, which is a very different claim from "this build could not
+ * read the catalog".
+ */
+const CATALOG_SECTIONS = new Set(["tiles", "sprites", "fonts", "styles", "settings"]);
+
+/** The catalog sections whose entries are vector-tile sources. */
+const TILE_SECTIONS = ["tiles"];
+
 export function collectTileCandidates(catalogPayload) {
   const candidates = [];
 
@@ -26,8 +41,19 @@ export function collectTileCandidates(catalogPayload) {
       }
     }
 
+    // Section-keyed catalogs: only the tile sections hold something the map
+    // can join observations to. A font or sprite id is not a vector layer.
+    for (const section of TILE_SECTIONS) {
+      const entries = catalogPayload[section];
+      if (entries && typeof entries === "object" && !Array.isArray(entries)) {
+        candidates.push(...Object.keys(entries));
+      }
+    }
+
+    // Flat catalogs list their layer ids at the top level. A section name is
+    // never one of them, so it is excluded here rather than probed.
     for (const key of Object.keys(catalogPayload)) {
-      if (key !== "collections") {
+      if (key !== "collections" && !CATALOG_SECTIONS.has(key)) {
         candidates.push(key);
       }
     }
