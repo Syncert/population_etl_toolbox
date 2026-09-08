@@ -16,6 +16,7 @@ import {
   apiErrorMessage,
   apiFetch,
   buildApiPath,
+  createSavedAnalysis,
   fetchAllPages,
   getCapabilities,
   getDistributionBins,
@@ -91,6 +92,14 @@ import {
 } from "../lib/viewModes";
 import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
+import { useStoredToken } from "../lib/apiToken";
+import {
+  describeSaveFailure,
+  describeSaveSuccess,
+  explorerDocument,
+  saveDestination,
+} from "../lib/savedAnalysis";
+import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
 import type { ExplorerState } from "../lib/urlState";
@@ -216,7 +225,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     message: "Click a geography to load its history.",
   });
   const [activeTab, setActiveTab] = useState("map");
-  const [saveStatus, setSaveStatus] = useState("");
+  const [saveStatus, setSaveStatus] = useState<SaveOutcome | null>(null);
+  const [saving, setSaving] = useState(false);
+  // The token the saved-analysis screen remembered for this tab, if any. It
+  // decides where a save goes; it is never rendered and never put in a URL.
+  const { token: accountToken } = useStoredToken();
 
   // The active source resolves against discovery; an unknown requested
   // segment degrades to the mounted default, then to the first discovered
@@ -1370,12 +1383,48 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     setDistributionStatus({ state: "idle", message: "waiting for metric" });
   }
 
-  function handleSaveChart() {
-    if (!selectedMetric || !selectedMetricMeta) return;
+  async function handleSaveChart() {
+    if (!selectedMetric || !selectedMetricMeta || saving) return;
+    const title = `${displayMetricName(selectedMetricMeta)} by county`;
+
+    // Signed in, the view is saved as a configuration: intent replayed
+    // against live publications, which is what makes it survive the tab and
+    // follow the warehouse. The document carries the selection only — never
+    // an observation value, because a saved analysis that froze values would
+    // drift silently from the data it claims to describe.
+    if (saveDestination(accountToken) === "account") {
+      setSaving(true);
+      setSaveStatus({ state: "loading", message: "Saving to your account", destination: null });
+      try {
+        await createSavedAnalysis(accountToken, {
+          name: title,
+          document: explorerDocument({
+            metricCode: selectedMetric,
+            scope: observationScope === SCOPE_AS_RELEASED ? "as_released" : "latest",
+            release: selectedRelease,
+            geoLevel: selectedGeoLevel,
+            stateFips: selectedStateFips,
+            geoId: selectedGeoId,
+            dimensions: dimensionSelections,
+          }),
+        });
+        setSaveStatus(describeSaveSuccess("account", title));
+      } catch (error) {
+        // Reported, not retried into the browser store: silently writing
+        // somewhere else would tell the user their work is safe in a place
+        // they did not choose and cannot see from their account.
+        setSaveStatus(describeSaveFailure(error));
+      } finally {
+        setSaving(false);
+      }
+      window.setTimeout(() => setSaveStatus(null), 4000);
+      return;
+    }
+
     const chart = {
       id: `${selectedMetric}:${selectedStateFips || "US"}:${selectedGeoId || "all"}`,
       version: 1,
-      title: `${displayMetricName(selectedMetricMeta)} by county`,
+      title,
       chartType: "choropleth",
       metricCode: selectedMetric,
       metricName: displayMetricName(selectedMetricMeta),
@@ -1389,8 +1438,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       savedAt: new Date().toISOString(),
     };
     saveChart(chart);
-    setSaveStatus("Saved for Builder");
-    window.setTimeout(() => setSaveStatus(""), 2400);
+    setSaveStatus(describeSaveSuccess("browser", title));
+    window.setTimeout(() => setSaveStatus(null), 4000);
   }
 
   function exportCsv() {
@@ -1479,7 +1528,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           <h1>{activeSource ? activeSource.title : "Source"} Explorer</h1>
           <p>Build a source-visible geography view, inspect observations, and validate data availability for this MVP.</p>
         </div>
-        <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={!viewModes.export.supported} title={viewModes.export.reason} data-testid="export-csv"><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric}><Save size={15} /> Save view</button></div>
+        <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={!viewModes.export.supported} title={viewModes.export.reason} data-testid="export-csv"><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric || saving} data-testid="save-view" data-destination={saveDestination(accountToken)} title={saveDestination(accountToken) === "account" ? "Saves to your account" : "Saves in this browser only; sign in on Saved analyses to keep it"}><Save size={15} /> {saveDestination(accountToken) === "account" ? "Save to account" : "Save in browser"}</button></div>
       </header>
       <div className="segmented-control source-page-tabs" role="tablist" aria-label="Explorable sources">
         {explorerSources.map((source) => (
@@ -1501,7 +1550,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           <span className="source-tab" aria-live="polite">Discovering sources…</span>
         ) : null}
       </div>
-      {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
+      {saveStatus ? (
+        <div
+          className="save-toast"
+          data-state={saveStatus.state}
+          data-destination={saveStatus.destination || ""}
+          data-testid="save-toast"
+          role="status"
+        >
+          {saveStatus.message}
+        </div>
+      ) : null}
 
       <section className="status-row">
         <StatusPill state={apiHealth.state} label="API" message={apiHealth.message} testId="api-status" />

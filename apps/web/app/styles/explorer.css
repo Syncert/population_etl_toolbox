@@ -58,6 +58,21 @@ main.dashboard {
   font-size: 0.8rem;
 }
 
+/*
+ * Where a save went, and whether it went at all, are different facts. Colour
+ * is never the only carrier of that: each toast states its outcome in words,
+ * and these tints only reinforce it.
+ */
+.save-toast[data-state="warn"] {
+  background: var(--warn);
+}
+
+.save-toast[data-state="bad"],
+.save-toast[data-state="unauthorized"],
+.save-toast[data-state="conflict"] {
+  background: var(--danger);
+}
+
 .api-query {
   display: block;
   overflow-x: auto;

@@ -64,11 +64,27 @@ Three properties a later plan must preserve:
    a `409` names the current version. Overwriting a version the client never
    read discards someone else's change.
 
+The explorer and the comparison workspace save to the account whenever a
+token is held, through the one destination decision in
+`lib/savedAnalysis.saveDestination`. Both screens state the destination on
+the control before the save and on the outcome after it, because "saved to
+your account" and "saved in this browser" have very different consequences
+for whether the work exists tomorrow. A refused account save is reported, not
+rewritten to the browser store: telling a user their work is safe somewhere
+they did not choose and cannot see from their account is worse than telling
+them it was not saved.
+
 The browser-local store (`economic-data-studio:saved-charts:v1`,
-`economic-data-studio:builder-draft:v1`) predates the contract and still
-backs the explorer's and comparison workspace's save buttons and the packet
-draft. `lib/savedAnalysis.planLocalMigration` bridges what it can and names
-what it cannot; the local store is never cleared by importing.
+`economic-data-studio:builder-draft:v1`) predates the contract and remains
+the signed-out destination and the evidence packet builder's input.
+`lib/savedAnalysis.planLocalMigration` bridges what it can and names what it
+cannot; the local store is never cleared by importing.
+
+The bearer token has one home, `lib/apiToken.ts`: `sessionStorage` only, at
+the user's explicit choice, guarded on every access because storage throws
+outright in a private window rather than returning null. Any new screen that
+authenticates reads it from there — a second copy of the key would be a
+second place for that discipline to drift out of.
 
 ## Privacy boundaries
 
@@ -137,10 +153,9 @@ Out of scope here, and deliberately not stubbed:
 
 Named so they are picked up deliberately rather than rediscovered:
 
-- The explorer and comparison workspaces still save to the browser-local
-  store; moving their save buttons onto `/analysis-configurations` is
-  mechanical now that the migration path exists.
-- Evidence packets persist to the local draft rather than the account.
+- Evidence packets persist to the local draft rather than the account. The
+  packet builder is now the only screen that still composes from
+  `saved-charts:v1`, which is why that store stays.
 - The comparison map and the explorer map are separate MapLibre wirings over
   one shared colouring model; unifying the presentations is a consolidation
   task, not a contract gap.

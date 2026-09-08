@@ -9,6 +9,7 @@ import StatusPill from "./StatusPill";
 import {
   apiErrorMessage,
   buildApiPath,
+  createSavedAnalysis,
   fetchAllPages,
   getCapabilities,
   getComparison,
@@ -43,6 +44,14 @@ import {
 } from "../lib/comparison";
 import type { ComparisonSelection, ComparisonSide } from "../lib/comparison";
 import { saveChart } from "../lib/savedCharts";
+import { useStoredToken } from "../lib/apiToken";
+import {
+  comparisonDocument,
+  describeSaveFailure,
+  describeSaveSuccess,
+  saveDestination,
+} from "../lib/savedAnalysis";
+import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata } from "../lib/tiles";
 import {
   describeComparisonViewModes,
@@ -107,7 +116,10 @@ export default function ComparisonWorkspace() {
     state: "idle",
     message: "waiting for a compatibility verdict",
   });
-  const [saveStatus, setSaveStatus] = useState("");
+  const [saveStatus, setSaveStatus] = useState<SaveOutcome | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Decides where a save goes. Never rendered, never put in a URL.
+  const { token: accountToken } = useStoredToken();
 
   const sourceOf = useCallback(
     (side: SideKey) => findExplorerSource(sources, selection[side].sourceCode),
@@ -444,14 +456,43 @@ export default function ComparisonWorkspace() {
     URL.revokeObjectURL(link.href);
   }
 
-  function handleSave() {
-    if (!comparable) {
+  async function handleSave() {
+    if (!comparable || saving) {
       return;
     }
+    const title = `${selection.a.metricCode} vs ${selection.b.metricCode}`;
+
+    // The configuration stores the pair and the geography, not the comparison
+    // response: the verdict, the derived fields, and the caveats are the
+    // API's to publish, and replaying the intent asks for them again rather
+    // than preserving a copy that could outlive its own compatibility rules.
+    if (saveDestination(accountToken) === "account") {
+      setSaving(true);
+      setSaveStatus({ state: "loading", message: "Saving to your account", destination: null });
+      try {
+        await createSavedAnalysis(accountToken, {
+          name: title,
+          document: comparisonDocument({
+            metricCodeA: selection.a.metricCode,
+            metricCodeB: selection.b.metricCode,
+            geoLevel: selection.geoLevel,
+            stateFips: selection.stateFips,
+          }),
+        });
+        setSaveStatus(describeSaveSuccess("account", title));
+      } catch (error) {
+        setSaveStatus(describeSaveFailure(error));
+      } finally {
+        setSaving(false);
+      }
+      window.setTimeout(() => setSaveStatus(null), 4000);
+      return;
+    }
+
     saveChart({
       id: `comparison:${selection.a.metricCode}:${selection.b.metricCode}:${selection.geoLevel}:${selection.stateFips || "US"}`,
       version: 1,
-      title: `${selection.a.metricCode} vs ${selection.b.metricCode}`,
+      title,
       chartType: "comparison",
       metricCode: selection.a.metricCode,
       metricCodeB: selection.b.metricCode,
@@ -465,8 +506,8 @@ export default function ComparisonWorkspace() {
       apiQuery,
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus("Saved for Builder");
-    window.setTimeout(() => setSaveStatus(""), 2400);
+    setSaveStatus(describeSaveSuccess("browser", title));
+    window.setTimeout(() => setSaveStatus(null), 4000);
   }
 
   return (
@@ -506,15 +547,35 @@ export default function ComparisonWorkspace() {
             className="button primary"
             type="button"
             onClick={handleSave}
-            disabled={!comparable}
-            title={comparable ? "" : "a blocked pair is not saved as an analysis"}
+            disabled={!comparable || saving}
+            title={
+              comparable
+                ? saveDestination(accountToken) === "account"
+                  ? "Saves to your account"
+                  : "Saves in this browser only; sign in on Saved analyses to keep it"
+                : "a blocked pair is not saved as an analysis"
+            }
             data-testid="comparison-save"
+            data-destination={saveDestination(accountToken)}
           >
-            <Save size={15} /> Save comparison
+            <Save size={15} />{" "}
+            {saveDestination(accountToken) === "account"
+              ? "Save to account"
+              : "Save in browser"}
           </button>
         </div>
       </header>
-      {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
+      {saveStatus ? (
+        <div
+          className="save-toast"
+          data-state={saveStatus.state}
+          data-destination={saveStatus.destination || ""}
+          data-testid="save-toast"
+          role="status"
+        >
+          {saveStatus.message}
+        </div>
+      ) : null}
 
       <section className="status-row">
         <StatusPill

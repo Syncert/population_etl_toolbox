@@ -485,3 +485,53 @@ test("a blocked pair presents no aligned view at all", async ({ page }) => {
   await expect(page.getByTestId("comparison-table-panel")).toHaveCount(0);
   await expect(page.getByTestId("comparison-export")).toBeDisabled();
 });
+
+// Covers: WEB-022 — the comparison workspace saves through the same
+// destination decision as the explorer, so the two screens cannot drift into
+// different ideas of when a save reaches the account.
+test("a comparison saves to the account when signed in, storing the pair and not the verdict", async ({
+  page,
+}) => {
+  await installRoutes(page);
+
+  const created = [];
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push({ authorization: route.request().headers()["authorization"] || "", body });
+    return route.fulfill({
+      json: {
+        configuration_id: 11,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+
+  await page.goto(
+    "/compare?a=ACS%3Aacs5%3AB01003_001&b=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&source_a=census&source_b=pep",
+  );
+  const save = page.getByTestId("comparison-save");
+  await expect(save).toBeEnabled();
+  await expect(save).toHaveAttribute("data-destination", "account");
+  await save.click();
+
+  await expect(page.getByTestId("save-toast")).toHaveAttribute("data-destination", "account");
+  expect(created).toHaveLength(1);
+  expect(created[0].authorization).toBe("Bearer operator-token");
+
+  // The configuration stores the pair and the geography. The verdict, the
+  // derived fields, and the caveats stay the API's to publish: a stored copy
+  // could outlive the compatibility rules that produced it.
+  const document = created[0].body.document;
+  expect(document.kind).toBe("comparison");
+  expect(document.metric_code_a).toBeTruthy();
+  expect(document.metric_code_b).toBeTruthy();
+  expect(document).not.toHaveProperty("derivations");
+  expect(document).not.toHaveProperty("caveats");
+  expect(document).not.toHaveProperty("verdict");
+});

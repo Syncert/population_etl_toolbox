@@ -10,6 +10,9 @@ import { describe, expect, test, vi } from "vitest";
 import {
   describeConflict,
   describeDocument,
+  describeSaveFailure,
+  describeSaveSuccess,
+  saveDestination,
   comparisonDocument,
   explorerDocument,
   planLocalMigration,
@@ -254,5 +257,57 @@ describe("browser-local charts migrate only where the contract describes them", 
       ]).map((item) => item.name),
     ).toEqual(["Alpha", "Beta"]);
     expect(sortConfigurations(null)).toEqual([]);
+  });
+});
+
+// Covers: WEB-022 — where a save goes is a decision the explorer and the
+// comparison workspace must make identically, and a reader must be told
+// which of the two destinations answered.
+describe("save destination", () => {
+  test("the account answers whenever a token is held, and the browser otherwise", () => {
+    expect(saveDestination("operator-token")).toBe("account");
+    // Every falsy token shape is the same fact: nobody is signed in.
+    expect(saveDestination("")).toBe("browser");
+    expect(saveDestination(null)).toBe("browser");
+    expect(saveDestination(undefined)).toBe("browser");
+  });
+
+  test("a browser save is reported as weaker than an account save, not as equal", () => {
+    const account = describeSaveSuccess("account", "Total population by county");
+    expect(account.state).toBe("ok");
+    expect(account.destination).toBe("account");
+    expect(account.message).toContain("your account");
+
+    // "Saved" alone would let a reader believe work survives the tab when it
+    // does not, so the local outcome names its limit and the way out of it.
+    const browser = describeSaveSuccess("browser", "Total population by county");
+    expect(browser.state).toBe("warn");
+    expect(browser.destination).toBe("browser");
+    expect(browser.message).toContain("this browser only");
+  });
+
+  test("a failed save reports the API's own refusal and claims no destination", () => {
+    // A 401 is deliberately identical for a missing, malformed, unknown, and
+    // revoked token; the message says the token was not accepted rather than
+    // guessing which, and never echoes the token itself.
+    const unauthorized = describeSaveFailure({ status: 401, message: "boom" });
+    expect(unauthorized.state).toBe("unauthorized");
+    expect(unauthorized.destination).toBeNull();
+    expect(unauthorized.message).toContain("not accepted");
+    expect(unauthorized.message).not.toContain("boom");
+
+    const conflict = describeSaveFailure({ status: 409 });
+    expect(conflict.state).toBe("conflict");
+    expect(conflict.destination).toBeNull();
+
+    const other = describeSaveFailure({ status: 503, message: "status 503" });
+    expect(other.state).toBe("bad");
+    expect(other.destination).toBeNull();
+    expect(other.message).toContain("status 503");
+
+    // A failed account save never silently becomes a local one: telling a
+    // user their work is safe somewhere they did not choose is worse than
+    // telling them it was not saved.
+    expect(describeSaveFailure(new Error("network")).destination).toBeNull();
   });
 });

@@ -728,3 +728,120 @@ test("the retired source dashboards land on the live explorer for their source",
   await page.goto("/bls");
   await expect(page).toHaveURL(/source=bls/);
 });
+
+// Covers: WEB-022 — a saved view is a configuration on the account when the
+// user is signed in, and a browser-local chart when they are not. The two are
+// different facts with different consequences for whether the work still
+// exists tomorrow, so the destination is stated before and after the save.
+test("an explorer view saves to the account when signed in, and says so", async ({ page }) => {
+  await installRoutes(page);
+
+  const created = [];
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const request = route.request();
+    created.push({
+      authorization: request.headers()["authorization"] || "",
+      body: JSON.parse(request.postData() || "{}"),
+      url: request.url(),
+    });
+    return route.fulfill({
+      json: {
+        configuration_id: 7,
+        name: JSON.parse(request.postData() || "{}").name,
+        version: 1,
+        document: JSON.parse(request.postData() || "{}").document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+
+  // The token the saved-analysis screen remembers for the tab.
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+  await page.goto("/explore");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+
+  // The destination is stated before the click, not discovered after it.
+  const save = page.getByTestId("save-view");
+  await expect(save).toHaveAttribute("data-destination", "account");
+  await save.click();
+
+  const toast = page.getByTestId("save-toast");
+  await expect(toast).toHaveAttribute("data-destination", "account");
+  await expect(toast).toContainText("your account");
+
+  expect(created).toHaveLength(1);
+  // The token reaches the API only as a header, and never appears in the URL
+  // it was sent to or in the address bar.
+  expect(created[0].authorization).toBe("Bearer operator-token");
+  expect(created[0].url).not.toContain("operator-token");
+  expect(page.url()).not.toContain("operator-token");
+
+  // The document is intent, not data: it names the measure and the filters
+  // and carries no observation value.
+  const document = created[0].body.document;
+  expect(document.kind).toBe("observations");
+  expect(document.metric_code).toBeTruthy();
+  expect(JSON.stringify(document)).not.toContain("561504");
+});
+
+test("an explorer view saves in the browser when signed out, and names that limit", async ({
+  page,
+}) => {
+  await installRoutes(page);
+  let configurationWrites = 0;
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    configurationWrites += 1;
+    return route.fulfill({ status: 401, json: { detail: "missing token" } });
+  });
+
+  await page.goto("/explore");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+
+  const save = page.getByTestId("save-view");
+  await expect(save).toHaveAttribute("data-destination", "browser");
+  await save.click();
+
+  const toast = page.getByTestId("save-toast");
+  await expect(toast).toHaveAttribute("data-destination", "browser");
+  // Not merely "Saved": a reader who is told only that would believe the work
+  // survives the tab.
+  await expect(toast).toContainText("this browser only");
+
+  // Signed out, the account is never reached at all — an unauthenticated
+  // write attempt would be a request the client knows the API must refuse.
+  expect(configurationWrites).toBe(0);
+  const stored = await page.evaluate(() =>
+    window.localStorage.getItem("economic-data-studio:saved-charts:v1"),
+  );
+  expect(JSON.parse(stored || "[]")).toHaveLength(1);
+});
+
+test("a refused account save is reported and never falls back to the browser", async ({
+  page,
+}) => {
+  await installRoutes(page);
+  await page.route("**/api/v1/analysis-configurations", (route) =>
+    route.fulfill({ status: 401, json: { detail: "token revoked" } }),
+  );
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "stale-token");
+  });
+  await page.goto("/explore");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+
+  await page.getByTestId("save-view").click();
+
+  const toast = page.getByTestId("save-toast");
+  await expect(toast).toHaveAttribute("data-state", "unauthorized");
+  await expect(toast).toContainText("not accepted");
+  // The refusal is reported, not worked around: writing to the browser store
+  // instead would tell the user their work is safe in a place they did not
+  // choose and cannot see from their account.
+  await expect(toast).not.toHaveAttribute("data-destination", "browser");
+  const stored = await page.evaluate(() =>
+    window.localStorage.getItem("economic-data-studio:saved-charts:v1"),
+  );
+  expect(JSON.parse(stored || "[]")).toHaveLength(0);
+});

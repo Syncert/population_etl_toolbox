@@ -309,3 +309,86 @@ export function isSameConfiguration(
     summary && configuration && summary.configuration_id === configuration.configuration_id,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Where a save goes
+// ---------------------------------------------------------------------------
+
+/**
+ * The two places a view can be saved, which are different facts and not two
+ * spellings of "saved".
+ *
+ * - `account` — a configuration on `/analysis-configurations`. It is the
+ *   user's, it survives the tab, and it is replayed against live
+ *   publications.
+ * - `browser` — the local chart store that predates the contract. It is this
+ *   browser's only, invisible to the account, and it is what the evidence
+ *   packet builder still composes from.
+ *
+ * A reader who is told only "Saved" cannot tell which happened, and the two
+ * have very different consequences for whether the work still exists
+ * tomorrow. Every caller reports the destination.
+ */
+export type SaveDestination = "account" | "browser";
+
+export interface SaveOutcome {
+  /** Shared request-state vocabulary value, for the status surface. */
+  state: string;
+  message: string;
+  /** Null when the save did not happen. */
+  destination: SaveDestination | null;
+}
+
+/**
+ * Where a save will go, decided only by whether a token is held.
+ *
+ * This is one decision in one place on purpose: the explorer and the
+ * comparison workspace must not drift into different ideas of when the
+ * account is used.
+ */
+export function saveDestination(token: string | null | undefined): SaveDestination {
+  return token ? "account" : "browser";
+}
+
+/**
+ * Report an account save that failed.
+ *
+ * A `401` is deliberately indistinguishable between a missing, malformed,
+ * unknown, and revoked token, so this names what the API said rather than
+ * guessing which. Nothing here echoes the token itself.
+ */
+export function describeSaveFailure(error: unknown): SaveOutcome {
+  const status = (error as { status?: number } | null)?.status;
+  if (status === 401) {
+    return {
+      state: "unauthorized",
+      message: "the token was not accepted — the view was not saved",
+      destination: null,
+    };
+  }
+  if (status === 409) {
+    return {
+      state: "conflict",
+      message: "a saved analysis with that name already exists",
+      destination: null,
+    };
+  }
+  const detail = (error as { message?: string } | null)?.message;
+  return {
+    state: "bad",
+    message: detail ? `not saved: ${detail}` : "not saved",
+    destination: null,
+  };
+}
+
+/** Report a successful save, naming where it went and what that means. */
+export function describeSaveSuccess(destination: SaveDestination, name: string): SaveOutcome {
+  if (destination === "account") {
+    return { state: "ok", message: `Saved to your account as “${name}”`, destination };
+  }
+  return {
+    state: "warn",
+    message: "Saved in this browser only — sign in on Saved analyses to keep it",
+    destination,
+  };
+}
