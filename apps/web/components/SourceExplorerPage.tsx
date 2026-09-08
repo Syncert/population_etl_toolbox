@@ -119,6 +119,13 @@ export {
 
 const CATALOG_PAGE_SIZE = 1000;
 const DEFAULT_GEO_LEVEL = "COUNTY";
+/** Geography grains in presentation order, broadest first. */
+const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY"];
+const GEO_LEVEL_LABEL: Record<string, string> = {
+  NATIONAL: "National",
+  STATE: "State",
+  COUNTY: "County",
+};
 const DEFAULT_MAP_MODE = "choropleth";
 // Presentation panels that are not measure-dependent: they describe the
 // request and how to read it, and answer for every selection.
@@ -363,6 +370,27 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     : "No observation";
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
+
+  // The grains this measure can actually be viewed at, from the publisher's
+  // own `valid_geo_grains`.
+  //
+  // The control used to offer all three unconditionally. Choosing one the
+  // measure does not publish sent a request the API answered with zero rows,
+  // and a corrective effect then snapped the selection back — so the choice
+  // was offered, accepted, and silently discarded, which reads as the app
+  // losing the click rather than as the measure not being published there.
+  //
+  // A metric that declares no grains is a metric whose grains are unknown,
+  // which is not the same as a metric published at none; that case keeps the
+  // full set rather than narrowing to nothing.
+  const offeredGeoLevels = useMemo(() => {
+    const declared = metricSupportedGeoLevels(selectedMetricMeta);
+    return declared.length > 0
+      ? GEO_LEVEL_ORDER.filter((level) => declared.includes(level))
+      : [...GEO_LEVEL_ORDER];
+  }, [selectedMetricMeta]);
+  const geoLevelsNarrowed =
+    Boolean(selectedMetricMeta) && offeredGeoLevels.length < GEO_LEVEL_ORDER.length;
 
   // Which presentations this selection can actually answer, read from the
   // measure's catalog row, the source's declared routes, and the vector
@@ -1612,9 +1640,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 onChange={(event) => setSelectedGeoLevel(event.target.value)}
                 disabled={!supportsGeoLevelFilter}
               >
-                <option value="NATIONAL">National</option>
-                <option value="STATE">State</option>
-                <option value="COUNTY">County</option>
+                {offeredGeoLevels.map((level) => (
+                  <option key={level} value={level}>
+                    {GEO_LEVEL_LABEL[level] || level}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1847,6 +1877,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             <p className="subtle" data-testid="geo-level-note">
               {activeSource?.title} declares no geography-level filter, so this source
               is explored at the grain it publishes.
+            </p>
+          ) : null}
+          {geoLevelsNarrowed ? (
+            <p className="subtle" data-testid="geo-grain-note">
+              {displayMetricName(selectedMetricMeta)} is published at{" "}
+              {offeredGeoLevels.map((level) => GEO_LEVEL_LABEL[level] || level).join(", ")} only,
+              so the other view levels are not offered for it. A narrower list is the
+              publisher&apos;s declaration, not a limit of this screen.
             </p>
           ) : null}
           {!supportsStateFilter && supportsGeoLevelFilter ? (

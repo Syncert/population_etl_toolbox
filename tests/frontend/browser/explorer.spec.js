@@ -845,3 +845,41 @@ test("a refused account save is reported and never falls back to the browser", a
   );
   expect(JSON.parse(stored || "[]")).toHaveLength(0);
 });
+
+// Covers: WEB-002 — the view-level control offers only the grains the
+// publisher declares for the selected measure.
+//
+// Offering all three unconditionally meant choosing one the measure does not
+// publish sent a request the API answered with zero rows, after which a
+// corrective effect snapped the selection back. The choice was offered,
+// accepted, and silently discarded, which reads as the screen losing the
+// click rather than as the measure not being published at that grain.
+test("the view level offers only the grains the measure declares, and says why", async ({
+  page,
+}) => {
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests });
+  await page.goto("/explore");
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+
+  const level = page.getByTestId("geo-level-select");
+
+  // ACS county population declares STATE and COUNTY, so NATIONAL is absent
+  // rather than offered and then revoked.
+  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(level.locator("option")).toHaveCount(2);
+  await expect(level.locator('option[value="STATE"]')).toHaveCount(1);
+  await expect(level.locator('option[value="COUNTY"]')).toHaveCount(1);
+  await expect(level.locator('option[value="NATIONAL"]')).toHaveCount(0);
+
+  // The narrowing is attributed to the publisher, not left to be inferred
+  // from a shorter list.
+  await expect(page.getByTestId("geo-grain-note")).toContainText("published at");
+  await expect(page.getByTestId("geo-grain-note")).toContainText("publisher");
+
+  // No request is ever sent for a grain the measure does not declare.
+  const requestedLevels = observationRequests.map((entry) => entry.geo_level).filter(Boolean);
+  expect(requestedLevels).not.toContain("NATIONAL");
+});
