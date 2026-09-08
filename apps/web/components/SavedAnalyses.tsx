@@ -25,6 +25,7 @@ import {
 import { createRequestTracker } from "../lib/api/requestState";
 import type { SavedAnalysisConfiguration, SavedAnalysisSummary } from "../lib/api/types";
 import { readSavedCharts } from "../lib/savedCharts";
+import { clearStoredToken, readStoredToken, storeToken } from "../lib/apiToken";
 import {
   describeConflict,
   describeDocument,
@@ -34,8 +35,6 @@ import {
   validationState,
 } from "../lib/savedAnalysis";
 import type { MigrationPlan } from "../lib/savedAnalysis";
-
-const TOKEN_SESSION_KEY = "economic-data-studio:api-token";
 
 interface RequestStatus {
   state: string;
@@ -67,14 +66,10 @@ export default function SavedAnalyses() {
   // A token the user asked this browser to remember lives in sessionStorage,
   // which is cleared when the tab closes and is never shared across origins.
   useEffect(() => {
-    try {
-      const stored = window.sessionStorage.getItem(TOKEN_SESSION_KEY);
-      if (stored) {
-        setToken(stored);
-        setRemember(true);
-      }
-    } catch {
-      // Storage unavailable: the user signs in for this page view only.
+    const stored = readStoredToken();
+    if (stored) {
+      setToken(stored);
+      setRemember(true);
     }
   }, []);
 
@@ -289,15 +284,7 @@ export default function SavedAnalyses() {
           data-testid="token-submit"
           onClick={() => {
             setToken(tokenDraft);
-            try {
-              if (remember && tokenDraft) {
-                window.sessionStorage.setItem(TOKEN_SESSION_KEY, tokenDraft);
-              } else {
-                window.sessionStorage.removeItem(TOKEN_SESSION_KEY);
-              }
-            } catch {
-              // Storage unavailable; the token stays in memory for this view.
-            }
+            storeToken(remember ? tokenDraft : "");
           }}
         >
           Sign in
@@ -311,11 +298,7 @@ export default function SavedAnalyses() {
             setTokenDraft("");
             setItems([]);
             setSelected(null);
-            try {
-              window.sessionStorage.removeItem(TOKEN_SESSION_KEY);
-            } catch {
-              // Nothing to clear.
-            }
+            clearStoredToken();
           }}
         >
           Sign out
