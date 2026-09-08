@@ -43,11 +43,19 @@ const sparseMetric = {
   units: "percent",
 };
 
-async function installRoutes(page, { requests = [] } = {}) {
+// `hold` gates the metric responses for a given offset so a test can observe
+// the in-flight window deliberately instead of racing it. Asserting a
+// transient attribute against an instantly-fulfilled mock is a coin flip: the
+// state is real, but it can open and close between two poll intervals.
+async function installRoutes(page, { requests = [], hold = null } = {}) {
   await page.route("**/api/v1/catalog/sources", (route) => route.fulfill({ json: sources }));
-  await page.route("**/api/v1/catalog/metrics?*", (route) => {
+  await page.route("**/api/v1/catalog/metrics?*", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     requests.push(Object.fromEntries(params));
+
+    if (hold && hold.offset === params.get("offset")) {
+      await hold.promise;
+    }
 
     if (params.get("source_code") === "CDC") {
       return route.fulfill({
@@ -75,7 +83,16 @@ async function installRoutes(page, { requests = [] } = {}) {
 
 test("catalog paging is deterministic over the API's published total", async ({ page }) => {
   const requests = [];
-  await installRoutes(page, { requests });
+  // The second page is held until this test releases it, so the assertions
+  // below describe the in-flight window rather than hoping to catch it.
+  let releaseSecondPage;
+  const hold = {
+    offset: "50",
+    promise: new Promise((resolve) => {
+      releaseSecondPage = resolve;
+    }),
+  };
+  await installRoutes(page, { requests, hold });
   await page.goto("/catalog");
 
   const catalog = page.getByTestId("catalog");
@@ -87,11 +104,20 @@ test("catalog paging is deterministic over the API's published total", async ({ 
   await expect(page.getByTestId("catalog-previous")).toBeDisabled();
 
   await page.getByTestId("catalog-next").click();
-  // The range follows the answered offset, so it stays on the loaded rows
-  // until the next page arrives rather than relabelling them.
+
+  // While the next page is in flight the rows on screen are still page one,
+  // and the range must keep describing them. Relabelling first would put a
+  // count over rows it does not describe, which is the one thing a paging
+  // control must never do.
   await expect(page.getByTestId("catalog-results")).toHaveAttribute("data-stale", "true");
-  await expect(page.getByTestId("catalog-range")).toContainText("showing 51-100");
+  await expect(page.getByTestId("catalog-range")).toContainText("showing 1-50");
+
+  releaseSecondPage();
+
+  // The range follows the answered offset, so it advances only once the rows
+  // it describes have actually arrived.
   await expect(page.getByTestId("catalog-results")).toHaveAttribute("data-stale", "false");
+  await expect(page.getByTestId("catalog-range")).toContainText("showing 51-100");
   expect(requests.at(-1)).toMatchObject({ limit: "50", offset: "50", active_only: "true" });
 
   // The last page is short, and the published total — not the short page —
