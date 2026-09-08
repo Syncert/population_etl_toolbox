@@ -15,6 +15,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.config.mjs",
+    "test:smoke": "vitest run --config vitest.smoke.config.mjs",
     "test:browser": "playwright test",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:bundle:update": "node scripts/check-bundle-budget.mjs --update"
