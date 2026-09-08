@@ -138,6 +138,30 @@ const census = findExplorerSource(sources, "census");
 const fbi = findExplorerSource(sources, "FBI_UCR");
 const nass = findExplorerSource(sources, "usda-nass");
 
+// A source publishing only its own route pair — no neutral resource. This is
+// the fallback shape, and the only one that still reaches the source-scoped
+// routes now that the neutral resource is preferred wherever it is declared.
+const [scopedOnly] = buildExplorerSources([
+  {
+    source_code: "CENSUS_ACS",
+    display_name: "Census American Community Survey",
+    route_segment: "census",
+    served_by_neutral_routes: false,
+    datasets: [],
+    observation_filters: ["county_fips", "geo_id", "geo_level", "state_fips"],
+    observation_routes: [
+      {
+        path: "/api/v1/census/observations/latest",
+        parameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
+      },
+      {
+        path: "/api/v1/census/observations/timeseries",
+        parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+      },
+    ],
+  },
+]);
+
 describe("declared access shapes", () => {
   test("dispatch-shaped sources join the explorer through the neutral resource", () => {
     expect(sources.map((source) => source.key)).toEqual([
@@ -148,7 +172,13 @@ describe("declared access shapes", () => {
     ]);
     expect(cdc.accessShape).toBe("neutral");
     expect(nass.accessShape).toBe("neutral");
-    expect(census.accessShape).toBe("source-scoped");
+    // Census declares its own route pair as well, but the neutral resource
+    // is preferred: the pair reads the legacy union views, which key
+    // observations on that era's metric identity rather than the glossary
+    // identity the catalog publishes.
+    expect(census.accessShape).toBe("neutral");
+    // Only a source with no neutral route at all falls back to the pair.
+    expect(scopedOnly.accessShape).toBe("source-scoped");
   });
 
   test("a segment-less source keeps its published identity as its key", () => {
@@ -234,9 +264,9 @@ describe("requests carry only declared filters", () => {
     });
   });
 
-  test("source-scoped sources keep their own routes and parameter discipline", () => {
+  test("a source-scoped-only source keeps its own routes and parameter discipline", () => {
     expect(
-      buildLatestObservationRequest(census, {
+      buildLatestObservationRequest(scopedOnly, {
         metricCode: "ACS:acs5:B01003_001",
         geoLevel: "COUNTY",
         stateFips: "55",
@@ -252,7 +282,7 @@ describe("requests carry only declared filters", () => {
       },
     });
     expect(
-      buildHistoryObservationRequest(census, {
+      buildHistoryObservationRequest(scopedOnly, {
         metricCode: "ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",
@@ -264,6 +294,36 @@ describe("requests carry only declared filters", () => {
         geo_id: "state:55|county:025",
         limit: "1000",
       },
+    });
+  });
+
+  test("a source declaring both shapes reads through the neutral resource", () => {
+    // This is the case that mattered in practice: Census declares both, and
+    // routing to its own pair with a glossary metric code returned an empty
+    // page while the same code answered 3,234 rows on /observations.
+    const latest = buildLatestObservationRequest(census, {
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      geoLevel: "COUNTY",
+      stateFips: "55",
+      limit: "4000",
+    });
+    expect(latest.resource).toBe("/observations");
+    expect(latest.params).toMatchObject({
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
+      scope: "latest",
+      geo_level: "COUNTY",
+      state_fips: "55",
+    });
+
+    const history = buildHistoryObservationRequest(census, {
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      geoId: "state:55|county:025",
+      limit: "1000",
+    });
+    expect(history.resource).toBe("/observations");
+    expect(history.params).toMatchObject({
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
+      geo_id: "state:55|county:025",
     });
   });
 
@@ -325,7 +385,7 @@ describe("the neutral envelope maps onto the explorer row shape", () => {
 
   test("source-scoped rows pass through untouched", () => {
     const acsRow = { geo_id: "state:55|county:025", value: "12.4", units: "people" };
-    expect(normalizeObservationRows(census, [acsRow])).toEqual([acsRow]);
+    expect(normalizeObservationRows(scopedOnly, [acsRow])).toEqual([acsRow]);
     expect(normalizeObservationRows(null, null)).toEqual([]);
   });
 
@@ -404,20 +464,10 @@ describe("as-released reads", () => {
     expect(buildReleaseListRequest(null, { metricCode: "CDC:x" })).toBeNull();
   });
 
-  test("an as-released read answers on the neutral resource, source-scoped or not", () => {
-    // Census reaches its latest values through its own route...
-    expect(
-      buildLatestObservationRequest(census, {
-        metricCode: "ACS:acs5:B01003_001",
-        geoLevel: "COUNTY",
-        stateFips: "55",
-        limit: "4000",
-      }).resource,
-    ).toBe("/census/observations/latest");
-
-    // ...but `scope=as_released` lives only on /observations, so the request
-    // moves there and carries the neutral filters the capability declares
-    // rather than the parameters of the route it left behind.
+  test("an as-released read answers on the neutral resource with its declared filters", () => {
+    // `scope=as_released` lives only on /observations, and the request
+    // carries the neutral filters the capability declares rather than the
+    // parameters of any source-scoped route the same source also publishes.
     expect(
       buildLatestObservationRequest(census, {
         metricCode: "ACS:acs5:B01003_001",
@@ -512,9 +562,19 @@ describe("as-released reads", () => {
       },
     });
 
-    // Without the as-released scope the source-scoped route still answers.
+    // A latest-scope history for the same source stays on the neutral
+    // resource too, so both scopes resolve the same metric identity.
     expect(
       buildHistoryObservationRequest(census, {
+        metricCode: "ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }).resource,
+    ).toBe("/observations");
+
+    // Only a source publishing no neutral route uses its own timeseries.
+    expect(
+      buildHistoryObservationRequest(scopedOnly, {
         metricCode: "ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",

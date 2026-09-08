@@ -271,21 +271,61 @@ async function installRoutes(
       });
     }
 
+    // Latest scope. Every source now reads through this resource, so the
+    // fixture dispatches on the metric's own published source prefix the way
+    // the registry does. A single-geography request carries `geo_id`; a
+    // cross-geography one carries `geo_level`.
+    const geoId = params.get("geo_id");
+    const answer = (items, sourceCode) =>
+      route.fulfill({
+        json: {
+          total: items.length,
+          limit: Number(params.get("limit") || 100),
+          offset: 0,
+          scope: params.get("scope") || "latest",
+          metric_code: metric,
+          source_code: sourceCode,
+          items,
+        },
+        headers: { "x-cache": "MISS" },
+      });
+
+    if (metric.startsWith("CENSUS_PEP:")) {
+      const pepRow = {
+        ...county,
+        metric_code: metric,
+        source_code: "CENSUS_PEP",
+        source: "CENSUS_PEP",
+        dataset_code: "pep_cty_alldata",
+        dataset: "pep_cty_alldata",
+        value: "561800",
+      };
+      // PEP publishes no history for this geography in this fixture.
+      return answer(geoId ? [] : [pepRow], "CENSUS_PEP");
+    }
+
+    if (metric.startsWith("ACS:")) {
+      if (failLatest) {
+        return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
+      }
+      if (geoId) {
+        return answer(
+          [
+            { ...county, metric_code: metric, observation_date: "2022-01-01", period: "2022", value: "555000" },
+            { ...county, metric_code: metric },
+          ],
+          "CENSUS_ACS",
+        );
+      }
+      // ACS1 publishes only counties above its population threshold, so this
+      // selection legitimately answers with nothing.
+      return answer(metric.includes(":acs1:") ? [] : [{ ...county, metric_code: metric }], "CENSUS_ACS");
+    }
+
     const stratum = params.get("stratum_id");
     const rows = [cdcRow("overall", "32.4"), cdcRow("age_18_44", null)];
     const items = stratum ? rows.filter((row) => row.dimensions.stratum_id === stratum) : rows;
-    return route.fulfill({
-      json: {
-        total: items.length,
-        limit: Number(params.get("limit") || 100),
-        offset: 0,
-        scope: params.get("scope") || "latest",
-        metric_code: metric,
-        source_code: "CDC",
-        items,
-      },
-      headers: { "x-cache": "MISS" },
-    });
+    return answer(items, "CDC");
   });
   await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
   await page.route("**/api/v1/catalog/capabilities", (route) => route.fulfill({
@@ -356,7 +396,26 @@ async function installRoutes(
       items: [{ bin_index: 1, count: 1 }],
     },
   }));
-  await page.route("**/tiles/catalog", (route) => route.fulfill({ json: { counties: {} } }));
+  await page.route("**/tiles/catalog", (route) =>
+    route.fulfill({
+      // Martin's real catalog shape: sources sit under section keys rather
+      // than at the top level (1.11.0, pinned in docker-compose.yml). The
+      // flat `{counties:{}}` this previously mocked is a shape Martin does
+      // not serve, which is how a broken discovery path stayed green.
+      json: {
+        tiles: {
+          counties: {
+            content_type: "application/x-protobuf",
+            description: "gold.dim_geo_latest.geo_geom",
+          },
+        },
+        sprites: {},
+        fonts: {},
+        styles: {},
+        settings: { rendering: false },
+      },
+    }),
+  );
   await page.route(/\/tiles\/counties$/, (route) => route.fulfill({
     json: {
       name: "counties",
@@ -427,8 +486,12 @@ test("source tabs derive from capability discovery and switch the explored sourc
   // tab records which shape reaches it.
   await expect(dashboard).toHaveAttribute("data-source-count", "4");
   await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
+  // Census declares its own route pair as well, and is still reached through
+  // the neutral resource: the pair reads the legacy union views, which key
+  // observations on that era's metric identity rather than the glossary
+  // identity the catalog publishes, so it answers an empty page.
   await expect(page.getByTestId("source-tab-census"))
-    .toHaveAttribute("data-access-shape", "source-scoped");
+    .toHaveAttribute("data-access-shape", "neutral");
   await expect(page.getByTestId("source-tab-pep")).toBeVisible();
   await expect(page.getByTestId("source-tab-usda-nass"))
     .toHaveAttribute("data-access-shape", "neutral");

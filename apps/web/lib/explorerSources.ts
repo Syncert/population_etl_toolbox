@@ -5,15 +5,27 @@
 //
 // Two access shapes reach observations, both declared by the API:
 //
-// - `source-scoped` — the source declares its own `latest` + `timeseries`
-//   route pair (Census ACS, BLS, FRED, Census PEP). Its accepted filters
-//   are the parameters those routes declare.
-// - `neutral` — the source is served by the registry-dispatched
-//   `/observations` resource (CDC, FBI UCR, USDA NASS, and every other
-//   source too). Its accepted filters are the capability's own
-//   `observation_filters`; a filter the source does not declare is
-//   rejected with a 422 rather than silently ignored, so nothing here may
-//   send one it did not read from the contract.
+// - `neutral` — the registry-dispatched `/observations` resource, which
+//   answers for every completed source. Its accepted filters are the
+//   capability's own `observation_filters`; a filter the source does not
+//   declare is rejected with a 422 rather than silently ignored, so nothing
+//   here may send one it did not read from the contract.
+// - `source-scoped` — the source's own `latest` + `timeseries` route pair.
+//   Its accepted filters are the parameters those routes declare.
+//
+// The neutral shape is preferred wherever it is declared, and the
+// source-scoped pair is the fallback for a source that publishes no neutral
+// route. That order matters for correctness, not just for tidiness: the
+// source-scoped pair is the original MVP surface over the legacy
+// cross-source union views, which key observations on that era's metric
+// identity (`ACS:acs5:B01003_001`), while the catalog this client reads its
+// metric codes from publishes the glossary identity
+// (`CENSUS_ACS:acs5:B01003_001`). The neutral resource resolves a metric
+// through that glossary and the reviewed dispatch registry, so it answers on
+// the identity the catalog actually published; the legacy pair matches
+// nothing and returns an empty page indistinguishable from a geography with
+// no published values. API_CONSUMER_GUIDE states the legacy routes retire
+// and that new work should use `/observations`.
 //
 // A source that declares neither shape is not explorable and is left out;
 // membership is never a source-code list.
@@ -213,7 +225,24 @@ export function buildExplorerSources(
           ]),
         ].sort()
       : [];
-    const requestFilters = sourceScoped ? [...latestParameters] : neutralFilters;
+    // The neutral resource is preferred wherever it is declared.
+    //
+    // Both shapes are real, but they read different relations. The
+    // source-scoped `latest`/`timeseries` pair is the original MVP surface
+    // over the legacy cross-source union views, which key observations on
+    // that era's metric identity — `ACS:acs5:B01003_001`. The catalog this
+    // client draws its metric codes from publishes the glossary identity —
+    // `CENSUS_ACS:acs5:B01003_001`. Sending a glossary code to the legacy
+    // pair matches nothing and answers an empty page that is
+    // indistinguishable from a geography with no published values.
+    //
+    // The neutral resource resolves the metric through the published
+    // glossary and the reviewed dispatch registry, so it answers on the
+    // identity the catalog actually published. API_CONSUMER_GUIDE says the
+    // legacy routes retire and new work should use `/observations`; this is
+    // new work.
+    const usesNeutral = neutral;
+    const requestFilters = usesNeutral ? neutralFilters : [...latestParameters];
     // `scope` and `release` are read from the neutral route's own declared
     // parameters. A source whose route declares neither cannot answer an
     // as-released question, and offering the control anyway would be this
@@ -226,7 +255,7 @@ export function buildExplorerSources(
       sourceCode: capability.source_code,
       title: capability.display_name || capability.source_code,
       tabLabel: key.toUpperCase(),
-      accessShape: sourceScoped ? "source-scoped" : "neutral",
+      accessShape: usesNeutral ? "neutral" : "source-scoped",
       requestFilters,
       dimensionFilters: dimensionFiltersOf(requestFilters),
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),

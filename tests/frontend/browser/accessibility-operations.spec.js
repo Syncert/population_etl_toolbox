@@ -136,8 +136,12 @@ async function installRoutes(page, { failObservations = false } = {}) {
       },
     }),
   );
+  // Every source reads through the neutral resource, so the failure the
+  // recovery test injects belongs here rather than on the legacy pair.
   await page.route("**/api/v1/observations?*", (route) =>
-    route.fulfill({ json: { total: 1, limit: 50, offset: 0, items: [observation] } }),
+    failObservations
+      ? route.fulfill({ status: 503, json: { detail: "database unavailable" } })
+      : route.fulfill({ json: { total: 1, limit: 4000, offset: 0, items: [observation] } }),
   );
   await page.route("**/api/v1/observations/releases?*", (route) =>
     route.fulfill({ json: { total: 0, limit: 200, offset: 0, items: [] } }),
@@ -147,7 +151,23 @@ async function installRoutes(page, { failObservations = false } = {}) {
       json: { total: 1, bin_count: 1, min_value: 561504, max_value: 561504, items: [{ bin_index: 1, count: 1 }] },
     }),
   );
-  await page.route("**/tiles/catalog", (route) => route.fulfill({ json: { counties: {} } }));
+  await page.route("**/tiles/catalog", (route) =>
+    route.fulfill({
+      // Martin's real catalog shape: sources sit under section keys.
+      json: {
+        tiles: {
+          counties: {
+            content_type: "application/x-protobuf",
+            description: "gold.dim_geo_latest.geo_geom",
+          },
+        },
+        sprites: {},
+        fonts: {},
+        styles: {},
+        settings: { rendering: false },
+      },
+    }),
+  );
   await page.route(/\/tiles\/counties$/, (route) =>
     route.fulfill({
       json: {

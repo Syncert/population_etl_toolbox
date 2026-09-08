@@ -156,8 +156,41 @@ describe("capability-derived explorer sources", () => {
       sourceCode: "CENSUS_PEP",
       title: "Census Population Estimates Program",
       tabLabel: "PEP",
-      accessShape: "source-scoped",
+      // Declares its own route pair *and* the neutral resource; the neutral
+      // one wins, because it resolves the glossary metric identity the
+      // catalog publishes rather than the legacy union views' own.
+      accessShape: "neutral",
     });
+  });
+
+  test("the source-scoped pair is the fallback when no neutral route is declared", () => {
+    // A source that publishes only its own route pair is still explorable
+    // through it. The preference for the neutral resource is about which to
+    // choose when both exist, not about refusing the only one on offer.
+    const [scopedOnly] = buildExplorerSources([
+      {
+        ...capabilities[2],
+        observation_routes: [
+          {
+            path: "/api/v1/census/observations/latest",
+            parameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
+          },
+          {
+            path: "/api/v1/census/observations/timeseries",
+            parameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+          },
+        ],
+      },
+    ]);
+    expect(scopedOnly.accessShape).toBe("source-scoped");
+    expect(scopedOnly.requestFilters).toEqual([
+      "geo_level",
+      "limit",
+      "metric_code",
+      "offset",
+      "state_fips",
+    ]);
+    expect(scopedOnly.neutralFilters).toEqual([]);
   });
 
   test("a source declaring neither access shape is left out", () => {
@@ -211,11 +244,18 @@ describe("capability-derived explorer sources", () => {
       expect(source.supportsReleasePin).toBe(true);
     }
 
-    // A source-scoped source keeps its own route parameters for a latest
-    // read, and carries its declared neutral filters for an as-released one.
+    // A source that declares the neutral resource is reached through it even
+    // when it also publishes its own route pair. The legacy pair reads the
+    // cross-source union views, which key observations on that era's metric
+    // identity (`ACS:acs5:B01003_001`); the catalog publishes the glossary
+    // identity (`CENSUS_ACS:acs5:B01003_001`). Preferring the pair sends a
+    // code the union views do not carry and answers an empty page.
     const census = findExplorerSource(sources, "census");
-    expect(census.accessShape).toBe("source-scoped");
-    expect(census.requestFilters).toEqual([
+    expect(census.accessShape).toBe("neutral");
+    expect(census.requestFilters).toEqual(census.neutralFilters);
+    // Its own route parameters stay recorded, for the fallback and for the
+    // history route's own parameter discipline.
+    expect(census.latestParameters).toEqual([
       "geo_level",
       "limit",
       "metric_code",
