@@ -10,6 +10,7 @@ import {
   apiFetch,
   buildApiPath,
   fetchAllPages,
+  fetchCollectionPages,
   getDistributionBins,
   getSourceLatestObservations,
   searchMetrics,
@@ -187,5 +188,35 @@ describe("request lifecycle state", () => {
 
     tracker.invalidate();
     expect(second.isCurrent()).toBe(false);
+  });
+
+  test("reports the total and whether the page bound cut the answer short", async () => {
+    const whole = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 3 }),
+      jsonResponse({ items: [{ id: 3 }], total: 3 }),
+    ]);
+    await expect(
+      fetchCollectionPages("/observations", { pageSize: 2, fetchImpl: whole.fetchImpl }),
+    ).resolves.toEqual({ items: [{ id: 1 }, { id: 2 }, { id: 3 }], total: 3, complete: true });
+
+    const cut = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 5 }),
+      jsonResponse({ items: [{ id: 3 }, { id: 4 }], total: 5 }),
+      jsonResponse({ items: [{ id: 5 }], total: 5 }),
+    ]);
+    const prefix = await fetchCollectionPages("/observations", {
+      pageSize: 2,
+      maxPages: 2,
+      fetchImpl: cut.fetchImpl,
+    });
+    expect(prefix.items.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    expect(prefix.total).toBe(5);
+    expect(prefix.complete).toBe(false);
+    expect(cut.calls).toHaveLength(2);
+
+    const unreported = recordingFetch([jsonResponse({ items: [{ id: 1 }] }), jsonResponse({ items: [] })]);
+    await expect(
+      fetchCollectionPages("/observations", { fetchImpl: unreported.fetchImpl }),
+    ).resolves.toEqual({ items: [{ id: 1 }], total: null, complete: true });
   });
 });

@@ -20,7 +20,9 @@ import {
   buildLatestObservationRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
+  countObservationPeriods,
   describeStratification,
+  newestPerGeography,
   normalizeObservationRows,
   observationDimensionOptions,
   observationDimensionValue,
@@ -662,5 +664,53 @@ describe("a history read across published releases", () => {
 
   test("drops a row with no period to order by", () => {
     expect(collapseToNewestRelease([{ release: "1", value: "x" }])).toEqual([]);
+  });
+});
+
+// A latest publication that is a series: Census PEP answers every estimated
+// year of the current vintage per county under scope=latest, so a map that
+// keeps whichever row arrived last, or only the first page, colours the
+// wrong rows or too few of them.
+describe("newestPerGeography", () => {
+  const rows = [
+    { geo_id: "state:01|county:001", period_start: "2020-07-01", period_end: "2020-07-01", value: "165" },
+    { geo_id: "state:01|county:001", period_start: "2025-07-01", period_end: "2025-07-01", value: "180" },
+    { geo_id: "state:01|county:001", period_start: "2023-07-01", period_end: "2023-07-01", value: "172" },
+    { geo_id: "state:01|county:003", period_start: "2025-07-01", period_end: "2025-07-01", value: "900" },
+    { geo_id: "state:01|county:003", period_start: "2024-07-01", period_end: "2024-07-01", value: "880" },
+    { geo_id: "state:01|county:005", observation_date: "2021-01-01", value: "12" },
+    { geo_id: null, period_start: "2025-07-01", value: "1" },
+    { geo_id: "state:01|county:007", value: "no period" },
+  ];
+
+  test("keeps each geography's newest period, in first-seen geography order", () => {
+    expect(newestPerGeography(rows).map((row) => [row.geo_id, row.value])).toEqual([
+      ["state:01|county:001", "180"],
+      ["state:01|county:003", "900"],
+      ["state:01|county:005", "12"],
+    ]);
+  });
+
+  test("keeps the first published row when one geography repeats a period", () => {
+    const repeated = [
+      { geo_id: "state:06", period_end: "2025-07-01", value: "first" },
+      { geo_id: "state:06", period_end: "2025-07-01", value: "second" },
+    ];
+    expect(newestPerGeography(repeated).map((row) => row.value)).toEqual(["first"]);
+  });
+
+  test("passes a one-row-per-geography publication through unchanged", () => {
+    const single = [
+      { geo_id: "state:01|county:001", period_end: "2020-01-01", value: "1" },
+      { geo_id: "state:01|county:003", period_end: "2015-01-01", value: "2" },
+    ];
+    expect(newestPerGeography(single)).toEqual(single);
+    expect(newestPerGeography([])).toEqual([]);
+    expect(newestPerGeography(null)).toEqual([]);
+  });
+
+  test("counts the distinct periods a publication spans", () => {
+    expect(countObservationPeriods(rows)).toBe(5);
+    expect(countObservationPeriods([])).toBe(0);
   });
 });

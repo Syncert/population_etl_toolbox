@@ -174,12 +174,26 @@ export async function apiFetch<T>(
   return (await response.json()) as T;
 }
 
+/** Every page of a `{items, total}` collection, and whether that was all of it. */
+export interface CollectionPages<T> {
+  items: T[];
+  /** The resource's reported total, or `null` when it published none. */
+  total: number | null;
+  /**
+   * False when paging stopped at `maxPages` before reaching the reported
+   * total: the items are a prefix of the answer, not the answer.
+   */
+  complete: boolean;
+}
+
 // Deterministic limit/offset paging over `{items, total}` collection
-// responses. Bounded so a contract regression cannot loop forever.
-export async function fetchAllPages<T>(
+// responses. Bounded so a contract regression cannot loop forever, and
+// honest about it: a caller that hits the bound is told the answer is a
+// prefix rather than handed a truncated list as if it were whole.
+export async function fetchCollectionPages<T>(
   resource: string,
   { params = {}, pageSize = 1000, maxPages = 50, signal, fetchImpl }: PageOptions = {},
-): Promise<T[]> {
+): Promise<CollectionPages<T>> {
   const items: T[] = [];
   let offset = 0;
   let total: number | null = null;
@@ -200,11 +214,22 @@ export async function fetchAllPages<T>(
     offset += pageItems.length;
     pages += 1;
 
-    if (pageItems.length === 0 || pages >= maxPages) {
-      break;
+    if (pageItems.length === 0) {
+      return { items, total, complete: true };
+    }
+    if (pages >= maxPages) {
+      return { items, total, complete: total !== null && items.length >= total };
     }
   } while (total === null || items.length < total);
 
+  return { items, total, complete: true };
+}
+
+export async function fetchAllPages<T>(
+  resource: string,
+  options: PageOptions = {},
+): Promise<T[]> {
+  const { items } = await fetchCollectionPages<T>(resource, options);
   return items;
 }
 

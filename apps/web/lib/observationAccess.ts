@@ -362,7 +362,7 @@ function compareReleases(left: unknown, right: unknown): number {
 export function collapseToNewestRelease(rows: ObservationRow[]): ObservationRow[] {
   const newestByPeriod = new Map<string, ObservationRow>();
   for (const row of rows) {
-    const period = firstText(row.observation_date, row.period_end, row.period_start);
+    const period = observationOrderingDate(row);
     if (!period) {
       continue;
     }
@@ -374,6 +374,51 @@ export function collapseToNewestRelease(rows: ObservationRow[]): ObservationRow[
   return [...newestByPeriod.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, row]) => row);
+}
+
+/** The date a row is ordered by: the published period end, else its start. */
+function observationOrderingDate(row: ObservationRow): string | null {
+  return firstText(row.observation_date, row.period_end, row.period_start);
+}
+
+/** How many distinct periods a set of rows spans. */
+export function countObservationPeriods(rows: ObservationRow[] | null | undefined): number {
+  const periods = new Set<string>();
+  for (const row of rows || []) {
+    const period = observationOrderingDate(row);
+    if (period) {
+      periods.add(period);
+    }
+  }
+  return periods.size;
+}
+
+/**
+ * One row per geography: the newest period each geography publishes, in
+ * first-seen geography order. A source whose latest publication is a
+ * series (Census PEP publishes every estimated year of the current vintage)
+ * answers several rows per geography under `scope=latest`; a map colours
+ * one value per polygon, and the API's own distribution and comparison
+ * routes rank the same way, so the map and its legend count the same rows.
+ * A row without a geography or a period is left out. Rows carrying the same
+ * period for one geography keep the first published, so nothing here
+ * chooses between them.
+ */
+export function newestPerGeography(rows: ObservationRow[] | null | undefined): ObservationRow[] {
+  const newestByGeo = new Map<string, ObservationRow>();
+  for (const row of rows || []) {
+    const geoId = firstText(row.geo_id);
+    const period = observationOrderingDate(row);
+    if (!geoId || !period) {
+      continue;
+    }
+    const current = newestByGeo.get(geoId);
+    const currentPeriod = current ? observationOrderingDate(current) : null;
+    if (!current || (currentPeriod !== null && period.localeCompare(currentPeriod) > 0)) {
+      newestByGeo.set(geoId, row);
+    }
+  }
+  return [...newestByGeo.values()];
 }
 
 /** A declared dimension's published value on one row, or `""` when absent. */

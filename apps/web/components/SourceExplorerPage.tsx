@@ -18,6 +18,7 @@ import {
   buildApiPath,
   createSavedAnalysis,
   fetchAllPages,
+  fetchCollectionPages,
   getCapabilities,
   getDistributionBins,
   getHealth,
@@ -76,7 +77,9 @@ import {
   buildLatestObservationRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
+  countObservationPeriods,
   describeStratification,
+  newestPerGeography,
   normalizeObservationRows,
   observationDimensionOptions,
   observationDimensionValue,
@@ -121,6 +124,12 @@ export {
 } from "../lib/explorerViewModel";
 
 const CATALOG_PAGE_SIZE = 1000;
+// The observation resources cap `limit` at 5000. A source whose latest
+// publication is a series (Census PEP: six estimated years per county, some
+// 19,000 county rows) does not fit one page, so the explorer pages by offset
+// until the reported total, bounded so a runaway answer stops and says so.
+const OBSERVATION_PAGE_SIZE = 5000;
+const OBSERVATION_PAGE_LIMIT = 8;
 const DEFAULT_GEO_LEVEL = "COUNTY";
 /** Geography grains in presentation order, broadest first. */
 const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY"];
@@ -139,6 +148,31 @@ const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // published releases than this is reported as such rather than truncated
 // into a silently partial option list.
 const RELEASE_PAGE_SIZE = 200;
+
+/**
+ * The observations status line: how many rows the publication answered, how
+ * many geographies that is, and, when the page bound cut the answer short,
+ * that the map is incomplete rather than silently sparse.
+ */
+function describeObservationLoad(
+  items: ObservationRow[],
+  total: number | null,
+  complete: boolean,
+  geoLevelLabel: string,
+): string {
+  if (items.length === 0) {
+    return `0 ${geoLevelLabel} records published for this selection`;
+  }
+  const geographies = newestPerGeography(items).length;
+  const periods = countObservationPeriods(items);
+  const loaded = complete || total === null
+    ? `loaded ${items.length} ${geoLevelLabel} records`
+    : `loaded ${items.length} of ${total} ${geoLevelLabel} records; the page bound cut the answer short, so the map is incomplete`;
+  const shape = periods > 1
+    ? ` (${geographies} geographies across ${periods} periods)`
+    : "";
+  return `${loaded}${shape}`;
+}
 
 type TileMetadata = Awaited<ReturnType<typeof discoverTileMetadata>>;
 
@@ -285,7 +319,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       metricCode: selectedMetric,
       geoLevel: selectedGeoLevel,
       stateFips: selectedGeoLevel === "NATIONAL" ? "" : selectedStateFips,
-      limit: "4000",
+      limit: String(OBSERVATION_PAGE_SIZE),
       scope: observationScope,
       release: selectedRelease,
       dimensions: Object.fromEntries(
@@ -316,8 +350,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => describeStratification(observations, seriesDimensions),
     [observations, seriesDimensions],
   );
+  // The map colours one value per polygon. A latest publication that is a
+  // series (several periods per geography) is reduced to each geography's
+  // newest period, the same ranking the API's distribution bins apply, so
+  // the legend counts and the coloured polygons describe the same rows.
   const mappableObservations = useMemo(
-    () => (stratification.stratified ? [] : observations),
+    () => (stratification.stratified ? [] : newestPerGeography(observations)),
     [observations, stratification.stratified],
   );
   const historyStratification = useMemo(
@@ -697,19 +735,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     async function loadObservations(source: ExplorerSource) {
       try {
         const { resource, params } = buildLatestObservationRequest(source, latestQuery);
-        const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
-        const items = normalizeObservationRows(
-          source,
-          Array.isArray(payload.items) ? payload.items : [],
-        );
+        const pages = await fetchCollectionPages<Observation>(resource, {
+          params,
+          pageSize: OBSERVATION_PAGE_SIZE,
+          maxPages: OBSERVATION_PAGE_LIMIT,
+        });
+        const items = normalizeObservationRows(source, pages.items);
 
         if (request.isCurrent()) {
           setObservations(items);
           setObservationStatus({
-            state: "ok",
-            message: items.length > 0
-              ? `loaded ${items.length} ${selectedGeoLevel.toLowerCase()} records`
-              : `0 ${selectedGeoLevel.toLowerCase()} records published for this selection`,
+            state: pages.complete ? "ok" : "bad",
+            message: describeObservationLoad(
+              items,
+              pages.total,
+              pages.complete,
+              selectedGeoLevel.toLowerCase(),
+            ),
           });
         }
       } catch (error) {
@@ -2098,7 +2140,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         {mapSupported ? (
         <article className="card workspace-panel" data-active={effectiveTab === "map"}>
           <h2>{selectedMetricMeta ? displayMetricName(selectedMetricMeta) : `${selectedGeoLevel.toLowerCase()} map`}</h2>
-          <p className="subtle">Latest {selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.</p>
+          <p className="subtle">
+            Latest {selectedGeoLevel.toLowerCase()} estimates, joined to Martin vector geometry by the discovered geography key.
+            {countObservationPeriods(observations) > 1
+              ? ` The publication spans ${countObservationPeriods(observations)} periods; each geography is coloured by its newest one.`
+              : ""}
+          </p>
           <div className="map-shell">
             <div
               className="map-canvas"
@@ -2262,7 +2309,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           </article>
         ) : null}
         <article className="card workspace-panel" data-active={effectiveTab === "api query"}>
-          <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>
+          <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map, paged by <code>offset</code> until its reported total.</p><code className="api-query">GET {apiQuery}</code>
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "notes"}>
           <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: {valueScale === "log" ? "five logarithmic intervals over the published values, so a long-tailed measure such as population is not one colour" : "five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable"}.</p>
