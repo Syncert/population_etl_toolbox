@@ -17,7 +17,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed
+- **Status:** Claimed 2026-09-10; in progress on `feat/census-pep-history`
 - **Last updated:** 2026-09-10
 - **Source owner:** U.S. Census Bureau Population Estimates Program (PEP), historical county and state series
 - **Geography scope:** State and county for every decade; national where the era's file carries it. Subcounty history is out of scope.
@@ -27,9 +27,9 @@ verify:
 
 **Last updated:** 2026-09-10
 
-**Current milestone:** none claimed
+**Current milestone:** PEH-001 claimed; registry generalisation under way.
 
-**Next pickup:** claim the plan, then start at PEH-001 (registry generalisation), because every later phase registers a release the current contract rejects.
+**Next pickup:** PEH-001 — generalise `PEPRelease`/`PEPDataset` so an intercensal release with an observation range that ends before its publication vintage can be registered.
 
 ### Completed in the current slice
 
