@@ -219,10 +219,12 @@ def test_metric_detail_returns_published_semantics_and_routes() -> None:
 def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None:
     """Covers: API-038 — union-served sources advertise the neutral routes."""
     row = dict(_METRIC_ROW)
-    row.update({"metric_code": "BLS:LAUCN06001", "source_code": "BLS", "units": "rate"})
+    row.update(
+        {"metric_code": "BLS:LAU:UNEMP_RATE", "source_code": "BLS", "units": "rate"}
+    )
     client = _client_with(_RowSession(rows=[row]))
     try:
-        response = client.get("/api/v1/catalog/metrics/BLS:LAUCN06001")
+        response = client.get("/api/v1/catalog/metrics/BLS:LAU:UNEMP_RATE")
     finally:
         _clear_overrides()
 

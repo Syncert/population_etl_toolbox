@@ -230,7 +230,7 @@ BEGIN
         f.as_of_date,
         f.updated_at::TIMESTAMPTZ,
         'us:1',
-        COALESCE(gl.geo_level, 'NATIONAL'),
+        'NATIONAL',
         gl.state_fips,
         gl.county_fips,
         gl.state_name,
@@ -254,6 +254,8 @@ BEGIN
         f.realtime_end
     FROM gold_fred.fact_fred_observation f
     JOIN gold_fred.dim_fred_series fs ON fs.fred_series_sk = f.fred_series_sk
+    -- gl supplies geography attributes only. Its geo_level vocabulary is
+    -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = 'us:1'
     WHERE (p_start_date IS NULL OR f.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR f.observation_date <= p_end_date);

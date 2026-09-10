@@ -130,3 +130,35 @@ def test_silver_upserts_preserve_watermarks_for_unchanged_rows() -> None:
         transform = _read(source["silver"])
         assert "IS DISTINCT FROM" in transform
         assert "ingested_at = EXCLUDED.ingested_at\n        WHERE" in transform
+
+
+def test_reporting_refreshes_never_write_the_raw_geography_vocabulary() -> None:
+    """Covers: ETL-043 — served ``geo_level`` is the normalised vocabulary.
+
+    ``silver_ref.dim_geo`` spells the national level ``us``; the served
+    relations promise ``NATIONAL``. A refresh that prefers the dimension's
+    column over the fact view's normalised one publishes ``us``, and
+    ``UPPER(geo_level) = UPPER(:geo_level)`` in the API dispatch then answers
+    nothing for ``geo_level=NATIONAL``.
+    """
+    offenders = []
+    for name, source in SOURCE_FILES.items():
+        sql = _read(source["gold"])
+        if "gl.geo_level" in sql:
+            offenders.append(name)
+    assert not offenders, (
+        "these reporting refreshes write silver_ref.dim_geo's raw geo_level "
+        "vocabulary ('us'/'state'/'county') into relations that promise "
+        f"NATIONAL/STATE/COUNTY: {offenders}"
+    )
+
+
+def test_fact_views_normalise_the_national_geography_level() -> None:
+    """Covers: ETL-043 — the normalised vocabulary has one definition."""
+    for name in ("acs", "bls"):
+        sql = _read(SOURCE_FILES[name]["gold"])
+        assert "LOWER(s.geo_level) = 'us'" in sql or "LOWER(ao.geo_level) = 'us'" in sql
+        assert "THEN 'NATIONAL'" in sql
+
+    fred = _read(SOURCE_FILES["fred"]["gold"])
+    assert "'NATIONAL'," in fred

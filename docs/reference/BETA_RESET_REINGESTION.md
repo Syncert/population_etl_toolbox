@@ -152,3 +152,32 @@ add an evidence-backed crosswalk, then replay the affected captured observations
   `GET /api/cdc/observations?dataset=places_county&limit=1`.
 - Martin TileJSON/MVT smoke checks succeed if spatial serving is deployed.
 
+
+## 7. Metric-identity changes require a forced full serving refresh
+
+The ingestion DAGs refresh serving in changed-year chunks: a year whose silver
+rows did not move is skipped. That is correct for value changes and wrong for
+identity changes. When a change alters which metric code a row is published
+under — the source's publisher view, its measure mapping, or the refresh
+procedure's `metric_code` expression — the unchanged years keep the old code,
+and the catalog then carries two identities for one measure with only part of
+the history under each.
+
+After such a change, refresh the whole source once, forced:
+
+```sql
+CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
+```
+
+Then run `glossary_harvest` (or `harvest_all_publishers`) so the catalog
+follows: the new codes are harvested `current`, and codes the publisher no
+longer emits become `stale` and then `retired` after
+`retirement_grace_harvests` harvests (default 2). Codes are never deleted, so
+an existing link to a retired code still resolves.
+
+Each source's procedure takes the same three arguments
+(`gold_census.refresh_dashboard_serving_layer_acs`,
+`gold_fred.refresh_dashboard_serving_layer_fred`, and so on). The procedures
+set a 60-minute statement timeout per call; run the forced refresh out of
+hours and record the duration. For scale: the BLS reporting relation is about
+5.8 million rows.

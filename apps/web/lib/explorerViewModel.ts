@@ -122,9 +122,13 @@ export function pickPreferredMetric(
     return "";
   }
 
-  const datasetMetrics = metrics.filter(
-    (item) => metricDataset(item.metric_code) === dataset,
-  );
+  // No facet selected means "the whole list", which is what the explorer
+  // renders when a source publishes fewer than two facets. Filtering on the
+  // empty string instead selected exactly the metrics whose codes carry no
+  // facet -- for BLS, the 56 national series and none of the LAUS measures.
+  const datasetMetrics = dataset
+    ? metrics.filter((item) => metricDataset(item.metric_code) === dataset)
+    : metrics;
   const candidates = datasetMetrics.length > 0 ? datasetMetrics : metrics;
   const matchingVariable = candidates.find(
     (item) => metricVariable(item.metric_code) === preferredVariable,
@@ -132,8 +136,17 @@ export function pickPreferredMetric(
   const canonicalPopulation = candidates.find(
     (item) => metricVariable(item.metric_code) === DEFAULT_POPULATION_VARIABLE,
   );
+  // Nothing named the measure, so fall back on what the catalog says the
+  // measures cover. Opening a source on a national-only series would land the
+  // user on a selection its map can never draw, and BLS lists 56 of them
+  // ahead of every LAUS measure. The grains are the published ones; this
+  // prefers a spatial measure, it does not decide which measures are spatial.
+  const firstSpatial = candidates.find((item) =>
+    metricSupportedGeoLevels(item).some((level) => level !== "NATIONAL"),
+  );
 
-  return (matchingVariable || canonicalPopulation || candidates[0]!).metric_code;
+  return (matchingVariable || canonicalPopulation || firstSpatial || candidates[0]!)
+    .metric_code;
 }
 
 export function metricOptions(metrics: MetricSummary[] | null | undefined): MetricOption[] {

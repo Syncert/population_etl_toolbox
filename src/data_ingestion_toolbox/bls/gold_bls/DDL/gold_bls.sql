@@ -46,6 +46,23 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- LAUS codes a program, an area, and a measure into every series id, so a
+-- series-level catalog gives one metric per place and no BLS metric spans
+-- geographies. These seven measures are the catalog identity instead; every
+-- other program stays series-identified. ``metric_key`` is the publisher's
+-- source_object_key, and the served metric_code is 'BLS:' || metric_key.
+CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_measure (
+    bls_measure_sk      BIGSERIAL PRIMARY KEY,
+    program_code        TEXT NOT NULL,
+    measure_code        TEXT NOT NULL,
+    metric_key          TEXT NOT NULL UNIQUE,
+    metric_display_name TEXT NOT NULL,
+    unit_of_measure     TEXT,
+    value_type          TEXT NOT NULL CHECK (value_type IN ('LEVEL', 'RATE', 'INDEX', 'PERCENT', 'CURRENCY', 'RATIO', 'OTHER')),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (program_code, measure_code)
+);
+
 -- ============================================================
 -- BLS FACT VIEW (unchanged — source of truth)
 -- ============================================================
@@ -76,7 +93,10 @@ SELECT
     sr.measure_category,
     sr.value_type,
     CURRENT_DATE       AS as_of_date,
-    s.ingested_at      AS updated_at
+    s.ingested_at      AS updated_at,
+    -- Appended, not inserted: CREATE OR REPLACE VIEW only permits new columns
+    -- at the end of the select list.
+    s.measure_code
 FROM silver_bls.fact_labor_statistics s
 JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id
 JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
@@ -258,7 +278,7 @@ BEGIN
         b.as_of_date,
         b.updated_at,
         b.geo_id,
-        COALESCE(gl.geo_level, b.geo_level),
+        b.geo_level,
         gl.state_fips,
         gl.county_fips,
         gl.state_name,
@@ -272,17 +292,24 @@ BEGIN
         bs.measure_name,
         b.measure_category,
         COALESCE(b.observation_basis, s.observation_basis),
-        bs.unit_of_measure,
+        COALESCE(bm.unit_of_measure, bs.unit_of_measure),
         b.value,
-        b.value_type,
+        COALESCE(bm.value_type, b.value_type),
         COALESCE(b.seasonal_adjustment_status, bs.seasonal_adjustment_status),
         bs.gold_metric_name,
         s.comparison_warning,
-        'BLS:' || bs.series_id,
-        COALESCE(bs.gold_metric_name, bs.series_title)
+        -- A measure-identified program (LAUS) publishes one metric across every
+        -- geography it covers; every other program keeps its series identity.
+        COALESCE('BLS:' || bm.metric_key, 'BLS:' || bs.series_id),
+        COALESCE(bm.metric_display_name, bs.gold_metric_name, bs.series_title)
     FROM gold_bls.fact_bls_observation b
     JOIN gold_bls.dim_bls_survey s  ON s.bls_survey_sk  = b.bls_survey_sk
     JOIN gold_bls.dim_bls_series bs ON bs.bls_series_sk = b.bls_series_sk
+    LEFT JOIN gold_bls.dim_bls_measure bm
+           ON bm.program_code = b.program_code
+          AND bm.measure_code = b.measure_code
+    -- gl supplies geography attributes only. Its geo_level vocabulary is
+    -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = b.geo_id
     WHERE (p_start_date IS NULL OR b.period_date >= p_start_date)
       AND (p_end_date IS NULL OR b.period_date <= p_end_date);

@@ -25,7 +25,7 @@ from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
 from tests.support.postgres import PostgresHookStub
-from tests.support.capture_seed import seed_capture
+from tests.support.capture_seed import seed_capture, seed_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -375,12 +375,24 @@ def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
 ) -> None:
-    """Covers: DB-012 — independent harvest links source facts to serving rows."""
+    """Covers: DB-012 — independent harvest links source facts to serving rows.
+
+    Also covers: ETL-043 — ``silver_ref.dim_geo`` carries ``us:1`` at level
+    ``us``, so the refresh has the dimension row that used to override the
+    normalised vocabulary. Without this seed the ``NATIONAL`` assertion below
+    passes vacuously.
+    """
     series_id = f"TEST_FRED_SILVER_{fred_silver_token}_GOLD"
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
             _seed_time(cursor, 20990101, "2099-01-01")
+            seed_geography(
+                cursor,
+                geo_type="nation",
+                vintage=2099,
+                name="United States",
+            )
             cursor.execute(
                 """
                 INSERT INTO silver_fred.fact_economic_indicators (
@@ -419,7 +431,8 @@ def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
         with reader.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT s.series_id, c.metric_code, r.geo_id, r.value, m.value
+                SELECT s.series_id, c.metric_code, r.geo_id, r.geo_level,
+                       m.geo_level, r.value, m.value
                 FROM gold_fred.dim_fred_series s
                 JOIN gold_glossary.dim_metric_catalog c
                   ON c.source_code = 'FRED'
@@ -437,6 +450,8 @@ def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
                 series_id,
                 f"FRED:{series_id}",
                 "us:1",
+                "NATIONAL",
+                "NATIONAL",
                 42.5,
                 42.5,
             )

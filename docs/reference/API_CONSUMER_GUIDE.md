@@ -90,6 +90,54 @@ Each row carries typed core fields plus everything the source publishes:
 - `release`, `as_of`, `source_record_id`, and `capture_id` trace a row back to
   its publication.
 
+### How a source identifies its metrics
+
+A metric code is `SOURCE:<key>`, where the key is whatever that source's
+publisher declares. Two shapes exist, and the catalog is what tells you which
+you are holding — `source_object_type` on the metric's catalog row is
+`series` or `measure`.
+
+**BLS LAUS is published per measure.** The Local Area Unemployment Statistics
+program codes a program, an area, and a measure into every series id
+(`LAUCN010010000000003` is the unemployment rate for Autauga County, Alabama),
+so publishing per series gave one metric per place and no BLS metric that
+spanned geographies. LAUS therefore publishes seven measure-level metrics
+whose observations span every published state and county:
+
+| Metric code | Measure | Grains |
+| --- | --- | --- |
+| `BLS:LAU:UNEMP_RATE` | Unemployment rate | State, county |
+| `BLS:LAU:UNEMP_LEVEL` | Unemployment level | State, county |
+| `BLS:LAU:EMP_LEVEL` | Employment level | State, county |
+| `BLS:LAU:LABOR_FORCE` | Labor force level | State, county |
+| `BLS:LAU:EMP_POP_RATIO` | Employment-population ratio | State |
+| `BLS:LAU:LFPR` | Labor force participation rate | State |
+| `BLS:LAU:CNIP` | Civilian noninstitutional population | State |
+
+The BLS series id is still on every row, under `dimensions.series_id`, so
+lineage back to the provider's series is never lost. Grains are read from the
+published rows, so `valid_geo_grains` on the catalog row is the authority —
+do not assume every LAUS measure reaches counties.
+
+The series-level LAUS codes are **retired catalog rows**: an existing link to
+`BLS:LAUCN010010000000003` still resolves through
+`GET /catalog/metrics/{metric_code}` and reports `freshness_state: "retired"`,
+and `active_only=true` hides it from search. It no longer answers
+observations.
+
+Every other BLS program (CES, CPI, JOLTS, and the CPS national series) is
+fixed-coded per series and keeps its series identity, so
+`BLS:CES0000000001` is unchanged. The national CPS unemployment rate
+(`BLS:LNS14000000`) stays a separate metric from `BLS:LAU:UNEMP_RATE`: it is a
+different survey and seasonally adjusted, and BLS claims no comparability
+between them.
+
+### The geography vocabulary served rows carry
+
+`geo_level` on a served row is always `NATIONAL`, `STATE`, or `COUNTY`, and
+the `geo_level` filter matches that vocabulary. A national row answers
+`geo_level=NATIONAL`.
+
 ### Legacy observation routes
 
 `GET /api/v1/observations/latest` and `/observations/timeseries` are the
