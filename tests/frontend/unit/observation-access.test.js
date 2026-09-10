@@ -19,6 +19,7 @@ import {
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
   buildReleaseListRequest,
+  collapseToNewestRelease,
   describeStratification,
   normalizeObservationRows,
   observationDimensionOptions,
@@ -635,5 +636,31 @@ describe("as-released reads", () => {
       "stratum_id",
       RELEASE_DIMENSION,
     ]);
+  });
+});
+
+describe("a history read across published releases", () => {
+  // ACS's latest relation keeps one row per geography, so a geography's
+  // history exists only across its releases; each period is shown as last
+  // published, and a later release revising a period replaces it.
+  test("keeps the newest release of each period, in period order", () => {
+    const rows = [
+      { geo_id: "g", period_end: "2023-12-31", release: "2023", value: "first" },
+      { geo_id: "g", period_end: "2024-12-31", release: "2024", value: "newest" },
+      { geo_id: "g", period_end: "2023-12-31", release: "2024", value: "revised" },
+    ];
+    expect(collapseToNewestRelease(rows).map((row) => row.value)).toEqual(["revised", "newest"]);
+  });
+
+  test("compares numeric release identities as numbers, not text", () => {
+    const rows = [
+      { period_end: "2024-12-31", release: "9", value: "old" },
+      { period_end: "2024-12-31", release: "10", value: "new" },
+    ];
+    expect(collapseToNewestRelease(rows)[0].value).toBe("new");
+  });
+
+  test("drops a row with no period to order by", () => {
+    expect(collapseToNewestRelease([{ release: "1", value: "x" }])).toEqual([]);
   });
 });

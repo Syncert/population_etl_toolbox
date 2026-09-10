@@ -341,6 +341,41 @@ export function normalizeObservationRows(
   });
 }
 
+function compareReleases(left: unknown, right: unknown): number {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+  return String(left ?? "").localeCompare(String(right ?? ""));
+}
+
+/**
+ * One row per period from an unpinned as-released read, in period order:
+ * the newest release of each period. A source whose latest relation keeps
+ * one row per geography (ACS holds only the newest vintage) has a
+ * geography's history only across its releases, and a period revised in a
+ * later release shows as last published. Release identities compare as
+ * numbers where both sides are numeric (a vintage year, a watermark) and as
+ * text otherwise (an as-of date).
+ */
+export function collapseToNewestRelease(rows: ObservationRow[]): ObservationRow[] {
+  const newestByPeriod = new Map<string, ObservationRow>();
+  for (const row of rows) {
+    const period = firstText(row.observation_date, row.period_end, row.period_start);
+    if (!period) {
+      continue;
+    }
+    const current = newestByPeriod.get(period);
+    if (!current || compareReleases(row.release, current.release) > 0) {
+      newestByPeriod.set(period, row);
+    }
+  }
+  return [...newestByPeriod.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, row]) => row);
+}
+
 /** A declared dimension's published value on one row, or `""` when absent. */
 export function observationDimensionValue(
   row: ObservationRow | null | undefined,

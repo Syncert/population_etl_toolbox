@@ -73,6 +73,7 @@ import {
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
   buildReleaseListRequest,
+  collapseToNewestRelease,
   describeStratification,
   normalizeObservationRows,
   observationDimensionOptions,
@@ -364,6 +365,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const geographyIndex = useMemo(
     () => buildObservationIndex(allGeographies, tileMetadata?.joinKey || "geo_id"),
     [allGeographies, tileMetadata],
+  );
+  // Observation rows publish no names; the geography catalog does.
+  const geographyById = useMemo(
+    () => new Map(allGeographies.map((item) => [String(item.geo_id), item])),
+    [allGeographies],
   );
   const missingValueLabel = selectedDataset === "acs1"
     ? "Not published in ACS1"
@@ -863,15 +869,46 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           dimensions: dimensionSelections,
         });
         const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
-        const items = normalizeObservationRows(
+        let items = normalizeObservationRows(
           source,
           Array.isArray(payload.items) ? payload.items : [],
         );
+        let acrossReleases = false;
+        // A source's latest relation can keep one row per geography -- ACS
+        // holds only the newest vintage -- so under the latest scope a
+        // history comes back as a single point. Every published release is
+        // that geography's history; read it and keep the newest release of
+        // each period, which is what "latest" means period by period.
+        if (items.length <= 1 && observationScope === SCOPE_LATEST && servesAsReleased(source)) {
+          const released = buildHistoryObservationRequest(source, {
+            metricCode: selectedMetric,
+            geoId: selectedGeoId,
+            limit: "1000",
+            scope: SCOPE_AS_RELEASED,
+            dimensions: dimensionSelections,
+          });
+          const releasedPayload = await apiFetch<CollectionResponse<Observation>>(
+            released.resource,
+            { params: released.params },
+          );
+          const releasedItems = collapseToNewestRelease(
+            normalizeObservationRows(
+              source,
+              Array.isArray(releasedPayload.items) ? releasedPayload.items : [],
+            ),
+          );
+          if (releasedItems.length > items.length) {
+            items = releasedItems;
+            acrossReleases = true;
+          }
+        }
         if (request.isCurrent()) {
           setTimeseries(items);
           setTimeseriesStatus({
             state: "ok",
-            message: `${items.length} historical observation${items.length === 1 ? "" : "s"}`,
+            message: `${items.length} historical observation${items.length === 1 ? "" : "s"}${
+              acrossReleases ? " across published releases" : ""
+            }`,
           });
         }
       } catch (error) {
@@ -1269,6 +1306,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         mapMode === "extrusion" ? "visible" : "none",
       );
     }
+
+    // From straight overhead an extrusion shows only its top, in the same
+    // colour the choropleth uses, so the two modes are indistinguishable.
+    // Tilt the camera with the mode and level it again on the way back.
+    map.easeTo({ pitch: mapMode === "extrusion" ? 55 : 0, duration: 600 });
   }, [mapMode, mapReady]);
 
   useEffect(() => {
@@ -1914,7 +1956,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             <div className="county-panel-header">
               <div>
                 <div className="eyebrow">Selected geography</div>
-                <h3>{selectedCounty ? observationName(selectedCounty) : "Choose a geography on the map"}</h3>
+                <h3>
+                  {selectedCounty
+                    ? observationName(selectedCountyGeography || selectedCounty)
+                    : "Choose a geography on the map"}
+                </h3>
               </div>
               {selectedGeoId ? (
                 <button className="clear-button" type="button" onClick={() => setSelectedGeoId("")}>
@@ -2090,7 +2136,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <tr
                     key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${String(item.release ?? "")}-${index}`}
                   >
-                    <td>{String(item.county_name || item.state_name || item.geo_id || "-")}</td>
+                    <td>{observationName(geographyById.get(String(item.geo_id ?? "")) || item)}</td>
                     <td>{String(item.geo_level || "-")}</td>
                     <td>{observationPeriodLabel(item) || "-"}</td>
                     <td>{item.metric_code}</td>

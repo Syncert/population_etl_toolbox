@@ -15,6 +15,7 @@ import {
 import {
   buildExtrusionHeightExpression,
   formatObservationValue,
+  observationName,
 } from "../../../apps/web/lib/explorerViewModel";
 
 const metrics = [
@@ -110,6 +111,25 @@ describe("a value the source did not publish is never a zero", () => {
     expect(expression).not.toContain("county:003");
   });
 
+  test("extrusion heights scale with zoom so a column stays visible at every zoom", () => {
+    // Heights are metres drawn to scale, and the 12 km ceiling is under a
+    // pixel at the national zoom. The per-feature match is bound once and
+    // multiplied per zoom stop: 128x at zoom 3, 1x at the reference zoom 10.
+    const expression = buildExtrusionHeightExpression(suppressed, "geo_id");
+    expect(expression[0]).toBe("let");
+    expect(expression[1]).toBe("height");
+    expect(expression[2][0]).toBe("match");
+    const [kind, , input, ...stops] = expression[3];
+    expect(kind).toBe("interpolate");
+    expect(input).toEqual(["zoom"]);
+    const factorAt = (zoom) => stops[stops.indexOf(zoom) + 1][2];
+    expect(factorAt(3)).toBe(128);
+    expect(factorAt(7)).toBe(8);
+    expect(factorAt(10)).toBe(1);
+    // With nothing published there is no column to scale.
+    expect(buildExtrusionHeightExpression([], "geo_id")).toEqual(["literal", 0]);
+  });
+
   test("formatting an absent value states its absence rather than zero", () => {
     expect(formatObservationValue(null)).toBe("-");
     expect(formatObservationValue("")).toBe("-");
@@ -118,5 +138,25 @@ describe("a value the source did not publish is never a zero", () => {
     expect(formatObservationValue(0)).toBe("0");
     expect(formatObservationValue("0")).toBe("0");
     expect(formatObservationValue("561504")).toBe("561,504");
+  });
+});
+
+describe("a geography is named for a reader, not by its code", () => {
+  test("a county names its state; a state does not repeat itself", () => {
+    expect(
+      observationName({
+        geo_id: "state:06|county:037",
+        geo_name: "Los Angeles County",
+        county_name: "Los Angeles County",
+        state_name: "California",
+      }),
+    ).toBe("Los Angeles County, California");
+    expect(observationName({ geo_id: "state:01", geo_name: "Alabama", state_name: "Alabama" })).toBe(
+      "Alabama",
+    );
+  });
+
+  test("a row that publishes no name falls back to its identity", () => {
+    expect(observationName({ geo_id: "state:06|county:037" })).toBe("state:06|county:037");
   });
 });

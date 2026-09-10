@@ -254,6 +254,25 @@ export function publishedNumber(value: unknown): number | null {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+// MapLibre draws extrusion heights to scale, in metres. At the national zoom
+// (~3) one pixel spans about 15 km, so the 12 km ceiling below is under a
+// pixel tall and the mode reads as a flat choropleth; at a state zoom (~7) a
+// pixel is ~1 km and the same column is a dozen pixels. Scaling by
+// 2^(REFERENCE_ZOOM - zoom) keeps the tallest column about the same size on
+// screen across the zooms the explorer moves between. `zoom` may only feed a
+// top-level step/interpolate, so the per-feature match is bound once with
+// `let` and referenced from every stop rather than repeated per stop.
+const EXTRUSION_REFERENCE_ZOOM = 10;
+const EXTRUSION_ZOOM_STOPS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+function scaleExtrusionByZoom(perFeatureHeight: MapExpression): MapExpression {
+  const stops = EXTRUSION_ZOOM_STOPS.flatMap((zoom) => [
+    zoom,
+    ["*", ["var", "height"], 2 ** (EXTRUSION_REFERENCE_ZOOM - zoom)],
+  ]);
+  return ["let", "height", perFeatureHeight, ["interpolate", ["linear"], ["zoom"], ...stops]];
+}
+
 export function buildExtrusionHeightExpression(
   observations: ObservationRow[] | null | undefined,
   joinKey: string,
@@ -291,7 +310,7 @@ export function buildExtrusionHeightExpression(
     return ["literal", 0];
   }
 
-  return ["match", ["to-string", ["get", joinKey]], ...keyedValues, 0];
+  return scaleExtrusionByZoom(["match", ["to-string", ["get", joinKey]], ...keyedValues, 0]);
 }
 
 export function observationJoinValue(
@@ -422,8 +441,9 @@ export function observationName(item: ObservationRow | null | undefined): string
     return "Unknown county";
   }
 
-  const county = item.geo_name || item.county_name || item.geo_id || "Unknown county";
-  return item.state_name ? `${county}, ${item.state_name}` : String(county);
+  const name = String(item.geo_name || item.county_name || item.geo_id || "Unknown county");
+  // A state-level row carries its own name as state_name too.
+  return item.state_name && item.state_name !== name ? `${name}, ${item.state_name}` : name;
 }
 
 export function observationUnit(item: ObservationRow | null | undefined): string {
