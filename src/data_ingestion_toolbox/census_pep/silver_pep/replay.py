@@ -18,6 +18,10 @@ from data_ingestion_toolbox.census_pep.config import (
     SOURCE_VARIABLE_ALIASES,
     PEPRelease,
 )
+from data_ingestion_toolbox.census_pep.silver_pep.legacy import (
+    parse_legacy_cell_values,
+    parse_legacy_table_values,
+)
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 
 _CENSUS_NULL_SENTINELS = frozenset(
@@ -165,13 +169,26 @@ def _value(value_source: str) -> tuple[Any, str]:
     return value, "valid"
 
 
+#: Readers for the products the Bureau published before the CSV era. The
+#: product declares which one reads it, so a layout is never guessed from
+#: the bytes.
+_LEGACY_PARSERS = {
+    "census-pep-fixed-width-table-v1": parse_legacy_table_values,
+    "census-pep-fixed-width-cells-v1": parse_legacy_cell_values,
+}
+
+
 def parse_captured_pep_values(
     payload: bytes,
     *,
     release: PEPRelease,
 ) -> list[dict[str, Any]]:
-    """Unpivot source-shaped PEP CSV bytes into revision records."""
+    """Unpivot source-shaped PEP bytes into revision records."""
     dataset = CONFIG.datasets[release.dataset_code]
+    legacy_parser = _LEGACY_PARSERS.get(dataset.parser_version)
+    if legacy_parser is not None:
+        return legacy_parser(payload, release=release)
+
     header, records = _parse_document(payload, text_encoding=dataset.text_encoding)
     metrics = _metric_columns(header, release)
 
@@ -267,6 +284,7 @@ def replay_pep_capture(
     if not values:
         return 0
 
+    parser_version = CONFIG.datasets[release.dataset_code].parser_version
     columns = (
         "source_row_index",
         "source_column_index",
@@ -293,7 +311,8 @@ def replay_pep_capture(
         "value_status",
     )
     records = [
-        (str(capture_id), *(item[column] for column in columns)) for item in values
+        (str(capture_id), *(item[column] for column in columns), parser_version)
+        for item in values
     ]
 
     database_connection = connection_factory()
@@ -310,7 +329,7 @@ def replay_pep_capture(
                     county_fips_source, place_fips_source,
                     county_subdivision_source, consolidated_city_source,
                     functional_status_source, name_source, state_name_source,
-                    value_source, value, value_status
+                    value_source, value, value_status, parser_version
                 ) VALUES %s
                 ON CONFLICT (capture_id, source_row_index, source_column_index)
                 DO NOTHING

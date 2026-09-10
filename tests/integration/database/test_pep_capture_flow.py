@@ -679,3 +679,148 @@ def test_overlapping_products_resolve_to_one_published_value(
             assert last_period.isoformat() == "2025-07-01"
     finally:
         reader.close()
+
+
+def test_one_county_series_spans_every_registered_decade(
+    postgres_connection_factory: Callable[[], connection],
+    pep_database_scope: PepDatabaseScope,
+) -> None:
+    """Covers: PEH-005 — a county's published history reaches back to 1970.
+
+    Six products, four file layouts and three readers, resolved into one
+    series per measure. Autauga County is deliberate: it has existed
+    unchanged across every decade here, so what this asserts is the pipeline
+    rather than a boundary change.
+    """
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips, county_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES
+                    ('state:01|county:001', 'county', '01', '001', 1970, 2025)
+                ON CONFLICT (geo_id) DO NOTHING
+                RETURNING geo_id
+                """
+            )
+            pep_database_scope.geo_ids.update(row[0] for row in cursor.fetchall())
+        writer.commit()
+    finally:
+        writer.close()
+
+    for dataset_code, vintage_year, fixture_name in (
+        ("pep_county_totals_1970s", 1982, "legacy_table_1970s.txt"),
+        ("pep_county_totals_1980s", 1992, "legacy_table_1980s.txt"),
+        ("pep_county_totals_1990s", 1999, "legacy_cells_1990s.txt"),
+        ("pep_county_alldata_2000s", 2009, "co_2000s.csv"),
+        ("pep_county_alldata_2010s", 2020, "co_2010s.csv"),
+        ("pep_county_alldata", 2025, "co_2020s.csv"),
+    ):
+        _capture_fixture(
+            postgres_connection_factory,
+            database_scope=pep_database_scope,
+            dataset_code=dataset_code,
+            vintage_year=vintage_year,
+            fixture_name=fixture_name,
+        )
+
+    transform_pep_to_silver(PostgresHookStub(postgres_connection_factory))
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT observation_year
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01|county:001'
+                ORDER BY observation_year
+                """
+            )
+            years = [row[0] for row in cursor.fetchall()]
+
+            # One row per year, no year answered twice, across six products.
+            assert len(years) == len(set(years))
+            assert years[0] == 1971
+            assert years[-1] == 2025
+            # July 1980 is absent because both printed tables treat April
+            # 1980 as the decade boundary: the 1970s table ends at 1979 and
+            # the 1980s table opens on the census rather than an estimate.
+            # That is a gap in what the Bureau published here, so it is left
+            # as one rather than filled by interpolation.
+            assert set(range(1971, 2026)) - set(years) == {1980}
+
+            # The decennial counts sit beside the estimates, dated to April.
+            cursor.execute(
+                """
+                SELECT observation_year, estimate_date
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'CENSUSPOP'
+                  AND geo_id = 'state:01|county:001'
+                ORDER BY observation_year
+                """
+            )
+            counts = cursor.fetchall()
+            assert [row[0] for row in counts] == [1970, 1980, 2000, 2010]
+            assert {row[1].month for row in counts} == {4}
+
+            # The one overlapping year resolves to the later publication.
+            cursor.execute(
+                """
+                SELECT dataset_code, pep_vintage
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01|county:001'
+                  AND observation_year = 2020
+                """
+            )
+            assert cursor.fetchall() == [("pep_county_alldata", 2025)]
+
+            # Each product is still readable as what it published.
+            cursor.execute(
+                """
+                SELECT DISTINCT dataset_code
+                FROM gold_pep.population_estimate_revision
+                WHERE geo_id = 'state:01|county:001'
+                ORDER BY dataset_code
+                """
+            )
+            assert [row[0] for row in cursor.fetchall()] == [
+                "pep_county_alldata",
+                "pep_county_alldata_2000s",
+                "pep_county_alldata_2010s",
+                "pep_county_totals_1970s",
+                "pep_county_totals_1980s",
+                "pep_county_totals_1990s",
+            ]
+
+            # Components begin where the Bureau began publishing them.
+            cursor.execute(
+                """
+                SELECT MIN(observation_year), MAX(observation_year)
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'BIRTHS'
+                  AND geo_id = 'state:01|county:001'
+                """
+            )
+            assert cursor.fetchone() == (2000, 2025)
+
+            # Every reader that produced a row is recorded against it.
+            cursor.execute(
+                """
+                SELECT DISTINCT parser_version
+                FROM silver_pep.observation_revision
+                ORDER BY parser_version
+                """
+            )
+            assert [row[0] for row in cursor.fetchall()] == [
+                "census-pep-bulk-csv-v1",
+                "census-pep-fixed-width-cells-v1",
+                "census-pep-fixed-width-table-v1",
+            ]
+    finally:
+        reader.close()

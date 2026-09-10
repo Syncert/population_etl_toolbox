@@ -24,6 +24,9 @@ HISTORICAL_DATASETS = {
     "pep_county_alldata_2010s",
     "pep_nst_alldata_2010s",
     "pep_county_alldata_2000s",
+    "pep_county_totals_1990s",
+    "pep_county_totals_1980s",
+    "pep_county_totals_1970s",
 }
 
 
@@ -142,7 +145,7 @@ def test_config_freezes_official_current_bulk_products() -> None:
         assert dataset.decennial_base == 2020
         assert dataset.era == "2020s"
     for dataset in config.CONFIG.datasets.values():
-        assert dataset.transport in {"bulk_csv", "bulk_zip"}
+        assert dataset.transport in {"bulk_csv", "bulk_text", "bulk_zip"}
         assert dataset.release_page_url.startswith("https://www.census.gov/")
         assert dataset.native_grain in dataset.summary_levels
 
@@ -154,9 +157,25 @@ def test_config_registers_one_product_per_closed_decade() -> None:
         "pep_county_alldata_2010s": "2010s",
         "pep_nst_alldata_2010s": "2010s",
         "pep_county_alldata_2000s": "2000s",
+        "pep_county_totals_1990s": "1990s",
+        "pep_county_totals_1980s": "1980s",
+        "pep_county_totals_1970s": "1970s",
     }
     bases = {config.CONFIG.datasets[c].decennial_base for c in HISTORICAL_DATASETS}
-    assert bases == {2010, 2000}
+    assert bases == {2010, 2000, 1990, 1980, 1970}
+    # A file the Bureau published after the following census closes an
+    # earlier decade, so its observations end before the vintage on it.
+    intercensal = {
+        release.dataset_code
+        for release in config.CONFIG.releases
+        if release.series_kind == "intercensal"
+    }
+    assert intercensal == {"pep_county_totals_1980s", "pep_county_totals_1970s"}
+    for release in config.CONFIG.releases:
+        if release.dataset_code in intercensal:
+            assert release.observation_end_year < release.vintage_year
+    # A derived total says so, so it is never read as one the Bureau printed.
+    assert config.CONFIG.datasets["pep_county_totals_1990s"].derivation
     # A closed decade is published once, so its product carries one release.
     for code in HISTORICAL_DATASETS:
         releases = [r for r in config.CONFIG.releases if r.dataset_code == code]

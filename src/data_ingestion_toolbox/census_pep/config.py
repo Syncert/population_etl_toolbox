@@ -262,7 +262,9 @@ class PEPDataset:
         title: str,
         api_path: str = "",
         bulk_path: str = "",
-        transport: Literal["api_json", "bulk_csv", "bulk_zip"] = "bulk_csv",
+        transport: Literal[
+            "api_json", "bulk_csv", "bulk_text", "bulk_zip"
+        ] = "bulk_csv",
         geography_levels: frozenset[str] = frozenset(),
         summary_levels: frozenset[str] = frozenset(),
         variables: frozenset[str] = frozenset(),
@@ -584,6 +586,100 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         minimum_states=50,
         minimum_principal_rows=3000,
     ),
+    # --- Before the CSV era -------------------------------------------------
+    # Printed tables and fixed-width cell files. They publish population and,
+    # for the 1970s and 1980s, the decennial count that opens the decade;
+    # the Bureau published no components of change for counties in these
+    # products, so those measures simply begin later.
+    "pep_county_totals_1990s": PEPDataset(
+        code="pep_county_totals_1990s",
+        title=(
+            "County Population Estimates by Race and Hispanic Origin, "
+            "1990-1999 (CO-99-10)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"county"}),
+        summary_levels=frozenset({"050"}),
+        variables=frozenset({"POPESTIMATE"}),
+        layout_version="co-99-10-rl",
+        parser_version="census-pep-fixed-width-cells-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/1990-2000/counties/asrh/co-99-10.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/1990-2000/co-99-10-rl.txt",
+        release_status="active",
+        decennial_base=1990,
+        series_kind="postcensal",
+        era="1990s",
+        native_grain="050",
+        derivation=(
+            "total population summed from the eight published "
+            "race-by-Hispanic-origin cells; the file publishes no total"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_county_totals_1980s": PEPDataset(
+        code="pep_county_totals_1980s",
+        title=(
+            "Intercensal Estimates of the Resident Population of States and "
+            "Counties, 1980-1989 (E8089CO)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"national", "state", "county"}),
+        summary_levels=frozenset({"010", "040", "050"}),
+        variables=frozenset({"POPESTIMATE", CENSUS_COUNT_VARIABLE}),
+        layout_version="printed-table-1980-1989",
+        parser_version="census-pep-fixed-width-table-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/data/datasets/time-series/demo/popest/1980s-county.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt",
+        release_status="active",
+        decennial_base=1980,
+        series_kind="intercensal",
+        era="1980s",
+        native_grain="050",
+        derivation=(
+            "state estimates are published rounded to thousands and county "
+            "estimates to hundreds; the Bureau states unrounded estimates "
+            "are not available"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_county_totals_1970s": PEPDataset(
+        code="pep_county_totals_1970s",
+        title=(
+            "Preliminary Estimates of the Intercensal Population of Counties, "
+            "1970-1979 (E7079CO)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"national", "state", "county"}),
+        summary_levels=frozenset({"010", "040", "050"}),
+        variables=frozenset({"POPESTIMATE", CENSUS_COUNT_VARIABLE}),
+        layout_version="printed-table-1970-1979",
+        parser_version="census-pep-fixed-width-table-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/data/datasets/time-series/demo/popest/1970s-county.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt",
+        release_status="active",
+        decennial_base=1970,
+        series_kind="intercensal",
+        era="1970s",
+        native_grain="050",
+        derivation=(
+            "state estimates are published rounded to thousands and county "
+            "estimates to hundreds; the Bureau states unrounded estimates "
+            "are not available"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
 }
 
 
@@ -606,6 +702,7 @@ def _release(
     observation_start_year: int,
     observation_end_year: int | None = None,
     geography_basis_date: str | None = None,
+    media_type: str = "text/csv",
 ) -> PEPRelease:
     """One immutable release contract for a registered PEP product.
 
@@ -633,6 +730,7 @@ def _release(
         ),
         schema_version=product_code.lower(),
         status=status,
+        media_type=media_type,
         series_kind=dataset.series_kind,
         archive_member=dataset.archive_member,
         partitions=dataset.partitions,
@@ -726,6 +824,40 @@ _CURATED_RELEASES = (
         status="published",
         observation_start_year=2000,
         geography_basis_date="2009-01-01",
+    ),
+    # These three state their own issue date in the file itself, which is
+    # better evidence than the artifact's date at its URL.
+    _release(
+        "pep_county_totals_1990s",
+        1999,
+        "CO-99-10",
+        "2000-08-30",
+        status="published",
+        observation_start_year=1990,
+        geography_basis_date="2000-01-01",
+        media_type="text/plain",
+    ),
+    _release(
+        "pep_county_totals_1980s",
+        1992,
+        "E8089CO",
+        "1992-03-01",
+        status="published",
+        observation_start_year=1980,
+        observation_end_year=1989,
+        geography_basis_date="1992-01-01",
+        media_type="text/plain",
+    ),
+    _release(
+        "pep_county_totals_1970s",
+        1982,
+        "E7079CO",
+        "1982-04-01",
+        status="published",
+        observation_start_year=1970,
+        observation_end_year=1979,
+        geography_basis_date="1982-01-01",
+        media_type="text/plain",
     ),
 )
 

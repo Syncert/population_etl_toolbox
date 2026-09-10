@@ -50,7 +50,7 @@ END $$;
 ALTER TABLE silver_pep.pep_dataset
     DROP CONSTRAINT IF EXISTS pep_dataset_transport_check,
     ADD CONSTRAINT pep_dataset_transport_check
-        CHECK (transport IN ('bulk_csv', 'bulk_zip'));
+        CHECK (transport IN ('bulk_csv', 'bulk_text', 'bulk_zip'));
 
 ALTER TABLE silver_pep.pep_dataset
     DROP CONSTRAINT IF EXISTS pep_dataset_series_kind_check,
@@ -344,6 +344,153 @@ VALUES
         'https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2000-2009/co-est2009-alldata.pdf',
         DATE '2016-07-19', 2000, 2009, DATE '2009-01-01',
         'co-est2009-alldata', 'published', 'text/csv', 'postcensal'
+    )
+ON CONFLICT (dataset_code, vintage_year) DO UPDATE SET
+    product_code = EXCLUDED.product_code,
+    data_url = EXCLUDED.data_url,
+    layout_url = EXCLUDED.layout_url,
+    release_date = EXCLUDED.release_date,
+    observation_start_year = EXCLUDED.observation_start_year,
+    observation_end_year = EXCLUDED.observation_end_year,
+    geography_basis_date = EXCLUDED.geography_basis_date,
+    schema_version = EXCLUDED.schema_version,
+    status = EXCLUDED.status,
+    media_type = EXCLUDED.media_type,
+    series_kind = EXCLUDED.series_kind,
+    updated_at = NOW();
+
+-- ---------------------------------------------------------------------------
+-- 5. Before the CSV era
+-- ---------------------------------------------------------------------------
+--
+-- Printed tables and fixed-width cell files, each read by the reader its
+-- product declares. They publish population and, for the 1970s and 1980s,
+-- the decennial count that opens the decade. The Bureau published no county
+-- components of change in these products, so births, deaths and migration
+-- simply begin later -- a gap in the source, recorded rather than filled.
+
+INSERT INTO silver_pep.pep_dataset (
+    dataset_code,
+    title,
+    transport,
+    geography_levels,
+    summary_levels,
+    variable_families,
+    parser_version,
+    text_encoding,
+    release_page_url,
+    decennial_base,
+    is_active,
+    series_kind,
+    era,
+    native_grain,
+    derivation
+)
+VALUES
+    (
+        'pep_county_totals_1990s',
+        'County Population Estimates by Race and Hispanic Origin, 1990-1999 (CO-99-10)',
+        'bulk_text',
+        ARRAY['county'],
+        ARRAY['050'],
+        ARRAY['POPESTIMATE'],
+        'census-pep-fixed-width-cells-v1',
+        'latin-1',
+        'https://www.census.gov/programs-surveys/popest/data/tables.html',
+        1990,
+        TRUE,
+        'postcensal',
+        '1990s',
+        '050',
+        'total population summed from the eight published race-by-Hispanic-origin cells; the file publishes no total'
+    ),
+    (
+        'pep_county_totals_1980s',
+        'Intercensal Estimates of the Resident Population of States and Counties, 1980-1989 (E8089CO)',
+        'bulk_text',
+        ARRAY['national', 'state', 'county'],
+        ARRAY['010', '040', '050'],
+        ARRAY['POPESTIMATE', 'CENSUSPOP'],
+        'census-pep-fixed-width-table-v1',
+        'latin-1',
+        'https://www.census.gov/data/datasets/time-series/demo/popest/1980s-county.html',
+        1980,
+        TRUE,
+        'intercensal',
+        '1980s',
+        '050',
+        'state estimates are published rounded to thousands and county estimates to hundreds; the Bureau states unrounded estimates are not available'
+    ),
+    (
+        'pep_county_totals_1970s',
+        'Preliminary Estimates of the Intercensal Population of Counties, 1970-1979 (E7079CO)',
+        'bulk_text',
+        ARRAY['national', 'state', 'county'],
+        ARRAY['010', '040', '050'],
+        ARRAY['POPESTIMATE', 'CENSUSPOP'],
+        'census-pep-fixed-width-table-v1',
+        'latin-1',
+        'https://www.census.gov/data/datasets/time-series/demo/popest/1970s-county.html',
+        1970,
+        TRUE,
+        'intercensal',
+        '1970s',
+        '050',
+        'state estimates are published rounded to thousands and county estimates to hundreds; the Bureau states unrounded estimates are not available'
+    )
+ON CONFLICT (dataset_code) DO UPDATE SET
+    title = EXCLUDED.title,
+    transport = EXCLUDED.transport,
+    geography_levels = EXCLUDED.geography_levels,
+    summary_levels = EXCLUDED.summary_levels,
+    variable_families = EXCLUDED.variable_families,
+    parser_version = EXCLUDED.parser_version,
+    text_encoding = EXCLUDED.text_encoding,
+    release_page_url = EXCLUDED.release_page_url,
+    decennial_base = EXCLUDED.decennial_base,
+    is_active = EXCLUDED.is_active,
+    series_kind = EXCLUDED.series_kind,
+    era = EXCLUDED.era,
+    native_grain = EXCLUDED.native_grain,
+    derivation = EXCLUDED.derivation,
+    updated_at = NOW();
+
+INSERT INTO silver_pep.pep_release (
+    dataset_code,
+    vintage_year,
+    product_code,
+    data_url,
+    layout_url,
+    release_date,
+    observation_start_year,
+    observation_end_year,
+    geography_basis_date,
+    schema_version,
+    status,
+    media_type,
+    series_kind
+)
+VALUES
+    (
+        'pep_county_totals_1990s', 1999, 'CO-99-10',
+        'https://www2.census.gov/programs-surveys/popest/datasets/1990-2000/counties/asrh/co-99-10.txt',
+        'https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/1990-2000/co-99-10-rl.txt',
+        DATE '2000-08-30', 1990, 1999, DATE '2000-01-01',
+        'co-99-10', 'published', 'text/plain', 'postcensal'
+    ),
+    (
+        'pep_county_totals_1980s', 1992, 'E8089CO',
+        'https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt',
+        'https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt',
+        DATE '1992-03-01', 1980, 1989, DATE '1992-01-01',
+        'e8089co', 'published', 'text/plain', 'intercensal'
+    ),
+    (
+        'pep_county_totals_1970s', 1982, 'E7079CO',
+        'https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt',
+        'https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt',
+        DATE '1982-04-01', 1970, 1979, DATE '1982-01-01',
+        'e7079co', 'published', 'text/plain', 'intercensal'
     )
 ON CONFLICT (dataset_code, vintage_year) DO UPDATE SET
     product_code = EXCLUDED.product_code,

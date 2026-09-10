@@ -1,0 +1,26 @@
+FIPS                      Census Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1970      1971      1972      1973      1974
+00000 United States   203302037 206826000 209283000 211356000 213341000
+FIPS                    Estimate Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1975      1976      1977      1978      1979
+00000 United States   215464000 217562000 219759000 222095000 224567000
+FIPS                      Census Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1970      1971      1972      1973      1974
+01000 Alabama           3444354   3497000   3540000   3581000   3628000
+FIPS                    Estimate Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1975      1976      1977      1978      1979
+01000 Alabama           3680000   3737000   3783000   3834000   3869000
+FIPS                      Census Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1970      1971      1972      1973      1974
+01001 Autauga Co.         24460     25500     27200     28500     29300
+FIPS                    Estimate Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1975      1976      1977      1978      1979
+01001 Autauga Co.         29700     29900     30500     30900     32100
+FIPS                      Census Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1970      1971      1972      1973      1974
+51540 Charlottesville
+       city               38880     39700     41700     43400     44400
+FIPS                    Estimate Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1975      1976      1977      1978      1979
+51540 Charlottesville
+       city               45100     45000     45000     44700     44800
