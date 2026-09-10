@@ -142,6 +142,20 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_date
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_dataset_vintage
     ON gold_census.rpt_acs_observations (dataset_code, vintage_year);
 
+-- The release listing (/observations/releases) answers, per metric, the
+-- distinct vintages with their newest as_of_date and row count. One metric's
+-- ~52k rows sit on ~52k distinct heap pages of this table, so reached through
+-- (metric_code, observation_date) that is one random read per row -- past the
+-- API's statement timeout on a cold cache. Everything the listing reads is in
+-- this index, so it runs as an index-only scan instead. as_of_date is a key
+-- column rather than INCLUDEd because B-tree deduplication is disabled for
+-- indexes with INCLUDE columns: the same index measured 3.2 GB with INCLUDE
+-- and 477 MB as three key columns. On a live warehouse, build it with
+-- CREATE INDEX CONCURRENTLY rather than holding a write lock for the
+-- duration.
+CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_vintage
+    ON gold_census.rpt_acs_observations (metric_code, vintage_year, as_of_date);
+
 CREATE INDEX IF NOT EXISTS ix_rpt_acs_observations_metric_geo_date
     ON gold_census.rpt_acs_observations (metric_code, geo_id, observation_date);
 
