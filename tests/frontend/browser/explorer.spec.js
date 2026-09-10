@@ -461,7 +461,9 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await page.getByTestId("county-select").selectOption(county.geo_id);
   await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
   await expect(page.getByText("2 historical observations")).toBeVisible();
-  await expect(page.getByText("Dane County, Wisconsin")).toBeVisible();
+  // The selected geography is named in its own heading; the observation
+  // table names it again in its Geo cell, so the assertion targets the heading.
+  await expect(page.getByRole("heading", { name: "Dane County, Wisconsin" })).toBeVisible();
 
   // The URL reproduces the selected exploration state without navigation.
   await expect(page).toHaveURL(/metric=ACS%3Aacs5%3AB01003_001/);
