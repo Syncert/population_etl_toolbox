@@ -231,12 +231,15 @@ export function isCountyObservation(item: ObservationRow | null | undefined): bo
 }
 
 export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
+  // The layer carries every geography with a shape -- some 32k places among
+  // them, which have no county_fips either -- so a level is matched on the
+  // published geo_level rather than inferred from which fips columns a
+  // feature happens to carry. The national view keeps states and counties
+  // as its backdrop.
   if (geoLevel === "NATIONAL") {
-    return true;
+    return ["in", ["get", "geo_level"], ["literal", ["STATE", "COUNTY"]]];
   }
-  return geoLevel === "STATE"
-    ? ["!", ["has", "county_fips"]]
-    : ["has", "county_fips"];
+  return ["==", ["get", "geo_level"], geoLevel === "STATE" ? "STATE" : "COUNTY"];
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   buildExtrusionHeightExpression,
   formatObservationValue,
   observationName,
+  tileFilterForGeoLevel,
   tileFilterForSelection,
 } from "../../../apps/web/lib/explorerViewModel";
 
@@ -164,18 +165,23 @@ describe("a geography is named for a reader, not by its code", () => {
 });
 
 describe("a selected state is the whole map", () => {
+  test("a level is matched on geo_level, so the 32k places never show as spots", () => {
+    // Places have no county_fips either; "not a county" is not "a state".
+    expect(tileFilterForGeoLevel("STATE")).toEqual(["==", ["get", "geo_level"], "STATE"]);
+    expect(tileFilterForGeoLevel("COUNTY")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
+    expect(tileFilterForGeoLevel("NATIONAL")).toEqual([
+      "in",
+      ["get", "geo_level"],
+      ["literal", ["STATE", "COUNTY"]],
+    ]);
+  });
+
   test("the selection filter keeps the geo level and narrows to the state", () => {
-    expect(tileFilterForSelection("COUNTY", "")).toEqual(["has", "county_fips"]);
+    expect(tileFilterForSelection("COUNTY", "")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
     expect(tileFilterForSelection("COUNTY", "06")).toEqual([
       "all",
-      ["has", "county_fips"],
+      ["==", ["get", "geo_level"], "COUNTY"],
       ["==", ["to-string", ["get", "state_fips"]], "06"],
-    ]);
-    // NATIONAL has no level filter of its own, so the state is the filter.
-    expect(tileFilterForSelection("NATIONAL", "06")).toEqual([
-      "==",
-      ["to-string", ["get", "state_fips"]],
-      "06",
     ]);
   });
 
