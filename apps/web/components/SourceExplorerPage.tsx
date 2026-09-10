@@ -2120,7 +2120,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     : "translate(12px, 12px)",
                 }}
               >
-                <strong>{observationName(hoveredCounty.observation)}</strong>
+                <strong>
+                  {observationName(
+                    geographyById.get(String(hoveredCounty.observation.geo_id ?? "")) ||
+                      hoveredCounty.observation,
+                  )}
+                </strong>
                 {hoveredCounty.hasObservation ? (
                   <>
                     <span>
