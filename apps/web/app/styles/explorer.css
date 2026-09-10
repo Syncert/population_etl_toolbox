@@ -45,6 +45,16 @@ main.dashboard {
   display: none;
 }
 
+/* The view -- map, table, quality context -- is the point of the workbench
+   and the controls are a column of selects, so the view gets the wider
+   column. base.css gives .grid the reverse split for the general case. */
+@media (min-width: 940px) {
+  .grid.workspace-grid {
+    grid-template-columns: minmax(300px, 0.85fr) 1.15fr;
+    align-items: start;
+  }
+}
+
 .save-toast {
   position: fixed;
   top: 70px;

@@ -1707,7 +1707,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         </p>
       ) : null}
 
-      <section className="grid">
+      <section className="grid workspace-grid">
         <article className="card">
           <h2>Data &amp; Geography</h2>
           <div className="selector-grid">
@@ -2092,6 +2092,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           </section>
         </article>
 
+        {/* Every workspace view renders in this grid slot, beside the controls:
+            a full-width panel would wrap to the row below the (tall) controls
+            card and land under the fold, which reads as the tab doing nothing. */}
         {mapSupported ? (
         <article className="card workspace-panel" data-active={effectiveTab === "map"}>
           <h2>{selectedMetricMeta ? displayMetricName(selectedMetricMeta) : `${selectedGeoLevel.toLowerCase()} map`}</h2>
@@ -2175,7 +2178,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         </article>
         ) : null}
 
-        <article className="card span-2 workspace-panel" data-active={effectiveTab === "table"}>
+        <article className="card workspace-panel" data-active={effectiveTab === "table"}>
           <h2>Observation Sample</h2>
           <div className="table-wrap">
             <table>
@@ -2230,11 +2233,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </table>
           </div>
         </article>
-        <article className="card span-2 workspace-panel" data-active={effectiveTab === "metadata"}>
+        <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
           <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
         </article>
         {viewModes.quality.supported ? (
-          <article className="card span-2 workspace-panel" data-active={effectiveTab === "quality"}>
+          <article className="card workspace-panel" data-active={effectiveTab === "quality"}>
             <div className="section-kicker">Published quality context</div>
             <h2>Freshness and provenance</h2>
             <p className="subtle">
@@ -2258,10 +2261,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </dl>
           </article>
         ) : null}
-        <article className="card span-2 workspace-panel" data-active={effectiveTab === "api query"}>
+        <article className="card workspace-panel" data-active={effectiveTab === "api query"}>
           <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>
         </article>
-        <article className="card span-2 workspace-panel" data-active={effectiveTab === "notes"}>
+        <article className="card workspace-panel" data-active={effectiveTab === "notes"}>
           <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: {valueScale === "log" ? "five logarithmic intervals over the published values, so a long-tailed measure such as population is not one colour" : "five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable"}.</p>
         </article>
       </section>
