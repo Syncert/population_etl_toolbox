@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_measure (
 );
 
 -- ============================================================
--- BLS FACT VIEW (unchanged — source of truth)
+-- BLS FACT VIEW (source of truth)
 -- ============================================================
 
 CREATE OR REPLACE VIEW gold_bls.fact_bls_observation AS

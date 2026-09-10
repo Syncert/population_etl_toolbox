@@ -169,15 +169,43 @@ After such a change, refresh the whole source once, forced:
 CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
 ```
 
-Then run `glossary_harvest` (or `harvest_all_publishers`) so the catalog
-follows: the new codes are harvested `current`, and codes the publisher no
-longer emits become `stale` and then `retired` after
-`retirement_grace_harvests` harvests (default 2). Codes are never deleted, so
-an existing link to a retired code still resolves.
+Then make the catalog follow. The harvest is watermarked the same way the
+refresh is: `harvest_publisher` compares the publisher's `publication_time`
+against `gold_glossary.publisher_harvest_state.last_publication_time` and
+returns 0 rows when nothing newer was published. An identity change does not
+move that watermark -- the underlying facts were not re-ingested -- so a
+harvest run straight after the refresh is a no-op and the catalog keeps the
+old codes indefinitely. Clear the source's watermark first:
+
+```sql
+UPDATE gold_glossary.publisher_harvest_state
+   SET last_publication_time = NULL
+ WHERE source_code = 'BLS';
+```
+
+Then run `glossary_harvest` (or `harvest_all_publishers`). The new codes are
+harvested `current`, and codes the publisher no longer emits become `stale`
+and then `retired` after `retirement_grace_harvests` harvests (default 2) --
+so reaching `retired` takes two harvests, each preceded by clearing the
+watermark. Codes are never deleted, so an existing link to a retired code
+still resolves and reports its retired state.
 
 Each source's procedure takes the same three arguments
 (`gold_census.refresh_dashboard_serving_layer_acs`,
 `gold_fred.refresh_dashboard_serving_layer_fred`, and so on). The procedures
-set a 60-minute statement timeout per call; run the forced refresh out of
-hours and record the duration. For scale: the BLS reporting relation is about
-5.8 million rows.
+set a 60-minute statement timeout per call, which bounds how large a window
+one call may cover. Measured on the development stack: BLS (5.8 million rows)
+took 16m44s end to end -- 12m30s to rebuild the reporting relation and 4m11s
+for the latest relation -- and FRED (52 thousand rows) took 6 seconds.
+
+`gold_census.rpt_acs_observations` is about 68 million rows and will not
+finish inside one call. Drive it a calendar year at a time instead, each pair
+in its own transaction, so no single statement approaches the timeout:
+
+```sql
+CALL gold_census.refresh_rpt_acs_observations('2019-01-01', '2019-12-31');
+CALL gold_census.refresh_mv_acs_latest('2019-01-01', '2019-12-31');
+```
+
+Every year must be covered, not only the changed ones: skipping unchanged
+years is precisely what leaves the old identity behind.
