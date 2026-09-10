@@ -1611,7 +1611,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   return (
     <main
-      className="dashboard"
+      className="dashboard dashboard-wide"
       data-testid="dashboard"
       data-selected-dataset={selectedDataset}
       data-selected-metric={selectedMetric}
