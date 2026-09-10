@@ -6,10 +6,13 @@
 #
 # The frontend smoke tier needs the opposite: the real router table, the real
 # registry dispatch, and the real generated SQL, reached over the same nginx
-# rewrites a browser uses. Compose merges services by name, so this overlay
-# replaces only the `api` service; Postgres, Martin, and the proxy stay
-# exactly as the deployment tier composes them, which is the point — the
-# smoke tier must not get a stack of its own to be right about.
+# rewrites a browser uses. Compose merges the two files field by field, not
+# service by service: a scalar declared here replaces the base file's, but a
+# sequence declared here is appended to it. So this overlay reshapes only the
+# `api` service and states nothing the base file already states; Postgres,
+# Martin, and the proxy stay exactly as the deployment tier composes them,
+# which is the point — the smoke tier must not get a stack of its own to be
+# right about.
 #
 #   docker compose -f docker-compose.test.yml -f docker-compose.smoke.yml \
 #     up --detach --wait postgres martin api proxy
@@ -41,10 +44,13 @@ services:
     ports:
       - "127.0.0.1:${TEST_API_HOST_PORT:-38000}:8000"
     read_only: true
-    tmpfs:
-      - /tmp
-    security_opt:
-      - no-new-privileges:true
+    # `tmpfs` and `security_opt` are deliberately not restated here. Compose
+    # appends sequences across merged files rather than replacing them, so
+    # repeating the base file's `/tmp` and `no-new-privileges:true` built a
+    # list holding each value twice and Compose refused the stack outright:
+    # `services.api.security_opt items at 0 and 1 are equal`. The base file
+    # already hardens this container and already gives it the writable `/tmp`
+    # a read-only root filesystem needs.
     healthcheck:
       test:
         - CMD-SHELL
