@@ -237,6 +237,77 @@ export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
 }
 
 /**
+ * The geo-level filter narrowed to one state when a state is selected: a
+ * selected state is the whole map, so every other state's geometry leaves
+ * the choropleth layers rather than staying behind in the no-data colour.
+ */
+export function tileFilterForSelection(
+  geoLevel: string,
+  stateFips: string | null | undefined,
+): TileFilter {
+  const levelFilter = tileFilterForGeoLevel(geoLevel);
+  if (!stateFips) {
+    return levelFilter;
+  }
+  const stateFilter = ["==", ["to-string", ["get", "state_fips"]], stateFips];
+  return levelFilter === true ? stateFilter : ["all", levelFilter, stateFilter];
+}
+
+export type LngLatBoundsArray = [[number, number], [number, number]];
+
+/** The subset of a GeoJSON feature the extent needs; the tile decoder's shape. */
+export interface FeatureLike {
+  properties?: Record<string, unknown> | null;
+  geometry?: { type?: string; coordinates?: unknown } | null;
+}
+
+function extendBounds(bounds: number[], coordinates: unknown): void {
+  if (!Array.isArray(coordinates)) {
+    return;
+  }
+  if (typeof coordinates[0] === "number" && typeof coordinates[1] === "number") {
+    const longitude = Number(coordinates[0]);
+    const latitude = Number(coordinates[1]);
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+      return;
+    }
+    bounds[0] = Math.min(bounds[0]!, longitude);
+    bounds[1] = Math.min(bounds[1]!, latitude);
+    bounds[2] = Math.max(bounds[2]!, longitude);
+    bounds[3] = Math.max(bounds[3]!, latitude);
+    return;
+  }
+  for (const child of coordinates) {
+    extendBounds(bounds, child);
+  }
+}
+
+/**
+ * The extent of the features in one state (every feature when no state is
+ * named) as [[west, south], [east, north]], or null when nothing matched.
+ * Read from the drawn polygons rather than catalog centroids, so an
+ * outlying county is not clipped and the fit does not depend on which
+ * coordinate fields the catalog happens to publish.
+ */
+export function boundsOfFeatures(
+  features: FeatureLike[] | null | undefined,
+  stateFips?: string | null,
+): LngLatBoundsArray | null {
+  const bounds = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const feature of features || []) {
+    const properties = (feature?.properties || {}) as Record<string, unknown>;
+    if (stateFips && String(properties.state_fips ?? "") !== stateFips) {
+      continue;
+    }
+    extendBounds(bounds, feature?.geometry?.coordinates);
+  }
+  if (!Number.isFinite(bounds[0]!)) {
+    return null;
+  }
+  return [[bounds[0]!, bounds[1]!], [bounds[2]!, bounds[3]!]];
+}
+
+/**
  * A published number, or `null` when the source published none.
  *
  * The API publishes `value: null` whenever a source published no usable

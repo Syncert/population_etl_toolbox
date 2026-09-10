@@ -13,9 +13,11 @@ import {
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
 import {
+  boundsOfFeatures,
   buildExtrusionHeightExpression,
   formatObservationValue,
   observationName,
+  tileFilterForSelection,
 } from "../../../apps/web/lib/explorerViewModel";
 
 const metrics = [
@@ -158,5 +160,40 @@ describe("a geography is named for a reader, not by its code", () => {
 
   test("a row that publishes no name falls back to its identity", () => {
     expect(observationName({ geo_id: "state:06|county:037" })).toBe("state:06|county:037");
+  });
+});
+
+describe("a selected state is the whole map", () => {
+  test("the selection filter keeps the geo level and narrows to the state", () => {
+    expect(tileFilterForSelection("COUNTY", "")).toEqual(["has", "county_fips"]);
+    expect(tileFilterForSelection("COUNTY", "06")).toEqual([
+      "all",
+      ["has", "county_fips"],
+      ["==", ["to-string", ["get", "state_fips"]], "06"],
+    ]);
+    // NATIONAL has no level filter of its own, so the state is the filter.
+    expect(tileFilterForSelection("NATIONAL", "06")).toEqual([
+      "==",
+      ["to-string", ["get", "state_fips"]],
+      "06",
+    ]);
+  });
+
+  test("the fit extent is the state's polygons, not the country's", () => {
+    const square = (west, south, east, north) => [
+      [[west, south], [east, south], [east, north], [west, north], [west, south]],
+    ];
+    const features = [
+      { properties: { state_fips: "06" }, geometry: { type: "Polygon", coordinates: square(-124, 32, -114, 42) } },
+      {
+        properties: { state_fips: "06" },
+        geometry: { type: "MultiPolygon", coordinates: [square(-120, 33, -118, 34.5)] },
+      },
+      { properties: { state_fips: "48" }, geometry: { type: "Polygon", coordinates: square(-106, 26, -93, 36) } },
+    ];
+    expect(boundsOfFeatures(features, "06")).toEqual([[-124, 32], [-114, 42]]);
+    expect(boundsOfFeatures(features)).toEqual([[-124, 26], [-93, 42]]);
+    expect(boundsOfFeatures(features, "99")).toBeNull();
+    expect(boundsOfFeatures([], "06")).toBeNull();
   });
 });

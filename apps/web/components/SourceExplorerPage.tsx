@@ -35,6 +35,7 @@ import type {
 } from "../lib/api/types";
 import {
   CHOROPLETH_PALETTE,
+  boundsOfFeatures,
   buildChoroplethMatchExpression,
   buildChoroplethModel,
   buildExtrusionHeightExpression,
@@ -57,8 +58,9 @@ import {
   preferredDatasetFacet,
   preferredGeoLevelForMetric,
   tileFilterForGeoLevel,
+  tileFilterForSelection,
 } from "../lib/explorerViewModel";
-import type { ObservationRow } from "../lib/explorerViewModel";
+import type { FeatureLike, ObservationRow } from "../lib/explorerViewModel";
 import {
   FALLBACK_EXPLORER_SOURCES,
   buildExplorerSources,
@@ -218,6 +220,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   });
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
+  // The polygons currently drawn, kept so a state selection can fit their
+  // extent; set once the layers exist so the fit never runs ahead of them.
+  const [choroplethFeatures, setChoroplethFeatures] = useState<FeatureLike[]>([]);
+  const fittedStateRef = useRef("");
   const [distributionStatus, setDistributionStatus] = useState<RequestStatus>({
     state: "idle",
     message: "waiting for metric",
@@ -1185,6 +1191,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       map.on("mouseleave", "choropleth-fill", handleCountyLeave);
       map.on("click", "choropleth-fill", handleCountyClick);
       interactionHandlersAttached = true;
+      setChoroplethFeatures(
+        Array.isArray(featureCollection.features) ? featureCollection.features : [],
+      );
     };
 
     addChoropleth(currentSourceLayer).catch((error: unknown) => {
@@ -1313,26 +1322,40 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     map.easeTo({ pitch: mapMode === "extrusion" ? 55 : 0, duration: 600 });
   }, [mapMode, mapReady]);
 
+  // A selected state is the whole map: every other state's geometry is
+  // filtered out of the choropleth layers and the view fits the state's
+  // extent. The layers are rebuilt on each selection, so the filter is
+  // re-applied whenever the drawn features change, but the view is fitted
+  // once per state -- a click inside the state must not move the camera.
   useEffect(() => {
     const map = mapRef.current;
-    const scopedGeographies = selectedGeoLevel === "STATE" ? states : counties;
-    if (!map || !mapReady || !selectedStateFips || scopedGeographies.length === 0) {
+    if (!map || !mapReady) {
       return;
     }
 
-    const bounds = new maplibregl.LngLatBounds();
-    for (const geography of scopedGeographies) {
-      const longitude = Number(geography.longitude);
-      const latitude = Number(geography.latitude);
-      if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
-        bounds.extend([longitude, latitude]);
+    const filter = tileFilterForSelection(
+      selectedGeoLevel,
+      selectedStateFips,
+    ) as FilterSpecification;
+    for (const layerId of ["choropleth-fill", "choropleth-extrusion", "choropleth-outline"]) {
+      if (map.getLayer(layerId)) {
+        map.setFilter(layerId, filter);
       }
     }
 
-    if (!bounds.isEmpty()) {
+    if (!selectedStateFips) {
+      fittedStateRef.current = "";
+      return;
+    }
+    if (fittedStateRef.current === selectedStateFips) {
+      return;
+    }
+    const bounds = boundsOfFeatures(choroplethFeatures, selectedStateFips);
+    if (bounds) {
+      fittedStateRef.current = selectedStateFips;
       map.fitBounds(bounds, { padding: 45, maxZoom: 7, duration: 700 });
     }
-  }, [counties, states, selectedGeoLevel, mapReady, selectedStateFips]);
+  }, [mapReady, selectedGeoLevel, selectedStateFips, choroplethFeatures]);
 
   useEffect(() => {
     const map = mapRef.current;
