@@ -12,6 +12,14 @@ import {
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
+import {
+  boundsOfFeatures,
+  buildExtrusionHeightExpression,
+  formatObservationValue,
+  observationName,
+  tileFilterForGeoLevel,
+  tileFilterForSelection,
+} from "../../../apps/web/lib/explorerViewModel";
 
 const metrics = [
   { metric_code: "ACS:acs1:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
@@ -72,5 +80,192 @@ describe("explorer metric, selection, and legend contracts", () => {
     const model = buildChoroplethModel([], "geo_id", null, "Not published in ACS1");
     expect(model.valueCount).toBe(0);
     expect(model.legendItems).toEqual([{ color: "#9fb0ba", label: "Not published in ACS1" }]);
+  });
+});
+
+describe("a value the source did not publish is never a zero", () => {
+  // The API publishes `value: null` whenever a source published no usable
+  // number, with `value_status` saying why. `Number(null)` is 0 and
+  // `Number.isFinite(0)` is true, so every numeric path has to reject the
+  // absent value explicitly or it silently becomes a published zero.
+  const suppressed = [
+    { geo_id: "state:55|county:025", value: "561504" },
+    { geo_id: "state:55|county:001", value: null, value_status: "suppressed" },
+    { geo_id: "state:55|county:003", value: "", value_status: "missing" },
+  ];
+
+  test("the choropleth colours only the geography that published a number", () => {
+    const model = buildChoroplethModel(suppressed, "geo_id");
+    expect(model.valueCount).toBe(1);
+    // A suppressed geography must not appear in the colour expression at
+    // all; leaving it out is what makes the map render it as no-data.
+    expect(JSON.stringify(model.expression)).not.toContain("county:001");
+    expect(JSON.stringify(model.expression)).not.toContain("county:003");
+    // Its absence must not drag the scale to zero either.
+    expect(model.minValue).toBe(561504);
+  });
+
+  test("extrusion heights exclude the geographies with no published value", () => {
+    const expression = JSON.stringify(
+      buildExtrusionHeightExpression(suppressed, "geo_id"),
+    );
+    expect(expression).toContain("county:025");
+    expect(expression).not.toContain("county:001");
+    expect(expression).not.toContain("county:003");
+  });
+
+  test("extrusion heights scale with zoom so a column stays visible at every zoom", () => {
+    // Heights are metres drawn to scale, and the 12 km ceiling is under a
+    // pixel at the national zoom. The per-feature match is bound once and
+    // multiplied per zoom stop: 128x at zoom 3, 1x at the reference zoom 10.
+    const expression = buildExtrusionHeightExpression(suppressed, "geo_id");
+    expect(expression[0]).toBe("let");
+    expect(expression[1]).toBe("height");
+    expect(expression[2][0]).toBe("match");
+    const [kind, , input, ...stops] = expression[3];
+    expect(kind).toBe("interpolate");
+    expect(input).toEqual(["zoom"]);
+    const factorAt = (zoom) => stops[stops.indexOf(zoom) + 1][2];
+    expect(factorAt(3)).toBe(128);
+    expect(factorAt(7)).toBe(8);
+    expect(factorAt(10)).toBe(1);
+    // With nothing published there is no column to scale.
+    expect(buildExtrusionHeightExpression([], "geo_id")).toEqual(["literal", 0]);
+  });
+
+  test("formatting an absent value states its absence rather than zero", () => {
+    expect(formatObservationValue(null)).toBe("-");
+    expect(formatObservationValue("")).toBe("-");
+    expect(formatObservationValue(undefined)).toBe("-");
+    // A published zero is still a published zero.
+    expect(formatObservationValue(0)).toBe("0");
+    expect(formatObservationValue("0")).toBe("0");
+    expect(formatObservationValue("561504")).toBe("561,504");
+  });
+});
+
+describe("a geography is named for a reader, not by its code", () => {
+  test("a county names its state; a state does not repeat itself", () => {
+    expect(
+      observationName({
+        geo_id: "state:06|county:037",
+        geo_name: "Los Angeles County",
+        county_name: "Los Angeles County",
+        state_name: "California",
+      }),
+    ).toBe("Los Angeles County, California");
+    expect(observationName({ geo_id: "state:01", geo_name: "Alabama", state_name: "Alabama" })).toBe(
+      "Alabama",
+    );
+  });
+
+  test("a row that publishes no name falls back to its identity", () => {
+    expect(observationName({ geo_id: "state:06|county:037" })).toBe("state:06|county:037");
+  });
+});
+
+describe("a selected state is the whole map", () => {
+  test("a level is matched on geo_level, so the 32k places never show as spots", () => {
+    // Places have no county_fips either; "not a county" is not "a state".
+    expect(tileFilterForGeoLevel("STATE")).toEqual(["==", ["get", "geo_level"], "STATE"]);
+    expect(tileFilterForGeoLevel("COUNTY")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
+    expect(tileFilterForGeoLevel("NATIONAL")).toEqual([
+      "in",
+      ["get", "geo_level"],
+      ["literal", ["STATE", "COUNTY"]],
+    ]);
+  });
+
+  test("the selection filter keeps the geo level and narrows to the state", () => {
+    expect(tileFilterForSelection("COUNTY", "")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
+    expect(tileFilterForSelection("COUNTY", "06")).toEqual([
+      "all",
+      ["==", ["get", "geo_level"], "COUNTY"],
+      ["==", ["to-string", ["get", "state_fips"]], "06"],
+    ]);
+  });
+
+  test("the fit extent is the state's polygons, not the country's", () => {
+    const square = (west, south, east, north) => [
+      [[west, south], [east, south], [east, north], [west, north], [west, south]],
+    ];
+    const features = [
+      { properties: { state_fips: "06" }, geometry: { type: "Polygon", coordinates: square(-124, 32, -114, 42) } },
+      {
+        properties: { state_fips: "06" },
+        geometry: { type: "MultiPolygon", coordinates: [square(-120, 33, -118, 34.5)] },
+      },
+      { properties: { state_fips: "48" }, geometry: { type: "Polygon", coordinates: square(-106, 26, -93, 36) } },
+    ];
+    expect(boundsOfFeatures(features, "06")).toEqual([[-124, 32], [-114, 42]]);
+    expect(boundsOfFeatures(features)).toEqual([[-124, 26], [-93, 42]]);
+    expect(boundsOfFeatures(features, "99")).toBeNull();
+    expect(boundsOfFeatures([], "06")).toBeNull();
+  });
+});
+
+describe("a logarithmic value scale", () => {
+  // Five decades and a zero. The API's equal-width bins over 0..100000 put
+  // four of the five decades in the first bin, which is the population map
+  // in one colour.
+  const decades = [
+    { geo_id: "a", value: "10" },
+    { geo_id: "b", value: "100" },
+    { geo_id: "c", value: "1000" },
+    { geo_id: "d", value: "10000" },
+    { geo_id: "e", value: "100000" },
+    { geo_id: "z", value: "0" },
+  ];
+  const distribution = {
+    min_value: 0,
+    max_value: 100000,
+    bin_count: 5,
+    total: 6,
+    items: [{ bin_index: 1, count: 5 }, { bin_index: 5, count: 1 }],
+  };
+  const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
+
+  test("spreads a long-tailed measure across every colour where linear bins cannot", () => {
+    const linear = buildChoroplethModel(decades, "geo_id", distribution);
+    const log = buildChoroplethModel(decades, "geo_id", distribution, "No observation", "log");
+    const keys = ["a", "b", "c", "d", "e"];
+    expect(new Set(keys.map((key) => colourOf(linear, key))).size).toBe(2);
+    expect(new Set(keys.map((key) => colourOf(log, key))).size).toBe(5);
+    expect(log.scale).toBe("log");
+    expect(log.usesDistribution).toBe(false);
+    // Zero has no logarithm; it sits in the lowest bin rather than vanishing.
+    expect(colourOf(log, "z")).toBe(colourOf(log, "a"));
+    expect(log.legendItems.map((item) => item.count)).toEqual([2, 1, 1, 1, 1, undefined]);
+    // Five bins of equal width in log space over four decades: edges fall
+    // at 10^1.8, 10^2.6, 10^3.4, 10^4.2, not on the decades themselves.
+    expect(log.legendItems[0].label).toBe("Up to 63");
+    expect(log.legendItems[4].label).toBe("15.8K and above");
+    expect(log.minValue).toBe(10);
+    expect(log.maxValue).toBeCloseTo(100000);
+  });
+
+  test("falls back to linear when nothing published is positive", () => {
+    const model = buildChoroplethModel(
+      [{ geo_id: "a", value: "0" }, { geo_id: "b", value: "-5" }],
+      "geo_id",
+      null,
+      "No observation",
+      "log",
+    );
+    expect(model.scale).toBe("linear");
+  });
+
+  test("extrusion heights follow the same scale", () => {
+    const log = buildExtrusionHeightExpression(decades, "geo_id", "log");
+    const heightOf = (expression, key) => {
+      const match = expression[2];
+      return match[match.indexOf(key) + 1];
+    };
+    // 1000 is the midpoint of 10..100000 in log space: half the height range.
+    expect(heightOf(log, "c")).toBe(200 + 6000);
+    expect(heightOf(log, "z")).toBe(200);
+    expect(heightOf(buildExtrusionHeightExpression(decades, "geo_id"), "c")).toBe(
+      Math.round(200 + ((1000 - 0) / 100000) * 12000),
+    );
   });
 });

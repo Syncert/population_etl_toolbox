@@ -1,0 +1,73 @@
+# Overlay that swaps the disposable stack's API stub for the real API.
+#
+# docker-compose.test.yml serves /api/v1/health from a small nginx stub and
+# 404s everything else. That is exactly what the deployment contracts need,
+# and it keeps that job from building a Python image for a health check.
+#
+# The frontend smoke tier needs the opposite: the real router table, the real
+# registry dispatch, and the real generated SQL, reached over the same nginx
+# rewrites a browser uses. Compose merges the two files field by field, not
+# service by service: a scalar declared here replaces the base file's, but a
+# sequence declared here is appended to it. So this overlay reshapes only the
+# `api` service and states nothing the base file already states; Postgres,
+# Martin, and the proxy stay exactly as the deployment tier composes them,
+# which is the point — the smoke tier must not get a stack of its own to be
+# right about.
+#
+#   docker compose -f docker-compose.test.yml -f docker-compose.smoke.yml \
+#     up --detach --wait postgres martin api proxy
+
+services:
+  api:
+    # `image` names the build output rather than selecting a registry image;
+    # the base file's pinned nginx digest is a scalar and is replaced here.
+    image: population-etl-api:smoke
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.api
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # The disposable Postgres owns every relation the API reads. This is
+      # the superuser the test stack creates, not a production-shaped
+      # read-only role: the privilege split has its own contracts, and
+      # borrowing them here would make a permission drift look like a
+      # frontend defect.
+      DATABASE_URL: postgresql+psycopg2://population_test:population_test@postgres:5432/population_etl_test
+      # Left unset deliberately: no Redis-backed response cache, so a smoke
+      # failure is a contract failure and never a stale cached page.
+      API_CACHE_TTL_SECONDS: "0"
+      # APP_API_DATABASE_URL is unset, so the saved-analysis routes answer an
+      # explicit 503. The smoke tier does not exercise them.
+    ports:
+      - "127.0.0.1:${TEST_API_HOST_PORT:-38000}:8000"
+    read_only: true
+    # `tmpfs` and `security_opt` are deliberately not restated here. Compose
+    # appends sequences across merged files rather than replacing them, so
+    # repeating the base file's `/tmp` and `no-new-privileges:true` built a
+    # list holding each value twice and Compose refused the stack outright:
+    # `services.api.security_opt items at 0 and 1 are equal`. The base file
+    # already hardens this container and already gives it the writable `/tmp`
+    # a read-only root filesystem needs.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request, sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready',
+          timeout=3).status == 200 else 1)"
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  proxy:
+    # The base file waits only for the stub to start, which is immediate. The
+    # real API has a database to reach first, so the proxy must wait for it to
+    # report ready or the first smoke request races the pool.
+    depends_on:
+      api:
+        condition: service_healthy
+      martin:
+        condition: service_healthy

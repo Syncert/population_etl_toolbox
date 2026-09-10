@@ -1,4 +1,4 @@
-.PHONY: test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-compose-smoke test-linux test-linux-build
+.PHONY: test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
 
 test-unit:
 	pytest tests/unit
@@ -58,7 +58,17 @@ test-web-browser:
 
 test-web-build:
 	npm --prefix apps/web run lint
+	npm --prefix apps/web run typecheck
 	npm --prefix apps/web run build
+
+# The live-stack smoke tier: the frontend's own discovery and request
+# building against a deployed API, Martin, and proxy, with nothing stubbed.
+test-web-smoke:
+	@set -e; \
+	  trap 'docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml down --volumes --remove-orphans' EXIT; \
+	  docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml up --detach --wait postgres martin api proxy; \
+	  SMOKE_BASE_URL=http://127.0.0.1:33001 SMOKE_REQUIRED=1 \
+	  npm --prefix apps/web run test:smoke
 
 test-compose-smoke:
 	@set -e; \

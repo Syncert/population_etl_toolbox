@@ -72,7 +72,19 @@ def _unauthenticated() -> HTTPException:
 
 
 def get_app_session_dep():
-    """Application-storage session dependency, overridable in tests."""
+    """Application-storage session dependency, overridable in tests.
+
+    The unconfigured-storage refusal belongs here rather than only in
+    ``require_account``. FastAPI resolves a path operation's dependencies
+    before running its body, and this dependency is itself in the signature of
+    ``require_account`` and of every saved-analysis route -- so on a
+    deployment with no ``APP_API_DATABASE_URL`` the engine raised first and
+    answered an opaque 500, and the 503 written for exactly that case was
+    unreachable. An unconfigured feature is a deployment fact the caller can
+    be told about, not a crash to page an operator over.
+    """
+    if not app_storage_configured():
+        raise HTTPException(status_code=503, detail=APP_STORAGE_UNCONFIGURED_DETAIL)
     yield from get_app_session()
 
 

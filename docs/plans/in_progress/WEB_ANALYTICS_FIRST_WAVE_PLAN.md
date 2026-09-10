@@ -1,0 +1,1341 @@
+---
+id: web-analytics-first-wave
+branch: feat/web_dev_first_wave
+depends_on:
+  - api-platform
+parallel_safe: true
+complexity: high
+verify:
+  - ./tests/run.ps1 web-unit
+  - ./tests/run.ps1 web-browser
+  - ./tests/run.ps1 web-build
+---
+
+# Web analytics foundation and first-wave products plan
+
+## Plan status
+
+- **Status:** Claimed; first pass complete across WEB-001 through WEB-009. Held in `in_progress/` rather than moved to `needs_review/`: WEB-001 through WEB-004 meet their acceptance criteria, but WEB-005 through WEB-009 each left named remainders (collected in `docs/reference/WEB_FIRST_WAVE_HANDOFF.md`), so the definition of done is not yet satisfied for the whole plan
+- **Last updated:** 2026-09-03
+- **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
+- **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
+  PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
+  capability-driven catalog and explorer. Source-specific product bullets below
+  name the primary sources for each product; the catalog, explorer, comparison
+  workspace, and data-quality explorer must cover all seven without a
+  closed client-side source enumeration.
+- **Next pickup:** human review. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; the per-phase delivery records name the follow-ons each pass deliberately left, and `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects them.
+- **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
+
+## Non-negotiable API completion gate
+
+**Feature development under this plan must not begin until `API_DEVELOPMENT_PLAN.md` has been fully implemented, reviewed, accepted by a human, and moved to `docs/plans/completed/`.** An API plan in `to_do/`, `in_progress/`, or `needs_review/` keeps this plan blocked.
+
+Before this plan is claimed, API-008 must provide an inspectable frontend handoff containing:
+
+- stable versioned routes and OpenAPI schemas;
+- discovery and capability contracts for every completed source;
+- observation, revision/as-released, comparison, distribution, provenance, freshness, and data-quality contracts;
+- pagination, error, authentication, authorization, rate-limit, cache, and deprecation behavior;
+- saved-analysis configuration ownership and persistence contracts; and
+- deterministic API fixtures and consumer examples suitable for frontend contract tests.
+
+Frontend work may continue during API implementation only when required to preserve or test an existing consumer contract. It must not invent client-side substitutes for unfinished API behavior, query warehouse tables directly, or begin the first-wave product features owned by this plan.
+
+## Objective
+
+Turn the existing Next.js analytics MVP into a stable, accessible, capability-driven public-data application that consumes only documented API and Martin contracts. Deliver the reusable explorer, profile, comparison, evidence, persistence, and quality patterns needed for the first wave of cross-source products:
+
+1. community conditions profile;
+2. population growth and service-demand planning;
+3. workforce availability and labor-market depth;
+4. evidence-backed grant needs assessment; and
+5. source coverage and data-quality explorer.
+
+The dependency boundary is:
+
+```text
+completed warehouse products
+    -> completed and versioned API contracts
+        -> reusable web analytics foundation
+            -> first-wave product configurations
+                -> later publishing and social workflows
+```
+
+The first-wave products are navigation, presentation, and saved-configuration templates over stable API resources. They are not new warehouse schemas and must not duplicate warehouse or API semantics in client code.
+
+## Current web assessment
+
+The repository already contains a meaningful frontend MVP that should be characterized and evolved rather than discarded:
+
+- `apps/web/` is a Next.js 15 App Router application using React 18 and same-origin `/api/*` and `/tiles/*` proxy rewrites.
+- Existing routes include the home page, catalog, explorer, profiles, articles, builder, and Census/BLS/FRED source dashboards.
+- `SourceExplorerPage.js` already loads catalog, geography, latest observation, timeseries, distribution, TileJSON, and vector-tile data; supports county selection, accessible keyboard interaction, CSV export, and browser-local saved views.
+- MapLibre and Martin provide the current spatial path, with API `geo_id` values reconciled to decoded MVT features in automated tests.
+- `SourceDashboard.js` demonstrates source-specific layouts, but it currently mixes live API values with static chart series, example values, hard-coded definitions, and presentation fallbacks. *(Baseline as of 2026-09-01; retired 2026-09-03 — see the WEB-003 sixth increment.)*
+- `savedCharts.js` and the builder currently persist versioned chart and draft objects in browser local storage. Accounts, server persistence, ownership, collaboration, and publishing are not implemented.
+- The metric catalog and several source choices are hard-coded in UI modules, and the primary explorer remains strongest for ACS county workflows.
+- `SourceExplorerPage.js` and `globals.css` are large, multi-responsibility files whose behavior must be protected by characterization tests before decomposition.
+- The testing catalog already implements WEB-001 through WEB-008: deterministic formatting/persistence, explorer view models, accessible history/source context, browser catalog/tile/selection/failure flows, dependency/build checks, and Chromium CI ownership.
+
+These are the baseline contracts. Existing code is evidence to inspect, not proof that every first-wave requirement is complete.
+
+## Product and architectural principles
+
+### API-only data access
+
+- All public data, catalog metadata, capabilities, provenance, quality state, comparisons, distributions, and saved configurations come through documented API contracts.
+- The web application must not connect to PostgreSQL, query warehouse relations, embed source-provider credentials, or recreate warehouse publication and comparison rules.
+- Martin remains the vector-tile boundary. The browser may consume documented TileJSON/MVT properties but must not infer geography identity from names.
+- Client code may format, sort explicitly client-owned small collections, and render API-derived results. It may not silently revise, aggregate, impute, or reinterpret provider facts.
+
+### Frontend layering
+
+The target dependency direction is:
+
+```text
+App Router routes and layouts
+    -> product screens and page-level orchestration
+        -> reusable explorer/profile/evidence components
+            -> domain hooks and pure view models
+                -> versioned API and tile clients
+```
+
+- Route components own URL state, page composition, metadata, and navigation.
+- Product screens assemble reusable capabilities; they do not fork source-specific business logic.
+- Components receive explicit state and callbacks and remain testable without live services.
+- Domain hooks own request lifecycle, cancellation, stale-response protection, caching integration, and mapping API contracts into view models.
+- API/tile clients own transport, version headers, typed decoding, stable errors, and request construction.
+- Pure view models own deterministic display transformations such as observation joins, chart series, legend rows, selection state, and export rows.
+- New or materially changed contract-boundary code should use TypeScript. Migration is incremental and test-led; a whole-repository rewrite is not a prerequisite.
+
+### Source-transparent analytics
+
+- Every displayed analytical value retains source, dataset/product, measure, unit, period, geography, release/as-of context, and available provenance/freshness state.
+- Uncertainty, suppression, missingness, non-reporting, coverage, methodology, vintage, adjustment, and revision fields remain visible where applicable.
+- Missing, suppressed, invalid, unavailable, or non-reporting values are never displayed as zero.
+- Provider-published values remain visually and semantically distinct from client presentation and API-derived comparisons, ratios, differences, distributions, or rankings.
+- The interface blocks or clearly explains incompatible unit, universe, time, geography, adjustment, method, or coverage comparisons.
+- Cross-source associations are described as context or association, never as causation.
+- Avoid unexplained composite scores, opaque ranks, and client-authored definitions that could be mistaken for provider facts.
+
+### Reproducible interaction state
+
+- Public exploration state is represented in stable, shareable URLs wherever practical: source, dataset, measure, geography, period/release, filters, view mode, comparison, and selected feature.
+- Reloading or sharing a public URL reproduces the same valid analysis request, subject to its declared live/frozen status.
+- Saved analyses reference stable catalog identities and versioned API queries rather than copying observation datasets.
+- Exports include enough source, query, period, geography, unit, provenance, and caveat context to be interpreted outside the application.
+
+### Accessibility, responsiveness, and trust
+
+- Core workflows are usable by keyboard and expose meaningful labels, focus order, announcements, and alternatives for visual-only content.
+- Maps and charts have table or textual alternatives and never become the only way to retrieve a value.
+- Color is not the sole carrier of state; legends expose exact bins/counts and missing/suppressed states.
+- Loading, empty, partial, stale, incompatible, unauthorized, rate-limited, and unavailable states are distinct and cannot leave stale values presented as current.
+- Mobile, tablet, and desktop layouts preserve the full analytical context rather than hiding source notes or caveats on smaller screens.
+- Performance budgets are evidence-based and measured on controlled builds; optimization must not remove semantics or accessibility.
+
+## First-wave product scope
+
+### Reusable catalog and explorer
+
+- Discover sources, datasets, measures, dimensions, supported filters, geographies, releases, time ranges, quality state, and methodology from API capabilities.
+- Configure latest, historical, and as-released queries without requiring source API or warehouse knowledge.
+- Present map, trend, table, metadata, quality, and export modes only where supported.
+- Support source-specific dimensional filters through capability metadata rather than closed UI enumerations.
+- Preserve URL reproducibility, saved-analysis creation, direct source links, and exact interpretation notes.
+
+### Community conditions profile
+
+- Select a supported place/geography and display a source-transparent collection of population, demographic, labor, health, safety, and rural/agricultural context where available.
+- Draw health and illness context from CDC, safety context from FBI UCR (respecting its agency reporting and aggregation boundaries), and rural/agricultural context from USDA NASS (respecting its disclosure suppression), alongside ACS, PEP, BLS, and FRED measures.
+- Display every measure independently with its own period, denominator, coverage, source, uncertainty, and caveat.
+- Provide direct paths into the explorer and comparison workspace for every profile measure.
+- Never collapse unlike measures into an unexplained score.
+
+### Population growth and service-demand planning
+
+- Combine PEP population estimates and changes with relevant ACS demographic, household, housing, and socioeconomic context.
+- Make PEP estimates, ACS survey estimates, vintages, margins of error, and geography/boundary basis visibly distinct.
+- Allow users to inspect underlying trends, compare compatible places, save the configuration, and export an evidence packet.
+
+### Workforce availability and labor-market depth
+
+- Present BLS, ACS, and PEP labor, population, education, commuting, occupation, and industry measures through their distinct source contracts.
+- Keep household survey, establishment survey, ACS, jobs, employed people, counts, and rates semantically separate.
+- Show period/frequency alignment and block invalid comparisons before rendering derived results.
+
+### Evidence-backed grant needs assessment
+
+- Compose reviewed maps, trends, tables, narrative notes, and methodology/source blocks from saved analyses.
+- Retain query, metric, geography, period, transformation, vintage/refresh, caveats, and live/frozen status on every analytical block.
+- Provide reproducible share, print, and export behavior without claiming that selected measures prove program effects.
+
+### Source coverage and data-quality explorer
+
+- Display API-published freshness, revision, suppression, missing-period, geography-coverage, reporting-participation, completeness, and definition-change evidence.
+- Link quality states to the affected source, dataset, release, geography, and measure scope.
+- Keep unknown, suppressed, missing, non-reporting, stale, and failed states distinct.
+- Present data-quality evidence as context for analysis, not as invented provider facts or a universal quality score.
+
+## WEB-001 audit record (2026-09-01)
+
+### Gate evidence
+
+- `docs/plans/completed/API_DEVELOPMENT_PLAN.md` is present in `completed/`
+  with every phase (API-001 through API-008) marked complete and its API-008
+  delivery record dated 2026-09-01.
+- The API-008 frontend handoff is `docs/reference/API_CONSUMER_GUIDE.md`:
+  version policy (`/api/v1` only), discovery/capability routes, observation
+  and release contracts, preflight-then-compare analysis, distribution bins,
+  saved-analysis storage (ADR-0003), the complete error table, and caching,
+  rate-limit, correlation, and pagination behavior. It is pinned by API-065
+  against the served OpenAPI surface, satisfying the "inspectable frontend
+  handoff" requirement.
+- Deterministic API fixtures exist at `tests/fixtures/api/openapi_contract.json`.
+
+### Route, component, and contract inventory
+
+| Route | Component(s) | API/tile calls | Notes |
+| --- | --- | --- | --- |
+| `/` | `app/page.js` | `/api/v1/catalog/sources`, `/api/v1/catalog/metrics` | Live signals; hard-coded 3-source name map as offline fallback |
+| `/catalog` | `app/catalog/page.js` | `/api/v1/catalog/metrics` | Live; **hard-coded source filter list** (Census/BLS/FRED) |
+| `/explore`, `/census`, `/fred`, `/bls` (explorer) | `SourceExplorerPage.js` (2,171 lines) | `/api/v1/health`, `/api/v1/catalog/metrics`, `/api/v1/catalog/geographies`, `/api/v1/{census,fred,bls}/observations/{latest,timeseries}`, `/api/v1/distribution/bins`, `/tiles/catalog`, `/tiles/{id}`, MVT samples | Live; **hard-coded 3-source `SOURCE_CONFIG`**; ad hoc fetch + boolean `cancelled` flags; URL params read once at bootstrap, never serialized back |
+| `/profiles` | `app/profiles/page.js` | `/api/v1/catalog/geographies`, `/api/v1/observations/timeseries` | Live; hard-coded ACS population metric; uses legacy timeseries route |
+| `/articles` | `app/articles/page.js` | `/api/v1/observations/timeseries` | Live; hard-coded metric + Dane County geo; legacy route |
+| `/builder` | `app/builder/page.js`, `lib/savedCharts.js` | none | Browser-local draft/chart persistence only |
+| `/bls`, `/census`, `/fred` (dashboards) | `SourceDashboard.js` (517 lines) | `/api/v1/catalog/metrics`, `/api/v1/{src}/observations/latest` | **Mixes one live KPI with static illustrative series, KPIs, ranked lists, tables, and decorative maps** — retired 2026-09-03; these routes redirect into the explorer |
+
+URL parameters (explorer, parse-only today): `metric`, `state`, `geo`,
+`geo_level`, `map_mode`. Local-storage objects:
+`economic-data-studio:saved-charts:v1` (capped 50, versioned) and
+`economic-data-studio:builder-draft:v1` (versioned draft). Exports: explorer
+CSV (geo, name, period, metric, value, unit, source, dataset, MOE) and
+dashboard CSV.
+
+### Analytical value classification
+
+- **Live:** home catalog signals; catalog search results; explorer
+  observations, timeseries, geography selectors, health states; profiles
+  history; articles history; dashboard primary KPI when the API answers.
+- **API-derived (labeled):** `/api/v1/distribution/bins` choropleth bins and
+  legend counts ("API distribution" label).
+- **Client-derived (labeled):** local equal-width fallback bins in the
+  explorer, labeled "local fallback" and reported through the distribution
+  status pill; profile/article growth percentages computed from series ends
+  (displayed beside their source series).
+- **Illustrative/placeholder (SourceDashboard.js):** static line/bar series
+  (`BLS_LINE`, `CENSUS_LINE`, `FRED_LINE`, `FRED_BARS`), static KPI values
+  (payrolls, participation, population change, density, median age, CPI
+  changes), static ranked state/county lists and related-indicator tables,
+  decorative US/Texas SVG maps with invented legends, static demographic
+  donut, non-functional filter bars, and static "as of" dates. The header
+  chip distinguishes "Live API" from "Preview" but static panels render in
+  both modes.
+- **Decision (first pass):** the dashboards now carry an explicit,
+  always-visible demonstration banner naming the illustrative panels, and
+  their replacement by capability-driven products is owned by WEB-003/WEB-005.
+  Removal was not chosen yet because the layouts document target design
+  intent; the label makes them unmistakable as examples per the acceptance
+  criterion.
+- **Decision (superseded 2026-09-03, WEB-003 sixth increment):** the
+  replacement shipped, so the labelled examples were retired rather than kept
+  labelled. `/bls`, `/census`, and `/fred` now redirect into the
+  capability-driven explorer for the same source; `SourceDashboard.js` and
+  `app/styles/dashboard.css` are deleted. No illustrative analytical value
+  remains anywhere in the application.
+
+### Baseline evidence (2026-09-01, this environment)
+
+- `npm --prefix apps/web ci` — clean install.
+- `npm --prefix apps/web run lint` — clean (baseline, before changes).
+- `npm --prefix apps/web run test:unit` — 10 passed (3 files, baseline).
+- Existing characterization coverage: `tests/frontend/unit/*` (formatting,
+  persistence, explorer view models, accessible components) and
+  `tests/frontend/browser/explorer.spec.js` protect the explorer contracts
+  ahead of decomposition. The browser suite requires a Chromium matching the
+  pinned `@playwright/test`; sandboxed environments with a pre-installed
+  build run it via `PLAYWRIGHT_CHROMIUM_EXECUTABLE` (added this pass to
+  `playwright.config.mjs`; resolution is unchanged when unset).
+
+## WEB-002 delivery record (first pass, 2026-09-01)
+
+Delivered the contract-client foundation:
+
+- `apps/web/lib/api/client.js` — the versioned API client. One transport
+  (`apiFetch`) owning request construction against `/api/v1`, `no-store`
+  caching, abort signals, and a stable `ApiError` (status + API `detail` +
+  request context; `kind` classifying unauthorized/forbidden/rate-limited/
+  unavailable/not-found/invalid). Resource helpers for every consumer-guide
+  route the app uses or the first wave needs: sources, metric search/detail,
+  geographies, **capabilities**, freshness, neutral observations + releases,
+  legacy latest/timeseries, source-scoped latest/timeseries, distribution
+  bins, comparison preflight/comparison, and health. `fetchAllPages`
+  centralizes deterministic limit/offset paging with a page-count bound.
+- `apps/web/lib/api/requestState.js` — shared request lifecycle states
+  (`idle/loading/ok/warn/bad` used today plus reserved states the plan
+  requires) and `createRequestTracker()` for stale-response protection.
+- `apps/web/lib/urlState.js` — explorer URL-state parse/serialize with
+  validation (`metric`, `state`, `geo`, `geo_level`, `map_mode`), preserving
+  every existing supported link shape; serialization omits defaults so
+  shared URLs stay minimal and stable.
+- Unit tests: `tests/frontend/unit/api-client.test.js`,
+  `tests/frontend/unit/url-state.test.js` (URL construction, paging
+  termination, error decoding and classification, abort passthrough,
+  stale-response suppression, parse/serialize round-trips).
+- First consumers migrated off ad hoc fetch: `app/page.js`,
+  `app/catalog/page.js` (whose source filter is now **capability-driven**
+  from `/api/v1/catalog/sources` instead of a hard-coded list),
+  `app/profiles/page.js`, `app/articles/page.js`, and the explorer's
+  bootstrap (health, catalog/geography paging, and URL parsing now go
+  through the shared client and `parseExplorerState`). `SourceDashboard.js`
+  carries the demonstration banner.
+- Testing catalog extended per the evidence-ownership contract: WEB-009
+  (versioned API client), WEB-010 (explorer URL state), WEB-011
+  (capability-driven catalog source filter) added to
+  `docs/reference/TESTING_CONTRACT.md` with complete pass metrics; the
+  implementation-status table now reads WEB-001–WEB-011 / 221 of 221; the
+  behavioral register (`tests/support/catalog_evidence.py`) audits 11 WEB
+  items and its guard pins 247 rows, all FULL.
+- One defect found by the new tests and fixed before first use: paging
+  treated a JSON `total: null` as `0` (via `Number(null)`), which would
+  have silently truncated multi-page catalogs.
+
+### Validation (2026-09-01, after changes)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 25 passed (6 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 2 passed (Chromium, real UI against intercepted `/api/v1` + MVT) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 247 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+### WEB-002 second increment (2026-09-01, same day)
+
+- **Explorer decomposition behind characterization tests.**
+  `SourceExplorerPage.js` shrank from 2,171 to 1,384 lines (the commit
+  message for this increment understates it as ~1,050) by extracting:
+  `lib/explorerViewModel.js` (all pure view models — metric/dataset/geo
+  selection, observation joins, choropleth/legend/extrusion models,
+  formatting, margin-of-error vocabulary), `lib/tiles.js` (the Martin
+  boundary: tile discovery, TileJSON template normalization, MVT preview
+  decoding), and `components/TimeSeriesChart.js`. The component re-exports
+  the view models so existing consumers and tests are unchanged.
+- **All explorer data effects now use the contract client** with
+  per-effect `createRequestTracker()` stale-response protection:
+  observations (`getSourceLatestObservations`), distribution bins
+  (`getDistributionBins`), and history (`getSourceTimeseries`).
+  `SOURCE_CONFIG` carries a route `segment` instead of hard-coded paths.
+  Status pills render `apiErrorMessage()` — the HTTP status plus the API's
+  own `detail` (`status 503: fallback unavailable`), keeping the failure
+  vocabulary stable and richer than before.
+- **URL state is now serialized back on change** via
+  `serializeExplorerState` + `history.replaceState`, so the address bar
+  reproduces metric, geography level, map mode, state, and selected
+  geography at all times; defaults are omitted. The browser suite asserts
+  the URL reproduces the pinned selection (spec extended under WEB-010).
+- The reproducible "API Query" tab now reports the same `limit=4000` the
+  map actually requests (it previously displayed `limit=5000`, which did
+  not reproduce the observation set), built by `buildApiPath`.
+
+Validation for this increment: web lint clean; web unit 26 passed (6
+files); production build clean; browser 2 passed (Chromium, including the
+new URL-reproduction assertions); `pytest tests/unit` 1219 passed; `ruff
+check .` clean.
+
+### WEB-002 third increment (2026-09-01, same day)
+
+- **`globals.css` decomposed** into nine ordered section files under
+  `app/styles/` (base, dashboard, shell, home, catalog, explorer,
+  profiles, article, builder); `globals.css` is now the ordered import
+  manifest. The split is whitespace-normalized-identical to the original
+  (verified programmatically: same 407 rules, same normalized bytes), so
+  the cascade is unchanged.
+- **`SourceDashboard.js` migrated** onto `searchMetrics` +
+  `getSourceLatestObservations` with its abort signal passed through; its
+  `SOURCE_META` carries a route segment instead of a hard-coded endpoint.
+- **Shared state-vocabulary component:** `components/StatusPill.js` maps
+  the full request-state vocabulary (current + reserved states) to visual
+  classes — only a completed healthy request renders as ok,
+  failure-shaped states as errors, everything else as caution — and the
+  explorer's four status pills now use it. Cataloged as WEB-012 with a
+  component test; the register is at 248 rows.
+- After this increment no ad hoc `fetch` remains in `apps/web` outside
+  the two client modules (`lib/api/client.js`, `lib/tiles.js`).
+
+Validation for this increment: web lint clean; web unit 30 passed (7
+files); production build clean; browser 2 passed; `pytest tests/unit`
+1219 passed (248-row register guard green); `ruff check .` clean.
+
+**The TypeScript deviation recorded here is now closed** — the owner
+chose TypeScript as the long-term direction, and it is implemented in the
+fourth increment below.
+
+### WEB-002 fourth increment — TypeScript adoption (2026-09-02)
+
+The owner chose TypeScript as the long-term direction, closing the
+deviation recorded above. Adoption is incremental and test-led, exactly
+as the plan's layering principle prescribes; the framework is unchanged
+(Next.js 15 App Router, React 18, same proxy rewrites).
+
+- **Toolchain:** `typescript` 6.0.3, `@types/node`, `@types/react`, and
+  `@types/react-dom` pinned exactly, matching the repo's devDependency
+  convention. `tsconfig.json` replaces `jsconfig.json` with `strict` plus
+  `noUncheckedIndexedAccess`, `allowJs: true`, and `checkJs: false`, so
+  typed and untyped modules live in one graph and conversion can proceed
+  file by file. `baseUrl` is deliberately omitted (deprecated in TS 6);
+  the `@/*` mapping resolves relative to the config under
+  `moduleResolution: "bundler"`.
+- **Converted (the contract boundary the principle names):**
+  `lib/api/client.ts`, `lib/api/requestState.ts`, `lib/urlState.ts`,
+  `lib/catalog.ts`, plus a new `lib/api/types.ts` carrying the response
+  contracts from the consumer guide. The typed contracts encode the
+  guide's guarantees a consumer must not violate — above all that
+  `Observation.value` is `string | null`, never a number, so no call site
+  can quietly treat a suppressed or missing value as zero. `apiFetch<T>`
+  and `fetchAllPages<T>` are generic, so every resource helper returns
+  its own typed shape, and `ApiErrorKind` is a closed union.
+- **Not converted yet, deliberately:** route and component files, and
+  `lib/explorerViewModel.js` / `lib/tiles.js`. They are unchanged in this
+  increment, so converting them now would be a rewrite rather than a
+  test-led migration; they convert as they are next materially changed.
+- **A real regression was caught by an existing test:** `as const` is
+  compile-time only, so the first port silently dropped the runtime
+  `Object.freeze` on the shared state vocabulary. Both guarantees are now
+  in place (`Object.freeze({...} as const)`).
+- **Gates:** `npm run typecheck` (`tsc --noEmit`) is a new script wired
+  into `make test-web-build` and the `frontend` CI job as its own step;
+  `next build` type-checks as well. WEB-007's pass metric now names the
+  strict typecheck, and the CI job is renamed to "Frontend lint,
+  typecheck, unit, build, and browser" consistently across the workflow,
+  `tests/support/ci_evidence_manifest.json`, and `CI_EVIDENCE_MAP.md`.
+
+Validation for this increment: `npm run typecheck` clean; web lint clean;
+web unit 30 passed; production build clean (with Next type checking);
+browser 2 passed (Chromium); `pytest tests/unit` 1219 passed; `ruff check
+.` clean.
+
+WEB-002 is complete as of this increment; the remaining pickup it named
+(capability discovery replacing `SOURCE_CONFIG`) is delivered by the
+WEB-003 first increment below.
+
+## WEB-003 delivery record (first increment, 2026-09-02)
+
+Capability discovery now decides which sources the explorer can drive; the
+three-source `SOURCE_CONFIG` enumeration is gone, and the explorer gains
+Census PEP with zero source-specific code.
+
+- **Contract fix found by inspection before first use:** the web client
+  typed `/catalog/capabilities` as a bare array with invented field names
+  (`neutral_routes_supported`, `routes`). The served contract is the
+  `{total, items}` `CapabilityListResponse` whose items carry
+  `display_name`, `served_by_neutral_routes`, `observation_filters`, and
+  `observation_routes` (`{path, parameters}`). `lib/api/types.ts` and
+  `getCapabilities` now match the OpenAPI snapshot exactly.
+- **`lib/explorerSources.ts` (new, typed):** derives explorer sources from
+  the capability entries — a source is explorable exactly when its declared
+  routes carry the source-scoped latest + timeseries pair the explorer's
+  workflow needs, so membership comes from route declarations, never a
+  source-code list. Census ACS, BLS, FRED, and Census PEP qualify today;
+  CDC, FBI UCR, and USDA NASS are honestly excluded until the explorer
+  understands the neutral dispatch shape (next pickup). Parameter support
+  (`state_fips`) is read from the declared route parameters; tab labels
+  derive from the API's own route segment; titles are the published
+  `display_name`. Discovery failure degrades to a single labeled offline
+  fallback entry for the mounted default source (surfaced as a visible
+  "Sources error … offline fallback in use" message), mirroring the
+  WEB-011 catalog degradation pattern.
+- **Dataset facets from published metric identity:** the ACS-only
+  `supportsDataset` flag is replaced by `datasetFacetOptions` /
+  `preferredDatasetFacet` over the loaded metrics' own
+  `SOURCE:dataset:variable` codes. The selector renders only when a source
+  publishes at least two facets; acs1/acs5 keep their documented coverage
+  labels and caveats (keyed by facet value, not by source branch), and
+  unlisted facets fall back to their published spelling.
+- **Explorer migration:** `SourceExplorerPage` bootstraps by reading
+  capabilities once (per the consumer guide), renders its source tabs from
+  discovery, and switches sources in place; `?source=<segment>` joins the
+  URL-state contract (parse, validated serialize, defaults omitted) so a
+  shared link reproduces a non-default source. Metric loading gained its
+  own request tracker so a fast source switch cannot commit a stale
+  catalog. The FRED-specific geography default branch is gone — metric
+  `valid_geo_grains` already snap the level.
+- **TypeScript:** `lib/explorerViewModel.ts` and
+  `components/SourceExplorerPage.tsx` are converted under the strict
+  config as the change landed, with typed view-model contracts
+  (`ObservationRow.value` stays `string | number | null`, never coerced)
+  and MapLibre expression casts confined to the map boundary. Re-exports
+  are unchanged, so existing consumers and tests are untouched.
+- **Evidence:** WEB-013 added to `docs/reference/TESTING_CONTRACT.md`
+  (unit + browser owner) with the implementation-status table at 223 of
+  223 and the behavioral register at 249 rows, all FULL. New
+  `tests/frontend/unit/explorer-sources.test.js` (7 tests: membership from
+  routes, exclusion without naming, parameter derivation, labeled
+  fallback, facet options/labels/preference); URL-state tests extended for
+  `source`; the browser suite gained a third spec proving the tabs render
+  from discovery (PEP present, USDA NASS absent), switching sources loads
+  that source's catalog and observations, and `?source=pep` deep-links
+  reproduce the source.
+
+### Validation (2026-09-02, after changes)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 37 passed (8 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 3 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 249 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (second increment — neutral access, 2026-09-02)
+
+Every completed source now reaches the explorer. Membership and access are
+both read from `/catalog/capabilities`; nothing enumerates sources.
+
+- **Two declared access shapes (`lib/explorerSources.ts`).** A source is
+  explorable when its capability entry carries either the source-scoped
+  `latest` + `timeseries` route pair or the neutral `/observations` route.
+  All seven completed sources qualify, and a source declaring neither is
+  still left out. A segment-less source (FBI UCR publishes no
+  `route_segment`) keeps its published `source_code` as its tab and URL
+  identity, so `/explore?source=FBI_UCR` resolves; keys resolve
+  case-insensitively, so existing `?source=pep` links stay valid.
+- **Requests are bounded by the declaration (`lib/observationAccess.ts`,
+  new).** Source-scoped requests carry only their route's declared
+  parameters; neutral requests carry only the capability's own
+  `observation_filters` plus the universal parameter set. The resource
+  rejects an undeclared filter with a 422 precisely so it is never
+  silently ignored, and dropping one client-side would silently widen the
+  answer instead — CDC declares no `state_fips`, so a selected state is
+  neither sent nor quietly ignored.
+- **The neutral envelope maps on without invention.** Published period
+  bounds render as a range (CDC's multi-year periods keep both bounds
+  rather than being narrowed to one), `unit` and `source_code` fill display
+  fields only when absent, and `value`/`value_status` are untouched. The
+  observation table gained a status column, so a suppressed value cannot
+  read as a number.
+- **Stratified answers are reported, not collapsed.** CDC strata and
+  adjustment statuses, FBI UCR subject types, and USDA NASS domains return
+  several declared-dimension series per geography; the choropleth join and a
+  single-line chart would each have kept whichever row arrived last. The map
+  now declines to colour, the history panel declines to chart, and both name
+  the series count and the declared filter that would narrow them. The
+  generated dimension controls offer the values the source actually
+  published in the answer, never a client-authored option list.
+- **Analysis routes are requested only where declared.** `/distribution/bins`
+  answers for the four analysis-ready sources; for the rest the pill reads
+  "not declared for this source" instead of presenting a failed request as a
+  fallback. The reproducible "API Query" tab is built by the same
+  capability-bounded builder the effect uses.
+- **Evidence:** WEB-014 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner). New `tests/frontend/unit/observation-access.test.js`
+  (15 tests); `explorer-sources` and `url-state` tests extended; a fourth
+  browser spec drives CDC end to end through the intercepted neutral
+  resource, asserting the request carried `scope=latest` and no
+  `state_fips`, the map stayed uncoloured while stratified, the published
+  period range and suppressed status rendered exactly, and narrowing the
+  declared `stratum_id` filter resolved it to one series.
+
+## WEB-003 delivery record (third increment — catalog, 2026-09-02)
+
+- **Deterministic paging over the published total.** The catalog paged with
+  a fixed `limit=100` and presented that page as the result. `lib/catalog.ts`
+  now owns the search state, request parameters, and page model: the page
+  count, display range, and `hasNext` come from the API's own `total`, so a
+  short last page is recognised rather than guessed, and when no total is
+  published the client does not invent one.
+- **A defect the new browser test found before it shipped:** the range was
+  computed from the requested page, so between a page click and its answer
+  the previous page's rows were relabelled with the new range — stale rows
+  presented as current. The range is now anchored to the offset the response
+  published, and the list is marked busy while a page or filter is in flight.
+- **Filters are only the ones the resource declares** (`q`, `source_code`,
+  `active_only`, `limit`, `offset`); filtering a loaded page client-side
+  would report a total the API never published. `active_only` is dropped
+  rather than sent as false, so "include retired metrics" falls through to
+  the resource's own default. Any filter change returns to the first page.
+- **Published provenance and quality context.** Each metric carries its
+  units, measure kind, aggregation characteristic, grains, source object,
+  publisher contract version, source watermark, publication and harvest
+  times, and serving relation, in a fixed order — and a field the publisher
+  did not publish is omitted rather than filled in. The previous "Pending"
+  beside an absent harvest time stated something the source did not.
+  Published freshness renders through the shared status pill; an unpublished
+  one reads as unknown, never as healthy.
+- **Catalog state is URL-reproducible** (`q`, `source`, `include_retired`,
+  `page`) and every metric keeps its direct explorer link.
+- **Evidence:** WEB-015 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 225 of 225 and the
+  behavioral register is at 251 rows, all FULL. `catalog-view-model` tests
+  extended to 12; new `tests/frontend/browser/catalog.spec.js` drives paging,
+  filter reset, provenance, and freshness against intercepted responses.
+
+### Validation (2026-09-02, after both increments)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 64 passed (9 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 7 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 251 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (fourth increment — as-released, 2026-09-03)
+
+The explorer could only ask what a source publishes *now*. WEB-003's
+as-released criterion is closed: a pinned release reproduces the analysis as
+that release published it.
+
+- **The surface is read, not assumed (`lib/explorerSources.ts`).** Three
+  declarations decide it: `/observations/releases` (the releases are
+  listable), the neutral route's `scope` parameter (an as-released read is a
+  request the API accepts), and its `release` parameter (one can be pinned).
+  The registry declares all three for every completed source, so the control
+  appears for all seven — but it appears because the capability entry says
+  so, and a source published without them gets an explicit "declares no
+  as-released surface" note instead. The offline fallback claims none:
+  with discovery unavailable nothing has declared one.
+- **An as-released read always answers on the neutral resource
+  (`lib/observationAccess.ts`).** `scope` lives only on `/observations`, so a
+  source-scoped source moves there for the released question and carries the
+  neutral filters its capability declares — not the parameters of the route
+  it left behind, which the neutral resource would reject with a 422. A
+  `release` is sent only alongside `scope=as_released`; carried alone the API
+  answers 422, because "the latest publication, but an older one" is a
+  contradiction rather than a query.
+- **Release identities come from the API.** The `Publication` control is
+  built from `/observations/releases` — the identity, its published `as_of`,
+  and its observation count, exactly as listed. Nothing infers a release from
+  a period, a vintage, or an observation row, and a page shorter than the
+  published total says so rather than presenting itself as the whole list.
+- **An unpinned as-released answer is one series per release.** Every
+  published release answers at once, so a geography carries several rows and
+  the choropleth join and the history chart would each have kept whichever
+  release sorted last. The release becomes one more stratification axis: the
+  map declines to colour, the history panel declines to chart, and both name
+  the release control as the filter that resolves it. Pinning one resolves it
+  to a single series.
+- **A defect this found before it shipped:** the pin is cleared when the
+  metric changes, because a release identity belongs to one metric — but that
+  reset also fired when a shared link selected a metric and its pin together,
+  silently widening the link's analysis to every release. The reset now
+  compares against the metric the pin was chosen for.
+- **`/distribution/bins` is not requested for an as-released read.** The
+  route declares no `scope`: its bins are computed over the metric's latest
+  values, and colouring released rows with them would label the legend with a
+  distribution of a different answer. The pill says so and the legend falls
+  back to bins local to the loaded rows.
+- **Reproducible and exportable.** `scope` and `release` round-trip through
+  the shareable URL (a `release` without the scope is dropped on both parse
+  and serialize), the observation table gains a release column while reading
+  as released, and the CSV export carries `scope`, each row's own `release`,
+  and its `as_of`.
+- **Evidence:** WEB-016 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 226 of 226 and the
+  behavioral register is at 252 rows, all FULL. The unit fixtures now carry
+  the served neutral parameter list from
+  `tests/fixtures/api/openapi_contract.json` rather than an abbreviated one.
+  `explorer-sources` extended to 10 tests, `observation-access` to 22,
+  `url-state` to 7; a fifth browser spec drives Census ACS end to end through
+  the release listing, the unpinned decline, the pin, the shared link, and the
+  return to the latest publication.
+
+### Validation (2026-09-03, after the fourth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 75 passed (9 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 8 passed (Chromium) |
+
+## WEB-003 delivery record (fifth increment — capability-gated modes, 2026-09-03)
+
+The explorer rendered every presentation for every selection. The map drew
+for a national series the tile boundary has no polygon for and merely
+declined to colour, which reads as "no data" rather than "not spatial" —
+different facts. WEB-003's mode criterion is closed.
+
+- **A support model over published evidence (`lib/viewModes.ts`, new).**
+  Map, trend, table, metadata, quality, and export each get a verdict and,
+  when unsupported, the published reason. Nothing consults a source name or
+  a client-authored list of mappable measures: the map reads the vector
+  layer's own published fields, the trend reads the source's declared
+  observation routes, quality and metadata read the measure's catalog row,
+  and table and export read what is loaded.
+- **The spatial grains come from the boundary itself.** `discoverTileMetadata`
+  now returns the vector layer's published field names; a feature carrying
+  `county_fips` is a county and one without it is a state, which is the
+  filter the map already applied. Nothing the boundary publishes identifies
+  a national geometry, so a national series has no map at all — the canvas
+  is not mounted, the tab is absent, and the panel states the reason and
+  names the observation table and CSV export as the paths to the same
+  values, both of which carry the geography, period, unit, and status
+  context.
+- **A trend is not requested where no route answers one.** A source
+  declaring neither a timeseries route nor the neutral resource previously
+  issued a request and reported its failure; it now says the source
+  publishes no per-geography history here.
+- **Quality became a real view.** A `quality` tab renders the measure's own
+  published freshness and provenance through the same `lib/catalog.ts`
+  models the catalog uses — an unpublished field omitted, an unpublished
+  freshness read as unknown. A measure publishing neither gets no quality
+  tab, because an empty one could read as "nothing is wrong".
+- **A defect the new browser test found before it shipped:** the first
+  attempt reset the selected tab whenever it left the supported set. While
+  tile discovery was in flight the map was briefly unsupported, so the reset
+  moved the user to another panel and never moved them back — the map stayed
+  hidden for the rest of the session. The rendered tab is now derived from
+  the requested one rather than overwriting it, so a briefly unavailable
+  mode is restored rather than lost.
+- **Evidence:** WEB-017 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 227 of 227 and the
+  behavioral register is at 253 rows, all FULL. New
+  `tests/frontend/unit/view-modes.test.js` (10 tests); a sixth browser spec
+  drives a national-grain measure end to end — no map, the stated reason,
+  the remaining modes still answering, and the map restored on return.
+
+### Validation (2026-09-03, after the fifth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 85 passed (10 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 9 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 253 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-003 delivery record (sixth increment — dashboards retired, 2026-09-03)
+
+WEB-001 labelled the demonstration dashboards rather than removing them,
+because their replacement did not exist yet. It does now, so the label is no
+longer the honest option: a page whose trend charts, secondary KPIs, ranked
+lists, related-indicator tables, demographic breakdowns, stylized maps, and
+filter options are invented examples has no place in an application whose
+whole contract is that displayed values are provider-published facts.
+
+- **The routes are retired, not broken.** `/bls`, `/census`, and `/fred`
+  redirect into `/explore?source=<key>` — the same source, reached through
+  whichever access shape its capability entry declares. Every existing link
+  stays valid and lands on live, source-backed analysis.
+- **Nothing illustrative survives.** `components/SourceDashboard.js` (521
+  lines) and `app/styles/dashboard.css` (988 lines) are deleted, along with
+  the demonstration banner that named them. The two declarations
+  `dashboard.css` contributed to the shared `.panel-heading` used by the
+  profiles and articles routes moved into `profiles.css`, which already owned
+  the rest of that rule, so those layouts are unchanged.
+- **The site navigation is back.** `SiteHeader` suppressed itself on the
+  three dashboard paths; with the dashboards gone the special case is gone
+  too.
+- **Evidence:** WEB-018 added to `docs/reference/TESTING_CONTRACT.md`
+  (browser owner); the implementation-status table reads 228 of 228 and the
+  behavioral register is at 254 rows, all FULL. A seventh browser spec
+  follows each retired route to the explorer, asserts it keeps its own source
+  identity, and asserts no demonstration banner and a present primary
+  navigation.
+
+With this increment every WEB-003 acceptance criterion is met: capability
+discovery decides membership and access, catalog search/paging/provenance is
+deterministic against the published total, latest and as-released exploration
+both answer for every completed source, presentation modes are offered only
+where the selection can answer them, and no static analytical value remains.
+
+### Validation (2026-09-03, after the sixth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 85 passed (10 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 10 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 254 rows) |
+| Python lint/format | `ruff check .` / `ruff format --check` (changed files) | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-004 delivery record (first increment — preflight-first workspace, 2026-09-03)
+
+The comparison workspace at `/compare`. Its governing rule is that the API
+owns the compatibility decision and this client only presents it: the point
+of asking first is that no incompatible data ever moves.
+
+- **Preflight before anything is compared (`lib/comparison.ts`, new).**
+  `/comparison/preflight` is asked as soon as both sides name a measure and
+  re-asked whenever the pair changes. `comparable` is read from the response
+  rather than inferred from the rule list, so a rule this client has never
+  heard of cannot flip the decision. `/comparison` is requested only when the
+  verdict allows it — it answers a blocked pair with a 422, so asking anyway
+  would turn a stated explanation into a request failure and move data the
+  policy rejected.
+- **Three-valued rules are presented as three values.** A `fail` blocks; an
+  `unknown` is a caution and a caveat, never a pass — where a source
+  publishes nothing to check (Census ACS publishes no units) the comparison
+  is served and the unverified rule travels with it. A comparable pair
+  carrying unverified rules never reaches the `ok` pill; a blocked pair reads
+  as `incompatible`, which the shared pill already treats as failure-shaped.
+- **A blocked pair is explained, not just refused.** Every failed rule shows
+  its own published reason, and the failed rule names drive actionable
+  alternatives — each measure stays fully explorable on its own, and a
+  stratified source is pointed at the explorer's declared filters rather than
+  a weakened comparison. Per-measure explorer links are offered directly, and
+  a blocked pair is not saveable as an analysis.
+- **Published inputs and API-derived values never blur.** Each side's column
+  is headed by its own metric code, so the two inputs cannot be read as one
+  measure; every field the response names in `derivations` is labelled
+  API-derived in the table header, in a prose note, and in the export
+  heading. A derivation this client has not heard of is labelled rather than
+  dropped.
+- **Nothing is silently aligned.** The API combines each side's own newest
+  value per geography rather than aligning them to a shared period, so each
+  row states whether the two periods it combined are the same. A side that
+  published nothing for a geography reads "Not published" — never zero, and
+  never a value borrowed from the other side.
+- **Reproducible and exportable.** The link names both measures, both
+  sources, the grain, and the state scope, and deliberately carries no
+  verdict: the verdict belongs to the API and is re-asked on open, so a link
+  can never reproduce a stale "comparable". The CSV export carries both
+  identities, sources, units, each row's own periods and values, the derived
+  fields marked derived in the heading itself, and every caveat the verdict
+  and the response published.
+- **`servesComparison` added to the capability model.** Declaring the
+  analysis routes does not make a source comparable with any other — each
+  pair is still decided by preflight — but a source declaring none is one the
+  analysis routes have already declined, which the source picker says before
+  a reader chooses it.
+- **Evidence:** WEB-019 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); the implementation-status table reads 229 of 229 and the
+  behavioral register is at 255 rows, all FULL. New
+  `tests/frontend/unit/comparison.test.js` (13 tests), `url-state` extended
+  to 10, `explorer-sources` to 11, and a new
+  `tests/frontend/browser/comparison.spec.js` (3 specs) driving the
+  comparable pair, the blocked pair with its unissued request, and the link
+  round trip.
+
+**Remaining for WEB-004:** aligned chart and map presentations for a
+comparable pair, gated by the same `lib/viewModes.ts` support model the
+explorer uses, and reopening a saved comparison from the builder.
+
+### Validation (2026-09-03, after the WEB-004 first increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 102 passed (11 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 13 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 255 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+## WEB-004 delivery record (second increment — aligned presentations, 2026-09-03)
+
+The comparison's table, scatter, and choropleth, each offered only where the
+comparison can answer it. WEB-004's acceptance criteria are met.
+
+- **Comparison modes over the same support model (`lib/viewModes.ts`).**
+  `describeComparisonViewModes` reuses `spatialGrains` and the explorer's
+  `ViewModeState` shape, reading the verdict, the rows the response carried,
+  the geographies plottable on both sides, the fields the response named as
+  derived, and the vector layer's published fields. A blocked pair presents
+  no aligned view at all, with the policy as the stated reason; a national
+  comparison is explicitly non-spatial; a single plottable pair is not a
+  plot, because one point states nothing about how two measures relate
+  across places.
+- **A scatter of the two published inputs (`components/ScatterChart.tsx`).**
+  Independent axes, so the plot asserts no shared unit and no relationship
+  beyond what the two publishers stated, and each point is one geography's
+  own pair. A geography missing a value on either side cannot be a point —
+  plotting it at zero would state a value neither source published — so it
+  is excluded, counted, and named in the caption, and it stays in the table.
+- **A choropleth of one API-derived field (`components/ChoroplethMap.tsx`).**
+  The colouring logic is not new: it renders `buildChoroplethModel` from
+  `lib/explorerViewModel`, the same model the explorer uses. Only a field the
+  response named in `derivations` may be mapped — colouring by a published
+  input would present one side as the comparison — and the legend and panel
+  both say the value is API-derived rather than published. Neither the map
+  nor the scatter is ever the only way to read a value; the full table sits
+  beside them.
+- **A defect this increment found in existing shared code:** `Number(null)`
+  and `Number("")` are both `0`, and `Number.isFinite(0)` is true. The
+  choropleth model, the extrusion heights, and `formatObservationValue` all
+  coerced before rejecting, so a value the API published as `null` — its
+  contract for "the source published no usable number", with `value_status`
+  saying why — was coloured, sized, and formatted as a published zero. This
+  affected the explorer as well as the new comparison map: a suppressed CDC
+  observation read as `0` in the selected-geography panel and the hover
+  tooltip. A shared `publishedNumber` guard now rejects the absent value
+  before coercion, and a genuine published `0` still renders. Three
+  regression tests pin it under WEB-002, whose pass metric now states the
+  guarantee.
+- **Evidence:** WEB-020 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner) and WEB-002's pass metric strengthened; the
+  implementation-status table reads 230 of 230 and the behavioral register is
+  at 256 rows, all FULL. `comparison` unit tests extended to 16,
+  `view-modes` to 16, `explorer-contracts` to 8; the comparison browser spec
+  extended to 5 specs covering the offered and withheld presentations.
+
+### Validation (2026-09-03, after the WEB-004 second increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 114 passed (11 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 15 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 256 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) — no API, Martin, or deployment
+contract changed in this pass; they run in their required CI jobs.
+
+**Known follow-on:** the comparison map and the explorer map are separate
+MapLibre wirings over one shared colouring model. Unifying the two
+presentations is a consolidation task for WEB-009, not a contract gap.
+
+## WEB-005 delivery record (first pass, 2026-09-03)
+
+Three first-wave products over one screen, all configuration.
+
+- **Templates reference catalog identities (`lib/productTemplates.ts`).**
+  Each slot names candidate metric codes in preference order and resolves to
+  the first one the live catalog publishes, via `/catalog/metrics/{code}`
+  whose 404 is the API's stable "not published". The resolved identity and
+  the publisher's own display name are always shown, so a reader sees which
+  measure answered rather than trusting the slot's label. A slot no candidate
+  satisfies reports the identities it looked for; it is never filled by a
+  similar measure, which would silently answer a different question.
+- **Partial coverage leaves a stated gap.** Unfilled slots and their sections
+  stay rendered and are counted in a coverage note. A profile that quietly
+  dropped them would read as though the place had no such conditions, when
+  the truth is that this warehouse publishes no such measure for it.
+- **Every measure stands on its own.** Value, source, period, unit,
+  uncertainty, published value status, and freshness travel with each answer,
+  plus a direct explorer link. Nothing is combined: no score, no index, no
+  ranking, no cross-measure arithmetic. Each product states its own limits in
+  the header — the ACS/PEP method difference, the household-versus-payroll
+  universe split — rather than leaving a reader to infer them.
+- **Three distinct absences stay distinct:** a slot the catalog cannot fill,
+  a measure that published nothing for this place, and a value the source
+  suppressed. None renders as a number and none renders as zero.
+- **Requests go through each source's own declared access shape**, reusing
+  `buildHistoryObservationRequest`, so a filter a source does not declare is
+  never sent.
+- **The link reproduces the product and the place** and carries no values, so
+  a shared profile re-asks the catalog and the observations rather than
+  presenting a stale reading as current.
+- The previous `/profiles` route — hard-coded to one ACS metric, with a
+  client-computed percentage change and a Census-only source note applied to
+  every source — is replaced.
+- **Evidence:** WEB-021 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 231 of 231, register at 257 rows, all FULL.
+  New `tests/frontend/unit/product-templates.test.js` (9 tests) and
+  `tests/frontend/browser/profiles.spec.js` (2 specs).
+
+## WEB-006 delivery record (first pass, 2026-09-03)
+
+Accounts and saved analyses at `/saved`, over the authenticated
+`/analysis-configurations` contract (ADR-0003).
+
+- **A configuration is intent, not data (`lib/savedAnalysis.ts`).** An
+  explorer or comparison selection saves its resource, measures, and
+  filters — never an observation value — so a saved analysis follows the
+  warehouse instead of freezing a snapshot. A `release` is stored only under
+  `scope=as_released`, the only scope the API accepts it with.
+- **Privacy is structural.** The token travels only as an `Authorization`
+  header, held in component state and, at the user's explicit choice,
+  `sessionStorage` (tab-lifetime, cleared on sign-out). It never reaches a
+  URL, a link, or the address bar — and neither does any configuration's
+  name, id, version, or owner. The reopen link carries the document's own
+  public selection and nothing else. The screen writes nothing to the
+  address bar at all.
+- **Stale is reported, not repaired.** A configuration whose measure was
+  retired comes back unmodified with `validation.valid = false` and the
+  API's reason; the screen shows the document exactly as saved and never
+  renders it as healthy, because replaying it would not produce the analysis
+  it describes.
+- **A conflict is refused, not merged.** Updates send `expected_version`; a
+  `409` surfaces the API's own explanation naming the current version.
+  Overwriting a version this client never read would discard a change made
+  elsewhere, so nothing is merged.
+- **Failures stay as indistinguishable as the API made them.** A `401` is
+  reported without guessing which of missing, malformed, unknown, or revoked
+  applies; another owner's identifier answers exactly like one that never
+  existed.
+- **Local views migrate only where the contract describes them.** Charts and
+  comparisons become documents; a saved profile is a reading order the
+  configuration contract does not describe and is listed as skipped with
+  that reason rather than coerced into a document the API would refuse. The
+  local store is never cleared, so importing loses nothing.
+- **`conflict` added to the shared request-state vocabulary** as a
+  deliberate failure-shaped pill state rather than an unmapped string;
+  WEB-012's pass metric now names it.
+- **Evidence:** WEB-022 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 232 of 232, register at 258 rows, all FULL.
+  New `tests/frontend/unit/saved-analysis.test.js` (11 tests) and
+  `tests/frontend/browser/saved-analyses.spec.js` (4 specs).
+
+**Not in this pass:** the explorer and comparison workspaces still save to
+the browser-local store rather than the account; moving their save buttons
+onto the authenticated contract is the natural follow-on, and the import
+path above already bridges what they wrote.
+
+## WEB-007 delivery record (first pass, 2026-09-03)
+
+The evidence packet composer at `/builder`, replacing the block builder.
+
+- **Composition is the risk this phase manages.** A chart lifted out of the
+  explorer into a document keeps its shape and loses which measure it was,
+  for where, over what period, at what publication, and with what caveats.
+  So `lib/evidencePackets.ts` gives every analytical block a reproducibility
+  envelope — measures, sources, geography, scope and pinned release, period,
+  units, transformation, the exact request, and caveats — and an analytical
+  block can only be filled from a saved view that already recorded one.
+- **Gaps are reported, never filled.** `packetIssues` names each analytical
+  block whose envelope is incomplete and exactly which fields it lacks; a
+  field a saved view never captured stays empty rather than being guessed.
+  The packet refuses to call itself complete while any such block remains.
+- **Live and frozen are distinguished.** A block replaying the latest
+  publication is live and says its values change when the source
+  republishes; a block pinned to a release is frozen and says it will not.
+  Both are legitimate and they mean different things in a proposal.
+- **The grant needs-assessment template ships with its methodology and
+  limits blocks already present**, so a packet cannot be assembled without
+  them, and its closing note states that the measures do not establish that
+  a program caused a change — associations stay associations.
+- **Preview, print, and export.** The preview drops the composer chrome and
+  keeps every envelope; a print stylesheet makes the packet itself the
+  shareable artifact; the CSV export carries each block's full envelope and
+  live status so the evidence can be re-derived without this application.
+  Each analytical block reopens into the analysis it replays.
+- **Evidence:** WEB-023 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 233 of 233, register at 259 rows, all FULL.
+  New `tests/frontend/unit/evidence-packets.test.js` (10 tests) and
+  `tests/frontend/browser/evidence-packet.spec.js` (3 specs).
+
+**Not in this pass:** packets persist to the existing browser-local draft
+rather than the account, and the `/articles` route still carries its own
+hand-written example. Public publishing and social interaction are
+explicitly outside this phase.
+
+## WEB-008 delivery record (first pass, 2026-09-03)
+
+The source coverage and data-quality explorer at `/quality`.
+
+- **The published signal is presented, never recomputed.** `/catalog/freshness`
+  gives per-source counts and publication/harvest times; each metric's own
+  freshness, watermark, and publisher contract version come from its catalog
+  row. There is no score, index, grade, or percentage anywhere: one number
+  over unlike measures would be a client-authored judgement wearing the
+  appearance of a published fact, and the page says so explicitly.
+- **Four distinct facts stay distinct.** Current, stale, and retired are the
+  warehouse's own counts; metrics the rollup places in none of them are
+  counted separately as carrying no published freshness state, because an
+  unknown state is not thereby current. A source with metrics but no
+  published publication time never reads as healthy — nothing establishes
+  that its current count describes a recent publication — and a source with
+  nothing published is distinct again.
+- **Unpublished fields read as unpublished.** A publisher that published no
+  watermark or contract version gets "Not published", never a placeholder
+  that would state something the source did not.
+- **Evidence the rollup does not carry is pointed at, not fabricated.**
+  Revisions live on `/observations/releases`, suppression on each row's
+  `value_status`, reporting participation on the FBI UCR `coverage` object,
+  definition changes on `publisher_contract_version`. Each is named with the
+  resource that publishes it, where to inspect it here, and what it means —
+  including that a suppressed value is never a zero and an unreported month
+  is not zero crime. Questions the API answers with nothing are stated so
+  absence is not read as a clean bill of health.
+- **Quality links back to the context it affects**, per metric, into the
+  explorer.
+- **Evidence:** WEB-024 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 234 of 234, register at 260 rows, all FULL.
+  New `tests/frontend/unit/data-quality.test.js` (10 tests) and
+  `tests/frontend/browser/data-quality.spec.js` (3 specs).
+
+## WEB-009 delivery record (first pass, 2026-09-03)
+
+The cross-workflow accessibility, performance, security, and operations
+gate, plus the handoff for later plans.
+
+- **A single audit spec covers every core workflow**
+  (`tests/frontend/browser/accessibility-operations.spec.js`): one `main`
+  landmark and one level-1 heading per route with a named navigation
+  landmark; a sweep asserting every form control on the explorer,
+  comparison, profile, and quality workflows carries an accessible name;
+  map and chart alternatives; keyboard-only selection announced through a
+  live region; a 390px viewport that keeps source and coverage context and
+  scrolls only vertically; and a 503 that leaves a named, recoverable state
+  rather than a blank page.
+- **Security headers gained a Content-Security-Policy.** Same-origin only —
+  the API and tiles arrive through this server's own rewrites, so nothing
+  needs a third-party script or connect origin — with `object-src 'none'`,
+  `base-uri`, `form-action`, and `frame-ancestors` locked to self, and the
+  `blob:` worker and image sources MapLibre genuinely requires.
+  `'unsafe-eval'` is development-only. `Cross-Origin-Opener-Policy` added.
+  Script `'unsafe-inline'` remains Next's own bootstrap; removing it needs a
+  per-request nonce and is recorded as a follow-on rather than switched on
+  untested.
+- **Route bundle budgets are measured, not estimated.**
+  `scripts/check-bundle-budget.mjs` reads the production build manifest and
+  sums the real byte size of every chunk each route loads, against explicit
+  per-route budgets in `scripts/bundle-budgets.json`. A route with no
+  declared budget fails rather than passing silently, because a new route
+  nobody set a threshold for is exactly the one that grows unnoticed. Wired
+  into the `frontend` workflow after `build`.
+- **Documentation now states the policies a consumer needs**: the route
+  inventory, the supported-browser policy (evergreen; WebGL is required only
+  for the map, which is never the sole path to a value), the API
+  compatibility policy (v1 only, capability-driven, undeclared filters never
+  sent, unknown fields ignored and absent fields read as not published),
+  performance budgets, the security headers, the accessibility commitments
+  that are actually gated, the privacy boundary, and operational
+  diagnostics.
+- **`docs/reference/WEB_FIRST_WAVE_HANDOFF.md`** names the stable modules a
+  later publishing or social plan may build on, the saved-analysis contract
+  and its three preserved properties, the privacy boundaries, the invariants
+  that must not break, the explicit non-goals, and the known follow-ons.
+- **Evidence:** WEB-025 added to `docs/reference/TESTING_CONTRACT.md`
+  (browser + static owner); status table 235 of 235, register at 261 rows,
+  all FULL.
+
+### Validation (2026-09-03, after WEB-009)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 154 passed (17 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Route bundle budgets | `npm --prefix apps/web run check:bundle` | every route within budget |
+| Web browser | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test` | 34 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1219 passed (register guard green at 261 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) and the `npm audit --omit=dev` gate
+were exercised earlier in this branch; no API, Martin, or deployment
+contract changed in this pass, and they run in their required CI jobs.
+
+## Implementation phases
+
+### WEB-001 — Dependency proof and frontend audit
+
+- Record evidence that the API plan is in `completed/` and that the API-008 frontend handoff is accepted.
+- Inventory routes, components, hooks, styles, API/tile calls, URL parameters, local-storage objects, exports, hard-coded source assumptions, static example data, accessibility behavior, and known consumers.
+- Map each displayed field and interaction to its stable API, TileJSON/MVT, or explicitly client-owned presentation contract.
+- Run the existing frontend unit, component, browser, lint, build, dependency, proxy, deployment, and affected API-to-tile evidence.
+- Add characterization tests for supported behavior before refactoring large components.
+
+**Acceptance:** Every current analytical value and fallback is classified as live, API-derived, client-derived, illustrative, or placeholder; every placeholder/static analytical value has an approved removal or clearly labeled demonstration path.
+
+### WEB-002 — Contract client and application foundation
+
+- Introduce version-aware API and tile client modules with typed request, response, pagination, error, and capability contracts.
+- Centralize request cancellation, stale-response protection, authentication state, errors, retries where permitted, and rate-limit handling.
+- Establish reusable loading, empty, partial, stale, suppressed, incompatible, unauthorized, forbidden, rate-limited, and unavailable states.
+- Establish shared application shell, navigation, responsive layout, focus management, announcements, and visual tokens.
+- Define URL-state parsing/serialization and a migration path for existing explorer links.
+- Decompose `SourceExplorerPage.js`, `SourceDashboard.js`, and affected styles behind passing characterization tests.
+
+**Acceptance:** Routes consume documented clients rather than ad hoc fetch calls, concurrent navigation cannot present stale results, and existing supported URLs either remain valid or have tested redirects/migration behavior.
+
+### WEB-003 — Capability-driven catalog and universal explorer
+
+- Replace hard-coded source/dataset/filter lists with API capability discovery.
+- Implement complete catalog search, filters, deterministic pagination, provenance, quality context, and direct explorer links.
+- Implement universal latest, historical, and as-released exploration across every completed source.
+- Render map, trend, table, metadata, quality, and export modes only when supported by the selected measure.
+- Preserve source-specific uncertainty, suppression, coverage, methodology, vintage, adjustment, and revision information.
+- Provide accessible non-map alternatives and explicit non-spatial experiences for national or otherwise unmappable series.
+
+**Acceptance:** Every completed source can be discovered and explored without adding a hard-coded source branch, and deterministic fixtures prove correct filters, identities, values, states, provenance, and exports.
+
+### WEB-004 — Comparison workspace
+
+- Build measure/geography/time selection over API capability and compatibility/preflight contracts.
+- Present compatibility decisions before querying or visualizing a comparison.
+- Support aligned table, chart, and map comparisons where declared valid.
+- Label differences, ratios, distributions, and ranks as derived and preserve input identities.
+- Provide actionable explanations and alternatives for incompatible selections.
+- Make comparison state URL-reproducible, saveable, exportable, and reopenable in the explorer.
+
+**Acceptance:** Same- and cross-source fixtures never create a misleading comparison, silently align incompatible periods/geographies, or hide missing, uncertainty, suppression, coverage, or methodology differences.
+
+### WEB-005 — Community profile and reusable product templates
+
+- Deliver the community conditions profile as the first complete cross-source product.
+- Build product-template metadata and composition primitives that reference stable API catalog identities and saved configurations.
+- Deliver population growth/service-demand and workforce availability/labor-market templates using the same reusable components.
+- Provide per-measure explorer links, source notes, time/geography context, quality state, and save/export actions.
+- Handle geographies or measures with partial source coverage without manufacturing values or collapsing the profile.
+
+**Acceptance:** The three analytical products are configuration-driven, source-transparent, reproducible, responsive, and fully usable without knowledge of warehouse schemas or source APIs.
+
+### WEB-006 — Accounts and saved analyses
+
+- Integrate the API authentication, authorization, and saved-analysis configuration contracts.
+- Implement create, list, open, update, duplicate, delete, version, ownership, conflict, and stale-capability experiences.
+- Import or migrate compatible browser-local saved charts and drafts; preserve an explicitly documented anonymous/local mode if approved.
+- Keep private analyses out of public caches, shared URLs, client logs, analytics telemetry, and error reports.
+- Expose live/frozen behavior and configuration version clearly.
+
+**Acceptance:** Cross-user access is denied, ownership and concurrency failures are understandable, private content does not leak, and saved configurations reopen as the same valid analysis or report an actionable contract change.
+
+### WEB-007 — Grant evidence composition and sharing
+
+- Refactor the existing article and builder routes into reusable text, chart, map, table, source-note, methodology, and caveat blocks.
+- Attach the complete reproducibility envelope to every analytical block.
+- Implement evidence-packet preview, print, export, share, reopen-in-explorer, and live/frozen behavior.
+- Add the grant needs-assessment template and prevent analytical blocks from losing source or caveat context during composition.
+- Keep public publishing approval and all social interaction outside this phase.
+
+**Acceptance:** A user can assemble, save, reopen, share, and export a traceable needs-assessment packet whose analytical blocks reproduce their source queries and visibly retain their limitations.
+
+### WEB-008 — Source coverage and data-quality explorer
+
+- Implement source/dataset/release/measure/geography quality navigation from the API quality contracts.
+- Visualize freshness, coverage, revisions, suppression, missing periods, reporting participation, completeness, and definition changes with accessible tables and explanations.
+- Link quality evidence back to affected explorer and profile contexts.
+- Avoid universal quality scores unless a separately approved reviewed semantic contract defines one.
+
+**Acceptance:** Users can determine whether a selected source product is sufficiently current and complete for their intended analysis without interpreting unknown, missing, suppressed, or non-reporting states as zero.
+
+### WEB-009 — Accessibility, performance, operations, and API handoff verification
+
+- Complete keyboard, focus, announcement, contrast, reduced-motion, chart/table alternative, zoom, responsive, and error-recovery audits for all core workflows.
+- Establish controlled bundle, route, interaction, map, and large-result rendering baselines with explicit regression thresholds.
+- Verify production dependency audit, lint, unit/component/browser tests, build, proxy, CSP/security headers, container hardening, startup/readiness, and composed-service behavior.
+- Update web setup, configuration, deployment, user guidance, supported-browser policy, API compatibility policy, and operational diagnostics.
+- Produce a handoff for later publishing/social plans naming stable components, saved-analysis contracts, privacy boundaries, and explicit non-goals.
+
+**Acceptance:** Every first-wave workflow passes the required functional, accessibility, responsive, performance, security, build, and deployment gates in supported environments with no unexpected skips or xfails.
+
+## Test-driven implementation contract
+
+Every behavior change follows the repository test-driven loop: identify or add the applicable WEB catalog item and CI owner, write the smallest deterministic failing unit/component/browser test, implement the smallest coherent behavior, run the focused test, then run affected and broad suites before continuing.
+
+### Unit and component tests
+
+- API/tile client URL construction, versioning, decoding, pagination, cancellation, errors, and secret-safe behavior.
+- Capability-to-control mapping without closed source enumerations.
+- URL-state parse/serialize/migration and deterministic public-link reproduction.
+- Observation, history, comparison, distribution, quality, map-join, export, and profile view models.
+- Exact missing, suppressed, non-reporting, uncertainty, coverage, stale, partial, incompatible, unauthorized, rate-limited, and unavailable states.
+- Saved-analysis versioning, local import/migration, conflict handling, ownership presentation, and private-cache exclusion.
+- Accessible names, keyboard operation, focus restoration, announcements, table/chart alternatives, and source/caveat visibility.
+
+### API contract and browser tests
+
+- Use reviewed deterministic response fixtures generated from or validated against the accepted versioned OpenAPI contracts.
+- Fail when a consumed route/schema/error/capability changes without an approved compatibility update.
+- Exercise the production Next.js application with intercepted deterministic API and MVT responses for fast browser contracts.
+- Exercise critical composed-service paths against disposable API, PostGIS, Redis, Martin, and proxy services where the boundary requires real integration.
+- Cover catalog-to-explorer, map/list selection, history, comparison, save/reopen, profile, evidence composition, quality inspection, export, sharing, authentication, authorization, conflict, and recovery flows.
+- Decode and reconcile real vector tiles where geography identity or mapped values are part of the acceptance criterion; a non-empty tile is insufficient.
+
+### Accessibility, responsive, and performance tests
+
+- Automated semantic/accessibility checks supplement, but do not replace, browser keyboard and focus assertions.
+- Run core workflows at approved mobile, tablet, and desktop viewports and prove that analytical context and caveats remain available.
+- Establish performance baselines on controlled CI runner classes after scenarios stabilize; fail sustained regressions beyond approved thresholds.
+- Test bounded high-cardinality catalogs/tables and map interaction without silently truncating API totals or freezing navigation.
+
+### Security and privacy tests
+
+- URL and rendered-content injection, unsafe external links, CSV formula injection, malformed API payloads, and oversized response handling.
+- Authentication/authorization denial paths, cross-user enumeration, private URL leakage, shared-cache exclusion, client-log redaction, and deletion/retention behavior.
+- No frontend fixture, browser artifact, screenshot, log, source map, build variable, or error message contains production data, credentials, internal service origins, or private user content.
+
+### Evidence ownership
+
+Implementation must extend `docs/reference/TESTING_CONTRACT.md` beyond WEB-001 through WEB-008 with complete pass metrics, update the implementation-status and latest-evidence sections, and update `docs/reference/CI_EVIDENCE_MAP.md` plus `tests/support/ci_evidence_manifest.json` when CI ownership or architecture-sensitive paths change.
+
+Expected validation includes, as applicable:
+
+```text
+npm --prefix apps/web ci
+npm --prefix apps/web run lint
+npm --prefix apps/web run test:unit
+npm --prefix apps/web run build
+npm --prefix apps/web run test:browser
+pytest
+ruff check .
+make test-api
+make test-martin-unit
+make test-martin-integration
+```
+
+Composed-service and browser checks must use the documented runners and disposable services. An unavailable environment is recorded as not run and never treated as passing.
+
+## Definition of done
+
+- The API completion gate and accepted API-008 frontend handoff are documented with repository evidence.
+- All frontend data access uses stable API or Martin contracts; no client queries warehouse tables or duplicates upstream semantic rules.
+- Every completed source is discoverable and explorable through capability-driven controls without a hard-coded source branch.
+- The community profile, population/service-demand, workforce, grant evidence, and source-quality first-wave products satisfy their stated guardrails and acceptance criteria.
+- Public analytical state is reproducible through documented URLs or versioned saved configurations.
+- Saved analyses enforce authentication, ownership, privacy, concurrency, retention/deletion, and public/private cache boundaries.
+- Every analytical value and derived result retains required source, measure, unit, time, geography, provenance, quality, uncertainty, suppression, coverage, and revision context where applicable.
+- Core workflows are keyboard accessible, responsive, and provide nonvisual alternatives for maps and charts.
+- Deterministic unit/component, API-contract, browser, real API/tile, accessibility, responsive, performance, security, build, dependency, proxy, and deployment checks pass with no unexpected skips or xfails.
+- Testing catalogs, CI evidence, OpenAPI fixtures, configuration, deployment, user guides, compatibility notes, and operational documentation are synchronized.
+- Static demonstration analytical values and ambiguous fallbacks have been removed or are isolated and unmistakably labeled as examples.
+- No in-scope TODO, placeholder, secret, undocumented contract, inaccessible critical path, or known defect remains.
+- The plan records implementation evidence, is marked ready for review, and is moved to `needs_review/`; only a human may accept it into `completed/`.
+
+## Non-goals
+
+- Modifying warehouse facts, gold publication rules, glossary semantics, API comparison policy, or API persistence behavior from the frontend.
+- Direct browser access to provider APIs, warehouse databases, raw/control/silver objects, Redis, or internal service origins.
+- Building new ingestion pipelines, API endpoints, or Martin layers as client-side workarounds.
+- Public blog publication workflows, comments, forums, follows, feeds, notifications, moderation, abuse reporting, or community governance.
+- Opaque scoring, unsupported causal claims, automated policy recommendations, or diagnostic/predictive health conclusions.
+- Requiring a complete live infrastructure stack for deterministic unit and component tests.
+
+## Follow-on plan boundary
+
+After this plan is completed and human-accepted, a separate publishing and social hub plan may build on its stable saved-analysis, evidence-block, identity, privacy, and sharing contracts. That later plan should independently define public profiles, publication approval, blog management, comments/forums, follows/feeds, notifications, moderation, abuse handling, retention, and governance. Completion of this first-wave plan does not imply approval to implement those features.
+
+## Primary repository references
+
+- `AGENTS.md` — delivery hierarchy, plan workflow, test-driven design, and definition of done.
+- `docs/plans/to_do/API_DEVELOPMENT_PLAN.md` — required versioned API platform and frontend handoff.
+- `docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md` — first-wave products, analytical guardrails, and product-wide definition of done.
+- `docs/reference/TESTING_CONTRACT.md` — current WEB-001 through WEB-008 contracts and frontend test ownership.
+- `docs/reference/CI_EVIDENCE_MAP.md` — frontend, API, Martin, deployment, and coverage evidence ownership.
+- `README.md` and `apps/web/README.md` — current application routes, local workflow, proxy, explorer, and persistence behavior.
+- `apps/web/`, `tests/frontend/`, `infra/web/`, and `infra/docker/` — current implementation, browser/unit evidence, proxy configuration, and deployment baseline.

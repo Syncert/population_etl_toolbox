@@ -11,6 +11,16 @@ services:
       - analytics_postgres_data:/var/lib/postgresql/data
       - ../../sql/bootstrap/001_api_readonly.sql:/docker-entrypoint-initdb.d/001_api_readonly.sql:ro
       - ../../sql/bootstrap/002_app_api.sql:/docker-entrypoint-initdb.d/002_app_api.sql:ro
+    healthcheck:
+      # Postgres's first-ever startup runs initdb, then restarts once to
+      # apply it; a dependent that only waits for the container to start
+      # (rather than for this to pass) can reach it mid-restart and see
+      # "the database system is starting up". This gates on the server
+      # actually accepting connections, not on any warehouse schema.
+      test: ["CMD-SHELL", "pg_isready -U analytics -d population_etl"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   service_postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -91,7 +101,15 @@ services:
   martin:
     image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b
     depends_on:
-      - analytics_postgres
+      analytics_postgres:
+        condition: service_healthy
+    # Martin's own startup connection attempt does not retry: it exits
+    # immediately on a connection failure rather than waiting. The
+    # service_healthy dependency above closes the ordinary startup race;
+    # this restart policy is the backstop for anything else that leaves
+    # Postgres briefly unreachable (a slow disk, a warehouse reset), so
+    # tiles recover on their own instead of needing a manual restart.
+    restart: on-failure:5
     command: --config /etc/martin/martin.yml
     environment:
       MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:-api_reader}:${ANALYTICS_API_DB_PASSWORD:-api_reader}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
@@ -104,6 +122,11 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "martin", "--version"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   web:
     build:

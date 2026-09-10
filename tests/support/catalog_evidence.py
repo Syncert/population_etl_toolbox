@@ -19,7 +19,7 @@ AUDITED_COUNTS = {
     "ETL": 42,
     "DB": 23,
     "API": 65,
-    "WEB": 8,
+    "WEB": 27,
     "DEPLOY": 5,
     "MARTIN": 10,
     "EXT": 14,
@@ -43,8 +43,8 @@ EXECUTION_PROFILES = {
         "api-unit, redis-integration, e2e-performance",
     ),
     "WEB": (
-        "make test-web-unit / test-web-browser / test-web-build",
-        "frontend",
+        "make test-web-unit / test-web-browser / test-web-build / test-web-smoke",
+        "frontend, frontend-smoke",
     ),
     "DEPLOY": ("make test-compose-smoke", "deployment-smoke"),
     "MARTIN": (

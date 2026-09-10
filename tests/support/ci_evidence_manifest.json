@@ -9,7 +9,7 @@
     {"workflow": "postgres-integration.yml", "job": "warehouse-database", "name": "Warehouse integration (PostGIS 16 + Python 3.11)"},
     {"workflow": "dag-parse.yml", "job": "dag-parse", "name": "DAG parse tests (Airflow 2.9.3 + Python 3.11)"},
     {"workflow": "scheduler-image.yml", "job": "dag-compatibility", "name": "DAG suite in scheduler image"},
-    {"workflow": "frontend.yml", "job": "frontend", "name": "Frontend lint, unit, build, and browser"},
+    {"workflow": "frontend.yml", "job": "frontend", "name": "Frontend lint, typecheck, unit, build, and browser"},
     {"workflow": "redis-integration.yml", "job": "api-cache", "name": "API cache integration (Redis 7 + Python 3.11)"},
     {"workflow": "martin-unit.yml", "job": "martin-unit", "name": "Martin deterministic contracts (Python 3.11)"},
     {"workflow": "martin-integration.yml", "job": "martin-postgis", "name": "Martin/PostGIS/API/proxy contracts"},

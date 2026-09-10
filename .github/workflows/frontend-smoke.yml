@@ -1,0 +1,78 @@
+name: frontend-smoke
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "infra/docker/docker-compose.test.yml"
+      - "infra/docker/docker-compose.smoke.yml"
+      - "infra/docker/Dockerfile.api"
+      - "infra/martin/**"
+      - "infra/web/**"
+      - "sql/**"
+      - "tests/frontend/smoke/**"
+      - "tests/sql/**"
+      - ".github/workflows/frontend-smoke.yml"
+  push:
+    branches: [main, "copilot/**", "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Frontend live-stack smoke
+    # Covers: WEB-027 — the explorer's own discovery and request-building
+    # modules run unmocked against a deployed API, Martin, and proxy. This is
+    # the tier that sees what a fixture cannot: a response whose shape the
+    # client reads wrongly, where the server was right all along.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # The proxy origin, which serves /api/v1 and /tiles through the same
+      # rewrites a browser uses.
+      SMOKE_BASE_URL: http://127.0.0.1:33001
+      # Refuse to pass by skipping.
+      SMOKE_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Start the deployed stack
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml
+          -f infra/docker/docker-compose.smoke.yml
+          up --detach --wait postgres martin api proxy
+      - name: Run the live-stack smoke tier
+        working-directory: apps/web
+        run: npm run test:smoke
+      - name: Capture service logs
+        if: failure()
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml
+          -f infra/docker/docker-compose.smoke.yml logs --no-color
+          > frontend-smoke.log
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: frontend-smoke-logs
+          path: frontend-smoke.log
+          if-no-files-found: ignore
+      - name: Stop and remove the stack
+        if: always()
+        run: >-
+          docker compose -f infra/docker/docker-compose.test.yml
+          -f infra/docker/docker-compose.smoke.yml
+          down --volumes --remove-orphans --timeout 15

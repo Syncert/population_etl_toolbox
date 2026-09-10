@@ -332,6 +332,33 @@ def test_unconfigured_storage_answers_503_not_401(
     assert "not configured" in response.json()["detail"]
 
 
+def test_unconfigured_storage_answers_503_through_the_real_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-059 — the 503 survives real dependency resolution.
+
+    The test above overrides ``get_app_session_dep``, which is exactly the
+    dependency that fails when storage is unconfigured: FastAPI resolves a
+    path operation's dependencies before its body runs, so ``require_account``
+    never reached its own 503 guard on a real deployment. The override
+    substituted the broken part, and the suite proved a branch that could not
+    be entered. This exercises the real dependency chain.
+    """
+    monkeypatch.setenv("APP_API_DATABASE_URL", "")
+    app.dependency_overrides.clear()
+    try:
+        response = TestClient(app).get(
+            "/api/v1/analysis-configurations", headers=_auth()
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    # Not a 500: an unconfigured feature is a deployment fact the caller can
+    # be told about, not a crash to page an operator over.
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
+
+
 def test_token_never_appears_in_responses_or_logs(
     accounts, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

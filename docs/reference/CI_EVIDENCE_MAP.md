@@ -12,7 +12,7 @@ This register assigns each delivery contract to one authoritative GitHub Actions
 | Ordered empty warehouse bootstrap, rerun, replay | `postgres-integration` / `Warehouse integration (PostGIS 16 + Python 3.11)` | Required PR/push | source DDL, migrations, bootstrap manifest, database tests |
 | Airflow parsing and task topology | `dag-parse` / `DAG parse tests (Airflow 2.9.3 + Python 3.11)` | Required PR/push | DAGs, orchestration code, bootstrap manifest |
 | Linux scheduler compatibility | `scheduler-image` / `DAG suite in scheduler image` | Required PR/push | scheduler image, DAGs, ETL package, SQL |
-| Browser consumer contract | `frontend` / `Frontend lint, unit, build, and browser` | Required PR/push | web, `apps/api` response schemas, gold contracts, semantic migrations |
+| Browser consumer contract | `frontend` / `Frontend lint, typecheck, unit, build, and browser` | Required PR/push | web, `apps/api` response schemas, gold contracts, semantic migrations |
 | Redis cache isolation (synthetic-app mechanics) | `redis-integration` / `API cache integration (Redis 7 + Python 3.11)` | Required PR/push | Cache middleware behavior against a synthetic app plus the deterministic middleware unit file; the production-application cache/freshness contract is owned by `e2e-performance`, which provisions the warehouse it needs |
 | Spatial configuration | `martin-unit` / `Martin deterministic contracts (Python 3.11)` | Required PR/push | Martin configuration and contracts |
 | Spatial database/proxy behavior | `martin-integration` / `Martin/PostGIS/API/proxy contracts` | Required PR/push | geography, gold serving, Martin, proxy |

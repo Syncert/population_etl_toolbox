@@ -2,26 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BookOpen, Database, FilePenLine, MapPinned } from "lucide-react";
+import { BarChart3, BookOpen, Bookmark, Columns3, Database, FilePenLine, MapPinned, ShieldCheck } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home" },
   { href: "/catalog", label: "Data Catalog", icon: Database },
   { href: "/explore", label: "Explore", icon: BarChart3 },
+  { href: "/compare", label: "Compare", icon: Columns3 },
   { href: "/profiles", label: "Profiles", icon: MapPinned },
+  { href: "/quality", label: "Data quality", icon: ShieldCheck },
   { href: "/articles", label: "Articles", icon: BookOpen },
   { href: "/builder", label: "Builder", icon: FilePenLine },
+  { href: "/saved", label: "Saved", icon: Bookmark },
 ];
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  const isSourceDashboard = ["/bls", "/census", "/fred"].some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
-  );
-
-  if (isSourceDashboard) {
-    return null;
-  }
 
   return (
     <header className="site-header">
