@@ -105,7 +105,7 @@ import {
 import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
-import type { ExplorerState } from "../lib/urlState";
+import type { ExplorerState, ValueScale } from "../lib/urlState";
 
 // The pure view models moved to ../lib/explorerViewModel; existing consumers
 // (tests included) keep importing them from here.
@@ -130,6 +130,7 @@ const GEO_LEVEL_LABEL: Record<string, string> = {
   COUNTY: "County",
 };
 const DEFAULT_MAP_MODE = "choropleth";
+const DEFAULT_VALUE_SCALE: ValueScale = "linear";
 // Presentation panels that are not measure-dependent: they describe the
 // request and how to read it, and answer for every selection.
 const PRESENTATION_TABS = ["api query", "notes"] as const;
@@ -194,6 +195,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedGeoLevel, setSelectedGeoLevel] = useState(DEFAULT_GEO_LEVEL);
   const [mapMode, setMapMode] = useState(DEFAULT_MAP_MODE);
+  const [valueScale, setValueScale] = useState<ValueScale>(DEFAULT_VALUE_SCALE);
   const [selectedMetric, setSelectedMetric] = useState("");
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [countyGeographies, setCountyGeographies] = useState<GeographySummary[]>([]);
@@ -567,6 +569,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         }
         if (requested?.mapMode) {
           setMapMode(requested.mapMode);
+        }
+        if (requested?.valueScale) {
+          setValueScale(requested.valueScale);
         }
         if (requested?.stateFips) setSelectedStateFips(requested.stateFips);
         if (requested?.geoId) setSelectedGeoId(requested.geoId);
@@ -1116,6 +1121,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
+              valueScale,
             ) as unknown as ExpressionSpecification,
             "fill-opacity": mapMode === "choropleth" ? 0.95 : 0.08,
           },
@@ -1138,10 +1144,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               tileMetadata.joinKey,
               distribution,
               missingValueLabel,
+              valueScale,
             ) as unknown as ExpressionSpecification,
             "fill-extrusion-height": buildExtrusionHeightExpression(
               mappableObservations,
               tileMetadata.joinKey,
+              valueScale,
             ) as unknown as ExpressionSpecification,
             "fill-extrusion-opacity": 0.92,
           },
@@ -1226,6 +1234,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     geographyIndex,
     distribution,
     missingValueLabel,
+    valueScale,
     selectedGeoId,
   ]);
 
@@ -1258,6 +1267,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
+          valueScale,
         ) as unknown as ExpressionSpecification,
       );
     }
@@ -1271,6 +1281,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           tileMetadata.joinKey,
           distribution,
           missingValueLabel,
+          valueScale,
         ) as unknown as ExpressionSpecification,
       );
       map.setPaintProperty(
@@ -1279,6 +1290,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         buildExtrusionHeightExpression(
           mappableObservations,
           tileMetadata.joinKey,
+          valueScale,
         ) as unknown as ExpressionSpecification,
       );
     }
@@ -1293,7 +1305,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     } else if (!selectedStateFips) {
       map.easeTo({ center: [-98.5, 38.5], zoom: 3.05, duration: 800 });
     }
-  }, [mapReady, mappableObservations, tileMetadata, distribution, missingValueLabel, selectedStateFips]);
+  }, [mapReady, mappableObservations, tileMetadata, distribution, missingValueLabel, valueScale, selectedStateFips]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1403,8 +1415,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       tileMetadata?.joinKey || "geo_id",
       distribution,
       missingValueLabel,
+      valueScale,
     ),
-    [mappableObservations, tileMetadata, distribution, missingValueLabel],
+    [mappableObservations, tileMetadata, distribution, missingValueLabel, valueScale],
   );
 
   // The exact request the observation effect issues, built by the same
@@ -1428,6 +1441,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         metric: selectedMetric,
         geoLevel: selectedGeoLevel as ExplorerState["geoLevel"],
         mapMode: mapMode as ExplorerState["mapMode"],
+        valueScale,
         stateFips: selectedStateFips,
         geoId: selectedGeoId,
         scope: observationScope,
@@ -1437,6 +1451,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         source: sourceKey,
         geoLevel: DEFAULT_GEO_LEVEL,
         mapMode: DEFAULT_MAP_MODE,
+        valueScale: DEFAULT_VALUE_SCALE,
         scope: DEFAULT_SCOPE,
       },
     );
@@ -1450,6 +1465,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     selectedMetric,
     selectedGeoLevel,
     mapMode,
+    valueScale,
     selectedStateFips,
     selectedGeoId,
     activeSource,
@@ -1724,6 +1740,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               >
                 <option value="choropleth">Choropleth</option>
                 <option value="extrusion">Extruded polygons</option>
+              </select>
+            </div>
+
+            <div className="control-group">
+              <label htmlFor="value-scale-select">Value scale</label>
+              <select
+                id="value-scale-select"
+                className="select"
+                data-testid="value-scale-select"
+                value={valueScale}
+                onChange={(event) => setValueScale(event.target.value as ValueScale)}
+              >
+                <option value="linear">Linear (API bins)</option>
+                <option value="log">Logarithmic</option>
               </select>
             </div>
 
@@ -2118,7 +2148,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             {choroplethModel.legendItems.length > 0 ? (
               <div className="map-legend" aria-label="Choropleth value legend">
                 <div className="legend-title">
-                  Value · {choroplethModel.usesDistribution ? "API distribution" : "local fallback"}
+                  Value ·{" "}
+                  {choroplethModel.scale === "log"
+                    ? "logarithmic bins"
+                    : choroplethModel.usesDistribution
+                      ? "API distribution"
+                      : "local fallback"}
                 </div>
                 {choroplethModel.legendItems.map((item) => (
                   <div className="legend-row" key={`${item.color}-${item.label}`}>
@@ -2222,7 +2257,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           <div className="section-kicker">Reproducible request</div><h2>API Query</h2><p className="subtle">This endpoint reproduces the observation set currently used by the map.</p><code className="api-query">GET {apiQuery}</code>
         </article>
         <article className="card span-2 workspace-panel" data-active={effectiveTab === "notes"}>
-          <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable.</p>
+          <div className="section-kicker">Interpretation notes</div><h2>Use this view carefully</h2><p>The map uses API-calculated distribution bins, reports missing observations separately, and preserves context in the selected geography details.</p><p className="subtle">Transformation: raw value. Geography: {selectedGeoLevel.toLowerCase()}. Dataset: {selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel || "Source default"}. Color treatment: {valueScale === "log" ? "five logarithmic intervals over the published values, so a long-tailed measure such as population is not one colour" : "five distribution-backed intervals with a local fallback only when the distribution endpoint is unavailable"}.</p>
         </article>
       </section>
     </main>

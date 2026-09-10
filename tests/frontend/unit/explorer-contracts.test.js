@@ -197,3 +197,69 @@ describe("a selected state is the whole map", () => {
     expect(boundsOfFeatures([], "06")).toBeNull();
   });
 });
+
+describe("a logarithmic value scale", () => {
+  // Five decades and a zero. The API's equal-width bins over 0..100000 put
+  // four of the five decades in the first bin, which is the population map
+  // in one colour.
+  const decades = [
+    { geo_id: "a", value: "10" },
+    { geo_id: "b", value: "100" },
+    { geo_id: "c", value: "1000" },
+    { geo_id: "d", value: "10000" },
+    { geo_id: "e", value: "100000" },
+    { geo_id: "z", value: "0" },
+  ];
+  const distribution = {
+    min_value: 0,
+    max_value: 100000,
+    bin_count: 5,
+    total: 6,
+    items: [{ bin_index: 1, count: 5 }, { bin_index: 5, count: 1 }],
+  };
+  const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
+
+  test("spreads a long-tailed measure across every colour where linear bins cannot", () => {
+    const linear = buildChoroplethModel(decades, "geo_id", distribution);
+    const log = buildChoroplethModel(decades, "geo_id", distribution, "No observation", "log");
+    const keys = ["a", "b", "c", "d", "e"];
+    expect(new Set(keys.map((key) => colourOf(linear, key))).size).toBe(2);
+    expect(new Set(keys.map((key) => colourOf(log, key))).size).toBe(5);
+    expect(log.scale).toBe("log");
+    expect(log.usesDistribution).toBe(false);
+    // Zero has no logarithm; it sits in the lowest bin rather than vanishing.
+    expect(colourOf(log, "z")).toBe(colourOf(log, "a"));
+    expect(log.legendItems.map((item) => item.count)).toEqual([2, 1, 1, 1, 1, undefined]);
+    // Five bins of equal width in log space over four decades: edges fall
+    // at 10^1.8, 10^2.6, 10^3.4, 10^4.2, not on the decades themselves.
+    expect(log.legendItems[0].label).toBe("Up to 63");
+    expect(log.legendItems[4].label).toBe("15.8K and above");
+    expect(log.minValue).toBe(10);
+    expect(log.maxValue).toBeCloseTo(100000);
+  });
+
+  test("falls back to linear when nothing published is positive", () => {
+    const model = buildChoroplethModel(
+      [{ geo_id: "a", value: "0" }, { geo_id: "b", value: "-5" }],
+      "geo_id",
+      null,
+      "No observation",
+      "log",
+    );
+    expect(model.scale).toBe("linear");
+  });
+
+  test("extrusion heights follow the same scale", () => {
+    const log = buildExtrusionHeightExpression(decades, "geo_id", "log");
+    const heightOf = (expression, key) => {
+      const match = expression[2];
+      return match[match.indexOf(key) + 1];
+    };
+    // 1000 is the midpoint of 10..100000 in log space: half the height range.
+    expect(heightOf(log, "c")).toBe(200 + 6000);
+    expect(heightOf(log, "z")).toBe(200);
+    expect(heightOf(buildExtrusionHeightExpression(decades, "geo_id"), "c")).toBe(
+      Math.round(200 + ((1000 - 0) / 100000) * 12000),
+    );
+  });
+});

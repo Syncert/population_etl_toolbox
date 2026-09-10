@@ -5,16 +5,18 @@
 // bottom of the file and shares this module's validation vocabulary.
 //
 // Explorer: parse and serialize the shareable public exploration state. Every link shape supported by the current explorer
-// (`source`, `metric`, `state`, `geo`, `geo_level`, `map_mode`, `scope`,
-// `release`) stays valid; unknown or invalid values are dropped rather than
+// (`source`, `metric`, `state`, `geo`, `geo_level`, `map_mode`, `value_scale`,
+// `scope`, `release`) stays valid; unknown or invalid values are dropped rather than
 // propagated into requests.
 
 export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY"] as const;
 export const MAP_MODES = ["choropleth", "extrusion"] as const;
+export const VALUE_SCALES = ["linear", "log"] as const;
 export const OBSERVATION_SCOPES = ["latest", "as_released"] as const;
 
 export type GeoLevel = (typeof GEO_LEVELS)[number];
 export type MapMode = (typeof MAP_MODES)[number];
+export type ValueScale = (typeof VALUE_SCALES)[number];
 export type ObservationScope = (typeof OBSERVATION_SCOPES)[number];
 
 export interface ExplorerState {
@@ -23,6 +25,8 @@ export interface ExplorerState {
   metric?: string;
   geoLevel?: GeoLevel;
   mapMode?: MapMode;
+  /** How values map to colour and height: equal-width bins, or logarithmic. */
+  valueScale?: ValueScale;
   stateFips?: string;
   geoId?: string;
   /** `latest` (the source's own latest publication) or `as_released`. */
@@ -38,7 +42,7 @@ export interface ExplorerState {
 /** Defaults are omitted from serialized links. */
 export type ExplorerStateDefaults = Pick<
   ExplorerState,
-  "source" | "metric" | "geoLevel" | "mapMode" | "scope"
+  "source" | "metric" | "geoLevel" | "mapMode" | "valueScale" | "scope"
 >;
 
 const STATE_FIPS_PATTERN = /^\d{2}$/;
@@ -53,6 +57,10 @@ function isGeoLevel(value: string): value is GeoLevel {
 
 function isMapMode(value: string | null): value is MapMode {
   return value !== null && (MAP_MODES as readonly string[]).includes(value);
+}
+
+function isValueScale(value: string | null): value is ValueScale {
+  return value !== null && (VALUE_SCALES as readonly string[]).includes(value);
 }
 
 function isScope(value: string | null): value is ObservationScope {
@@ -81,6 +89,10 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
   const mapMode = params.get("map_mode");
   if (isMapMode(mapMode)) {
     state.mapMode = mapMode;
+  }
+  const valueScale = params.get("value_scale");
+  if (isValueScale(valueScale)) {
+    state.valueScale = valueScale;
   }
 
   const stateFips = params.get("state");
@@ -132,6 +144,13 @@ export function serializeExplorerState(
   }
   if (state.mapMode && isMapMode(state.mapMode) && state.mapMode !== defaults.mapMode) {
     params.set("map_mode", state.mapMode);
+  }
+  if (
+    state.valueScale &&
+    isValueScale(state.valueScale) &&
+    state.valueScale !== defaults.valueScale
+  ) {
+    params.set("value_scale", state.valueScale);
   }
   if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
     params.set("state", state.stateFips);

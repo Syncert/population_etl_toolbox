@@ -19,7 +19,7 @@ import {
 describe("explorer URL state", () => {
   test("parses every currently supported link parameter", () => {
     const parsed = parseExplorerState(
-      "?source=pep&metric=ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion",
+      "?source=pep&metric=ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion&value_scale=log",
     );
     expect(parsed).toEqual({
       source: "pep",
@@ -28,12 +28,13 @@ describe("explorer URL state", () => {
       geoId: "state:55|county:025",
       geoLevel: "COUNTY",
       mapMode: "extrusion",
+      valueScale: "log",
     });
   });
 
   test("drops invalid values instead of propagating them", () => {
     expect(
-      parseExplorerState("?geo_level=PLANET&map_mode=hologram&state=5x5&source=Not%2FValid"),
+      parseExplorerState("?geo_level=PLANET&map_mode=hologram&value_scale=cubic&state=5x5&source=Not%2FValid"),
     ).toEqual({});
     expect(parseExplorerState("")).toEqual({});
   });
@@ -52,6 +53,7 @@ describe("explorer URL state", () => {
       metric: "BLS:LAU:UNEMP_RATE",
       geoLevel: "STATE",
       mapMode: "extrusion",
+      valueScale: "log",
       stateFips: "55",
       geoId: "state:55",
     };

@@ -3,6 +3,7 @@
 // expressions. No React, no fetch, no browser state.
 
 import type { DistributionResponse, MetricSummary } from "./api/types";
+import type { ValueScale } from "./urlState";
 
 export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
 export const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
@@ -59,6 +60,8 @@ export interface ChoroplethModel {
   maxValue: number | null;
   usesDistribution: boolean;
   valueCount: number;
+  /** The scale the colours were assigned on; "linear" when log was asked for but nothing positive was published. */
+  scale: ValueScale;
 }
 
 export function metricDataset(metricCode: unknown): string {
@@ -344,9 +347,44 @@ function scaleExtrusionByZoom(perFeatureHeight: MapExpression): MapExpression {
   return ["let", "height", perFeatureHeight, ["interpolate", ["linear"], ["zoom"], ...stops]];
 }
 
+/** log10 bounds over the published positive values, or null when there are none. */
+function logRange(values: number[]): { logMin: number; logMax: number } | null {
+  let logMin = Infinity;
+  let logMax = -Infinity;
+  for (const value of values) {
+    if (value > 0) {
+      const logValue = Math.log10(value);
+      logMin = Math.min(logMin, logValue);
+      logMax = Math.max(logMax, logValue);
+    }
+  }
+  return Number.isFinite(logMin) ? { logMin, logMax } : null;
+}
+
+/**
+ * Where a value sits on a log10 scale, 0..1. A value that is not positive
+ * has no logarithm; it sits at the bottom of the scale rather than
+ * vanishing, because a county of zero is still a county.
+ */
+function logPosition(value: number, logMin: number, logMax: number): number {
+  if (!(value > 0)) {
+    return 0;
+  }
+  const span = logMax - logMin;
+  if (span <= 0) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, (Math.log10(value) - logMin) / span));
+}
+
+function binIndexFor(position: number, binCount: number): number {
+  return Math.max(0, Math.min(binCount - 1, Math.floor(position * binCount)));
+}
+
 export function buildExtrusionHeightExpression(
   observations: ObservationRow[] | null | undefined,
   joinKey: string,
+  valueScale: ValueScale = "linear",
 ): MapExpression {
   if (!Array.isArray(observations) || observations.length === 0) {
     return ["literal", 0];
@@ -364,6 +402,7 @@ export function buildExtrusionHeightExpression(
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
   const span = maxValue - minValue || 1;
+  const logBounds = valueScale === "log" ? logRange(values) : null;
 
   for (const item of observations) {
     const joinValue = observationJoinValue(item, joinKey);
@@ -372,7 +411,9 @@ export function buildExtrusionHeightExpression(
       continue;
     }
 
-    const normalized = (numericValue - minValue) / span;
+    const normalized = logBounds
+      ? logPosition(numericValue, logBounds.logMin, logBounds.logMax)
+      : (numericValue - minValue) / span;
     const height = Math.round(200 + normalized * 12000);
     keyedValues.push(String(joinValue), height);
   }
@@ -577,11 +618,60 @@ export function buildSelectionFilter(
   ];
 }
 
+/**
+ * Colours on a log10 scale: five bins of equal width in log space between
+ * the smallest and largest positive value, each legend row counted locally.
+ * The API's equal-width bins put nearly every county of a long-tailed
+ * measure such as population in the first bin; this is the alternative.
+ */
+function buildLogChoroplethModel(
+  keyedMap: Map<string, number>,
+  joinKey: string,
+  bounds: { logMin: number; logMax: number },
+  missingValueLabel: string,
+): ChoroplethModel {
+  const binCount = CHOROPLETH_PALETTE.length;
+  const counts = new Array<number>(binCount).fill(0);
+  const keyedValues: string[] = [];
+  for (const [key, numericValue] of keyedMap.entries()) {
+    const index = binIndexFor(logPosition(numericValue, bounds.logMin, bounds.logMax), binCount);
+    counts[index] = (counts[index] ?? 0) + 1;
+    keyedValues.push(key, CHOROPLETH_PALETTE[index]!);
+  }
+
+  const edge = (index: number): number =>
+    10 ** (bounds.logMin + ((bounds.logMax - bounds.logMin) * index) / binCount);
+  const legendItems: LegendItem[] = CHOROPLETH_PALETTE.map((color, index) => ({
+    color,
+    label:
+      bounds.logMax <= bounds.logMin
+        ? formatLegendValue(edge(0))
+        : index === 0
+          ? `Up to ${formatLegendValue(edge(1))}`
+          : index === binCount - 1
+            ? `${formatLegendValue(edge(index))} and above`
+            : `${formatLegendValue(edge(index))} - ${formatLegendValue(edge(index + 1))}`,
+    count: counts[index],
+  }));
+  legendItems.push({ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel });
+
+  return {
+    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    legendItems,
+    minValue: 10 ** bounds.logMin,
+    maxValue: 10 ** bounds.logMax,
+    usesDistribution: false,
+    valueCount: keyedMap.size,
+    scale: "log",
+  };
+}
+
 export function buildChoroplethModel(
   observations: ObservationRow[] | null | undefined,
   joinKey: string,
   distribution: DistributionResponse | null = null,
   missingValueLabel: string = "No observation",
+  valueScale: ValueScale = "linear",
 ): ChoroplethModel {
   if (!Array.isArray(observations) || observations.length === 0) {
     return {
@@ -591,6 +681,7 @@ export function buildChoroplethModel(
       maxValue: null,
       usesDistribution: false,
       valueCount: 0,
+      scale: valueScale,
     };
   }
 
@@ -616,7 +707,13 @@ export function buildChoroplethModel(
       maxValue: null,
       usesDistribution: false,
       valueCount: 0,
+      scale: valueScale,
     };
+  }
+
+  const logBounds = valueScale === "log" ? logRange(values) : null;
+  if (logBounds) {
+    return buildLogChoroplethModel(keyedMap, joinKey, logBounds, missingValueLabel);
   }
 
   const apiBins = distributionBins(distribution);
@@ -679,6 +776,7 @@ export function buildChoroplethModel(
     maxValue,
     usesDistribution,
     valueCount: values.length,
+    scale: "linear",
   };
 }
 
@@ -687,11 +785,13 @@ export function buildChoroplethMatchExpression(
   joinKey: string,
   distribution: DistributionResponse | null = null,
   missingValueLabel: string = "No observation",
+  valueScale: ValueScale = "linear",
 ): MapExpression {
   return buildChoroplethModel(
     observations,
     joinKey,
     distribution,
     missingValueLabel,
+    valueScale,
   ).expression;
 }
