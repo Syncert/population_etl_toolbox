@@ -297,17 +297,6 @@ ON CONFLICT (dataset_code) DO UPDATE SET
     native_grain = EXCLUDED.native_grain,
     updated_at = NOW();
 
--- The decennial count column exists in every "all data" file and was never
--- read. Publishing it as its own measure is additive: no existing measure
--- changes, and the April count stops being a candidate for the July slot.
-UPDATE silver_pep.pep_dataset
-SET variable_families = ARRAY(
-        SELECT DISTINCT unnest(variable_families || ARRAY['CENSUSPOP'])
-    ),
-    updated_at = NOW()
-WHERE dataset_code IN ('pep_nst_alldata', 'pep_county_alldata')
-  AND NOT ('CENSUSPOP' = ANY (variable_families));
-
 UPDATE silver_pep.pep_dataset
 SET series_kind = 'postcensal',
     era = '2020s',

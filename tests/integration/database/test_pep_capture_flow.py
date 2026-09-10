@@ -515,3 +515,167 @@ def test_pep_two_vintages_and_place_publish_without_losing_revision_history(
             assert cursor.fetchone() == ("CENSUS_PEP", "pending")
     finally:
         reader.close()
+
+
+def test_overlapping_products_resolve_to_one_published_value(
+    postgres_connection_factory: Callable[[], connection],
+    pep_database_scope: PepDatabaseScope,
+) -> None:
+    """Covers: PEH-002 — one row per measure, geography and year, across products.
+
+    PEP publishes overlapping files. The state and county products both carry
+    state rows, and consecutive decades both carry their shared seam year, so
+    ranking within a dataset kept every one of them: a state read answered
+    twice per period and July 2020 answered once per decade. The precedence
+    rule picks exactly one and the revision surface still shows all of them.
+    """
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO silver_ref.dim_geo_entity (
+                    geo_id, geo_type, state_fips, county_fips,
+                    first_seen_version, last_seen_version
+                ) VALUES
+                    ('us:1', 'nation', NULL, NULL, 2000, 2025),
+                    ('state:01', 'state', '01', NULL, 2000, 2025),
+                    ('state:01|county:001', 'county', '01', '001', 2000, 2025)
+                ON CONFLICT (geo_id) DO NOTHING
+                RETURNING geo_id
+                """
+            )
+            pep_database_scope.geo_ids.update(row[0] for row in cursor.fetchall())
+        writer.commit()
+    finally:
+        writer.close()
+
+    # The same decade published twice: the county file rolls Alabama up from
+    # its counties, the state file publishes Alabama in its own right.
+    _capture_fixture(
+        postgres_connection_factory,
+        database_scope=pep_database_scope,
+        dataset_code="pep_county_alldata_2010s",
+        vintage_year=2020,
+        fixture_name="co_2010s.csv",
+    )
+    _capture_fixture(
+        postgres_connection_factory,
+        database_scope=pep_database_scope,
+        dataset_code="pep_nst_alldata_2010s",
+        vintage_year=2020,
+        fixture_name="nst_2010s.csv",
+    )
+    # The seam: July 2020 is the last year of the 2010s series and the first
+    # of the 2020s one, revised between them.
+    _capture_fixture(
+        postgres_connection_factory,
+        database_scope=pep_database_scope,
+        dataset_code="pep_nst_alldata",
+        vintage_year=2025,
+        fixture_name="nst_2025.csv",
+    )
+
+    transform_pep_to_silver(PostgresHookStub(postgres_connection_factory))
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            # Both products published Alabama for 2015, with the same value.
+            cursor.execute(
+                """
+                SELECT dataset_code, summary_level, value
+                FROM gold_pep.population_estimate_revision
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01'
+                  AND observation_year = 2015
+                ORDER BY dataset_code
+                """
+            )
+            assert cursor.fetchall() == [
+                ("pep_county_alldata_2010s", "040", 4854803),
+                ("pep_nst_alldata_2010s", "040", 4854803),
+            ]
+
+            # Exactly one survives, and it is the file that publishes a state
+            # in its own right rather than as a rollup of its counties.
+            cursor.execute(
+                """
+                SELECT dataset_code, value
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01'
+                  AND observation_year = 2015
+                """
+            )
+            assert cursor.fetchall() == [("pep_nst_alldata_2010s", 4854803)]
+
+            # The seam year is published by both decades, and revised between
+            # them; the later vintage is the currently published value.
+            cursor.execute(
+                """
+                SELECT pep_vintage, value
+                FROM gold_pep.population_estimate_revision
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'us:1'
+                  AND observation_year = 2020
+                ORDER BY pep_vintage
+                """
+            )
+            assert cursor.fetchall() == [(2020, 329484123), (2025, 331578104)]
+            cursor.execute(
+                """
+                SELECT dataset_code, pep_vintage, value
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'us:1'
+                  AND observation_year = 2020
+                """
+            )
+            assert cursor.fetchall() == [("pep_nst_alldata", 2025, 331578104)]
+
+            # No geography, measure and year is answered twice any more.
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM (
+                    SELECT metric_code, geo_id, observation_year
+                    FROM gold_pep.population_estimate_latest
+                    GROUP BY metric_code, geo_id, observation_year
+                    HAVING COUNT(*) > 1
+                ) AS duplicated
+                """
+            )
+            assert cursor.fetchone() == (0,)
+
+            # The April enumeration and the July estimate share a year and
+            # stay apart: different measures, different dates, both published.
+            cursor.execute(
+                """
+                SELECT metric_code, estimate_date, value
+                FROM gold_pep.population_estimate_latest
+                WHERE geo_id = 'state:01'
+                  AND observation_year = 2010
+                  AND metric_code IN ('CENSUSPOP', 'POPESTIMATE')
+                ORDER BY metric_code
+                """
+            )
+            rows = cursor.fetchall()
+            assert [(row[0], row[1].isoformat(), row[2]) for row in rows] == [
+                ("CENSUSPOP", "2010-04-01", 4779736),
+                ("POPESTIMATE", "2010-07-01", 4785514),
+            ]
+
+            # Coverage is read from the facts, per measure.
+            cursor.execute(
+                """
+                SELECT first_period, last_period
+                FROM gold_pep.measure_export
+                WHERE source_object_key = 'POPESTIMATE'
+                """
+            )
+            first_period, last_period = cursor.fetchone()
+            assert first_period.isoformat() == "2010-07-01"
+            assert last_period.isoformat() == "2025-07-01"
+    finally:
+        reader.close()

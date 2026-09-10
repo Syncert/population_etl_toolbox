@@ -251,6 +251,9 @@ class PEPDataset:
         "derivation",
         "archive_member",
         "partitions",
+        "required_columns",
+        "minimum_states",
+        "minimum_principal_rows",
     )
 
     def __init__(
@@ -278,6 +281,9 @@ class PEPDataset:
         derivation: str | None = None,
         archive_member: str | None = None,
         partitions: tuple[str, ...] = (),
+        required_columns: frozenset[str] = frozenset(),
+        minimum_states: int = 0,
+        minimum_principal_rows: int = 0,
     ) -> None:
         object.__setattr__(self, "code", code)
         object.__setattr__(self, "title", title)
@@ -302,6 +308,9 @@ class PEPDataset:
         object.__setattr__(self, "derivation", derivation)
         object.__setattr__(self, "archive_member", archive_member)
         object.__setattr__(self, "partitions", partitions)
+        object.__setattr__(self, "required_columns", required_columns)
+        object.__setattr__(self, "minimum_states", minimum_states)
+        object.__setattr__(self, "minimum_principal_rows", minimum_principal_rows)
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"PEPDataset is immutable: cannot set {name}")
@@ -335,7 +344,28 @@ SOURCE_VARIABLE_ALIASES: dict[str, str] = {
 #: estimate, so it is published as its own measure and never folded into
 #: ``POPESTIMATE`` -- that separation is what keeps a decade's closing count
 #: from colliding with the next decade's opening estimate.
+#: Only the closed-decade files carry it: the 2020s "all data" files publish
+#: no ``CENSUS*POP`` column, so those products do not declare one.
 CENSUS_COUNT_VARIABLE = "CENSUSPOP"
+
+#: The identifying columns each published layout family carries. A file
+#: missing one of them is not the product it claims to be, so the parser
+#: refuses it rather than reading whatever columns happen to line up.
+NST_LAYOUT_COLUMNS = frozenset({"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"})
+COUNTY_LAYOUT_COLUMNS = frozenset({"SUMLEV", "STATE", "COUNTY", "STNAME", "CTYNAME"})
+SUBCOUNTY_LAYOUT_COLUMNS = frozenset(
+    {
+        "SUMLEV",
+        "STATE",
+        "COUNTY",
+        "PLACE",
+        "COUSUB",
+        "CONCIT",
+        "FUNCSTAT",
+        "NAME",
+        "STNAME",
+    }
+)
 
 #: Component families shared by every "all data" file, in the spelling used
 #: by the 2000s and 2010s releases.
@@ -377,7 +407,6 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         summary_levels=frozenset({"010", "020", "030", "040"}),
         variables=frozenset(
             {
-                CENSUS_COUNT_VARIABLE,
                 "ESTIMATESBASE",
                 "POPESTIMATE",
                 "NPOPCHG",
@@ -407,6 +436,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2020s",
         native_grain="040",
+        required_columns=NST_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=50,
     ),
     "pep_county_alldata": PEPDataset(
         code="pep_county_alldata",
@@ -416,7 +448,6 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         summary_levels=frozenset({"040", "050"}),
         variables=frozenset(
             {
-                CENSUS_COUNT_VARIABLE,
                 "ESTIMATESBASE",
                 "POPESTIMATE",
                 "NPOPCHG",
@@ -446,6 +477,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2020s",
         native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
     ),
     "pep_subcounty": PEPDataset(
         code="pep_subcounty",
@@ -469,6 +503,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2020s",
         native_grain="162",
+        required_columns=SUBCOUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=18000,
     ),
     # --- 2010s: the closed decade, Vintage 2020 -----------------------------
     "pep_county_alldata_2010s": PEPDataset(
@@ -492,6 +529,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2010s",
         native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
     ),
     "pep_nst_alldata_2010s": PEPDataset(
         code="pep_nst_alldata_2010s",
@@ -514,6 +554,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2010s",
         native_grain="040",
+        required_columns=NST_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=50,
     ),
     # --- 2000s: the closed decade, Vintage 2009 -----------------------------
     "pep_county_alldata_2000s": PEPDataset(
@@ -537,6 +580,9 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         series_kind="postcensal",
         era="2000s",
         native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
     ),
 }
 
