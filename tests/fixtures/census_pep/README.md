@@ -10,8 +10,10 @@ Population Estimates Program bulk CSV releases, retrieved 2026-08-24.
 | `subcounty_2025.csv` | `https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/cities/totals/sub-est2025.csv` | Abbeville city, Alabama (`SUMLEV=162`) | Incorporated-place codes and population columns |
 
 The closed-decade fixtures below were retrieved 2026-09-10 and cut the same
-way: the file's own header, then whole rows selected byte-for-byte, rejoined
-with the separator the source file uses.
+way: the file's own header, then whole rows selected byte-for-byte. Values,
+columns and text encoding are exactly the source's. Line endings are not:
+the repository normalises them on checkout, as it does for every fixture
+here, and the readers accept either.
 
 | Fixture | Official source | Retained rows | Purpose |
 | --- | --- | --- | --- |
