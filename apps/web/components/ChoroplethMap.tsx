@@ -14,7 +14,7 @@
 // never the only way to retrieve a value.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, FilterSpecification } from "maplibre-gl";
 import { buildChoroplethModel, tileFilterForGeoLevel } from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";

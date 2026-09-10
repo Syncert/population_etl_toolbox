@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Download, Save } from "lucide-react";
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
 import type {
   ExpressionSpecification,
   FilterSpecification,
   MapLayerMouseEvent,
 } from "maplibre-gl";
+import type { FeatureCollection } from "geojson";
 import SourceNote from "./SourceNote";
 import StatusPill from "./StatusPill";
 import TimeSeriesChart from "./TimeSeriesChart";
@@ -1148,7 +1149,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
       map.addSource("choropleth", {
         type: "geojson",
-        data: featureCollection as GeoJSON.FeatureCollection,
+        data: featureCollection as FeatureCollection,
       });
 
       map.addLayer(
@@ -1298,7 +1299,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     source.setData({
       type: "FeatureCollection",
       features,
-    } as GeoJSON.FeatureCollection);
+    } as FeatureCollection);
 
     if (map.getLayer("choropleth-fill") && tileMetadata?.joinKey) {
       map.setPaintProperty(
