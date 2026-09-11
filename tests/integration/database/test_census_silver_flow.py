@@ -125,6 +125,13 @@ def test_census_raw_rows_transform_to_exact_silver_keys(
                 cursor.execute(
                     "DELETE FROM raw_census.acs_variables WHERE table_id = 'B99999'"
                 )
+                # The revision rows this test committed outlive it. Left
+                # behind, the next run's transform reads them, finds the
+                # geography deleted below already gone, and refuses.
+                cursor.execute(
+                    "DELETE FROM silver_census.observation_revision "
+                    "WHERE table_id = 'B99999'"
+                )
                 delete_geography(cursor, "state:98")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20940101"
