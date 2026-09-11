@@ -14,7 +14,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed
+- **Status:** Implementation complete; awaiting human review
 - **Last updated:** 2026-09-10
 - **Owner surface:** `src/data_ingestion_toolbox/utility/gold_schema.py`, each source's `refresh_dashboard_serving_layer_*` procedure, `control.serving_refresh_chunk_state`
 - **Depends on:** nothing open. Found while delivering `BLS_LAUS_MEASURE_METRICS_PLAN.md`, whose ACS acceptance criterion it blocks.
@@ -23,16 +23,18 @@ verify:
 
 **Last updated:** 2026-09-10
 
-**Current milestone:** none claimed
+**Current milestone:** none; every phase is delivered.
 
-**Next pickup:** claim the plan, then start at FFR-001 — the chunk planner is what every later phase reuses.
+**Next pickup:** none. Human review. Running the ACS re-serve itself is
+`BLS_LAUS_MEASURE_METRICS_PLAN.md`'s outstanding acceptance criterion, not
+this plan's; this plan supplies the tooling it needs.
 
 ### Completed in the current slice
 
-- [ ] FFR-001 the chunk planner can plan every chunk, not only changed ones
-- [ ] FFR-002 a forced full re-serve runs through the checkpointed chunk path
-- [ ] FFR-003 resumability and idempotency of a forced re-serve
-- [ ] FFR-004 evidence and operator documentation
+- [x] FFR-001 the chunk planner can plan every chunk, not only changed ones
+- [x] FFR-002 a forced full re-serve runs through the checkpointed chunk path
+- [x] FFR-003 resumability and idempotency of a forced re-serve
+- [x] FFR-004 evidence and operator documentation
 
 ## Objective
 
@@ -130,9 +132,11 @@ Deliverables:
   existing `changed_chunks_sql` gains a planning mode) that enumerates every
   calendar year the serving relation covers, independent of any watermark, as
   reviewed SQL alongside the existing constant.
-- Each of the seven sources declares it, derived from its own reporting
-  relation's date span rather than from silver, so the plan covers exactly what
-  is served.
+- Each source that drives this helper declares it, spanning its own reporting
+  relation as well as silver, so the plan covers exactly what is served.
+  (Scoping correction, recorded during implementation: **three** sources drive
+  this helper — BLS, Census ACS, FRED — not seven. The other four refresh
+  through their own paths.)
 - `refresh_serving_layer_in_year_chunks` takes a `force_full` flag selecting
   which plan to use, defaulting to the changed-chunk plan.
 
@@ -219,12 +223,111 @@ Deliverables:
 
 ## Open questions for the reviewer
 
-1. Whether the operator entry point should be a conf key on each existing
-   ingestion DAG or one dedicated `serving_full_reserve` DAG taking a source
-   code. The dedicated DAG keeps an expensive operation out of the scheduled
-   graphs and gives it its own log; the conf key reuses wiring that already
-   exists. The plan defaults to the dedicated DAG.
+1. **Resolved during implementation.** The dedicated `serving_full_reserve`
+   DAG was taken, per the plan's default. It keeps a multi-hour operation out
+   of the scheduled graphs and gives it its own run history, and it made the
+   "no scheduled run can select the forced plan" invariant assertable as a
+   flat statement about the ingestion DAG sources.
 
 ## Implementation evidence
 
-_Empty until claimed._
+### Scope correction
+
+The plan said "each of the seven sources declares it". Only **three** drive
+`refresh_serving_layer_in_year_chunks` — BLS, Census ACS, and FRED, the
+union-served sources that own the large relations. PEP, CDC, FBI UCR, and USDA
+NASS refresh through their own paths and are untouched. The three that use the
+helper all declare a forced plan, and `test_every_union_served_source_declares_both_plans`
+pins that set so a fourth adopter cannot quietly ship without one.
+
+### FFR-001 — the planner can plan every chunk
+
+- `ServingRefreshChunkConfig` gains `all_chunks_sql` and
+  `full_statement_timeout`. The forced plan carries no watermark predicate and
+  no bound parameters at all, so it cannot accidentally behave like the
+  incremental one.
+- Each plan spans the **reporting relation as well as silver**, through
+  `LEAST`/`GREATEST` over both bounds and `generate_series` between them. A
+  year silver no longer carries is still visited, so its orphaned served rows
+  are deleted rather than surviving a "full" re-serve. Years are bounded by
+  min/max rather than a `DISTINCT` scan, so planning stays index-friendly on a
+  68-million-row relation.
+- `refresh_serving_layer_in_year_chunks` takes `force_full`, defaulting to the
+  changed-year plan. A config declaring no forced plan raises rather than
+  silently falling back — falling back would re-serve nothing and look like
+  success.
+
+### FFR-002 — the operator entry point
+
+- `dags/serving_full_reserve_dag.py`, `schedule=None`, triggered with
+  `{"source_code": "CENSUS_ACS"}`. A dedicated DAG rather than a conf key on
+  each ingestion DAG, per the plan's default: it keeps a multi-hour operation
+  out of the scheduled graphs and gives it its own run history and log.
+- `full_reserve_request` validates the conf strictly — a missing or unknown
+  source raises, naming the known set — so a typo fails the task instead of
+  re-serving nothing or something else.
+- The three chunk configurations **moved out of the ingestion DAGs** into
+  `src/data_ingestion_toolbox/utility/serving_reserve.py`. The operator DAG and
+  the ingestion DAGs now drive the same declarations. A second copy of a
+  relation name, a procedure name, or a chunk plan is exactly what drifts
+  silently and re-serves the wrong years.
+- A forced chunk rewrites the whole year rather than the changed subset, so
+  each source declares a longer `full_statement_timeout` (BLS 90min, ACS
+  120min, FRED 60min).
+
+### FFR-003 — resumability and idempotency
+
+- **A design flaw was found and fixed while testing this phase.** The first
+  implementation marked forced progress with a timestamp captured in the
+  running process. An Airflow retry is a new process, so a failure in ACS's
+  twentieth year would have rewritten the nineteen already done — a restart
+  wearing the word "resume". Migration
+  `016_serving_full_reserve_run.sql` adds
+  `control.serving_refresh_state.last_full_reserve_started_at`, so the marker
+  survives the process.
+- A forced run resumes the previous one when any chunk is still outstanding
+  against that marker, and opens a new one only when the previous finished.
+  The watermark cannot express this — a forced re-serve deliberately leaves
+  watermarks alone — which is why progress rides on the chunk's completion time
+  relative to the marker.
+- The watermark is still never pushed past the genuine silver watermark: the
+  forced plan's per-year targets are real `MAX(ingested_at)` values (epoch
+  where a year has no silver), and the final update remains a `GREATEST`. A
+  forced run that advanced it to wall-clock time would make the next
+  incremental run skip rows ingested in between, silently.
+
+### FFR-004 — documentation
+
+- `docs/reference/BETA_RESET_REINGESTION.md` section 7 now names the DAG,
+  carries the measured durations for all three relations, and keeps the
+  one-shot procedure call as the small-relation option with its limits stated.
+- The BLS plan's rollout runbook step 3 replaces its hand-written year loop
+  with the same DAG.
+- `TESTING_CONTRACT.md` gains ETL-045; `CI_EVIDENCE_MAP.md` maps it onto
+  `etl-unit`, `postgres-integration`, and `dag-parse`.
+
+### Verification
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit` | 1268 passed |
+| `pytest -m "integration and database" tests/integration/database/test_forced_full_reserve.py tests/integration/database/test_fred_silver_flow.py` (fresh warehouse) | 10 passed |
+| `ruff check` and `ruff format --check` | clean |
+| `airflow dags list-import-errors` in the running scheduler | none; `serving_full_reserve` parses and is registered |
+
+The integration tests prove the contract on real PostgreSQL: the forced plan
+visits a year the changed plan skips (after an incremental refresh the
+scheduled plan reports `planned: 0`, which is exactly the state a metric
+identity change leaves); a repeated forced re-serve changes no row counts; an
+interrupted run resumes under the same marker, skipping the year it had
+finished and rewriting only the outstanding one, then a later run opens a new
+marker; and a forced run leaves `last_silver_ingested_at` at or below the
+genuine silver maximum.
+
+`tests/run.ps1 dags` is not runnable on this host — Airflow's logging
+configuration fails to initialise on Windows and the pinned scheduler image has
+no pytest — so the DAG-tier additions (`serving_full_reserve` in
+`EXPECTED_DAG_IDS`, its `None` schedule contract, its retry count) run in CI's
+`scheduler-image` job. The DAG is verified to parse against the running
+Airflow, which mounts this code, and the "no scheduled run selects the forced
+plan" invariant is asserted at unit level over the DAG source instead.

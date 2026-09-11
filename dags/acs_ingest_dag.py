@@ -63,9 +63,9 @@ from data_ingestion_toolbox.census_acs.silver_census.transform import (
     transform_census_to_silver,
 )
 from data_ingestion_toolbox.utility.gold_schema import (
-    ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.serving_reserve import ACS_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -682,26 +682,7 @@ def acs_ingest():
         """Refresh changed ACS vintages as independently committed annual chunks."""
         return refresh_serving_layer_in_year_chunks(
             hook=_get_postgres_hook(),
-            config=ServingRefreshChunkConfig(
-                source_code="CENSUS_ACS",
-                log_label="ACS",
-                report_table="gold_census.rpt_acs_observations",
-                report_date_column="observation_date",
-                changed_chunks_sql="""
-                    SELECT
-                        MAKE_DATE(s.estimate_year, 1, 1) AS chunk_start,
-                        MAKE_DATE(s.estimate_year, 12, 31) AS chunk_end,
-                        MAX(s.ingested_at) AS target_watermark
-                    FROM silver_census.fact_demographics s
-                    WHERE s.estimate_value IS NOT NULL
-                      AND s.ingested_at > %s
-                    GROUP BY s.estimate_year
-                    ORDER BY s.estimate_year
-                """,
-                report_procedure="gold_census.refresh_rpt_acs_observations",
-                latest_procedure="gold_census.refresh_mv_acs_latest",
-                statement_timeout="90min",
-            ),
+            config=ACS_CHUNK_CONFIG,
             task_logger=logger,
         )
 

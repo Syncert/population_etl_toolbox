@@ -245,22 +245,22 @@ before each of two harvests is the only path. That is what was run on the
 development stack when this plan was implemented, and the numbers below come
 from it.
 
-### Step 3 — ACS, full re-serve, a year at a time
+### Step 3 — ACS, full re-serve
 
 ACS publishes the same metric identities as before, so it needs **no** harvest —
-only the geography vocabulary is wrong. A single forced call cannot do it:
-`gold_census.rpt_acs_observations` is 68,302,467 rows, past the procedure's
-60-minute statement timeout. Drive it per year, each pair its own transaction:
+only the geography vocabulary is wrong. Trigger the `serving_full_reserve` DAG
+with:
 
-```sql
-CALL gold_census.refresh_rpt_acs_observations('2005-01-01', '2005-12-31');
-CALL gold_census.refresh_mv_acs_latest('2005-01-01', '2005-12-31');
--- ... repeat for every year through 2024
+```json
+{"source_code": "CENSUS_ACS"}
 ```
 
-Every year from 2005 to 2024 must be covered; skipping unchanged years is
-exactly what leaves the old vocabulary behind. Budget roughly 2.5 hours on an
-idle box at the measured 7,700 rows per second. Verify:
+It plans every calendar year regardless of watermark, commits per year, and
+resumes at the year it stopped on if interrupted — which matters here, because
+`gold_census.rpt_acs_observations` is 68,302,467 rows and takes roughly 2.5
+hours on an idle box at the measured 7,700 rows per second. A single forced
+procedure call cannot do it at all: it exceeds the 60-minute statement timeout.
+Verify:
 
 ```sql
 SELECT DISTINCT geo_level FROM gold_census.rpt_acs_observations;  -- COUNTY, NATIONAL, STATE

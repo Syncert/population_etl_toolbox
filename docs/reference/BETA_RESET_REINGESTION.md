@@ -163,11 +163,18 @@ procedure's `metric_code` expression — the unchanged years keep the old code,
 and the catalog then carries two identities for one measure with only part of
 the history under each.
 
-After such a change, refresh the whole source once, forced:
+After such a change, re-serve the whole source once. Trigger the
+`serving_full_reserve` DAG with the source in its conf:
 
-```sql
-CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
+```json
+{"source_code": "BLS"}
 ```
+
+It has no schedule — a full re-serve must never happen on one — and drives the
+same chunked, checkpointed path the ingestion DAGs use, so it commits per
+calendar year, logs per-chunk row counts, and an interrupted run resumes at the
+year it stopped on rather than starting over. Known sources: `BLS`,
+`CENSUS_ACS`, `FRED`.
 
 Then let the catalog follow, which it now does on its own. The harvest skips
 only when the publisher has published nothing newer **and** a digest of the
@@ -203,22 +210,21 @@ scheduled run is never forced. A forced run is recorded in
 > operating a warehouse that predates that migration, that manual clear is the
 > only path.
 
-Each source's procedure takes the same three arguments
-(`gold_census.refresh_dashboard_serving_layer_acs`,
-`gold_fred.refresh_dashboard_serving_layer_fred`, and so on). The procedures
-set a 60-minute statement timeout per call, which bounds how large a window
-one call may cover. Measured on the development stack: BLS (5.8 million rows)
-took 16m44s end to end -- 12m30s to rebuild the reporting relation and 4m11s
-for the latest relation -- and FRED (52 thousand rows) took 6 seconds.
+Pause the source's ingestion first. Re-serving a source while its ingest
+writes silver starves both: measured on the development stack, one ACS year
+managed about 1,500 rows per second against a live ingest instead of the 7,700
+the same box sustained idle.
 
-`gold_census.rpt_acs_observations` is about 68 million rows and will not
-finish inside one call. Drive it a calendar year at a time instead, each pair
-in its own transaction, so no single statement approaches the timeout:
+Measured durations, forced, on an idle box:
 
-```sql
-CALL gold_census.refresh_rpt_acs_observations('2019-01-01', '2019-12-31');
-CALL gold_census.refresh_mv_acs_latest('2019-01-01', '2019-12-31');
-```
+| Relation | Rows | Duration |
+| --- | --- | --- |
+| `gold_fred.rpt_fred_observations` | 52 thousand | 6 seconds |
+| `gold_bls.rpt_bls_observations` | 5.8 million | 16m44s (12m31s report, 4m11s latest) |
+| `gold_census.rpt_acs_observations` | 68.3 million | about 2.5 hours |
 
-Every year must be covered, not only the changed ones: skipping unchanged
-years is precisely what leaves the old identity behind.
+The one-shot procedure call
+(`CALL gold_<source>.refresh_dashboard_serving_layer_<source>(NULL, NULL, TRUE)`)
+still exists and is fine for a small relation, but it runs as a single
+transaction under a 60-minute statement timeout, so it cannot finish ACS at
+all and loses the whole run on any failure. Prefer the DAG.

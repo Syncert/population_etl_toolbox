@@ -49,9 +49,9 @@ from data_ingestion_toolbox.fred.domain_coverage import (
 )
 from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_silver
 from data_ingestion_toolbox.utility.gold_schema import (
-    ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.serving_reserve import FRED_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -602,28 +602,7 @@ def fred_ingest():
         """Refresh changed FRED years as independently committed annual chunks."""
         return refresh_serving_layer_in_year_chunks(
             hook=_get_postgres_hook(),
-            config=ServingRefreshChunkConfig(
-                source_code="FRED",
-                log_label="FRED",
-                report_table="gold_fred.rpt_fred_observations",
-                report_date_column="observation_date",
-                changed_chunks_sql="""
-                    SELECT
-                        MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 1, 1)
-                            AS chunk_start,
-                        MAKE_DATE(EXTRACT(YEAR FROM s.observation_date)::INTEGER, 12, 31)
-                            AS chunk_end,
-                        MAX(s.ingested_at) AS target_watermark
-                    FROM silver_fred.fact_economic_indicators s
-                    WHERE s.is_missing = FALSE
-                      AND s.ingested_at > %s
-                    GROUP BY EXTRACT(YEAR FROM s.observation_date)
-                    ORDER BY EXTRACT(YEAR FROM s.observation_date)
-                """,
-                report_procedure="gold_fred.refresh_rpt_fred_observations",
-                latest_procedure="gold_fred.refresh_mv_fred_latest",
-                statement_timeout="30min",
-            ),
+            config=FRED_CHUNK_CONFIG,
             task_logger=logger,
         )
 

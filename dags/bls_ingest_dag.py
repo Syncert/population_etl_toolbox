@@ -53,9 +53,9 @@ from data_ingestion_toolbox.bls.ingest import (
 )
 from data_ingestion_toolbox.bls.silver_bls.transform import transform_bls_to_silver
 from data_ingestion_toolbox.utility.gold_schema import (
-    ServingRefreshChunkConfig,
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.serving_reserve import BLS_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -943,26 +943,7 @@ def bls_ingest():
         """Refresh changed BLS years as independently committed annual chunks."""
         return refresh_serving_layer_in_year_chunks(
             hook=_get_postgres_hook(),
-            config=ServingRefreshChunkConfig(
-                source_code="BLS",
-                log_label="BLS",
-                report_table="gold_bls.rpt_bls_observations",
-                report_date_column="observation_date",
-                changed_chunks_sql="""
-                    SELECT
-                        MAKE_DATE(s.year, 1, 1) AS chunk_start,
-                        MAKE_DATE(s.year, 12, 31) AS chunk_end,
-                        MAX(s.ingested_at) AS target_watermark
-                    FROM silver_bls.fact_labor_statistics s
-                    WHERE s.value IS NOT NULL
-                      AND s.ingested_at > %s
-                    GROUP BY s.year
-                    ORDER BY s.year
-                """,
-                report_procedure="gold_bls.refresh_rpt_bls_observations",
-                latest_procedure="gold_bls.refresh_mv_bls_latest",
-                statement_timeout="60min",
-            ),
+            config=BLS_CHUNK_CONFIG,
             task_logger=logger,
         )
 
