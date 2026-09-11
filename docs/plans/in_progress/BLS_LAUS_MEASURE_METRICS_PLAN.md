@@ -28,7 +28,7 @@ verify:
 
 **Current milestone:** BLM-004, ACS reporting relation only
 
-**Next pickup:** finish re-serving `gold_census.rpt_acs_observations` (about 68 million rows) a calendar year at a time, every year from 2005 to 2024, then confirm `SELECT DISTINCT geo_level` over `gold_census.rpt_acs_observations` and `gold_census.mv_acs_latest` returns only `NATIONAL`, `STATE`, `COUNTY`. The procedure calls and the reason a single forced call will not do are in `BETA_RESET_REINGESTION.md` section 7. Nothing else is outstanding; the code, tests, and documentation for every phase are delivered, and BLS and FRED are fully re-served and verified.
+**Next pickup:** re-serve `gold_census.rpt_acs_observations` (68,302,467 rows) with ACS ingestion paused, a calendar year at a time for every year from 2005 to 2024, then confirm `SELECT DISTINCT geo_level` over `gold_census.rpt_acs_observations` and `gold_census.mv_acs_latest` returns only `NATIONAL`, `STATE`, `COUNTY` and that `GET /observations?metric_code=CENSUS_ACS:acs1:B01001_001&geo_level=NATIONAL` answers the unfiltered row count. The procedure calls, and why a single forced call cannot be used, are in `BETA_RESET_REINGESTION.md` section 7. Nothing else is outstanding: the code, tests, and documentation for every phase are delivered, and BLS and FRED are fully re-served and verified.
 
 ### Completed in the current slice
 
@@ -227,9 +227,26 @@ All warehouse evidence was gathered against the running development stack
   procedure and asserts the served and latest rows both carry `NATIONAL`.
   Without the seed the assertion passed vacuously, which is why the defect
   survived.
-- **Outstanding:** `gold_census.rpt_acs_observations` (68,302,467 rows) is
-  still being re-served a year at a time and continues to carry `us` for the
-  years not yet reached. See the checkpoint's next pickup.
+- **Outstanding, and deliberately not forced on a live stack:**
+  `gold_census.rpt_acs_observations` (68,302,467 rows) still carries 54,901
+  rows at `us`. A per-year re-serve was started and then cancelled, and its
+  transaction rolled back, so the relation is in a consistent pre-refresh
+  state rather than a mixed one. Two reasons to sequence it rather than push
+  it through here:
+  - A scheduled `acs_ingest` run (`scheduled__2026-08-01T06:00:00+00:00`) has
+    been writing `silver_census.fact_demographics` since 19:25Z. With that
+    contention, year 2005 (685,717 rows) had not finished after 8 minutes --
+    about 1,500 rows per second against the 7,700 the uncontended BLS refresh
+    sustained -- which extrapolates to roughly twelve hours for the full
+    relation.
+  - Re-serving years the in-flight ingest is still changing is also partly
+    wasted: that DAG runs its own serving refresh for its changed years when
+    it finishes, and it now emits the normalised vocabulary because it calls
+    the same fixed procedures.
+  `BETA_RESET_REINGESTION.md` step 2 already requires pausing ingestion before
+  a reset of this kind, and section 7 now carries the per-year calls. The code
+  path itself is proven by the BLS and FRED re-serves above, which exercise
+  the identical change, and by the DDL-text and real-database tests.
 
 ### BLM-002 — LAUS measure identity
 
