@@ -1,6 +1,6 @@
 """LAUS publishes per measure, every other BLS program per series.
 
-Covers: ETL-044 — a LAUS series id codes a program, an area, and a measure, so
+Covers: ETL-048 — a LAUS series id codes a program, an area, and a measure, so
 series-level publication gave 13,261 single-place metrics and no BLS metric
 spanning geographies. The explorer's map, distribution bins, and comparison
 routes are capability-driven and therefore had nothing to draw. These tests
@@ -43,7 +43,7 @@ def _read(path: Path) -> str:
 
 
 def test_transform_seeds_exactly_the_seven_laus_measures() -> None:
-    """Covers: ETL-044 — the published measure identities are the LAUS seven."""
+    """Covers: ETL-048 — the published measure identities are the LAUS seven."""
     seeded = {
         match.group("measure_code"): (
             match.group("metric_key"),
@@ -57,7 +57,7 @@ def test_transform_seeds_exactly_the_seven_laus_measures() -> None:
 
 
 def test_measure_dimension_holds_no_non_laus_program() -> None:
-    """Covers: ETL-044 — CES, CPI, JOLTS, and CPS keep their series identity.
+    """Covers: ETL-048 — CES, CPI, JOLTS, and CPS keep their series identity.
 
     The serving refresh and the publisher both branch on membership of
     ``dim_bls_measure``, so seeding another program here would silently retire
@@ -70,7 +70,7 @@ def test_measure_dimension_holds_no_non_laus_program() -> None:
 
 
 def test_serving_refresh_prefers_the_measure_identity_for_mapped_programs() -> None:
-    """Covers: ETL-044 — mapped rows publish the measure code, others the series."""
+    """Covers: ETL-048 — mapped rows publish the measure code, others the series."""
     sql = _read(GOLD_DDL)
     assert "COALESCE('BLS:' || bm.metric_key, 'BLS:' || bs.series_id)" in sql
     assert (
@@ -81,14 +81,14 @@ def test_serving_refresh_prefers_the_measure_identity_for_mapped_programs() -> N
 
 
 def test_serving_refresh_keeps_the_series_id_on_every_row() -> None:
-    """Covers: ETL-044 — lineage back to the BLS series survives the change."""
+    """Covers: ETL-048 — lineage back to the BLS series survives the change."""
     sql = _read(GOLD_DDL)
     assert "series_id                  TEXT NOT NULL," in sql
     assert "        bs.series_id,\n" in sql
 
 
 def test_latest_relation_keys_on_geography_series_and_metric() -> None:
-    """Covers: ETL-044 — one latest row per geography per measure.
+    """Covers: ETL-048 — one latest row per geography per measure.
 
     LAUS is unadjusted only at both grains, so a geography has exactly one
     series per measure and this key yields exactly one latest row for it.
@@ -101,7 +101,7 @@ def test_latest_relation_keys_on_geography_series_and_metric() -> None:
 
 
 def test_publisher_reads_laus_grains_from_the_fact_rows() -> None:
-    """Covers: ETL-044 — grains are aggregated, never declared as a constant."""
+    """Covers: ETL-048 — grains are aggregated, never declared as a constant."""
     sql = _read(PUBLISHER_DDL)
     export = sql.split("CREATE OR REPLACE VIEW gold_bls.measure_export AS", 1)[1]
     export = export.split("CREATE OR REPLACE VIEW gold_bls.metric_publisher AS", 1)[0]
@@ -112,7 +112,7 @@ def test_publisher_reads_laus_grains_from_the_fact_rows() -> None:
 
 
 def test_publisher_emits_measure_rows_and_excludes_their_series() -> None:
-    """Covers: ETL-044 — a measure-identified program publishes once, not twice."""
+    """Covers: ETL-048 — a measure-identified program publishes once, not twice."""
     sql = _read(PUBLISHER_DDL)
     assert "'measure'::TEXT," in sql
     assert (
@@ -123,7 +123,7 @@ def test_publisher_emits_measure_rows_and_excludes_their_series() -> None:
 
 
 def test_publisher_keys_measure_lineage_on_the_measure() -> None:
-    """Covers: ETL-044 — physical lineage points at the measure, not a series."""
+    """Covers: ETL-048 — physical lineage points at the measure, not a series."""
     sql = _read(PUBLISHER_DDL)
     assert (
         "JSONB_BUILD_OBJECT('schema', 'gold_bls', 'relation', "

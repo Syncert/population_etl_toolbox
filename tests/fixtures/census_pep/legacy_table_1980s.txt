@@ -1,0 +1,18 @@
+FIPS                   Census    Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1980      1981      1982      1983      1984
+00000 United States   226542250 229465744 231664432 233792014 235824908
+FIPS                   Estimate  Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1985      1986      1987      1988      1989
+00000 United States   237923734 240132831 242288936 244499004 246819222
+FIPS                   Census    Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1980      1981      1982      1983      1984
+01000 Alabama           3894025   3918533   3925263   3934100   3951824
+FIPS                   Estimate  Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1985      1986      1987      1988      1989
+01000 Alabama           3972520   3991569   4015262   4023842   4030219
+FIPS                   Census    Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1980      1981      1982      1983      1984
+01001 Autauga Co.         32259     31985     32036     32054     32134
+FIPS                   Estimate  Estimate  Estimate  Estimate  Estimate
+Code  Area Name            1985      1986      1987      1988      1989
+01001 Autauga Co.         32245     32893     33268     33636     33996
