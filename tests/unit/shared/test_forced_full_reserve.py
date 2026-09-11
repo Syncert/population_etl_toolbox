@@ -59,6 +59,37 @@ def test_the_forced_plan_spans_the_served_relation_too() -> None:
         assert "generate_series" in config.all_chunks_sql
 
 
+#: The silver fact table each source's forced plan aggregates.
+SILVER_FACTS = {
+    "BLS": "silver_bls.fact_labor_statistics",
+    "CENSUS_ACS": "silver_census.fact_demographics",
+    "FRED": "silver_fred.fact_economic_indicators",
+}
+
+
+def test_the_forced_plan_reads_the_silver_fact_table_exactly_once() -> None:
+    """Covers: ETL-049 — the per-year watermark is one aggregate, not N.
+
+    The first implementation took each year's watermark from a correlated
+    subquery, so the planner read the whole fact table once per calendar year.
+    On Census ACS that is twenty passes over tens of millions of rows: the
+    planning step alone had not returned after ten minutes, before a single row
+    was re-served. The fix aggregates once and joins the result to the year
+    series, and naming the table exactly once is what makes the difference
+    visible to a test -- runtime is not assertable here, because the fixtures
+    these tests can build are far too small to show it.
+    """
+    for source_code, config in FULL_RESERVE_CONFIGS.items():
+        table = SILVER_FACTS[source_code]
+        occurrences = config.all_chunks_sql.count(table)
+        assert occurrences == 1, (
+            f"{source_code}'s forced plan names {table} {occurrences} times; "
+            "more than one means it scans the fact table per year rather than "
+            "aggregating it once"
+        )
+        assert "GROUP BY" in config.all_chunks_sql
+
+
 def test_a_forced_chunk_may_take_longer_than_an_incremental_one() -> None:
     """Covers: ETL-049 — a forced chunk rewrites the year, not the delta."""
     for config in CONFIGS:

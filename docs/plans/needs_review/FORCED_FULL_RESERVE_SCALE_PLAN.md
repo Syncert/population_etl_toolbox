@@ -296,6 +296,27 @@ pins that set so a fourth adopter cannot quietly ship without one.
   forced run that advanced it to wall-clock time would make the next
   incremental run skip rows ingested in between, silently.
 
+### Planning cost, found while operating it
+
+The first implementation took each year's target watermark from a correlated
+subquery. That reads the whole silver fact table **once per calendar year**:
+on Census ACS, twenty passes over tens of millions of rows. Dry-running the
+plan against the development warehouse before the first real re-serve, it had
+not returned after **ten minutes** -- before a single row was re-served.
+
+FRED, which the integration tests exercise, has four rows in its fixture, so
+nothing in the suite could show it. The plan now aggregates once and joins the
+result to the year series:
+
+| Plan shape | ACS planning step |
+| --- | --- |
+| correlated subquery per year | >10 minutes, cancelled |
+| single `GROUP BY`, joined | **5m49s**, 20 chunks returned |
+
+`test_the_forced_plan_reads_the_silver_fact_table_exactly_once` pins it by
+counting how often the plan names its fact table, because runtime is not
+assertable against fixtures this small. The old shape names it three times.
+
 ### FFR-004 — documentation
 
 - `docs/reference/BETA_RESET_REINGESTION.md` section 7 now names the DAG,
