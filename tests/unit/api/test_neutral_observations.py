@@ -790,12 +790,12 @@ def test_dispatched_sql_names_only_allowlisted_relations(
 
 
 # ---------------------------------------------------------------------------
-# PEH-006 — one row per geography, ranked inside the source relation
+# API-066 — one row per geography, ranked inside the source relation
 # ---------------------------------------------------------------------------
 
 
 def test_newest_per_geography_ranks_inside_the_source_relation() -> None:
-    """Covers: PEH-006 — the reduction happens where the ordering is known.
+    """Covers: API-066 — the reduction happens where the ordering is known.
 
     ``scope=latest`` answers a source's whole latest publication, which for
     Census PEP is every estimated year of the current vintage. A client that
@@ -830,7 +830,7 @@ def test_newest_per_geography_ranks_inside_the_source_relation() -> None:
 
 
 def test_newest_per_geography_keeps_the_declared_filters() -> None:
-    """Covers: PEH-006 — the reduction composes, it does not replace."""
+    """Covers: API-066 — the reduction composes, it does not replace."""
     session = _DispatchSession(metric_row=dict(_PEP_METRIC))
     client = _client_with(session)
     try:
@@ -861,7 +861,7 @@ def test_newest_per_geography_keeps_the_declared_filters() -> None:
 
 
 def test_newest_per_geography_is_refused_for_an_as_released_read() -> None:
-    """Covers: PEH-006 — an as-released read is a series per release.
+    """Covers: API-066 — an as-released read is a series per release.
 
     Reducing it to one row per geography would present whichever release
     sorted last as the value, which is the same reason the explorer leaves
@@ -888,7 +888,7 @@ def test_newest_per_geography_is_refused_for_an_as_released_read() -> None:
 
 
 def test_default_still_answers_the_whole_latest_publication() -> None:
-    """Covers: PEH-006 — the v1 default is unchanged by the addition."""
+    """Covers: API-066 — the v1 default is unchanged by the addition."""
     session = _DispatchSession(metric_row=dict(_PEP_METRIC))
     client = _client_with(session)
     try:
@@ -906,7 +906,7 @@ def test_default_still_answers_the_whole_latest_publication() -> None:
 
 
 def test_newest_per_geography_is_declared_on_the_neutral_route() -> None:
-    """Covers: PEH-006 — a client discovers the parameter rather than assuming.
+    """Covers: API-066 — a client discovers the parameter rather than assuming.
 
     The explorer only sends a parameter the capability entry declares, so an
     undeclared one would simply never be used.

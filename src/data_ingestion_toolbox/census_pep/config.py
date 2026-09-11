@@ -254,6 +254,7 @@ class PEPDataset:
         "required_columns",
         "minimum_states",
         "minimum_principal_rows",
+        "pads_geography_codes",
     )
 
     def __init__(
@@ -286,6 +287,7 @@ class PEPDataset:
         required_columns: frozenset[str] = frozenset(),
         minimum_states: int = 0,
         minimum_principal_rows: int = 0,
+        pads_geography_codes: bool = False,
     ) -> None:
         object.__setattr__(self, "code", code)
         object.__setattr__(self, "title", title)
@@ -313,6 +315,7 @@ class PEPDataset:
         object.__setattr__(self, "required_columns", required_columns)
         object.__setattr__(self, "minimum_states", minimum_states)
         object.__setattr__(self, "minimum_principal_rows", minimum_principal_rows)
+        object.__setattr__(self, "pads_geography_codes", pads_geography_codes)
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"PEPDataset is immutable: cannot set {name}")
@@ -586,6 +589,34 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         minimum_states=50,
         minimum_principal_rows=3000,
     ),
+    "pep_county_intercensal_2000s": PEPDataset(
+        code="pep_county_intercensal_2000s",
+        title=(
+            "Intercensal Estimates of the Resident Population for Counties, "
+            "2000-2010 (CO-EST00INT-TOT)"
+        ),
+        transport="bulk_csv",
+        geography_levels=frozenset({"state", "county"}),
+        summary_levels=frozenset({"040", "050"}),
+        variables=frozenset({CENSUS_COUNT_VARIABLE, "ESTIMATESBASE", "POPESTIMATE"}),
+        layout_version="co-est00int-tot",
+        parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv",
+        release_status="active",
+        decennial_base=2000,
+        series_kind="intercensal",
+        era="2000s",
+        native_grain="050",
+        # This file prints its codes without leading zeros: Alabama is state
+        # 1 at summary level 40, where every other product writes 01 and 040.
+        pads_geography_codes=True,
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
     # --- Before the CSV era -------------------------------------------------
     # Printed tables and fixed-width cell files. They publish population and,
     # for the 1970s and 1980s, the decennial count that opens the decade;
@@ -824,6 +855,22 @@ _CURATED_RELEASES = (
         status="published",
         observation_start_year=2000,
         geography_basis_date="2009-01-01",
+    ),
+    # The intercensal publication closes the 2000s against both censuses and
+    # supersedes the postcensal estimates for those years. A postcensal
+    # release's vintage is forced to its last observation year; an
+    # intercensal one has no such anchor, so it takes the year the artifact
+    # was published at its registered URL, the same evidence its release date
+    # comes from.
+    _release(
+        "pep_county_intercensal_2000s",
+        2016,
+        "CO-EST00INT-TOT",
+        "2016-09-09",
+        status="published",
+        observation_start_year=2000,
+        observation_end_year=2010,
+        geography_basis_date="2010-01-01",
     ),
     # These three state their own issue date in the file itself, which is
     # better evidence than the artifact's date at its URL.

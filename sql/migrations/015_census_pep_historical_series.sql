@@ -261,6 +261,22 @@ VALUES
         '040'
     ),
     (
+        'pep_county_intercensal_2000s',
+        'Intercensal Estimates of the Resident Population for Counties, 2000-2010 (CO-EST00INT-TOT)',
+        'bulk_csv',
+        ARRAY['state', 'county'],
+        ARRAY['040', '050'],
+        ARRAY['CENSUSPOP', 'ESTIMATESBASE', 'POPESTIMATE'],
+        'census-pep-bulk-csv-v1',
+        'cp1252',
+        'https://www.census.gov/programs-surveys/popest/data/tables.html',
+        2000,
+        TRUE,
+        'intercensal',
+        '2000s',
+        '050'
+    ),
+    (
         'pep_county_alldata_2000s',
         'State and County Population Estimates and Components of Change, 2000-2009 (Vintage 2009)',
         'bulk_csv',
@@ -337,6 +353,13 @@ VALUES
         'https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2020/nst-est2020-alldata.pdf',
         DATE '2021-05-04', 2010, 2020, DATE '2020-01-01',
         'nst-est2020-alldata', 'published', 'text/csv', 'postcensal'
+    ),
+    (
+        'pep_county_intercensal_2000s', 2016, 'CO-EST00INT-TOT',
+        'https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv',
+        'https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv',
+        DATE '2016-09-09', 2000, 2010, DATE '2010-01-01',
+        'co-est00int-tot', 'published', 'text/csv', 'intercensal'
     ),
     (
         'pep_county_alldata_2000s', 2009, 'CO-EST2009-ALLDATA',

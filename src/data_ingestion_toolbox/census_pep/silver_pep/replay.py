@@ -192,10 +192,21 @@ def parse_captured_pep_values(
     header, records = _parse_document(payload, text_encoding=dataset.text_encoding)
     metrics = _metric_columns(header, release)
 
+    #: Fixed-width FIPS fields, for a file that prints them without their
+    #: leading zeros. Padding a code of known width restores what the code
+    #: is; it is applied only where the product declares the file does this.
+    code_widths = {"SUMLEV": 3, "STATE": 2, "COUNTY": 3, "PLACE": 5}
+
+    def read_code(source_row: dict[str, str], name: str) -> str | None:
+        value = source_row.get(name)
+        if value is None or not dataset.pads_geography_codes:
+            return value
+        return value.rjust(code_widths[name], "0") if name in code_widths else value
+
     parsed: list[dict[str, Any]] = []
     for row_index, record in enumerate(records):
         source_row = dict(zip(header, record))
-        summary_level = source_row.get("SUMLEV")
+        summary_level = read_code(source_row, "SUMLEV")
         if summary_level not in dataset.summary_levels:
             raise PepCapturePayloadError(
                 f"PEP CSV contains unregistered summary level: {summary_level}"
@@ -221,9 +232,9 @@ def parse_captured_pep_values(
                     "summary_level": summary_level,
                     "region_code_source": source_row.get("REGION"),
                     "division_code_source": source_row.get("DIVISION"),
-                    "state_fips_source": source_row.get("STATE"),
-                    "county_fips_source": source_row.get("COUNTY"),
-                    "place_fips_source": source_row.get("PLACE"),
+                    "state_fips_source": read_code(source_row, "STATE"),
+                    "county_fips_source": read_code(source_row, "COUNTY"),
+                    "place_fips_source": read_code(source_row, "PLACE"),
                     "county_subdivision_source": source_row.get("COUSUB"),
                     "consolidated_city_source": source_row.get("CONCIT"),
                     "functional_status_source": source_row.get("FUNCSTAT"),

@@ -1,6 +1,6 @@
 """Static contracts for the Census PEP gold publication.
 
-Covers: PEH-002 — the currently published value for a measure, geography and
+Covers: ETL-044 — the currently published value for a measure, geography and
 year is chosen across every product that publishes it, not within one. These
 assertions read the DDL text so a regression fails in the unit tier, before a
 warehouse is available to reproduce it in.
@@ -47,7 +47,7 @@ def _view_body(name: str) -> str:
 
 
 def test_latest_is_not_partitioned_by_the_publishing_product() -> None:
-    """Covers: PEH-002 — two products publishing one value yield one row.
+    """Covers: ETL-044 — two products publishing one value yield one row.
 
     While the 2020s were the only decade, ranking inside a dataset was
     harmless. It is not: the state file and the county file both publish
@@ -62,7 +62,7 @@ def test_latest_is_not_partitioned_by_the_publishing_product() -> None:
 
 
 def test_latest_prefers_the_intercensal_series_then_the_newest_vintage() -> None:
-    """Covers: PEH-002 — precedence is stated in the order it is applied."""
+    """Covers: ETL-044 — precedence is stated in the order it is applied."""
     body = _view_body("gold_pep.population_estimate_latest")
     order = re.search(r"ORDER BY(.*?)\)\s*AS vintage_rank", body, re.DOTALL)
     assert order is not None
@@ -75,7 +75,7 @@ def test_latest_prefers_the_intercensal_series_then_the_newest_vintage() -> None
 
 
 def test_latest_selects_exactly_one_row_per_geography_measure_and_year() -> None:
-    """Covers: PEH-002 — the choice is total, not merely preferred.
+    """Covers: ETL-044 — the choice is total, not merely preferred.
 
     ``DENSE_RANK`` would return every row of a tie; the promise is one row,
     and the final ordering key makes that deterministic rather than left to
@@ -88,14 +88,14 @@ def test_latest_selects_exactly_one_row_per_geography_measure_and_year() -> None
 
 
 def test_measure_coverage_is_read_from_the_facts() -> None:
-    """Covers: PEH-002 — published coverage follows what actually loaded."""
+    """Covers: ETL-044 — published coverage follows what actually loaded."""
     body = _view_body("gold_pep.measure_export")
     assert "MIN(fact.estimate_date) AS first_period" in body
     assert "MAX(fact.estimate_date) AS last_period" in body
 
 
 def test_transform_dates_a_decennial_count_to_april() -> None:
-    """Covers: PEH-001 — an April enumeration is not a July estimate.
+    """Covers: ETL-043 — an April enumeration is not a July estimate.
 
     This is what keeps a decade's closing count from competing with the next
     decade's opening estimate for the same geography and year.
@@ -106,7 +106,7 @@ def test_transform_dates_a_decennial_count_to_april() -> None:
 
 
 def test_release_completeness_reads_the_registry_not_a_product_list() -> None:
-    """Covers: PEH-003 — a newly registered product can be complete.
+    """Covers: ETL-045 — a newly registered product can be complete.
 
     Completeness named the three 2020s products, so any further product was
     incomplete by construction and its rows never reached the gold views.

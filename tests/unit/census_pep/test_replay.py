@@ -157,7 +157,7 @@ def test_production_completeness_rejects_partial_fixture() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PEH-003 — one parser, every decade's spelling
+# ETL-045 — one parser, every decade's spelling
 # ---------------------------------------------------------------------------
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "census_pep"
@@ -179,7 +179,7 @@ def _parsed(dataset_code: str, vintage_year: int, fixture: str) -> list[dict]:
 
 
 def test_closed_decade_component_spelling_maps_onto_one_measure() -> None:
-    """Covers: PEH-003 — NATURALINC and NATURALCHG are the same measure.
+    """Covers: ETL-045 — NATURALINC and NATURALCHG are the same measure.
 
     The Bureau renamed the family when it opened the 2020s series. Reading
     the older spelling as its own metric would split one county's natural
@@ -197,7 +197,7 @@ def test_closed_decade_component_spelling_maps_onto_one_measure() -> None:
 
 
 def test_decennial_count_is_read_as_its_own_measure() -> None:
-    """Covers: PEH-003 — the census column carries its year inside its name."""
+    """Covers: ETL-045 — the census column carries its year inside its name."""
     rows = _parsed("pep_county_alldata_2010s", 2020, "co_2010s.csv")
     counts = [row for row in rows if row["metric_code"] == "CENSUSPOP"]
 
@@ -213,13 +213,13 @@ def test_decennial_count_is_read_as_its_own_measure() -> None:
 
 
 def test_current_decade_files_publish_no_census_count() -> None:
-    """Covers: PEH-003 — a family a file does not carry yields no rows."""
+    """Covers: ETL-045 — a family a file does not carry yields no rows."""
     rows = _parsed("pep_nst_alldata", 2025, "nst_2025.csv")
     assert not [row for row in rows if row["metric_code"] == "CENSUSPOP"]
 
 
 def test_not_applicable_is_recorded_as_a_sentinel_not_a_parse_failure() -> None:
-    """Covers: PEH-003 — 'X' is a published non-value.
+    """Covers: ETL-045 — 'X' is a published non-value.
 
     The Bureau marks the decennial count of a geography that did not exist at
     that census with X. Reading it as an unparseable value would report a
@@ -242,7 +242,7 @@ def test_not_applicable_is_recorded_as_a_sentinel_not_a_parse_failure() -> None:
 
 
 def test_metric_column_outside_the_release_range_is_refused() -> None:
-    """Covers: PEH-003 — a file must cover the decade its release declares."""
+    """Covers: ETL-045 — a file must cover the decade its release declares."""
     header = "SUMLEV,STATE,COUNTY,STNAME,CTYNAME,POPESTIMATE2024"
     row = "050,01,001,Alabama,Autauga County,60000"
     payload = (header + "\n" + row + "\n").encode("cp1252")
@@ -254,7 +254,7 @@ def test_metric_column_outside_the_release_range_is_refused() -> None:
 
 
 def test_completeness_follows_each_product_own_principal_grain() -> None:
-    """Covers: PEH-003 — completeness is declared by the registry.
+    """Covers: ETL-045 — completeness is declared by the registry.
 
     The thresholds named the three 2020s products, so a newly registered one
     could never be complete and its rows would never reach the gold views.

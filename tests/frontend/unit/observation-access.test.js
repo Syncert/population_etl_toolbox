@@ -716,7 +716,7 @@ describe("newestPerGeography", () => {
 });
 
 
-// Covers: PEH-006 — the map asks the resource for one row per geography
+// Covers: WEB-028 — the map asks the resource for one row per geography
 // rather than paging a source's whole latest publication and reducing it in
 // the browser.
 describe("newest per geography", () => {

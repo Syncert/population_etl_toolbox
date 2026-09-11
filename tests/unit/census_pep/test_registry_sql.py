@@ -69,7 +69,7 @@ def test_sql_release_key_separates_vintage_and_observation_range() -> None:
 
 
 def test_sql_observation_range_ends_at_the_vintage_only_when_postcensal() -> None:
-    """Covers: PEH-001 — an intercensal release may close an earlier decade.
+    """Covers: ETL-043 — an intercensal release may close an earlier decade.
 
     The original contract required every release to end at its own vintage,
     which is true of a postcensal series and false of an intercensal one.
@@ -85,7 +85,7 @@ def test_sql_observation_range_ends_at_the_vintage_only_when_postcensal() -> Non
 
 
 def test_sql_separates_the_april_count_from_the_july_estimate() -> None:
-    """Covers: PEH-001 — a decennial count is not dated as a July estimate."""
+    """Covers: ETL-043 — a decennial count is not dated as a July estimate."""
     historical = HISTORICAL_SQL.read_text(encoding="utf-8")
 
     assert "fact_population_estimate_date_check" in historical
@@ -95,7 +95,7 @@ def test_sql_separates_the_april_count_from_the_july_estimate() -> None:
 
 
 def test_sql_registers_one_product_per_closed_decade() -> None:
-    """Covers: PEH-001 — the closed decades reach the SQL registry too."""
+    """Covers: ETL-043 — the closed decades reach the SQL registry too."""
     historical = HISTORICAL_SQL.read_text(encoding="utf-8")
 
     for dataset_code in (

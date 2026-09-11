@@ -521,7 +521,7 @@ def test_overlapping_products_resolve_to_one_published_value(
     postgres_connection_factory: Callable[[], connection],
     pep_database_scope: PepDatabaseScope,
 ) -> None:
-    """Covers: PEH-002 — one row per measure, geography and year, across products.
+    """Covers: ETL-044 — one row per measure, geography and year, across products.
 
     PEP publishes overlapping files. The state and county products both carry
     state rows, and consecutive decades both carry their shared seam year, so
@@ -685,7 +685,7 @@ def test_one_county_series_spans_every_registered_decade(
     postgres_connection_factory: Callable[[], connection],
     pep_database_scope: PepDatabaseScope,
 ) -> None:
-    """Covers: PEH-005 — a county's published history reaches back to 1970.
+    """Covers: ETL-046 — a county's published history reaches back to 1970.
 
     Six products, four file layouts and three readers, resolved into one
     series per measure. Autauga County is deliberate: it has existed
@@ -716,6 +716,7 @@ def test_one_county_series_spans_every_registered_decade(
         ("pep_county_totals_1980s", 1992, "legacy_table_1980s.txt"),
         ("pep_county_totals_1990s", 1999, "legacy_cells_1990s.txt"),
         ("pep_county_alldata_2000s", 2009, "co_2000s.csv"),
+        ("pep_county_intercensal_2000s", 2016, "co_intercensal_2000s.csv"),
         ("pep_county_alldata_2010s", 2020, "co_2010s.csv"),
         ("pep_county_alldata", 2025, "co_2020s.csv"),
     ):
@@ -768,6 +769,32 @@ def test_one_county_series_spans_every_registered_decade(
             assert [row[0] for row in counts] == [1970, 1980, 2000, 2010]
             assert {row[1].month for row in counts} == {4}
 
+            # The 2000s are published twice: postcensal during the decade,
+            # then intercensal once both censuses could close it. The
+            # intercensal series wins, whatever the vintages say, because it
+            # is the Bureau's settled answer rather than a projection.
+            cursor.execute(
+                """
+                SELECT dataset_code, value
+                FROM gold_pep.population_estimate_revision
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01|county:001'
+                  AND observation_year = 2005
+                ORDER BY dataset_code
+                """
+            )
+            assert len(cursor.fetchall()) == 2
+            cursor.execute(
+                """
+                SELECT dataset_code
+                FROM gold_pep.population_estimate_latest
+                WHERE metric_code = 'POPESTIMATE'
+                  AND geo_id = 'state:01|county:001'
+                  AND observation_year = 2005
+                """
+            )
+            assert cursor.fetchall() == [("pep_county_intercensal_2000s",)]
+
             # The one overlapping year resolves to the later publication.
             cursor.execute(
                 """
@@ -793,6 +820,7 @@ def test_one_county_series_spans_every_registered_decade(
                 "pep_county_alldata",
                 "pep_county_alldata_2000s",
                 "pep_county_alldata_2010s",
+                "pep_county_intercensal_2000s",
                 "pep_county_totals_1970s",
                 "pep_county_totals_1980s",
                 "pep_county_totals_1990s",

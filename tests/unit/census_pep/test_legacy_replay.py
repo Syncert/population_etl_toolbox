@@ -1,6 +1,6 @@
 """Offline replay contracts for the Census PEP tables published before CSV.
 
-Covers: PEH-005 — the 1970s, 1980s and 1990s county products are printed
+Covers: ETL-046 — the 1970s, 1980s and 1990s county products are printed
 tables and fixed-width cell files. Each is read by the reader its product
 declares, and every value keeps the source text it was read from.
 """
@@ -54,7 +54,7 @@ def value_of(rows: list[dict], year: int, metric: str, fips: str) -> dict:
 
 
 def test_printed_table_reads_the_measure_from_each_block_header() -> None:
-    """Covers: PEH-005 — the column label says whether it is a count.
+    """Covers: ETL-046 — the column label says whether it is a count.
 
     The table prints the decennial enumeration beside the estimates, under a
     "Census" heading rather than an "Estimate" one. Reading every column as
@@ -79,7 +79,7 @@ def test_printed_table_reads_the_measure_from_each_block_header() -> None:
 
 
 def test_printed_table_carries_nation_state_and_county_in_one_column() -> None:
-    """Covers: PEH-005 — a five-digit code is the row's geography grain."""
+    """Covers: ETL-046 — a five-digit code is the row's geography grain."""
     rows = parsed("pep_county_totals_1970s", "legacy_table_1970s.txt")
 
     assert value_of(rows, 1970, "CENSUSPOP", "00000")["summary_level"] == "010"
@@ -92,7 +92,7 @@ def test_printed_table_carries_nation_state_and_county_in_one_column() -> None:
 
 
 def test_printed_table_rejoins_an_area_name_that_wrapped() -> None:
-    """Covers: PEH-005 — a wrapped name keeps its values and its name.
+    """Covers: ETL-046 — a wrapped name keeps its values and its name.
 
     Virginia's longer independent-city names spill onto a second line and
     take the row's values with them. Read line by line, the city would be a
@@ -107,7 +107,7 @@ def test_printed_table_rejoins_an_area_name_that_wrapped() -> None:
 
 
 def test_printed_table_reads_the_following_decade_the_same_way() -> None:
-    """Covers: PEH-005 — one reader serves both printed decades."""
+    """Covers: ETL-046 — one reader serves both printed decades."""
     rows = parsed("pep_county_totals_1980s", "legacy_table_1980s.txt")
 
     assert int(value_of(rows, 1980, "CENSUSPOP", "00000")["value"]) == 226542250
@@ -118,7 +118,7 @@ def test_printed_table_reads_the_following_decade_the_same_way() -> None:
 
 
 def test_printed_table_refuses_a_row_its_block_header_does_not_describe() -> None:
-    """Covers: PEH-005 — a shifted column is a failure, not a silent value."""
+    """Covers: ETL-046 — a shifted column is a failure, not a silent value."""
     payload = (
         "FIPS                      Census Estimate  Estimate  Estimate  Estimate\n"
         "Code  Area Name            1970      1971      1972      1973      1974\n"
@@ -132,7 +132,7 @@ def test_printed_table_refuses_a_row_its_block_header_does_not_describe() -> Non
 
 
 def test_printed_table_refuses_a_row_before_any_block_header() -> None:
-    """Covers: PEH-005 — no row is read under assumed columns."""
+    """Covers: ETL-046 — no row is read under assumed columns."""
     payload = "01001 Autauga Co.         24460     25500\n".encode("latin-1")
 
     with pytest.raises(PepLegacyPayloadError, match="before any block header"):
@@ -147,7 +147,7 @@ def test_printed_table_refuses_a_row_before_any_block_header() -> None:
 
 
 def test_cell_file_totals_the_published_cells() -> None:
-    """Covers: PEH-005 — the 1990s file publishes cells and no total.
+    """Covers: ETL-046 — the 1990s file publishes cells and no total.
 
     The total is their sum. The product records that derivation, and the
     value keeps the exact cell text it was summed from, so the arithmetic is
@@ -171,7 +171,7 @@ def test_cell_file_totals_the_published_cells() -> None:
 
 
 def test_cell_file_skips_its_prose_preamble() -> None:
-    """Covers: PEH-005 — the preamble is passed over by shape, not by count.
+    """Covers: ETL-046 — the preamble is passed over by shape, not by count.
 
     Skipping a fixed number of lines would break the moment the Bureau
     reflowed its own note, and would do so silently.
@@ -185,7 +185,7 @@ def test_cell_file_skips_its_prose_preamble() -> None:
 
 
 def test_cell_file_refuses_a_year_outside_its_release() -> None:
-    """Covers: PEH-005 — a file must cover the decade its release declares."""
+    """Covers: ETL-046 — a file must cover the decade its release declares."""
     payload = (
         "2005 01001    27085     6854       71      118      184       41"
         "        0        3 \n"
@@ -198,7 +198,7 @@ def test_cell_file_refuses_a_year_outside_its_release() -> None:
 
 
 def test_legacy_capture_records_the_reader_that_read_it() -> None:
-    """Covers: PEH-005 — the parser is part of a capture's lineage."""
+    """Covers: ETL-046 — the parser is part of a capture's lineage."""
     assert (
         CONFIG.datasets["pep_county_totals_1970s"].parser_version
         == "census-pep-fixed-width-table-v1"

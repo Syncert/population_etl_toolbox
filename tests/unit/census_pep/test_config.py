@@ -6,9 +6,16 @@ import os
 
 import pytest
 
+from pathlib import Path
+
 from data_ingestion_toolbox.census_pep import config
+from data_ingestion_toolbox.census_pep.silver_pep.replay import (
+    parse_captured_pep_values,
+)
 
 pytestmark = pytest.mark.unit
+
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "census_pep"
 
 
 #: The products serving the current decade. They keep their codes, their
@@ -24,6 +31,7 @@ HISTORICAL_DATASETS = {
     "pep_county_alldata_2010s",
     "pep_nst_alldata_2010s",
     "pep_county_alldata_2000s",
+    "pep_county_intercensal_2000s",
     "pep_county_totals_1990s",
     "pep_county_totals_1980s",
     "pep_county_totals_1970s",
@@ -151,12 +159,13 @@ def test_config_freezes_official_current_bulk_products() -> None:
 
 
 def test_config_registers_one_product_per_closed_decade() -> None:
-    """Covers: PEH-001 — each closed decade is its own registered product."""
+    """Covers: ETL-043 — each closed decade is its own registered product."""
     eras = {code: config.CONFIG.datasets[code].era for code in HISTORICAL_DATASETS}
     assert eras == {
         "pep_county_alldata_2010s": "2010s",
         "pep_nst_alldata_2010s": "2010s",
         "pep_county_alldata_2000s": "2000s",
+        "pep_county_intercensal_2000s": "2000s",
         "pep_county_totals_1990s": "1990s",
         "pep_county_totals_1980s": "1980s",
         "pep_county_totals_1970s": "1970s",
@@ -170,7 +179,11 @@ def test_config_registers_one_product_per_closed_decade() -> None:
         for release in config.CONFIG.releases
         if release.series_kind == "intercensal"
     }
-    assert intercensal == {"pep_county_totals_1980s", "pep_county_totals_1970s"}
+    assert intercensal == {
+        "pep_county_intercensal_2000s",
+        "pep_county_totals_1980s",
+        "pep_county_totals_1970s",
+    }
     for release in config.CONFIG.releases:
         if release.dataset_code in intercensal:
             assert release.observation_end_year < release.vintage_year
@@ -228,7 +241,7 @@ def test_config_separates_current_and_prior_release_vintages() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PEH-001 — the release contract across decades
+# ETL-043 — the release contract across decades
 # ---------------------------------------------------------------------------
 
 
@@ -252,7 +265,7 @@ def _release_kwargs(**overrides: object) -> dict[str, object]:
 
 
 def test_release_accepts_an_intercensal_range_that_ends_before_its_vintage() -> None:
-    """Covers: PEH-001 — an intercensal release closes an earlier decade.
+    """Covers: ETL-043 — an intercensal release closes an earlier decade.
 
     It is published once the following census can close the decade, so its
     last observation year is years behind the vintage carrying it. The old
@@ -271,13 +284,13 @@ def test_release_accepts_an_intercensal_range_that_ends_before_its_vintage() -> 
 
 
 def test_release_still_requires_a_postcensal_series_to_end_at_its_vintage() -> None:
-    """Covers: PEH-001 — the vintage equality holds where it is true."""
+    """Covers: ETL-043 — the vintage equality holds where it is true."""
     with pytest.raises(ValueError, match="postcensal"):
         config.PEPRelease(**_release_kwargs(observation_end_year=2023))
 
 
 def test_release_rejects_observations_after_its_own_vintage() -> None:
-    """Covers: PEH-001 — no release may observe beyond its publication."""
+    """Covers: ETL-043 — no release may observe beyond its publication."""
     with pytest.raises(ValueError, match="ends after its own vintage"):
         config.PEPRelease(
             **_release_kwargs(
@@ -303,7 +316,7 @@ def test_release_rejects_a_reversed_range_and_an_unofficial_host() -> None:
 
 
 def test_single_file_release_is_captured_from_one_url() -> None:
-    """Covers: PEH-001 — an unpartitioned product yields one source file."""
+    """Covers: ETL-043 — an unpartitioned product yields one source file."""
     release = config.PEPRelease(**_release_kwargs())
     assert release.source_files() == (
         (None, "https://www2.census.gov/programs-surveys/popest/x.csv"),
@@ -311,7 +324,7 @@ def test_single_file_release_is_captured_from_one_url() -> None:
 
 
 def test_partitioned_release_yields_one_source_file_per_partition() -> None:
-    """Covers: PEH-001 — a product split across files declares its parts.
+    """Covers: ETL-043 — a product split across files declares its parts.
 
     The Bureau splits some products one file per state. Each part is
     captured separately so a part that fails to answer is a missing file
@@ -341,7 +354,7 @@ def test_partitioned_release_yields_one_source_file_per_partition() -> None:
 
 
 def test_partitioned_release_requires_a_templated_url_and_unique_parts() -> None:
-    """Covers: PEH-001 — a partition set that cannot address its files fails."""
+    """Covers: ETL-043 — a partition set that cannot address its files fails."""
     with pytest.raises(ValueError, match="template its data URL"):
         config.PEPRelease(**_release_kwargs(partitions=("01", "02")))
     with pytest.raises(ValueError, match="duplicate partition"):
@@ -356,7 +369,7 @@ def test_partitioned_release_requires_a_templated_url_and_unique_parts() -> None
 
 
 def test_current_decade_releases_are_unchanged_by_the_generalised_helper() -> None:
-    """Covers: PEH-001 — widening the contract moved no published value.
+    """Covers: ETL-043 — widening the contract moved no published value.
 
     Every 2020s release is re-expressed through the helper that now reads
     the observation range from its arguments. The resulting contracts must
@@ -422,3 +435,61 @@ def test_current_decade_releases_are_unchanged_by_the_generalised_helper() -> No
     for release in config.CONFIG.releases:
         assert "{vintage}" not in release.data_url
         assert "{partition}" not in release.data_url
+
+
+def test_intercensal_product_restores_codes_its_file_omits() -> None:
+    """Covers: ETL-045 — a FIPS code of known width is padded, not guessed.
+
+    The intercensal county file prints Alabama as state 1 at summary level
+    40 where every other product writes 01 and 040. Read as printed, its
+    rows would resolve against no geography at all.
+    """
+    release = next(
+        item
+        for item in config.CONFIG.releases
+        if item.dataset_code == "pep_county_intercensal_2000s"
+    )
+    rows = parse_captured_pep_values(
+        (FIXTURES / "co_intercensal_2000s.csv").read_bytes(), release=release
+    )
+    alabama = [row for row in rows if row["summary_level"] == "040"]
+    autauga = [row for row in rows if row["summary_level"] == "050"]
+
+    assert alabama and autauga
+    assert {row["state_fips_source"] for row in alabama} == {"01"}
+    assert {row["county_fips_source"] for row in alabama} == {"000"}
+    assert {row["county_fips_source"] for row in autauga} == {"001"}
+    # The padding is declared per product, not applied to every file.
+    assert config.CONFIG.datasets["pep_county_intercensal_2000s"].pads_geography_codes
+    assert not config.CONFIG.datasets["pep_county_alldata_2000s"].pads_geography_codes
+
+
+def test_intercensal_publication_revises_the_postcensal_estimates() -> None:
+    """Covers: ETL-044 — the two 2000s products disagree, as they should.
+
+    The intercensal series closes the decade against both enumerations, so
+    it supersedes the postcensal estimates rather than repeating them.
+    Registering both is what makes the revision visible.
+    """
+
+    def alabama_2005(dataset_code: str, fixture: str) -> str:
+        release = next(
+            item for item in config.CONFIG.releases if item.dataset_code == dataset_code
+        )
+        rows = parse_captured_pep_values(
+            (FIXTURES / fixture).read_bytes(), release=release
+        )
+        return next(
+            row["value_source"]
+            for row in rows
+            if row["metric_code"] == "POPESTIMATE"
+            and row["observation_year"] == 2005
+            and row["summary_level"] == "040"
+        )
+
+    postcensal = alabama_2005("pep_county_alldata_2000s", "co_2000s.csv")
+    intercensal = alabama_2005(
+        "pep_county_intercensal_2000s", "co_intercensal_2000s.csv"
+    )
+    assert postcensal == "4545049"
+    assert intercensal == "4569805"
