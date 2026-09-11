@@ -714,3 +714,113 @@ describe("newestPerGeography", () => {
     expect(countObservationPeriods([])).toBe(0);
   });
 });
+
+
+// Covers: PEH-006 — the map asks the resource for one row per geography
+// rather than paging a source's whole latest publication and reducing it in
+// the browser.
+describe("newest per geography", () => {
+  const declaring = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level", "year_from", "year_to"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: [
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "offset",
+            "release",
+            "scope",
+            "year_from",
+            "year_to",
+          ],
+        },
+        { path: "/api/v1/observations/releases", parameters: ["metric_code"] },
+      ],
+    },
+  ])[0];
+
+  const silent = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: ["geo_id", "geo_level", "limit", "metric_code", "scope"],
+        },
+      ],
+    },
+  ])[0];
+
+  test("the capability entry decides whether the parameter exists", () => {
+    expect(declaring.supportsNewestPerGeography).toBe(true);
+    expect(silent.supportsNewestPerGeography).toBe(false);
+  });
+
+  test("the map read asks for one row per geography where it is declared", () => {
+    const request = buildLatestObservationRequest(declaring, {
+      metricCode: "CENSUS_PEP:POPESTIMATE",
+      geoLevel: "COUNTY",
+      limit: "5000",
+      newestPerGeography: true,
+    });
+    expect(request.resource).toBe("/observations");
+    expect(request.params.newest_per_geography).toBe("true");
+    expect(request.params.geo_level).toBe("COUNTY");
+  });
+
+  test("a source that does not declare it is never sent it", () => {
+    const request = buildLatestObservationRequest(silent, {
+      metricCode: "CENSUS_PEP:POPESTIMATE",
+      geoLevel: "COUNTY",
+      newestPerGeography: true,
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+  });
+
+  test("an as-released read never carries it", () => {
+    // The resource refuses the combination, because one series per release
+    // reduced per geography would show whichever release sorted last.
+    const request = buildLatestObservationRequest(declaring, {
+      metricCode: "CENSUS_PEP:POPESTIMATE",
+      geoLevel: "COUNTY",
+      newestPerGeography: true,
+      scope: SCOPE_AS_RELEASED,
+    });
+    expect(request.params.scope).toBe(SCOPE_AS_RELEASED);
+    expect(request.params.newest_per_geography).toBeUndefined();
+  });
+
+  test("the history request reads the whole series, never the reduction", () => {
+    // A geography's trend is the series; reducing it would leave one point.
+    const request = buildHistoryObservationRequest(declaring, {
+      metricCode: "CENSUS_PEP:POPESTIMATE",
+      geoId: "state:01|county:001",
+      limit: "1000",
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+    expect(request.params.geo_id).toBe("state:01|county:001");
+  });
+
+  test("it is not sent unless the caller asks for it", () => {
+    const request = buildLatestObservationRequest(declaring, {
+      metricCode: "CENSUS_PEP:POPESTIMATE",
+      geoLevel: "COUNTY",
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+  });
+});

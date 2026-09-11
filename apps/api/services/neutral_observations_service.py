@@ -256,6 +256,36 @@ def _observation_from(
     )
 
 
+def _newest_per_geography_source(
+    dispatch: ObservationDispatch,
+    relation: str,
+    where_sql: str,
+) -> str:
+    """``relation`` reduced to each geography's newest published period.
+
+    The ranking happens inside the source's own relation, before any
+    projection, which is what makes it safe over a multi-period latest
+    surface: Census PEP's latest publication is every estimated year of the
+    current vintage, so a map of it needs one row per geography and the
+    source is the only place that knows which row that is. The distribution
+    and comparison services already rank the same way, so a page taken this
+    way and a set of bins describe the same rows.
+    """
+    return f"""(
+            SELECT ranked.*
+            FROM (
+                SELECT source.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {dispatch.geo_id_expression}
+                        ORDER BY {dispatch.period_start_expression} DESC
+                    ) AS newest_period_rank
+                FROM {relation} AS source
+                WHERE {where_sql}
+            ) AS ranked
+            WHERE ranked.newest_period_rank = 1
+        )"""
+
+
 def list_neutral_observations(
     db: Session,
     metric_code: str,
@@ -264,6 +294,7 @@ def list_neutral_observations(
     filters: Mapping[str, Any],
     limit: int,
     offset: int,
+    newest_per_geography: bool = False,
 ) -> Optional[NeutralObservationListResponse]:
     """One metric's observations from its owning source's serving contract.
 
@@ -273,6 +304,13 @@ def list_neutral_observations(
         raise NeutralQueryError(
             "release can only be combined with scope=as_released; scope=latest "
             "always serves the source's own latest publication"
+        )
+    if newest_per_geography and scope != SCOPE_LATEST:
+        raise NeutralQueryError(
+            "newest_per_geography can only be combined with scope=latest; an "
+            "as-released read answers one series per published release, and "
+            "reducing it to one row per geography would present whichever "
+            "release sorted last as the value"
         )
 
     metric = resolve_metric(db, metric_code)
@@ -299,13 +337,25 @@ def list_neutral_observations(
     require_relation(db, relation)
 
     where_sql = " AND ".join(conditions)
-    count_query = text(f"SELECT COUNT(*) FROM {relation} WHERE {where_sql}")
+    if newest_per_geography:
+        # Filtered and reduced inside the source relation, so the outer
+        # statement reads the result rather than filtering it again.
+        source_sql = (
+            f"{_newest_per_geography_source(dispatch, relation, where_sql)}"
+            " AS observations"
+        )
+        outer_where = ""
+    else:
+        source_sql = relation
+        outer_where = f"WHERE {where_sql}"
+
+    count_query = text(f"SELECT COUNT(*) FROM {source_sql} {outer_where}")
     list_query = text(
         f"""
         SELECT
             {_select_sql(dispatch)}
-        FROM {relation}
-        WHERE {where_sql}
+        FROM {source_sql}
+        {outer_where}
         ORDER BY {", ".join(order)}
         LIMIT :limit OFFSET :offset
         """

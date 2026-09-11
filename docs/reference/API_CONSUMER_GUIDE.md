@@ -60,10 +60,31 @@ own serving relations, so its semantics survive.
   identity; add `release=<identity>` to pin one. A `release` without
   `scope=as_released` is a 422, because "the latest publication, but an older
   one" is a contradiction rather than a query.
+- `newest_per_geography=true` — one row per geography: its newest published
+  period. Valid only with `scope=latest`; sending it with
+  `scope=as_released` is a 422, because an as-released read is one series
+  per release and reducing it per geography would present whichever release
+  sorted last as the value.
 - Per-source filters as declared by `/catalog/capabilities`: `geo_id`,
   `geo_level`, `state_fips`, `county_fips`, `stratum_id`,
   `adjustment_status`, `domain_desc`, `domaincat_desc`, `subject_type`,
   `subject_code`, `year_from`, `year_to`.
+
+### A latest publication can be a series
+
+`scope=latest` means the source's own latest publication, which is not
+always one row per geography. Census PEP publishes every estimated year of
+the current vintage, so `CENSUS_PEP:BIRTHS` at `geo_level=COUNTY` answers
+18,864 rows: 3,144 counties times six years. That is the whole publication
+and it is the right default.
+
+If you want one value per geography — to colour a map, or to join against
+another measure — pass `newest_per_geography=true` rather than paging the
+publication and reducing it yourself. The ranking happens inside the
+source's own relation, which is the only place that knows how its periods
+order, and it is the same ranking `/distribution/bins` and
+`/comparison/preflight` already apply. A page taken this way and a set of
+bins therefore describe the same rows.
 
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what

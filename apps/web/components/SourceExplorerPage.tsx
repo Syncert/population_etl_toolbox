@@ -321,6 +321,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       geoLevel: selectedGeoLevel,
       stateFips: selectedGeoLevel === "NATIONAL" ? "" : selectedStateFips,
       limit: String(OBSERVATION_PAGE_SIZE),
+      // The map colours one value per geography. Where the resource can
+      // answer that directly, ask it to: a source publishing a long series
+      // otherwise sends every period of it across the wire to be reduced here.
+      newestPerGeography: true,
       scope: observationScope,
       release: selectedRelease,
       dimensions: Object.fromEntries(
