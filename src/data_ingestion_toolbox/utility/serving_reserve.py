@@ -29,30 +29,35 @@ BLS_CHUNK_CONFIG = ServingRefreshChunkConfig(
         ORDER BY s.year
     """,
     all_chunks_sql="""
-        SELECT
-            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
-            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
-            COALESCE(
-                (
-                    SELECT MAX(s.ingested_at)
-                    FROM silver_bls.fact_labor_statistics s
-                    WHERE s.value IS NOT NULL
-                      AND s.year = y::INT
-                ),
-                TIMESTAMPTZ 'epoch'
-            ) AS target_watermark
-        FROM (
+        -- One pass over silver for every year's watermark. A correlated
+        -- subquery per year reads the whole fact table once per year, which on
+        -- ACS meant twenty scans of tens of millions of rows and a planning
+        -- step that had not returned after ten minutes.
+        WITH silver_years AS (
+            SELECT s.year AS observation_year,
+                   MAX(s.ingested_at) AS target_watermark
+            FROM silver_bls.fact_labor_statistics s
+            WHERE s.value IS NOT NULL
+            GROUP BY s.year
+        ),
+        bounds AS (
             SELECT
                 LEAST(
-                    (SELECT MIN(s.year) FROM silver_bls.fact_labor_statistics s WHERE s.value IS NOT NULL),
+                    (SELECT MIN(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MIN(r.observation_date))::INT FROM gold_bls.rpt_bls_observations r)
                 ) AS first_year,
                 GREATEST(
-                    (SELECT MAX(s.year) FROM silver_bls.fact_labor_statistics s WHERE s.value IS NOT NULL),
+                    (SELECT MAX(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MAX(r.observation_date))::INT FROM gold_bls.rpt_bls_observations r)
                 ) AS last_year
-        ) AS bounds
+        )
+        SELECT
+            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
+            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
+            COALESCE(silver_years.target_watermark, TIMESTAMPTZ 'epoch') AS target_watermark
+        FROM bounds
         CROSS JOIN LATERAL generate_series(bounds.first_year, bounds.last_year) AS y
+        LEFT JOIN silver_years ON silver_years.observation_year = y::INT
         WHERE bounds.first_year IS NOT NULL
         ORDER BY y
     """,
@@ -79,30 +84,35 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
         ORDER BY s.estimate_year
     """,
     all_chunks_sql="""
-        SELECT
-            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
-            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
-            COALESCE(
-                (
-                    SELECT MAX(s.ingested_at)
-                    FROM silver_census.fact_demographics s
-                    WHERE s.estimate_value IS NOT NULL
-                      AND s.estimate_year = y::INT
-                ),
-                TIMESTAMPTZ 'epoch'
-            ) AS target_watermark
-        FROM (
+        -- One pass over silver for every year's watermark. A correlated
+        -- subquery per year reads the whole fact table once per year, which on
+        -- ACS meant twenty scans of tens of millions of rows and a planning
+        -- step that had not returned after ten minutes.
+        WITH silver_years AS (
+            SELECT s.estimate_year AS observation_year,
+                   MAX(s.ingested_at) AS target_watermark
+            FROM silver_census.fact_demographics s
+            WHERE s.estimate_value IS NOT NULL
+            GROUP BY s.estimate_year
+        ),
+        bounds AS (
             SELECT
                 LEAST(
-                    (SELECT MIN(s.estimate_year) FROM silver_census.fact_demographics s WHERE s.estimate_value IS NOT NULL),
+                    (SELECT MIN(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MIN(r.observation_date))::INT FROM gold_census.rpt_acs_observations r)
                 ) AS first_year,
                 GREATEST(
-                    (SELECT MAX(s.estimate_year) FROM silver_census.fact_demographics s WHERE s.estimate_value IS NOT NULL),
+                    (SELECT MAX(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MAX(r.observation_date))::INT FROM gold_census.rpt_acs_observations r)
                 ) AS last_year
-        ) AS bounds
+        )
+        SELECT
+            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
+            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
+            COALESCE(silver_years.target_watermark, TIMESTAMPTZ 'epoch') AS target_watermark
+        FROM bounds
         CROSS JOIN LATERAL generate_series(bounds.first_year, bounds.last_year) AS y
+        LEFT JOIN silver_years ON silver_years.observation_year = y::INT
         WHERE bounds.first_year IS NOT NULL
         ORDER BY y
     """,
@@ -131,30 +141,35 @@ FRED_CHUNK_CONFIG = ServingRefreshChunkConfig(
         ORDER BY EXTRACT(YEAR FROM s.observation_date)
     """,
     all_chunks_sql="""
-        SELECT
-            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
-            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
-            COALESCE(
-                (
-                    SELECT MAX(s.ingested_at)
-                    FROM silver_fred.fact_economic_indicators s
-                    WHERE s.is_missing = FALSE
-                      AND EXTRACT(YEAR FROM s.observation_date)::INT = y::INT
-                ),
-                TIMESTAMPTZ 'epoch'
-            ) AS target_watermark
-        FROM (
+        -- One pass over silver for every year's watermark. A correlated
+        -- subquery per year reads the whole fact table once per year, which on
+        -- ACS meant twenty scans of tens of millions of rows and a planning
+        -- step that had not returned after ten minutes.
+        WITH silver_years AS (
+            SELECT EXTRACT(YEAR FROM s.observation_date)::INT AS observation_year,
+                   MAX(s.ingested_at) AS target_watermark
+            FROM silver_fred.fact_economic_indicators s
+            WHERE s.is_missing = FALSE
+            GROUP BY EXTRACT(YEAR FROM s.observation_date)::INT
+        ),
+        bounds AS (
             SELECT
                 LEAST(
-                    (SELECT MIN(EXTRACT(YEAR FROM s.observation_date)::INT) FROM silver_fred.fact_economic_indicators s WHERE s.is_missing = FALSE),
+                    (SELECT MIN(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MIN(r.observation_date))::INT FROM gold_fred.rpt_fred_observations r)
                 ) AS first_year,
                 GREATEST(
-                    (SELECT MAX(EXTRACT(YEAR FROM s.observation_date)::INT) FROM silver_fred.fact_economic_indicators s WHERE s.is_missing = FALSE),
+                    (SELECT MAX(observation_year) FROM silver_years),
                     (SELECT EXTRACT(YEAR FROM MAX(r.observation_date))::INT FROM gold_fred.rpt_fred_observations r)
                 ) AS last_year
-        ) AS bounds
+        )
+        SELECT
+            MAKE_DATE(y::INT, 1, 1) AS chunk_start,
+            MAKE_DATE(y::INT, 12, 31) AS chunk_end,
+            COALESCE(silver_years.target_watermark, TIMESTAMPTZ 'epoch') AS target_watermark
+        FROM bounds
         CROSS JOIN LATERAL generate_series(bounds.first_year, bounds.last_year) AS y
+        LEFT JOIN silver_years ON silver_years.observation_year = y::INT
         WHERE bounds.first_year IS NOT NULL
         ORDER BY y
     """,
