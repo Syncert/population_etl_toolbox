@@ -351,8 +351,8 @@ SKIPPED tests/integration/database/test_usda_nass_dag_tasks.py:
 | Command | Result |
 | --- | --- |
 | `pytest tests/unit` | 1268 passed |
-| `pytest -m "integration and not e2e" tests/integration` on a freshly recreated warehouse, **no `--ignore`** | **129 passed, 2 skipped, 0 failed** (252s) |
-| the same command again, against the same warehouse | see the repeatability entry below |
+| `pytest -m "integration and not e2e" tests/integration` on a freshly recreated warehouse, **no `--ignore`** | **131 passed, 2 skipped, 0 failed** (303s) |
+| the same command again, against the same warehouse | **131 passed, 2 skipped, 0 failed** (246s) |
 | `ruff check` and `ruff format --check` | clean |
 
 Both skips are explicit and named, neither is a silent pass:
@@ -365,18 +365,55 @@ SKIPPED tests/integration/deployment/test_compose_smoke.py:32: set
   RUN_COMPOSE_TESTS=1 through the compose smoke runner
 ```
 
-Shared relations after the run, which is the property the tier's
+Shared relations after both runs, which is the property the tier's
 reproducibility rests on:
 
 ```
-raw_fred.fred_datasets          0
-raw_fred.fred_series            0
-control.acs_ingestion_slices    0
-control.bls_ingestion_slices    0
-control.fred_ingestion_slices   0
+silver_bls.observation_revision      0
+silver_fred.observation_revision     0
+silver_census.observation_revision   0
+raw_fred.fred_datasets               0
 ```
 
-Before the fix the same measurement read `fred_datasets 23`.
+Before the fixes the same measurement read `fred_datasets 23` and, once that
+was fixed, 8 then 11 orphaned revision rows.
+
+### The second leak, and why one run could not have found it
+
+The FRED configuration leak was the whole of the six observed failures, but it
+was not the whole of the tier's irreproducibility. With it fixed, run 1 passed
+and **run 2 failed** inside `test_census_silver_flow.py` with
+
+```
+Census ACS transform blocked: silver_ref geography history is incomplete
+(1 distinct IDs missing; examples: county:state:55|county:001)
+```
+
+The suite that failed had done nothing wrong. `observation_revision` rows are
+*pending work*: the next run's transform reads every one of them. Four suites
+committed rows and never removed them, so on the second run those rows outlived
+the geographies their own suites had correctly cleaned up, and the transform
+refused.
+
+Traced by reproducing and reading the ids back out of the warehouse:
+
+| Leaked id | Suite | Cleanup it had |
+| --- | --- | --- |
+| `LAUST990000000000003` | `test_bls_silver_flow` | facts, raw series, time -- not revisions |
+| `TEST_FRED_SILVER_*` (7 rows) | `test_fred_silver_flow` | six relations -- not revisions |
+| `CAPTURE_*` (2 rows) | `test_fred_capture_ingest` | none |
+| `IMM_*` | `test_production_resilience` | none |
+
+The two suites with no cleanup at all now use a shared `revision_cleanup`
+fixture in the database conftest, which takes an id prefix and clears all three
+revision relations; the two with token fixtures got the missing delete added
+where the rest of their cleanup already lives. `SHARED_RELATIONS` in the
+repeatability test covers the revision relations too, so the next one is named
+where it happens.
+
+This is exactly the risk the plan recorded ("another leaking suite is hiding
+behind this one"), and the reason DTI-004's acceptance was two runs rather than
+one: a single run cannot observe state that only matters to the run after it.
 
 The `serving_full_reserve` DAG-tier additions from
 `FORCED_FULL_RESERVE_SCALE_PLAN.md` still run only in CI's `scheduler-image`

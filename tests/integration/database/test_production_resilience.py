@@ -53,10 +53,12 @@ def test_parser_failure_preserves_capture_and_records_quarantine(
 def test_raw_capture_rejects_mutation_after_successful_ingest(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    revision_cleanup: list[str],
 ) -> None:
     """Covers: RES-004 — retry safety relies on immutable committed payloads."""
     domain = f"immutable_{uuid4().hex[:10]}"
     series_id = f"IMM_{uuid4().hex[:12].upper()}"
+    revision_cleanup.append(series_id)
     monkeypatch.setattr(ingest, "_get_pg_connection", postgres_connection_factory)
     monkeypatch.setattr(
         ingest,
