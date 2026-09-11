@@ -1,0 +1,22 @@
+(CO-99-10)  Population Estimates for Counties: Race By Hispanic Origin Annual Time Series,
+             July 1, 1990 to July 1, 1999
+  
+NOTE:  This data set is in a file format and layout intended for downloading, not casual inspection.
+       Please refer to the file layout for more information.
+Source:  Population Estimates Program, Population Division, U.S. Census Bureau, Washington, DC  20233
+Contact:  Statistical Information Staff, Population Division, U.S. Census Bureau (301-457-2422)
+          pop@census.gov (please include a phone number with email correspondence)
+  
+Internet Release Date:  August 30, 2000
+
+           |-----------Non-Hispanic----------- |---------Hispanic Origin----------|
+1990 01001    27085     6854       71      118      184       41        0        3 
+1991 01001    27560     7016       74      124      196       46        0        2 
+1992 01001    28257     7275       75      133      210       48        0        4 
+1993 01001    28942     7538       71      140      234       47        0        4 
+1994 01001    29819     7853       71      150      266       50        0        9 
+1995 01001    30445     8122       72      159      295       54        0        7 
+1996 01001    31226     8392       72      170      328       54        0        9 
+1997 01001    31920     8684       76      174      359       68        0       12 
+1998 01001    32531     8935       77      184      391       65        0       10 
+1999 01001    33151     9204       77      187      441       67        0       13 

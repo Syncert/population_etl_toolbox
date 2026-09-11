@@ -23,10 +23,31 @@ class TestSelectReleases:
 
         assert [release.dataset_code for release in releases] == [
             "pep_county_alldata",
+            "pep_county_alldata_2000s",
+            "pep_county_alldata_2010s",
+            "pep_county_intercensal_2000s",
+            "pep_county_totals_1970s",
+            "pep_county_totals_1980s",
+            "pep_county_totals_1990s",
             "pep_nst_alldata",
+            "pep_nst_alldata_2010s",
             "pep_subcounty",
         ]
-        assert {release.vintage_year for release in releases} == {2025}
+        # Every product answers with its own current publication: the
+        # current decade with Vintage 2025, each closed decade with the
+        # final vintage that closed it.
+        assert {release.dataset_code: release.vintage_year for release in releases} == {
+            "pep_county_alldata": 2025,
+            "pep_county_alldata_2000s": 2009,
+            "pep_county_alldata_2010s": 2020,
+            "pep_county_intercensal_2000s": 2016,
+            "pep_county_totals_1970s": 1982,
+            "pep_county_totals_1980s": 1992,
+            "pep_county_totals_1990s": 1999,
+            "pep_nst_alldata": 2025,
+            "pep_nst_alldata_2010s": 2020,
+            "pep_subcounty": 2025,
+        }
         assert {release.status for release in releases} == {"published"}
 
     def test_explicit_vintage_selects_archived_release(self) -> None:

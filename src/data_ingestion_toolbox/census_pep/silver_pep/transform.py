@@ -31,10 +31,17 @@ def transform_pep_to_silver(hook: PostgresHook | None = None) -> int:
                         metric_code, display_name, unit, is_component, allows_negative
                     )
                     SELECT DISTINCT metric_code,
-                        INITCAP(REPLACE(metric_code, '_', ' ')), unit,
-                        metric_code NOT IN ('ESTIMATESBASE', 'POPESTIMATE'),
+                        CASE metric_code
+                            WHEN 'CENSUSPOP' THEN 'Decennial census count'
+                            ELSE INITCAP(REPLACE(metric_code, '_', ' '))
+                        END,
+                        unit,
                         metric_code NOT IN (
-                            'ESTIMATESBASE', 'POPESTIMATE', 'BIRTHS', 'DEATHS'
+                            'ESTIMATESBASE', 'POPESTIMATE', 'CENSUSPOP'
+                        ),
+                        metric_code NOT IN (
+                            'ESTIMATESBASE', 'POPESTIMATE', 'CENSUSPOP',
+                            'BIRTHS', 'DEATHS'
                         )
                     FROM silver_pep.observation_revision
                     ON CONFLICT (metric_code) DO UPDATE SET
@@ -52,20 +59,26 @@ def transform_pep_to_silver(hook: PostgresHook | None = None) -> int:
                         source_record_count, observation_count,
                         completeness_status, completeness_reason
                     )
-                    SELECT capture_id, MIN(dataset_code), MIN(release_vintage),
-                        MIN(product_code), COUNT(DISTINCT source_row_index), COUNT(*),
+                    SELECT revision.capture_id, MIN(revision.dataset_code),
+                        MIN(revision.release_vintage), MIN(revision.product_code),
+                        COUNT(DISTINCT revision.source_row_index), COUNT(*),
                         CASE WHEN BOOL_OR(
-                            (dataset_code = 'pep_nst_alldata' AND summary_level = '010')
-                            OR (dataset_code = 'pep_county_alldata' AND summary_level = '050')
-                            OR (dataset_code = 'pep_subcounty' AND summary_level = '162')
+                            revision.summary_level = dataset.principal_level
                         ) THEN 'complete' ELSE 'incomplete' END,
                         CASE WHEN BOOL_OR(
-                            (dataset_code = 'pep_nst_alldata' AND summary_level = '010')
-                            OR (dataset_code = 'pep_county_alldata' AND summary_level = '050')
-                            OR (dataset_code = 'pep_subcounty' AND summary_level = '162')
+                            revision.summary_level = dataset.principal_level
                         ) THEN NULL ELSE 'required principal summary level is absent' END
-                    FROM silver_pep.observation_revision
-                    GROUP BY capture_id
+                    FROM silver_pep.observation_revision AS revision
+                    JOIN (
+                        SELECT dataset_code,
+                            -- The national/state file is complete when it
+                            -- carries the nation; every other product when it
+                            -- carries its own finest published grain.
+                            CASE WHEN '010' = ANY(summary_levels) THEN '010'
+                                 ELSE native_grain END AS principal_level
+                        FROM silver_pep.pep_dataset
+                    ) AS dataset USING (dataset_code)
+                    GROUP BY revision.capture_id
                     ON CONFLICT (capture_id) DO UPDATE SET
                         source_record_count = EXCLUDED.source_record_count,
                         observation_count = EXCLUDED.observation_count,
@@ -175,7 +188,14 @@ def transform_pep_to_silver(hook: PostgresHook | None = None) -> int:
                         source.source_column_index, source.dataset_code,
                         source.release_vintage, source.product_code,
                         source.metric_code, source.observation_year,
-                        MAKE_DATE(source.observation_year, 7, 1),
+                        MAKE_DATE(
+                            source.observation_year,
+                            CASE
+                                WHEN source.metric_code = 'CENSUSPOP' THEN 4
+                                ELSE 7
+                            END,
+                            1
+                        ),
                         source.candidate_geo_id, entity.geo_sk, source.geo_type,
                         release.geography_basis_date,
                         CASE WHEN source.geo_type = 'unsupported' THEN 'unsupported'
