@@ -174,6 +174,124 @@ Deliverables:
 - `docs/reference/TESTING_CONTRACT.md`: a row for the served geography vocabulary invariant and one for the BLS measure identity, mapped in `CI_EVIDENCE_MAP.md`.
 - This plan's evidence section filled with the exact commands and results from BLM-001 to BLM-005.
 
+## Rollout runbook
+
+The order below is the one to follow on any warehouse this change reaches,
+development included. It exists because the ingest DAGs re-serve **changed
+years only**: deploying without it leaves BLS split between two identities,
+which is worse than the state before the change.
+
+`docs/reference/BETA_RESET_REINGESTION.md` section 7 is the general rule; this
+is the concrete sequence for this change.
+
+### Step 0 — quiesce ingestion for the sources being re-served
+
+Re-serving a source while its ingest writes silver starves both. Measured on
+the development stack: with a scheduled `acs_ingest` run in
+`transform_to_silver`, one ACS year managed about 1,500 rows per second against
+the 7,700 the same box sustained when idle.
+
+```
+airflow dags pause acs_ingest
+airflow dags pause bls_ingest
+```
+
+Pausing stops new runs; a run already in flight continues. Let it finish rather
+than killing it — `transform_to_silver` is where the expensive work is, and its
+serving refresh runs afterwards.
+
+### Step 1 — BLS, forced full re-serve
+
+```sql
+CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
+```
+
+Measured: 5,819,264 rows in 16m44s (12m31s reporting, 4m11s latest) on an idle
+box. Verify before moving on:
+
+```sql
+SELECT DISTINCT geo_level FROM gold_bls.rpt_bls_observations;   -- COUNTY, NATIONAL, STATE
+SELECT COUNT(*) FROM gold_bls.rpt_bls_observations
+ WHERE program_code = 'LA' AND metric_code NOT LIKE 'BLS:LAU:%'; -- 0
+```
+
+A non-zero second count means the re-serve did not cover every year.
+
+### Step 2 — BLS, glossary harvest, twice
+
+The harvest is watermarked against the **facts**, so a metric-identity change
+is invisible to it: it returns 0 rows and reports success. Clear the watermark
+before each harvest. Reaching `retired` takes `retirement_grace_harvests`
+harvests (default 2), so this runs twice.
+
+```sql
+UPDATE gold_glossary.publisher_harvest_state
+   SET last_publication_time = NULL WHERE source_code = 'BLS';
+```
+
+then trigger `glossary_reconciliation` (or call `harvest_publisher` for
+`gold_bls`), repeat both, and verify:
+
+```sql
+SELECT freshness_state, COUNT(*) FROM gold_glossary.dim_metric_catalog
+ WHERE source_code = 'BLS' GROUP BY 1;   -- current 63, retired 13261
+```
+
+`current 63` with `stale 13261` means only one harvest has run; do the second.
+
+### Step 3 — ACS, full re-serve, a year at a time
+
+ACS publishes the same metric identities as before, so it needs **no** harvest —
+only the geography vocabulary is wrong. A single forced call cannot do it:
+`gold_census.rpt_acs_observations` is 68,302,467 rows, past the procedure's
+60-minute statement timeout. Drive it per year, each pair its own transaction:
+
+```sql
+CALL gold_census.refresh_rpt_acs_observations('2005-01-01', '2005-12-31');
+CALL gold_census.refresh_mv_acs_latest('2005-01-01', '2005-12-31');
+-- ... repeat for every year through 2024
+```
+
+Every year from 2005 to 2024 must be covered; skipping unchanged years is
+exactly what leaves the old vocabulary behind. Budget roughly 2.5 hours on an
+idle box at the measured 7,700 rows per second. Verify:
+
+```sql
+SELECT DISTINCT geo_level FROM gold_census.rpt_acs_observations;  -- COUNTY, NATIONAL, STATE
+SELECT DISTINCT geo_level FROM gold_census.mv_acs_latest;         -- COUNTY, NATIONAL, STATE
+```
+
+### Step 4 — FRED, forced full re-serve
+
+Small and quick; identities unchanged, so no harvest.
+
+```sql
+CALL gold_fred.refresh_dashboard_serving_layer_fred(NULL, NULL, TRUE);
+```
+
+Measured: 51,646 rows in 5.9 seconds.
+
+### Step 5 — resume ingestion and check the API
+
+```
+airflow dags unpause acs_ingest
+airflow dags unpause bls_ingest
+```
+
+```
+GET /api/v1/observations?metric_code=BLS:CES0000000001&geo_level=NATIONAL   -> 1 row
+GET /api/v1/observations?metric_code=CENSUS_ACS:acs1:B01001_001&geo_level=NATIONAL -> non-zero
+GET /api/v1/observations?metric_code=BLS:LAU:UNEMP_RATE&geo_level=COUNTY    -> 3225 rows
+GET /api/v1/catalog/metrics?source_code=BLS&active_only=true                -> total 63
+GET /api/v1/catalog/metrics/BLS:LAUCN010010000000003                        -> freshness_state retired
+```
+
+### Already done on the development stack
+
+Steps 1, 2, and 4 are complete and verified there, with the numbers above
+recorded in the evidence section. Step 3 is the outstanding one; step 0 is why
+it has not run yet.
+
 ## Test plan
 
 | Layer | Tier | What it proves |
@@ -209,9 +327,11 @@ All warehouse evidence was gathered against the running development stack
   still supplies state and county FIPS, names, and coordinates; only its
   vocabulary column stopped being preferred.
 - Before: `gold_bls.rpt_bls_observations` 22,102 rows at `us`,
-  `gold_census.rpt_acs_observations` 54,901, `gold_fred.mv_fred_latest` 24.
-  (The scoping note's 22,055 and 4,447 were measured a day earlier; the ACS
-  figure in particular was an undercount.)
+  `gold_census.rpt_acs_observations` **54,901**, `gold_fred.mv_fred_latest` 24.
+  The scoping note's 4,447 for ACS is the count in `gold_census.mv_acs_latest`,
+  not in the reporting relation it names — the reporting relation carries more
+  than twelve times as many, which is what makes its re-serve the expensive
+  step in the runbook below.
 - After the BLS and FRED re-serves, `SELECT DISTINCT geo_level` over
   `gold_bls.rpt_bls_observations`, `gold_bls.mv_bls_latest`,
   `gold_fred.rpt_fred_observations`, and `gold_fred.mv_fred_latest` returns
