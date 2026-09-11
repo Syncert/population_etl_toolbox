@@ -793,3 +793,141 @@ def test_dispatched_sql_names_only_allowlisted_relations(
     list_sql = queries[-1]
     assert "ORDER BY" in list_sql
     assert "LIMIT :limit OFFSET :offset" in list_sql
+
+
+# ---------------------------------------------------------------------------
+# API-066 — one row per geography, ranked inside the source relation
+# ---------------------------------------------------------------------------
+
+
+def test_newest_per_geography_ranks_inside_the_source_relation() -> None:
+    """Covers: API-066 — the reduction happens where the ordering is known.
+
+    ``scope=latest`` answers a source's whole latest publication, which for
+    Census PEP is every estimated year of the current vintage. A client that
+    wants one value per geography would otherwise have to page the whole
+    publication and reduce it itself.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatched = _dispatched(session)
+    assert dispatched, "the request reached the source relation"
+    for sql in dispatched:
+        assert "ROW_NUMBER() OVER" in sql
+        assert "PARTITION BY geo_id" in sql
+        assert "ORDER BY estimate_date::TEXT DESC" in sql
+        assert "newest_period_rank = 1" in sql
+        # Ranked before projection, over the source's own relation.
+        assert "FROM gold_pep.population_estimate_latest" in sql
+    # The count answers over the reduced set, so total and page agree.
+    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+
+
+def test_newest_per_geography_keeps_the_declared_filters() -> None:
+    """Covers: API-066 — the reduction composes, it does not replace."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "geo_level": "COUNTY",
+                "year_from": 2020,
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    for sql in _dispatched(session):
+        # Filters stay inside the ranked subquery: ranking the unfiltered
+        # relation and filtering afterwards would answer the newest period
+        # that survived the filter, not the newest period of the selection.
+        ranked = sql.split("ROW_NUMBER() OVER", 1)[1]
+        # PEP publishes its grain as geo_type, which is the condition its
+        # dispatch entry declares for the neutral geo_level filter.
+        assert "UPPER(geo_type) = UPPER(:geo_level)" in ranked
+        assert "observation_year >= :year_from" in ranked
+    assert session.parameters[-1]["geo_level"] == "COUNTY"
+    assert session.parameters[-1]["year_from"] == 2020
+
+
+def test_newest_per_geography_is_refused_for_an_as_released_read() -> None:
+    """Covers: API-066 — an as-released read is a series per release.
+
+    Reducing it to one row per geography would present whichever release
+    sorted last as the value, which is the same reason the explorer leaves
+    an unpinned as-released answer uncoloured.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "newest_per_geography" in detail
+    assert "scope=latest" in detail
+
+
+def test_default_still_answers_the_whole_latest_publication() -> None:
+    """Covers: API-066 — the v1 default is unchanged by the addition."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _PEP_METRIC["metric_code"]},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    for sql in _dispatched(session):
+        assert "ROW_NUMBER() OVER" not in sql
+        assert "newest_period_rank" not in sql
+
+
+def test_newest_per_geography_is_declared_on_the_neutral_route() -> None:
+    """Covers: API-066 — a client discovers the parameter rather than assuming.
+
+    The explorer only sends a parameter the capability entry declares, so an
+    undeclared one would simply never be used.
+    """
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/api/v1/catalog/capabilities")
+
+    assert response.status_code == 200
+    neutral_path = f"{VERSIONED_ROOT}/observations"
+    for capability in response.json()["items"]:
+        routes = {
+            route["path"]: route["parameters"]
+            for route in capability["observation_routes"]
+        }
+        if neutral_path in routes:
+            assert "newest_per_geography" in routes[neutral_path], capability[
+                "source_code"
+            ]

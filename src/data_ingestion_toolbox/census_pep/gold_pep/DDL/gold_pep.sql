@@ -23,6 +23,25 @@ SELECT capture_id, dataset_code, release_vintage AS pep_vintage,
 FROM ranked
 WHERE capture_rank = 1;
 
+-- The currently published value for one measure, geography and year --
+-- exactly one row, chosen across every product that publishes it.
+--
+-- Ranking within a dataset was enough while the 2020s were the only decade,
+-- but PEP publishes overlapping products: the state file and the county file
+-- both carry state rows, and consecutive decades both carry their shared
+-- seam year. Partitioning by dataset kept every one of them, so a state read
+-- answered twice per period and a seam year would answer once per decade.
+--
+-- Precedence, in order:
+--   1. An intercensal series beats a postcensal one for the same year. It is
+--      the Bureau's closing word on a decade, computed against both
+--      enumerations, where a postcensal estimate only had the opening one.
+--   2. Otherwise the newest vintage, which is the latest revision.
+--   3. Otherwise the product that publishes this geography in its own right
+--      rather than as a rollup: a state row from the state file beats the
+--      same state row summed into the county file.
+--   4. Otherwise the dataset code, so the choice is deterministic rather
+--      than left to whichever row the planner returned last.
 CREATE OR REPLACE VIEW gold_pep.population_estimate_latest AS
 SELECT capture_id, dataset_code, pep_vintage, product_code, metric_code,
     observation_year, estimate_date, geo_id, geo_sk, geo_type,
@@ -31,11 +50,21 @@ SELECT capture_id, dataset_code, pep_vintage, product_code, metric_code,
     source_retrieved_at
 FROM (
     SELECT revision.*,
-        DENSE_RANK() OVER (
-            PARTITION BY dataset_code, metric_code, geo_id, observation_year
-            ORDER BY pep_vintage DESC
+        ROW_NUMBER() OVER (
+            PARTITION BY revision.metric_code, revision.geo_id,
+                revision.observation_year
+            ORDER BY
+                CASE WHEN dataset.series_kind = 'intercensal' THEN 0 ELSE 1 END,
+                revision.pep_vintage DESC,
+                CASE
+                    WHEN revision.summary_level = dataset.native_grain THEN 0
+                    ELSE 1
+                END,
+                revision.dataset_code
         ) AS vintage_rank
     FROM gold_pep.population_estimate_revision AS revision
+    JOIN silver_pep.pep_dataset AS dataset
+      ON dataset.dataset_code = revision.dataset_code
 ) AS ranked
 WHERE vintage_rank = 1;
 
@@ -100,7 +129,15 @@ SELECT measure.metric_code AS source_object_key,
     measure.is_component, measure.allows_negative,
     measure.population_universe,
     ARRAY_AGG(DISTINCT fact.geo_type ORDER BY fact.geo_type) AS valid_geo_grains,
-    MAX(fact.transformed_at) AS publication_time
+    MAX(fact.transformed_at) AS publication_time,
+    -- Coverage is per measure, not per source: the Bureau published births
+    -- for the 1980s onward and migration components only from 2000, so a
+    -- single "PEP starts in 1970" would be wrong for most of the catalog.
+    -- Read from the facts rather than declared, so a decade that fails to
+    -- load narrows the published range instead of overstating it. Appended
+    -- rather than inserted so CREATE OR REPLACE VIEW keeps working.
+    MIN(fact.estimate_date) AS first_period,
+    MAX(fact.estimate_date) AS last_period
 FROM silver_pep.dim_measure AS measure
 JOIN silver_pep.fact_population_estimate AS fact USING (metric_code)
 GROUP BY measure.metric_code;

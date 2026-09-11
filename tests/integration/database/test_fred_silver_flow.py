@@ -377,7 +377,7 @@ def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
 ) -> None:
     """Covers: DB-012 — independent harvest links source facts to serving rows.
 
-    Also covers: ETL-043 — ``silver_ref.dim_geo`` carries ``us:1`` at level
+    Also covers: ETL-047 — ``silver_ref.dim_geo`` carries ``us:1`` at level
     ``us``, so the refresh has the dimension row that used to override the
     normalised vocabulary. Without this seed the ``NATIONAL`` assertion below
     passes vacuously.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-// Covers: WEB-028 — BLS LAUS is published per measure, so a BLS metric spans
+// Covers: WEB-029 — BLS LAUS is published per measure, so a BLS metric spans
 // every state and county the program covers and the explorer's spatial
 // presentations answer for it through the same capability-driven paths every
 // other source uses. No client-side BLS special case is added or expected.

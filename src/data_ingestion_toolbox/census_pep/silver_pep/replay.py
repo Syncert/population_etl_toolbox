@@ -12,7 +12,16 @@ from uuid import UUID
 from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
-from data_ingestion_toolbox.census_pep.config import CONFIG, PEPRelease
+from data_ingestion_toolbox.census_pep.config import (
+    CENSUS_COUNT_VARIABLE,
+    CONFIG,
+    SOURCE_VARIABLE_ALIASES,
+    PEPRelease,
+)
+from data_ingestion_toolbox.census_pep.silver_pep.legacy import (
+    parse_legacy_cell_values,
+    parse_legacy_table_values,
+)
 from data_ingestion_toolbox.normalization import NumericParseError, parse_decimal
 
 _CENSUS_NULL_SENTINELS = frozenset(
@@ -23,6 +32,12 @@ _CENSUS_NULL_SENTINELS = frozenset(
         "-666666666",
         "-888888888",
         "-999999999",
+        # "X" marks a cell the Bureau declares not applicable: the decennial
+        # count of a geography that did not exist at that census. Alaska's
+        # Chugach and Copper River census areas carry it for 2010, Broomfield
+        # County for 2000. It is a published non-value, so it is recorded as a
+        # sentinel rather than reported as a value this parser failed to read.
+        "X",
     }
 )
 
@@ -37,23 +52,10 @@ _RATE_METRICS = frozenset(
     }
 )
 
-_REQUIRED_SOURCE_COLUMNS = {
-    "pep_nst_alldata": frozenset({"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"}),
-    "pep_county_alldata": frozenset({"SUMLEV", "STATE", "COUNTY", "STNAME", "CTYNAME"}),
-    "pep_subcounty": frozenset(
-        {
-            "SUMLEV",
-            "STATE",
-            "COUNTY",
-            "PLACE",
-            "COUSUB",
-            "CONCIT",
-            "FUNCSTAT",
-            "NAME",
-            "STNAME",
-        }
-    ),
-}
+#: ``CENSUS2010POP`` carries its year inside the name rather than after it,
+#: so it needs its own pattern. It is the April enumeration that opened the
+#: decade, published beside the July estimates rather than as one of them.
+_CENSUS_COUNT_PATTERN = re.compile(r"^CENSUS(\d{4})POP$")
 
 
 class PepCapturePayloadError(ValueError):
@@ -98,26 +100,47 @@ def _metric_columns(
     header: list[str],
     release: PEPRelease,
 ) -> list[tuple[int, str, int]]:
+    """The value columns this release publishes, as (index, metric, year).
+
+    A family is matched in the spelling the file uses and reported in the
+    canonical one, so the 2000s and 2010s ``NATURALINC`` and the 2020s
+    ``NATURALCHG`` reach the warehouse as the same measure.
+    """
     dataset = CONFIG.datasets.get(release.dataset_code)
     if dataset is None:
         raise ValueError(f"unknown registered PEP dataset: {release.dataset_code}")
-    required = _REQUIRED_SOURCE_COLUMNS[release.dataset_code]
-    missing = required - set(header)
+    missing = dataset.required_columns - set(header)
     if missing:
         raise PepCapturePayloadError(
             "PEP CSV is missing required columns: " + ", ".join(sorted(missing))
         )
 
-    family_pattern = "|".join(
-        re.escape(family) for family in sorted(dataset.variables, key=len, reverse=True)
+    suffixed = sorted(
+        (family for family in dataset.variables if family != CENSUS_COUNT_VARIABLE),
+        key=len,
+        reverse=True,
     )
+    family_pattern = "|".join(re.escape(family) for family in suffixed)
     pattern = re.compile(rf"^({family_pattern})_?(\d{{4}})$")
+    reads_census_count = CENSUS_COUNT_VARIABLE in dataset.variables
+
     metrics: list[tuple[int, str, int]] = []
     for index, column in enumerate(header):
+        family: str | None = None
+        observation_year: int | None = None
+
         match = pattern.fullmatch(column)
-        if match is None:
+        if match is not None:
+            family = SOURCE_VARIABLE_ALIASES.get(match.group(1), match.group(1))
+            observation_year = int(match.group(2))
+        elif reads_census_count:
+            census_match = _CENSUS_COUNT_PATTERN.fullmatch(column)
+            if census_match is not None:
+                family = CENSUS_COUNT_VARIABLE
+                observation_year = int(census_match.group(1))
+
+        if family is None or observation_year is None:
             continue
-        observation_year = int(match.group(2))
         if not (
             release.observation_start_year
             <= observation_year
@@ -126,7 +149,7 @@ def _metric_columns(
             raise PepCapturePayloadError(
                 f"PEP metric column is outside release range: {column}"
             )
-        metrics.append((index, match.group(1), observation_year))
+        metrics.append((index, family, observation_year))
     if not metrics:
         raise PepCapturePayloadError("PEP CSV contains no registered metric column")
     return metrics
@@ -146,20 +169,44 @@ def _value(value_source: str) -> tuple[Any, str]:
     return value, "valid"
 
 
+#: Readers for the products the Bureau published before the CSV era. The
+#: product declares which one reads it, so a layout is never guessed from
+#: the bytes.
+_LEGACY_PARSERS = {
+    "census-pep-fixed-width-table-v1": parse_legacy_table_values,
+    "census-pep-fixed-width-cells-v1": parse_legacy_cell_values,
+}
+
+
 def parse_captured_pep_values(
     payload: bytes,
     *,
     release: PEPRelease,
 ) -> list[dict[str, Any]]:
-    """Unpivot source-shaped PEP CSV bytes into revision records."""
+    """Unpivot source-shaped PEP bytes into revision records."""
     dataset = CONFIG.datasets[release.dataset_code]
+    legacy_parser = _LEGACY_PARSERS.get(dataset.parser_version)
+    if legacy_parser is not None:
+        return legacy_parser(payload, release=release)
+
     header, records = _parse_document(payload, text_encoding=dataset.text_encoding)
     metrics = _metric_columns(header, release)
+
+    #: Fixed-width FIPS fields, for a file that prints them without their
+    #: leading zeros. Padding a code of known width restores what the code
+    #: is; it is applied only where the product declares the file does this.
+    code_widths = {"SUMLEV": 3, "STATE": 2, "COUNTY": 3, "PLACE": 5}
+
+    def read_code(source_row: dict[str, str], name: str) -> str | None:
+        value = source_row.get(name)
+        if value is None or not dataset.pads_geography_codes:
+            return value
+        return value.rjust(code_widths[name], "0") if name in code_widths else value
 
     parsed: list[dict[str, Any]] = []
     for row_index, record in enumerate(records):
         source_row = dict(zip(header, record))
-        summary_level = source_row.get("SUMLEV")
+        summary_level = read_code(source_row, "SUMLEV")
         if summary_level not in dataset.summary_levels:
             raise PepCapturePayloadError(
                 f"PEP CSV contains unregistered summary level: {summary_level}"
@@ -185,9 +232,9 @@ def parse_captured_pep_values(
                     "summary_level": summary_level,
                     "region_code_source": source_row.get("REGION"),
                     "division_code_source": source_row.get("DIVISION"),
-                    "state_fips_source": source_row.get("STATE"),
-                    "county_fips_source": source_row.get("COUNTY"),
-                    "place_fips_source": source_row.get("PLACE"),
+                    "state_fips_source": read_code(source_row, "STATE"),
+                    "county_fips_source": read_code(source_row, "COUNTY"),
+                    "place_fips_source": read_code(source_row, "PLACE"),
                     "county_subdivision_source": source_row.get("COUSUB"),
                     "consolidated_city_source": source_row.get("CONCIT"),
                     "functional_status_source": source_row.get("FUNCSTAT"),
@@ -213,12 +260,10 @@ def validate_release_completeness(
     }
     levels = {item[1] for item in source_rows}
     state_codes = {item[2] for item in source_rows if item[2] not in (None, "00")}
-    requirements = {
-        "pep_nst_alldata": ("040", 50, 50),
-        "pep_county_alldata": ("050", 50, 3000),
-        "pep_subcounty": ("162", 50, 18000),
-    }
-    required_level, minimum_states, minimum_rows = requirements[release.dataset_code]
+    dataset = CONFIG.datasets[release.dataset_code]
+    required_level = dataset.native_grain
+    minimum_states = dataset.minimum_states
+    minimum_rows = dataset.minimum_principal_rows
     matching_rows = {row[0] for row in source_rows if row[1] == required_level}
     if (
         required_level not in levels
@@ -250,6 +295,7 @@ def replay_pep_capture(
     if not values:
         return 0
 
+    parser_version = CONFIG.datasets[release.dataset_code].parser_version
     columns = (
         "source_row_index",
         "source_column_index",
@@ -276,7 +322,8 @@ def replay_pep_capture(
         "value_status",
     )
     records = [
-        (str(capture_id), *(item[column] for column in columns)) for item in values
+        (str(capture_id), *(item[column] for column in columns), parser_version)
+        for item in values
     ]
 
     database_connection = connection_factory()
@@ -293,7 +340,7 @@ def replay_pep_capture(
                     county_fips_source, place_fips_source,
                     county_subdivision_source, consolidated_city_source,
                     functional_status_source, name_source, state_name_source,
-                    value_source, value, value_status
+                    value_source, value, value_status, parser_version
                 ) VALUES %s
                 ON CONFLICT (capture_id, source_row_index, source_column_index)
                 DO NOTHING

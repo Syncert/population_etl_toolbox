@@ -341,7 +341,7 @@ All warehouse evidence was gathered against the running development stack
   row. It answered 0 before.
 - `tests/unit/shared/test_incremental_serving_contract.py` gains
   `test_reporting_refreshes_never_write_the_raw_geography_vocabulary` and
-  `test_fact_views_normalise_the_national_geography_level` (ETL-043).
+  `test_fact_views_normalise_the_national_geography_level` (ETL-047).
 - `tests/integration/database/test_fred_silver_flow.py` now seeds `us:1`
   through `seed_geography(geo_type="nation")` before calling the real refresh
   procedure and asserts the served and latest rows both carry `NATIONAL`.
@@ -383,7 +383,7 @@ All warehouse evidence was gathered against the running development stack
 - The maximum row count per `(geo_id, metric_code)` over the LAUS rows of
   `mv_bls_latest` is **1** — one latest row per geography per measure, as the
   unadjusted-only coverage implies.
-- `tests/unit/bls/test_measure_identity.py` (ETL-044) pins the seven
+- `tests/unit/bls/test_measure_identity.py` (ETL-048) pins the seven
   identities, that only program `LA` is mapped, the refresh's identity branch,
   that `series_id` survives on every row, and the latest key.
 

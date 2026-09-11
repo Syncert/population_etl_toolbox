@@ -17,7 +17,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed
+- **Status:** Implementation complete on `feat/census-pep-history`; ready for human review
 - **Last updated:** 2026-09-10
 - **Source owner:** U.S. Census Bureau Population Estimates Program (PEP), historical county and state series
 - **Geography scope:** State and county for every decade; national where the era's file carries it. Subcounty history is out of scope.
@@ -27,19 +27,19 @@ verify:
 
 **Last updated:** 2026-09-10
 
-**Current milestone:** none claimed
+**Current milestone:** every phase delivered. PEP now registers ten products across six decades and serves county population from 1971 to 2025, with the seam between decades resolved to one published value and an additive API parameter that answers one row per geography.
 
-**Next pickup:** claim the plan, then start at PEH-001 (registry generalisation), because every later phase registers a release the current contract rejects.
+**Next pickup:** none. Two deliberate remainders are named under *Remainders* below; neither is a gap in this plan's objective.
 
 ### Completed in the current slice
 
-- [ ] PEH-001 registry contract covers eras, series kinds, and per-release observation ranges
-- [ ] PEH-002 cross-dataset latest selection with the seam rule
-- [ ] PEH-003 2010 to 2020 series (Vintage 2020 alldata, same layout as today)
-- [ ] PEH-004 2000 to 2010 series (Vintage 2009 components plus intercensal totals)
-- [ ] PEH-005 1990s, 1980s, and 1970s series (legacy layouts, totals and partial components)
-- [ ] PEH-006 newest-per-geography parameter on the neutral observations resource
-- [ ] PEH-007 full PEP serving refresh, glossary harvest, and evidence record
+- [x] PEH-001 registry contract covers eras, series kinds, and per-release observation ranges
+- [x] PEH-002 cross-dataset latest selection with the seam rule
+- [x] PEH-003 2010 to 2020 series (Vintage 2020 alldata, same layout as today)
+- [x] PEH-004 2000 to 2010 series (Vintage 2009 components plus intercensal totals)
+- [x] PEH-005 1990s, 1980s, and 1970s series (legacy layouts, totals and partial components)
+- [x] PEH-006 newest-per-geography parameter on the neutral observations resource
+- [x] PEH-007 full PEP serving refresh, glossary harvest, and evidence record
 
 ## Objective
 
@@ -78,12 +78,19 @@ Not found on the site: a 2010 to 2020 county intercensal totals file (only age, 
 
 | Measure | 1970s | 1980s | 1990s | 2000s | 2010s | 2020s |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POPESTIMATE` | yes | yes | yes | yes | yes | yes |
-| `BIRTHS`, `DEATHS`, `NATURALCHG` | no | yes | no | yes | yes | yes |
-| `NPOPCHG` | derivable | yes | derivable | yes | yes | yes |
-| `INTERNATIONALMIG`, `DOMESTICMIG`, `NETMIG`, `RESIDUAL` | no | decade cumulative only | no | yes | yes | yes |
+| `POPESTIMATE` | 1971-1979 | 1981-1989 | yes | yes | yes | yes |
+| `CENSUSPOP` | April 1970 | April 1980 | no | April 2000 | April 2010 | no |
+| `BIRTHS`, `DEATHS`, `NATURALCHG` | no | not served | no | yes | yes | yes |
+| `NPOPCHG`, `RESIDUAL` | no | not served | no | yes | yes | yes |
+| `INTERNATIONALMIG`, `DOMESTICMIG`, `NETMIG` | no | not served | no | yes | yes | yes |
 | Rates (`RBIRTH`, `RDEATH`, `RNATURALCHG`, `R*MIG`) | no | no | no | yes | yes | yes |
 | `ESTIMATESBASE` | no | no | no | yes | yes | yes |
+
+Corrected against what was actually registered. Three entries moved as the products were read rather than assumed:
+
+- **July 1980 has no estimate.** Both printed tables treat April 1980 as the decade boundary: the 1970s table ends at 1979 and the 1980s table opens on the census column. The year is absent and left absent.
+- **The 1980s components are not served** (see *Remainders*).
+- **`CENSUSPOP` is a delivered measure**, and the current-decade files publish no census column at all, so those products do not declare one.
 
 Gaps in this table are the Bureau's, not the pipeline's. The catalog must state coverage per measure so the explorer's quality panel reports it rather than presenting a 1970 start for every PEP metric.
 
@@ -237,13 +244,119 @@ Acceptance:
 - **Volume.** About 3,144 counties times 56 years times up to 16 measures is under two million county rows, plus state rows; well within the fact table's design. The explorer is protected by PEH-006; without it the PEP county map would exceed the 40,000-row paging bound after PEH-004.
 - **Summed totals differ from published totals by rounding.** Where a decade has both a totals file and a characteristics file (1970s), the fixture cross-check tolerates zero difference; a nonzero difference is recorded as a finding, and the totals file wins.
 
-## Open questions for the reviewer
+## Open questions, as resolved
 
-1. Whether decade-cumulative 1980s migration and residual figures should load at all (decision 5 allows either). Loading them adds two ten-year-period measures that no other era has; leaving them out loses the only 1980s migration signal the Bureau publishes.
-2. Whether a `CENSUSPOP` measure should be added for the April counts or whether `ESTIMATESBASE` is close enough. The 2020s file distinguishes `CENSUS2020POP` from `ESTIMATESBASE2020` (the base includes count corrections), so a separate measure is the more faithful reading.
+1. **The 1980s components are not loaded**, cumulative or annual. The reason turned out to be stronger than the trade-off the question anticipated: the Bureau publishes them by estimation period, and its first and last periods run 15 and 9 months (April 1980 to June 1981, July 1989 to March 1990). The silver fact carries one observation date, so any load would have to restate those periods as July-to-July years. Decision 5 forbids faking annual rows, and the same reasoning forbids faking annual periods. Recorded under *Remainders*.
+2. **A separate `CENSUSPOP` measure was added**, as the question's own reading preferred. It is dated to 1 April and is what keeps a decade's closing count from competing with the next decade's opening estimate for the same geography and year. The current-decade files publish no census column, so those products do not declare one.
 
-Neither blocks claiming the plan; both are recorded as the default reading in the decisions and can be reversed there before the plan is claimed.
+## Remainders
+
+Both are deliberate, and neither is a gap in the objective.
+
+- **1980s components of change (`comp8090.zip`).** Not served, for the reason in question 1 above. Serving them faithfully needs period bounds on the silver fact and through the gold and API layers, which is a cross-source schema change a single-source plan should not make on its own. The release contract already carries `archive_member`, so the capture side is ready if a later plan adds the period bounds.
+- **`first_period` / `last_period` are exported, not published.** They are read from the facts in `gold_pep.measure_export`, so per-measure coverage is queryable and tested. Surfacing them in the catalog means widening `metric_publisher`, whose column shape is a cross-source contract that ARC-001 guards; a single-source plan widening it unilaterally is the failure that test exists to prevent.
 
 ## Implementation evidence
 
-_Empty until claimed._
+Recorded 2026-09-10 on `feat/census-pep-history`, branched from `main` at
+the merge of the web first wave (789f56e).
+
+### What is registered
+
+Ten products across six decades, thirteen releases, bootstrapping cleanly:
+
+| Era | Product | Vintage | Observations | Series |
+| --- | --- | --- | --- | --- |
+| 1970s | `pep_county_totals_1970s` (E7079CO) | 1982 | 1970-1979 | intercensal |
+| 1980s | `pep_county_totals_1980s` (E8089CO) | 1992 | 1980-1989 | intercensal |
+| 1990s | `pep_county_totals_1990s` (CO-99-10) | 1999 | 1990-1999 | postcensal |
+| 2000s | `pep_county_alldata_2000s` (CO-EST2009-ALLDATA) | 2009 | 2000-2009 | postcensal |
+| 2000s | `pep_county_intercensal_2000s` (CO-EST00INT-TOT) | 2016 | 2000-2010 | intercensal |
+| 2010s | `pep_county_alldata_2010s` (CO-EST2020-ALLDATA) | 2020 | 2010-2020 | postcensal |
+| 2010s | `pep_nst_alldata_2010s` (NST-EST2020-ALLDATA) | 2020 | 2010-2020 | postcensal |
+| 2020s | the three existing products | 2024, 2025 | 2020-vintage | postcensal |
+
+### Parsed against the real files
+
+Every registered historical file was fetched and parsed end to end, and
+each passed its own completeness contract:
+
+| File | Values | Geographies | Range |
+| --- | --- | --- | --- |
+| `e7079co.txt` | 31,900 | 3,138 counties + 51 states + US | 1970-1979 |
+| `e8089co.txt` | 31,930 | 3,141 counties + 51 states + US | 1980-1989 |
+| `co-99-10.txt` | 31,410 | 3,141 counties | 1990-1999 |
+| `co-est2009-alldata.csv` | 466,324 | 3,143 counties + 51 states | 2000-2009 |
+| `co-est00int-tot.csv` | 41,522 | 3,143 counties + 51 states | 2000-2010 |
+| `co-est2020-alldata.csv` | 514,234 | 3,143 counties + 51 states | 2010-2020 |
+| `nst-est2020-alldata.csv` | 9,177 | US, regions, 51 states | 2010-2020 |
+
+Values were checked against the printed source: Autauga County's 1970
+census count reads 24,460 and its 1975 estimate 29,700, the United States
+counted 226,542,250 in 1980, and Autauga's 1990 population sums to 34,356
+from its eight published cells.
+
+### What the warehouse serves
+
+A real PostGIS 16 database, bootstrapped from all 32 manifest assets:
+
+- Autauga County's `POPESTIMATE` runs 1971 to 2025, one row per year, no
+  year answered twice, across six products and three readers. The only
+  absent year in that span is 1980.
+- `CENSUSPOP` answers 1970, 1980, 2000 and 2010, each dated 1 April, beside
+  the July estimates for the same years.
+- 2005 resolves to the intercensal publication (4,569,805 for Alabama)
+  rather than the postcensal projection (4,545,049); both remain readable
+  under `scope=as_released`.
+- July 2020 resolves to Vintage 2025's 331,578,104 rather than Vintage
+  2020's 329,484,123.
+- Alabama's 2015 state row resolves to the state file rather than the
+  county file's rollup, which also retires the doubled state rows the
+  warehouse serves today.
+
+### The API parameter, on live data
+
+Against the running development warehouse, `CENSUS_PEP:BIRTHS` at county
+grain:
+
+| Read | Rows |
+| --- | --- |
+| `scope=latest` (unchanged default) | 18,864 |
+| `scope=latest&newest_per_geography=true` | 3,144 |
+| `/distribution/bins` total | 3,144 |
+
+### Verification
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit` | 1,261 passed |
+| `pytest -m "unit and api" tests/unit/api` | 253 passed |
+| `npx vitest run` (web unit) | 192 passed |
+| `npm run typecheck` / `npm run lint` | clean |
+| `ruff check src tests apps` | clean |
+| `pytest tests/integration/database/test_pep_capture_flow.py` | 4 passed |
+| `pytest -m "integration and not e2e" tests/integration` | 108 passed, 6 failed |
+
+The six integration failures are in `test_quality_assessment.py` and
+`test_source_quality_checks.py`. They reproduce identically with this
+plan's two new PEP tests deselected, and the failing assertion is a FRED
+rule reporting that the warehouse is not empty, so they are whole-tier
+ordering artefacts of a shared local database rather than anything this
+work changed. `tests/integration/database/test_usda_nass_dag_tasks.py`
+cannot be collected on this host at all: Airflow rejects the Windows
+temporary-directory path as a relative SQLite URL, which also predates
+this work.
+
+### Notes for the operator
+
+- Ingestion order for the one-time backfill: newest decade first, then
+  each earlier one, refreshing gold between them. The seam rule needs both
+  sides of an overlap present to be checked, and each refresh is
+  idempotent.
+- The archival products are immutable, so their releases are `published`
+  and each is its own current release. Re-running the DAG re-captures
+  about 9 MB and inserts nothing new.
+- `CI_EVIDENCE_MAP.md` needed no new row: it maps contracts to jobs by
+  owning path, and every path this plan touches (`src`, `sql/migrations`,
+  `sql/bootstrap`, `apps/api`, `apps/web`) is already owned by an existing
+  row. The new catalog IDs are ETL-043 to ETL-046, API-066 and WEB-028.

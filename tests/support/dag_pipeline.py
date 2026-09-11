@@ -640,21 +640,34 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def build_pep_release_csv(url: str) -> bytes:
-    """Generate a production-shaped PEP bulk release for one registered URL.
+    """Generate a production-shaped PEP release for one registered URL.
 
     The reviewed fixtures are bounded samples, but the PEP replay applies its
-    production completeness contract: NST needs 50 states at summary level 040,
-    counties 3000 principal rows at 050, and subcounty 18000 at 162. Those
-    guards are correct production behaviour, so the sample is generated at
-    production shape from the same synthetic geography the shared dimension
-    uses, rather than weakening the checks.
+    production completeness contract: each product needs its own principal
+    summary level, at least 50 states, and its declared minimum of principal
+    rows. Those guards are correct production behaviour, so the sample is
+    generated at production shape from the same synthetic geography the
+    shared dimension uses, rather than weakening the checks.
+
+    The shape comes from the registry rather than from substrings of the URL:
+    PEP publishes six decades across three layouts, and a generator that
+    guessed the layout from a filename would silently serve the wrong decade's
+    columns the moment another product was registered.
     """
-    lowered = url.lower()
-    # The vintage is the four digits in the release filename (nst-est2025,
-    # co-est2025, sub-est2025), not the first digits anywhere in the URL.
-    match = re.search(r"est(\d{4})", lowered.rsplit("/", 1)[-1])
-    vintage = match.group(1) if match else "2025"
-    metric = f"POPESTIMATE{vintage}"
+    from data_ingestion_toolbox.census_pep.config import (
+        COUNTY_LAYOUT_COLUMNS,
+        CONFIG,
+        NST_LAYOUT_COLUMNS,
+        SUBCOUNTY_LAYOUT_COLUMNS,
+    )
+
+    release = next((item for item in CONFIG.releases if item.data_url == url), None)
+    if release is None:
+        raise AssertionError(f"No PEP release fixture registered for {url}")
+    dataset = CONFIG.datasets[release.dataset_code]
+    # Every product publishes its last observation year, so one column of it
+    # exercises the release's declared range without inventing a year.
+    year = release.observation_end_year
 
     def state_rows() -> list[dict[str, str]]:
         return [
@@ -663,32 +676,82 @@ def build_pep_release_csv(url: str) -> bytes:
             if entry["state_fips"] != "00"
         ]
 
-    lines: list[str]
-    if "nst-est" in lowered:
+    states = {entry["state_fips"]: entry["name"] for entry in state_rows()}
+
+    if dataset.parser_version == "census-pep-fixed-width-table-v1":
+        # A printed table: the block header states the measure and the year,
+        # and the nation, states and counties share one five-digit code
+        # column.
+        # A printed table separates the area name from its values by spacing
+        # alone, so a name ending in digits would be read as one more value.
+        # The Bureau's own names never do; the synthetic ones can.
+        def area_name(name: str) -> str:
+            cleaned = re.sub(r"[^A-Za-z ]", "", name).strip()
+            return cleaned or "Area"
+
+        lines = [
+            "FIPS                    Estimate",
+            f"Code  Area Name            {year}",
+            "00000 United States   331000000",
+        ]
+        for state_fips, name in states.items():
+            lines.append(f"{state_fips}000 {area_name(name):<18} 1000000")
+        for entry in build_geography_records("county"):
+            lines.append(
+                f"{entry['state_fips']}{entry['county_fips']} "
+                f"{area_name(entry['name']):<18} 10000"
+            )
+        return ("\n".join(lines) + "\n").encode(dataset.text_encoding)
+
+    if dataset.parser_version == "census-pep-fixed-width-cells-v1":
+        # One record per county and year, eight nine-character cells and no
+        # published total.
+        cells = "".join(
+            f"{value:>9}" for value in (7000, 2000, 500, 300, 150, 40, 5, 5)
+        )
+        lines = [
+            "(CO-99-10)  Population Estimates for Counties",
+            "           |-----------Non-Hispanic----------- |---Hispanic---|",
+        ]
+        counties = build_geography_records("county")
+        for entry in counties:
+            lines.append(f"{year} {entry['state_fips']}{entry['county_fips']}{cells}")
+        # This product publishes counties only, so its state coverage has to
+        # come from the counties themselves. The shared synthetic geography
+        # spans a handful of states, which is enough for a product that also
+        # publishes state rows and not for one that does not, so every
+        # remaining state contributes one county. Those rows resolve against
+        # no canonical geography and are recorded as unmapped, which is what
+        # the pipeline does with a county it cannot place.
+        covered = {entry["state_fips"] for entry in counties}
+        for state_fips in states:
+            if state_fips not in covered:
+                lines.append(f"{year} {state_fips}997{cells}")
+        return ("\n".join(lines) + "\n").encode(dataset.text_encoding)
+
+    metric = f"POPESTIMATE{year}"
+    if dataset.required_columns == NST_LAYOUT_COLUMNS:
         lines = [f"SUMLEV,REGION,DIVISION,STATE,NAME,{metric}"]
         lines.append("010,0,0,00,United States,331000000")
-        for entry in state_rows():
-            lines.append(f"040,1,1,{entry['state_fips']},{entry['name']},1000000")
-    elif "co-est" in lowered:
+        for state_fips, name in states.items():
+            lines.append(f"040,1,1,{state_fips},{name},1000000")
+    elif dataset.required_columns == COUNTY_LAYOUT_COLUMNS:
         lines = [f"SUMLEV,STATE,COUNTY,STNAME,CTYNAME,{metric}"]
-        states = {entry["state_fips"]: entry["name"] for entry in state_rows()}
-        for entry in states:
-            lines.append(f"040,{entry},000,{states[entry]},{states[entry]},1000000")
+        for state_fips, name in states.items():
+            lines.append(f"040,{state_fips},000,{name},{name},1000000")
         for entry in build_geography_records("county"):
             state_name = states.get(entry["state_fips"], "Unknown State")
             lines.append(
                 f"050,{entry['state_fips']},{entry['county_fips']},"
                 f"{state_name},{entry['name']},10000"
             )
-    elif "sub-est" in lowered:
+    elif dataset.required_columns == SUBCOUNTY_LAYOUT_COLUMNS:
         lines = [
             f"SUMLEV,STATE,COUNTY,PLACE,COUSUB,CONCIT,FUNCSTAT,NAME,STNAME,{metric}"
         ]
-        states = {entry["state_fips"]: entry["name"] for entry in state_rows()}
-        for entry in states:
+        for state_fips, name in states.items():
             lines.append(
-                f"040,{entry},000,00000,00000,00000,A,{states[entry]},"
-                f"{states[entry]},1000000"
+                f"040,{state_fips},000,00000,00000,00000,A,{name},{name},1000000"
             )
         for entry in build_geography_records("place"):
             state_name = states.get(entry["state_fips"], "Unknown State")
@@ -697,7 +760,7 @@ def build_pep_release_csv(url: str) -> bytes:
                 f"{entry['name']},{state_name},5000"
             )
     else:
-        raise AssertionError(f"No PEP release fixture registered for {url}")
+        raise AssertionError(f"No PEP layout registered for {release.product_code}")
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
