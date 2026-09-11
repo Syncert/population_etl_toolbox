@@ -64,7 +64,7 @@ def test_harvest_all_isolates_publishers(monkeypatch: pytest.MonkeyPatch) -> Non
     publishers = [harvest.Publisher("gold_good"), harvest.Publisher("gold_bad")]
     monkeypatch.setattr(harvest, "discover_publishers", lambda _: publishers)
 
-    def harvest_one(_: Any, publisher: harvest.Publisher) -> int:
+    def harvest_one(_: Any, publisher: harvest.Publisher, **__: Any) -> int:
         if publisher.schema == "gold_bad":
             raise RuntimeError("credentials=secret\nprovider unavailable")
         return 3

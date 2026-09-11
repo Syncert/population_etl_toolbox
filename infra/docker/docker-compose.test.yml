@@ -41,6 +41,7 @@ services:
       - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/034_bls_publisher.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/035_fred_publisher.sql:ro
       - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/040_gold_glossary.sql:ro
+      - ../../sql/migrations/015_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/040a_publisher_harvest_fingerprint.sql:ro
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/041_semantic_policy.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/042_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro

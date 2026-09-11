@@ -169,26 +169,39 @@ After such a change, refresh the whole source once, forced:
 CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
 ```
 
-Then make the catalog follow. The harvest is watermarked the same way the
-refresh is: `harvest_publisher` compares the publisher's `publication_time`
-against `gold_glossary.publisher_harvest_state.last_publication_time` and
-returns 0 rows when nothing newer was published. An identity change does not
-move that watermark -- the underlying facts were not re-ingested -- so a
-harvest run straight after the refresh is a no-op and the catalog keeps the
-old codes indefinitely. Clear the source's watermark first:
+Then let the catalog follow, which it now does on its own. The harvest skips
+only when the publisher has published nothing newer **and** a digest of the
+content it would write is unchanged, so a change to what a publisher *says* --
+a metric's identity, display name, units, grains, lineage, or the set of keys
+it emits -- is visible to it even though no fact was re-ingested. The next
+`glossary_reconciliation` run picks it up with no operator action.
 
-```sql
-UPDATE gold_glossary.publisher_harvest_state
-   SET last_publication_time = NULL
- WHERE source_code = 'BLS';
+New codes are harvested `current`; codes the publisher no longer emits become
+`stale` and then `retired` after `retirement_grace_harvests` harvests
+(default 2). A harvest that finds nothing to write still counts against absent
+keys, so retirement completes on scheduled runs alone. Codes are never
+deleted, so an existing link to a retired code still resolves and reports its
+retired state.
+
+To reconcile immediately rather than waiting for the daily schedule, trigger
+`glossary_reconciliation` with:
+
+```json
+{"force": true, "schemas": ["gold_bls"]}
 ```
 
-Then run `glossary_harvest` (or `harvest_all_publishers`). The new codes are
-harvested `current`, and codes the publisher no longer emits become `stale`
-and then `retired` after `retirement_grace_harvests` harvests (default 2) --
-so reaching `retired` takes two harvests, each preceded by clearing the
-watermark. Codes are never deleted, so an existing link to a retired code
-still resolves and reports its retired state.
+`force` re-harvests even where nothing changed, and `schemas` keeps the repair
+to one source instead of rewriting every catalog. Both default off, so a
+scheduled run is never forced. A forced run is recorded in
+`gold_glossary.publisher_harvest_state.last_harvest_forced`.
+
+> Before migration `015_publisher_harvest_fingerprint.sql` the harvest compared
+> only the publication time, which every publisher derives from its facts. An
+> identity change moved nothing it could see: the harvest wrote nothing, logged
+> success, and the catalog kept the old codes until an operator cleared
+> `last_publication_time` by hand, once per retirement grace step. If you are
+> operating a warehouse that predates that migration, that manual clear is the
+> only path.
 
 Each source's procedure takes the same three arguments
 (`gold_census.refresh_dashboard_serving_layer_acs`,

@@ -10,6 +10,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from data_ingestion_toolbox.glossary.harvest import (
     harvest_all_publishers,
     process_pending_events,
+    reconciliation_arguments,
 )
 
 POSTGRES_CONN_ID = "public_data"
@@ -55,8 +56,23 @@ def glossary_harvest():
 )
 def glossary_reconciliation():
     @task
-    def reconcile_all_publishers() -> dict[str, int | str]:
-        return harvest_all_publishers(_connection_factory)
+    def reconcile_all_publishers(**context) -> dict[str, int | str]:
+        """Reconcile every publisher, or repair one on an operator request.
+
+        Two optional ``dag_run.conf`` keys, both unset on every scheduled run:
+
+        - ``force``: re-harvest even where the publisher has published nothing
+          newer and says exactly what it said last time. Needed after a change
+          to what a publisher *says* rather than to its facts -- a metric
+          identity, units, grains -- since no fact watermark moves for those.
+        - ``schemas``: a list of publisher schemas (for example
+          ``["gold_bls"]``) to limit the run to, so a repair does not rewrite
+          every source's catalog.
+        """
+        conf = getattr(context.get("dag_run"), "conf", None)
+        return harvest_all_publishers(
+            _connection_factory, **reconciliation_arguments(conf)
+        )
 
     @task
     def refresh_shared_geography() -> None:
