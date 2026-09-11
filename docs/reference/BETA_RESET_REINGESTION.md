@@ -221,7 +221,26 @@ Measured durations, forced, on an idle box:
 | --- | --- | --- |
 | `gold_fred.rpt_fred_observations` | 52 thousand | 6 seconds |
 | `gold_bls.rpt_bls_observations` | 5.8 million | 16m44s (12m31s report, 4m11s latest) |
-| `gold_census.rpt_acs_observations` | 68.3 million | about 2.5 hours |
+| `gold_census.rpt_acs_observations` | 68.3 million | **12 to 16 hours** (measured per year; see below) |
+
+Per-row cost is **not** comparable across sources, so do not extrapolate one
+source's throughput onto another. BLS sustains about 7,700 rows per second;
+ACS runs at roughly 1,200 to 1,500, because its reporting relation is twelve
+times larger and carries eight indexes that every chunk's delete and re-insert
+must maintain. The first published estimate for ACS was 2.5 hours, arrived at
+by extrapolating the BLS rate, and it was wrong by roughly six times.
+
+Measured per year on an idle box, from the first forced ACS re-serve:
+
+| Year | Rows | Duration | Throughput |
+| --- | --- | --- | --- |
+| 2005 | 686k | 1007s | 681/s (contended -- other queries were reading the same table) |
+| 2006 | 714k | 592s | 1,206/s |
+| 2007 | 710k | 473s | 1,501/s |
+
+Throughput improves as the cache warms. Budget an overnight run for ACS, and
+expect the later years to dominate: 2005 to 2008 are under 800 thousand rows
+each, while 2009 onward are 2.9 to 4.4 million.
 
 The one-shot procedure call
 (`CALL gold_<source>.refresh_dashboard_serving_layer_<source>(NULL, NULL, TRUE)`)

@@ -69,9 +69,17 @@ Measured on the development stack (`docker-analytics_postgres-1`).
   | `gold_bls.rpt_bls_observations` | 5,819,264 | 16m44s (12m31s report + 4m11s latest) |
 
   That is roughly 7,700 rows per second with the box otherwise idle.
-- **`gold_census.rpt_acs_observations` is 68,302,467 rows.** At the measured
-  rate that is about 2.5 hours in one statement — past the 60-minute timeout,
-  so the supported call cannot complete it at all.
+- **`gold_census.rpt_acs_observations` is 68,302,467 rows**, and cannot finish
+  in one statement at all — it is far past the 60-minute timeout, so the
+  supported call cannot complete it.
+
+  The figure first recorded here, "about 2.5 hours", was wrong: it extrapolated
+  the BLS rate onto a relation twelve times larger carrying eight indexes.
+  Measured during the first real forced re-serve, ACS sustains roughly 1,200 to
+  1,500 rows per second against BLS's 7,700 — per-row cost is a property of the
+  relation, not of the driver — which puts the full re-serve at **12 to 16
+  hours**. `BETA_RESET_REINGESTION.md` section 7 carries the per-year
+  measurements.
 - **Contention makes it far worse.** With a scheduled `acs_ingest` run writing
   `silver_census.fact_demographics` concurrently, a single ACS year (2005,
   685,717 rows) had not finished after 8 minutes — about 1,500 rows per second,
