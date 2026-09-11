@@ -15,7 +15,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed
+- **Status:** Implementation complete; awaiting human review
 - **Last updated:** 2026-09-10
 - **Owner surface:** `src/data_ingestion_toolbox/glossary/harvest.py`, `dags/glossary_harvest_dag.py`, `gold_glossary.publisher_harvest_state`
 - **Depends on:** nothing open. Found while delivering `BLS_LAUS_MEASURE_METRICS_PLAN.md`, which works around it by hand.
@@ -24,16 +24,16 @@ verify:
 
 **Last updated:** 2026-09-10
 
-**Current milestone:** none claimed
+**Current milestone:** none; every phase is delivered.
 
-**Next pickup:** claim the plan, then start at GHI-001 — every later phase depends on the harvest being able to run at all when the facts have not moved.
+**Next pickup:** none. Human review.
 
 ### Completed in the current slice
 
-- [ ] GHI-001 a publisher-contract change is a reason to harvest
-- [ ] GHI-002 an explicit re-harvest path that does not require editing state
-- [ ] GHI-003 retirement reaches `retired` without repeating the operator action
-- [ ] GHI-004 evidence and operator documentation
+- [x] GHI-001 a publisher-contract change is a reason to harvest
+- [x] GHI-002 an explicit re-harvest path that does not require editing state
+- [x] GHI-003 retirement reaches `retired` without repeating the operator action
+- [x] GHI-004 evidence and operator documentation
 
 ## Objective
 
@@ -209,11 +209,103 @@ Deliverables:
 
 ## Open questions for the reviewer
 
-1. GHI-003 offers two mechanisms. The attempt-counter reading is simpler and
-   keeps retirement in one place; the elapsed-harvest reading survives a
-   publisher being unreadable for a stretch. The plan defaults to the attempt
-   counter with the outage guard in the risks section.
+1. **Resolved during implementation.** GHI-003 offered two mechanisms; the
+   attempt-counter reading was taken. The outage concern that motivated the
+   alternative is handled by position rather than by a flag: both callers reach
+   `_advance_retirement` only after successfully reading a non-empty publisher,
+   so a publisher that cannot be read returns before any key is counted
+   against. That is pinned by
+   `test_an_empty_publisher_is_never_treated_as_a_dropped_catalog`.
 
 ## Implementation evidence
 
-_Empty until claimed._
+### GHI-001 — a publisher-contract change is a reason to harvest
+
+- `content_fingerprint` digests the thirteen columns the harvest actually
+  writes into `dim_metric_catalog` and `dim_source_system`
+  (`FINGERPRINTED_COLUMNS`). Rows are sorted before digesting, so a publisher
+  view with no `ORDER BY` cannot look like a content change, and values are
+  canonicalised so a JSONB lineage blob that round-trips differently still
+  compares equal.
+- `source_watermark`, `source_run_id`, and `publication_time` are deliberately
+  excluded: they move on every ingestion, so including them would make the
+  fingerprint a slower restatement of the guard it sits beside.
+- Migration `016_publisher_harvest_fingerprint.sql` adds
+  `last_content_fingerprint` and `last_harvest_forced` to
+  `gold_glossary.publisher_harvest_state`, registered in
+  `sql/bootstrap/warehouse_manifest.json` and mounted in the test compose
+  bootstrap in the same position.
+- A NULL fingerprint — every row predating the migration — harvests rather
+  than skips, so a deployment re-harvests each source once and is
+  fingerprinted from then on.
+
+### GHI-002 — an explicit re-harvest path
+
+- `harvest_publisher(..., force=False)` and
+  `harvest_all_publishers(..., force=False, schemas=None)`. Nothing else about
+  what is written changes; a forced run is logged distinctly and recorded in
+  `last_harvest_forced`.
+- `reconciliation_arguments` reads the operator's request out of a DAG run
+  conf and lives in `harvest.py` rather than the DAG, so it is testable without
+  importing Airflow. `glossary_reconciliation` is now a thin adapter over it.
+- Targeting an unknown schema raises rather than silently harvesting nothing,
+  so a typo in a repair request cannot look like success.
+
+### GHI-003 — retirement completes without an operator per grace step
+
+- Decision recorded: the **attempt counter** reading, per the plan's default.
+  `_advance_retirement` now runs on the skip path as well as the write path, so
+  a key the publisher no longer emits counts down its grace on ordinary
+  scheduled harvests.
+- The outage guard the risks section required is satisfied by position rather
+  than by a flag: both callers reach `_advance_retirement` only after
+  successfully reading a non-empty publisher. An empty or unreadable publisher
+  returns before it, so a provider outage can never retire a live metric —
+  `test_an_empty_publisher_is_never_treated_as_a_dropped_catalog` pins that.
+- Without this the fingerprint alone would strand a dropped key: the harvest
+  that first sees it disappear changes the content and marks it `stale`, and
+  every harvest after that sees unchanged content and skips.
+
+### GHI-004 — evidence and documentation
+
+- `docs/reference/BETA_RESET_REINGESTION.md` section 7 now documents the
+  supported path — the daily reconciliation picks a contract change up unaided,
+  and `{"force": true, "schemas": ["gold_bls"]}` reconciles immediately — with
+  the prior manual `last_publication_time` clear kept as a note for warehouses
+  predating the migration.
+- The BLS plan's rollout runbook step 2 is updated the same way and records
+  that the manual clear is what was actually run when that plan was
+  implemented.
+- `TESTING_CONTRACT.md` gains ARC-004; `CI_EVIDENCE_MAP.md` maps it onto
+  `etl-unit` and `postgres-integration`.
+
+### Verification
+
+Live development warehouse (`docker-analytics_postgres-1`), after applying
+migration 015 to a warehouse whose BLS catalog had already been reconciled by
+hand:
+
+| Call | Result |
+| --- | --- |
+| `harvest_publisher(gold_bls)` — fingerprint unrecorded | **63** rows |
+| `harvest_publisher(gold_bls)` — unchanged | **0** rows |
+| `harvest_publisher(gold_bls, force=True)` | **63** rows |
+
+The catalog is unchanged by those calls (`current 63`, `retired 13261`) and
+`last_harvest_forced` is `true` with a recorded fingerprint.
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit` | 1259 passed |
+| `pytest -m "integration and database" tests/integration/database/test_glossary_harvest*.py tests/integration/database/test_warehouse_bootstrap.py` (fresh warehouse) | 8 passed |
+| `ruff check` and `ruff format --check` | clean |
+| `airflow dags list-import-errors` in the running scheduler | none; both glossary DAGs parse |
+
+Not runnable on this host, and not claimed as evidence: `tests/run.ps1 dags`.
+Airflow's logging configuration fails to initialise on Windows
+(`AttributeError: partially initialized module 'airflow' has no attribute
+'utils'`), and the pinned scheduler image has no pytest installed, so the tier
+runs only in CI's `scheduler-image` job. The conf-reading behaviour that would
+otherwise need that tier is covered at unit level instead, which is why
+`reconciliation_arguments` was extracted out of the DAG module. The DAG itself
+is verified to parse against the running Airflow, which mounts this code.

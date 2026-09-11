@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import hashlib
+import json
+import logging
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -13,7 +16,32 @@ from psycopg2.extras import Json, execute_values
 
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
+logger = logging.getLogger(__name__)
+
 PUBLISHER_VIEW = "metric_publisher"
+
+#: The columns whose values the harvest actually writes into the catalog and
+#: the source-system row. A change to any of them must reach the catalog, and a
+#: change to nothing else should not cost a rewrite.
+#:
+#: ``source_watermark``, ``source_run_id``, and ``publication_time`` are
+#: deliberately absent: they move on every ingestion, so including them would
+#: make the fingerprint a slower restatement of the publication-time guard.
+FINGERPRINTED_COLUMNS = (
+    "source_object_key",
+    "source_object_type",
+    "metric_display_name",
+    "units",
+    "measure_kind",
+    "valid_geo_grains",
+    "valid_time_grains",
+    "aggregation_characteristic",
+    "physical_lineage",
+    "publisher_contract_version",
+    "source_name",
+    "source_type",
+    "reference_url",
+)
 REQUIRED_COLUMNS = (
     "source_code",
     "publisher_contract_version",
@@ -78,13 +106,88 @@ def _publisher_rows(database_connection: Any, publisher: Publisher) -> list[tupl
         return cursor.fetchall()
 
 
+def content_fingerprint(documents: list[dict[str, Any]]) -> str:
+    """Digest the catalog content a harvest of ``documents`` would write.
+
+    Rows are sorted by key so the publisher view's own ordering cannot change
+    the digest, and values are serialized with sorted object keys so a JSONB
+    lineage blob that round-trips differently still compares equal.
+    """
+    canonical = sorted(
+        [
+            [_canonical(document.get(column)) for column in FINGERPRINTED_COLUMNS]
+            for document in documents
+        ],
+        key=repr,
+    )
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _canonical(value: Any) -> Any:
+    """Render one publisher value comparably across driver representations."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _canonical(item) for key, item in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    return str(value)
+
+
+def _advance_retirement(
+    cursor: Any,
+    source_code: str,
+    published_keys: list[str],
+    retirement_grace_harvests: int,
+) -> int:
+    """Count one harvest against every catalog key the publisher did not emit.
+
+    Returns how many rows advanced, so a caller that wrote nothing else can
+    still say what it did. Callers reach this only after successfully reading a
+    non-empty publisher: a harvest that could not read the publisher must never
+    count against a key, or an outage would retire a live metric.
+    """
+    cursor.execute(
+        """
+        UPDATE gold_glossary.dim_metric_catalog
+           SET missing_harvest_count = missing_harvest_count + 1,
+               freshness_state = CASE
+                   WHEN missing_harvest_count + 1 >= %s THEN 'retired'
+                   ELSE 'stale'
+               END,
+               harvested_at = NOW()
+         WHERE source_code = %s
+           AND NOT (source_object_key = ANY(%s))
+        """,
+        (retirement_grace_harvests, source_code, published_keys),
+    )
+    return cursor.rowcount
+
+
 def harvest_publisher(
     connection_factory: Callable[[], Any],
     publisher: Publisher,
     *,
     retirement_grace_harvests: int = 2,
+    force: bool = False,
 ) -> int:
-    """Harvest one publisher in an isolated, source-locked transaction."""
+    """Harvest one publisher in an isolated, source-locked transaction.
+
+    Skips without writing when the publisher has published nothing newer *and*
+    says exactly what it said last time. A publisher-contract change -- a
+    metric's identity, display name, units, grains, lineage, or the set of keys
+    it emits -- moves no fact watermark, so the content fingerprint is what
+    makes it visible; before it existed, such a change could never reach the
+    catalog without an operator editing the harvest state by hand.
+
+    A skip is not a no-op: keys the publisher no longer emits still advance
+    toward retirement, so a dropped key reaches ``retired`` on ordinary
+    scheduled harvests instead of requiring one forced run per grace step.
+
+    ``force`` bypasses both guards for a deliberate re-harvest, changing
+    nothing else about what is written.
+    """
     if retirement_grace_harvests < 1:
         raise ValueError("retirement grace must be positive")
     database_connection = connection_factory()
@@ -108,6 +211,8 @@ def harvest_publisher(
             if item["source_run_id"] is not None
         }
         source_run_id = source_run_ids.pop() if len(source_run_ids) == 1 else None
+        fingerprint = content_fingerprint(documents)
+        keys = [str(item["source_object_key"]) for item in documents]
 
         with database_connection.cursor() as cursor:
             cursor.execute(
@@ -116,16 +221,46 @@ def harvest_publisher(
             )
             cursor.execute(
                 """
-                SELECT last_publication_time
+                SELECT last_publication_time, last_content_fingerprint
                 FROM gold_glossary.publisher_harvest_state
                 WHERE source_code = %s AND status = 'success'
                 """,
                 (source_code,),
             )
             prior = cursor.fetchone()
-            if prior and prior[0] is not None and prior[0] >= publication_time:
-                database_connection.rollback()
+            # A NULL stored fingerprint means "never recorded" -- every row
+            # predating the fingerprint column -- and must harvest, not skip.
+            nothing_newer = (
+                prior is not None
+                and prior[0] is not None
+                and prior[0] >= publication_time
+            )
+            same_content = (
+                prior is not None and prior[1] is not None and prior[1] == fingerprint
+            )
+            if nothing_newer and same_content and not force:
+                # The catalog content is unchanged, so nothing is upserted --
+                # but a key this publisher has stopped emitting must still count
+                # down its retirement grace, or a dropped key would sit 'stale'
+                # forever waiting for an unrelated republication.
+                retired = _advance_retirement(
+                    cursor, source_code, keys, retirement_grace_harvests
+                )
+                database_connection.commit()
+                if retired:
+                    logger.info(
+                        "harvest_publisher: %s unchanged; advanced retirement "
+                        "for %d absent key(s)",
+                        source_code,
+                        retired,
+                    )
                 return 0
+            if force:
+                logger.info(
+                    "harvest_publisher: %s forced; bypassing the publication-"
+                    "time and fingerprint guards",
+                    source_code,
+                )
             first = documents[0]
             cursor.execute(
                 """
@@ -213,34 +348,23 @@ def harvest_publisher(
                 """,
                 records,
             )
-            keys = [str(item["source_object_key"]) for item in documents]
-            cursor.execute(
-                """
-                UPDATE gold_glossary.dim_metric_catalog
-                   SET missing_harvest_count = missing_harvest_count + 1,
-                       freshness_state = CASE
-                           WHEN missing_harvest_count + 1 >= %s THEN 'retired'
-                           ELSE 'stale'
-                       END,
-                       harvested_at = NOW()
-                 WHERE source_code = %s
-                   AND NOT (source_object_key = ANY(%s))
-                """,
-                (retirement_grace_harvests, source_code, keys),
-            )
+            _advance_retirement(cursor, source_code, keys, retirement_grace_harvests)
             cursor.execute(
                 """
                 INSERT INTO gold_glossary.publisher_harvest_state (
                     source_code, publisher_contract_version,
                     last_source_watermark, last_source_run_id,
-                    last_publication_time, last_harvest_started_at,
+                    last_publication_time, last_content_fingerprint,
+                    last_harvest_forced, last_harvest_started_at,
                     last_harvest_completed_at, status, last_error
-                ) VALUES (%s, %s, %s, %s, %s, NOW(), NOW(), 'success', NULL)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 'success', NULL)
                 ON CONFLICT (source_code) DO UPDATE SET
                     publisher_contract_version = EXCLUDED.publisher_contract_version,
                     last_source_watermark = EXCLUDED.last_source_watermark,
                     last_source_run_id = EXCLUDED.last_source_run_id,
                     last_publication_time = EXCLUDED.last_publication_time,
+                    last_content_fingerprint = EXCLUDED.last_content_fingerprint,
+                    last_harvest_forced = EXCLUDED.last_harvest_forced,
                     last_harvest_completed_at = NOW(),
                     status = 'success',
                     last_error = NULL
@@ -251,6 +375,8 @@ def harvest_publisher(
                     source_watermark,
                     str(source_run_id) if source_run_id else None,
                     publication_time,
+                    fingerprint,
+                    force,
                 ),
             )
         database_connection.commit()
@@ -262,19 +388,61 @@ def harvest_publisher(
         database_connection.close()
 
 
+def reconciliation_arguments(conf: Any) -> dict[str, Any]:
+    """Read an operator's reconciliation request out of a DAG run conf.
+
+    Lives here rather than in the DAG so it is testable without importing
+    Airflow. Both keys are absent from every scheduled run, so the default is
+    always the ordinary incremental reconciliation.
+
+    - ``force``: re-harvest even where the publisher published nothing newer
+      and says exactly what it said last time.
+    - ``schemas``: limit the run to named publisher schemas, so a repair does
+      not rewrite every source's catalog.
+    """
+    mapping = conf if isinstance(conf, dict) else {}
+    schemas = mapping.get("schemas")
+    if isinstance(schemas, str):
+        raise ValueError("schemas must be a list of publisher schemas, not a string")
+    return {
+        "force": bool(mapping.get("force", False)),
+        "schemas": [str(schema) for schema in schemas] if schemas else None,
+    }
+
+
 def harvest_all_publishers(
     connection_factory: Callable[[], Any],
+    *,
+    force: bool = False,
+    schemas: Collection[str] | None = None,
 ) -> dict[str, int | str]:
-    """Refresh valid publishers independently; one failure cannot roll back another."""
+    """Refresh valid publishers independently; one failure cannot roll back another.
+
+    ``force`` re-harvests even where nothing changed, and ``schemas`` narrows
+    the run to named publisher schemas, so a repair can target one source
+    without rewriting every catalog.
+    """
     discovery_connection = connection_factory()
     try:
         publishers = discover_publishers(discovery_connection)
     finally:
         discovery_connection.close()
+    if schemas is not None:
+        wanted = {str(schema) for schema in schemas}
+        unknown = wanted - {publisher.schema for publisher in publishers}
+        if unknown:
+            raise ValueError(
+                f"no publisher view found for schema(s): {sorted(unknown)}"
+            )
+        publishers = [
+            publisher for publisher in publishers if publisher.schema in wanted
+        ]
     results: dict[str, int | str] = {}
     for publisher in publishers:
         try:
-            results[publisher.schema] = harvest_publisher(connection_factory, publisher)
+            results[publisher.schema] = harvest_publisher(
+                connection_factory, publisher, force=force
+            )
         except BaseException as error:
             results[publisher.schema] = sanitize_error_message(error)
     return results

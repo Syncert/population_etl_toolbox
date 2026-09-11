@@ -217,27 +217,33 @@ SELECT COUNT(*) FROM gold_bls.rpt_bls_observations
 
 A non-zero second count means the re-serve did not cover every year.
 
-### Step 2 — BLS, glossary harvest, twice
+### Step 2 — BLS, glossary harvest
 
-The harvest is watermarked against the **facts**, so a metric-identity change
-is invisible to it: it returns 0 rows and reports success. Clear the watermark
-before each harvest. Reaching `retired` takes `retirement_grace_harvests`
-harvests (default 2), so this runs twice.
+Trigger `glossary_reconciliation` with:
 
-```sql
-UPDATE gold_glossary.publisher_harvest_state
-   SET last_publication_time = NULL WHERE source_code = 'BLS';
+```json
+{"force": true, "schemas": ["gold_bls"]}
 ```
 
-then trigger `glossary_reconciliation` (or call `harvest_publisher` for
-`gold_bls`), repeat both, and verify:
+Since migration `016_publisher_harvest_fingerprint.sql` the harvest notices a
+publisher-contract change on its own, so the daily scheduled run would pick
+this up unaided; forcing it just avoids waiting. Retirement then completes on
+the following scheduled run without further action. Verify:
 
 ```sql
 SELECT freshness_state, COUNT(*) FROM gold_glossary.dim_metric_catalog
- WHERE source_code = 'BLS' GROUP BY 1;   -- current 63, retired 13261
+ WHERE source_code = 'BLS' GROUP BY 1;   -- current 63, then retired 13261
 ```
 
-`current 63` with `stale 13261` means only one harvest has run; do the second.
+`current 63` with `stale 13261` means the grace has not elapsed yet; the next
+scheduled harvest completes it.
+
+On a warehouse predating that migration the harvest compares only the
+publication time, which an identity change does not move, and the manual
+`UPDATE gold_glossary.publisher_harvest_state SET last_publication_time = NULL`
+before each of two harvests is the only path. That is what was run on the
+development stack when this plan was implemented, and the numbers below come
+from it.
 
 ### Step 3 — ACS, full re-serve, a year at a time
 
