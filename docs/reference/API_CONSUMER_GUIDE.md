@@ -90,6 +90,51 @@ bins therefore describe the same rows.
 releases newest-first with observation counts — this is how you discover what
 `release=` accepts.
 
+### Census PEP spans six decades, and its measures do not
+
+Census PEP publishes one series per decade, each its own product with its
+own file, and the warehouse registers all of them. A county's population
+therefore runs from 1971 to the current vintage, but the other measures
+begin where the Bureau began publishing them:
+
+| Measure | Published from |
+| --- | --- |
+| `CENSUS_PEP:POPESTIMATE` | July 1971 (July 1980 is absent; see below) |
+| `CENSUS_PEP:CENSUSPOP` | April 1970, then each decennial count |
+| `CENSUS_PEP:ESTIMATESBASE` | April 2000 |
+| `CENSUS_PEP:BIRTHS`, `DEATHS`, `NATURALCHG` | July 2000 |
+| `CENSUS_PEP:NPOPCHG`, `RESIDUAL`, the migration components and every rate | July 2000 |
+
+Ask the catalog rather than this table: each measure publishes its own
+first and last period, derived from the rows that actually loaded.
+
+Three things follow from reading six publications as one series.
+
+**A decennial count is not a July estimate.** `CENSUSPOP` is the April
+enumeration that opens a decade and is a separate measure dated to 1 April.
+Alabama's 2010 rows are 4,779,736 counted in April and 4,785,514 estimated
+in July; neither is a revision of the other.
+
+**July 1980 is absent, and left absent.** The 1970s table ends at 1979 and
+the 1980s table opens on the April 1980 census rather than an estimate, so
+the Bureau published no July 1980 county estimate in these products. The
+gap is reported rather than interpolated.
+
+**A year published twice answers once.** Decades overlap at their seams and
+the Bureau republishes a decade once its following census can close it.
+`scope=latest` answers the settled value: an intercensal series before a
+postcensal one, then the newest vintage, then the product that publishes
+that geography in its own right rather than as a rollup. Every publication
+remains readable under `scope=as_released`, and each row names the
+`dataset_code` and `vintage` it came from. Autauga County's 2005
+population reads 4,569,805 from the intercensal series where the
+postcensal file had projected 4,545,049.
+
+The 1980s components of change are not served. The Bureau publishes them
+by estimation period rather than by year, and its first and last periods
+run 15 and 9 months, which this API's single observation date cannot state
+without misreporting the period they cover.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus everything the source publishes:

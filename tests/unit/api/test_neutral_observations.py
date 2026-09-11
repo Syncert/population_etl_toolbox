@@ -922,6 +922,6 @@ def test_newest_per_geography_is_declared_on_the_neutral_route() -> None:
             for route in capability["observation_routes"]
         }
         if neutral_path in routes:
-            assert "newest_per_geography" in routes[neutral_path], (
-                capability["source_code"]
-            )
+            assert "newest_per_geography" in routes[neutral_path], capability[
+                "source_code"
+            ]
