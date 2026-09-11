@@ -202,7 +202,7 @@ to one source instead of rewriting every catalog. Both default off, so a
 scheduled run is never forced. A forced run is recorded in
 `gold_glossary.publisher_harvest_state.last_harvest_forced`.
 
-> Before migration `015_publisher_harvest_fingerprint.sql` the harvest compared
+> Before migration `016_publisher_harvest_fingerprint.sql` the harvest compared
 > only the publication time, which every publisher derives from its facts. An
 > identity change moved nothing it could see: the harvest wrote nothing, logged
 > success, and the catalog kept the old codes until an operator cleared

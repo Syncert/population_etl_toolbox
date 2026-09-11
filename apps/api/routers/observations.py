@@ -49,6 +49,16 @@ def get_neutral_observations(
     subject_code: Optional[str] = Query(None, max_length=50),
     year_from: Optional[int] = Query(None, ge=1700, le=2200),
     year_to: Optional[int] = Query(None, ge=1700, le=2200),
+    newest_per_geography: bool = Query(
+        False,
+        description=(
+            "Answer one row per geography: its newest published period. "
+            "Valid only with scope=latest. A source whose latest publication "
+            "is a series answers several periods per geography by default, "
+            "which is the whole publication; this reduces it the same way "
+            "/distribution/bins and /comparison/preflight already do."
+        ),
+    ),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
@@ -60,6 +70,11 @@ def get_neutral_observations(
     suppression, uncertainty, and dimensional semantics. Filters beyond the
     universal parameters are per-source; ``/catalog/capabilities`` declares
     which apply, and an unsupported filter is rejected with an explanation.
+
+    ``scope=latest`` answers a source's whole latest publication, which for
+    a source that publishes a series is several periods per geography.
+    ``newest_per_geography=true`` reduces that to one row per geography
+    without changing the default.
     """
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
@@ -86,6 +101,7 @@ def get_neutral_observations(
             },
             limit=limit,
             offset=offset,
+            newest_per_geography=newest_per_geography,
         )
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc

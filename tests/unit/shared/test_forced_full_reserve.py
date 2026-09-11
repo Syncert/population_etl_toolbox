@@ -1,6 +1,6 @@
 """The forced full re-serve plan and its operator entry point.
 
-Covers: ETL-045 — a change to what a served row *says* rather than what it is
+Covers: ETL-049 — a change to what a served row *says* rather than what it is
 worth moves no silver watermark, so the changed-year plan skips exactly the
 years still carrying the old meaning. Before this, the only supported full
 re-serve was a single unchunked procedure call under a 60-minute statement
@@ -31,7 +31,7 @@ CONFIGS = (BLS_CHUNK_CONFIG, ACS_CHUNK_CONFIG, FRED_CHUNK_CONFIG)
 
 
 def test_every_union_served_source_declares_both_plans() -> None:
-    """Covers: ETL-045 — a source that cannot be re-served in full is a gap."""
+    """Covers: ETL-049 — a source that cannot be re-served in full is a gap."""
     assert set(FULL_RESERVE_CONFIGS) == {"BLS", "CENSUS_ACS", "FRED"}
     for config in CONFIGS:
         assert config.changed_chunks_sql.strip()
@@ -39,7 +39,7 @@ def test_every_union_served_source_declares_both_plans() -> None:
 
 
 def test_the_forced_plan_carries_no_watermark_predicate() -> None:
-    """Covers: ETL-045 — the whole point is to ignore the watermark.
+    """Covers: ETL-049 — the whole point is to ignore the watermark.
 
     A stray ``ingested_at > %s`` would silently turn a full re-serve back into
     an incremental one, and the symptom — years keeping their old meaning — is
@@ -53,14 +53,14 @@ def test_the_forced_plan_carries_no_watermark_predicate() -> None:
 
 
 def test_the_forced_plan_spans_the_served_relation_too() -> None:
-    """Covers: ETL-045 — a year silver dropped still has served rows to delete."""
+    """Covers: ETL-049 — a year silver dropped still has served rows to delete."""
     for config in CONFIGS:
         assert config.report_table in config.all_chunks_sql
         assert "generate_series" in config.all_chunks_sql
 
 
 def test_a_forced_chunk_may_take_longer_than_an_incremental_one() -> None:
-    """Covers: ETL-045 — a forced chunk rewrites the year, not the delta."""
+    """Covers: ETL-049 — a forced chunk rewrites the year, not the delta."""
     for config in CONFIGS:
         assert config.full_statement_timeout
         forced = int(re.match(r"(\d+)min", config.full_statement_timeout).group(1))
@@ -69,7 +69,7 @@ def test_a_forced_chunk_may_take_longer_than_an_incremental_one() -> None:
 
 
 def test_the_shared_configs_are_the_ones_the_ingest_dags_use() -> None:
-    """Covers: ETL-045 — one definition, so the two callers cannot drift."""
+    """Covers: ETL-049 — one definition, so the two callers cannot drift."""
     for source_code, config in FULL_RESERVE_CONFIGS.items():
         assert config.source_code == source_code
         assert config.report_procedure.startswith(config.report_table.split(".")[0])
@@ -141,7 +141,7 @@ def _config(**overrides: str) -> ServingRefreshChunkConfig:
 
 
 def test_the_default_run_uses_the_changed_year_plan() -> None:
-    """Covers: ETL-045 — an expensive re-serve never happens by accident."""
+    """Covers: ETL-049 — an expensive re-serve never happens by accident."""
     hook = _Hook()
     refresh_serving_layer_in_year_chunks(hook=hook, config=_config())
 
@@ -150,7 +150,7 @@ def test_the_default_run_uses_the_changed_year_plan() -> None:
 
 
 def test_a_forced_run_uses_the_every_year_plan() -> None:
-    """Covers: ETL-045 — the operator's request selects the other plan."""
+    """Covers: ETL-049 — the operator's request selects the other plan."""
     hook = _Hook()
     refresh_serving_layer_in_year_chunks(hook=hook, config=_config(), force_full=True)
 
@@ -161,7 +161,7 @@ def test_a_forced_run_uses_the_every_year_plan() -> None:
 def test_a_source_without_a_forced_plan_refuses_rather_than_silently_degrading() -> (
     None
 ):
-    """Covers: ETL-045 — falling back to the changed plan would do nothing."""
+    """Covers: ETL-049 — falling back to the changed plan would do nothing."""
     hook = _Hook()
     with pytest.raises(ValueError, match="cannot be re-served in full"):
         refresh_serving_layer_in_year_chunks(

@@ -58,6 +58,12 @@ export interface LatestObservationQuery extends ScopedQuery {
   geoLevel?: string;
   stateFips?: string;
   limit?: string | number;
+  /**
+   * Ask the resource for one row per geography rather than the source's
+   * whole latest publication. Sent only where the capability entry
+   * declares the parameter, and never with an as-released read.
+   */
+  newestPerGeography?: boolean;
   /** Selected values for the source's own declared dimension filters. */
   dimensions?: Record<string, string>;
 }
@@ -126,6 +132,36 @@ export function scopedDimensionFilters(
   return scope === SCOPE_AS_RELEASED && servesAsReleased(source)
     ? source.neutralDimensionFilters
     : source.dimensionFilters;
+}
+
+/**
+ * `newest_per_geography`, where the caller asked for it and the resource
+ * declares it.
+ *
+ * A source whose latest publication is a series -- Census PEP publishes
+ * every estimated year of the current vintage -- answers several rows per
+ * geography under `scope=latest`. That is the whole publication, and it is
+ * the right default; a map needs one value per polygon. Asking the resource
+ * for that is the same ranking its own distribution bins apply, so the
+ * legend and the coloured polygons describe the same rows.
+ *
+ * It travels only with `scope=latest`: an as-released read is one series per
+ * release, and reducing it per geography would show whichever release sorted
+ * last as the value. The resource refuses that combination, and this client
+ * does not send it.
+ */
+function newestPerGeographyParams(
+  source: ExplorerSource,
+  query: LatestObservationQuery,
+): QueryParams {
+  if (
+    !query.newestPerGeography ||
+    !source.supportsNewestPerGeography ||
+    asReleased(source, query)
+  ) {
+    return {};
+  }
+  return { newest_per_geography: "true" };
 }
 
 /**
@@ -224,6 +260,7 @@ export function buildLatestObservationRequest(
       metric_code: query.metricCode,
       ...scopeParams(source, query),
       limit: query.limit,
+      ...newestPerGeographyParams(source, query),
       ...declaredOnly(source, shared, allowed),
       ...dimensionParams(scopedDimensionFilters(source, query.scope || SCOPE_LATEST), query.dimensions),
     },
