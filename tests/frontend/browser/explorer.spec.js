@@ -1,7 +1,7 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
 // Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
-// WEB-017, WEB-018, WEB-028 —
+// WEB-017, WEB-018, WEB-029 —
 // browser catalog/tile/selection/failure flows, URL reproduction of the
 // selected exploration state, capability-driven source discovery and
 // switching, dispatch-shaped sources reached through the neutral
@@ -762,7 +762,7 @@ test("a national series gets the explicit non-spatial experience, not an empty m
 });
 
 test("a measure-identified source draws its map through the shared paths", async ({ page }) => {
-  // Covers: WEB-028 — BLS LAUS publishes per measure, so a BLS metric spans
+  // Covers: WEB-029 — BLS LAUS publishes per measure, so a BLS metric spans
   // geographies and the map, bins, and state filter answer for it through the
   // same capability-driven paths every other source uses. The client carries
   // no BLS special case; if this needed one, that would be a warehouse or API

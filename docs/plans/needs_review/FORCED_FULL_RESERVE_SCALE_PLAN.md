@@ -282,7 +282,7 @@ pins that set so a fourth adopter cannot quietly ship without one.
   running process. An Airflow retry is a new process, so a failure in ACS's
   twentieth year would have rewritten the nineteen already done — a restart
   wearing the word "resume". Migration
-  `016_serving_full_reserve_run.sql` adds
+  `017_serving_full_reserve_run.sql` adds
   `control.serving_refresh_state.last_full_reserve_started_at`, so the marker
   survives the process.
 - A forced run resumes the previous one when any chunk is still outstanding
@@ -303,7 +303,7 @@ pins that set so a fourth adopter cannot quietly ship without one.
   one-shot procedure call as the small-relation option with its limits stated.
 - The BLS plan's rollout runbook step 3 replaces its hand-written year loop
   with the same DAG.
-- `TESTING_CONTRACT.md` gains ETL-045; `CI_EVIDENCE_MAP.md` maps it onto
+- `TESTING_CONTRACT.md` gains ETL-049; `CI_EVIDENCE_MAP.md` maps it onto
   `etl-unit`, `postgres-integration`, and `dag-parse`.
 
 ### Verification

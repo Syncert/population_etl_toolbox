@@ -1,4 +1,4 @@
--- 015_publisher_harvest_fingerprint.sql
+-- 016_publisher_harvest_fingerprint.sql
 --
 -- The glossary harvest skipped whenever a publisher's publication_time had not
 -- advanced. That time is derived from the *facts* every publisher reads, so a

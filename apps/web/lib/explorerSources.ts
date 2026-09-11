@@ -99,6 +99,12 @@ export interface ExplorerSource {
   supportsAsReleased: boolean;
   /** True when the neutral resource declares `release`, so one can be pinned. */
   supportsReleasePin: boolean;
+  /**
+   * True when the neutral resource declares `newest_per_geography`, so the
+   * map can ask for one row per geography instead of paging a source's
+   * whole latest publication and reducing it here.
+   */
+  supportsNewestPerGeography: boolean;
 }
 
 const LATEST_SUFFIX = "/observations/latest";
@@ -172,6 +178,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     servesReleases: false,
     supportsAsReleased: false,
     supportsReleasePin: false,
+    supportsNewestPerGeography: false,
   },
 ];
 
@@ -267,6 +274,9 @@ export function buildExplorerSources(
       servesReleases: declaredPaths.has(`${API_BASE}${RELEASES_PATH}`),
       supportsAsReleased: neutralParameters.includes("scope"),
       supportsReleasePin: neutralParameters.includes("release"),
+      supportsNewestPerGeography: neutralParameters.includes(
+        "newest_per_geography",
+      ),
     });
   }
 

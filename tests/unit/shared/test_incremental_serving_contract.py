@@ -155,7 +155,7 @@ def test_silver_upserts_preserve_watermarks_for_unchanged_rows() -> None:
 
 
 def test_reporting_refreshes_never_write_the_raw_geography_vocabulary() -> None:
-    """Covers: ETL-043 — served ``geo_level`` is the normalised vocabulary.
+    """Covers: ETL-047 — served ``geo_level`` is the normalised vocabulary.
 
     ``silver_ref.dim_geo`` spells the national level ``us``; the served
     relations promise ``NATIONAL``. A refresh that prefers the dimension's
@@ -176,7 +176,7 @@ def test_reporting_refreshes_never_write_the_raw_geography_vocabulary() -> None:
 
 
 def test_fact_views_normalise_the_national_geography_level() -> None:
-    """Covers: ETL-043 — the normalised vocabulary has one definition."""
+    """Covers: ETL-047 — the normalised vocabulary has one definition."""
     for name in ("acs", "bls"):
         sql = _read(SOURCE_FILES[name]["gold"])
         assert "LOWER(s.geo_level) = 'us'" in sql or "LOWER(ao.geo_level) = 'us'" in sql

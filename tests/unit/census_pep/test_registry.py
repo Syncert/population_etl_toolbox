@@ -473,6 +473,13 @@ def test_default_registry_uses_curated_products() -> None:
         "pep_nst_alldata",
         "pep_county_alldata",
         "pep_subcounty",
+        "pep_county_alldata_2010s",
+        "pep_nst_alldata_2010s",
+        "pep_county_alldata_2000s",
+        "pep_county_intercensal_2000s",
+        "pep_county_totals_1990s",
+        "pep_county_totals_1980s",
+        "pep_county_totals_1970s",
     }
 
 
@@ -511,10 +518,12 @@ def test_initialize_discovers_actual_release_vintages() -> None:
     reg.initialize()
     discovered = reg.discover_releases()
 
-    assert set(reg.vintages) == {2024, 2025}
+    # One vintage per publication, across every registered decade, back to
+    # the table the Bureau issued in April 1982 for the 1970s.
+    assert set(reg.vintages) == {1982, 1992, 1999, 2009, 2016, 2020, 2024, 2025}
     assert reg.get_current_vintage() is not None
     assert reg.get_current_vintage().vintage_year == 2025
-    assert len(discovered) == 6
+    assert len(discovered) == 13
     assert discovered[-1] == {
         "dataset_code": "pep_subcounty",
         "vintage_year": 2025,

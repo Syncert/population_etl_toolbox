@@ -124,9 +124,23 @@ class PEPConfig:
 class PEPRelease:
     """Versioned Census PEP bulk-file release contract.
 
-    Current PEP estimates are published as bulk files. The vintage identifies
-    the final observation year, while each file contains a revised time series
-    beginning with the 2020 estimates base.
+    PEP estimates are published as bulk files, one decade at a time. The
+    Bureau publishes two kinds of series and this contract distinguishes
+    them, because only one of them ends at its own vintage:
+
+    ``postcensal``
+        Published during the decade it estimates and revised each year. The
+        vintage names the last observation year, so a Vintage 2025 file
+        carries July 2020 through July 2025.
+    ``intercensal``
+        Published after the following census, once the decade can be closed
+        against two enumerations. Its observation range ends years before
+        the publication that carries it, so a release covering 2000 through
+        2010 may be published under a later vintage.
+
+    ``observation_start_year`` and ``observation_end_year`` are therefore
+    read from the release definition rather than assumed, and the vintage
+    equality holds only for the postcensal kind.
     """
 
     dataset_code: str
@@ -141,16 +155,55 @@ class PEPRelease:
     schema_version: str
     status: Literal["published", "archived"]
     media_type: str = "text/csv"
+    series_kind: Literal["postcensal", "intercensal"] = "postcensal"
+    #: Member path inside the archive when the product ships as a zip. The
+    #: registered ``data_url`` is always the archive itself, so raw capture
+    #: keeps the bytes the Bureau published rather than an extract of them.
+    archive_member: str | None = None
+    #: Partition keys for a product the Bureau splits across several files
+    #: (the 2000s intercensal county product is one file per state). Empty
+    #: for a single-file product. Each partition is captured separately and
+    #: the release is complete only when every one of them is present.
+    partitions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.observation_end_year != self.vintage_year:
-            raise ValueError("PEP observation end year must equal its vintage")
+        if self.series_kind == "postcensal" and (
+            self.observation_end_year != self.vintage_year
+        ):
+            raise ValueError(
+                "postcensal PEP observation end year must equal its vintage"
+            )
+        if self.observation_end_year > self.vintage_year:
+            raise ValueError("PEP observation range ends after its own vintage")
         if self.observation_start_year > self.observation_end_year:
             raise ValueError("PEP observation range is reversed")
         if not self.data_url.startswith("https://www2.census.gov/"):
             raise ValueError("PEP data URL must use the official Census host")
         if not self.layout_url.startswith("https://www2.census.gov/"):
             raise ValueError("PEP layout URL must use the official Census host")
+        if self.archive_member is not None and not self.archive_member:
+            raise ValueError("PEP archive member must not be empty when declared")
+        if len(self.partitions) != len(set(self.partitions)):
+            raise ValueError("PEP release declares a duplicate partition key")
+        if self.partitions and "{partition}" not in self.data_url:
+            raise ValueError(
+                "a partitioned PEP release must template its data URL on {partition}"
+            )
+
+    def source_files(self) -> tuple[tuple[str | None, str], ...]:
+        """The ``(partition, url)`` pairs this release is captured from.
+
+        A single-file product yields one pair whose partition is ``None``;
+        a partitioned product yields one pair per declared partition. The
+        caller captures each pair separately, so a partition that fails to
+        answer is a missing file rather than a silently shorter release.
+        """
+        if not self.partitions:
+            return ((None, self.data_url),)
+        return tuple(
+            (partition, self.data_url.format(partition=partition))
+            for partition in self.partitions
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +245,16 @@ class PEPDataset:
         "release_status",
         "decennial_base",
         "release_date",
+        "series_kind",
+        "era",
+        "native_grain",
+        "derivation",
+        "archive_member",
+        "partitions",
+        "required_columns",
+        "minimum_states",
+        "minimum_principal_rows",
+        "pads_geography_codes",
     )
 
     def __init__(
@@ -200,19 +263,31 @@ class PEPDataset:
         title: str,
         api_path: str = "",
         bulk_path: str = "",
-        transport: Literal["api_json", "bulk_csv"] = "bulk_csv",
+        transport: Literal[
+            "api_json", "bulk_csv", "bulk_text", "bulk_zip"
+        ] = "bulk_csv",
         geography_levels: frozenset[str] = frozenset(),
         summary_levels: frozenset[str] = frozenset(),
         variables: frozenset[str] = frozenset(),
         layout_version: str = "1",
         parser_version: str = "census-pep-bulk-csv-v1",
-        text_encoding: Literal["utf-8-sig", "cp1252"] = "utf-8-sig",
+        text_encoding: Literal["utf-8-sig", "cp1252", "latin-1"] = "utf-8-sig",
         release_page_url: str = "",
         data_url_template: str = "",
         layout_url_template: str = "",
         release_status: Literal["active", "deprecated", "pending"] = "pending",
         decennial_base: int | None = None,
         release_date: str | None = None,
+        series_kind: Literal["postcensal", "intercensal"] = "postcensal",
+        era: str = "",
+        native_grain: str = "",
+        derivation: str | None = None,
+        archive_member: str | None = None,
+        partitions: tuple[str, ...] = (),
+        required_columns: frozenset[str] = frozenset(),
+        minimum_states: int = 0,
+        minimum_principal_rows: int = 0,
+        pads_geography_codes: bool = False,
     ) -> None:
         object.__setattr__(self, "code", code)
         object.__setattr__(self, "title", title)
@@ -231,6 +306,16 @@ class PEPDataset:
         object.__setattr__(self, "release_status", release_status)
         object.__setattr__(self, "decennial_base", decennial_base)
         object.__setattr__(self, "release_date", release_date)
+        object.__setattr__(self, "series_kind", series_kind)
+        object.__setattr__(self, "era", era)
+        object.__setattr__(self, "native_grain", native_grain)
+        object.__setattr__(self, "derivation", derivation)
+        object.__setattr__(self, "archive_member", archive_member)
+        object.__setattr__(self, "partitions", partitions)
+        object.__setattr__(self, "required_columns", required_columns)
+        object.__setattr__(self, "minimum_states", minimum_states)
+        object.__setattr__(self, "minimum_principal_rows", minimum_principal_rows)
+        object.__setattr__(self, "pads_geography_codes", pads_geography_codes)
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"PEPDataset is immutable: cannot set {name}")
@@ -243,6 +328,73 @@ class PEPDataset:
             return False
         return self.code == other.code
 
+
+# ---------------------------------------------------------------------------
+# Variable spelling across eras
+# ---------------------------------------------------------------------------
+
+#: The Bureau renamed two component families when it opened the 2020s series:
+#: the 2000s and 2010s "all data" files publish ``NATURALINC``/``RNATURALINC``
+#: where the 2020s files publish ``NATURALCHG``/``RNATURALCHG``. The measure is
+#: the same, so a dataset declares the spelling its own file uses and the
+#: parser maps it onto the one canonical metric code. A family absent from this
+#: map is already canonical.
+SOURCE_VARIABLE_ALIASES: dict[str, str] = {
+    "NATURALINC": "NATURALCHG",
+    "RNATURALINC": "RNATURALCHG",
+}
+
+#: The decennial count column, whose year sits inside the name rather than
+#: after it (``CENSUS2010POP``). It is an April enumeration, not a July
+#: estimate, so it is published as its own measure and never folded into
+#: ``POPESTIMATE`` -- that separation is what keeps a decade's closing count
+#: from colliding with the next decade's opening estimate.
+#: Only the closed-decade files carry it: the 2020s "all data" files publish
+#: no ``CENSUS*POP`` column, so those products do not declare one.
+CENSUS_COUNT_VARIABLE = "CENSUSPOP"
+
+#: The identifying columns each published layout family carries. A file
+#: missing one of them is not the product it claims to be, so the parser
+#: refuses it rather than reading whatever columns happen to line up.
+NST_LAYOUT_COLUMNS = frozenset({"SUMLEV", "REGION", "DIVISION", "STATE", "NAME"})
+COUNTY_LAYOUT_COLUMNS = frozenset({"SUMLEV", "STATE", "COUNTY", "STNAME", "CTYNAME"})
+SUBCOUNTY_LAYOUT_COLUMNS = frozenset(
+    {
+        "SUMLEV",
+        "STATE",
+        "COUNTY",
+        "PLACE",
+        "COUSUB",
+        "CONCIT",
+        "FUNCSTAT",
+        "NAME",
+        "STNAME",
+    }
+)
+
+#: Component families shared by every "all data" file, in the spelling used
+#: by the 2000s and 2010s releases.
+_LEGACY_ALLDATA_VARIABLES = frozenset(
+    {
+        CENSUS_COUNT_VARIABLE,
+        "ESTIMATESBASE",
+        "POPESTIMATE",
+        "NPOPCHG",
+        "BIRTHS",
+        "DEATHS",
+        "NATURALINC",
+        "INTERNATIONALMIG",
+        "DOMESTICMIG",
+        "NETMIG",
+        "RESIDUAL",
+        "RBIRTH",
+        "RDEATH",
+        "RNATURALINC",
+        "RINTERNATIONALMIG",
+        "RDOMESTICMIG",
+        "RNETMIG",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Curated dataset registry
@@ -286,6 +438,12 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/NST-EST{vintage}-ALLDATA.pdf",
         release_status="active",
         decennial_base=2020,
+        series_kind="postcensal",
+        era="2020s",
+        native_grain="040",
+        required_columns=NST_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=50,
     ),
     "pep_county_alldata": PEPDataset(
         code="pep_county_alldata",
@@ -321,6 +479,12 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/CO-EST{vintage}-ALLDATA.pdf",
         release_status="active",
         decennial_base=2020,
+        series_kind="postcensal",
+        era="2020s",
+        native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
     ),
     "pep_subcounty": PEPDataset(
         code="pep_subcounty",
@@ -341,8 +505,222 @@ _CURATED_DATASETS: dict[str, PEPDataset] = {
         layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-{vintage}/SUB-EST{vintage}.pdf",
         release_status="active",
         decennial_base=2020,
+        series_kind="postcensal",
+        era="2020s",
+        native_grain="162",
+        required_columns=SUBCOUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=18000,
+    ),
+    # --- 2010s: the closed decade, Vintage 2020 -----------------------------
+    "pep_county_alldata_2010s": PEPDataset(
+        code="pep_county_alldata_2010s",
+        title=(
+            "State and County Population Estimates and Components of Change, "
+            "2010-2020 (Vintage 2020)"
+        ),
+        transport="bulk_csv",
+        geography_levels=frozenset({"state", "county"}),
+        summary_levels=frozenset({"040", "050"}),
+        variables=_LEGACY_ALLDATA_VARIABLES,
+        layout_version="vintage-specific-official-layout",
+        parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2020/co-est2020-alldata.pdf",
+        release_status="active",
+        decennial_base=2010,
+        series_kind="postcensal",
+        era="2010s",
+        native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_nst_alldata_2010s": PEPDataset(
+        code="pep_nst_alldata_2010s",
+        title=(
+            "National and State Population Estimates and Components of Change, "
+            "2010-2020 (Vintage 2020)"
+        ),
+        transport="bulk_csv",
+        geography_levels=frozenset({"national", "region", "division", "state"}),
+        summary_levels=frozenset({"010", "020", "030", "040"}),
+        variables=_LEGACY_ALLDATA_VARIABLES,
+        layout_version="vintage-specific-official-layout",
+        parser_version="census-pep-bulk-csv-v1",
+        text_encoding="utf-8-sig",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/state/totals/nst-est2020-alldata.csv",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2020/nst-est2020-alldata.pdf",
+        release_status="active",
+        decennial_base=2010,
+        series_kind="postcensal",
+        era="2010s",
+        native_grain="040",
+        required_columns=NST_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=50,
+    ),
+    # --- 2000s: the closed decade, Vintage 2009 -----------------------------
+    "pep_county_alldata_2000s": PEPDataset(
+        code="pep_county_alldata_2000s",
+        title=(
+            "State and County Population Estimates and Components of Change, "
+            "2000-2009 (Vintage 2009)"
+        ),
+        transport="bulk_csv",
+        geography_levels=frozenset({"state", "county"}),
+        summary_levels=frozenset({"040", "050"}),
+        variables=_LEGACY_ALLDATA_VARIABLES,
+        layout_version="vintage-specific-official-layout",
+        parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2000-2009/counties/totals/co-est2009-alldata.csv",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2000-2009/co-est2009-alldata.pdf",
+        release_status="active",
+        decennial_base=2000,
+        series_kind="postcensal",
+        era="2000s",
+        native_grain="050",
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_county_intercensal_2000s": PEPDataset(
+        code="pep_county_intercensal_2000s",
+        title=(
+            "Intercensal Estimates of the Resident Population for Counties, "
+            "2000-2010 (CO-EST00INT-TOT)"
+        ),
+        transport="bulk_csv",
+        geography_levels=frozenset({"state", "county"}),
+        summary_levels=frozenset({"040", "050"}),
+        variables=frozenset({CENSUS_COUNT_VARIABLE, "ESTIMATESBASE", "POPESTIMATE"}),
+        layout_version="co-est00int-tot",
+        parser_version="census-pep-bulk-csv-v1",
+        text_encoding="cp1252",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/datasets/2000-2010/intercensal/county/co-est00int-tot.csv",
+        release_status="active",
+        decennial_base=2000,
+        series_kind="intercensal",
+        era="2000s",
+        native_grain="050",
+        # This file prints its codes without leading zeros: Alabama is state
+        # 1 at summary level 40, where every other product writes 01 and 040.
+        pads_geography_codes=True,
+        required_columns=COUNTY_LAYOUT_COLUMNS,
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    # --- Before the CSV era -------------------------------------------------
+    # Printed tables and fixed-width cell files. They publish population and,
+    # for the 1970s and 1980s, the decennial count that opens the decade;
+    # the Bureau published no components of change for counties in these
+    # products, so those measures simply begin later.
+    "pep_county_totals_1990s": PEPDataset(
+        code="pep_county_totals_1990s",
+        title=(
+            "County Population Estimates by Race and Hispanic Origin, "
+            "1990-1999 (CO-99-10)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"county"}),
+        summary_levels=frozenset({"050"}),
+        variables=frozenset({"POPESTIMATE"}),
+        layout_version="co-99-10-rl",
+        parser_version="census-pep-fixed-width-cells-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/programs-surveys/popest/data/tables.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/datasets/1990-2000/counties/asrh/co-99-10.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/1990-2000/co-99-10-rl.txt",
+        release_status="active",
+        decennial_base=1990,
+        series_kind="postcensal",
+        era="1990s",
+        native_grain="050",
+        derivation=(
+            "total population summed from the eight published "
+            "race-by-Hispanic-origin cells; the file publishes no total"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_county_totals_1980s": PEPDataset(
+        code="pep_county_totals_1980s",
+        title=(
+            "Intercensal Estimates of the Resident Population of States and "
+            "Counties, 1980-1989 (E8089CO)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"national", "state", "county"}),
+        summary_levels=frozenset({"010", "040", "050"}),
+        variables=frozenset({"POPESTIMATE", CENSUS_COUNT_VARIABLE}),
+        layout_version="printed-table-1980-1989",
+        parser_version="census-pep-fixed-width-table-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/data/datasets/time-series/demo/popest/1980s-county.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/tables/1980-1990/counties/totals/e8089co.txt",
+        release_status="active",
+        decennial_base=1980,
+        series_kind="intercensal",
+        era="1980s",
+        native_grain="050",
+        derivation=(
+            "state estimates are published rounded to thousands and county "
+            "estimates to hundreds; the Bureau states unrounded estimates "
+            "are not available"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
+    ),
+    "pep_county_totals_1970s": PEPDataset(
+        code="pep_county_totals_1970s",
+        title=(
+            "Preliminary Estimates of the Intercensal Population of Counties, "
+            "1970-1979 (E7079CO)"
+        ),
+        transport="bulk_text",
+        geography_levels=frozenset({"national", "state", "county"}),
+        summary_levels=frozenset({"010", "040", "050"}),
+        variables=frozenset({"POPESTIMATE", CENSUS_COUNT_VARIABLE}),
+        layout_version="printed-table-1970-1979",
+        parser_version="census-pep-fixed-width-table-v1",
+        text_encoding="latin-1",
+        release_page_url="https://www.census.gov/data/datasets/time-series/demo/popest/1970s-county.html",
+        data_url_template="https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt",
+        layout_url_template="https://www2.census.gov/programs-surveys/popest/tables/1900-1980/counties/totals/e7079co.txt",
+        release_status="active",
+        decennial_base=1970,
+        series_kind="intercensal",
+        era="1970s",
+        native_grain="050",
+        derivation=(
+            "state estimates are published rounded to thousands and county "
+            "estimates to hundreds; the Bureau states unrounded estimates "
+            "are not available"
+        ),
+        required_columns=frozenset(),
+        minimum_states=50,
+        minimum_principal_rows=3000,
     ),
 }
+
+
+def _vintage_url(template: str, vintage_year: int) -> str:
+    """Fill the vintage placeholder, leaving any partition placeholder alone.
+
+    ``str.format`` would raise on a partitioned template, whose
+    ``{partition}`` is filled per file at capture time rather than here.
+    """
+    return template.replace("{vintage}", str(vintage_year))
 
 
 def _release(
@@ -352,29 +730,61 @@ def _release(
     release_date: str,
     *,
     status: Literal["published", "archived"],
+    observation_start_year: int,
+    observation_end_year: int | None = None,
+    geography_basis_date: str | None = None,
+    media_type: str = "text/csv",
 ) -> PEPRelease:
+    """One immutable release contract for a registered PEP product.
+
+    The observation range is a property of the published file, so it is
+    passed in rather than assumed: a postcensal release ends at its own
+    vintage (the default), while an intercensal release closes a decade
+    that ended before the vintage that published it.
+    """
     dataset = _CURATED_DATASETS[dataset_code]
     return PEPRelease(
         dataset_code=dataset_code,
         vintage_year=vintage_year,
         product_code=product_code,
-        data_url=dataset.data_url_template.format(vintage=vintage_year),
-        layout_url=dataset.layout_url_template.format(vintage=vintage_year),
+        data_url=_vintage_url(dataset.data_url_template, vintage_year),
+        layout_url=_vintage_url(dataset.layout_url_template, vintage_year),
         release_date=release_date,
-        observation_start_year=2020,
-        observation_end_year=vintage_year,
-        geography_basis_date=f"{vintage_year}-01-01",
+        observation_start_year=observation_start_year,
+        observation_end_year=(
+            vintage_year if observation_end_year is None else observation_end_year
+        ),
+        geography_basis_date=(
+            f"{vintage_year}-01-01"
+            if geography_basis_date is None
+            else geography_basis_date
+        ),
         schema_version=product_code.lower(),
         status=status,
+        media_type=media_type,
+        series_kind=dataset.series_kind,
+        archive_member=dataset.archive_member,
+        partitions=dataset.partitions,
     )
 
 
 _CURATED_RELEASES = (
+    # --- 2020s: the current decade, revised each vintage -------------------
     _release(
-        "pep_nst_alldata", 2024, "NST-EST2024-ALLDATA", "2024-12-19", status="archived"
+        "pep_nst_alldata",
+        2024,
+        "NST-EST2024-ALLDATA",
+        "2024-12-19",
+        status="archived",
+        observation_start_year=2020,
     ),
     _release(
-        "pep_nst_alldata", 2025, "NST-EST2025-ALLDATA", "2026-01-27", status="published"
+        "pep_nst_alldata",
+        2025,
+        "NST-EST2025-ALLDATA",
+        "2026-01-27",
+        status="published",
+        observation_start_year=2020,
     ),
     _release(
         "pep_county_alldata",
@@ -382,6 +792,7 @@ _CURATED_RELEASES = (
         "CO-EST2024-ALLDATA",
         "2025-03-13",
         status="archived",
+        observation_start_year=2020,
     ),
     _release(
         "pep_county_alldata",
@@ -389,9 +800,112 @@ _CURATED_RELEASES = (
         "CO-EST2025-ALLDATA",
         "2026-03-26",
         status="published",
+        observation_start_year=2020,
     ),
-    _release("pep_subcounty", 2024, "SUB-EST2024", "2025-05-15", status="archived"),
-    _release("pep_subcounty", 2025, "SUB-EST2025", "2026-05-14", status="published"),
+    _release(
+        "pep_subcounty",
+        2024,
+        "SUB-EST2024",
+        "2025-05-15",
+        status="archived",
+        observation_start_year=2020,
+    ),
+    _release(
+        "pep_subcounty",
+        2025,
+        "SUB-EST2025",
+        "2026-05-14",
+        status="published",
+        observation_start_year=2020,
+    ),
+    # --- Closed decades ----------------------------------------------------
+    # Each is the Bureau's final publication for its decade, so each product
+    # carries exactly one release and that release is its own current one.
+    #
+    # `release_date` for an archival product is the date the file was
+    # published at the URL this release registers, read from the server's
+    # `Last-Modified`, unless the file states its own issue date (the 1970s
+    # table does). The Bureau's original press date is not recoverable from
+    # the artifact, and inventing one would put an unverifiable date on a
+    # published contract. The dates still order the eras correctly, which is
+    # what release precedence reads them for.
+    _release(
+        "pep_county_alldata_2010s",
+        2020,
+        "CO-EST2020-ALLDATA",
+        "2021-05-04",
+        status="published",
+        observation_start_year=2010,
+        geography_basis_date="2020-01-01",
+    ),
+    _release(
+        "pep_nst_alldata_2010s",
+        2020,
+        "NST-EST2020-ALLDATA",
+        "2021-05-04",
+        status="published",
+        observation_start_year=2010,
+        geography_basis_date="2020-01-01",
+    ),
+    _release(
+        "pep_county_alldata_2000s",
+        2009,
+        "CO-EST2009-ALLDATA",
+        "2016-07-19",
+        status="published",
+        observation_start_year=2000,
+        geography_basis_date="2009-01-01",
+    ),
+    # The intercensal publication closes the 2000s against both censuses and
+    # supersedes the postcensal estimates for those years. A postcensal
+    # release's vintage is forced to its last observation year; an
+    # intercensal one has no such anchor, so it takes the year the artifact
+    # was published at its registered URL, the same evidence its release date
+    # comes from.
+    _release(
+        "pep_county_intercensal_2000s",
+        2016,
+        "CO-EST00INT-TOT",
+        "2016-09-09",
+        status="published",
+        observation_start_year=2000,
+        observation_end_year=2010,
+        geography_basis_date="2010-01-01",
+    ),
+    # These three state their own issue date in the file itself, which is
+    # better evidence than the artifact's date at its URL.
+    _release(
+        "pep_county_totals_1990s",
+        1999,
+        "CO-99-10",
+        "2000-08-30",
+        status="published",
+        observation_start_year=1990,
+        geography_basis_date="2000-01-01",
+        media_type="text/plain",
+    ),
+    _release(
+        "pep_county_totals_1980s",
+        1992,
+        "E8089CO",
+        "1992-03-01",
+        status="published",
+        observation_start_year=1980,
+        observation_end_year=1989,
+        geography_basis_date="1992-01-01",
+        media_type="text/plain",
+    ),
+    _release(
+        "pep_county_totals_1970s",
+        1982,
+        "E7079CO",
+        "1982-04-01",
+        status="published",
+        observation_start_year=1970,
+        observation_end_year=1979,
+        geography_basis_date="1982-01-01",
+        media_type="text/plain",
+    ),
 )
 
 # Default config contains only nonsecret, import-safe release contracts.

@@ -276,3 +276,32 @@ def test_every_catalog_id_has_an_implementation_reference() -> None:
 
     assert awaiting_ids <= known_ids
     assert known_ids - referenced_ids - awaiting_ids == set()
+
+
+def test_no_tracked_file_carries_an_unresolved_conflict_marker() -> None:
+    """Covers: ENV-001 — a committed merge conflict is caught by the suite.
+
+    A conflict resolved everywhere except one file reaches a branch silently:
+    git reports the merge as complete, and a file no test reads -- a reference
+    document, a CI map -- keeps its markers with nothing to notice. That
+    happened on this repository while resolving a four-branch stack, and the
+    only reason it surfaced was a hand-run grep.
+
+    Markers are matched at the start of a line, with the length git actually
+    writes, so prose about conflicts and Markdown rules are not flagged.
+    """
+    patterns = (re.compile(r"^<<<<<<< "), re.compile(r"^>>>>>>> "))
+    offenders: list[str] = []
+    for name in _tracked_existing_files():
+        path = REPOSITORY_ROOT / name
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue  # binary or unreadable: nothing to resolve
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if any(pattern.match(line) for pattern in patterns):
+                offenders.append(f"{name}:{line_number}")
+                break
+    assert not offenders, (
+        f"these tracked files carry unresolved merge conflict markers: {offenders}"
+    )

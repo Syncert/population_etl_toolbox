@@ -1,6 +1,6 @@
 """A forced full re-serve, against real PostgreSQL.
 
-Covers: ETL-045 — the changed-year plan selects years by silver watermark, so a
+Covers: ETL-049 — the changed-year plan selects years by silver watermark, so a
 change to what a served row *means* (a metric identity, a geography vocabulary,
 units) skips exactly the years still carrying the old meaning. These tests hold
 the watermark still and prove the forced plan visits the year anyway, resumes
@@ -164,7 +164,7 @@ def test_the_forced_plan_visits_a_year_the_changed_plan_skips(
     postgres_connection_factory: Callable[[], connection],
     reserve_token: str,
 ) -> None:
-    """Covers: ETL-045 — the defect this contract exists for.
+    """Covers: ETL-049 — the defect this contract exists for.
 
     After an incremental refresh the watermark covers both years, so a second
     incremental run plans nothing at all. That is precisely the state a metric
@@ -195,7 +195,7 @@ def test_a_forced_reserve_is_idempotent(
     postgres_connection_factory: Callable[[], connection],
     reserve_token: str,
 ) -> None:
-    """Covers: ETL-045 — running it twice changes no row counts."""
+    """Covers: ETL-049 — running it twice changes no row counts."""
     series_id = _seed(postgres_connection_factory, reserve_token)
     hook = PostgresHookStub(postgres_connection_factory)
 
@@ -215,7 +215,7 @@ def test_a_forced_reserve_resumes_at_the_year_it_stopped_on(
     postgres_connection_factory: Callable[[], connection],
     reserve_token: str,
 ) -> None:
-    """Covers: ETL-045 — an interruption is not a restart.
+    """Covers: ETL-049 — an interruption is not a restart.
 
     The watermark cannot decide this: a forced re-serve deliberately leaves
     watermarks alone, so every year looks equally "already done". Progress
@@ -278,7 +278,7 @@ def test_a_forced_reserve_does_not_push_the_source_watermark_forward(
     postgres_connection_factory: Callable[[], connection],
     reserve_token: str,
 ) -> None:
-    """Covers: ETL-045 — a re-serve must not make later ingests skip rows.
+    """Covers: ETL-049 — a re-serve must not make later ingests skip rows.
 
     If a forced run advanced the watermark to wall-clock time, silver rows
     ingested before it but after the genuine watermark would never be served

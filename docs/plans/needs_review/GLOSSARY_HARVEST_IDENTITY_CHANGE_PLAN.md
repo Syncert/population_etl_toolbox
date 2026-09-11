@@ -230,7 +230,7 @@ Deliverables:
 - `source_watermark`, `source_run_id`, and `publication_time` are deliberately
   excluded: they move on every ingestion, so including them would make the
   fingerprint a slower restatement of the guard it sits beside.
-- Migration `015_publisher_harvest_fingerprint.sql` adds
+- Migration `016_publisher_harvest_fingerprint.sql` adds
   `last_content_fingerprint` and `last_harvest_forced` to
   `gold_glossary.publisher_harvest_state`, registered in
   `sql/bootstrap/warehouse_manifest.json` and mounted in the test compose
