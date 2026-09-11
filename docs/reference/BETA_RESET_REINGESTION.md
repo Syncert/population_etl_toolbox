@@ -152,3 +152,60 @@ add an evidence-backed crosswalk, then replay the affected captured observations
   `GET /api/cdc/observations?dataset=places_county&limit=1`.
 - Martin TileJSON/MVT smoke checks succeed if spatial serving is deployed.
 
+
+## 7. Metric-identity changes require a forced full serving refresh
+
+The ingestion DAGs refresh serving in changed-year chunks: a year whose silver
+rows did not move is skipped. That is correct for value changes and wrong for
+identity changes. When a change alters which metric code a row is published
+under — the source's publisher view, its measure mapping, or the refresh
+procedure's `metric_code` expression — the unchanged years keep the old code,
+and the catalog then carries two identities for one measure with only part of
+the history under each.
+
+After such a change, refresh the whole source once, forced:
+
+```sql
+CALL gold_bls.refresh_dashboard_serving_layer_bls(NULL, NULL, TRUE);
+```
+
+Then make the catalog follow. The harvest is watermarked the same way the
+refresh is: `harvest_publisher` compares the publisher's `publication_time`
+against `gold_glossary.publisher_harvest_state.last_publication_time` and
+returns 0 rows when nothing newer was published. An identity change does not
+move that watermark -- the underlying facts were not re-ingested -- so a
+harvest run straight after the refresh is a no-op and the catalog keeps the
+old codes indefinitely. Clear the source's watermark first:
+
+```sql
+UPDATE gold_glossary.publisher_harvest_state
+   SET last_publication_time = NULL
+ WHERE source_code = 'BLS';
+```
+
+Then run `glossary_harvest` (or `harvest_all_publishers`). The new codes are
+harvested `current`, and codes the publisher no longer emits become `stale`
+and then `retired` after `retirement_grace_harvests` harvests (default 2) --
+so reaching `retired` takes two harvests, each preceded by clearing the
+watermark. Codes are never deleted, so an existing link to a retired code
+still resolves and reports its retired state.
+
+Each source's procedure takes the same three arguments
+(`gold_census.refresh_dashboard_serving_layer_acs`,
+`gold_fred.refresh_dashboard_serving_layer_fred`, and so on). The procedures
+set a 60-minute statement timeout per call, which bounds how large a window
+one call may cover. Measured on the development stack: BLS (5.8 million rows)
+took 16m44s end to end -- 12m30s to rebuild the reporting relation and 4m11s
+for the latest relation -- and FRED (52 thousand rows) took 6 seconds.
+
+`gold_census.rpt_acs_observations` is about 68 million rows and will not
+finish inside one call. Drive it a calendar year at a time instead, each pair
+in its own transaction, so no single statement approaches the timeout:
+
+```sql
+CALL gold_census.refresh_rpt_acs_observations('2019-01-01', '2019-12-31');
+CALL gold_census.refresh_mv_acs_latest('2019-01-01', '2019-12-31');
+```
+
+Every year must be covered, not only the changed ones: skipping unchanged
+years is precisely what leaves the old identity behind.

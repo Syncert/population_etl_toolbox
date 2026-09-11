@@ -52,11 +52,17 @@ _CDC_METRIC = {
 }
 
 _BLS_METRIC = {
-    "metric_code": "BLS:LAUCN060010000000003",
+    # LAUS is published per measure, so one BLS metric spans every state and
+    # county the program covers; the series id rides along as a dimension.
+    "metric_code": "BLS:LAU:UNEMP_RATE",
     "metric_display_name": "Unemployment rate",
     "source_code": "BLS",
-    "units": "rate",
-    "physical_lineage": {},
+    "units": "Percent",
+    "physical_lineage": {
+        "schema": "gold_bls",
+        "relation": "fact_bls_observation",
+        "key": "LAU:UNEMP_RATE",
+    },
 }
 
 _ACS_METRIC = {

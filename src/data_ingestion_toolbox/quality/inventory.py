@@ -772,6 +772,16 @@ _BLS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first publication",
     ),
     _obj(
+        "gold_bls.dim_bls_measure",
+        "gold",
+        "BLS",
+        grain="bls_measure_sk; unique per program_code, measure_code",
+        lineage="silver_bls.fact_labor_statistics",
+        scope_method="the seven measures the LA program publishes",
+        cadence="per publication",
+        empty_behavior="empty only before the first publication",
+    ),
+    _obj(
         "gold_bls.fact_bls_observation",
         "gold",
         "BLS",
@@ -832,11 +842,21 @@ _BLS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first publication",
     ),
     _obj(
+        "gold_bls.measure_export",
+        "publisher",
+        "BLS",
+        grain="metric_key (one row per measure-identified BLS metric)",
+        lineage="gold_bls.dim_bls_measure, gold_bls.fact_bls_observation",
+        scope_method="publisher export whose grains are aggregated from the fact rows",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first publication",
+    ),
+    _obj(
         "gold_bls.metric_publisher",
         "publisher",
         "BLS",
         grain="metric_code (one row per published BLS metric)",
-        lineage="gold_bls.dim_bls_series",
+        lineage="gold_bls.dim_bls_series, gold_bls.measure_export",
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first publication",
@@ -1923,11 +1943,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "referential_integrity",
         "Every published BLS observation resolves its series and survey "
-        "dimensions and its geography.",
+        "dimensions and its geography, and every measure-identified program's "
+        "rows resolve a measure identity.",
         (
             "gold_bls.fact_bls_observation",
             "gold_bls.dim_bls_series",
             "gold_bls.dim_bls_survey",
+            "gold_bls.dim_bls_measure",
         ),
     ),
     _rule(
@@ -1951,11 +1973,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "conformance",
         "BLS serving contract views preserve the published fact's identity, "
-        "values, and metric codes.",
+        "values, and metric codes, and the measure export publishes the grains "
+        "the fact rows actually carry.",
         (
             "gold_bls.fact_observation",
             "gold_bls.v_metric_latest_by_geo",
             "gold_bls.v_metric_timeseries_by_geo",
+            "gold_bls.measure_export",
             "gold_bls.metric_publisher",
         ),
     ),

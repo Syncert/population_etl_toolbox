@@ -1,7 +1,7 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
 
 // Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
-// WEB-017, WEB-018 —
+// WEB-017, WEB-018, WEB-029 —
 // browser catalog/tile/selection/failure flows, URL reproduction of the
 // selected exploration state, capability-driven source discovery and
 // switching, dispatch-shaped sources reached through the neutral
@@ -49,6 +49,29 @@ const pepMetric = {
   source_code: "CENSUS_PEP",
   valid_geo_grains: ["STATE", "COUNTY"],
   valid_time_grains: ["ANNUAL"],
+};
+
+// BLS publishes two identity shapes. CES is one national series per metric
+// and sorts ahead of every LAU code in the catalog; LAUS publishes per
+// measure, so one metric spans every published state and county.
+const blsNationalMetric = {
+  metric_code: "BLS:CES0000000001",
+  metric_display_name: "Total Nonfarm Payroll Employment",
+  source_code: "BLS",
+  units: "Thousands of Persons",
+  valid_geo_grains: ["NATIONAL"],
+  valid_time_grains: ["MONTHLY"],
+  freshness_state: "current",
+};
+
+const blsMeasureMetric = {
+  metric_code: "BLS:LAU:UNEMP_RATE",
+  metric_display_name: "Unemployment rate",
+  source_code: "BLS",
+  units: "Percent",
+  valid_geo_grains: ["COUNTY", "STATE"],
+  valid_time_grains: ["MONTHLY"],
+  freshness_state: "current",
 };
 
 const cdcMetric = {
@@ -105,7 +128,7 @@ const capabilityRoutes = (segment) => [
 ];
 
 const capabilities = {
-  total: 4,
+  total: 5,
   items: [
     {
       source_code: "CENSUS_ACS",
@@ -136,6 +159,15 @@ const capabilities = {
         ...neutralRoutes,
         { path: "/api/v1/usda-nass/observations", parameters: ["geo_id", "limit"] },
       ],
+    },
+    {
+      source_code: "BLS",
+      display_name: "Bureau of Labor Statistics",
+      route_segment: "bls",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["county_fips", "geo_id", "geo_level", "state_fips"],
+      observation_routes: capabilityRoutes("bls"),
     },
     {
       source_code: "CDC",
@@ -304,6 +336,24 @@ async function installRoutes(
       return answer(geoId ? [] : [pepRow], "CENSUS_PEP");
     }
 
+    if (metric.startsWith("BLS:")) {
+      const blsRow = {
+        ...county,
+        metric_code: metric,
+        source_code: "BLS",
+        source: "BLS",
+        metric_display_name: "Unemployment rate",
+        value: "3.1",
+        unit: "Percent",
+        units: "Percent",
+        period_start: "2025-07-01",
+        period_end: "2025-07-31",
+        dimensions: { series_id: "LAUCN550250000000003" },
+      };
+      // The national series has no county rows; the measure spans them.
+      return answer(metric === "BLS:CES0000000001" ? [] : [blsRow], "BLS");
+    }
+
     if (metric.startsWith("ACS:")) {
       if (failLatest) {
         return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
@@ -334,7 +384,11 @@ async function installRoutes(
   }));
   await page.route("**/api/v1/catalog/metrics?*", (route) => {
     const sourceCode = new URL(route.request().url()).searchParams.get("source_code");
-    const bySource = { CENSUS_PEP: [pepMetric], CDC: [cdcMetric] };
+    const bySource = {
+      CENSUS_PEP: [pepMetric],
+      CDC: [cdcMetric],
+      BLS: [blsNationalMetric, blsMeasureMetric],
+    };
     const items = bySource[sourceCode] || metrics;
     return route.fulfill({
       json: { total: items.length, limit: 1000, offset: 0, items },
@@ -486,7 +540,7 @@ test("source tabs derive from capability discovery and switch the explored sourc
   // Every source whose declarations carry an access shape becomes a tab —
   // the source-scoped pair or the neutral /observations resource — and the
   // tab records which shape reaches it.
-  await expect(dashboard).toHaveAttribute("data-source-count", "4");
+  await expect(dashboard).toHaveAttribute("data-source-count", "5");
   await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
   // Census declares its own route pair as well, and is still reached through
   // the neutral resource: the pair reads the legacy union views, which key
@@ -541,7 +595,7 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  await expect(dashboard).toHaveAttribute("data-source-count", "4");
+  await expect(dashboard).toHaveAttribute("data-source-count", "5");
 
   await page.getByTestId("source-tab-cdc").click();
   await expect(dashboard).toHaveAttribute("data-access-shape", "neutral");
@@ -705,6 +759,59 @@ test("a national series gets the explicit non-spatial experience, not an empty m
   await page.getByRole("tab", { name: "quality" }).click();
   await expect(page.getByTestId("explorer-freshness")).toContainText("fresh");
   await expect(page.getByTestId("explorer-provenance")).toContainText("people");
+});
+
+test("a measure-identified source draws its map through the shared paths", async ({ page }) => {
+  // Covers: WEB-029 — BLS LAUS publishes per measure, so a BLS metric spans
+  // geographies and the map, bins, and state filter answer for it through the
+  // same capability-driven paths every other source uses. The client carries
+  // no BLS special case; if this needed one, that would be a warehouse or API
+  // defect rather than a reason to add one here.
+  const neutralRequests = [];
+  const tileRequests = await installRoutes(page, { neutralRequests });
+  await page.goto("/explore");
+
+  await page.getByTestId("source-tab-bls").click();
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-source-key", "bls");
+
+  // BLS lists 56 national series ahead of every LAUS measure, and the default
+  // must not open the source on a selection its map can never draw.
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "BLS:LAU:UNEMP_RATE");
+  await expect(dashboard).toHaveAttribute("data-map-supported", "true");
+
+  // Only three-part codes carry a dataset facet, so BLS publishes one facet
+  // and the selector stays hidden with the whole list offered.
+  await expect(page.getByTestId("dataset-select")).toHaveCount(0);
+  await expect(dashboard).toHaveAttribute("data-metric-count", "2");
+
+  // The choropleth colours the measure's county rows and the legend reports
+  // the API's own distribution rather than a client-computed one.
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-colored-values", "1");
+  await expect(page.getByLabel("Choropleth value legend")).toContainText("API distribution");
+  expect(tileRequests()).toBeGreaterThan(0);
+
+  // The read went through the neutral resource at the county grain, with the
+  // geography filters BLS declares.
+  const blsRequest = neutralRequests.findLast(
+    (request) => request.metric_code === "BLS:LAU:UNEMP_RATE",
+  );
+  expect(blsRequest.geo_level).toBe("COUNTY");
+
+  // The state filter BLS declares narrows the same read, and a clicked county
+  // answers its own history.
+  await page.getByTestId("state-select").selectOption("55");
+  await page.getByTestId("county-select").selectOption(county.geo_id);
+  await expect(dashboard).toHaveAttribute("data-selected-geo-id", county.geo_id);
+
+  // The series id rides along as a published dimension, so lineage back to
+  // the BLS series survives the measure-level identity.
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+
+  // A national BLS series is still correctly non-spatial.
+  await page.getByTestId("metric-select").selectOption("BLS:CES0000000001");
+  await expect(dashboard).toHaveAttribute("data-map-supported", "false");
+  await expect(page.getByTestId("non-spatial-note")).toContainText("no national geometry");
 });
 
 test("the retired source dashboards land on the live explorer for their source", async ({ page }) => {

@@ -26,9 +26,11 @@ _REQUIRED_RELATIONS = (
     "control.serving_refresh_chunk_state",
     "gold_bls.dim_bls_survey",
     "gold_bls.dim_bls_series",
+    "gold_bls.dim_bls_measure",
     "gold_bls.fact_bls_observation",
     "gold_bls.rpt_bls_observations",
     "gold_bls.mv_bls_latest",
+    "gold_bls.measure_export",
     "gold_bls.metric_publisher",
 )
 _REQUIRED_PROCEDURES = (
@@ -99,6 +101,34 @@ def refresh_bls_elements(hook: PostgresHook | None = None) -> int:
                 id_construction_type = EXCLUDED.id_construction_type,
                 comparison_warning = EXCLUDED.comparison_warning,
                 reference_url = EXCLUDED.reference_url,
+                updated_at = NOW();
+            """
+        )
+
+        # LAUS measure identities. These are the seven measures the LA program
+        # publishes across geographies; the measure code is the last two digits
+        # of every LAUS series id. Non-LA programs are deliberately absent so
+        # the serving refresh falls through to their series identity.
+        cur.execute(
+            """
+            INSERT INTO gold_bls.dim_bls_measure (
+                program_code, measure_code, metric_key,
+                metric_display_name, unit_of_measure, value_type
+            )
+            VALUES
+                ('LA', '03', 'LAU:UNEMP_RATE', 'Unemployment rate', 'Percent', 'RATE'),
+                ('LA', '04', 'LAU:UNEMP_LEVEL', 'Unemployment level', 'Persons', 'LEVEL'),
+                ('LA', '05', 'LAU:EMP_LEVEL', 'Employment level', 'Persons', 'LEVEL'),
+                ('LA', '06', 'LAU:LABOR_FORCE', 'Labor force level', 'Persons', 'LEVEL'),
+                ('LA', '07', 'LAU:EMP_POP_RATIO', 'Employment-population ratio', 'Percent', 'RATIO'),
+                ('LA', '08', 'LAU:LFPR', 'Labor force participation rate', 'Percent', 'RATE'),
+                ('LA', '09', 'LAU:CNIP', 'Civilian noninstitutional population', 'Persons', 'LEVEL')
+            ON CONFLICT (program_code, measure_code)
+            DO UPDATE SET
+                metric_key = EXCLUDED.metric_key,
+                metric_display_name = EXCLUDED.metric_display_name,
+                unit_of_measure = EXCLUDED.unit_of_measure,
+                value_type = EXCLUDED.value_type,
                 updated_at = NOW();
             """
         )

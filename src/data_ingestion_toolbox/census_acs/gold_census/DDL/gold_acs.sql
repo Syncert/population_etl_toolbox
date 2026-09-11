@@ -283,7 +283,7 @@ BEGIN
         ao.as_of_date,
         ao.updated_at,
         ao.geo_id,
-        COALESCE(gl.geo_level, ao.geo_level),
+        ao.geo_level,
         gl.state_fips,
         gl.county_fips,
         gl.state_name,
@@ -311,6 +311,8 @@ BEGIN
     FROM gold_census.fact_acs_observation ao
     JOIN gold_census.dim_acs_table    t  ON t.acs_table_sk    = ao.acs_table_sk
     JOIN gold_census.dim_acs_variable v  ON v.acs_variable_sk = ao.acs_variable_sk
+    -- gl supplies geography attributes only. Its geo_level vocabulary is
+    -- 'us'/'state'/'county'; served rows promise NATIONAL/STATE/COUNTY.
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = ao.geo_id
     WHERE (p_start_date IS NULL OR ao.observation_date >= p_start_date)
       AND (p_end_date IS NULL OR ao.observation_date <= p_end_date);
