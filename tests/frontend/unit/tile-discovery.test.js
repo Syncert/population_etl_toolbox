@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 // Covers: WEB-026 — tile-layer discovery against the catalog shapes Martin
 // actually serves. Martin groups its sources into catalog sections
@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildSampleUrlFromTemplate,
   collectTileCandidates,
+  discoverTileMetadata,
   normalizeTileTemplateFromTileJson,
   prioritizeTileCandidates,
 } from "../../../apps/web/lib/tiles";
@@ -139,5 +140,94 @@ describe("a TileJSON template survives normalization with its placeholders intac
     );
     expect(normalizeTileTemplateFromTileJson("")).toBe("");
     expect(normalizeTileTemplateFromTileJson(null)).toBe("");
+  });
+});
+
+// Covers: WEB-026 — discovery reads at most one body per probe and releases
+// the rest. Deciding a probe from its status or its content type leaves a
+// response whose body was never read, and an unread body holds its
+// connection open until the response is collected. The tile samples are the
+// case that matters: each probe is a whole world tile, and discovery probes
+// up to six templates per candidate layer before it draws anything.
+//
+// The live-stack tier is where this first showed as more than a tidiness
+// point — Node's HTTP client asserts on a socket whose parser is still
+// paused by an unread body, so the leak surfaced as an uncaught exception
+// after every otherwise-passing run.
+describe("tile discovery releases the response bodies it does not read", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /** A response that records whether its body was cancelled. */
+  function stubResponse({ ok = true, status = 200, contentType = "", json = {} }) {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    return {
+      ok,
+      status,
+      headers: { get: (name) => (name.toLowerCase() === "content-type" ? contentType : null) },
+      json: async () => json,
+      body: { cancel },
+      cancel,
+    };
+  }
+
+  const TILE_JSON = {
+    name: "counties",
+    tiles: ["http://127.0.0.1:3200/tiles/counties/{z}/{x}/{y}"],
+    vector_layers: [{ id: "counties", fields: { geo_id: "", state_fips: "", county_fips: "" } }],
+  };
+
+  test("a rejected discovery endpoint and every tile-sample probe are released", async () => {
+    const served = new Map();
+    // The catalog endpoint answers 404, so discovery falls through to
+    // `/tiles/` — the rejected response is decided from its status alone.
+    served.set("/tiles/catalog", stubResponse({ ok: false, status: 404 }));
+    served.set("/tiles/", stubResponse({ json: MARTIN_CATALOG }));
+    served.set("/tiles/counties", stubResponse({ json: TILE_JSON }));
+    // The first template probed is the one TileJSON publishes, and it is
+    // accepted on its content type — without its body ever being read.
+    served.set(
+      "/tiles/counties/0/0/0",
+      stubResponse({ contentType: "application/x-protobuf" }),
+    );
+
+    globalThis.fetch = vi.fn(async (path) => {
+      const response = served.get(path);
+      if (!response) {
+        throw new Error(`unexpected discovery request: ${path}`);
+      }
+      return response;
+    });
+
+    const discovered = await discoverTileMetadata();
+    expect(discovered.layerId).toBe("counties");
+    expect(discovered.joinKey).toBe("geo_id");
+
+    // The two bodies discovery decided without reading.
+    expect(served.get("/tiles/catalog").cancel).toHaveBeenCalled();
+    expect(served.get("/tiles/counties/0/0/0").cancel).toHaveBeenCalled();
+    // The two it did read are consumed, not cancelled; cancelling a body
+    // mid-read is what would truncate the catalog it is parsing.
+    expect(served.get("/tiles/").cancel).not.toHaveBeenCalled();
+    expect(served.get("/tiles/counties").cancel).not.toHaveBeenCalled();
+  });
+
+  test("a response with no body to cancel is not an error", async () => {
+    // A 304 or a HEAD carries no body, and a discovery probe must not fail
+    // over how its own discarded response was disposed of.
+    const bodiless = { ok: false, status: 304, headers: { get: () => null }, json: async () => ({}) };
+    const served = new Map([
+      ["/tiles/catalog", bodiless],
+      ["/tiles/", stubResponse({ json: MARTIN_CATALOG })],
+      ["/tiles/counties", stubResponse({ json: TILE_JSON })],
+      ["/tiles/counties/0/0/0", stubResponse({ contentType: "application/x-protobuf" })],
+    ]);
+
+    globalThis.fetch = vi.fn(async (path) => served.get(path));
+
+    await expect(discoverTileMetadata()).resolves.toMatchObject({ layerId: "counties" });
   });
 });

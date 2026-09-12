@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "linux", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-build", "compose-smoke")]
+    [ValidateSet("unit", "etl", "api", "dags", "dag-pipeline", "integration", "external", "e2e", "linux", "martin-unit", "martin-integration", "performance", "resilience", "web-unit", "web-browser", "web-smoke", "web-build", "compose-smoke")]
     [string]$Tier = "unit",
 
     # Extra pytest arguments for the "linux" tier, e.g.
@@ -177,6 +177,54 @@ switch ($Tier) {
     "web-browser" {
         & npm --prefix apps/web run test:browser
         if ($LASTEXITCODE -ne 0) { throw "web browser tests failed" }
+    }
+    "web-smoke" {
+        # The live-stack frontend tier, composed exactly as CI composes it:
+        # the real API over the disposable warehouse, Martin, and the nginx
+        # proxy that serves /api/v1 and /tiles through the same rewrites a
+        # browser uses.
+        #
+        # The origin is part of the tier, not a convenience. Node 24's bundled
+        # undici asserts (`assert(!this.paused)`) when a large response
+        # arrives over a socket the origin closes, so running this against
+        # `next dev`'s rewrite origin -- which answers `connection: close` on
+        # every response -- exits the tier non-zero on whole-world tiles no
+        # matter how the client reads them, with every test green. The
+        # composed proxy answers keep-alive, and the tier's own unhandled-error
+        # test reports the difference rather than leaving it to the exit code.
+        $env:SMOKE_BASE_URL = "http://127.0.0.1:33001"
+        # Refuse to pass by skipping: this tier is required wherever it runs.
+        $env:SMOKE_REQUIRED = "1"
+        $compose = @(
+            "compose",
+            "-f", "infra/docker/docker-compose.test.yml",
+            "-f", "infra/docker/docker-compose.smoke.yml"
+        )
+        try {
+            # `--build` is not optional here. The API image this tier grades is
+            # built from the working tree, and Compose reuses an existing image
+            # by name: on 2026-09-12 a four-day-old `population-etl-api:smoke`
+            # answered every ACS observation request with the pre-ARC-005
+            # identity, and two WEB-027 tests failed against code that had been
+            # correct for days. A tier that can grade a stale image is not a
+            # live-stack tier.
+            & docker @compose up --detach --wait --build postgres martin api proxy
+            if ($LASTEXITCODE -ne 0) { throw "Smoke stack failed to start" }
+            & npm --prefix apps/web run test:smoke
+            if ($LASTEXITCODE -ne 0) { throw "web smoke tests failed" }
+        }
+        finally {
+            # Windows PowerShell wraps a native command's stderr in an
+            # ErrorRecord, so Compose's ordinary teardown progress would
+            # terminate here and replace the verdict this tier reports.
+            $ErrorActionPreference = "Continue"
+            & docker @compose down --volumes --remove-orphans --timeout 15
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Compose teardown exited $LASTEXITCODE; check for leftover population-testing containers."
+            }
+            @("SMOKE_BASE_URL", "SMOKE_REQUIRED") |
+                ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+        }
     }
     "web-build" {
         & npm --prefix apps/web run lint

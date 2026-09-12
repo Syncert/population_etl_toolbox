@@ -63,10 +63,15 @@ test-web-build:
 
 # The live-stack smoke tier: the frontend's own discovery and request
 # building against a deployed API, Martin, and proxy, with nothing stubbed.
+#
+# `--build` is not optional. Compose reuses an image by name, and on
+# 2026-09-12 a four-day-old `population-etl-api:smoke` served ACS
+# observations under the pre-ARC-005 identity and failed two WEB-027 tests
+# against code that had been correct for days.
 test-web-smoke:
 	@set -e; \
 	  trap 'docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml down --volumes --remove-orphans' EXIT; \
-	  docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml up --detach --wait postgres martin api proxy; \
+	  docker compose -f infra/docker/docker-compose.test.yml -f infra/docker/docker-compose.smoke.yml up --detach --wait --build postgres martin api proxy; \
 	  SMOKE_BASE_URL=http://127.0.0.1:33001 SMOKE_REQUIRED=1 \
 	  npm --prefix apps/web run test:smoke
 
