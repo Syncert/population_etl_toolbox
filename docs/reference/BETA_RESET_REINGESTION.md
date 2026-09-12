@@ -300,3 +300,75 @@ The one-shot procedure call
 still exists and is fine for a small relation, but it runs as a single
 transaction under a 60-minute statement timeout, so it cannot finish ACS at
 all and loses the whole run on any failure. Prefer the DAG.
+
+### Worked example: the ACS metric-code re-serve (ARC-005)
+
+This is the class of change section 7 describes, run end to end on the
+development stack, and it is the reference for the next identity change.
+
+**What changed.** `gold_census.metric_publisher` has always published ACS
+catalog codes as `CENSUS_ACS:<dataset>:<variable>`, because the glossary
+composes every catalog code as `source_code || ':' || source_object_key`.
+The refresh procedure `gold_census.refresh_rpt_acs_observations` composed the
+served code as `'ACS:' || dataset || ':' || variable`. Every one of the 4,447
+`current` ACS catalog codes therefore resolved to zero serving rows, and the
+only bridge was a prefix rewrite in the API's dispatch registry. The fix
+changed the one producer -- the refresh procedure now composes
+`'CENSUS_ACS:' || ...` -- and removed the registry rewrite. No silver row
+moved, so a scheduled `acs_ingest` run would have re-served nothing and left
+every year under the old spelling. This is exactly the case the DAG exists for.
+
+**Which stored codes broke, and why none did.** Saved analysis configurations
+(`app_api.saved_analysis_configuration`) are validated against
+`gold_glossary.dim_metric` on write and on read, and that relation has only
+ever held `CENSUS_ACS:` codes, so a document holding an `ACS:` code was
+refused at write time and cannot exist. The remaining holders of the old
+spelling were repository constants and fixtures (`apps/web/lib/productTemplates.ts`,
+the two `tests/sql/*_seed.sql` seeds, and frontend fixtures), all changed in
+the same commit, and per-browser `localStorage` saved views, which already
+degrade to "metric unavailable" when a code stops resolving.
+
+**Order of operations, as run.**
+
+1. Pause `acs_ingest`. An ingest run was in flight, so the pause prevented the
+   *next* run rather than interrupting this one; the re-serve waited for the
+   in-flight run to reach a terminal state.
+2. Apply the changed gold DDL to the warehouse. `acs_ingest`'s own
+   `ensure_gold_census_schema` task does this from the mounted working tree,
+   and `ensure_acs_gold_schema()` is idempotent, so applying it explicitly
+   before the re-serve costs nothing and removes a dependency on which branch
+   the scheduler saw when that task last ran.
+3. Trigger `serving_full_reserve` with `{"source_code": "CENSUS_ACS"}` and
+   wait. It commits per year and resumes at the interrupted year.
+4. Trigger `glossary_reconciliation` with
+   `{"force": true, "schemas": ["gold_census"]}`. Under this decision the
+   catalog's published codes did not change, so nothing retires; the forced
+   harvest is confirmation that the publisher still emits the same 4,447 keys
+   and that the harvest state records the run.
+5. Restart the API container. It imports the dispatch registry at startup, and
+   a process still holding the `ACS:` rewrite answers the new rows with
+   nothing.
+6. Verify, then unpause `acs_ingest`.
+
+**Verification.** Both surfaces spell one identity when these hold on the
+warehouse:
+
+```sql
+-- every current ACS catalog code has serving rows
+SELECT COUNT(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM gold_census.mv_acs_latest m
+           WHERE m.metric_code = c.metric_code)) AS resolvable,
+       COUNT(*) AS current_codes
+FROM gold_glossary.dim_metric_catalog c
+WHERE c.source_code = 'CENSUS_ACS' AND c.freshness_state = 'current';
+
+-- and nothing survives under the abandoned spelling
+SELECT COUNT(*) FROM gold_census.rpt_acs_observations WHERE metric_code LIKE 'ACS:%';
+SELECT COUNT(*) FROM gold_census.mv_acs_latest          WHERE metric_code LIKE 'ACS:%';
+```
+
+The repository guard for the same contract is `ARC-005` (static), with
+`DB-025`, `DB-026`, and `API-067` in
+`tests/integration/api/test_catalog_serving_agreement.py`, which publishes one
+ACS metric through the real refresh and the real harvest and then requires the
+catalog's own code to answer from `/api/v1/observations`.

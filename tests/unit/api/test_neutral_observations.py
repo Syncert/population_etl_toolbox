@@ -219,13 +219,15 @@ def test_lineage_identity_source_binds_the_published_identity() -> None:
     assert bound["identity_value_type_id"] == "crude"
 
 
-def test_lineage_key_source_bridges_the_published_identity_mismatch() -> None:
-    """Covers: API-042 — ACS glossary codes reach the ACS-prefixed serving rows.
+def test_acs_binds_the_published_catalog_code_without_a_rewrite() -> None:
+    """Covers: API-042 — ACS serving rows answer the code the catalog publishes.
 
-    The glossary publishes ``CENSUS_ACS:<dataset>:<variable>`` while the
-    serving relations spell the same identity ``ACS:<dataset>:<variable>``;
-    the published lineage key, not string surgery on the request, bridges the
-    two.
+    Covers: ARC-005 — the ACS serving relations carried ``ACS:<dataset>:
+    <variable>`` while the glossary published ``CENSUS_ACS:<dataset>:
+    <variable>``, and the dispatch spanned the gap with a rewriting
+    ``lineage_key_prefix``. The serving relations now spell the catalog's own
+    identity, so the requested code binds directly and no prefix rewrite is
+    declared for the source.
     """
     session = _DispatchSession(metric_row=dict(_ACS_METRIC))
     client = _client_with(session)
@@ -240,7 +242,9 @@ def test_lineage_key_source_bridges_the_published_identity_mismatch() -> None:
     assert response.status_code == 200
     assert any("FROM gold_census.mv_acs_latest" in sql for sql in _dispatched(session))
     bound = session.parameters[-1]
-    assert bound["lineage_key"] == "ACS:acs5:B01003_001E"
+    assert "lineage_key" not in bound
+    assert bound["metric_code_value"] == "CENSUS_ACS:acs5:B01003_001E"
+    assert OBSERVATION_DISPATCH["CENSUS_ACS"].lineage_key_prefix == ""
 
 
 def test_pep_dispatch_reads_the_revision_relations_with_the_bare_key() -> None:

@@ -17,7 +17,7 @@ const sources = [
 // publishes; the sparse one publishes almost none, and must not be filled in.
 function metricAt(index) {
   return {
-    metric_code: `ACS:acs5:B0${1000 + index}_001`,
+    metric_code: `CENSUS_ACS:acs5:B0${1000 + index}_001`,
     metric_display_name: `Measure ${index}`,
     source_code: "CENSUS_ACS",
     source_object_type: "acs5",

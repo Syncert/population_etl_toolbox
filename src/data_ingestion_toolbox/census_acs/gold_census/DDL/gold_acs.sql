@@ -290,7 +290,13 @@ BEGIN
         gl.county_name,
         gl.latitude,
         gl.longitude,
-        'ACS:' || ao.dataset_code || ':' || v.variable_code,
+        -- The catalog is the published discovery surface, and the glossary
+        -- composes every catalog code as source_code || ':' ||
+        -- source_object_key. gold_census.metric_publisher publishes
+        -- source_code 'CENSUS_ACS' and source_object_key
+        -- '<dataset>:<variable>', so the served metric_code must be spelled
+        -- the same way or a consumer following the catalog reads nothing.
+        'CENSUS_ACS:' || ao.dataset_code || ':' || v.variable_code,
         v.variable_label,
         ao.estimate_value,
         ao.dataset_code,

@@ -15,17 +15,19 @@
 //
 // The neutral shape is preferred wherever it is declared, and the
 // source-scoped pair is the fallback for a source that publishes no neutral
-// route. That order matters for correctness, not just for tidiness: the
-// source-scoped pair is the original MVP surface over the legacy
-// cross-source union views, which key observations on that era's metric
-// identity (`ACS:acs5:B01003_001`), while the catalog this client reads its
-// metric codes from publishes the glossary identity
-// (`CENSUS_ACS:acs5:B01003_001`). The neutral resource resolves a metric
-// through that glossary and the reviewed dispatch registry, so it answers on
-// the identity the catalog actually published; the legacy pair matches
-// nothing and returns an empty page indistinguishable from a geography with
-// no published values. API_CONSUMER_GUIDE states the legacy routes retire
-// and that new work should use `/observations`.
+// route. That order was first a correctness rule: the source-scoped pair is
+// the original MVP surface over the legacy cross-source union views, which
+// keyed Census ACS observations on that era's metric identity
+// (`ACS:acs5:B01003_001`) while the catalog this client reads its metric codes
+// from publishes the glossary identity (`CENSUS_ACS:acs5:B01003_001`), so a
+// catalog code sent to the legacy pair matched nothing and returned an empty
+// page indistinguishable from a geography with no published values. ARC-005
+// removed that disagreement in the warehouse — the ACS serving relations now
+// carry the catalog's own code — so both shapes answer the same code today.
+// The preference stands on its own terms: the neutral resource resolves a
+// metric through the published glossary and the reviewed dispatch registry,
+// and API_CONSUMER_GUIDE states the legacy routes retire and that new work
+// should use `/observations`.
 //
 // A source that declares neither shape is not explorable and is left out;
 // membership is never a source-code list.
@@ -236,18 +238,19 @@ export function buildExplorerSources(
     //
     // Both shapes are real, but they read different relations. The
     // source-scoped `latest`/`timeseries` pair is the original MVP surface
-    // over the legacy cross-source union views, which key observations on
-    // that era's metric identity — `ACS:acs5:B01003_001`. The catalog this
-    // client draws its metric codes from publishes the glossary identity —
-    // `CENSUS_ACS:acs5:B01003_001`. Sending a glossary code to the legacy
-    // pair matches nothing and answers an empty page that is
-    // indistinguishable from a geography with no published values.
+    // over the legacy cross-source union views, which keyed Census ACS
+    // observations on that era's metric identity — `ACS:acs5:B01003_001` —
+    // while the catalog this client draws its metric codes from publishes the
+    // glossary identity, `CENSUS_ACS:acs5:B01003_001`. Sending a catalog code
+    // to the legacy pair matched nothing and answered an empty page that was
+    // indistinguishable from a geography with no published values. ARC-005
+    // ended the disagreement at its source, so both shapes now answer the
+    // catalog's own code.
     //
-    // The neutral resource resolves the metric through the published
-    // glossary and the reviewed dispatch registry, so it answers on the
-    // identity the catalog actually published. API_CONSUMER_GUIDE says the
-    // legacy routes retire and new work should use `/observations`; this is
-    // new work.
+    // The preference remains. The neutral resource resolves the metric
+    // through the published glossary and the reviewed dispatch registry, and
+    // API_CONSUMER_GUIDE says the legacy routes retire and new work should
+    // use `/observations`; this is new work.
     const usesNeutral = neutral;
     const requestFilters = usesNeutral ? neutralFilters : [...latestParameters];
     // `scope` and `release` are read from the neutral route's own declared

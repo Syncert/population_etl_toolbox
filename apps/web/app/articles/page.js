@@ -8,7 +8,7 @@ import SourceNote from "../../components/SourceNote";
 import { getTimeseries } from "../../lib/api/client";
 import { explorerHref } from "../../lib/urlState";
 
-const metricCode = "ACS:acs5:B01003_001";
+const metricCode = "CENSUS_ACS:acs5:B01003_001";
 const exampleGeo = "state:55|county:025";
 const exampleExplorerHref = explorerHref({
   metric: metricCode,

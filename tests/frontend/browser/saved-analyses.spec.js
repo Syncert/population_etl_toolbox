@@ -16,7 +16,7 @@ const configurations = {
     version: 2,
     document: {
       kind: "observations",
-      metric_code: "ACS:acs5:B01003_001",
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
       scope: "latest",
       release: null,
       filters: { geo_level: "COUNTY", state_fips: "55", geo_id: "state:55|county:025" },
@@ -32,14 +32,14 @@ const configurations = {
     version: 1,
     document: {
       kind: "observations",
-      metric_code: "ACS:acs5:RETIRED_001",
+      metric_code: "CENSUS_ACS:acs5:RETIRED_001",
       scope: "latest",
       release: null,
       filters: { geo_level: "COUNTY" },
       visualization: {},
     },
     // Reported, not repaired: the document comes back exactly as saved.
-    validation: { valid: false, reason: "metric_code 'ACS:acs5:RETIRED_001' is no longer published" },
+    validation: { valid: false, reason: "metric_code 'CENSUS_ACS:acs5:RETIRED_001' is no longer published" },
     created_at: "2026-08-01T00:00:00Z",
     updated_at: "2026-08-01T00:00:00Z",
   },
@@ -172,14 +172,14 @@ test("a stale configuration is shown unmodified with the reported reason", async
   await expect(page.getByTestId("saved-validation")).toContainText("no longer published");
   await expect(page.getByTestId("stale-note")).toContainText("rather than rewriting your content");
   // The document itself is intact, exactly as saved.
-  await expect(page.getByTestId("saved-document")).toContainText("ACS:acs5:RETIRED_001");
+  await expect(page.getByTestId("saved-document")).toContainText("CENSUS_ACS:acs5:RETIRED_001");
 
   // Opening a valid one reopens into the explorer carrying the selection
   // and nothing identifying.
   await page.getByTestId("saved-open-1").click();
   await expect(page.getByTestId("saved-validation")).toContainText("matches live capabilities");
   const reopen = page.getByTestId("reopen");
-  await expect(reopen).toHaveAttribute("href", /metric=ACS%3Aacs5%3AB01003_001/);
+  await expect(reopen).toHaveAttribute("href", /metric=CENSUS_ACS%3Aacs5%3AB01003_001/);
   await expect(reopen).toHaveAttribute("href", /geo=state%3A55%7Ccounty%3A025/);
   const href = await reopen.getAttribute("href");
   expect(href).not.toContain("configuration");
@@ -213,7 +213,7 @@ test("browser-local views migrate only where the contract describes them", async
           id: "chart:1",
           title: "County population",
           chartType: "choropleth",
-          metricCode: "ACS:acs5:B01003_001",
+          metricCode: "CENSUS_ACS:acs5:B01003_001",
           geoLevel: "COUNTY",
         },
         { id: "profile:1", title: "Community profile", chartType: "profile" },

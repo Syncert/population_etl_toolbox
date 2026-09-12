@@ -218,7 +218,7 @@ def test_bls_timeseries_rejects_invalid_date_range() -> None:
 @pytest.mark.api
 def test_census_latest_observations_returns_data() -> None:
     """Covers: API-011, API-013 — Census latest returns ACS contract rows."""
-    row = _observation_row(metric_code="ACS:acs5:B01003_001", geo_id="state:06")
+    row = _observation_row(metric_code="CENSUS_ACS:acs5:B01003_001", geo_id="state:06")
     row.update(
         source_code="CENSUS_ACS",
         source="CENSUS_ACS",
@@ -238,7 +238,7 @@ def test_census_latest_observations_returns_data() -> None:
         client = TestClient(app)
         response = client.get(
             "/api/v1/census/observations/latest",
-            params={"metric_code": "ACS:acs5:B01003_001", "limit": 10},
+            params={"metric_code": "CENSUS_ACS:acs5:B01003_001", "limit": 10},
         )
     finally:
         app.dependency_overrides.clear()
@@ -283,7 +283,7 @@ def test_fred_latest_observations_returns_data() -> None:
     ("source_path", "source_schema", "metric_code", "source_code"),
     [
         ("bls", "gold_bls", "BLS:LAU:UNEMP_RATE", "BLS"),
-        ("census", "gold_census", "ACS:acs5:B01003_001", "CENSUS_ACS"),
+        ("census", "gold_census", "CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS"),
         ("fred", "gold_fred", "FRED:UNRATE", "FRED"),
         (
             "pep",

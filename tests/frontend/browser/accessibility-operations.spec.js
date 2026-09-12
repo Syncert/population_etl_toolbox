@@ -46,7 +46,7 @@ const capabilities = {
   ],
 };
 
-const METRIC = "ACS:acs5:B01003_001";
+const METRIC = "CENSUS_ACS:acs5:B01003_001";
 const GEO_ID = "state:55|county:025";
 
 const observation = {

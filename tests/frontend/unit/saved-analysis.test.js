@@ -34,7 +34,7 @@ function jsonResponse(payload, { status = 200 } = {}) {
 describe("a configuration is intent, not data", () => {
   test("an explorer selection saves its query, never its values", () => {
     const document = explorerDocument({
-      metricCode: "ACS:acs5:B01003_001",
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
       geoLevel: "COUNTY",
       stateFips: "55",
       geoId: "state:55|county:025",
@@ -42,7 +42,7 @@ describe("a configuration is intent, not data", () => {
     });
     expect(document).toEqual({
       kind: "observations",
-      metric_code: "ACS:acs5:B01003_001",
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
       scope: "latest",
       release: null,
       filters: {
@@ -135,13 +135,13 @@ describe("private content stays out of URLs", () => {
   test("a reopen link carries the selection and nothing identifying", () => {
     const href = reopenHref({
       kind: "observations",
-      metric_code: "ACS:acs5:B01003_001",
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
       scope: "as_released",
       release: "2022",
       filters: { geo_level: "COUNTY", state_fips: "55", geo_id: "state:55|county:025" },
     });
     expect(href).toContain("/explore?");
-    expect(href).toContain("metric=ACS");
+    expect(href).toContain("metric=CENSUS_ACS");
     expect(href).toContain("scope=as_released");
     expect(href).toContain("release=2022");
     // Not the configuration's own identity, name, version, or owner.
@@ -203,7 +203,7 @@ describe("browser-local charts migrate only where the contract describes them", 
         id: "chart:1",
         title: "County population",
         chartType: "choropleth",
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoLevel: "COUNTY",
         stateFips: "55",
       },

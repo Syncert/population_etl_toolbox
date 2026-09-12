@@ -13,7 +13,7 @@ describe("frontend formatting and saved-chart persistence", () => {
   beforeEach(() => window.localStorage.clear());
 
   test("formats Census metric labels and safe empty values", () => {
-    expect(displayMetricName({ metric_code: "ACS:acs5:B01003_001" })).toBe("Total population");
+    expect(displayMetricName({ metric_code: "CENSUS_ACS:acs5:B01003_001" })).toBe("Total population");
     expect(displayMetricName({ metric_display_name: "Estimate!!Population!Total" })).toBe("Population - Total");
     expect(displayMetricName(null)).toBe("Untitled metric");
   });

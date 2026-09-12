@@ -203,7 +203,7 @@ def test_census_fixture_flows_raw_to_gold_and_replays_identically(
     Covers: E2E-004 — the complete ACS fixture replays identically.
     """
     variable = "B99998_001"
-    metric_code = f"ACS:acs5:{variable}"
+    metric_code = f"CENSUS_ACS:acs5:{variable}"
     warehouse_scope(
         postgres_connection_factory,
         request,

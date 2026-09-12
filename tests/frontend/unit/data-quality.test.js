@@ -100,7 +100,7 @@ describe("per-metric quality is the publisher's own", () => {
   test("unpublished fields stay empty rather than becoming placeholders", () => {
     const [row] = metricQualityRows([
       {
-        metric_code: "ACS:acs5:B01003_001",
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
         metric_display_name: "Total population",
         freshness_state: "fresh",
         publication_time: "2026-09-01T00:00:00Z",

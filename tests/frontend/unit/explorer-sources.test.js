@@ -247,7 +247,7 @@ describe("capability-derived explorer sources", () => {
     // A source that declares the neutral resource is reached through it even
     // when it also publishes its own route pair. The legacy pair reads the
     // cross-source union views, which key observations on that era's metric
-    // identity (`ACS:acs5:B01003_001`); the catalog publishes the glossary
+    // identity (`CENSUS_ACS:acs5:B01003_001`); the catalog publishes the glossary
     // identity (`CENSUS_ACS:acs5:B01003_001`). Preferring the pair sends a
     // code the union views do not carry and answers an empty page.
     const census = findExplorerSource(sources, "census");
@@ -349,9 +349,9 @@ describe("capability-derived explorer sources", () => {
 
 describe("dataset facets derived from published metric identity", () => {
   const acsMetrics = [
-    { metric_code: "ACS:acs5:B01003_001", metric_display_name: "Population" },
-    { metric_code: "ACS:acs1:B01003_001", metric_display_name: "Population" },
-    { metric_code: "ACS:acs5:B19013_001", metric_display_name: "Income" },
+    { metric_code: "CENSUS_ACS:acs5:B01003_001", metric_display_name: "Population" },
+    { metric_code: "CENSUS_ACS:acs1:B01003_001", metric_display_name: "Population" },
+    { metric_code: "CENSUS_ACS:acs5:B19013_001", metric_display_name: "Income" },
   ];
 
   test("facet options come from metric codes with published coverage labels", () => {

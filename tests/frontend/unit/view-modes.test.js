@@ -62,7 +62,7 @@ const [census] = buildExplorerSources([
 ]);
 
 const metric = {
-  metric_code: "ACS:acs5:B01003_001",
+  metric_code: "CENSUS_ACS:acs5:B01003_001",
   metric_display_name: "Total population",
   source_code: "CENSUS_ACS",
   units: "people",

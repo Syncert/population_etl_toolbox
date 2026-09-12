@@ -19,11 +19,11 @@ import {
 describe("explorer URL state", () => {
   test("parses every currently supported link parameter", () => {
     const parsed = parseExplorerState(
-      "?source=pep&metric=ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion&value_scale=log",
+      "?source=pep&metric=CENSUS_ACS%3Aacs5%3AB01003_001&state=55&geo=state%3A55%7Ccounty%3A025&geo_level=COUNTY&map_mode=extrusion&value_scale=log",
     );
     expect(parsed).toEqual({
       source: "pep",
-      metric: "ACS:acs5:B01003_001",
+      metric: "CENSUS_ACS:acs5:B01003_001",
       stateFips: "55",
       geoId: "state:55|county:025",
       geoLevel: "COUNTY",
@@ -111,7 +111,7 @@ describe("explorer URL state", () => {
 describe("comparison URL state", () => {
   test("names both measures, their sources, and the scope", () => {
     const state = {
-      metricA: "ACS:acs5:B01003_001",
+      metricA: "CENSUS_ACS:acs5:B01003_001",
       metricB: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
       sourceA: "census",
       sourceB: "pep",
@@ -119,7 +119,7 @@ describe("comparison URL state", () => {
       stateFips: "55",
     };
     expect(parseComparisonState(`?${serializeComparisonState(state)}`)).toEqual(state);
-    expect(comparisonHref(state, { geoLevel: "COUNTY" })).toContain("/compare?a=ACS");
+    expect(comparisonHref(state, { geoLevel: "COUNTY" })).toContain("/compare?a=CENSUS_ACS");
     expect(comparisonHref({}, { geoLevel: "COUNTY" })).toBe("/compare");
   });
 

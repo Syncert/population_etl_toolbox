@@ -12,13 +12,13 @@ const savedViews = [
     id: "chart:1",
     title: "Dane County population",
     chartType: "choropleth",
-    metricCode: "ACS:acs5:B01003_001",
+    metricCode: "CENSUS_ACS:acs5:B01003_001",
     metricName: "Total population",
     source: "CENSUS_ACS",
     geoLevel: "COUNTY",
     geoId: "state:55|county:025",
     transformation: "raw",
-    apiQuery: "/api/v1/observations?metric_code=ACS%3Aacs5%3AB01003_001",
+    apiQuery: "/api/v1/observations?metric_code=CENSUS_ACS%3Aacs5%3AB01003_001",
     period: "2023",
     savedAt: "2026-09-03T00:00:00Z",
   },
@@ -26,7 +26,7 @@ const savedViews = [
     id: "chart:2",
     title: "Population as released 2022",
     chartType: "choropleth",
-    metricCode: "ACS:acs5:B01003_001",
+    metricCode: "CENSUS_ACS:acs5:B01003_001",
     source: "CENSUS_ACS",
     geoLevel: "COUNTY",
     scope: "as_released",
@@ -82,7 +82,7 @@ test("an analytical block is filled from a saved view and keeps its envelope", a
   const block = page.getByTestId("block-population-evidence");
   await expect(block).toHaveAttribute("data-has-envelope", "true");
   const envelope = page.getByTestId("envelope-population-evidence");
-  await expect(envelope).toContainText("ACS:acs5:B01003_001");
+  await expect(envelope).toContainText("CENSUS_ACS:acs5:B01003_001");
   await expect(envelope).toContainText("CENSUS_ACS");
   await expect(envelope).toContainText("state:55|county:025");
   await expect(envelope).toContainText("2023");
@@ -93,7 +93,7 @@ test("an analytical block is filled from a saved view and keeps its envelope", a
   await expect(envelope).toContainText("change when the source republishes");
   await expect(page.getByTestId("reopen-population-evidence")).toHaveAttribute(
     "href",
-    /metric=ACS%3Aacs5%3AB01003_001/,
+    /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
   );
 
   // A pinned release is frozen, and is distinguished from the live block.

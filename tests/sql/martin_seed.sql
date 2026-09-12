@@ -42,15 +42,16 @@ INSERT INTO gold_glossary.dim_metric_catalog (
     source_object_key, valid_geo_grains, valid_time_grains, units,
     measure_kind, aggregation_characteristic, physical_lineage
 ) VALUES (
-    'ACS:acs5:B01003_001_MARTIN_TEST', 'Martin county population fixture',
+    'CENSUS_ACS:acs5:B01003_001_MARTIN_TEST', 'Martin county population fixture',
     'CENSUS_ACS', 'ACS_VARIABLE', 'acs5:B01003_001_MARTIN_TEST',
     ARRAY['COUNTY'], ARRAY['ANNUAL'], 'people', 'estimate', 'non-additive',
     -- The lineage the reviewed dispatch declares for CENSUS_ACS
     -- (apps.api.registry.OBSERVATION_DISPATCH). It named
     -- silver_census.fact_demographics, which the neutral resource rejects as a
     -- publication/registry disagreement, so this metric was reachable only
-    -- through the legacy route. `key` is the publisher's lineage key; the
-    -- dispatch composes it under the `ACS:` prefix its serving relations use.
+    -- through the legacy route. `key` remains the publisher's lineage key;
+    -- since ARC-005 the serving relations carry the catalog's own composed
+    -- code, so both surfaces below spell one identity.
     '{"schema":"gold_census","relation":"fact_acs_observation",'
     '"key":"acs5:B01003_001_MARTIN_TEST"}'::JSONB
 ) ON CONFLICT (metric_code) DO UPDATE SET
@@ -67,11 +68,11 @@ INSERT INTO gold_census.rpt_acs_observations (
     '2099-12-31', NOW(), 'state:55|county:025', 'COUNTY', '55', '025',
     'Wisconsin', 'Dane County', 43.0667, -89.4000, 600000,
     'acs5', 2099, 'B01003', 'B01003_001', 600000,
-    'ESTIMATE', 'people', 'ACS:acs5:B01003_001_MARTIN_TEST',
+    'ESTIMATE', 'people', 'CENSUS_ACS:acs5:B01003_001_MARTIN_TEST',
     'Martin county population fixture'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO gold_census.mv_acs_latest
 SELECT * FROM gold_census.rpt_acs_observations
-WHERE metric_code = 'ACS:acs5:B01003_001_MARTIN_TEST'
+WHERE metric_code = 'CENSUS_ACS:acs5:B01003_001_MARTIN_TEST'
 ON CONFLICT DO NOTHING;

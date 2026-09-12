@@ -277,7 +277,7 @@ def census_bls_api_fixture(
 ) -> Iterator[tuple[TestClient, str, str]]:
     """Seed matching Census and BLS source rows in the actual serving relations."""
     token = uuid4().hex[:10].upper()
-    census_metric = f"ACS:acs5:TEST_{token}"
+    census_metric = f"CENSUS_ACS:acs5:TEST_{token}"
     bls_metric = f"BLS:TEST_{token}"
     census_variable = f"TEST_{token}E"
     bls_series = f"LAUTEST{token}"
@@ -304,10 +304,10 @@ def census_bls_api_fixture(
                         {
                             "schema": "gold_census",
                             "relation": "fact_acs_observation",
-                            # The serving relations spell this identity with
-                            # the ACS: prefix; the published key bridges it,
-                            # exactly as the production publisher does.
-                            "key": census_metric.removeprefix("ACS:"),
+                            # The publisher's lineage key: the composed code
+                            # without its source_code prefix, exactly as
+                            # gold_census.metric_publisher emits it.
+                            "key": census_metric.removeprefix("CENSUS_ACS:"),
                         }
                     ),
                     bls_metric,

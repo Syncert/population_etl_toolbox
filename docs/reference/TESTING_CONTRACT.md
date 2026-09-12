@@ -277,13 +277,13 @@ Last audited against the repository on 2026-09-01. **Implemented** means that ch
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-011 | None |
-| Data-layer architecture boundaries | ARC-001–ARC-003 | None |
+| Data-layer architecture boundaries | ARC-001–ARC-005 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-042 | None |
-| Database integration | DB-001–DB-023 | None |
-| API | API-001–API-065 | None |
+| Database integration | DB-001–DB-026 | None |
+| API | API-001–API-067 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-012 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -396,6 +396,7 @@ These static tests enforce [ADR-0001](../decisions/0001-data-layer-boundaries.md
 | ARC-002 | P0 | Static / `unit` | Lossless raw capture boundary | Every non-legacy source raw DDL declares capture identity, request fingerprint, retrieval time, checksum, media type, and payload, with no capture update/delete path | A new source persists only parsed observations or mutates captures |
 | ARC-003 | P0 | Static / `unit` | Gold policy boundary | Policy-column declarations remain exactly at the frozen legacy inventory and no new source gold DDL declares them | A new dashboard, aggregation, definition, comparison, or ownership policy column appears in gold |
 | ARC-004 | P0 | Contract + database / `unit integration database` | A publisher-contract change reaches the catalog | The harvest skips only when the publisher has published nothing newer *and* a digest of the content it would write is unchanged; an unrecorded digest harvests rather than skips; a changed display name, units, grains, lineage, object type, contract version, or set of keys harvests even though no fact watermark moved; a skipped harvest still counts against keys the publisher no longer emits, so retirement reaches `retired` on scheduled harvests alone; an empty or unreadable publisher counts against nothing; and an explicit force re-harvests identical content and is recorded on the harvest state row | A metric-identity, rename, units, or grain change that leaves the catalog serving what the warehouse no longer publishes while the harvest reports success, a key stranded at `stale` because only a skip ever follows it, or a provider outage retiring live metrics |
+| ARC-005 | P0 | Static / `unit` | Catalog and serving spell one metric identity | Every serving relation composes its `metric_code` from the same `source_code` its schema's `metric_publisher` publishes, so the code the catalog advertises is the code the serving relation stores; no serving relation composes a prefix no publisher publishes; and an observation-dispatch entry may declare a lineage prefix only when it is the glossary's own `<source_code>:` composition, never a rewrite into a second identity | A source publishing one metric under two identities, so a consumer that follows the catalog correctly reads an empty page, or a registry prefix quietly translating one spelling into another instead of the producers agreeing |
 
 ### Airflow DAG Tests
 
@@ -507,6 +508,8 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-022 | P0 | Integration / `integration database` | Changed-response retention | Two payloads for one request fingerprint retain distinct checksums and ordered retrieval events | Revised response overwrites or hides an earlier capture |
 | DB-023 | P0 | Integration / `integration database` | Parser quarantine lineage | Sanitized parser failure state references a still-queryable immutable capture | Failure loses payload lineage or stores no replay target |
 | DB-024 | P0 | Database / `integration database` | Tier repeatability and suite-owned cleanup | A suite removes every row it committed, not only the rows it asserted on; a test asserting behaviour on an empty warehouse empties the relations that behaviour reads and fails naming the relation that is not empty rather than letting an unrelated rule fail later; the full tier reports the same result run twice against one warehouse; and a module that cannot be imported in this environment skips with its reason instead of aborting collection of the tier | A tier whose red is routinely ignored because it is not reproducible: failures that appear only in a full run, a rule blamed for state an earlier suite left behind, or an engineer getting no result at all because one module could not be imported |
+| DB-025 | P0 | Database + API / `integration api database` | A published catalog code is answerable | An ACS metric published end to end — real refresh procedures, real publisher view, real glossary harvest — is stored in the serving relations under the same code the catalog publishes, and every registered source's `current` catalog codes are answered by `/api/v1/observations` with at least one row; the sweep is driven by the reviewed observation-dispatch registry and fails, rather than passing vacuously, when no source published a code to check | A source advertising codes its serving layer has never heard of, or a guard that reports green because it exercised nothing |
+| DB-026 | P0 | Database / `integration database` | An abandoned metric spelling does not survive a re-serve | After a forced full re-serve no ACS serving row remains under the retired `ACS:` spelling, in either the latest materialized view or the durable reporting relation | A partially re-served warehouse carrying both identities and answering differently depending on which code a consumer happens to hold |
 
 ### API and Redis Tests
 
@@ -580,6 +583,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-064 | P0 | Contract / `integration api database` | Real-schema saved-analysis contract | The checked-in `sql/bootstrap/002_app_api.sql` creates exactly the schema the service queries; create, read, list, update, and delete round-trip through PostgreSQL with owner scoping and version conflicts enforced against the real tables; a second account sharing the database sees nothing; an unknown token and a revoked account are both refused | The bootstrap DDL drifting from the service's SQL, cross-account visibility against the real store, a conflicting update applied, or revocation not taking effect |
 | API-065 | P0 | Contract / `unit api` | Consumer guide matches the served contract | Every `/api/v1` route the frontend handoff names is served; the guide publishes the same sunset date the legacy responses send; legacy aliases still carry `Deprecation`, `Sunset`, and `Link` and answer identically to their successors; and the guide's declined-source and neutral-filter claims are derived from the registry rather than a prose copy | The handoff naming an unserved route, publishing a stale sunset date, or describing capabilities the application does not have |
 | API-066 | P0 | Service / `unit api` | Newest observation per geography | `newest_per_geography=true` ranks inside the source's own relation before projection, using the ranking the distribution and comparison services already apply, so a page and a set of bins describe the same rows; declared filters stay inside the ranked subquery; it is refused with `scope=as_released`; the default answers the whole latest publication unchanged; and the parameter is declared on the neutral route so a client discovers it | Ranking applied after projection or after filtering, a total that disagrees with its page, an as-released read reduced to one row per geography, or the v1 default changed |
+| API-067 | P0 | Contract / `integration api database` | Catalog-to-observation round trip | A metric code read from `/api/v1/catalog/metrics` answers from `/api/v1/observations` with at least one row, over the real warehouse and through the published HTTP surfaces rather than the services behind them | The discovery surface and the observation surface drifting apart with every tier green, because no test crosses them |
 
 ### Frontend Tests
 

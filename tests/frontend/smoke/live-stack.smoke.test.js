@@ -17,11 +17,13 @@ import { beforeAll, describe, expect, test } from "vitest";
 //     and reported that the deployment publishes no spatial layer. The browser
 //     fixture served the flat shape, so it passed.
 //   - Observations were read through the legacy source-scoped pair, which
-//     keys rows on the pre-glossary metric identity (`ACS:acs5:B01003_001`)
+//     keyed rows on the pre-glossary metric identity (`ACS:acs5:B01003_001`)
 //     while the catalog publishes the glossary identity
 //     (`CENSUS_ACS:acs5:B01003_001`). The real API answered an empty page; the
 //     fixtures spelled both identities the same way, so they answered a full
-//     one.
+//     one. ARC-005 later ended that disagreement in the warehouse, but the
+//     lesson this tier encodes is unchanged: only a real response can catch a
+//     client that is reading a correct server wrongly.
 //
 // A fixture cannot catch either class of defect, because in both cases the
 // server was right and the client's reading of it was wrong. Only a real
