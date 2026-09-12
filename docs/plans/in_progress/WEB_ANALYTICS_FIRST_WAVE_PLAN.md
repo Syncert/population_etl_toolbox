@@ -1284,7 +1284,7 @@ template does not.
 | Web browser | `npx playwright test` | 54 passed (Chromium) |
 | Web build / budgets / CSP guard | `build` / `check:bundle` / `check:csp` | succeeded; every route within budget; 0 prerendered routes |
 | Frontend smoke, WEB-033 | `SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:smoke` | `map-wiring.smoke.test.js` 2 passed against the live proxy |
-| Frontend smoke, WEB-027 | same run | **2 failed**: "every catalog metric answers through the access shape the explorer picks" (13 metrics answered no row) and "observed geographies are present in the discovered tile layer" (observed `us:1` only). These exercise `tiles.js`, `observationAccess`, `explorerSources`, and the API client, none of which this branch touches. Root cause not established here; recorded rather than explained away. |
+| Frontend smoke, WEB-027 | same run | **2 failed**: "every catalog metric answers through the access shape the explorer picks" (13 metrics answered no row from `/observations`: the four county LAUS series `BLS:LAUCN010010000000003`–`…006`, and nine `USDA_NASS:corn_census_county:<hash>` metrics — every one a county-grain metric the catalog publishes as current) and "observed geographies are present in the discovered tile layer" (observed `us:1` only). These exercise `tiles.js`, `observationAccess`, `explorerSources`, and the API client, none of which this branch touches. Root cause not established here; recorded rather than explained away. |
 | Python unit | `pytest tests/unit` | 1338 passed (register guard at 289 rows, all FULL) |
 | Python lint | `ruff check .` | clean |
 
