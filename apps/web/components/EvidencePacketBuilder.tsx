@@ -9,19 +9,41 @@
 // be filled from a saved view that already recorded its envelope, every
 // block shows that envelope inline, and the packet refuses to call itself
 // complete while any analytical block is missing context.
+//
+// Where a packet is saved is one decision, made in one place
+// (`saveDestination`), and it is stated on the control before the click and
+// on the outcome after it: the account whenever a token is held, this browser
+// otherwise. A refused account save is reported, never quietly redirected to
+// the browser store -- telling someone their work is safe somewhere they did
+// not choose and cannot see from their account is worse than telling them it
+// was not saved.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, FileText, Plus, Printer, Save, Trash2 } from "lucide-react";
+import { Download, FileText, FolderOpen, Plus, Printer, Save, Trash2 } from "lucide-react";
 import StatusPill from "./StatusPill";
 import EvidenceEnvelope from "./EvidenceEnvelope";
 import { BUILDER_DRAFT_KEY, readSavedCharts } from "../lib/savedCharts";
 import {
+  ApiError,
+  createEvidencePacket,
+  getEvidencePacket,
+  listEvidencePackets,
+  updateEvidencePacket,
+} from "../lib/api/client";
+import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
+import { useStoredToken } from "../lib/apiToken";
+import { describeSaveFailure, describeSaveSuccess, saveDestination } from "../lib/savedAnalysis";
+import type { SaveOutcome } from "../lib/savedAnalysis";
+import {
+  documentToPacket,
   envelopeFromSavedChart,
   grantNeedsTemplate,
   isAnalyticalBlock,
+  mergeBlockStates,
   packetExport,
   packetIsComplete,
   packetIssues,
+  packetToDocument,
 } from "../lib/evidencePackets";
 import type { EvidencePacket, PacketBlock } from "../lib/evidencePackets";
 
@@ -29,12 +51,26 @@ function newId(prefix: string): string {
   return `${prefix}:${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** The account record the composer is editing, when it opened one. */
+interface AccountPacket {
+  packetId: number;
+  version: number;
+  name: string;
+}
+
 export default function EvidencePacketBuilder() {
+  const { token, resolved: tokenResolved } = useStoredToken();
   const [packet, setPacket] = useState<EvidencePacket>(() => grantNeedsTemplate());
   const [savedCharts, setSavedCharts] = useState<Record<string, unknown>[]>([]);
   const [targetBlockId, setTargetBlockId] = useState("");
   const [saveState, setSaveState] = useState("Draft stored in this browser");
+  const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
+  const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [account, setAccount] = useState<AccountPacket | null>(null);
+  const [accountPackets, setAccountPackets] = useState<EvidencePacketSummary[]>([]);
+  const [accountStatus, setAccountStatus] = useState({ state: "idle", message: "not signed in" });
+  const [apiValidation, setApiValidation] = useState<PacketValidation | null>(null);
 
   useEffect(() => {
     setSavedCharts(readSavedCharts());
@@ -48,11 +84,54 @@ export default function EvidencePacketBuilder() {
     }
   }, []);
 
+  const destination = saveDestination(token);
+
+  const refreshAccount = useCallback(async (activeToken: string) => {
+    if (!activeToken) {
+      setAccountPackets([]);
+      setAccountStatus({ state: "idle", message: "not signed in" });
+      return;
+    }
+    setAccountStatus({ state: "loading", message: "loading your packets" });
+    try {
+      const payload = await listEvidencePackets(activeToken, { limit: "200" });
+      setAccountPackets(payload.items);
+      setAccountStatus({
+        state: "ok",
+        message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+      });
+    } catch (error) {
+      setAccountPackets([]);
+      // A 401 is identical for a missing, malformed, unknown, or revoked
+      // token by design; every other refusal keeps its classification.
+      setAccountStatus({
+        state:
+          error instanceof ApiError ? (error.status === 401 ? "unauthorized" : error.kind) : "bad",
+        message:
+          error instanceof ApiError && error.status === 401
+            ? "the token was not accepted"
+            : (error as { message?: string })?.message || "could not load your packets",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tokenResolved) {
+      refreshAccount(token);
+    }
+  }, [refreshAccount, token, tokenResolved]);
+
   const issues = useMemo(() => packetIssues(packet), [packet]);
   const complete = useMemo(() => packetIsComplete(packet), [packet]);
   const issueByBlock = useMemo(
     () => new Map(issues.map((issue) => [issue.blockId, issue])),
     [issues],
+  );
+  // Only the API can see staleness; a block it reports and the client does
+  // not is a measure retired since the block was composed.
+  const staleBlocks = useMemo(
+    () => mergeBlockStates(packet, apiValidation).filter((state) => state.state === "stale"),
+    [packet, apiValidation],
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<PacketBlock>) => {
@@ -81,7 +160,10 @@ export default function EvidencePacketBuilder() {
 
   // A saved view brings its recorded envelope with it. A view that never
   // captured a field leaves it empty, so the packet reports the gap rather
-  // than the composer inventing a value to fill it.
+  // than the composer inventing a value to fill it. The query's scope and
+  // release are the envelope's, so the two can never disagree -- the API
+  // refuses a block whose envelope records a publication its query does not
+  // ask for.
   function attachSavedView(chart: Record<string, unknown>) {
     const blockId =
       targetBlockId ||
@@ -93,11 +175,15 @@ export default function EvidencePacketBuilder() {
           kind: "comparison" as const,
           metric_code_a: String(chart.metricCode || ""),
           metric_code_b: String(chart.metricCodeB || ""),
+          scope: envelope.scope,
+          release: envelope.release || null,
           filters: { geo_level: String(chart.geoLevel || "") },
         }
       : {
           kind: "observations" as const,
           metric_code: String(chart.metricCode || ""),
+          scope: envelope.scope,
+          release: envelope.release || null,
           filters: {
             geo_level: String(chart.geoLevel || ""),
             geo_id: String(chart.geoId || ""),
@@ -129,9 +215,82 @@ export default function EvidencePacketBuilder() {
     }));
   }
 
-  function persist() {
+  function persistLocally() {
     window.localStorage.setItem(BUILDER_DRAFT_KEY, JSON.stringify(packet));
     setSaveState(`Saved ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+  }
+
+  async function persist() {
+    if (destination !== "account") {
+      persistLocally();
+      setSaveOutcome(describeSaveSuccess("browser", packet.title || "packet"));
+      window.setTimeout(() => setSaveOutcome(null), 4000);
+      return;
+    }
+    // Signed in, the packet is stored as the composer produced it: each
+    // analytical block's query and recorded envelope, never an observation
+    // value. The API refuses a contradiction and reports incompleteness;
+    // both come back here as the API said them.
+    const name = packet.title.trim() || "Untitled packet";
+    setSaving(true);
+    setSaveOutcome({ state: "loading", message: "Saving to your account", destination: null });
+    try {
+      const record = account
+        ? await updateEvidencePacket(token, account.packetId, {
+            name,
+            document: packetToDocument(packet),
+            expected_version: account.version,
+          })
+        : await createEvidencePacket(token, { name, document: packetToDocument(packet) });
+      setAccount({ packetId: record.packet_id, version: record.version, name: record.name });
+      setApiValidation(record.validation);
+      setSaveOutcome(describeSaveSuccess("account", record.name));
+      setSaveState(`In your account as “${record.name}”, version ${record.version}`);
+      refreshAccount(token);
+    } catch (error) {
+      // A 409 is either a name clash or a version the caller never read. The
+      // API's own detail names which; it is surfaced, never merged over.
+      if (error instanceof ApiError && error.status === 409 && account) {
+        setSaveOutcome({
+          state: "conflict",
+          message: `not saved: ${error.message}. Reopen the packet to see the current version.`,
+          destination: null,
+        });
+      } else {
+        setSaveOutcome(describeSaveFailure(error));
+      }
+    } finally {
+      setSaving(false);
+    }
+    window.setTimeout(() => setSaveOutcome(null), 6000);
+  }
+
+  async function openAccountPacket(packetId: number) {
+    if (!token) return;
+    setAccountStatus({ state: "loading", message: "opening packet" });
+    try {
+      const record = await getEvidencePacket(token, packetId);
+      setPacket(documentToPacket(record.document, record.updated_at));
+      setAccount({ packetId: record.packet_id, version: record.version, name: record.name });
+      setApiValidation(record.validation);
+      setAccountStatus({
+        state: "ok",
+        message: `opened “${record.name}”, version ${record.version}`,
+      });
+    } catch (error) {
+      setAccountStatus({
+        state:
+          error instanceof ApiError ? (error.status === 401 ? "unauthorized" : error.kind) : "bad",
+        message: (error as { message?: string })?.message || "could not open the packet",
+      });
+    }
+  }
+
+  function startNewPacket() {
+    setPacket(grantNeedsTemplate());
+    setAccount(null);
+    setApiValidation(null);
+    setSaveState("New packet, not yet saved");
   }
 
   function exportCsv() {
@@ -154,6 +313,7 @@ export default function EvidencePacketBuilder() {
       data-issue-count={issues.length}
       data-complete={complete ? "true" : "false"}
       data-preview={preview ? "true" : "false"}
+      data-account-packet={account ? String(account.packetId) : ""}
     >
       <header className="page-heading no-print">
         <div className="section-kicker">Evidence packet</div>
@@ -176,6 +336,20 @@ export default function EvidencePacketBuilder() {
           }
           testId="packet-status"
         />
+        <StatusPill
+          state={tokenResolved ? accountStatus.state : "loading"}
+          label="Account"
+          message={tokenResolved ? accountStatus.message : "checking"}
+          testId="packet-account-status"
+        />
+        {saveOutcome ? (
+          <StatusPill
+            state={saveOutcome.state}
+            label="Save"
+            message={saveOutcome.message}
+            testId="packet-save-toast"
+          />
+        ) : null}
       </section>
 
       <section className="profile-controls no-print">
@@ -195,8 +369,27 @@ export default function EvidencePacketBuilder() {
         <button className="button secondary" type="button" onClick={() => addBlock("caveat", "Caveat")} data-testid="add-caveat">
           <Plus size={15} /> Add caveat
         </button>
-        <button className="button secondary" type="button" onClick={persist} data-testid="packet-save">
-          <Save size={15} /> Save draft
+        <button
+          className="button secondary"
+          type="button"
+          onClick={persist}
+          disabled={saving || !tokenResolved}
+          data-testid="packet-save"
+          data-destination={destination}
+          title={
+            destination === "account"
+              ? account
+                ? `Updates “${account.name}” in your account`
+                : "Saves to your account"
+              : "Saves in this browser only; sign in on Saved analyses to keep it"
+          }
+        >
+          <Save size={15} />{" "}
+          {destination === "account"
+            ? account
+              ? "Save to account (update)"
+              : "Save to account"
+            : "Save draft in browser"}
         </button>
         <button className="button secondary" type="button" onClick={exportCsv} data-testid="packet-export">
           <Download size={15} /> Export evidence
@@ -212,7 +405,7 @@ export default function EvidencePacketBuilder() {
         <button className="button primary" type="button" onClick={() => window.print()} data-testid="packet-print">
           <Printer size={15} /> Print
         </button>
-        <span className="subtle">{saveState}</span>
+        <span className="subtle" data-testid="packet-save-state">{saveState}</span>
       </section>
 
       {issues.length > 0 ? (
@@ -228,9 +421,68 @@ export default function EvidencePacketBuilder() {
         </section>
       ) : null}
 
+      {staleBlocks.length > 0 ? (
+        <section className="coverage-note partial no-print" data-testid="packet-stale">
+          <strong>The API reports these blocks can no longer be replayed as composed:</strong>
+          <ul>
+            {staleBlocks.map((state) => (
+              <li key={state.blockId} data-testid={`stale-${state.blockId}`}>
+                <strong>{state.title}</strong>: {state.reason}
+              </li>
+            ))}
+          </ul>
+          <p className="subtle">
+            Shown exactly as stored — the API reports the mismatch rather than rewriting your
+            packet, so you decide what to change.
+          </p>
+        </section>
+      ) : null}
+
       <section className="builder-shell">
         {!preview ? (
           <aside className="builder-library no-print" data-testid="packet-library">
+            {token ? (
+              <div data-testid="packet-account-library">
+                <div className="library-heading">Your packets</div>
+                <p className="subtle">
+                  Stored in your account. Opening one replaces the composer&apos;s contents;
+                  nothing about a packet is written to the address bar.
+                </p>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={startNewPacket}
+                  data-testid="packet-new"
+                >
+                  <Plus size={15} /> New packet
+                </button>
+                {accountPackets.length === 0 ? (
+                  <div className="empty-state compact" data-testid="packet-account-empty">
+                    No packets in your account yet.
+                  </div>
+                ) : (
+                  accountPackets.map((row) => (
+                    <button
+                      className="library-button"
+                      type="button"
+                      key={row.packet_id}
+                      onClick={() => openAccountPacket(row.packet_id)}
+                      data-testid={`packet-open-${row.packet_id}`}
+                    >
+                      <span>
+                        <strong>{row.name}</strong>
+                        <small>
+                          v{row.version} · {row.block_count} blocks, {row.analytical_block_count}{" "}
+                          analytical
+                        </small>
+                      </span>
+                      <FolderOpen size={15} />
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+
             <div className="library-heading">Saved views</div>
             <p className="subtle">
               Only a saved view can fill an analytical block, because only a saved view carries

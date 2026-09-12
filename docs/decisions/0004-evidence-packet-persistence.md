@@ -1,9 +1,10 @@
 # ADR-0004: Evidence packet persistence
 
-- **Status:** Proposed — awaiting human review. Nothing here is implemented.
+- **Status:** Accepted
 - **Date:** 2026-09-12
+- **Accepted:** 2026-09-12 (human review; the evidence packet plan's explicit precondition)
 - **Decision owners:** API platform maintainers
-- **Related work:** WEB-007 in the [web analytics first-wave plan](../plans/in_progress/WEB_ANALYTICS_FIRST_WAVE_PLAN.md), which is blocked on this decision; extends [ADR-0003](0003-saved-analysis-authentication-and-persistence.md)
+- **Related work:** implemented by the [evidence packet persistence plan](../plans/needs_review/EVIDENCE_PACKET_PERSISTENCE_PLAN.md); unblocks WEB-007 in the [web analytics first-wave plan](../plans/in_progress/WEB_ANALYTICS_FIRST_WAVE_PLAN.md); extends [ADR-0003](0003-saved-analysis-authentication-and-persistence.md)
 
 ## Context
 
@@ -386,5 +387,4 @@ Implementation obligations, should this be accepted:
 - then the web migration above, which closes the last item blocking
   `WEB_ANALYTICS_FIRST_WAVE_PLAN.md`.
 
-An implementation plan belongs in `docs/plans/to_do/` **only once this ADR is
-accepted** — that folder means approved work, and this is a proposal.
+Accepted 2026-09-12; the implementation plan was claimed the same day.

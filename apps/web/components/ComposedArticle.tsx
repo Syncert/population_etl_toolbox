@@ -22,8 +22,13 @@ import { Download, Printer } from "lucide-react";
 import StatusPill from "./StatusPill";
 import EvidenceEnvelope from "./EvidenceEnvelope";
 import { BUILDER_DRAFT_KEY } from "../lib/savedCharts";
+import { ApiError, getEvidencePacket, listEvidencePackets } from "../lib/api/client";
+import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
+import { useStoredToken } from "../lib/apiToken";
 import {
+  documentToPacket,
   isAnalyticalBlock,
+  mergeBlockStates,
   packetExport,
   packetIsComplete,
   packetIssues,
@@ -39,10 +44,94 @@ const LOADING: ComposedPacketRead = {
 };
 
 export default function ComposedArticle() {
+  const { token, resolved: tokenResolved } = useStoredToken();
   const [read, setRead] = useState<ComposedPacketRead>(LOADING);
   const [loaded, setLoaded] = useState(false);
+  // Signed in, the reader lists the account's packets and shows the one
+  // selected here -- in component state only. ADR-0003's privacy boundary
+  // keeps a configuration's id out of the address bar, and a packet id is
+  // the same class of fact, so nothing about a packet reaches the URL.
+  const [accountPackets, setAccountPackets] = useState<EvidencePacketSummary[]>([]);
+  const [accountStatus, setAccountStatus] = useState({ state: "idle", message: "not signed in" });
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [apiValidation, setApiValidation] = useState<PacketValidation | null>(null);
+  const [source, setSource] = useState<"browser" | "account">("browser");
 
   useEffect(() => {
+    if (!tokenResolved || !token) {
+      return;
+    }
+    let cancelled = false;
+    setAccountStatus({ state: "loading", message: "loading your packets" });
+    listEvidencePackets(token, { limit: "200" })
+      .then((payload) => {
+        if (cancelled) return;
+        setAccountPackets(payload.items);
+        setAccountStatus({
+          state: "ok",
+          message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setAccountPackets([]);
+        setAccountStatus({
+          state: error instanceof ApiError ? (error.status === 401 ? "unauthorized" : error.kind) : "bad",
+          message:
+            error instanceof ApiError && error.status === 401
+              ? "the token was not accepted"
+              : (error as { message?: string })?.message || "could not load your packets",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, tokenResolved]);
+
+  useEffect(() => {
+    if (!token || selectedId === null) {
+      return;
+    }
+    let cancelled = false;
+    setLoaded(false);
+    getEvidencePacket(token, selectedId)
+      .then((record) => {
+        if (cancelled) return;
+        setRead({
+          state: "ready",
+          packet: documentToPacket(record.document, record.updated_at),
+          reason: "read from your account",
+          unsupported: [],
+        });
+        setApiValidation(record.validation);
+        setSource("account");
+        setLoaded(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRead({
+          state: "unreadable",
+          packet: null,
+          reason:
+            error instanceof ApiError && error.status === 404
+              ? "that packet is not in your account"
+              : (error as { message?: string })?.message || "the packet could not be read",
+          unsupported: [],
+        });
+        setApiValidation(null);
+        setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedId]);
+
+  useEffect(() => {
+    if (selectedId !== null) {
+      return;
+    }
+    setSource("browser");
+    setApiValidation(null);
     let raw: string | null = null;
     try {
       raw = window.localStorage.getItem(BUILDER_DRAFT_KEY);
@@ -60,10 +149,13 @@ export default function ComposedArticle() {
     }
     setRead(readComposedPacket(raw));
     setLoaded(true);
-  }, []);
+  }, [selectedId]);
 
   const packet = read.packet;
   const issues = packet ? packetIssues(packet) : [];
+  const staleBlocks = mergeBlockStates(packet, apiValidation).filter(
+    (state) => state.state === "stale",
+  );
   const complete = packetIsComplete(packet);
   const issueByBlock = new Map(issues.map((issue) => [issue.blockId, issue]));
 
@@ -78,6 +170,35 @@ export default function ComposedArticle() {
     link.click();
     URL.revokeObjectURL(link.href);
   }
+
+  const picker =
+    tokenResolved && token ? (
+      <section className="status-row no-print" data-testid="article-account">
+        <StatusPill
+          state={accountStatus.state}
+          label="Account"
+          message={accountStatus.message}
+          testId="article-account-status"
+        />
+        <label>
+          Read from your account
+          <select
+            value={selectedId === null ? "" : String(selectedId)}
+            onChange={(event) =>
+              setSelectedId(event.target.value ? Number(event.target.value) : null)
+            }
+            data-testid="article-packet-select"
+          >
+            <option value="">This browser&apos;s draft</option>
+            {accountPackets.map((row) => (
+              <option value={String(row.packet_id)} key={row.packet_id}>
+                {row.name} (v{row.version}, {row.block_count} blocks)
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+    ) : null;
 
   if (!loaded) {
     return (
@@ -108,6 +229,7 @@ export default function ComposedArticle() {
             read them. Nothing on this page is written by hand and nothing on it is computed here.
           </p>
         </header>
+        {picker}
         <StatusPill state={state} label="Article" message={reason} testId="article-status" />
         <div className="article-copy">
           <p data-testid="article-empty">{reason}.</p>
@@ -129,7 +251,9 @@ export default function ComposedArticle() {
       data-block-count={packet.blocks.length}
       data-issue-count={issues.length}
       data-complete={complete ? "true" : "false"}
+      data-source={source}
     >
+      {picker}
       <article>
         <header className="article-header">
           <div className="section-kicker">Composed evidence</div>
@@ -178,6 +302,19 @@ export default function ComposedArticle() {
             <ul>
               {read.unsupported.map((title) => (
                 <li key={title}>{title}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {staleBlocks.length > 0 ? (
+          <section className="coverage-note partial" data-testid="article-stale">
+            <strong>The API reports these blocks can no longer be replayed as composed:</strong>
+            <ul>
+              {staleBlocks.map((state) => (
+                <li key={state.blockId} data-testid={`article-stale-${state.blockId}`}>
+                  <strong>{state.title}</strong>: {state.reason}
+                </li>
               ))}
             </ul>
           </section>

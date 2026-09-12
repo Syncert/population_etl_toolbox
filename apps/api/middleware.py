@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
@@ -61,6 +63,115 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+#: The largest request body any route accepts. ADR-0004's packet cap; far
+#: above any saved configuration. Public analytical GETs carry no body.
+DEFAULT_MAX_REQUEST_BODY_BYTES = 262_144
+
+REQUEST_TOO_LARGE_DETAIL = "request body exceeds the accepted size"
+
+
+class RequestBodyLimitMiddleware:
+    """Refuse a request body over the bound before anything parses it.
+
+    Two bounds, because a client chooses which one applies. A declared
+    ``content-length`` over the limit is refused on the request line alone.
+    A chunked body with no declared length is counted as it streams and
+    refused the moment it crosses the bound, so a client cannot dodge the
+    check by omitting the header.
+
+    Sits inside the cache and the limiter on purpose: a refused body is never
+    a cacheable response, and it still spends analysis budget -- the limiter
+    protects the database, and a 413 costs it nothing, but a client sending
+    oversize bodies in a loop should still be throttled.
+
+    Why this exists: there was no body bound anywhere, and the authenticated
+    write resources store JSONB. ``AnalysisDocument.filters`` and
+    ``.visualization`` are unbounded dictionaries, so an account holder could
+    already store an arbitrarily large document. This closes that for every
+    write path at once rather than per resource.
+    """
+
+    def __init__(self, app, max_bytes: int = DEFAULT_MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max(1, int(max_bytes))
+
+    async def __call__(
+        self, scope: dict[str, Any], receive: Receive, send: Send
+    ) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared = _declared_content_length(scope)
+        if declared is not None and declared > self.max_bytes:
+            await _send_too_large(send)
+            return
+
+        received = 0
+        refused = False
+
+        async def bounded_receive() -> Message:
+            nonlocal received, refused
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    refused = True
+                    # Cut the body off here: the application sees a
+                    # disconnect rather than a truncated document it might
+                    # parse as complete.
+                    return {"type": "http.disconnect"}
+            return message
+
+        # The 413 must be the only response. If the application already
+        # started one before the stream crossed the bound, the client sees
+        # the disconnect; that is the correct failure for a body that lied
+        # about its size, and it is never a stored write.
+        response_started = False
+
+        async def guarded_send(message: Message) -> None:
+            nonlocal response_started
+            if refused:
+                return
+            if message.get("type") == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, bounded_receive, guarded_send)
+        except Exception:
+            if not refused:
+                raise
+        if refused and not response_started:
+            await _send_too_large(send)
+
+
+def _declared_content_length(scope: dict[str, Any]) -> int | None:
+    for name, value in scope.get("headers", []):
+        if name == b"content-length":
+            try:
+                return int(value.decode("latin-1").strip())
+            except ValueError:
+                return None
+    return None
+
+
+async def _send_too_large(send: Send) -> None:
+    body = json.dumps({"detail": REQUEST_TOO_LARGE_DETAIL}).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+                (b"cache-control", b"no-store"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
 
 
 class RedisResponseCacheMiddleware:

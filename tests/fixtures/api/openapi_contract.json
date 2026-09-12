@@ -21,6 +21,26 @@
         "analysis-configurations"
       ]
     },
+    "DELETE /api/v1/evidence-packets/{packet_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "packet_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "204": "no-content",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "evidence-packets"
+      ]
+    },
     "GET /api/v1/analysis-configurations": {
       "parameters": [
         {
@@ -742,6 +762,59 @@
       },
       "tags": [
         "distribution"
+      ]
+    },
+    "GET /api/v1/evidence-packets": {
+      "parameters": [
+        {
+          "constraints": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:EvidencePacketListResponse",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "evidence-packets"
+      ]
+    },
+    "GET /api/v1/evidence-packets/{packet_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "packet_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:EvidencePacket",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "evidence-packets"
       ]
     },
     "GET /api/v1/fred/observations/latest": {
@@ -1680,6 +1753,16 @@
         "analysis-configurations"
       ]
     },
+    "POST /api/v1/evidence-packets": {
+      "parameters": [],
+      "responses": {
+        "201": "application/json:EvidencePacket",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "evidence-packets"
+      ]
+    },
     "PUT /api/v1/analysis-configurations/{configuration_id}": {
       "parameters": [
         {
@@ -1699,6 +1782,26 @@
       "tags": [
         "analysis-configurations"
       ]
+    },
+    "PUT /api/v1/evidence-packets/{packet_id}": {
+      "parameters": [
+        {
+          "constraints": {
+            "minimum": 1
+          },
+          "in": "path",
+          "name": "packet_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "application/json:EvidencePacket",
+        "422": "application/json:HTTPValidationError"
+      },
+      "tags": [
+        "evidence-packets"
+      ]
     }
   },
   "schemas": {
@@ -1716,6 +1819,18 @@
       },
       "required": [
         "kind"
+      ]
+    },
+    "BlockValidation": {
+      "properties": {
+        "block_id": "string",
+        "missing": "array<string>",
+        "reason": "string | null",
+        "valid": "boolean"
+      },
+      "required": [
+        "block_id",
+        "valid"
       ]
     },
     "CapabilityListResponse": {
@@ -1918,6 +2033,91 @@
         "items",
         "metric_code",
         "total"
+      ]
+    },
+    "EvidencePacket": {
+      "properties": {
+        "created_at": "string(date-time)",
+        "document": "EvidencePacketDocument",
+        "name": "string",
+        "packet_id": "integer",
+        "updated_at": "string(date-time)",
+        "validation": "PacketValidation",
+        "version": "integer"
+      },
+      "required": [
+        "created_at",
+        "document",
+        "name",
+        "packet_id",
+        "updated_at",
+        "validation",
+        "version"
+      ]
+    },
+    "EvidencePacketCreateRequest": {
+      "properties": {
+        "document": "EvidencePacketDocument",
+        "name": "string"
+      },
+      "required": [
+        "document",
+        "name"
+      ]
+    },
+    "EvidencePacketDocument": {
+      "properties": {
+        "blocks": "array<PacketBlock>",
+        "purpose": "string",
+        "schema_version": "integer",
+        "title": "string"
+      },
+      "required": []
+    },
+    "EvidencePacketListResponse": {
+      "properties": {
+        "items": "array<EvidencePacketSummary>",
+        "limit": "integer",
+        "offset": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ]
+    },
+    "EvidencePacketSummary": {
+      "properties": {
+        "analytical_block_count": "integer",
+        "block_count": "integer",
+        "created_at": "string(date-time)",
+        "name": "string",
+        "packet_id": "integer",
+        "updated_at": "string(date-time)",
+        "version": "integer"
+      },
+      "required": [
+        "analytical_block_count",
+        "block_count",
+        "created_at",
+        "name",
+        "packet_id",
+        "updated_at",
+        "version"
+      ]
+    },
+    "EvidencePacketUpdateRequest": {
+      "properties": {
+        "document": "EvidencePacketDocument",
+        "expected_version": "integer",
+        "name": "string"
+      },
+      "required": [
+        "document",
+        "expected_version",
+        "name"
       ]
     },
     "FreshnessListResponse": {
@@ -2438,6 +2638,31 @@
       },
       "required": []
     },
+    "PacketBlock": {
+      "properties": {
+        "block_id": "string",
+        "content": "string",
+        "document": "AnalysisDocument | null",
+        "envelope": "ReproducibilityEnvelope | null",
+        "source_configuration_id": "integer | null",
+        "title": "string",
+        "type": "string"
+      },
+      "required": [
+        "block_id",
+        "type"
+      ]
+    },
+    "PacketValidation": {
+      "properties": {
+        "blocks": "array<BlockValidation>",
+        "reason": "string | null",
+        "valid": "boolean"
+      },
+      "required": [
+        "valid"
+      ]
+    },
     "ReadinessResponse": {
       "properties": {
         "cache": "string",
@@ -2449,6 +2674,22 @@
         "database",
         "status"
       ]
+    },
+    "ReproducibilityEnvelope": {
+      "properties": {
+        "api_query": "string",
+        "caveats": "array<string>",
+        "geo_id": "string",
+        "geo_level": "string",
+        "metric_codes": "array<string>",
+        "period": "string",
+        "release": "string",
+        "scope": "string",
+        "source_codes": "array<string>",
+        "transformation": "string",
+        "units": "string"
+      },
+      "required": []
     },
     "SavedAnalysisConfiguration": {
       "properties": {

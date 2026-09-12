@@ -39,6 +39,7 @@ Contract-boundary modules are TypeScript under `strict` plus
 | `lib/productTemplates.ts` | Product configuration over catalog identities | New first-wave-style products |
 | `lib/evidencePackets.ts` | Blocks and the reproducibility envelope | Any composition surface |
 | `lib/savedAnalysis.ts` | Configuration documents, validation, conflicts, local migration | Anything persisting a user's analysis |
+| `lib/evidencePackets.ts` | Blocks, the reproducibility envelope, the local-draft reader, the account boundary translation, and the merge of the API's per-block verdict with the client's own report | Any composition surface, and anything storing or reading a packet |
 | `lib/urlState.ts` | Parse/serialize for explorer, comparison, catalog, and profile links | Any shareable state |
 | `components/StatusPill.js` | The one visual mapping of request state | Every status surface |
 | `components/ChoroplethMap.tsx` | A read-only choropleth over the shared colouring model | A new map that does not need the explorer's interaction |
@@ -154,19 +155,15 @@ Out of scope here, and deliberately not stubbed:
 
 Named so they are picked up deliberately rather than rediscovered:
 
-- Evidence packets persist to the local draft rather than the account, and
-  `/articles` reads that same draft. This one is blocked upstream rather than
-  deferred by choice: `/analysis-configurations` stores a document whose
-  `kind` is `observations`, `comparison`, or `distribution` — one resource
-  with its filters — and a packet is an ordered composition of blocks, which
-  that contract cannot describe. Persisting one would mean either inventing an
-  API resource from the client, which this plan's non-goals forbid, or
-  smuggling the composition through a field the API stores verbatim and never
-  validates, which would make a stored packet unvalidatable by the contract
-  that is supposed to guarantee it. It needs an API-side plan defining a
-  composition resource first. The packet builder and the articles reader are
-  the only screens that still compose from `saved-charts:v1` and
-  `builder-draft:v1`, which is why those stores stay.
+- Evidence packets persist to the account through `/api/v1/evidence-packets`
+  (ADR-0004) whenever a token is held; `builder-draft:v1` remains the
+  signed-out destination and `saved-charts:v1` remains the composer's input
+  for filling analytical blocks, which is why both stores stay. A later plan
+  inherits the packet contract's rule — contradictions are refused at write,
+  incompleteness is stored and reported per block — and the one translation
+  in `lib/evidencePackets.packetToDocument`/`documentToPacket`. Nothing about
+  a packet reaches the address bar from either screen; sharing a packet is
+  publishing, and publishing is that later plan's to define.
 - The comparison map and the explorer map are separate MapLibre wirings over
   one shared colouring model; unifying the presentations is a consolidation
   task, not a contract gap.

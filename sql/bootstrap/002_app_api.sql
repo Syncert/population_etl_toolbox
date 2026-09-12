@@ -62,6 +62,30 @@ CREATE TABLE IF NOT EXISTS app_api.saved_analysis_configuration (
 CREATE INDEX IF NOT EXISTS saved_analysis_owner_idx
     ON app_api.saved_analysis_configuration (owner_user_id, configuration_id);
 
+-- One row per evidence packet (ADR-0004): an ordered composition of blocks,
+-- stored as one JSONB document so block order and the packet's optimistic
+-- version move together. Analytical blocks embed their own query rather than
+-- referencing a saved configuration, so editing a configuration later can
+-- never silently rewrite what an issued packet argued. No observation value
+-- is ever stored here; a block's query is replayed live.
+CREATE TABLE IF NOT EXISTS app_api.evidence_packet (
+    packet_id         BIGSERIAL PRIMARY KEY,
+    owner_user_id     BIGINT NOT NULL
+        REFERENCES app_api.user_account (user_account_id) ON DELETE CASCADE,
+    name              TEXT NOT NULL,
+    version           INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    document          JSONB NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS evidence_packet_owner_idx
+    ON app_api.evidence_packet (owner_user_id, packet_id);
+
+-- The grants below are positional: they cover the tables that exist when they
+-- run. Re-running this whole file against a deployed database is therefore
+-- the migration for any table added above; every statement is idempotent.
 GRANT USAGE ON SCHEMA app_api TO api_app_writer;
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON ALL TABLES IN SCHEMA app_api TO api_app_writer;

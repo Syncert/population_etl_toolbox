@@ -7,7 +7,11 @@ from fastapi import APIRouter, FastAPI
 from apps.api.database import DatabaseNotConfigured, dispose_engine
 from apps.api.dependencies import serving_contract_unavailable
 from apps.api.freshness import PublicationEpochProvider
-from apps.api.middleware import RedisResponseCacheMiddleware, SecurityHeadersMiddleware
+from apps.api.middleware import (
+    RedisResponseCacheMiddleware,
+    RequestBodyLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from apps.api.ratelimit import RateLimitMiddleware
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
@@ -15,6 +19,7 @@ from apps.api.routers import (
     cdc,
     comparison,
     distribution,
+    evidence_packets,
     health,
     observations,
     saved_analysis,
@@ -50,6 +55,8 @@ PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
     # API-owned, user-scoped storage (ADR-0003). Authenticated and never
     # publicly cached; its paths sit outside the cacheable prefixes.
     saved_analysis.router,
+    # Evidence packets (ADR-0004): the same discipline, a separate resource.
+    evidence_packets.router,
 )
 
 
@@ -112,6 +119,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # then security headers -- applied to cached bodies too -- then the cache,
     # and innermost the rate limiter, so a cache hit costs no budget and the
     # limits meter exactly the requests that reach the database.
+    # Innermost of all: a body over the bound is refused before any router
+    # parses it, is never a cacheable response, and still spends budget.
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_bytes=configured.api_max_request_body_bytes,
+    )
     application.add_middleware(
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
