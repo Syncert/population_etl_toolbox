@@ -46,6 +46,8 @@ jobs:
       - run: npm run build
       - name: Check route bundle budgets
         run: npm run check:bundle
+      - name: Check the CSP nonce survives the production build
+        run: npm run check:csp
       - name: Install Chromium runtime
         run: npx playwright install --with-deps chromium
       - run: npm run test:browser

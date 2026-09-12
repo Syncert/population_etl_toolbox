@@ -113,6 +113,10 @@ boundary above.
 These are the rules the first wave is built on. Every one is gated by a
 catalog entry in `docs/reference/TESTING_CONTRACT.md` (WEB-001–WEB-025).
 
+- **No inline script runs without this response's nonce.** `middleware.ts`
+  owns the Content-Security-Policy; a later plan that needs an inline
+  script reads the `x-nonce` request header and stamps it, never widens
+  `script-src`. Styles still admit `'unsafe-inline'`.
 - **The API owns semantics.** Membership, access shapes, declared filters,
   compatibility verdicts, distribution bins, freshness, and validation are
   read from the API and never recomputed. A rule this client has never heard
@@ -167,4 +171,3 @@ Named so they are picked up deliberately rather than rediscovered:
 - The comparison map and the explorer map are separate MapLibre wirings over
   one shared colouring model; unifying the presentations is a consolidation
   task, not a contract gap.
-- Script `'unsafe-inline'` in the CSP needs a per-request nonce to remove.
