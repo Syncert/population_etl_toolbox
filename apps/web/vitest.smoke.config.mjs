@@ -9,6 +9,16 @@
 // /api/v1 and /tiles — the composed proxy does, exactly as a browser sees it:
 //
 //   SMOKE_BASE_URL=http://127.0.0.1:33001 npm run test:smoke
+//
+// or through the runner, which composes that origin itself:
+//
+//   ./tests/run.ps1 web-smoke
+//
+// Point it at `next dev`'s rewrite origin instead and the tier exits non-zero
+// with every test green: that origin answers `connection: close` on every
+// response, and Node 24's bundled undici asserts when a large body's socket
+// ends under it. `tests/frontend/smoke/unhandledErrors.js` reports that as a
+// named failure rather than as a footnote under a green summary.
 
 import { defineConfig } from "vitest/config";
 import { transformWithEsbuild } from "vite";

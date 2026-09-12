@@ -18,6 +18,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 
 import { boundaryTileUrl } from "../../../apps/web/lib/mapWiring";
 import { discoverTileMetadata, isVectorTileContentType } from "../../../apps/web/lib/tiles";
+import { reportUnhandledErrors } from "./unhandledErrors";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
 
@@ -62,6 +63,13 @@ describe.skipIf(!BASE_URL)("the comparison map's source URL against real Martin"
     // Whatever the server answers for the row "%7By%7D", it is not a tile.
     const isTile =
       response.status === 200 && isVectorTileContentType(response.headers.get("content-type"));
+    // Drained even though the verdict is decided from the head: an abandoned
+    // body holds its socket, and a socket that ends with its parser still
+    // paused takes the whole process down with it.
+    await response.arrayBuffer();
     expect(isTile, `${filled} answered ${response.status} as a tile`).toBe(false);
   });
 });
+
+// Declared last on purpose: it reports on every request the tests above made.
+reportUnhandledErrors();

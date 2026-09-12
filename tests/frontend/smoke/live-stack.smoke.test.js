@@ -37,6 +37,7 @@ import { apiFetch } from "../../../apps/web/lib/api/client";
 import { buildExplorerSources } from "../../../apps/web/lib/explorerSources";
 import { buildLatestObservationRequest } from "../../../apps/web/lib/observationAccess";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../../../apps/web/lib/tiles";
+import { reportUnhandledErrors } from "./unhandledErrors";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
 
@@ -202,3 +203,6 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     ).toBeGreaterThan(0);
   }, 60_000);
 });
+
+// Declared last on purpose: it reports on every request the tests above made.
+reportUnhandledErrors();

@@ -170,6 +170,28 @@ export function buildSampleUrlFromTemplate(tileTemplate) {
     );
 }
 
+/**
+ * Release a response whose body this module will not read.
+ *
+ * Discovery probes several endpoints and reads the body of at most one of
+ * them: a rejected status, and every tile sample probed only for its
+ * content type, are decided from the head alone. An unread body is not free
+ * -- it holds its connection open until the response is collected, and the
+ * tile samples in particular are whole world tiles. Cancelling says the
+ * caller is done with it, so the connection is returned immediately.
+ *
+ * Errors are swallowed deliberately: a body already consumed, already
+ * cancelled, or absent (a 304, a HEAD) is nothing to report, and a discovery
+ * probe must not fail over how its own discarded response was disposed of.
+ */
+function releaseBody(response) {
+  try {
+    return response?.body?.cancel?.()?.catch?.(() => {});
+  } catch {
+    return undefined;
+  }
+}
+
 export async function discoverTileMetadata() {
   const discoveryPaths = ["/tiles/catalog", "/tiles/"];
   let prioritizedCandidates = [];
@@ -178,6 +200,7 @@ export async function discoverTileMetadata() {
     try {
       const response = await fetch(path, { cache: "no-store" });
       if (!response.ok) {
+        releaseBody(response);
         continue;
       }
 
@@ -200,6 +223,7 @@ export async function discoverTileMetadata() {
     try {
       const tileJsonResponse = await fetch(`/tiles/${id}`, { cache: "no-store" });
       if (!tileJsonResponse.ok) {
+        releaseBody(tileJsonResponse);
         continue;
       }
 
@@ -266,6 +290,10 @@ export async function discoverTileMetadata() {
         const sampleUrl = buildSampleUrlFromTemplate(candidateTemplate);
         const sampleTileResponse = await fetch(sampleUrl, { cache: "no-store" });
         const sampleContentType = sampleTileResponse.headers.get("content-type") || "";
+        // The probe asks one question -- does this template serve vector
+        // tiles -- and the headers answer it. The tile itself is refetched
+        // by loadPreviewTileFeatures when one is actually drawn.
+        releaseBody(sampleTileResponse);
 
         if (sampleTileResponse.ok && isVectorTileContentType(sampleContentType)) {
           selectedTileTemplate = candidateTemplate;
@@ -306,6 +334,7 @@ export async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLeve
   const response = await fetch(sampleUrl, { cache: "no-store" });
 
   if (!response.ok) {
+    releaseBody(response);
     throw new Error(`tile sample status ${response.status}`);
   }
 
