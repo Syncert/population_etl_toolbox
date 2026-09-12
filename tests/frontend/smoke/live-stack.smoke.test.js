@@ -119,8 +119,11 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     let checked = 0;
 
     for (const source of sources) {
+      // As the explorer asks: current metrics only. A retired code answers
+      // no rows by definition -- that is what retired means -- and BLS
+      // carries 13,261 of them since the LAUS measure-identity migration.
       const catalog = await apiFetch("/catalog/metrics", {
-        params: { source_code: source.sourceCode, limit: 50 },
+        params: { source_code: source.sourceCode, active_only: "true", limit: 50 },
       });
 
       for (const metric of catalog.items || []) {
@@ -158,14 +161,19 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
 
     // The capability resource declares every completed source, including ones
     // the deployment has published no metric for yet. Joining needs a source
-    // that actually publishes one, not whichever is declared first.
+    // that actually publishes a metric at the boundary's own grain, not
+    // whichever is declared first: BLS's first catalog row is a national
+    // series, and a county layer cannot contain ``us:1``. The explorer's
+    // default selection makes the same choice (WEB-029).
     let source = null;
     let metric = null;
     for (const candidate of sources) {
       const catalog = await apiFetch("/catalog/metrics", {
-        params: { source_code: candidate.sourceCode, limit: 1 },
+        params: { source_code: candidate.sourceCode, active_only: "true", limit: 50 },
       });
-      const published = (catalog.items || [])[0];
+      const published = (catalog.items || []).find((item) =>
+        (item.valid_geo_grains || []).includes("COUNTY"),
+      );
       if (published) {
         source = candidate;
         metric = published;

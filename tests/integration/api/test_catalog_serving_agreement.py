@@ -426,3 +426,80 @@ def test_every_registered_source_answers_each_current_catalog_code(
         "no registered source published a current catalog code, so this guard "
         "proved nothing; the warehouse under test carries no catalog content"
     )
+
+
+def _current_catalog_grains(client: TestClient, source_code: str) -> dict[str, list[str]]:
+    response = client.get(
+        "/api/v1/catalog/metrics",
+        params={"source_code": source_code, "active_only": "true", "limit": 1000},
+    )
+    assert response.status_code == 200, response.text
+    return {
+        item["metric_code"]: list(item.get("valid_geo_grains") or [])
+        for item in sorted(response.json()["items"], key=lambda item: item["metric_code"])
+    }
+
+
+def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
+    api_client: TestClient, published_acs_metric: str
+) -> None:
+    """Covers: DB-028 — a grain read from the catalog can be sent straight back.
+
+    The consumer guide promises one geography-grain vocabulary on served rows
+    and in ``valid_geo_grains``. Four sources broke it four ways, and no tier
+    saw any of them: CDC and PEP published and served ``nation`` where the
+    contract says ``NATIONAL``; USDA NASS published ``NATION`` from one column
+    and filtered on another whose word is ``NATIONAL``, so every national
+    statistic in its catalog was unanswerable; FBI projected a source
+    identifier as the row's grain; and Census ACS declared grains from its
+    dataset code, advertising 2,487 metric/grain pairs nothing served.
+
+    Source-agnostic like DB-025: the sources come from the reviewed dispatch
+    registry. For each sampled current code, every grain the catalog
+    publishes for it must answer at least one row when sent as ``geo_level``,
+    and every row that comes back must carry that grain, in the vocabulary.
+    The ACS fixture publishes exactly the grain it seeded, so the guard is
+    exercised on every warehouse rather than only where content happens to
+    exist.
+    """
+    from apps.api.registry import GEO_GRAINS
+
+    unanswered: list[str] = []
+    off_vocabulary: list[str] = []
+    exercised: list[str] = []
+
+    for source_code in sorted(OBSERVATION_DISPATCH):
+        grains_by_code = _current_catalog_grains(api_client, source_code)
+        for metric_code, grains in list(grains_by_code.items())[:SWEEP_SAMPLE]:
+            for grain in grains:
+                exercised.append(f"{metric_code}@{grain}")
+                if grain not in GEO_GRAINS:
+                    off_vocabulary.append(
+                        f"{source_code} publishes grain '{grain}' for '{metric_code}', "
+                        f"which is not in the vocabulary {GEO_GRAINS}"
+                    )
+                response = api_client.get(
+                    "/api/v1/observations",
+                    params={"metric_code": metric_code, "geo_level": grain, "limit": 5},
+                )
+                assert response.status_code == 200, f"{metric_code}@{grain}: {response.text}"
+                payload = response.json()
+                if int(payload["total"]) < 1:
+                    unanswered.append(
+                        f"{source_code} publishes grain '{grain}' for '{metric_code}', "
+                        "which /api/v1/observations answers with no rows"
+                    )
+                for row in payload["items"]:
+                    if row.get("geo_level") != grain:
+                        off_vocabulary.append(
+                            f"{metric_code}@{grain} served a row whose geo_level is "
+                            f"{row.get('geo_level')!r}"
+                        )
+
+    assert not unanswered, "\n".join(unanswered)
+    assert not off_vocabulary, "\n".join(off_vocabulary)
+    # The fixture seeded one state row, so the derived grain is exactly STATE:
+    # a declared grain would have advertised NATIONAL and COUNTY here too.
+    assert f"{published_acs_metric}@STATE" in exercised
+    assert f"{published_acs_metric}@NATIONAL" not in exercised
+    assert f"{published_acs_metric}@COUNTY" not in exercised

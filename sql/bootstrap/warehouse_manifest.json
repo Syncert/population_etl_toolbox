@@ -162,6 +162,11 @@
       "path": "sql/migrations/017_serving_full_reserve_run.sql"
     },
     {
+      "id": "migration-018",
+      "phase": "glossary",
+      "path": "sql/migrations/018_geo_grain_vocabulary.sql"
+    },
+    {
       "id": "migration-003",
       "phase": "semantic-cutover",
       "path": "sql/migrations/003_semantic_policy_extraction.sql"

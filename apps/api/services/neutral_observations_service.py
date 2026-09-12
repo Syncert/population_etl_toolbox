@@ -32,6 +32,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from apps.api.registry import (
+    normalize_geo_level,
     OBSERVATION_DISPATCH,
     ObservationDispatch,
 )
@@ -172,7 +173,12 @@ def _filter_conditions(
             f"{', '.join(unsupported)}; supported filters: {supported}"
         )
     conditions = [declared[name] for name in sorted(requested)]
-    return conditions, dict(requested)
+    bound = dict(requested)
+    if "geo_level" in bound:
+        # The catalog's word, or a word it used to publish, becomes the one
+        # vocabulary word the served rows carry before it is bound.
+        bound["geo_level"] = normalize_geo_level(bound["geo_level"])
+    return conditions, bound
 
 
 def _select_sql(dispatch: ObservationDispatch) -> str:

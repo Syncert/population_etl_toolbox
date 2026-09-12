@@ -309,6 +309,27 @@ still exists and is fine for a small relation, but it runs as a single
 transaction under a 60-minute statement timeout, so it cannot finish ACS at
 all and loses the whole run on any failure. Prefer the DAG.
 
+### Worked example: the geography-grain vocabulary (DB-028)
+
+The class of change where a publisher's *published* grains change without
+any fact moving. `018_geo_grain_vocabulary.sql` defines the vocabulary
+function and replaces the CDC and USDA NASS publisher views; the ACS and PEP
+publishers are re-applied from their source DDL by `ensure_*_gold_schema`.
+Nothing is re-served. Order:
+
+1. Apply `sql/migrations/018_geo_grain_vocabulary.sql`, then the ACS and
+   PEP gold DDL (their DAGs' `ensure_*` tasks do this from the mounted tree;
+   applying explicitly costs nothing and is idempotent).
+2. Trigger `glossary_reconciliation` with
+   `{"force": true, "schemas": ["gold_census", "gold_cdc", "gold_nass", "gold_pep"]}`.
+   The published keys do not change, so nothing retires; the harvest
+   rewrites each code's `valid_geo_grains`.
+3. Restart the API container: the dispatch registry's grain expressions are
+   imported at startup.
+4. Verify with the DB-028 sweep, or directly: every grain in a current
+   code's `valid_geo_grains` answers `geo_level=<grain>` with at least one
+   row whose `geo_level` is that grain.
+
 ### Worked example: the ACS metric-code re-serve (ARC-005)
 
 This is the class of change section 7 describes, run end to end on the
