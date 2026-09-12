@@ -16,7 +16,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Accepted 2026-09-12 (Implemented and verified end to end; ready for review)
+- **Status:** Implemented and verified end to end; ready for review
 - **Last updated:** 2026-09-12
 - **Source owner:** U.S. Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS) program, plus the national-grain serving fix for BLS, Census ACS, and FRED
 - **Geography scope:** State and county for LAUS measures; the national grain is a serving-vocabulary repair only
@@ -364,7 +364,7 @@ All warehouse evidence was gathered against the running development stack
 - **ACS complete, 2026-09-12.** `gold_census.rpt_acs_observations`
   (68,302,467 rows) was re-served in full with `acs_ingest` paused throughout,
   through the `serving_full_reserve` DAG that
-  `completed/FORCED_FULL_RESERVE_SCALE_PLAN.md` delivers: run
+  `needs_review/FORCED_FULL_RESERVE_SCALE_PLAN.md` delivers: run
   `manual__2026-09-11T20:09:41+00:00`, state `success`, 20 of 20 year chunks
   `COMPLETE`, 0 failed. `SELECT geo_level, COUNT(*)` now returns exactly three
   values over both served relations, and the 54,901 `us` rows are gone:

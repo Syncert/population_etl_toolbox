@@ -14,7 +14,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Accepted 2026-09-12 (Implementation complete; awaiting human review)
+- **Status:** Implementation complete; awaiting human review
 - **Last updated:** 2026-09-12
 - **Owner surface:** `src/data_ingestion_toolbox/utility/gold_schema.py`, each source's `refresh_dashboard_serving_layer_*` procedure, `control.serving_refresh_chunk_state`
 - **Depends on:** nothing open. Found while delivering `BLS_LAUS_MEASURE_METRICS_PLAN.md`, whose ACS acceptance criterion it blocks.
