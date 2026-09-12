@@ -37,6 +37,7 @@ import { apiFetch } from "../../../apps/web/lib/api/client";
 import { buildExplorerSources } from "../../../apps/web/lib/explorerSources";
 import { buildLatestObservationRequest } from "../../../apps/web/lib/observationAccess";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../../../apps/web/lib/tiles";
+import { spatialGrains } from "../../../apps/web/lib/viewModes";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
 
@@ -114,13 +115,22 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     }
   });
 
-  test("every catalog metric answers through the access shape the explorer picks", async () => {
+  test("every active catalog metric answers through the access shape the explorer picks", async () => {
     const empty = [];
     let checked = 0;
 
     for (const source of sources) {
+      // `active_only` is the catalog's own retirement filter, and the filter
+      // the explorer's catalog module sends by default. The unfiltered
+      // catalog also publishes every code a source has *stopped* publishing
+      // -- 13,261 retired BLS series against 63 active ones on the
+      // development stack -- and a retired code answering nothing is the
+      // contract working, not a defect. Demanding a row from those would
+      // make this tier fail for the one reason it must not: correct
+      // behaviour. The same definition of "a code the catalog advertises as
+      // answerable" is what DB-025 asserts in the integration tier.
       const catalog = await apiFetch("/catalog/metrics", {
-        params: { source_code: source.sourceCode, limit: 50 },
+        params: { source_code: source.sourceCode, active_only: true, limit: 50 },
       });
 
       for (const metric of catalog.items || []) {
@@ -151,32 +161,60 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
   }, 120_000);
 
   test("observed geographies are present in the discovered tile layer", async () => {
-    const decoded = await loadPreviewTileFeatures(tiles.tileTemplate, tiles.sourceLayer, "NATIONAL");
+    // Which grains this boundary can draw is the client's own reading of the
+    // layer's published fields, so it is asked here rather than restated.
+    // The answer bounds what this test may demand: the deployed boundary
+    // publishes state and county polygons and nothing that identifies a
+    // national geometry, and a national series having no spatial
+    // presentation is the explorer's declared behaviour (see viewModes), not
+    // a map that failed to colour. Joining a national observation against a
+    // county boundary would assert a contract this application deliberately
+    // does not make.
+    const grains = spatialGrains(tiles.fields);
+    expect(
+      grains,
+      `the discovered layer '${tiles.layerId}' publishes no geography field to draw any grain at`,
+    ).not.toEqual([]);
+
+    // The capability resource declares every completed source, including ones
+    // the deployment has published no metric for yet. Joining needs a source
+    // that actually publishes one at a grain the boundary draws, not
+    // whichever is declared first.
+    let chosen = null;
+    for (const grain of grains) {
+      for (const candidate of sources) {
+        const catalog = await apiFetch("/catalog/metrics", {
+          params: { source_code: candidate.sourceCode, active_only: true, limit: 50 },
+        });
+        const published = (catalog.items || []).find((item) =>
+          (item.valid_geo_grains || []).includes(grain),
+        );
+        if (published) {
+          chosen = { source: candidate, metric: published, grain };
+          break;
+        }
+      }
+      if (chosen) {
+        break;
+      }
+    }
+    expect(
+      chosen,
+      `the stack publishes no active metric at a grain the boundary draws (${grains.join(", ")})`,
+    ).toBeTruthy();
+
+    const decoded = await loadPreviewTileFeatures(
+      tiles.tileTemplate,
+      tiles.sourceLayer,
+      chosen.grain,
+    );
     const tileGeoIds = new Set(
       decoded.features.map((feature) => feature.properties[tiles.joinKey]).filter(Boolean),
     );
 
-    // The capability resource declares every completed source, including ones
-    // the deployment has published no metric for yet. Joining needs a source
-    // that actually publishes one, not whichever is declared first.
-    let source = null;
-    let metric = null;
-    for (const candidate of sources) {
-      const catalog = await apiFetch("/catalog/metrics", {
-        params: { source_code: candidate.sourceCode, limit: 1 },
-      });
-      const published = (catalog.items || [])[0];
-      if (published) {
-        source = candidate;
-        metric = published;
-        break;
-      }
-    }
-    expect(metric, "the stack publishes no metric to join against").toBeTruthy();
-
-    const request = buildLatestObservationRequest(source, {
-      metricCode: metric.metric_code,
-      geoLevel: (metric.valid_geo_grains || [])[0] || "COUNTY",
+    const request = buildLatestObservationRequest(chosen.source, {
+      metricCode: chosen.metric.metric_code,
+      geoLevel: chosen.grain,
       limit: 50,
     });
     const page = await apiFetch(request.resource, { params: request.params });
@@ -189,7 +227,7 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     const joined = observed.filter((geoId) => tileGeoIds.has(geoId));
     expect(
       joined.length,
-      `no observed geography is present in tile layer '${tiles.layerId}': ` +
+      `no observed ${chosen.grain} geography is present in tile layer '${tiles.layerId}': ` +
         `observed ${observed.slice(0, 3).join(", ")}; tile publishes ${[...tileGeoIds].slice(0, 3).join(", ")}`,
     ).toBeGreaterThan(0);
   }, 60_000);

@@ -15,7 +15,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: every named remainder is closed (items 1–3, 2026-09-12); held for one open question from the live-stack smoke tier (see the WEB-033 validation) before moving to `needs_review/`
+- **Status:** Ready for review. Every phase WEB-001 through WEB-009 is delivered against its acceptance criteria, every named remainder is closed (items 1–3, 2026-09-12), and the one open question the live-stack smoke tier raised is resolved with evidence in the WEB-034 delivery record. Moved to `needs_review/` on 2026-09-12
 - **Last updated:** 2026-09-12
 - **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** establish whether the two WEB-027 live-stack smoke failures recorded under the WEB-033 validation are development-stack state or a client defect, then move this plan to `needs_review/`. Items 1–3 under "Remaining before this plan is done" were closed on 2026-09-12 (WEB-031, WEB-032, WEB-033). Item 1, account persistence for evidence packets, was closed on 2026-09-12 by ADR-0004 and its plan. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
+- **Next pickup:** human review. The two WEB-027 live-stack smoke failures recorded under the WEB-033 validation were neither development-stack state nor a defect in what the client does for a reader — both were tier assertions the published contract does not make, resolved in WEB-034, which also fixes one real client defect the tier did surface. Items 1–3 under "Remaining before this plan is done" were closed on 2026-09-12 (WEB-031, WEB-032, WEB-033). Item 1, account persistence for evidence packets, was closed on 2026-09-12 by ADR-0004 and its plan. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1288,9 +1288,103 @@ template does not.
 | Python unit | `pytest tests/unit` | 1338 passed (register guard at 289 rows, all FULL) |
 | Python lint | `ruff check .` | clean |
 
+## WEB-034 delivery record (the live-stack smoke tier's two open failures, 2026-09-12)
+
+The WEB-033 validation recorded two WEB-027 failures and deliberately did not
+explain them. They are resolved here, and neither was development-stack state
+nor a defect in what the client does for a reader. Both were assertions the
+tier made that the application's published contract does not make, so the tier
+failed for correct behaviour -- the one reason it must never fail.
+
+### The first: retired catalog codes were required to answer
+
+`/catalog/metrics` publishes a source's whole catalog, including every code the
+source has **stopped** publishing. On the development warehouse that is 13,261
+retired BLS series against 63 active ones, and the four
+`BLS:LAUCN0100100000000{03..06}` county series the tier named are retired --
+each carries `freshness_state: "retired"`:
+
+```
+GET /api/v1/catalog/metrics?source_code=BLS&limit=50          -> total 13324, 4 LAUCN rows, all freshness_state=retired
+GET /api/v1/catalog/metrics?source_code=BLS&limit=50&active_only=true
+                                                              -> total 63, 0 retired rows, 0 LAUCN rows
+GET /api/v1/observations?metric_code=BLS:LAUCN010010000000003&geo_level=COUNTY -> {"total": 0}
+```
+
+A retired code answering nothing is the retirement contract working. The tier
+read the catalog unfiltered while the explorer's own catalog module sends
+`active_only` by default, so the tier was asserting something no surface of the
+application claims. It now sends the same filter, which is also how DB-025
+defines "a code the catalog advertises as answerable" in the integration tier.
+
+The nine `USDA_NASS:corn_census_county:<hash>` metrics in the earlier record
+are a separate matter: they are `current`, and they answer. The earlier note
+called them county-grain from the dataset name, but each one's first declared
+grain is `NATIONAL` (the nine are exactly the sixteen `corn_census_county`
+rows minus the seven declaring `COUNTY`), and all nine answer at it --
+`0d0635…` returns 1 row at `NATIONAL` and 39 at `STATE`. They had not been
+re-served when that run was recorded; the re-run here finds them healthy.
+
+### The second: a national observation was required to join a county boundary
+
+The tier asked the boundary for features at `"NATIONAL"`, which
+`loadPreviewTileFeatures` treats as "do not filter by grain", and then joined
+them against the first published metric's first declared grain -- `us:1`. The
+deployed layer is `counties`, whose published fields are `state_fips` and
+`county_fips` and nothing that identifies a national geometry. The client's own
+`spatialGrains` says exactly that, and `describeViewModes` renders a national
+series as an explicit non-spatial experience rather than an empty map. So the
+tier was requiring a join the explorer deliberately never attempts.
+
+It now reads `spatialGrains(tiles.fields)`, picks an active metric published at
+a grain the boundary actually draws, and requires that join. The defects the
+tier exists to catch are untouched: a section-keyed catalog probed as layer
+ids, or a glossary code sent to a route keyed on the legacy identity, still
+fail it.
+
+### A real client defect the tier did surface
+
+Discovery reads the body of at most one probe: a rejected status and a tile
+sample accepted on its content type alone are both decided from the head. Every
+other body was abandoned unread, and each abandoned tile sample is a whole
+world tile (864,711 bytes decoded on this stack) holding its connection until
+collection -- up to six per candidate layer. `tiles.js` now cancels the bodies
+it does not read, and `tile-discovery.test.js` pins it: reverting the release
+calls fails "a rejected discovery endpoint and every tile-sample probe are
+released".
+
+### Why the tier reported unhandled errors on top of its failures
+
+Both earlier runs used `SMOKE_BASE_URL=http://localhost:3001`, the Next.js
+container serving its own rewrites, and both ended with Node uncaught
+exceptions (`assert(!this.paused)` inside undici's `Parser.finish`) that make
+the run exit non-zero even when every test passes. That origin sets
+`connection: close` on every rewritten response; Martin serves the identical
+tile without it, and four lines of plain `fetch` reproduce the assertion
+against `:3001` and not against Martin directly. It is a Node HTTP-client
+assertion on a forced socket close, not application behaviour, and the tier's
+documented origin is the composed nginx proxy
+(`TEST_MARTIN_PROXY_HOST_PORT`, default 33001), as `vitest.smoke.config.mjs`
+already says. Run there, the tier is clean.
+
+### Validation (2026-09-12, after WEB-034)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Frontend smoke | `SMOKE_BASE_URL=http://127.0.0.1:33001 npm --prefix apps/web run test:smoke` | **8 passed, 0 errors, exit 0** (`live-stack` 6, `map-wiring` 2), against `infra/web/nginx.conf` on the running development stack |
+| Frontend smoke, prior origin | `SMOKE_BASE_URL=http://localhost:3001 …` | 8 passed; 3-4 undici socket assertions from the rewrite origin's `connection: close`, as above |
+| Web unit | `npm --prefix apps/web run test:unit` | 220 passed (20 files; `tile-discovery.test.js` 12) |
+| Web browser | `npx playwright test` | 54 passed (Chromium) |
+| Web typecheck / lint | `npm --prefix apps/web run typecheck` / `lint` | clean |
+| Web build / budgets / CSP guard | `build` / `check:bundle` / `check:csp` | succeeded; every route within budget; 0 prerendered routes |
+| Evidence register | `pytest tests/unit/shared/test_catalog_evidence.py` | 1 passed |
+
 ## Remaining before this plan is done
 
-Three items, each named rather than absorbed:
+Three items were named rather than absorbed. All three are closed (2026-09-12),
+and so is the live-stack smoke question WEB-033 left open — see the WEB-034
+delivery record above. Follow-ons deliberately outside this plan are collected
+in `docs/reference/WEB_FIRST_WAVE_HANDOFF.md`.
 
 1. ~~Evidence packets persist to the browser draft, not the account.~~
    **Closed 2026-09-12** by ADR-0004 and `EVIDENCE_PACKET_PERSISTENCE_PLAN.md`:
