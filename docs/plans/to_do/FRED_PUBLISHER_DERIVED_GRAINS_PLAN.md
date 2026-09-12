@@ -1,7 +1,8 @@
 ---
 id: fred-publisher-derived-grains
 branch: fix/fred-publisher-derived-grains
-depends_on: []
+depends_on:
+  - catalog-grain-vocabulary
 parallel_safe: true
 complexity: low
 verify:
@@ -20,10 +21,8 @@ verify:
 - **Last updated:** 2026-09-12
 - **Owner surface:** `src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql`,
   `tests/integration/database/` (FRED silver flow), `tests/integration/api/test_catalog_serving_agreement.py`
-- **Depends on:** the `catalog-grain-vocabulary` plan (`fix/observations-unanswered-metrics`,
-  in `needs_review/` on that branch): the vocabulary function and DB-028.
-  Not declared in the frontmatter because that plan's id is not on `main`
-  yet; add it to `depends_on` once it is.
+- **Depends on:** `catalog-grain-vocabulary` (the vocabulary function and
+  DB-028), in `needs_review/`.
 
 ## Context
 
