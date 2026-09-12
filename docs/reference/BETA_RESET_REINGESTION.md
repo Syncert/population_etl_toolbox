@@ -221,7 +221,79 @@ Measured durations, forced, on an idle box:
 | --- | --- | --- |
 | `gold_fred.rpt_fred_observations` | 52 thousand | 6 seconds |
 | `gold_bls.rpt_bls_observations` | 5.8 million | 16m44s (12m31s report, 4m11s latest) |
-| `gold_census.rpt_acs_observations` | 68.3 million | about 2.5 hours |
+| `gold_census.rpt_acs_observations` | 68.3 million | 4h36m tuned, 12h52m untuned (see below) |
+
+Per-row cost is **not** comparable across sources, so do not extrapolate one
+source's throughput onto another. The first published estimate for ACS was 2.5
+hours, arrived at by extrapolating the BLS rate, and it was wrong by roughly
+six times. ACS's reporting relation is twelve times larger than BLS's and
+carries eight indexes that every chunk's delete and re-insert must maintain.
+
+### ACS throughput is bound by `shared_buffers`, not by CPU
+
+The single biggest factor is whether the relation fits in the buffer cache.
+`gold_census.rpt_acs_observations` is 37 GB of heap and 25 GB of indexes, 66 GB
+in total. Measured on one host across a `shared_buffers` change, with nothing
+else altered:
+
+| `shared_buffers` | Heap cache hit | Throughput |
+| --- | --- | --- |
+| 160 MB (stock) | not measured | ~360 rows/s |
+| 16 GB | 59.8% | 473 to 557 rows/s |
+| 48 GB, cold cache | ~80% | 1,364 rows/s |
+| 48 GB, warm cache | ~86% | 3,100 to 4,000 rows/s |
+
+At 16 GB the re-serve read roughly 1.2 TB off disk. At 48 GB a year's working
+set largely stays resident and the same work runs six to eight times faster.
+`infra/docker/docker-compose.yml` parameterises these settings; set them for
+the host in `infra/docker/.env` (see `.env.example`). The compose defaults are
+deliberately sized for a development laptop, so a warehouse host that does not
+override them gets the slow path.
+
+Beware one trap: a `command:` block in compose overrides anything set with
+`ALTER SYSTEM`, so tuning applied by hand at the server is silently discarded
+on the next recreate. Verify with `SHOW shared_buffers` against the running
+container rather than trusting the setting you applied.
+
+Measured per year, forced, one host, `acs_ingest` paused throughout. Years 2005
+to 2012 ran at 16 GB of `shared_buffers`; 2013 onward at 48 GB, with 2013
+starting on a cold cache immediately after the restart that applied it:
+
+| Year | Rows | Duration | Throughput | `shared_buffers` |
+| --- | --- | --- | --- | --- |
+| 2005 | 686k | 1007s | 681/s | 16 GB (contended) |
+| 2006 | 714k | 592s | 1,206/s | 16 GB |
+| 2007 | 710k | 473s | 1,501/s | 16 GB |
+| 2008 | 761k | 618s | 1,231/s | 16 GB |
+| 2009 | 2.88M | 7996s | 360/s | 16 GB |
+| 2010 | 3.66M | 4220s | 868/s | 16 GB (warm) |
+| 2011 | 3.69M | 7808s | 473/s | 16 GB |
+| 2012 | 3.91M | 7027s | 557/s | 16 GB |
+| 2013 | 4.15M | 3039s | 1,364/s | 48 GB (cold) |
+| 2014 | 4.16M | 1229s | 3,383/s | 48 GB |
+| 2015 | 4.22M | 1061s | 3,980/s | 48 GB |
+| 2016 | 4.34M | 1400s | 3,103/s | 48 GB |
+| 2017 | 4.39M | 1212s | 3,618/s | 48 GB |
+| 2018 | 4.39M | 1237s | 3,549/s | 48 GB |
+| 2019 | 4.40M | 1104s | 3,986/s | 48 GB |
+| 2020 | 3.54M | 1124s | 3,145/s | 48 GB |
+| 2021 | 4.37M | 1581s | 2,767/s | 48 GB |
+| 2022 | 4.44M | 1236s | 3,589/s | 48 GB |
+| 2023 | 4.45M | 1190s | 3,736/s | 48 GB |
+| 2024 | 4.45M | 1151s | 3,862/s | 48 GB |
+
+Totals: 46,305 seconds of chunk work for all twenty years, of which the twelve
+tuned years took 16,564s (4h36m). A tuned run of all twenty from cold would be
+roughly five to six hours. Note that the small early years are **not** cheap per
+row — 2005 to 2008 are under 800 thousand rows each, and 2009 alone took longer
+than the entire tuned half of the run.
+
+Do not read a single year's number as a rate you can multiply. Between the
+worst measurement here (360/s) and the best (3,986/s) there is an eleven-fold
+spread, all on the same box and the same data, driven by cache state and memory
+configuration. Three separate estimates made from partial measurements during
+this run were wrong; measure the first two or three years of an actual run
+before committing to a window.
 
 The one-shot procedure call
 (`CALL gold_<source>.refresh_dashboard_serving_layer_<source>(NULL, NULL, TRUE)`)
