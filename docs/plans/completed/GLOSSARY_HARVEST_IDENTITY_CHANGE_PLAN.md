@@ -15,7 +15,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; awaiting human review
+- **Status:** Accepted 2026-09-12 (Implementation complete; awaiting human review)
 - **Last updated:** 2026-09-10
 - **Owner surface:** `src/data_ingestion_toolbox/glossary/harvest.py`, `dags/glossary_harvest_dag.py`, `gold_glossary.publisher_harvest_state`
 - **Depends on:** nothing open. Found while delivering `BLS_LAUS_MEASURE_METRICS_PLAN.md`, which works around it by hand.

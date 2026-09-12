@@ -13,7 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete; awaiting human review
+- **Status:** Accepted 2026-09-12 (Implementation complete; awaiting human review)
 - **Last updated:** 2026-09-10
 - **Owner surface:** `tests/integration/database/`, `tests/support/`, `src/data_ingestion_toolbox/quality/sources.py`
 - **Depends on:** nothing open. The leakage was recorded as an unowned observation in `completed/WAREHOUSE_DATA_QUALITY_PLAN.md` on 2026-08-31 and reproduced with an exact root cause on 2026-09-10.
