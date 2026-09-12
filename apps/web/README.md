@@ -63,6 +63,19 @@ npm run check:bundle:update   # rewrite the baseline, deliberately
 with no declared budget fails the check rather than passing silently, so a
 new route cannot grow unnoticed.
 
+## Maps
+
+Both maps — the explorer's and the comparison workspace's — are one MapLibre
+wiring. `components/useMapLibre.ts` brings a map up and takes it down;
+`lib/mapWiring.ts` paints, filters, shows, and hides layers and resolves the
+boundary's tile template to this origin textually, so its `{z}/{x}/{y}`
+placeholders survive (Chromium's `new URL` percent-encodes braces, and
+MapLibre fills a template by literal replace); `components/ChoroplethLegend.tsx`
+is the one legend. What differs between the two maps is only which sources
+and layers each adds in `onLoad`. The colouring model itself is
+`lib/explorerViewModel`, unchanged: a geography without a published number
+is left uncoloured, never coloured as zero.
+
 ## Security headers
 
 `next.config.mjs` serves `X-Content-Type-Options`, `X-Frame-Options`,

@@ -10,9 +10,11 @@ import type {
   MapLayerMouseEvent,
 } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
+import ChoroplethLegend from "./ChoroplethLegend";
 import SourceNote from "./SourceNote";
 import StatusPill from "./StatusPill";
 import TimeSeriesChart from "./TimeSeriesChart";
+import { useMapLibre } from "./useMapLibre";
 import {
   apiErrorMessage,
   apiFetch,
@@ -108,6 +110,14 @@ import {
 } from "../lib/savedAnalysis";
 import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
+import {
+  EXPLORER_CHOROPLETH_LAYERS,
+  US_OVERVIEW_VIEW,
+  pitchForMapMode,
+  syncExplorerMapMode,
+  syncLayerFilter,
+  syncLayerPaint,
+} from "../lib/mapWiring";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
 import type { ExplorerState, ValueScale } from "../lib/urlState";
 
@@ -196,7 +206,6 @@ function fetchAllCatalogItems<T>(resource: string, params: QueryParams = {}): Pr
 
 export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey?: string }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
   const metricsTracker = useRef(createRequestTracker()).current;
   const observationTracker = useRef(createRequestTracker()).current;
   const distributionTracker = useRef(createRequestTracker()).current;
@@ -267,7 +276,6 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   });
   const [tileMetadata, setTileMetadata] = useState<TileMetadata | null>(null);
   const [activeSourceLayer, setActiveSourceLayer] = useState<string | null>(null);
-  const [mapReady, setMapReady] = useState(false);
   const [hoveredCounty, setHoveredCounty] = useState<HoveredCounty | null>(null);
   const [selectedGeoId, setSelectedGeoId] = useState("");
   const [timeseries, setTimeseries] = useState<ObservationRow[]>([]);
@@ -995,67 +1003,30 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     selectedRelease,
   ]);
 
-  useEffect(() => {
-    // The canvas exists only while the boundary can draw the selection, so
-    // this re-runs when that changes rather than keeping a hidden map alive.
-    if (!mapSupported || !mapContainerRef.current || mapRef.current) {
-      return;
-    }
-
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {},
-        layers: [
-          {
-            id: "background",
-            type: "background",
-            paint: {
-              "background-color": "#dfe8ed",
-            },
-          },
-        ],
+  // The canvas exists only while the boundary can draw the selection, so the
+  // map is removed rather than hidden when that changes. The observation
+  // points are this screen's own layer, added once the style has loaded.
+  const { mapRef, ready: mapReady } = useMapLibre(mapContainerRef, mapSupported, (map) => {
+    map.addSource("obs", {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: [],
       },
-      center: [-98.5795, 39.8283],
-      zoom: 3,
     });
-
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-
-    map.on("load", () => {
-      map.addSource("obs", {
-        type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: [],
-        },
-      });
-
-      map.addLayer({
-        id: "obs-points",
-        type: "circle",
-        source: "obs",
-        paint: {
-          "circle-color": "#0a7a6d",
-          "circle-radius": 1.4,
-          "circle-opacity": 0.08,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 0.25,
-        },
-      });
-
-      setMapReady(true);
+    map.addLayer({
+      id: "obs-points",
+      type: "circle",
+      source: "obs",
+      paint: {
+        "circle-color": "#0a7a6d",
+        "circle-radius": 1.4,
+        "circle-opacity": 0.08,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 0.25,
+      },
     });
-
-    mapRef.current = map;
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      setMapReady(false);
-    };
-  }, [mapSupported]);
+  });
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1271,6 +1242,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       }
     };
   }, [
+    mapRef,
     mapReady,
     tileMetadata,
     activeSourceLayer,
@@ -1305,34 +1277,21 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       features,
     } as FeatureCollection);
 
-    if (map.getLayer("choropleth-fill") && tileMetadata?.joinKey) {
-      map.setPaintProperty(
-        "choropleth-fill",
-        "fill-color",
-        buildChoroplethMatchExpression(
-          mappableObservations,
-          tileMetadata.joinKey,
-          distribution,
-          missingValueLabel,
-          valueScale,
-        ) as unknown as ExpressionSpecification,
-      );
-    }
-
-    if (map.getLayer("choropleth-extrusion") && tileMetadata?.joinKey) {
-      map.setPaintProperty(
-        "choropleth-extrusion",
-        "fill-extrusion-color",
-        buildChoroplethMatchExpression(
-          mappableObservations,
-          tileMetadata.joinKey,
-          distribution,
-          missingValueLabel,
-          valueScale,
-        ) as unknown as ExpressionSpecification,
-      );
-      map.setPaintProperty(
-        "choropleth-extrusion",
+    if (tileMetadata?.joinKey) {
+      // One colouring expression feeds both the flat fill and the columns,
+      // so the two modes can never disagree about a geography's colour.
+      const colour = buildChoroplethMatchExpression(
+        mappableObservations,
+        tileMetadata.joinKey,
+        distribution,
+        missingValueLabel,
+        valueScale,
+      ) as unknown as ExpressionSpecification;
+      syncLayerPaint(map, ["choropleth-fill"], "fill-color", colour);
+      syncLayerPaint(map, ["choropleth-extrusion"], "fill-extrusion-color", colour);
+      syncLayerPaint(
+        map,
+        ["choropleth-extrusion"],
         "fill-extrusion-height",
         buildExtrusionHeightExpression(
           mappableObservations,
@@ -1350,9 +1309,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       }
       map.fitBounds(bounds, { padding: 30, maxZoom: 7, duration: 800 });
     } else if (!selectedStateFips) {
-      map.easeTo({ center: [-98.5, 38.5], zoom: 3.05, duration: 800 });
+      map.easeTo({ ...US_OVERVIEW_VIEW, duration: 800 });
     }
-  }, [mapReady, mappableObservations, tileMetadata, distribution, missingValueLabel, valueScale, selectedStateFips]);
+  }, [mapRef, mapReady, mappableObservations, tileMetadata, distribution, missingValueLabel, valueScale, selectedStateFips]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1360,26 +1319,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       return;
     }
 
-    if (map.getLayer("choropleth-fill")) {
-      map.setPaintProperty(
-        "choropleth-fill",
-        "fill-opacity",
-        mapMode === "choropleth" ? 0.95 : 0.08,
-      );
-    }
-    if (map.getLayer("choropleth-extrusion")) {
-      map.setLayoutProperty(
-        "choropleth-extrusion",
-        "visibility",
-        mapMode === "extrusion" ? "visible" : "none",
-      );
-    }
+    const mode = mapMode === "extrusion" ? "extrusion" : "choropleth";
+    syncExplorerMapMode(map, mode);
 
     // From straight overhead an extrusion shows only its top, in the same
     // colour the choropleth uses, so the two modes are indistinguishable.
     // Tilt the camera with the mode and level it again on the way back.
-    map.easeTo({ pitch: mapMode === "extrusion" ? 55 : 0, duration: 600 });
-  }, [mapMode, mapReady]);
+    map.easeTo({ pitch: pitchForMapMode(mode), duration: 600 });
+  }, [mapRef, mapMode, mapReady]);
 
   // A selected state is the whole map: every other state's geometry is
   // filtered out of the choropleth layers and the view fits the state's
@@ -1396,11 +1343,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       selectedGeoLevel,
       selectedStateFips,
     ) as FilterSpecification;
-    for (const layerId of ["choropleth-fill", "choropleth-extrusion", "choropleth-outline"]) {
-      if (map.getLayer(layerId)) {
-        map.setFilter(layerId, filter);
-      }
-    }
+    syncLayerFilter(map, EXPLORER_CHOROPLETH_LAYERS, filter);
 
     if (!selectedStateFips) {
       fittedStateRef.current = "";
@@ -1414,7 +1357,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       fittedStateRef.current = selectedStateFips;
       map.fitBounds(bounds, { padding: 45, maxZoom: 7, duration: 700 });
     }
-  }, [mapReady, selectedGeoLevel, selectedStateFips, choroplethFeatures]);
+  }, [mapRef, mapReady, selectedGeoLevel, selectedStateFips, choroplethFeatures]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1434,7 +1377,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         tileMetadata.joinKey,
       ) as unknown as FilterSpecification,
     );
-  }, [mapReady, mappableObservations, selectedCountyGeography, selectedGeoId, tileMetadata]);
+  }, [mapRef, mapReady, mappableObservations, selectedCountyGeography, selectedGeoId, tileMetadata]);
 
 
   useEffect(() => {
@@ -2205,27 +2148,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 )}
               </div>
             ) : null}
-            {choroplethModel.legendItems.length > 0 ? (
-              <div className="map-legend" aria-label="Choropleth value legend">
-                <div className="legend-title">
-                  Value ·{" "}
-                  {choroplethModel.scale === "log"
-                    ? "logarithmic bins"
-                    : choroplethModel.usesDistribution
-                      ? "API distribution"
-                      : "local fallback"}
-                </div>
-                {choroplethModel.legendItems.map((item) => (
-                  <div className="legend-row" key={`${item.color}-${item.label}`}>
-                    <span className="legend-swatch" style={{ backgroundColor: item.color }} />
-                    <span>
-                      {item.label}
-                      {Number.isFinite(item.count) ? ` (${item.count})` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            <ChoroplethLegend
+              title={`Value · ${
+                choroplethModel.scale === "log"
+                  ? "logarithmic bins"
+                  : choroplethModel.usesDistribution
+                    ? "API distribution"
+                    : "local fallback"
+              }`}
+              items={choroplethModel.legendItems}
+              ariaLabel="Choropleth value legend"
+              showCounts
+            />
           </div>
         </article>
         ) : null}
