@@ -15,7 +15,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: one named item remains (see "Remaining before this plan is done"; items 1 and 2 closed 2026-09-12), so the definition of done is not yet satisfied for the whole plan
+- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: every named remainder is closed (items 1–3, 2026-09-12); held for one open question from the live-stack smoke tier (see the WEB-033 validation) before moving to `needs_review/`
 - **Last updated:** 2026-09-12
 - **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** the map consolidation (item 3 under "Remaining before this plan is done"). The CSP nonce (item 2) was closed on 2026-09-12 (WEB-032). Item 1, account persistence for evidence packets, was closed on 2026-09-12 by ADR-0004 and its plan. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
+- **Next pickup:** establish whether the two WEB-027 live-stack smoke failures recorded under the WEB-033 validation are development-stack state or a client defect, then move this plan to `needs_review/`. Items 1–3 under "Remaining before this plan is done" were closed on 2026-09-12 (WEB-031, WEB-032, WEB-033). Item 1, account persistence for evidence packets, was closed on 2026-09-12 by ADR-0004 and its plan. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1239,6 +1239,55 @@ Not run, recorded as not run: composed-service suites (`make test-api`,
 needs a deployed API and Martin. No API, Martin, warehouse, or deployment
 contract changed in this increment; they run in their required CI jobs.
 
+## WEB-009 delivery record (fourth increment — one map wiring, 2026-09-12)
+
+Item 3 of the remainders. The explorer and the comparison workspace built
+their MapLibre maps the same way and kept their layers in sync the same way,
+in two copies; what they *draw* differs and still does.
+
+- **One construction** (`components/useMapLibre.ts`): the same empty style,
+  opening view, navigation control, ready on load, removed rather than
+  hidden. What differs between screens — which sources and layers exist — is
+  the caller's, through `onLoad`.
+- **One sync** (`lib/mapWiring.ts`): paint, filter, and visibility helpers
+  that touch every listed layer that exists, skip the ones that do not, and
+  report what they touched; the explorer's two modes as one layer-state
+  function; the shared views and layer ids as named constants. Takes the
+  narrowest slice of a map it needs, so it is unit-tested against a fake.
+- **One legend** (`components/ChoroplethLegend.tsx`), with the explorer's
+  per-bin counts as an option rather than a second markup.
+- The colouring model is untouched: `explorerViewModel` still owns the rule
+  that a geography without a published number is left uncoloured.
+
+### What the consolidation found
+
+The comparison map resolved its source URL through
+`new URL(template, origin)`. Chromium percent-encodes the template's braces
+(WHATWG path set; verified in the browser the suite runs), and MapLibre
+fills a template by literal `replace(/{z}/g, …)` (verified in the installed
+bundle), so that source could never have been filled. Not observed in the
+browser tier, and it never could be: headless Chromium has no GL context,
+MapLibre requests no tiles there at all, and the legend and coloured count
+come from the rows — the tier was green either way. The first attempt at a
+browser assertion on tile requests was itself vacuous (it only ever saw
+discovery's `0/0/0` probe) and was dropped. The observation lives in the
+smoke tier instead, against real Martin: the textual URL, filled exactly as
+MapLibre fills it, fetches a vector tile; the `new URL` form of the same
+template does not.
+
+### Validation (2026-09-12, after the fourth increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck / lint | `npm --prefix apps/web run typecheck` / `lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 218 passed (20 files; `map-wiring.test.js` 7) |
+| Web browser | `npx playwright test` | 54 passed (Chromium) |
+| Web build / budgets / CSP guard | `build` / `check:bundle` / `check:csp` | succeeded; every route within budget; 0 prerendered routes |
+| Frontend smoke, WEB-033 | `SMOKE_BASE_URL=http://localhost:3001 npm --prefix apps/web run test:smoke` | `map-wiring.smoke.test.js` 2 passed against the live proxy |
+| Frontend smoke, WEB-027 | same run | **2 failed**: "every catalog metric answers through the access shape the explorer picks" (13 metrics answered no row) and "observed geographies are present in the discovered tile layer" (observed `us:1` only). These exercise `tiles.js`, `observationAccess`, `explorerSources`, and the API client, none of which this branch touches. Root cause not established here; recorded rather than explained away. |
+| Python unit | `pytest tests/unit` | 1338 passed (register guard at 289 rows, all FULL) |
+| Python lint | `ruff check .` | clean |
+
 ## Remaining before this plan is done
 
 Three items, each named rather than absorbed:
@@ -1257,11 +1306,29 @@ Three items, each named rather than absorbed:
    one — a blank site. Caught only by serving the production build and
    reading its HTML; `scripts/check-csp-nonce.mjs` now fails the build for
    it, because a guard that only runs in dev guards nothing here.
-3. **The comparison map and the explorer map are separate MapLibre wirings**
-   over one shared colouring model. A consolidation, not a contract gap;
-   recorded in the handoff.
+3. ~~The comparison map and the explorer map are separate MapLibre wirings.~~
+   **Closed 2026-09-12** (WEB-033). One hook brings a map up and takes it
+   down (`useMapLibre`); one module paints, filters, shows, and hides layers
+   (`lib/mapWiring`); one legend (`ChoroplethLegend`). The two maps still
+   draw different things — the explorer decodes tile previews into four
+   layers with hover, selection, keyboard, and a state fit; the comparison
+   draws one fill off the vector source — and that difference is now the
+   whole difference between them.
 
-Item 3 is in scope and open; items 1 and 2 are closed.
+   Found on the way: the comparison map resolved its source URL through
+   `new URL(template, origin)`, which percent-encodes the template's braces
+   (Chromium honours the WHATWG path set; verified in the browser the suite
+   runs), and MapLibre fills a template by literal `replace(/{z}/g, …)`
+   (verified in the installed bundle) — so that source could never have
+   been filled. Inferred from those two premises rather than observed in
+   the browser tier: headless Chromium has no GL context, MapLibre requests
+   no tiles there at all, and the legend and coloured count come from the
+   rows, so the tier was green either way. The smoke tier now fetches the
+   URL the comparison map builds — filled exactly as MapLibre fills it —
+   from real Martin, and the `new URL` form of the same template alongside
+   it, so the difference is observed where it can be.
+
+All three items are closed.
 
 ## Implementation phases
 
