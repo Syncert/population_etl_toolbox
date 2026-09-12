@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; first pass complete across WEB-001 through WEB-009. Held in `in_progress/` rather than moved to `needs_review/`: WEB-001 through WEB-004 meet their acceptance criteria, but WEB-005 through WEB-009 each left named remainders (collected in `docs/reference/WEB_FIRST_WAVE_HANDOFF.md`), so the definition of done is not yet satisfied for the whole plan
-- **Last updated:** 2026-09-03
+- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: three named items remain (see "Remaining before this plan is done"), one of which is blocked on an upstream API contract, so the definition of done is not yet satisfied for the whole plan
+- **Last updated:** 2026-09-12
 - **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
   PEP, CDC, FBI UCR Crime, and USDA NASS Crop — surfaced through the
@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** human review. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; the per-phase delivery records name the follow-ons each pass deliberately left, and `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects them.
+- **Next pickup:** the CSP per-request nonce (WEB-009 item 2 under "Remaining before this plan is done"), then the map consolidation (item 3). Item 1, account persistence for evidence packets, cannot be picked up here — it needs an API plan defining a composition resource first, because `/analysis-configurations` describes one resource with its filters and a packet is an ordered composition of blocks. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1149,6 +1149,121 @@ Not run, recorded as not run: composed-service suites (`make test-api`,
 `make test-martin-*`, deployment smoke) and the `npm audit --omit=dev` gate
 were exercised earlier in this branch; no API, Martin, or deployment
 contract changed in this pass, and they run in their required CI jobs.
+
+## WEB-007 delivery record (second increment — composed articles, 2026-09-12)
+
+The remaining half of WEB-007's "refactor the existing article and builder
+routes into reusable blocks". The builder was refactored in the first pass;
+`/articles` was not, and it stayed a hand-written example.
+
+- **The hand-written article is retired.** `/articles` presented one
+  hard-coded ACS measure (`CENSUS_ACS:acs5:B01003_001`) for one hard-coded
+  county, under a headline percentage the client computed itself from the
+  first and last observations it happened to receive. That number was the
+  defect this phase exists to prevent: an analytical value the warehouse
+  never published, rendered in the same typeface as the published series
+  beside it, with nothing saying which was which. Its arithmetic also read a
+  suppressed latest value as a real one — `Number(null)` is `0`, so a
+  suppressed observation produced a published-looking `-100.0%` — and its
+  request failure path collapsed into the same empty chart as a place with no
+  history.
+- **The route is now a reading surface over composed blocks**
+  (`components/ComposedArticle.tsx`). It presents the packet the composer
+  produced, block by block, with the reproducibility envelope each block
+  recorded. Nothing on the page is authored here and nothing on it is
+  computed here.
+- **Reading a stored composition keeps three outcomes apart**
+  (`readComposedPacket` in `lib/evidencePackets.ts`). Nothing composed yet,
+  a composition this build cannot parse, and a composition written by a
+  different composer version are three different facts about somebody's work.
+  Collapsing them into one empty state would tell a reader whose draft is
+  still sitting in their browser that it is gone. Storage that throws rather
+  than answering — a private window — is unreadable, not absent.
+- **An envelope reaches the reader verbatim or is reported as incomplete.** A
+  malformed envelope is reduced to the fields it does carry, so `packetIssues`
+  names exactly what the block lacks rather than the block vanishing; a value
+  that is not an envelope at all leaves the block with none. An unrecognized
+  scope reads as the latest publication, never as a pin, because reading a
+  live block as frozen presents values that can still change as settled.
+- **A block type this build cannot present is named, not dropped.** A reader
+  who cannot see a block must at least know it was there.
+- **One presentation of the envelope** (`components/EvidenceEnvelope.tsx`),
+  used by the composer and the reader. Two renderings would be two places for
+  a field to quietly stop being shown.
+- **`MiniLineChart` is removed with the page that was its only caller**, and
+  WEB-003's component evidence now runs against `TimeSeriesChart` — the chart
+  the explorer actually ships — rather than a component nothing rendered.
+
+### A defect that fix surfaced
+
+Re-pointing WEB-003 at the live history chart showed `TimeSeriesChart` doing
+exactly what the retired article's headline did: `Number(item.value)` on an
+API row, `Number.isFinite` as the guard. `Number(null)` is `0` and `0` is
+finite, so a period the source suppressed or never published joined the
+explorer's trend line at zero — the same "never a zero" invariant the map,
+the legend, the formatter, and the export already enforce through
+`publishedNumber`, which this chart alone did not use. It does now, and the
+periods it cannot plot are counted beside the chart rather than silently
+dropped, because a reader who cannot see the gap reads the line as the whole
+published history.
+
+### Catalog synchronization
+
+The implementation-status summary in `docs/reference/TESTING_CONTRACT.md` had
+drifted from the catalog it summarizes: it claimed `ETL-001–ETL-042`,
+`EXT-001–EXT-012`, `WEB-001–WEB-027`, a 237-row total, and a 263-row register,
+against an actual 279 rows. Corrected to the counted values, with WEB-030
+added.
+
+- **Evidence:** WEB-030 added to `docs/reference/TESTING_CONTRACT.md` (unit +
+  browser owner); status table 280 of 280, register at 280 rows, all FULL.
+  New `tests/frontend/unit/composed-article.test.js` (7 tests) and
+  `tests/frontend/browser/articles.spec.js` (5 specs); `/articles` added to
+  the WEB-025 core-route accessibility sweep.
+
+### Validation (2026-09-12, after the WEB-007 second increment)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 206 passed (18 files) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Route bundle budgets | `npm --prefix apps/web run check:bundle` | every route within budget (`/articles` 373.6 kB / 421 kB) |
+| Web browser | `npx playwright test` | 46 passed (Chromium) |
+| Python deterministic suite | `pytest tests/unit` | 1315 passed (register guard green at 280 rows) |
+| Python lint | `ruff check .` | clean |
+
+Not run, recorded as not run: composed-service suites (`make test-api`,
+`make test-martin-*`, deployment smoke) and the frontend smoke tier, which
+needs a deployed API and Martin. No API, Martin, warehouse, or deployment
+contract changed in this increment; they run in their required CI jobs.
+
+## Remaining before this plan is done
+
+Three items, each named rather than absorbed:
+
+1. **Evidence packets persist to the browser draft, not the account —
+   blocked upstream.** `/analysis-configurations` stores a document whose
+   `kind` is `observations`, `comparison`, or `distribution`: one resource
+   with its filters. A packet is an ordered composition of blocks, and that
+   contract cannot describe one. Persisting it would mean either inventing an
+   API resource from the client — which this plan's non-goals forbid — or
+   smuggling the composition through `visualization`, which the API stores
+   verbatim and never validates, making a stored packet unvalidatable by the
+   contract meant to guarantee it. This needs an API-side plan defining a
+   composition resource before the web side can move, exactly as the
+   warehouse-then-API-then-web order in `AGENTS.md` requires.
+2. **Script `'unsafe-inline'` in the CSP.** Removing it needs a per-request
+   nonce, which in the App Router means moving the header into middleware and
+   giving up the static rendering every route currently gets. That trade is
+   its own reviewable change, not a line in this one.
+3. **The comparison map and the explorer map are separate MapLibre wirings**
+   over one shared colouring model. A consolidation, not a contract gap;
+   recorded in the handoff.
+
+Item 1 is a genuine upstream block and cannot be closed under this plan.
+Items 2 and 3 are in scope and open.
 
 ## Implementation phases
 

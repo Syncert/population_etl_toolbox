@@ -187,7 +187,17 @@ async function installRoutes(page, { failObservations = false } = {}) {
   );
 }
 
-const CORE_ROUTES = ["/", "/catalog", "/explore", "/compare", "/profiles", "/quality", "/builder", "/saved"];
+const CORE_ROUTES = [
+  "/",
+  "/catalog",
+  "/explore",
+  "/compare",
+  "/profiles",
+  "/quality",
+  "/articles",
+  "/builder",
+  "/saved",
+];
 
 test("every core route serves the declared security headers", async ({ page }) => {
   await installRoutes(page);

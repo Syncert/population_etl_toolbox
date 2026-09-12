@@ -11,13 +11,11 @@
 // complete while any analytical block is missing context.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Download, FileText, Plus, Printer, Save, Trash2 } from "lucide-react";
 import StatusPill from "./StatusPill";
+import EvidenceEnvelope from "./EvidenceEnvelope";
 import { BUILDER_DRAFT_KEY, readSavedCharts } from "../lib/savedCharts";
 import {
-  blockLiveStatus,
-  blockReopenHref,
   envelopeFromSavedChart,
   grantNeedsTemplate,
   isAnalyticalBlock,
@@ -284,7 +282,6 @@ export default function EvidencePacketBuilder() {
 
             {packet.blocks.map((block) => {
               const issue = issueByBlock.get(block.id);
-              const status = blockLiveStatus(block.envelope);
               return (
                 <article
                   className="builder-block"
@@ -324,66 +321,7 @@ export default function EvidencePacketBuilder() {
 
                   {isAnalyticalBlock(block) ? (
                     block.envelope ? (
-                      <div data-testid={`envelope-${block.id}`}>
-                        <StatusPill
-                          state={status.state}
-                          label="Basis"
-                          message={status.label}
-                          testId={`live-${block.id}`}
-                        />
-                        <p className="subtle">{status.detail}</p>
-                        <dl className="source-grid">
-                          <div>
-                            <dt>Measures</dt>
-                            <dd>{block.envelope.metricCodes.join(", ") || "Not recorded"}</dd>
-                          </div>
-                          <div>
-                            <dt>Sources</dt>
-                            <dd>{block.envelope.sourceCodes.join(", ") || "Not recorded"}</dd>
-                          </div>
-                          <div>
-                            <dt>Geography</dt>
-                            <dd>
-                              {block.envelope.geoId || block.envelope.geoLevel || "Not recorded"}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Period</dt>
-                            <dd>{block.envelope.period || "Not recorded"}</dd>
-                          </div>
-                          <div>
-                            <dt>Publication</dt>
-                            <dd>
-                              {block.envelope.scope}
-                              {block.envelope.release ? ` · ${block.envelope.release}` : ""}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Transformation</dt>
-                            <dd>{block.envelope.transformation}</dd>
-                          </div>
-                          <div>
-                            <dt>Request</dt>
-                            <dd>
-                              <code>{block.envelope.apiQuery || "Not recorded"}</code>
-                            </dd>
-                          </div>
-                        </dl>
-                        {block.envelope.caveats.length > 0 ? (
-                          <ul data-testid={`caveats-${block.id}`}>
-                            {block.envelope.caveats.map((caveat) => (
-                              <li key={caveat}>{caveat}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        <Link
-                          className="text-link no-print"
-                          href={blockReopenHref(block)}
-                          data-testid={`reopen-${block.id}`}
-                        >
-                          Reopen this analysis
-                        </Link>
-                      </div>
+                      <EvidenceEnvelope block={block} />
                     ) : (
                       <p className="coverage-note partial" data-testid={`empty-${block.id}`}>
                         {issue?.reason || "this block presents no analysis yet"}. Attach a saved

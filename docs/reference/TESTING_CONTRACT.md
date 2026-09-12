@@ -272,7 +272,7 @@ Unless a row says otherwise, any unmet pass condition is the failure condition a
 
 ### Implementation Status
 
-Last audited against the repository on 2026-09-01. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
+Last audited against the repository on 2026-09-12. **Implemented** means that checked-in automation covers the complete catalog pass metric; it does not assert that every environment-dependent test passed in the latest run. **Awaiting** includes catalog items with no automation and items whose current coverage is only partial. Update this table whenever a catalog item is completed.
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
@@ -281,23 +281,23 @@ Last audited against the repository on 2026-09-01. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
-| ETL and shared units | ETL-001–ETL-042 | None |
+| ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-026 | None |
 | API | API-001–API-067 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
-| External source contracts | EXT-001–EXT-012 | None |
+| External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-027 | None |
+| Frontend | WEB-001–WEB-030 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **237 of 237** | **0 of 237** |
+| **Total** | **280 of 280** | **0 of 280** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 263-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 280-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -618,6 +618,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-027 | P0 | Smoke / `frontend-smoke` | Live-stack discovery and observation access | The explorer's own tile discovery, capability-to-source derivation, and observation request building run unmocked against a deployed API, Martin, and proxy reached through the same same-origin rewrites a browser uses: discovery resolves a vector layer whose published fields actually contain the join key it selected, a real tile decodes to features that all carry that key, every metric the catalog publishes answers with at least one row through whichever access shape the client itself selected, and at least one observed geography is present in the discovered tile layer so a map can render a value; a stack publishing no metric fails the tier rather than passing vacuously, and the tier refuses to pass by skipping where it is declared required | A client that reads a correct response wrongly and stays green because a fixture encoded the shape it expected: a section-keyed tile catalog probed as layer ids, a glossary metric code sent to a serving route that keys rows on the legacy identity, or observations and tiles that never join, each of which renders as an empty map or an empty table with no error anywhere |
 | WEB-028 | P0 | Unit / `frontend` | Explorer asks for one row per geography | The map read sends `newest_per_geography` only where the capability entry declares it, never with an as-released read, and never on a geography's history request, which is the series | An undeclared parameter sent, an as-released answer reduced per geography, or a trend chart left with one point |
 | WEB-029 | P0 | Unit / `frontend` | Measure-identified sources are spatial selections | A LAUS measure at the county grain is offered the map, trend, and table through the same capability-driven paths every other source uses, with no client-side BLS special case; the geography selector is narrowed by the measure's own published grains; a national series is still reported as non-spatial with its published reason; a catalog publishing one dataset facet hides the facet selector and offers the whole list; and the default selection falls to a measure the map can draw rather than to the first national series the catalog happens to list | A source whose first catalog rows are national series opens on a selection its map can never draw, an empty facet selects only the facet-less metrics, or a spatial measure is presented as non-spatial |
+| WEB-030 | P0 | Unit + Browser / `frontend` | Composed articles carry their own evidence | The articles route presents composed evidence blocks and nothing else — no hand-written narrative, no measure or geography the page chose for itself, and no analytical value this client computed, because a client-derived headline rendered beside published series is indistinguishable from one the warehouse published; a stored composition reads back as three distinct outcomes (nothing composed, composed and readable, stored but unreadable) so a reader whose draft this build cannot parse is never told their work is absent; a recorded envelope reaches the page verbatim while a malformed one is reduced to the fields it does carry so `packetIssues` names exactly what is missing; an unrecognized publication scope reads as the latest publication rather than a pin the composer never made; a block type this build cannot present is named rather than dropped; and an analytical block without a complete envelope is shown as composed but explicitly not presented as evidence | A hand-written or client-computed analytical value presented beside published ones, an unreadable composition reported as nothing composed, an envelope field invented or lost on the way to the reader, a live block read as pinned to a release, a block silently dropped, or an incomplete block rendered as finished evidence |
 
 ### Deployment Tests
 
