@@ -47,9 +47,14 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
     """Covers: E2E-002 — BLS capture-to-API rows are exact.
 
     Covers: E2E-004 — the complete BLS fixture replays identically.
+
+    The fixture is a LAUS unemployment-rate series (program ``la``, measure
+    ``03``). LAUS is published per measure across geographies, so the served
+    metric is the measure code and the series id survives only as a column on
+    the served row; the API is read under exactly that identity.
     """
     series_id = "LAUST970000000000003"
-    metric_code = f"BLS:{series_id}"
+    metric_code = "BLS:LAU:UNEMP_RATE"
     # The production ingest starts its own runs, so the scope adopts every run
     # this node adds for the source and removes the capture graph the targeted
     # deletes below cannot reach.
@@ -115,14 +120,35 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                     "/api/v1/bls/observations/timeseries",
                     params={"metric_code": metric_code, "geo_id": "state:97"},
                 )
+                # The measure code spans every LAUS geography, so the latest
+                # reads are pinned to the fixture state rather than the metric.
                 common = client.get(
-                    "/api/v1/observations/latest", params={"metric_code": metric_code}
+                    "/api/v1/observations/latest",
+                    params={"metric_code": metric_code, "state_fips": "97"},
                 )
             assert source.status_code == common.status_code == 200
             assert source.json()["total"] == common.json()["total"] == 1
             assert source.json()["items"][0]["value"] == "4.5"
+            assert source.json()["items"][0]["metric_code"] == metric_code
+            assert common.json()["items"][0]["geo_level"] == "STATE"
             responses.append(source.json())
         assert responses[0] == responses[1]
+
+        # Lineage back to the BLS series survives on the served row as its
+        # own column; the metric identity is the measure, not the series.
+        served = postgres_connection_factory()
+        try:
+            with served.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT metric_code, series_id
+                    FROM gold_bls.mv_bls_latest
+                    WHERE geo_id = 'state:97'
+                    """
+                )
+                assert cursor.fetchall() == [(metric_code, series_id)]
+        finally:
+            served.close()
 
         source_evidence = postgres_connection_factory()
         try:
@@ -153,9 +179,11 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
         )
         with _real_client() as client:
             revised = client.get(
-                "/api/v1/bls/observations/latest", params={"metric_code": metric_code}
+                "/api/v1/bls/observations/latest",
+                params={"metric_code": metric_code, "state_fips": "97"},
             )
         assert revised.status_code == 200
+        assert revised.json()["total"] == 1
         assert revised.json()["items"][0]["value"] == "5.25"
     finally:
         cleanup = postgres_connection_factory()
@@ -169,10 +197,8 @@ def test_bls_fixture_flows_raw_to_gold_and_replays_identically(
                     "DELETE FROM gold_bls.rpt_bls_observations WHERE series_id = %s",
                     (series_id,),
                 )
-                cursor.execute(
-                    "DELETE FROM gold_glossary.dim_metric_catalog WHERE metric_code = %s",
-                    (metric_code,),
-                )
+                # No catalog delete: this node never harvests, and the measure
+                # code is a shared catalog row another suite may have published.
                 cursor.execute(
                     "DELETE FROM gold_bls.dim_bls_series WHERE series_id = %s",
                     (series_id,),

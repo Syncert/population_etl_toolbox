@@ -674,7 +674,7 @@ End-to-end fixtures contain normal rows, duplicates, a revision, a dimension mis
 | ID | Priority | Type / markers | Test | Pass metric | Failure signal |
 |---|---:|---|---|---|---|
 | E2E-001 | P1 | E2E / `e2e database slow` | Census fixture to API | Fixture passes raw -> silver -> gold -> Census/common API with exact approved row/value/geography counts | Any stage loses, duplicates, or mutates an approved row |
-| E2E-002 | P1 | E2E / `e2e database slow` | BLS fixture to API | Fixture passes raw -> silver -> gold -> BLS/common API with exact approved row/value/period counts | Any stage loses, duplicates, or mutates an approved row |
+| E2E-002 | P1 | E2E / `e2e database slow` | BLS fixture to API | LAUS fixture passes raw -> silver -> gold -> BLS/common API under the published measure code (`BLS:LAU:UNEMP_RATE`) with exact approved row/value/period counts, and the served row keeps the source series id as `series_id` | Any stage loses, duplicates, or mutates an approved row, or the served row carries a series-shaped LAUS code |
 | E2E-003 | P1 | E2E / `e2e database slow` | FRED fixture to API | Fixture passes raw -> silver -> gold -> FRED/common API with exact approved row/value/duration counts | Any stage loses, duplicates, or mutates an approved row |
 | E2E-004 | P1 | E2E / `e2e database slow` | Replay safety | Running each complete fixture twice produces zero additional facts and identical API JSON | Natural-key count or response changes |
 | E2E-005 | P1 | E2E / `e2e database slow` | Revision propagation | Revised source observation replaces latest value while prior durable history follows the declared revision policy | Stale latest response, duplicate latest row, or unintended history loss |
