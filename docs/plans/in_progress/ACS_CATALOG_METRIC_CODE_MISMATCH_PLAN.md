@@ -23,7 +23,7 @@ verify:
   `src/data_ingestion_toolbox/glossary/harvest.py`, `apps/api/registry.py`,
   `tests/integration/database/`
 - **Depends on:** nothing open. Found on 2026-09-12 while validating the ACS
-  geography re-serve in `needs_review/FORCED_FULL_RESERVE_SCALE_PLAN.md`; the
+  geography re-serve in `completed/FORCED_FULL_RESERVE_SCALE_PLAN.md`; the
   defect is older than that work and independent of it.
 
 ## Implementation checkpoint
@@ -146,7 +146,7 @@ code, and the API's own tests build their fixtures from one side or the other.
 2. **Do not fix it by teaching the API to translate.** A prefix-rewriting shim
    in `apps/api` would make the symptom disappear while leaving two identities
    for one metric in the warehouse, which is exactly the condition
-   `needs_review/GLOSSARY_HARVEST_IDENTITY_CHANGE_PLAN.md` exists to prevent.
+   `completed/GLOSSARY_HARVEST_IDENTITY_CHANGE_PLAN.md` exists to prevent.
    One of the two producers changes.
 3. **The choice of canonical spelling is the implementer's to make and record.**
    ACM-001 requires it in writing before any code moves, because the two
