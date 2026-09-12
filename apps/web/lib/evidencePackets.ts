@@ -472,3 +472,173 @@ export function readComposedPacket(raw: string | null | undefined): ComposedPack
     unsupported,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The account boundary (ADR-0004)
+//
+// The API is snake_case and stores every envelope field; this module is
+// camelCase and lets a field the composer never captured stay absent. The
+// two functions below are the whole translation, in one place, so a field
+// cannot quietly stop crossing in one direction.
+// ---------------------------------------------------------------------------
+
+import type {
+  ApiPacketBlock,
+  ApiReproducibilityEnvelope,
+  BlockValidation,
+  EvidencePacketDocument,
+  PacketValidation,
+} from "./api/types";
+
+function envelopeToApi(envelope: ReproducibilityEnvelope): ApiReproducibilityEnvelope {
+  return {
+    metric_codes: [...envelope.metricCodes],
+    source_codes: [...envelope.sourceCodes],
+    geo_id: envelope.geoId,
+    geo_level: envelope.geoLevel,
+    scope: envelope.scope,
+    release: envelope.release,
+    period: envelope.period,
+    units: envelope.units,
+    transformation: envelope.transformation || "none",
+    api_query: envelope.apiQuery,
+    caveats: [...envelope.caveats],
+  };
+}
+
+function envelopeFromApi(envelope: ApiReproducibilityEnvelope): ReproducibilityEnvelope {
+  return {
+    metricCodes: [...(envelope.metric_codes || [])],
+    sourceCodes: [...(envelope.source_codes || [])],
+    geoId: envelope.geo_id || "",
+    geoLevel: envelope.geo_level || "",
+    scope: envelope.scope === "as_released" ? "as_released" : "latest",
+    release: envelope.release || "",
+    period: envelope.period || "",
+    units: envelope.units || "",
+    transformation: envelope.transformation || "none",
+    apiQuery: envelope.api_query || "",
+    caveats: [...(envelope.caveats || [])],
+  };
+}
+
+/**
+ * The packet as the API stores it.
+ *
+ * A prose block's envelope and document are dropped rather than sent: the
+ * API refuses a caveat that carries a query, and a stray envelope on a text
+ * block is a composer bug, not content worth preserving. Analytical blocks
+ * cross exactly as recorded — an empty one stays empty, so the API reports
+ * the gap the same way `packetIssues` does.
+ */
+export function packetToDocument(packet: EvidencePacket): EvidencePacketDocument {
+  return {
+    schema_version: 1,
+    title: packet.title,
+    purpose: packet.purpose,
+    blocks: packet.blocks.map((block): ApiPacketBlock => {
+      const row: ApiPacketBlock = {
+        block_id: block.id,
+        type: block.type,
+        title: block.title,
+        content: block.content || "",
+      };
+      if (isAnalyticalBlock(block)) {
+        if (block.envelope) {
+          row.envelope = envelopeToApi(block.envelope);
+        }
+        if (block.document) {
+          row.document = block.document;
+        }
+      }
+      return row;
+    }),
+  };
+}
+
+/** The API's stored document as this module's packet, verbatim. */
+export function documentToPacket(
+  document: EvidencePacketDocument,
+  updatedAt: string,
+): EvidencePacket {
+  return {
+    version: 1,
+    title: document.title || "",
+    purpose: document.purpose || "",
+    updatedAt,
+    blocks: (document.blocks || []).map((row): PacketBlock => {
+      const block: PacketBlock = {
+        id: row.block_id,
+        type: row.type,
+        title: row.title || "",
+        content: row.content || "",
+      };
+      if (row.envelope) {
+        block.envelope = envelopeFromApi(row.envelope);
+      }
+      if (row.document) {
+        block.document = row.document;
+      }
+      return block;
+    }),
+  };
+}
+
+/**
+ * The API's per-block verdicts merged with the client's own issue report.
+ *
+ * The client can see incompleteness; only the API can see staleness — a
+ * measure retired since the block was composed. A block the API reports and
+ * the client does not is stale, and stale is what a reader must be told
+ * first, because it is the thing the composer cannot fix by filling a field.
+ */
+export interface BlockReadState {
+  blockId: string;
+  title: string;
+  /** "incomplete" | "stale" | "ok" */
+  state: "incomplete" | "stale" | "ok";
+  reason: string;
+  missing: string[];
+}
+
+export function mergeBlockStates(
+  packet: EvidencePacket | null | undefined,
+  validation: PacketValidation | null | undefined,
+): BlockReadState[] {
+  const issues = new Map(packetIssues(packet).map((issue) => [issue.blockId, issue]));
+  const verdicts = new Map<string, BlockValidation>(
+    (validation?.blocks || []).map((state) => [state.block_id, state]),
+  );
+  return (packet?.blocks || []).filter(isAnalyticalBlock).map((block) => {
+    const issue = issues.get(block.id);
+    const verdict = verdicts.get(block.id);
+    if (verdict && !verdict.valid && (verdict.missing || []).length === 0) {
+      return {
+        blockId: block.id,
+        title: block.title,
+        state: "stale",
+        reason: verdict.reason || "the API reports this block can no longer be replayed",
+        missing: [],
+      };
+    }
+    if (issue) {
+      return {
+        blockId: block.id,
+        title: block.title,
+        state: "incomplete",
+        reason: issue.reason,
+        missing: issue.missing,
+      };
+    }
+    if (verdict && !verdict.valid) {
+      return {
+        blockId: block.id,
+        title: block.title,
+        state: "incomplete",
+        reason: verdict.reason || "this block is missing context",
+        missing: verdict.missing || [],
+      };
+    }
+    return { blockId: block.id, title: block.title, state: "ok", reason: "", missing: [] };
+  });
+}

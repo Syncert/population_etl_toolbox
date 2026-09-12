@@ -15,7 +15,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: three named items remain (see "Remaining before this plan is done"), one of which is blocked on an upstream API contract, so the definition of done is not yet satisfied for the whole plan
+- **Status:** Claimed; first pass complete across WEB-001 through WEB-009, and WEB-007's articles remainder closed on 2026-09-12. Still held in `in_progress/` rather than moved to `needs_review/`: two named items remain (see "Remaining before this plan is done"; item 1 closed 2026-09-12 by ADR-0004), so the definition of done is not yet satisfied for the whole plan
 - **Last updated:** 2026-09-12
 - **Current milestone:** every phase WEB-001 through WEB-009 has a first pass. WEB-001 through WEB-004 are complete against their acceptance criteria; WEB-005 through WEB-009 have first passes whose deliberate remainders are named in their delivery records — every completed source now reaches the explorer through whichever access shape its capability entry declares (the source-scoped latest/timeseries pair, or the neutral `/observations` resource for CDC, FBI UCR, and USDA NASS), with capability-declared `observation_filters` driving the filter controls and stratified answers reported rather than collapsed; the catalog pages deterministically over the API's published total and shows published provenance and freshness; and as-released exploration is reachable wherever the capability entry declares `/observations/releases` and the neutral `scope`/`release` parameters, so a pinned release reproduces the analysis as that release published it and an unpinned one is reported as a series per release rather than collapsed; and each of map, trend, table, metadata, quality, and export is presented only where published evidence says the selection can answer it, so a national series gets an explicit non-spatial experience instead of a map that declines to colour. The API completion gate is satisfied (`API_DEVELOPMENT_PLAN.md` is in `docs/plans/completed/` with the API-008 consumer handoff published as `docs/reference/API_CONSUMER_GUIDE.md` and pinned by API-065)
 - **Source scope:** Every implemented source — Census ACS, BLS, FRED, Census
@@ -24,7 +24,7 @@ verify:
   name the primary sources for each product; the catalog, explorer, comparison
   workspace, and data-quality explorer must cover all seven without a
   closed client-side source enumeration.
-- **Next pickup:** the CSP per-request nonce (WEB-009 item 2 under "Remaining before this plan is done"), then the map consolidation (item 3). Item 1, account persistence for evidence packets, cannot be picked up here — it needs an API plan defining a composition resource first, because `/analysis-configurations` describes one resource with its filters and a packet is an ordered composition of blocks. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
+- **Next pickup:** the CSP per-request nonce (WEB-009 item 2 under "Remaining before this plan is done"), then the map consolidation (item 3). Item 1, account persistence for evidence packets, was closed on 2026-09-12 by ADR-0004 and its plan. Every phase WEB-001 through WEB-009 has a first pass with inspectable evidence; `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` collects the follow-ons.
 - **Depends on:** Human acceptance of `API_DEVELOPMENT_PLAN.md` into `docs/plans/completed/`, including its stable frontend contract handoff — **satisfied 2026-09-01** (plan file present in `completed/`; API-008 delivery record dated 2026-09-01)
 
 ## Non-negotiable API completion gate
@@ -1243,17 +1243,10 @@ contract changed in this increment; they run in their required CI jobs.
 
 Three items, each named rather than absorbed:
 
-1. **Evidence packets persist to the browser draft, not the account —
-   blocked upstream.** `/analysis-configurations` stores a document whose
-   `kind` is `observations`, `comparison`, or `distribution`: one resource
-   with its filters. A packet is an ordered composition of blocks, and that
-   contract cannot describe one. Persisting it would mean either inventing an
-   API resource from the client — which this plan's non-goals forbid — or
-   smuggling the composition through `visualization`, which the API stores
-   verbatim and never validates, making a stored packet unvalidatable by the
-   contract meant to guarantee it. This needs an API-side plan defining a
-   composition resource before the web side can move, exactly as the
-   warehouse-then-API-then-web order in `AGENTS.md` requires.
+1. ~~Evidence packets persist to the browser draft, not the account.~~
+   **Closed 2026-09-12** by ADR-0004 and `EVIDENCE_PACKET_PERSISTENCE_PLAN.md`:
+   `/api/v1/evidence-packets` is served, and the composer and the reader save
+   to and read from the account whenever a token is held (WEB-031).
 2. **Script `'unsafe-inline'` in the CSP.** Removing it needs a per-request
    nonce, which in the App Router means moving the header into middleware and
    giving up the static rendering every route currently gets. That trade is
@@ -1262,8 +1255,7 @@ Three items, each named rather than absorbed:
    over one shared colouring model. A consolidation, not a contract gap;
    recorded in the handoff.
 
-Item 1 is a genuine upstream block and cannot be closed under this plan.
-Items 2 and 3 are in scope and open.
+Items 2 and 3 are in scope and open; item 1 is closed.
 
 ## Implementation phases
 

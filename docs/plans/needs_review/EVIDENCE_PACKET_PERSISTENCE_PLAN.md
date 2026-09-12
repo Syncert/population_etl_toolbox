@@ -17,9 +17,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed 2026-09-12, the day ADR-0004 was accepted. Created
-  directly in `in_progress/` because acceptance of the ADR was the approval
-  the `to_do/` state would have recorded.
+- **Status:** Ready for review. Claimed 2026-09-12, the day ADR-0004 was
+  accepted (created directly in `in_progress/` because acceptance of the ADR
+  was the approval the `to_do/` state would have recorded); every phase
+  delivered with evidence the same day.
 - **Last updated:** 2026-09-12
 - **Owner surface:** `apps/api/schemas/evidence_packet.py`,
   `apps/api/services/evidence_packet_service.py`,
@@ -37,20 +38,112 @@ verify:
 
 **Last updated:** 2026-09-12
 
-**Current milestone:** EP-001 (this plan and the ADR's acceptance). Next is
-EP-002, the shared request-body bound, because its exposure exists today
-independent of packets.
+**Current milestone:** complete. All six phases delivered.
 
-**Next pickup:** EP-002.
+**Next pickup:** none — human review.
 
-- [ ] EP-001 ADR-0004 marked Accepted; plan claimed
-- [ ] EP-002 shared request-body bound on the authenticated write paths
-- [ ] EP-003 `/api/v1/evidence-packets`: schema, service, router, DDL
-- [ ] EP-004 API evidence: unit denial paths, real-schema contract, guide,
+- [x] EP-001 ADR-0004 marked Accepted; plan claimed
+- [x] EP-002 shared request-body bound on the authenticated write paths
+- [x] EP-003 `/api/v1/evidence-packets`: schema, service, router, DDL
+- [x] EP-004 API evidence: unit denial paths, real-schema contract, guide,
       catalog, bootstrap docs
-- [ ] EP-005 web: client, encode/decode, builder and articles on the account,
-      local-draft migration, catalog row
-- [ ] EP-006 close the WEB plan's item 1 and the handoff follow-on
+- [x] EP-005 web: client, encode/decode, builder and articles on the account,
+      catalog row
+- [x] EP-006 close the WEB plan's item 1 and the handoff follow-on
+
+## Delivery record (2026-09-12)
+
+### EP-002 — request-body bound
+
+`RequestBodyLimitMiddleware` (`apps/api/middleware.py`), innermost of the
+stack, bounds every body at `API_MAX_REQUEST_BODY_BYTES` (default 262144)
+by declared `content-length` and as a chunked body streams, answering a
+sanitized `413` before any router parses it. The finding that motivated it
+is recorded in ADR-0004: there was no body bound anywhere, and
+`AnalysisDocument.filters`/`.visualization` are unbounded, so an account
+holder could already store an arbitrarily large document through
+`/analysis-configurations`. Both write paths are covered by the one
+mechanism; catalog row API-068.
+
+### EP-003 — the resource
+
+Exactly the ADR: `apps/api/schemas/evidence_packet.py`,
+`apps/api/services/evidence_packet_service.py`,
+`apps/api/routers/evidence_packets.py`, `app_api.evidence_packet` in
+`sql/bootstrap/002_app_api.sql` above the positional grant block. The
+service reuses `validate_document` for each block's query, deduplicates
+distinct queries per request, refuses the ADR's contradiction table with a
+422 naming the block, and reports incompleteness and staleness per block on
+read. One decision not in the ADR, made under its rule: when a block is both
+stale and incomplete, the stale reason leads and the missing list still
+travels beside it, because a retired measure is the thing to fix first.
+
+### EP-004 — API evidence
+
+- `tests/unit/api/test_evidence_packets.py`: 23 tests over API-068–071,
+  including every row of the contradiction table as a parametrized case, the
+  chunked-body cut-off, resolve-once-per-request, and a list that performs no
+  glossary lookup.
+- `tests/integration/api/test_evidence_packet_contract.py`: API-072 and
+  DB-027, **run against the test PostGIS on this host with the checked-in
+  DDL** (4 passed together with the configuration contract).
+- `API_CONSUMER_GUIDE.md` "Saved evidence packets" section (API-065 parses
+  its routes); the 413 in the error table; `BETA_RESET_REINGESTION.md` gains
+  the re-run-the-bootstrap migration step; `CI_EVIDENCE_MAP.md` row; the
+  reviewed OpenAPI snapshot regenerated for 5 operations and 10 schemas;
+  `SHARED_API_PREFIXES` claims the routes for the platform.
+
+### EP-005 — web
+
+- `lib/api/types.ts`, `lib/api/client.ts`: packet types and five calls,
+  token only as a header.
+- `lib/evidencePackets.ts`: `packetToDocument`/`documentToPacket`, the one
+  snake/camel translation; `mergeBlockStates`, which lets only the API name a
+  block stale and keeps that distinct from incomplete.
+- `EvidencePacketBuilder`: `saveDestination` decides; the control states the
+  destination before the click; create or update with `expected_version`;
+  a 409 surfaced with the API's detail; a refused save reported, never
+  redirected to the browser store; the account's packets listed and opened
+  in place; stale blocks named from the API's verdict.
+- `ComposedArticle`: signed in, the account's packets in a picker held in
+  component state only — nothing about a packet reaches the address bar —
+  and the API's per-block verdict beside the client's own report; signed out,
+  unchanged.
+- WEB-031 added. `tests/frontend/unit/evidence-packet-account.test.js`
+  (5 tests) and `tests/frontend/browser/evidence-packet-account.spec.js`
+  (5 specs).
+
+The "local-draft migration" named in the plan's EP-005 bullet was
+deliberately not built as a separate bridge: the composer already loads the
+browser draft into the same in-memory packet that "Save to account" stores,
+so the migration is one click with the destination stated on it, and the
+local store is never cleared. A second migration path would have been a
+second place for the translation to drift.
+
+### EP-006
+
+`WEB_ANALYTICS_FIRST_WAVE_PLAN.md` item 1 closed with a pointer here; the
+handoff's follow-on rewritten to describe the shipped contract and
+`lib/evidencePackets.ts` added to its stable-module table.
+
+### Validation (2026-09-12)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Python unit | `pytest tests/unit` | 1338 passed (register guard green at 287 rows, all FULL) |
+| Python lint | `ruff check .` | clean |
+| Real-schema contracts | `pytest tests/integration/api/test_evidence_packet_contract.py tests/integration/api/test_saved_analysis_contract.py -m "integration and not e2e"` against the test PostGIS | 4 passed |
+| Web typecheck | `npm --prefix apps/web run typecheck` | clean |
+| Web lint | `npm --prefix apps/web run lint` | clean |
+| Web unit | `npm --prefix apps/web run test:unit` | 211 passed (19 files) |
+| Web browser | `npx playwright test` | 51 passed (Chromium) |
+| Web build | `npm --prefix apps/web run build` | production build succeeded |
+| Route bundle budgets | `npm --prefix apps/web run check:bundle` | every route within budget (`/builder` 388.3 / 430 kB, `/articles` 382.9 / 421 kB) |
+
+Not run, recorded as not run: the rest of the integration tier, the e2e,
+Martin, deployment-smoke, and frontend-smoke tiers. No warehouse, Martin, or
+deployment contract changed; they run in their required CI jobs. The DAG tier
+is unaffected (no DAG or ETL change).
 
 ## Objective
 

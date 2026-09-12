@@ -16,6 +16,9 @@ import type {
   MetricReleaseListResponse,
   MetricSummary,
   Observation,
+  EvidencePacketDocument,
+  EvidencePacketListResponse,
+  EvidencePacketRecord,
   SavedAnalysisConfiguration,
   SavedAnalysisListResponse,
   SourceCapability,
@@ -450,6 +453,74 @@ export function deleteSavedAnalysis(
   options: RequestOptions = {},
 ): Promise<void> {
   return apiFetch<void>(`/analysis-configurations/${configurationId}`, {
+    ...options,
+    token,
+    method: "DELETE",
+  });
+}
+
+// --- Evidence packets (ADR-0004) ---
+//
+// The same discipline as the configuration routes: user-scoped, bearer token
+// only as a header, `private, no-store`, outside the cacheable prefixes.
+// Nothing here may place a packet's content, id, or owner's token in a URL.
+
+export function listEvidencePackets(
+  token: string,
+  params: QueryParams = {},
+  options: RequestOptions = {},
+): Promise<EvidencePacketListResponse> {
+  return apiFetch<EvidencePacketListResponse>("/evidence-packets", {
+    ...options,
+    params,
+    token,
+  });
+}
+
+export function getEvidencePacket(
+  token: string,
+  packetId: number,
+  options: RequestOptions = {},
+): Promise<EvidencePacketRecord> {
+  return apiFetch<EvidencePacketRecord>(`/evidence-packets/${packetId}`, {
+    ...options,
+    token,
+  });
+}
+
+export function createEvidencePacket(
+  token: string,
+  payload: { name: string; document: EvidencePacketDocument },
+  options: RequestOptions = {},
+): Promise<EvidencePacketRecord> {
+  return apiFetch<EvidencePacketRecord>("/evidence-packets", {
+    ...options,
+    token,
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateEvidencePacket(
+  token: string,
+  packetId: number,
+  payload: { name: string; document: EvidencePacketDocument; expected_version: number },
+  options: RequestOptions = {},
+): Promise<EvidencePacketRecord> {
+  return apiFetch<EvidencePacketRecord>(`/evidence-packets/${packetId}`, {
+    ...options,
+    token,
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteEvidencePacket(
+  token: string,
+  packetId: number,
+  options: RequestOptions = {},
+): Promise<void> {
+  return apiFetch<void>(`/evidence-packets/${packetId}`, {
     ...options,
     token,
     method: "DELETE",

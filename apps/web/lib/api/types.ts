@@ -277,3 +277,96 @@ export interface SavedAnalysisConfiguration {
   created_at: string;
   updated_at: string;
 }
+
+// --- Evidence packets (ADR-0004) ---
+
+export type PacketBlockType =
+  | "text"
+  | "analysis"
+  | "table"
+  | "map"
+  | "source-note"
+  | "methodology"
+  | "caveat";
+
+/** The envelope as the API stores it: snake_case, every field present. */
+export interface ApiReproducibilityEnvelope {
+  metric_codes: string[];
+  source_codes: string[];
+  geo_id: string;
+  geo_level: string;
+  scope: "latest" | "as_released";
+  release: string;
+  period: string;
+  units: string;
+  transformation: string;
+  api_query: string;
+  caveats: string[];
+}
+
+export interface ApiPacketBlock {
+  block_id: string;
+  type: PacketBlockType;
+  title: string;
+  content: string;
+  envelope?: ApiReproducibilityEnvelope | null;
+  document?: AnalysisDocument | null;
+  source_configuration_id?: number | null;
+}
+
+/**
+ * A packet as the API stores it. `schema_version` is the document's own
+ * shape version; the row's `version` is the concurrency counter.
+ */
+export interface EvidencePacketDocument {
+  schema_version: 1;
+  title: string;
+  purpose: string;
+  blocks: ApiPacketBlock[];
+}
+
+/**
+ * One block's read-time state. `missing` names envelope fields the composer
+ * never filled (incomplete); `reason` carries the live contract's verdict
+ * (stale) or the incomplete explanation. Different problems, different fixes.
+ */
+export interface BlockValidation {
+  block_id: string;
+  valid: boolean;
+  reason?: string | null;
+  missing: string[];
+}
+
+export interface PacketValidation {
+  valid: boolean;
+  reason?: string | null;
+  blocks: BlockValidation[];
+}
+
+/** List row: identity, lifecycle, and size — never a verdict. */
+export interface EvidencePacketSummary {
+  packet_id: number;
+  name: string;
+  version: number;
+  block_count: number;
+  analytical_block_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidencePacketListResponse {
+  total: number;
+  limit?: number;
+  offset?: number;
+  items: EvidencePacketSummary[];
+}
+
+export interface EvidencePacketRecord {
+  packet_id: number;
+  name: string;
+  version: number;
+  document: EvidencePacketDocument;
+  validation: PacketValidation;
+  created_at: string;
+  updated_at: string;
+}
