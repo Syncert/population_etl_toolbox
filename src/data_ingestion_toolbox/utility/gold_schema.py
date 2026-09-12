@@ -24,10 +24,26 @@ class ServingRefreshChunkConfig:
     log_label: str
     report_table: str
     report_date_column: str
+    #: Plans the years whose silver rows moved past the source watermark.
+    #: Takes the watermark as its one parameter. This is what every scheduled
+    #: run uses.
     changed_chunks_sql: str
     report_procedure: str
     latest_procedure: str
     statement_timeout: str
+    #: Plans every year the source could serve, with no watermark predicate and
+    #: no parameters.
+    #:
+    #: A change to what a served row *says* rather than what it is worth -- a
+    #: metric identity, a vocabulary, units, a new served column -- moves no
+    #: silver watermark, so ``changed_chunks_sql`` skips exactly the years that
+    #: most need rewriting. This is the plan a forced re-serve uses instead.
+    #: It spans the reporting relation as well as silver, so a year silver no
+    #: longer carries is still visited and its orphaned served rows deleted.
+    all_chunks_sql: str = ""
+    #: Statement timeout for a forced chunk, which rewrites every row in the
+    #: year rather than the changed subset.
+    full_statement_timeout: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -192,20 +208,65 @@ def build_shard_list(
     return [r[0].isoformat() for r in rows]
 
 
+def _full_reserve_is_finished(
+    cursor: Any, source_code: str, run_started_at: Any
+) -> bool:
+    """Whether the forced re-serve that began at ``run_started_at`` completed.
+
+    Finished means no chunk row is still outstanding for it: every chunk either
+    completed at or after that instant, or has no work recorded against it at
+    all. An outstanding chunk means the previous forced run was interrupted, so
+    the next one continues it under the same marker instead of starting over.
+    """
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM control.serving_refresh_chunk_state
+        WHERE source_code = %s
+          AND COALESCE(last_refresh_completed_at, '-infinity'::TIMESTAMPTZ)
+              < %s
+        """,
+        (source_code, run_started_at),
+    )
+    return int(cursor.fetchone()[0]) == 0
+
+
 def refresh_serving_layer_in_year_chunks(
     *,
     hook: PostgresHook,
     config: ServingRefreshChunkConfig,
     task_logger: logging.Logger | None = None,
+    force_full: bool = False,
 ) -> dict[str, int]:
     """Refresh changed calendar years with a durable checkpoint per year.
 
     Each report/latest pair is committed independently. If a later chunk fails,
     an Airflow retry replans from the unchanged source watermark and skips chunks
     whose completed watermark already covers the planned target.
+
+    ``force_full`` plans every year instead and rewrites each one regardless of
+    its watermark, which is what a change to a served row's *meaning* needs:
+    no silver row moved, so the changed-year plan would skip precisely the
+    years carrying the old meaning. It is never the default, and no scheduled
+    run passes it.
+
+    A forced run stays resumable without loosening the incremental checkpoint:
+    a chunk is skipped when it completed *during this run*, so an interrupted
+    forced re-serve resumes at the year it stopped on, while the chunk's
+    recorded target watermark keeps meaning what it always did.
     """
     log = task_logger or logger
     refresh_started = time.monotonic()
+    if force_full and not config.all_chunks_sql:
+        raise ValueError(
+            f"{config.log_label} declares no all_chunks_sql, so it cannot be "
+            "re-served in full"
+        )
+    statement_timeout = (
+        config.full_statement_timeout or config.statement_timeout
+        if force_full
+        else config.statement_timeout
+    )
 
     with hook.get_conn() as conn, conn.cursor() as cur:
         cur.execute("SET LOCAL lock_timeout = '30s'")
@@ -245,7 +306,39 @@ def refresh_serving_layer_in_year_chunks(
             """,
             (config.source_code,),
         )
-        cur.execute(config.changed_chunks_sql, (watermark,))
+        run_started_at = None
+        if force_full:
+            # Resume an unfinished forced re-serve rather than restarting it.
+            # An Airflow retry is a new process, so this marker has to be
+            # durable: without it, a failure in ACS's twentieth year would
+            # rewrite the nineteen already done.
+            cur.execute(
+                """
+                SELECT last_full_reserve_started_at
+                FROM control.serving_refresh_state
+                WHERE source_code = %s
+                """,
+                (config.source_code,),
+            )
+            existing = cur.fetchone()
+            run_started_at = existing[0] if existing else None
+            if run_started_at is None or _full_reserve_is_finished(
+                cur, config.source_code, run_started_at
+            ):
+                cur.execute(
+                    """
+                    UPDATE control.serving_refresh_state
+                    SET last_full_reserve_started_at = clock_timestamp(),
+                        updated_at = NOW()
+                    WHERE source_code = %s
+                    RETURNING last_full_reserve_started_at
+                    """,
+                    (config.source_code,),
+                )
+                run_started_at = cur.fetchone()[0]
+            cur.execute(config.all_chunks_sql)
+        else:
+            cur.execute(config.changed_chunks_sql, (watermark,))
         changed_chunks = cur.fetchall()
 
         planned_chunks: list[dict[str, Any]] = []
@@ -288,7 +381,8 @@ def refresh_serving_layer_in_year_chunks(
                 RETURNING
                     target_silver_ingested_at,
                     completed_silver_ingested_at,
-                    status
+                    status,
+                    last_refresh_completed_at
                 """,
                 (
                     config.source_code,
@@ -297,7 +391,7 @@ def refresh_serving_layer_in_year_chunks(
                     target_watermark,
                 ),
             )
-            target, completed, status = cur.fetchone()
+            target, completed, status, completed_at = cur.fetchone()
             planned_chunks.append(
                 {
                     "start": chunk_start,
@@ -305,6 +399,7 @@ def refresh_serving_layer_in_year_chunks(
                     "target": target,
                     "completed": completed,
                     "status": status,
+                    "completed_at": completed_at,
                 }
             )
         conn.commit()
@@ -329,8 +424,9 @@ def refresh_serving_layer_in_year_chunks(
         return {"planned": 0, "completed": 0, "skipped": 0}
 
     log.info(
-        "[%s SERVING REFRESH] planned_chunks=%d watermark=%s window_start=%s window_end=%s",
+        "[%s SERVING REFRESH] plan=%s planned_chunks=%d watermark=%s window_start=%s window_end=%s",
         config.log_label,
+        "FULL" if force_full else "CHANGED",
         len(planned_chunks),
         watermark,
         planned_chunks[0]["start"],
@@ -341,7 +437,19 @@ def refresh_serving_layer_in_year_chunks(
     skipped_count = 0
     for position, chunk in enumerate(planned_chunks, start=1):
         completed_watermark = chunk["completed"]
-        if completed_watermark is not None and completed_watermark >= chunk["target"]:
+        if force_full:
+            # The watermark cannot decide here: a forced run exists precisely
+            # because nothing moved it. Only work this run already did counts,
+            # which is what makes an interrupted re-serve resumable rather than
+            # a restart.
+            completed_at = chunk["completed_at"]
+            already_done = completed_at is not None and completed_at >= run_started_at
+        else:
+            already_done = (
+                completed_watermark is not None
+                and completed_watermark >= chunk["target"]
+            )
+        if already_done:
             skipped_count += 1
             log.info(
                 "[%s SERVING REFRESH] chunk=%d/%d start=%s end=%s status=SKIPPED checkpoint=%s target=%s",
@@ -385,9 +493,7 @@ def refresh_serving_layer_in_year_chunks(
         try:
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
-                cur.execute(
-                    f"SET LOCAL statement_timeout = '{config.statement_timeout}'"
-                )
+                cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
                 cur.execute(
                     f"CALL {config.report_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),
@@ -494,6 +600,11 @@ def refresh_serving_layer_in_year_chunks(
             ),
         )
         durable_complete_count = int(cur.fetchone()[0])
+        if force_full:
+            # Every planned chunk either ran or was skipped as already done in
+            # this run; the watermark comparison above cannot express that,
+            # because a forced run deliberately leaves watermarks alone.
+            durable_complete_count = len(planned_chunks)
         if durable_complete_count != len(planned_chunks):
             raise RuntimeError(
                 f"{config.log_label} serving refresh cannot advance its watermark: "

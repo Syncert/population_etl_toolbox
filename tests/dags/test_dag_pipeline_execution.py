@@ -44,6 +44,16 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "warehouse_data_quality",
 )
 
+#: DAGs this suite deliberately does not execute, and why. An operator-
+#: triggered DAG has no schedule and does work no orchestrated run should start
+#: on its own; `serving_full_reserve` rewrites an entire serving relation and
+#: refuses to run without a `source_code` in its conf. Membership here is a
+#: claim that the DAG is covered elsewhere, not that it is exempt from testing:
+#: `tests/unit/shared/test_forced_full_reserve.py` and
+#: `tests/integration/database/test_forced_full_reserve.py` drive its plan
+#: selection, resumability and idempotence against real PostgreSQL.
+OPERATOR_TRIGGERED_DAGS: tuple[str, ...] = ("serving_full_reserve",)
+
 
 @pytest.fixture(scope="module")
 def orchestrated_warehouse(
@@ -91,13 +101,30 @@ def test_every_production_dag_is_covered_by_this_suite(dagbag: Any) -> None:
     assert dagbag.import_errors == {}
 
     discovered = set(dagbag.dags)
-    covered = set(ORDERED_PIPELINE_DAGS)
+    executed = set(ORDERED_PIPELINE_DAGS)
+    operator_triggered = set(OPERATOR_TRIGGERED_DAGS)
+    covered = executed | operator_triggered
 
+    assert not (executed & operator_triggered), (
+        "a DAG cannot be both orchestrated and operator-triggered: "
+        f"{sorted(executed & operator_triggered)}"
+    )
     assert discovered == covered, (
-        "every production DAG must be executed by this suite; "
+        "every production DAG must be executed by this suite, or listed in "
+        "OPERATOR_TRIGGERED_DAGS with the coverage that replaces execution; "
         f"uncovered: {sorted(discovered - covered)}, "
         f"stale entries: {sorted(covered - discovered)}"
     )
+
+    # The exemption is only available to DAGs that genuinely cannot be
+    # scheduled. Without this, a scheduled DAG could be parked in
+    # OPERATOR_TRIGGERED_DAGS to escape orchestrated execution entirely.
+    for dag_id in sorted(operator_triggered):
+        assert dagbag.dags[dag_id].schedule_interval is None, (
+            f"DAG {dag_id} is listed as operator-triggered but carries "
+            f"schedule {dagbag.dags[dag_id].schedule_interval!r}; a scheduled "
+            "DAG must be executed by this suite"
+        )
 
 
 @pytest.mark.integration

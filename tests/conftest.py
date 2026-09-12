@@ -11,6 +11,8 @@ from typing import Iterator
 
 import pytest
 
+from tests.support.airflow_env import sqlite_connection_string
+
 _FIXTURES = Path(__file__).parent / "fixtures"
 
 # Some production ETL modules import Airflow hooks even in deterministic unit
@@ -20,6 +22,15 @@ os.environ.setdefault(
     str(Path(tempfile.gettempdir()) / "population-etl-airflow-tests"),
 )
 os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
+# Airflow derives its SQLite URL from AIRFLOW_HOME as f"sqlite:///{home}/...",
+# which yields the four-slash absolute form it demands only when the path
+# starts with "/". A Windows drive letter does not, so importing Airflow raised
+# before any test ran -- and because that is an import failure it aborted
+# collection of the whole tier rather than skipping one module.
+os.environ.setdefault(
+    "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
+    sqlite_connection_string(os.environ["AIRFLOW_HOME"]),
+)
 
 
 @pytest.fixture

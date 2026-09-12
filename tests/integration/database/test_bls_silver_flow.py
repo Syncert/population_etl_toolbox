@@ -107,6 +107,12 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
                 cursor.execute(
                     "DELETE FROM raw_bls.bls_series WHERE series_id = %s", (series_id,)
                 )
+                cursor.execute(
+                    # Pending work the next run's transform reads; see
+                    # tests/integration/database/test_tier_repeatability.py.
+                    "DELETE FROM silver_bls.observation_revision WHERE series_id = %s",
+                    (series_id,),
+                )
                 delete_geography(cursor, "state:99")
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20980101"

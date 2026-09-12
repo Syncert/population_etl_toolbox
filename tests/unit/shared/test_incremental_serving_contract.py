@@ -8,6 +8,7 @@ pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GLOSSARY_CONTRACT = REPO_ROOT / "sql/gold_contract/002_gold_glossary_schema.sql"
 CONTROL_FOUNDATION = REPO_ROOT / "sql/migrations/001_raw_capture_control_foundation.sql"
+SERVING_RESERVE = REPO_ROOT / "src/data_ingestion_toolbox/utility/serving_reserve.py"
 
 SOURCE_FILES = {
     "acs": {
@@ -81,16 +82,37 @@ def test_chunk_checkpoint_table_is_installed_everywhere() -> None:
 
 
 def test_dags_refresh_changed_history_in_annual_chunks() -> None:
-    """Covers: ETL-037 — DAGs refresh changed history in annual chunks."""
+    """Covers: ETL-037 — DAGs refresh changed history in annual chunks.
+
+    The chunk configuration moved to ``utility/serving_reserve.py`` so the
+    operator-triggered full re-serve drives the same declarations rather than a
+    second copy of them, so the annual plan and the procedure names are
+    asserted there while the DAG is asserted to still drive the chunked path.
+    """
+    configs = _read(SERVING_RESERVE)
     for source in SOURCE_FILES.values():
         dag = _read(source["dag"])
         assert "get_gold_" not in dag or "_refresh_window" not in dag
         assert "SET statement_timeout = 0" not in dag
         assert "CALL gold_glossary.refresh_dim_geo_latest()" not in dag
         assert "refresh_serving_layer_in_year_chunks" in dag
-        assert "MAKE_DATE" in dag
-        assert source["report_procedure"] in dag
-        assert source["latest_procedure"] in dag
+        assert "MAKE_DATE" in configs
+        assert source["report_procedure"] in configs
+        assert source["latest_procedure"] in configs
+
+
+def test_only_an_operator_can_select_the_full_reserve_plan() -> None:
+    """Covers: ETL-037 — a scheduled run never triggers a full re-serve.
+
+    A forced re-serve rewrites the whole relation; on ACS that is 68 million
+    rows. No ingestion DAG may ask for one.
+    """
+    for source in SOURCE_FILES.values():
+        assert "force_full" not in _read(source["dag"])
+
+    operator_dag = _read(REPO_ROOT / "dags/serving_full_reserve_dag.py")
+    assert "force_full=True" in operator_dag
+    assert "schedule=None" in operator_dag
 
 
 def test_chunk_refreshes_emit_progress_and_row_count_logs() -> None:

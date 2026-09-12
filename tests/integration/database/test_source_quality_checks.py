@@ -30,6 +30,35 @@ from data_ingestion_toolbox.quality.sources import (
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 
+#: Relations the source quality executors read to decide "valid emptiness".
+#: Asserted rather than assumed, so a suite that leaks committed rows is named
+#: here instead of surfacing as an unrelated rule failure several tests later.
+REQUIRED_EMPTY_RELATIONS = (
+    "silver_ref.geography_resolution",
+    "control.acs_ingestion_slices",
+    "control.bls_ingestion_slices",
+    "control.fred_ingestion_slices",
+    "gold_glossary.publisher_registry",
+    "raw_fred.fred_datasets",
+    "raw_fred.fred_series",
+)
+
+
+def _assert_warehouse_is_empty(cursor) -> None:
+    """Fail naming the relation that is not empty, not the rule that noticed."""
+    populated = []
+    for relation in REQUIRED_EMPTY_RELATIONS:
+        cursor.execute(f"SELECT COUNT(*) FROM {relation}")
+        count = cursor.fetchone()[0]
+        if count:
+            populated.append(f"{relation}={count}")
+    assert not populated, (
+        "this test asserts what the quality rules do on an empty warehouse, so "
+        "it must start from one; these relations still hold committed rows "
+        f"from earlier in the session: {populated}"
+    )
+
+
 def test_an_empty_warehouse_is_valid_emptiness_not_failure(
     postgres_connection: connection,
 ) -> None:
@@ -41,8 +70,16 @@ def test_an_empty_warehouse_is_valid_emptiness_not_failure(
             "DELETE FROM control.bls_ingestion_slices",
             "DELETE FROM control.fred_ingestion_slices",
             "DELETE FROM gold_glossary.publisher_registry",
+            # Configuration and captured metadata are two different relations,
+            # and a rule that reconciles them is right to fail when one is
+            # populated and the other is not. This test's premise is that
+            # neither is, so it must empty both rather than inherit whatever
+            # an earlier suite in the session committed.
+            "DELETE FROM raw_fred.fred_datasets",
+            "DELETE FROM raw_fred.fred_series",
         ):
             cursor.execute(statement)
+        _assert_warehouse_is_empty(cursor)
         for rule_id, executor in sorted(SOURCE_EXECUTORS.items()):
             for outcome in executor(cursor, {}):
                 assert outcome.result in {"not_applicable", "pass"}, (

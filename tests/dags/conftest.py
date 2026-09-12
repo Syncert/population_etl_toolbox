@@ -15,6 +15,7 @@ from typing import Any, Generator
 
 import pytest
 
+from tests.support.airflow_env import sqlite_connection_string
 from tests.integration.database.conftest import (
     bootstrapped_postgres,
     postgres_connection_factory,
@@ -51,8 +52,8 @@ def isolated_airflow_environment(
     }
     os.environ["AIRFLOW_HOME"] = str(airflow_home)
     os.environ["AIRFLOW__CORE__LOAD_EXAMPLES"] = "False"
-    os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"] = (
-        f"sqlite:///{airflow_home / 'airflow.db'}"
+    os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"] = sqlite_connection_string(
+        airflow_home
     )
     try:
         yield airflow_home

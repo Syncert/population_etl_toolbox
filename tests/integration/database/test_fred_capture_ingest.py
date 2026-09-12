@@ -16,11 +16,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 def test_fred_ingest_commits_capture_before_silver_and_bypasses_legacy_raw(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    revision_cleanup: list[str],
 ) -> None:
     """Covers: DB-020, DB-023 — production FRED uses capture-first replay."""
     token = uuid4().hex[:12]
     domain = f"capture_ingest_{token}"
     series_id = f"CAPTURE_{token.upper()}"
+    revision_cleanup.append(series_id)
     payload = {
         "observations": [
             {

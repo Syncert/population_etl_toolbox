@@ -39,6 +39,7 @@ EXPECTED_DAG_IDS = {
     "glossary_harvest",
     "glossary_reconciliation",
     "warehouse_data_quality",
+    "serving_full_reserve",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -54,6 +55,8 @@ EXPECTED_SCHEDULES = {
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
+    # Operator-triggered only: a full re-serve must never happen on a schedule.
+    "serving_full_reserve": None,
 }
 
 # Expected default retry counts (not counting intentional per-task overrides)
@@ -69,6 +72,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
+    "serving_full_reserve": 1,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks
@@ -127,10 +131,19 @@ def test_dag_ids_are_unique(dagbag) -> None:
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_DAG_IDS))
 def test_dag_required_metadata(dagbag, dag_id: str) -> None:
-    """Covers: DAG-004 — every DAG has the required metadata."""
+    """Covers: DAG-004 — every DAG has the required metadata.
+
+    Whether a DAG carries a schedule is DAG-005's contract, not this one: an
+    operator-triggered DAG must carry none. What DAG-004 requires is that the
+    question was answered deliberately, so a new DAG nobody classified fails
+    here rather than quietly inheriting whichever default it was given.
+    """
     dag = dagbag.dags[dag_id]
     assert dag.default_args.get("owner") == "data-eng"
-    assert dag.schedule_interval is not None
+    assert dag_id in EXPECTED_SCHEDULES, (
+        f"DAG {dag_id} declares no schedule contract; add it to "
+        "EXPECTED_SCHEDULES, with None if it is operator-triggered"
+    )
     assert dag.start_date is not None
     assert dag.tags, f"DAG {dag_id} has no tags"
     assert dag.catchup is False
@@ -143,9 +156,20 @@ def test_dag_required_metadata(dagbag, dag_id: str) -> None:
 
 @pytest.mark.dag
 @pytest.mark.parametrize("dag_id,expected_cron", sorted(EXPECTED_SCHEDULES.items()))
-def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str) -> None:
-    """Covers: DAG-005 — every DAG schedule matches its cron contract."""
+def test_dag_schedule_contract(dagbag, dag_id: str, expected_cron: str | None) -> None:
+    """Covers: DAG-005 — every DAG schedule matches its cron contract.
+
+    ``None`` means the DAG is operator-triggered and must carry no schedule at
+    all. `serving_full_reserve` rewrites an entire serving relation, so a cron
+    on it would be a recurring multi-hour job nobody asked for.
+    """
     dag = dagbag.dags[dag_id]
+    if expected_cron is None:
+        assert dag.schedule_interval is None, (
+            f"DAG {dag_id} must be operator-triggered, "
+            f"got schedule {dag.schedule_interval!r}"
+        )
+        return
     assert str(dag.schedule_interval) == expected_cron, (
         f"DAG {dag_id}: expected schedule {expected_cron!r}, "
         f"got {dag.schedule_interval!r}"

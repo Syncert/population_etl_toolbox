@@ -56,6 +56,24 @@ def test_bounded_fred_metadata_sync_populates_required_fields(
         cleanup = postgres_connection_factory()
         try:
             with cleanup.cursor() as cursor:
+                # sync_fred_datasets_table() writes the whole configured
+                # (domain, series) set, not just the series under test.
+                # Deleting only that one left the rest behind as committed
+                # state, and DQ-FRED-002 then correctly reported configured
+                # datasets whose series rows were absent -- which failed the
+                # "empty warehouse" quality test and, through it, every test
+                # that needs a promotable release certification.
+                cursor.execute(
+                    "DELETE FROM raw_fred.fred_datasets "
+                    "WHERE (domain, series_id) IN %s",
+                    (
+                        tuple(
+                            (domain, configured)
+                            for domain, series in CONFIG.curated_by_domain.items()
+                            for configured in series
+                        ),
+                    ),
+                )
                 cursor.execute(
                     "DELETE FROM raw_fred.fred_datasets WHERE series_id = %s",
                     (series_id,),

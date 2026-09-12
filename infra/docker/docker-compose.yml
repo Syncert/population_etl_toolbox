@@ -1,6 +1,40 @@
 services:
   analytics_postgres:
     image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+    # Postgres ships defaults sized for a small database: 128 MB of shared
+    # buffers, 4 MB work_mem, 1 GB max_wal_size. This warehouse's ACS serving
+    # relation alone is 37 GB of heap and 25 GB of indexes, so stock settings
+    # cache well under one percent of it and every page comes off disk. A
+    # forced re-serve measured roughly 360 rows per second untuned; the same
+    # work is bound by how much of the relation fits in shared_buffers, not by
+    # CPU. See docs/reference/BETA_RESET_REINGESTION.md section 7.
+    #
+    # Defaults below suit a development host with about 16 GB to spare. Raise
+    # them on a warehouse server through infra/docker/.env -- copy
+    # .env.example, which carries the sizing rules and the measured effect --
+    # rather than editing here, and keep shared_buffers well under the memory
+    # the container may actually use or Postgres will not start.
+    #
+    # Note that this block overrides ALTER SYSTEM, so hand-tuning at the server
+    # is discarded on the next recreate. Check SHOW shared_buffers against the
+    # running container to see what actually took effect.
+    command: >
+      postgres
+      -c shared_buffers=${ANALYTICS_PG_SHARED_BUFFERS:-4GB}
+      -c effective_cache_size=${ANALYTICS_PG_EFFECTIVE_CACHE_SIZE:-12GB}
+      -c maintenance_work_mem=${ANALYTICS_PG_MAINTENANCE_WORK_MEM:-1GB}
+      -c work_mem=${ANALYTICS_PG_WORK_MEM:-64MB}
+      -c max_wal_size=${ANALYTICS_PG_MAX_WAL_SIZE:-8GB}
+      -c min_wal_size=${ANALYTICS_PG_MIN_WAL_SIZE:-1GB}
+      -c checkpoint_timeout=${ANALYTICS_PG_CHECKPOINT_TIMEOUT:-15min}
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=${ANALYTICS_PG_WAL_BUFFERS:-64MB}
+      -c max_worker_processes=${ANALYTICS_PG_MAX_WORKER_PROCESSES:-8}
+      -c max_parallel_workers=${ANALYTICS_PG_MAX_PARALLEL_WORKERS:-8}
+      -c max_parallel_workers_per_gather=${ANALYTICS_PG_MAX_PARALLEL_PER_GATHER:-4}
+      -c max_parallel_maintenance_workers=${ANALYTICS_PG_MAX_PARALLEL_MAINTENANCE:-4}
+      -c random_page_cost=${ANALYTICS_PG_RANDOM_PAGE_COST:-1.1}
+      -c effective_io_concurrency=${ANALYTICS_PG_EFFECTIVE_IO_CONCURRENCY:-200}
     environment:
       POSTGRES_USER: analytics
       POSTGRES_PASSWORD: analytics

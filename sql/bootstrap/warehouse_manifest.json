@@ -157,6 +157,11 @@
       "path": "sql/migrations/016_publisher_harvest_fingerprint.sql"
     },
     {
+      "id": "migration-017",
+      "phase": "glossary",
+      "path": "sql/migrations/017_serving_full_reserve_run.sql"
+    },
+    {
       "id": "migration-003",
       "phase": "semantic-cutover",
       "path": "sql/migrations/003_semantic_policy_extraction.sql"
