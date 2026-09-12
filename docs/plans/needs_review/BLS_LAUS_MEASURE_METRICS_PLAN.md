@@ -16,26 +16,26 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed and implemented; one acceptance criterion still running (the ACS reporting re-serve)
-- **Last updated:** 2026-09-10
+- **Status:** Implemented and verified end to end; ready for review
+- **Last updated:** 2026-09-12
 - **Source owner:** U.S. Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS) program, plus the national-grain serving fix for BLS, Census ACS, and FRED
 - **Geography scope:** State and county for LAUS measures; the national grain is a serving-vocabulary repair only
 - **Depends on:** `API_DEVELOPMENT_PLAN.md` accepted into `completed/` (satisfied 2026-09-01). No open plan is a prerequisite. This plan changes warehouse objects first, so it should integrate before any web work that assumes the new BLS metric identities.
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-12
 
-**Current milestone:** BLM-004, ACS reporting relation only
+**Current milestone:** none outstanding
 
-**Next pickup:** re-serve `gold_census.rpt_acs_observations` (68,302,467 rows) with ACS ingestion paused, a calendar year at a time for every year from 2005 to 2024, then confirm `SELECT DISTINCT geo_level` over `gold_census.rpt_acs_observations` and `gold_census.mv_acs_latest` returns only `NATIONAL`, `STATE`, `COUNTY` and that `GET /observations?metric_code=CENSUS_ACS:acs1:B01001_001&geo_level=NATIONAL` answers the unfiltered row count. The procedure calls, and why a single forced call cannot be used, are in `BETA_RESET_REINGESTION.md` section 7. Nothing else is outstanding: the code, tests, and documentation for every phase are delivered, and BLS and FRED are fully re-served and verified.
+**Next pickup:** review. The ACS reporting re-serve completed on 2026-09-12 and its acceptance criteria are verified below, so nothing in this plan is outstanding. One caveat the reviewer should read first: the national-read criterion as originally written names `metric_code=CENSUS_ACS:acs1:B01001_001`, and that code answers zero rows -- not because of anything in this plan, but because the ACS catalog and the ACS serving layer have spelled metric codes differently since `298b73d`. The criterion's intent (a national ACS row answers with `geo_level: NATIONAL`) is met under the code the serving layer actually publishes. That mismatch is filed separately as `to_do/ACS_CATALOG_METRIC_CODE_MISMATCH_PLAN.md`.
 
 ### Completed in the current slice
 
-- [x] BLM-001 national geography vocabulary in the served relations — code, tests, and BLS/FRED evidence complete; ACS re-serve in progress
+- [x] BLM-001 national geography vocabulary in the served relations — complete for BLS, FRED, and ACS
 - [x] BLM-002 LAUS measure identity in the BLS reporting and latest relations
 - [x] BLM-003 BLS metric publisher emits one metric per LAUS measure
-- [x] BLM-004 full BLS serving refresh and glossary harvest — BLS and FRED complete; ACS outstanding
+- [x] BLM-004 full BLS serving refresh and glossary harvest — BLS, FRED, and ACS complete
 - [x] BLM-005 API and web contract synchronisation
 - [x] BLM-006 evidence record and consumer-facing documentation
 
@@ -353,26 +353,55 @@ All warehouse evidence was gathered against the running development stack
   procedure and asserts the served and latest rows both carry `NATIONAL`.
   Without the seed the assertion passed vacuously, which is why the defect
   survived.
-- **Outstanding, and deliberately not forced on a live stack:**
-  `gold_census.rpt_acs_observations` (68,302,467 rows) still carries 54,901
-  rows at `us`. A per-year re-serve was started and then cancelled, and its
-  transaction rolled back, so the relation is in a consistent pre-refresh
-  state rather than a mixed one. Two reasons to sequence it rather than push
-  it through here:
-  - A scheduled `acs_ingest` run (`scheduled__2026-08-01T06:00:00+00:00`) has
-    been writing `silver_census.fact_demographics` since 19:25Z. With that
-    contention, year 2005 (685,717 rows) had not finished after 8 minutes --
-    about 1,500 rows per second against the 7,700 the uncontended BLS refresh
-    sustained -- which extrapolates to roughly twelve hours for the full
-    relation.
-  - Re-serving years the in-flight ingest is still changing is also partly
-    wasted: that DAG runs its own serving refresh for its changed years when
-    it finishes, and it now emits the normalised vocabulary because it calls
-    the same fixed procedures.
-  `BETA_RESET_REINGESTION.md` step 2 already requires pausing ingestion before
-  a reset of this kind, and section 7 now carries the per-year calls. The code
-  path itself is proven by the BLS and FRED re-serves above, which exercise
-  the identical change, and by the DDL-text and real-database tests.
+- **ACS complete, 2026-09-12.** `gold_census.rpt_acs_observations`
+  (68,302,467 rows) was re-served in full with `acs_ingest` paused throughout,
+  through the `serving_full_reserve` DAG that
+  `needs_review/FORCED_FULL_RESERVE_SCALE_PLAN.md` delivers: run
+  `manual__2026-09-11T20:09:41+00:00`, state `success`, 20 of 20 year chunks
+  `COMPLETE`, 0 failed. `SELECT geo_level, COUNT(*)` now returns exactly three
+  values over both served relations, and the 54,901 `us` rows are gone:
+
+  | `geo_level` | `rpt_acs_observations` | `mv_acs_latest` |
+  | --- | --- | --- |
+  | `COUNTY` | 65,980,229 | 4,500,593 |
+  | `NATIONAL` | 54,901 | 4,447 |
+  | `STATE` | 2,267,337 | 141,680 |
+
+- **The national read answers, under the served code.**
+  `GET /api/v1/census/observations/latest?metric_code=ACS:acs1:B01001_001&geo_level=NATIONAL`
+  returns 1 row: 340,110,990 for 2024, `geo_id: "us:1"`, `geo_level:
+  "NATIONAL"`. The timeseries form returns 19 rows spanning 2005 to 2024 --
+  19 and not 20 because ACS 1-year published no 2020 release. `geo_level=us`
+  is rejected with HTTP 422 at the API boundary.
+
+  The criterion as originally written used `CENSUS_ACS:acs1:B01001_001`, which
+  answers `total: 0`. That is a real defect and it is **older than this plan**:
+  the ACS publisher emits `CENSUS_ACS` as its `source_code` while the ACS
+  refresh procedure builds codes with an `ACS:` prefix, so all 4,447 catalog
+  codes for ACS are unresolvable. BLS, FRED, and PEP agree across the two
+  surfaces; only ACS does not, since `298b73d` (2026-08-19). Filed as
+  `to_do/ACS_CATALOG_METRIC_CODE_MISMATCH_PLAN.md`. It does not affect this
+  plan's vocabulary change, which is what BLM-001 is about.
+
+- **The re-serve did not disturb the ingest watermark.**
+  `control.serving_refresh_state.last_silver_ingested_at` for `CENSUS_ACS`
+  reads `2026-08-31 05:27:25.071076+00`, identical to `MAX(ingested_at)` in
+  `silver_census.fact_demographics`, so no later ingest will skip rows it
+  should serve. `acs_ingest` was unpaused after the run; it is
+  `schedule="0 6 1 * *"` with `catchup=False`, so no backfill was triggered.
+
+- **Why this took four attempts, and what it cost.** This plan originally
+  deferred the ACS re-serve on the grounds that a scheduled `acs_ingest` run
+  was contending for the table, and estimated roughly twelve hours by
+  extrapolating one contended year. Pausing ingestion was right; the estimate
+  was wrong, as were two later revisions of it. The real constraint was
+  memory, not contention: the ACS serving relation is 66 GB
+  against a container running Postgres defaults, so the early runs read
+  roughly 1.2 TB off disk at a 59.8% heap cache hit ratio. All twenty years
+  took 46,305 seconds of chunk work; once `shared_buffers` went to 48 GB the
+  remaining twelve took 16,564s (4h36m) at an 86% hit ratio. The full per-year
+  table and the tuning that produced it are in `BETA_RESET_REINGESTION.md`
+  section 7.
 
 ### BLM-002 — LAUS measure identity
 
