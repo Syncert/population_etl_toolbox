@@ -121,11 +121,15 @@ Compose reuses an image by name, so the tier was grading four-day-old code. CI
 builds the image on every run and was never affected. `web-smoke` now passes
 `--build`, and the failures did not reproduce afterwards.
 
-This also answers an open question recorded elsewhere:
-`WEB_ANALYTICS_FIRST_WAVE_PLAN.md` held itself in `in_progress/` to establish
-whether two WEB-027 live-stack smoke failures were "development-stack state or
-a client defect". They were neither — they were a stale API image in the
-composed stack.
+**Corrected 2026-09-12, after this plan merged.** An earlier revision claimed
+this also answered the open question `WEB_ANALYTICS_FIRST_WAVE_PLAN.md` was
+held in `in_progress/` for. It does not: that plan's two WEB-027 failures were
+recorded against the development stack, where they were four retired LAUCN
+series demanded to answer and a national series joined against a county
+boundary. They are explained and closed in that plan's WEB-034 delivery
+record, and the code fix reached `main` in `a74c43f`. Two failures on the
+composed fixture stack, two on the development stack, one stale image and one
+contract misreading — the same two test names, and nothing else in common.
 
 ## Acceptance
 
