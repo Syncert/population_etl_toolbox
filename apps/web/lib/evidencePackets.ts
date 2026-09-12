@@ -337,3 +337,138 @@ export function packetExport(packet: EvidencePacket | null | undefined): PacketE
 export function packetDocument(packet: EvidencePacket | null | undefined): string {
   return JSON.stringify(packet ?? null, null, 2);
 }
+
+/** How a stored composition read back: the three states are not the same fact. */
+export type ComposedPacketState = "empty" | "ready" | "unreadable";
+
+export interface ComposedPacketRead {
+  state: ComposedPacketState;
+  packet: EvidencePacket | null;
+  /** Why, in the reader's terms. Always populated. */
+  reason: string;
+  /** Block titles the stored composition carried that this build cannot present. */
+  unsupported: string[];
+}
+
+function normalizeEnvelope(value: unknown): ReproducibilityEnvelope | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  const text = (field: unknown) => (typeof field === "string" ? field : "");
+  const list = (field: unknown) =>
+    Array.isArray(field) ? field.filter((entry): entry is string => typeof entry === "string") : [];
+  return {
+    metricCodes: list(source.metricCodes),
+    sourceCodes: list(source.sourceCodes),
+    geoId: text(source.geoId),
+    geoLevel: text(source.geoLevel),
+    scope: source.scope === "as_released" ? "as_released" : "latest",
+    release: text(source.release),
+    period: text(source.period),
+    units: text(source.units),
+    transformation: text(source.transformation) || "none",
+    apiQuery: text(source.apiQuery),
+    caveats: list(source.caveats),
+  };
+}
+
+/**
+ * Read a stored composition back as a packet, or say why it could not be.
+ *
+ * Three outcomes that a reading surface must keep apart. Nothing composed yet
+ * is not the same as a stored composition this build cannot parse: the first
+ * invites the reader to compose one, the second says their work is still
+ * there and this page could not read it. Collapsing them into one empty state
+ * would tell someone their packet is gone.
+ *
+ * A malformed envelope is reduced to the fields it does carry rather than
+ * discarded, so `packetIssues` names exactly what the block lacks instead of
+ * the block disappearing; and a block of a type this build does not know is
+ * reported by title rather than rendered or dropped, because a reader who
+ * cannot see it must at least know it was there.
+ */
+export function readComposedPacket(raw: string | null | undefined): ComposedPacketRead {
+  if (raw === null || raw === undefined || raw === "") {
+    return {
+      state: "empty",
+      packet: null,
+      reason: "nothing has been composed in this browser yet",
+      unsupported: [],
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {
+      state: "unreadable",
+      packet: null,
+      reason: "the stored composition is not readable as a packet, so nothing is shown for it",
+      unsupported: [],
+    };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      state: "unreadable",
+      packet: null,
+      reason: "the stored composition is not readable as a packet, so nothing is shown for it",
+      unsupported: [],
+    };
+  }
+  const source = parsed as Record<string, unknown>;
+  if (source.version !== 1 || !Array.isArray(source.blocks)) {
+    return {
+      state: "unreadable",
+      packet: null,
+      reason:
+        "the stored composition was written by a different version of the composer, so this page does not present it",
+      unsupported: [],
+    };
+  }
+  const blocks: PacketBlock[] = [];
+  const unsupported: string[] = [];
+  for (const entry of source.blocks) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const block = entry as Record<string, unknown>;
+    const id = typeof block.id === "string" ? block.id : "";
+    const title = typeof block.title === "string" ? block.title : "";
+    if (!id) {
+      continue;
+    }
+    if (!BLOCK_TYPES.includes(block.type as BlockType)) {
+      unsupported.push(title || id);
+      continue;
+    }
+    const normalized: PacketBlock = { id, type: block.type as BlockType, title };
+    if (typeof block.content === "string") {
+      normalized.content = block.content;
+    }
+    const envelope = normalizeEnvelope(block.envelope);
+    if (envelope) {
+      normalized.envelope = envelope;
+    }
+    if (block.document && typeof block.document === "object" && !Array.isArray(block.document)) {
+      normalized.document = block.document as AnalysisDocument;
+    }
+    blocks.push(normalized);
+  }
+  const packet: EvidencePacket = {
+    version: 1,
+    title: typeof source.title === "string" ? source.title : "",
+    purpose: typeof source.purpose === "string" ? source.purpose : "",
+    blocks,
+    updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : "",
+  };
+  return {
+    state: "ready",
+    packet,
+    reason:
+      unsupported.length > 0
+        ? "this composition carries blocks this build cannot present; they are named rather than dropped"
+        : "this composition was read in full",
+    unsupported,
+  };
+}

@@ -12,7 +12,7 @@ App Router-based public frontend for the API and Martin tiles services. Both Com
 - `/quality`: the source coverage and data-quality explorer
 - `/saved`: account-stored analysis configurations
 - `/builder`: the evidence packet composer, with a reproducibility envelope on every analytical block
-- `/articles`: narrative page using the same live observation contract
+- `/articles`: the reading surface for a composed evidence packet — every block is presented as the composer recorded it, with its reproducibility envelope, and any block without one is named rather than rendered as evidence; nothing on the page is written by hand and nothing on it is computed here
 - `/bls`, `/census`, `/fred`: retired demonstration dashboards; these redirect into `/explore` for the same source
 
 ## Supported browsers

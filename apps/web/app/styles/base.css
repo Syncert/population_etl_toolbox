@@ -325,6 +325,15 @@ main.dashboard {
   text-align: center;
 }
 
+/* Periods the source published nothing for. Stated beside the line rather
+   than inside it, so the gap is legible without being read as a value. */
+.chart-note {
+  margin: 8px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-size: 0.78rem;
+}
+
 .map-shell {
   position: relative;
   height: 360px;

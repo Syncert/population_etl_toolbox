@@ -42,6 +42,7 @@ Contract-boundary modules are TypeScript under `strict` plus
 | `lib/urlState.ts` | Parse/serialize for explorer, comparison, catalog, and profile links | Any shareable state |
 | `components/StatusPill.js` | The one visual mapping of request state | Every status surface |
 | `components/ChoroplethMap.tsx` | A read-only choropleth over the shared colouring model | A new map that does not need the explorer's interaction |
+| `components/EvidenceEnvelope.tsx` | The one presentation of an analytical block's reproducibility envelope and its live/frozen basis | Any surface that shows a composed block — composer, reader, or a later publishing screen |
 
 ## Saved-analysis contract
 
@@ -153,12 +154,20 @@ Out of scope here, and deliberately not stubbed:
 
 Named so they are picked up deliberately rather than rediscovered:
 
-- Evidence packets persist to the local draft rather than the account. The
-  packet builder is now the only screen that still composes from
-  `saved-charts:v1`, which is why that store stays.
+- Evidence packets persist to the local draft rather than the account, and
+  `/articles` reads that same draft. This one is blocked upstream rather than
+  deferred by choice: `/analysis-configurations` stores a document whose
+  `kind` is `observations`, `comparison`, or `distribution` — one resource
+  with its filters — and a packet is an ordered composition of blocks, which
+  that contract cannot describe. Persisting one would mean either inventing an
+  API resource from the client, which this plan's non-goals forbid, or
+  smuggling the composition through a field the API stores verbatim and never
+  validates, which would make a stored packet unvalidatable by the contract
+  that is supposed to guarantee it. It needs an API-side plan defining a
+  composition resource first. The packet builder and the articles reader are
+  the only screens that still compose from `saved-charts:v1` and
+  `builder-draft:v1`, which is why those stores stay.
 - The comparison map and the explorer map are separate MapLibre wirings over
   one shared colouring model; unifying the presentations is a consolidation
   task, not a contract gap.
 - Script `'unsafe-inline'` in the CSP needs a per-request nonce to remove.
-- `/articles` still carries a hand-written example rather than composed
-  blocks.
