@@ -13,7 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed
+- **Status:** Implementation complete; awaiting human review
 - **Last updated:** 2026-09-10
 - **Owner surface:** `tests/integration/database/`, `tests/support/`, `src/data_ingestion_toolbox/quality/sources.py`
 - **Depends on:** nothing open. The leakage was recorded as an unowned observation in `completed/WAREHOUSE_DATA_QUALITY_PLAN.md` on 2026-08-31 and reproduced with an exact root cause on 2026-09-10.
@@ -22,16 +22,16 @@ verify:
 
 **Last updated:** 2026-09-10
 
-**Current milestone:** none claimed
+**Current milestone:** none; every phase is delivered.
 
-**Next pickup:** claim the plan, then start at DTI-001 — the six observed failures share one root cause, and fixing it is what makes the rest measurable.
+**Next pickup:** none. Human review.
 
 ### Completed in the current slice
 
-- [ ] DTI-001 the FRED configuration leak that fails six tests
-- [ ] DTI-002 "valid emptiness" is asserted, not assumed
-- [ ] DTI-003 the tier is collectable on a Windows host
-- [ ] DTI-004 a repeatable-tier guard and evidence
+- [x] DTI-001 the FRED configuration leak that fails six tests
+- [x] DTI-002 "valid emptiness" is asserted, not assumed
+- [x] DTI-003 the tier is collectable on a Windows host
+- [x] DTI-004 a repeatable-tier guard and evidence
 
 ## Objective
 
@@ -174,9 +174,12 @@ Acceptance:
 Deliverables:
 
 - The Airflow-importing module is guarded so an import failure **skips that
-  module with its reason** rather than aborting collection — a
-  `pytest.importorskip`-style guard, or a collection hook that converts the
-  logging-config failure into a skip.
+  module with its reason** rather than aborting collection.
+  (Recorded during implementation: the abort turned out to have two causes
+  stacked. The first was a path bug in the suite's own configuration — see the
+  evidence — and fixing it revealed the second, a dependency-matrix constraint
+  the module's existing guard was written for but could not detect, because the
+  failure is not an `ImportError`.)
 - The skip names the host limitation and the environment where the module does
   run, so it can never read as "this test does not matter".
 - `tests/run.ps1 integration` needs no `--ignore` argument to produce a result.
@@ -234,10 +237,187 @@ Acceptance:
 
 ## Open questions for the reviewer
 
-1. DTI-002's rule question: on a warehouse with configured FRED datasets and no
-   captured series at all, is `DQ-FRED-002` reporting a real defect or a false
-   alarm? The plan takes no default and requires the decision to be recorded.
+1. **Resolved during implementation.** On a warehouse with configured FRED
+   datasets and no captured series, `DQ-FRED-002` is reporting a real defect:
+   configured work that never reached the warehouse is exactly what the rule
+   exists to catch, and softening it would blind the rule in production to
+   protect a test whose premise was wrong. The rule is unchanged; the test now
+   empties both relations and asserts that it did.
 
 ## Implementation evidence
 
-_Empty until claimed._
+### DTI-001 — the FRED configuration leak
+
+Traced to one suite, with the arithmetic matching exactly.
+
+`tests/integration/database/legacy/test_fred_metadata.py` skips only when
+`CONFIG.has_api_key` is false. `FRED_API_KEY` is set in this environment, so it
+ran. It calls `metadata.sync_fred_datasets_table()`, which writes **one row per
+configured (domain, series) pair — 24 of them** — and its cleanup deleted the
+**single** series it asserted on (`UNRATE`) from both `raw_fred.fred_datasets`
+and `raw_fred.fred_series`.
+
+Measured after a full-tier run on a freshly recreated warehouse, before the
+fix:
+
+```
+raw_fred.fred_datasets   23
+raw_fred.fred_series      0
+unmatched                23     -- 24 configured, 1 cleaned up
+```
+
+`DQ-FRED-002` reconciles configured datasets against captured series
+([sources.py:129-149](../../../src/data_ingestion_toolbox/quality/sources.py#L129-L149))
+and reported those 23 correctly. It carries `QUARANTINE` severity, so
+`certify_release` reported `promotable=False`, so no certified baseline
+existed, so plausibility refused — which is why
+`test_extreme_but_valid_values_warn_without_mutation` observed `{''}` where it
+expected `{'PROBE_SHOCK'}`. One leak, six failures.
+
+**The rule was not weakened.** It reported a real inconsistency in the state it
+was given. Both halves of the fix are in the tests:
+
+- The legacy suite now deletes every `(domain, series)` pair
+  `sync_fred_datasets_table()` writes, not only the one it named.
+- `test_an_empty_warehouse_is_valid_emptiness_not_failure` now empties
+  `raw_fred.fred_datasets` and `raw_fred.fred_series` itself rather than
+  inheriting whatever an earlier suite committed.
+
+### DTI-002 — valid emptiness is asserted, not assumed
+
+`_assert_warehouse_is_empty` runs before the rules and fails naming the
+relation that still holds rows, so the next leak is reported where it happens
+instead of surfacing as an unrelated rule failure several tests later.
+
+**Open question resolved.** The plan asked whether `DQ-FRED-002` should treat
+"datasets configured, `raw_fred.fred_series` entirely empty" as
+`not_applicable`. It should not. Configured work that never reached the
+warehouse is a real finding in production — that is what the rule is for. The
+test's premise was that *neither* relation holds anything, and a test that
+requires an empty relation must empty it. The rule is unchanged.
+
+### DTI-003 — the tier is collectable on this host
+
+The abort was not "Airflow does not work on Windows". It was a path bug in the
+suite's own configuration.
+
+`tests/conftest.py` set `AIRFLOW_HOME` but not
+`AIRFLOW__DATABASE__SQL_ALCHEMY_CONN`, so Airflow derived
+`f"sqlite:///{home}/airflow.db"`. That yields the four-slash absolute form
+Airflow demands only when the path starts with `/`. A Windows path starts with
+a drive letter, so the string came out `sqlite:///C:\Users\...` and Airflow
+raised `AirflowConfigException: Cannot use relative path` at import — aborting
+collection of the entire tier rather than skipping one module.
+`tests/dags/conftest.py` had the same bug written out longhand.
+
+`tests/support/airflow_env.py::sqlite_connection_string` builds the URL from
+the POSIX rendering of the resolved path, so both platforms get
+`sqlite:////...`. Verified directly: `sqlite:////C:/Users/.../airflow.db`
+imports Airflow successfully on this host; `sqlite:///C:/Users/...` raises.
+
+With the path fixed, the genuine constraint surfaced: this virtual environment
+pins SQLAlchemy 2 for the API, and Airflow 2.9.3 requires SQLAlchemy < 2, so
+importing a DAG raises `MappedAnnotationError`. That is the documented,
+intended environment split the module's own comment describes. The existing
+`pytest.importorskip("airflow")` never fired because the failure is not an
+`ImportError` — and neither `airflow` nor `airflow.models` fails, since the
+declarative mappers are only built when something imports
+`airflow.decorators`, which is what every DAG module does.
+`require_airflow_dag_imports()` probes that and skips with the reason:
+
+```
+SKIPPED tests/integration/database/test_usda_nass_dag_tasks.py:
+  a production DAG cannot be imported in this environment
+  (MappedAnnotationError); the postgres-integration job installs
+  .[airflow-dev] and runs this module there.
+```
+
+`tests/run.ps1 integration` needs no `--ignore` argument.
+
+### DTI-004 — repeatability guard and documentation
+
+- `tests/integration/database/test_tier_repeatability.py` asserts that the
+  session leaves no rows in the shared provider and ledger relations, naming
+  what leaked. It does not re-run the tier; it pins the property that makes the
+  tier reproducible, at the point where breaking it is cheap to detect.
+- `TESTING_CONTRACT.md` gains DB-024; `CI_EVIDENCE_MAP.md` maps it onto
+  `postgres-integration`.
+- The observation standing open in `completed/WAREHOUSE_DATA_QUALITY_PLAN.md`
+  since 2026-08-31 now records its resolution and the specific suite
+  responsible.
+
+### Verification
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/unit` | 1268 passed |
+| `pytest -m "integration and not e2e" tests/integration` on a freshly recreated warehouse, **no `--ignore`** | **131 passed, 2 skipped, 0 failed** (303s) |
+| the same command again, against the same warehouse | **131 passed, 2 skipped, 0 failed** (246s) |
+| `ruff check` and `ruff format --check` | clean |
+
+Both skips are explicit and named, neither is a silent pass:
+
+```
+SKIPPED tests/support/airflow_env.py:56: a production DAG cannot be imported
+  in this environment (MappedAnnotationError); the postgres-integration job
+  installs .[airflow-dev] and runs this module there.
+SKIPPED tests/integration/deployment/test_compose_smoke.py:32: set
+  RUN_COMPOSE_TESTS=1 through the compose smoke runner
+```
+
+Shared relations after both runs, which is the property the tier's
+reproducibility rests on:
+
+```
+silver_bls.observation_revision      0
+silver_fred.observation_revision     0
+silver_census.observation_revision   0
+raw_fred.fred_datasets               0
+```
+
+Before the fixes the same measurement read `fred_datasets 23` and, once that
+was fixed, 8 then 11 orphaned revision rows.
+
+### The second leak, and why one run could not have found it
+
+The FRED configuration leak was the whole of the six observed failures, but it
+was not the whole of the tier's irreproducibility. With it fixed, run 1 passed
+and **run 2 failed** inside `test_census_silver_flow.py` with
+
+```
+Census ACS transform blocked: silver_ref geography history is incomplete
+(1 distinct IDs missing; examples: county:state:55|county:001)
+```
+
+The suite that failed had done nothing wrong. `observation_revision` rows are
+*pending work*: the next run's transform reads every one of them. Four suites
+committed rows and never removed them, so on the second run those rows outlived
+the geographies their own suites had correctly cleaned up, and the transform
+refused.
+
+Traced by reproducing and reading the ids back out of the warehouse:
+
+| Leaked id | Suite | Cleanup it had |
+| --- | --- | --- |
+| `LAUST990000000000003` | `test_bls_silver_flow` | facts, raw series, time -- not revisions |
+| `TEST_FRED_SILVER_*` (7 rows) | `test_fred_silver_flow` | six relations -- not revisions |
+| `CAPTURE_*` (2 rows) | `test_fred_capture_ingest` | none |
+| `IMM_*` | `test_production_resilience` | none |
+
+The two suites with no cleanup at all now use a shared `revision_cleanup`
+fixture in the database conftest, which takes an id prefix and clears all three
+revision relations; the two with token fixtures got the missing delete added
+where the rest of their cleanup already lives. `SHARED_RELATIONS` in the
+repeatability test covers the revision relations too, so the next one is named
+where it happens.
+
+This is exactly the risk the plan recorded ("another leaking suite is hiding
+behind this one"), and the reason DTI-004's acceptance was two runs rather than
+one: a single run cannot observe state that only matters to the run after it.
+
+The `serving_full_reserve` DAG-tier additions from
+`FORCED_FULL_RESERVE_SCALE_PLAN.md` still run only in CI's `scheduler-image`
+job: this environment's SQLAlchemy pin is what DTI-003 identified, and fixing
+the path bug does not change it. That is a dependency-matrix property of the
+warehouse-coverage environment, not a defect, and it is now reported as a skip
+with its reason rather than as an abort.

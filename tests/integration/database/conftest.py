@@ -56,3 +56,50 @@ def postgres_connection(
     finally:
         database_connection.rollback()
         database_connection.close()
+
+
+@pytest.fixture
+def revision_cleanup(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[list[str]]:
+    """Remove the `observation_revision` rows a suite commits.
+
+    Revision rows are pending work, not test fixtures: the next run's transform
+    reads every one of them. Left behind, they outlive the geographies and
+    reference rows their suite correctly cleaned up, and the following run
+    fails inside a *different* suite with "silver_ref geography history is
+    incomplete" -- a failure with no relationship to the code under test.
+
+    Append each series id (or variable name) the test causes to be written;
+    ids are matched by prefix, so a token-scoped id covers every row derived
+    from it.
+    """
+    identifiers: list[str] = []
+    try:
+        yield identifiers
+    finally:
+        if not identifiers:
+            return
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for identifier in identifiers:
+                    pattern = f"{identifier}%"
+                    cursor.execute(
+                        "DELETE FROM silver_fred.observation_revision "
+                        "WHERE series_id LIKE %s",
+                        (pattern,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM silver_bls.observation_revision "
+                        "WHERE series_id LIKE %s",
+                        (pattern,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM silver_census.observation_revision "
+                        "WHERE variable_name LIKE %s",
+                        (pattern,),
+                    )
+            cleanup.commit()
+        finally:
+            cleanup.close()

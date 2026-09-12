@@ -65,6 +65,13 @@ def fred_silver_token(
                     "DELETE FROM raw_fred.fred_series WHERE series_id LIKE %s",
                     (f"TEST_FRED_SILVER_{token}%",),
                 )
+                # Revision rows are pending work the next run's transform
+                # reads, so leaving them outlives the reference rows above.
+                cursor.execute(
+                    "DELETE FROM silver_fred.observation_revision "
+                    "WHERE series_id LIKE %s",
+                    (f"TEST_FRED_SILVER_{token}%",),
+                )
                 cursor.execute(
                     "DELETE FROM control.serving_refresh_chunk_state "
                     "WHERE source_code = 'FRED'"

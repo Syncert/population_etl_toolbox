@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from uuid import uuid4
 
 import pytest
@@ -14,13 +14,51 @@ from data_ingestion_toolbox.census_acs import ingest as census_ingest
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 
+@pytest.fixture
+def capture_cutover_cleanup(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[list[str]]:
+    """Remove the revision rows these ingests commit.
+
+    ``ingest_slice`` writes through the production path, so its rows outlive
+    the test. Left behind, the next run's Census transform reads them, finds
+    the geographies their suites have since cleaned up, and refuses with
+    "silver_ref geography history is incomplete" -- a failure in a suite that
+    did nothing wrong, on the second run only.
+    """
+    variables: list[str] = []
+    try:
+        yield variables
+    finally:
+        if not variables:
+            return
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM silver_census.observation_revision "
+                    "WHERE variable_name = ANY(%s)",
+                    (variables,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_bls.observation_revision "
+                    "WHERE series_id = ANY(%s)",
+                    (variables,),
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
 def test_census_ingest_captures_array_and_bypasses_legacy_raw(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    capture_cutover_cleanup: list[str],
 ) -> None:
     """Covers: DB-020, DB-023 — Census normalization starts after capture."""
     token = uuid4().hex[:8].upper()
     variable = f"B{token[:5]}_001E"
+    capture_cutover_cleanup.append(variable)
     payload = [[variable, "state", "county"], ["123", "55", "001"]]
     monkeypatch.setattr(
         census_ingest, "_get_pg_connection", postgres_connection_factory
@@ -55,10 +93,12 @@ def test_census_ingest_captures_array_and_bypasses_legacy_raw(
 def test_bls_ingest_captures_complete_response_and_bypasses_legacy_raw(
     monkeypatch: pytest.MonkeyPatch,
     postgres_connection_factory: Callable[[], connection],
+    capture_cutover_cleanup: list[str],
 ) -> None:
     """Covers: DB-020, DB-022 — BLS source strings replay from captures."""
     token = uuid4().hex[:10].upper()
     series_id = f"TESTBLS{token}"
+    capture_cutover_cleanup.append(series_id)
     payload = {
         "status": "REQUEST_SUCCEEDED",
         "Results": {

@@ -21,16 +21,13 @@ from psycopg2.extensions import connection
 from data_ingestion_toolbox.usda_nass.registry import enabled_products, iter_slices
 from tests.support import dag_pipeline
 from tests.support import usda_nass as nass_support
+from tests.support.airflow_env import require_airflow_dag_imports
 from tests.support.postgres import PostgresHookStub
 
-# This module imports the production DAG, so it needs Airflow. The warehouse
-# coverage job installs the API extra, whose SQLAlchemy 2 pin cannot coexist
-# with Airflow 2.9.3 (SQLAlchemy < 2), so skip there instead of failing
-# collection. The postgres-integration job installs .[airflow-dev] and runs it.
-pytest.importorskip(
-    "airflow",
-    reason="The production DAG module requires Airflow; install .[airflow-dev].",
-)
+# This module imports the production DAG. `importorskip("airflow")` passed in
+# environments where that import cannot work, and the resulting error aborted
+# collection of the whole tier instead of skipping this module.
+require_airflow_dag_imports()
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
