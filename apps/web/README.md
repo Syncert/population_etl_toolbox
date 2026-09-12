@@ -63,16 +63,41 @@ npm run check:bundle:update   # rewrite the baseline, deliberately
 with no declared budget fails the check rather than passing silently, so a
 new route cannot grow unnoticed.
 
+## Maps
+
+Both maps — the explorer's and the comparison workspace's — are one MapLibre
+wiring. `components/useMapLibre.ts` brings a map up and takes it down;
+`lib/mapWiring.ts` paints, filters, shows, and hides layers and resolves the
+boundary's tile template to this origin textually, so its `{z}/{x}/{y}`
+placeholders survive (Chromium's `new URL` percent-encodes braces, and
+MapLibre fills a template by literal replace); `components/ChoroplethLegend.tsx`
+is the one legend. What differs between the two maps is only which sources
+and layers each adds in `onLoad`. The colouring model itself is
+`lib/explorerViewModel`, unchanged: a geography without a published number
+is left uncoloured, never coloured as zero.
+
 ## Security headers
 
-`next.config.mjs` serves `Content-Security-Policy`, `X-Content-Type-Options`,
-`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and
-`Cross-Origin-Opener-Policy` on every route. The CSP is same-origin only:
-the API and tile server are reached through this server's own rewrites, so
-nothing needs a third-party script or connect origin. `worker-src blob:` and
-`img-src blob:` exist for MapLibre. Script `'unsafe-inline'` is Next's own
-inline bootstrap; removing it requires a per-request nonce and is a
-deliberate follow-on.
+`next.config.mjs` serves `X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`, and `Cross-Origin-Opener-Policy` on
+every route. `middleware.ts` serves the `Content-Security-Policy`, because it
+carries a **per-request nonce**: `script-src 'self' 'nonce-…' 'strict-dynamic'`
+with no `'unsafe-inline'`, so only the scripts Next stamped with this
+response's nonce (and the chunks they load) run, and an injected inline
+script does not. The CSP is same-origin only: the API and tile server are
+reached through this server's own rewrites, so nothing needs a third-party
+script or connect origin. `worker-src blob:` and `img-src blob:` exist for
+MapLibre. Styles keep `'unsafe-inline'`; a style nonce is a separate change.
+
+The cost of the nonce is that every route is dynamically rendered rather
+than static (`export const dynamic = "force-dynamic"` in `app/layout.js`) —
+a per-request value cannot be baked into a prerendered page, and a page that
+were prerendered would ship script tags with no nonce against a policy that
+demands one, so the browser would block every script on it. That failure is
+invisible under `next dev`, which renders per request regardless, so
+`npm run check:csp` reads the production build and fails if any route is
+prerendered or the middleware is not registered for the pages. It runs in CI
+after `build`, beside the bundle budgets.
 
 ## Accessibility commitments
 

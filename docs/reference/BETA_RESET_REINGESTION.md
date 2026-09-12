@@ -401,3 +401,50 @@ The repository guard for the same contract is `ARC-005` (static), with
 `tests/integration/api/test_catalog_serving_agreement.py`, which publishes one
 ACS metric through the real refresh and the real harvest and then requires the
 catalog's own code to answer from `/api/v1/observations`.
+
+**What it cost, and what made it slow.** Run 2026-09-12 on the development
+stack at 48 GB `shared_buffers`: 42,444 s wall clock (11h47m) for all twenty
+years, against the 4h36m measured above for the tuned half of the previous
+run. Verification afterwards: 4447/4447 current catalog codes resolvable, 0/0
+rows under the old spelling, row counts unchanged.
+
+| Year | Duration | Note |
+| --- | --- | --- |
+| 2005–2008 | 571 / 279 / 225 / 262 s | |
+| 2009–2013 | 1385 / 1211 / 1287 / 1501 / 1670 s | |
+| 2014 | 2241 s | bloat building |
+| 2015 | 3610 s | |
+| 2016 | 7202 s, **failed** on the chunk driver's two-hour statement timeout; 1718 s on the retry | after the vacuum below |
+| 2017–2024 | 1458 / 1464 / 1526 / 1404 / 1619 / 1859 / 1931 / 1807 s | |
+
+The slowdown was not the re-serve. A catalog count query from another
+session had been open for nine hours, and its snapshot stopped vacuum from
+reclaiming the rows each year's delete leaves behind. By 2015
+`gold_census.mv_acs_latest` held 54.7 million dead rows against 8.9 million
+live, and its heap had grown to about 31 GB, so every later year's per-key
+lookups and deletes crawled through garbage. The fix was to end that session
+and run a manual vacuum, which cleared the bloat in 48 minutes:
+
+```sql
+VACUUM (ANALYZE, PARALLEL 0) gold_census.mv_acs_latest;
+VACUUM (ANALYZE, PARALLEL 0) gold_census.rpt_acs_observations;
+```
+
+`PARALLEL 0` is not optional on this stack: the compose file sets no
+`shm_size`, so the container has Docker's default 64 MB `/dev/shm`, and a
+parallel index vacuum at the configured 8 GB `maintenance_work_mem` fails at
+once with "could not resize shared memory segment ... No space left on
+device". The re-serve itself never hit that error.
+
+Three operator rules follow:
+
+1. Before a long re-serve, look for old snapshots
+   (`SELECT pid, now() - query_start FROM pg_stat_activity WHERE state <> 'idle'`)
+   and end anything that will outlive a year. One nine-hour reader cost more
+   than six hours here.
+2. If per-year time is climbing rather than flat, check `n_dead_tup` on the
+   two serving relations in `pg_stat_user_tables` and vacuum manually; do not
+   wait for autovacuum, which yields to everything else on the box.
+3. Confirm the ingest pause actually held. On this run `acs_ingest` was
+   unpaused through the UI before the re-serve started; it was harmless only
+   because the schedule is monthly.

@@ -14,10 +14,9 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed; ACM-001 through ACM-003 implemented with evidence
-  below. ACM-004's forced full re-serve is running on the development stack
-  (see the checkpoint); the plan moves to `needs_review/` when its
-  verification is recorded.
+- **Status:** Ready for review. ACM-001 through ACM-004 delivered with
+  evidence below; the forced full re-serve completed on the development stack
+  on 2026-09-12 and every acceptance check passed.
 - **Last updated:** 2026-09-12
 - **Owner surface:** `src/data_ingestion_toolbox/census_acs/gold_census/DDL/`,
   `src/data_ingestion_toolbox/glossary/harvest.py`, `apps/api/registry.py`,
@@ -30,31 +29,18 @@ verify:
 
 **Last updated:** 2026-09-12
 
-**Current milestone:** ACM-004 in flight. The orchestration for the
-development stack (pause `acs_ingest` → wait for the in-flight ingest run →
-apply the changed gold DDL → `serving_full_reserve` for `CENSUS_ACS` → forced
-`glossary_reconciliation` scoped to `gold_census` → restart the API container
-→ verify → unpause `acs_ingest`) was started on 2026-09-12 and logs to the
-session scratchpad (`acm004.log`, `acm004.status`).
+**Current milestone:** complete. Every phase has inspectable evidence and the
+development warehouse verification is recorded under "ACM-004 on the
+development stack".
 
-**Next pickup:** read the re-serve's verification (resolvable/current ACS
-catalog codes must be 4447/4447; `ACS:`-prefixed residue in
-`gold_census.rpt_acs_observations` and `gold_census.mv_acs_latest` must be
-0/0; `/api/v1/observations` answers the first current catalog code), record
-the measured duration in the evidence table below and in
-`docs/reference/BETA_RESET_REINGESTION.md`, then move this plan to
-`needs_review/`. If the re-serve run failed, `acs_ingest` was deliberately
-left paused: resume it by re-triggering `serving_full_reserve` with
-`{"source_code": "CENSUS_ACS"}` (it resumes at the interrupted year) and
-unpause `acs_ingest` only once the verification passes.
+**Next pickup:** none.
 
 ### Completed in the current slice
 
 - [x] ACM-001 decide which spelling is canonical and record why
 - [x] ACM-002 make the two sides agree
 - [x] ACM-003 a guard that fails when a catalog code cannot be served
-- [ ] ACM-004 re-serve or re-harvest as the decision requires (running;
-      documentation half delivered, operational half in flight)
+- [x] ACM-004 re-serve or re-harvest as the decision requires
 
 ## Objective
 
@@ -255,10 +241,9 @@ Acceptance:
 
 - Every `CENSUS_ACS` catalog row's `metric_code` exists in
   `gold_census.mv_acs_latest`, except rows legitimately `retired`.
-  **Met in the repository** (the refresh composes the catalog's code, and the
-  end-to-end integration guard proves it on a bootstrapped warehouse); **met
-  on the development warehouse** once ACM-004's re-serve verification records
-  4447/4447.
+  **Met** in the repository (the refresh composes the catalog's code, and the
+  end-to-end integration guard proves it on a bootstrapped warehouse) and on
+  the development warehouse (4447/4447 after ACM-004's re-serve).
 
 ### ACM-003 — A guard that fails when a catalog code cannot be served
 
@@ -428,7 +413,59 @@ CENSUS_ACS declares lineage_key_prefix 'ACS:', which is neither empty nor the gl
 | `npm run test:unit` / `npm run lint` / `npm run typecheck` / `npm run test:browser` (`apps/web`) | 198 passed / clean / clean / 41 passed |
 | `ruff check` + `ruff format --check` on changed Python | clean |
 
-### ACM-004 on the development stack
+### ACM-004 on the development stack (2026-09-12)
 
-Recorded from `acm004.log` when the orchestration completes; see the
-checkpoint for what must be true.
+Sequence as run, unattended, from an orchestration script: pause `acs_ingest`
+(03:20 UTC) → wait for the in-flight ingest run (finished 04:36; its
+`ensure_gold_census_schema` task had already installed the changed procedure
+from the mounted working tree, confirmed by inspecting `pg_proc`) → trigger
+`serving_full_reserve` with `{"source_code": "CENSUS_ACS"}` (run
+`acm004_reserve_20260912T043628Z`, 04:36) → forced `glossary_reconciliation`
+with `{"force": true, "schemas": ["gold_census"]}` (run
+`acm004_reconcile_20260912T162354Z`, success 16:25) → `docker restart
+docker-api-1` → verify → unpause `acs_ingest` (16:26).
+
+Verification, against the warehouse and the restarted live API:
+
+| Check | Result |
+| --- | --- |
+| `current` ACS catalog codes with a row in `gold_census.mv_acs_latest` | **4447 / 4447** |
+| Rows under the abandoned `ACS:` spelling, `rpt_acs_observations` / `mv_acs_latest` | **0 / 0** |
+| Row counts after the re-serve, `rpt_acs_observations` / `mv_acs_latest` | 68,302,467 / 4,646,720 (unchanged from before, as expected for an identity-only rewrite) |
+| ACS catalog rows by `freshness_state` | `current` 4447; nothing stale or retired, as the decision predicted |
+| `publisher_harvest_state` for `CENSUS_ACS` | `success`, `last_harvest_forced = true`, completed 16:23:58 |
+| `GET /api/v1/observations?metric_code=CENSUS_ACS:acs1:B01001_001&limit=1` | `total: 932` |
+| `GET /api/v1/census/observations/latest?metric_code=CENSUS_ACS:acs1:B01001_001&geo_level=NATIONAL` | `total: 1` (the request that answered `total: 0` in the evidence section) |
+| Registry sweep through the live API: first `current` catalog code of every source in `OBSERVATION_DISPATCH` | BLS 1, CDC 2310, CENSUS_ACS 932, FBI_UCR 3216, FRED 1, USDA_NASS 183 rows; CENSUS_PEP answered a 503 on one sample and is recorded in the notes below |
+
+The re-serve took 42,444 s wall clock (11h47m) instead of the measured
+4h36m, and the reason is worth keeping. A catalog count query from another
+session had been running for nine hours, and its snapshot stopped vacuum from
+reclaiming the rows each year's delete left behind: by year 2015
+`gold_census.mv_acs_latest` carried 54.7 million dead rows against 8.9 million
+live, per-year time had climbed from 4 minutes to 60, and 2016's latest-view
+rebuild hit the chunk driver's two-hour statement timeout after 7,202 s.
+Cancelling that session and running a manual `VACUUM (ANALYZE, PARALLEL 0)`
+on both serving relations (the container's 64 MB `/dev/shm` cannot host a
+parallel index vacuum at the configured 8 GB maintenance memory) cleared the
+bloat in 48 minutes; Airflow's own retry resumed at 2016 and finished it in
+1,718 s, and 2017 to 2024 ran at 1,404 to 1,931 s each. Per-year timings are
+in `docs/reference/BETA_RESET_REINGESTION.md` section 7.
+
+Notes:
+
+- `acs_ingest` was unpaused through the Airflow UI by `admin` at 04:25 UTC,
+  before the re-serve started, so the script's pause did not hold. It was
+  harmless here because the DAG's schedule is monthly and the next run could
+  not start before 2026-10-01, but an operator following section 7 should
+  confirm the pause held rather than assume it.
+- The CENSUS_PEP sample in the live sweep returned `503 Database service is
+  temporarily unavailable` on three consecutive tries. The API container log
+  shows the cause: the neutral read for `CENSUS_PEP:BIRTHS` is cancelled by
+  the API's own statement timeout (`psycopg2.errors.QueryCanceled`), so the
+  PEP latest relation on this warehouse answers too slowly for the configured
+  budget. Nothing in this plan touches PEP identity, dispatch, or relations,
+  and the catalog resolves the code normally, so this is reported to the
+  reviewer as a separate PEP serving-performance defect rather than
+  investigated here. The repository sweep (DB-025) passes for every source on
+  a bootstrapped warehouse.
