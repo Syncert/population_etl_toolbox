@@ -37,6 +37,7 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     "/api/v1/distribution",
     "/api/v1/comparison",
     "/api/v1/analysis-configurations",
+    "/api/v1/evidence-packets",
 )
 
 

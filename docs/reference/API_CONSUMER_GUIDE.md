@@ -265,6 +265,46 @@ Authenticated, user-owned storage — see ADR-0003.
   version. Deletion is immediate and permanent.
 - These responses are `private, no-store` and are never publicly cached.
 
+## Saved evidence packets
+
+Authenticated, user-owned storage for composed evidence packets — see
+ADR-0004. A packet is an ordered composition of blocks (narrative,
+methodology, caveats, and analytical blocks that each carry a query plus the
+reproducibility envelope the composer recorded). It is a separate resource
+from a configuration: a configuration is a live question you re-ask, a packet
+is a document you hand to someone else, so each analytical block embeds its
+own query rather than referencing a configuration that could later change.
+
+- `Authorization: Bearer <token>`, the same operator-provisioned token.
+- `GET|POST /api/v1/evidence-packets`,
+  `GET|PUT|DELETE /api/v1/evidence-packets/{packet_id}`.
+- **Contradictions are refused; incompleteness is reported.** A write is
+  `422`, naming the `block_id`, when an analytical block's envelope names a
+  measure its query does not ask for, records a scope or release its query
+  does not, when a prose block carries a query or an envelope, when a block
+  id repeats, or when a block's query is one the live routes would refuse.
+  An analytical block that is still empty or partially filled is **stored**,
+  and reported: `validation.blocks[]` names each block, whether it is valid,
+  the reason, and the envelope fields still `missing`. A block whose measure
+  was retired after it was stored is reported the same way, with the
+  document returned unmodified.
+- **A list summary carries `block_count` and `analytical_block_count` and no
+  validation verdict.** Validation is a detail-read concern; the absence of a
+  verdict on a summary means *not checked*, never *valid*.
+- No observation value is stored. A block replaying the latest publication
+  is live; a block pinned to a release reproduces that release.
+- Bounds: at most 100 blocks, 50 of them analytical; the serialized document
+  is bounded by the request-body limit below.
+- Updates send `expected_version`; a mismatch is `409` naming the current
+  version. Deletion is immediate and permanent; deleting an account deletes
+  its packets.
+- These responses are `private, no-store` and are never publicly cached.
+
+**Request bodies are bounded.** Every request body is limited to 256 KB
+(`API_MAX_REQUEST_BODY_BYTES`), by declared `content-length` and as a
+chunked body streams. Over the bound answers `413 {"detail": "..."}` before
+any parsing. Public analytical reads carry no body and are unaffected.
+
 ## Errors
 
 | Status | Meaning |
@@ -272,6 +312,7 @@ Authenticated, user-owned storage — see ADR-0003.
 | `401` | Missing, malformed, unknown, or revoked bearer token. Identical for every case by design |
 | `404` | Unknown identifier, or a configuration you do not own (indistinguishable on purpose) |
 | `409` | Version conflict, or a name you already use |
+| `413` | The request body is over the accepted size. Refused before parsing |
 | `422` | A request the API can explain: an unsupported filter, a contradictory scope, an incompatible comparison, a reversed range, or an invalid document |
 | `429` | Rate limited. Honour `Retry-After` |
 | `503` | The API cannot serve: database unavailable, a required serving contract missing, or (for saved analysis) storage not configured. The body is deliberately sanitized and never names warehouse objects |

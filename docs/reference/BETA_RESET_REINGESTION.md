@@ -78,6 +78,14 @@ If the API uses its restricted database role, apply
 `sql/bootstrap/001_api_readonly.sql` afterward using the documented provisioning
 environment. Do not grant the API write access as a bootstrap shortcut.
 
+API-owned application storage (`app_api`: accounts, saved analysis
+configurations, evidence packets) comes from `sql/bootstrap/002_app_api.sql`.
+Its grants are positional — they cover the tables that exist when the file
+runs — so **re-running the whole file against an already-deployed database is
+the migration** whenever a table is added to it (as `app_api.evidence_packet`
+was under ADR-0004). Every statement in it is idempotent; nothing in it is
+warehouse content and no ETL process touches it.
+
 ## 4. Validate bootstrap before downloading data
 
 ```bash

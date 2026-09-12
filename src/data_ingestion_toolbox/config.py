@@ -68,6 +68,12 @@ class Settings:
         self.api_rate_limit_analysis_per_minute: int = int(
             os.environ.get("API_RATE_LIMIT_ANALYSIS_PER_MINUTE", "0")
         )
+        # The largest request body any route accepts (ADR-0004). Bounds the
+        # authenticated write resources' JSONB documents; public reads carry
+        # no body. 256 KB is the evidence packet cap.
+        self.api_max_request_body_bytes: int = int(
+            os.environ.get("API_MAX_REQUEST_BODY_BYTES", "262144")
+        )
 
 
 @lru_cache(maxsize=1)
