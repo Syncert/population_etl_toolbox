@@ -17,7 +17,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Implementation complete on `feat/census-pep-history`; ready for human review
+- **Status:** Accepted 2026-09-12 (Implementation complete on `feat/census-pep-history`; ready for human review)
 - **Last updated:** 2026-09-10
 - **Source owner:** U.S. Census Bureau Population Estimates Program (PEP), historical county and state series
 - **Geography scope:** State and county for every decade; national where the era's file carries it. Subcounty history is out of scope.
