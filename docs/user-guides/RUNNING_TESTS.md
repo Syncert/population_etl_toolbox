@@ -49,12 +49,15 @@ Linux/macOS uses `make`; Windows PowerShell uses the equivalent tier name with
 | Frontend units | `make test-web-unit` | `.\tests\run.ps1 web-unit` |
 | Frontend browser | `make test-web-browser` | `.\tests\run.ps1 web-browser` |
 | Frontend lint/build | `make test-web-build` | `.\tests\run.ps1 web-build` |
+| Frontend live-stack smoke | `make test-web-smoke` | `.\tests\run.ps1 web-smoke` |
 | Compose smoke | `make test-compose-smoke` | `.\tests\run.ps1 compose-smoke` |
 | Linux container runner | `make test-linux` | `.\tests\run.ps1 linux` |
 
-`martin-integration` and `compose-smoke` start the pinned disposable Compose
-services and remove their containers, network, and test-only volumes when the
-run finishes, including after a failure.
+`martin-integration`, `web-smoke`, and `compose-smoke` start the pinned
+disposable Compose services and remove their containers, network, and
+test-only volumes when the run finishes, including after a failure.
+`web-smoke` also rebuilds the API image it grades, because Compose reuses an
+image by name and a stale one reports the working tree's code as broken.
 
 ## Airflow DAG Tests
 
@@ -168,7 +171,7 @@ what CI grades, and it is the only way a count assertion means what it says:
 ```powershell
 docker compose -f infra/docker/docker-compose.test.yml down --volumes --remove-orphans
 docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
-.	estsun.ps1 e2e
+.\tests\run.ps1 e2e
 ```
 
 ## Database and Redis Tests

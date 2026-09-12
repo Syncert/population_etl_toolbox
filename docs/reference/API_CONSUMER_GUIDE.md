@@ -200,9 +200,21 @@ between them.
 
 ### The geography vocabulary served rows carry
 
-`geo_level` on a served row is always `NATIONAL`, `STATE`, or `COUNTY`, and
-the `geo_level` filter matches that vocabulary. A national row answers
-`geo_level=NATIONAL`.
+`geo_level` on a served row is always one of `NATIONAL`, `STATE`, `COUNTY`,
+`PLACE` (Census PEP), or `AGENCY` (FBI UCR), and a metric's
+`valid_geo_grains` in the catalog uses the same five words — so a grain read
+from the catalog can be sent straight back as the `geo_level` filter and
+will answer. A national row answers `geo_level=NATIONAL`. The filter is
+case-insensitive, and it accepts `NATION` as an alias for `NATIONAL` because
+the catalog published that word for CDC, PEP, and USDA NASS before the
+vocabulary was unified; a saved configuration or a shared link holding it
+keeps answering. Every source that publishes grains declares the `geo_level`
+filter, including FBI UCR.
+
+The vocabulary is one warehouse function, `gold_glossary.geo_grain(text)`,
+which the publisher views and the serving routes both go through; a grain
+in the catalog is derived from the rows a source actually serves, never
+declared from configuration.
 
 ### Legacy observation routes
 

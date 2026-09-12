@@ -128,7 +128,15 @@ SELECT measure.metric_code AS source_object_key,
     measure.display_name AS metric_display_name, measure.unit,
     measure.is_component, measure.allows_negative,
     measure.population_universe,
-    ARRAY_AGG(DISTINCT fact.geo_type ORDER BY fact.geo_type) AS valid_geo_grains,
+    -- Grains are the ones the served relation carries, in the vocabulary the
+    -- API filters on. Read from the silver fact this also published
+    -- 'unsupported' -- 1.6M rows whose geography never resolved and which the
+    -- served relations exclude. A resolution status is not a grain: nothing
+    -- can be asked for it. The mapping is the gold_glossary geo_grain
+    -- function, written inline here because this file is re-applied by the PEP DAG
+    -- ahead of the glossary phase that defines the function, and DB-028
+    -- holds the outcome to the same vocabulary either way.
+    COALESCE(served.valid_geo_grains, ARRAY[]::TEXT[]) AS valid_geo_grains,
     MAX(fact.transformed_at) AS publication_time,
     -- Coverage is per measure, not per source: the Bureau published births
     -- for the 1980s onward and migration components only from 2000, so a
@@ -140,7 +148,23 @@ SELECT measure.metric_code AS source_object_key,
     MAX(fact.estimate_date) AS last_period
 FROM silver_pep.dim_measure AS measure
 JOIN silver_pep.fact_population_estimate AS fact USING (metric_code)
-GROUP BY measure.metric_code;
+LEFT JOIN (
+    -- Aggregated first, then joined once per measure. Joining the served
+    -- relation row-for-row beside the silver fact multiplies the two per
+    -- metric -- a cross product over millions of rows -- which is exactly
+    -- what the first cut of this did.
+    SELECT revision.metric_code,
+           ARRAY_AGG(DISTINCT CASE UPPER(revision.geo_type)
+                                 WHEN 'NATION' THEN 'NATIONAL'
+                                 ELSE UPPER(revision.geo_type) END
+                     ORDER BY CASE UPPER(revision.geo_type)
+                                 WHEN 'NATION' THEN 'NATIONAL'
+                                 ELSE UPPER(revision.geo_type) END)::TEXT[]
+               AS valid_geo_grains
+    FROM gold_pep.population_estimate_revision AS revision
+    GROUP BY revision.metric_code
+) AS served ON served.metric_code = measure.metric_code
+GROUP BY measure.metric_code, served.valid_geo_grains;
 
 CREATE OR REPLACE VIEW gold_pep.metric_publisher AS
 SELECT 'CENSUS_PEP'::TEXT AS source_code,

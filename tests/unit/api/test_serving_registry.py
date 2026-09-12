@@ -256,3 +256,34 @@ def test_missing_serving_contract_answers_a_sanitized_503() -> None:
     body = response.text
     assert contract.latest_relation not in body
     assert "gold_bls" not in body
+
+
+def test_every_geo_level_filter_matches_the_grain_the_source_projects() -> None:
+    """Covers: API-073 — the catalog's grain word is the filter's word.
+
+    A source's ``geo_level`` filter must compare the same expression the
+    source projects as a row's ``geo_level``. USDA NASS published ``NATION``
+    from ``geo_type`` while filtering on ``agg_level_desc``, whose value is
+    ``NATIONAL``: every national statistic in its catalog was unanswerable
+    and nothing reported it. Pinning filter to projection makes that
+    disagreement impossible to reintroduce in the registry.
+    """
+    from apps.api.registry import GEO_GRAINS, normalize_geo_level
+
+    for source_code, dispatch in OBSERVATION_DISPATCH.items():
+        declared = dict(dispatch.filter_conditions)
+        if "geo_level" not in declared:
+            continue
+        condition = declared["geo_level"]
+        projection = dispatch.geo_level_expression
+        assert condition.startswith(f"{projection} = ") or condition.startswith(
+            f"UPPER({projection}) = "
+        ), f"{source_code}: filter {condition!r} does not compare {projection!r}"
+        assert condition.endswith("= UPPER(:geo_level)"), source_code
+
+    # The alias table only ever points into the vocabulary.
+    assert normalize_geo_level("nation") == "NATIONAL"
+    assert normalize_geo_level(" County ") == "COUNTY"
+    assert normalize_geo_level("SOMETHING_ELSE") == "SOMETHING_ELSE"
+    assert all(normalize_geo_level(word) == word for word in GEO_GRAINS)
+

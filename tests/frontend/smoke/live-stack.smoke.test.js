@@ -38,6 +38,7 @@ import { buildExplorerSources } from "../../../apps/web/lib/explorerSources";
 import { buildLatestObservationRequest } from "../../../apps/web/lib/observationAccess";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../../../apps/web/lib/tiles";
 import { spatialGrains } from "../../../apps/web/lib/viewModes";
+import { reportUnhandledErrors } from "./unhandledErrors";
 
 const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
 
@@ -120,17 +121,15 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     let checked = 0;
 
     for (const source of sources) {
-      // `active_only` is the catalog's own retirement filter, and the filter
-      // the explorer's catalog module sends by default. The unfiltered
-      // catalog also publishes every code a source has *stopped* publishing
-      // -- 13,261 retired BLS series against 63 active ones on the
-      // development stack -- and a retired code answering nothing is the
-      // contract working, not a defect. Demanding a row from those would
-      // make this tier fail for the one reason it must not: correct
-      // behaviour. The same definition of "a code the catalog advertises as
-      // answerable" is what DB-025 asserts in the integration tier.
+      // As the explorer asks: current metrics only. A retired code answers
+      // no rows by definition -- that is what retired means -- and BLS
+      // carries 13,261 of them against 63 active ones since the LAUS
+      // measure-identity migration. Demanding a row from a retired code
+      // would fail this tier for the one reason it must not: correct
+      // behaviour. DB-025 asserts the same definition of "a code the
+      // catalog advertises as answerable" in the integration tier.
       const catalog = await apiFetch("/catalog/metrics", {
-        params: { source_code: source.sourceCode, active_only: true, limit: 50 },
+        params: { source_code: source.sourceCode, active_only: "true", limit: 50 },
       });
 
       for (const metric of catalog.items || []) {
@@ -184,7 +183,7 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     for (const grain of grains) {
       for (const candidate of sources) {
         const catalog = await apiFetch("/catalog/metrics", {
-          params: { source_code: candidate.sourceCode, active_only: true, limit: 50 },
+          params: { source_code: candidate.sourceCode, active_only: "true", limit: 50 },
         });
         const published = (catalog.items || []).find((item) =>
           (item.valid_geo_grains || []).includes(grain),
@@ -232,3 +231,6 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     ).toBeGreaterThan(0);
   }, 60_000);
 });
+
+// Declared last on purpose: it reports on every request the tests above made.
+reportUnhandledErrors();
