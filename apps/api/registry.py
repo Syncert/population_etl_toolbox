@@ -241,6 +241,36 @@ _UNION_PERIOD_START = "COALESCE(duration_start, observation_date)::TEXT"
 _UNION_PERIOD_END = "COALESCE(duration_end, observation_date)::TEXT"
 _GEO_ID_FILTER = ("geo_id", "geo_id = :geo_id")
 _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
+
+#: The geography-grain vocabulary every served row carries and every catalog
+#: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
+#: sent straight back as the ``geo_level`` filter. Five words, because that
+#: is what the warehouse serves: PLACE is Census PEP's, AGENCY is FBI UCR's.
+GEO_GRAINS: tuple[str, ...] = ("NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY")
+
+#: Words the catalog published before the vocabulary was unified. A saved
+#: configuration or a shared link holding one must keep answering (ADR-0002),
+#: so the filter accepts them and binds the vocabulary word instead.
+GEO_GRAIN_ALIASES: dict[str, str] = {"NATION": "NATIONAL", "US": "NATIONAL"}
+
+
+def normalize_geo_level(value: str) -> str:
+    """The vocabulary word for a requested ``geo_level``, alias-aware.
+
+    Upper-cased and trimmed; an alias becomes its vocabulary word; anything
+    else is passed through so the filter fails to match rather than a wrong
+    grain silently answering.
+    """
+    word = str(value).strip().upper()
+    return GEO_GRAIN_ALIASES.get(word, word)
+
+
+#: Sources whose served relation carries the grain as a source-shaped
+#: ``geo_type`` (``nation``/``state``/``county``/``place``) project and filter
+#: it through the one warehouse mapping, so the row's word and the catalog's
+#: word cannot diverge. Defined in ``sql/migrations/018_geo_grain_vocabulary.sql``.
+_GRAIN_OF_GEO_TYPE = "gold_glossary.geo_grain(geo_type)"
+_GEO_TYPE_GRAIN_FILTER = ("geo_level", f"{_GRAIN_OF_GEO_TYPE} = UPPER(:geo_level)")
 _STATE_FIPS_FILTER = ("state_fips", "state_fips = :state_fips")
 _COUNTY_FIPS_FILTER = ("county_fips", "county_fips = :county_fips")
 
@@ -329,7 +359,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             release_order_expression="release_watermark::BIGINT",
             period_start_expression="period_start::TEXT",
             period_end_expression="period_end::TEXT",
-            geo_level_expression="geo_type",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
             value_status_column="value_status",
             unit_expression="unit",
             dimension_expressions=(
@@ -356,7 +386,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             capture_id_column="capture_id",
             filter_conditions=(
                 _GEO_ID_FILTER,
-                ("geo_level", "UPPER(geo_type) = UPPER(:geo_level)"),
+                _GEO_TYPE_GRAIN_FILTER,
                 ("stratum_id", "stratum_id = :stratum_id"),
                 ("adjustment_status", "adjustment_status = :adjustment_status"),
                 ("year_from", "period_end >= :year_from"),
@@ -396,7 +426,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             release_order_expression="pep_vintage",
             period_start_expression="estimate_date::TEXT",
             period_end_expression="estimate_date::TEXT",
-            geo_level_expression="geo_type",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
             unit_expression="unit",
             dimension_expressions=(
                 ("dataset_code", "dataset_code"),
@@ -407,7 +437,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             capture_id_column="capture_id",
             filter_conditions=(
                 _GEO_ID_FILTER,
-                ("geo_level", "UPPER(geo_type) = UPPER(:geo_level)"),
+                _GEO_TYPE_GRAIN_FILTER,
                 ("year_from", "observation_year >= :year_from"),
                 ("year_to", "observation_year <= :year_to"),
             ),
@@ -432,7 +462,11 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             as_of_expression="refresh_date::TEXT",
             period_start_expression="period_start::TEXT",
             period_end_expression="period_end::TEXT",
-            geo_level_expression="source_geo_level",
+            # The grain is subject_type (agency/state/national), the column
+            # the FBI publisher derives its catalog grains from. It used to
+            # project source_geo_level -- an identifier like
+            # ``fbi_agency:WI0050700`` -- as the row's geo_level.
+            geo_level_expression="UPPER(subject_type)",
             value_status_column="value_status",
             unit_expression="unit",
             dimension_expressions=(
@@ -461,6 +495,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             capture_id_column="capture_id",
             filter_conditions=(
                 _GEO_ID_FILTER,
+                ("geo_level", "UPPER(subject_type) = UPPER(:geo_level)"),
                 ("subject_type", "subject_type = :subject_type"),
                 ("subject_code", "subject_code = :subject_code"),
                 ("year_from", "period_end >= MAKE_DATE(:year_from, 1, 1)"),
@@ -532,7 +567,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             release_order_expression="release_watermark",
             period_start_expression="year::TEXT",
             period_end_expression="year::TEXT",
-            geo_level_expression="agg_level_desc",
+            geo_level_expression="UPPER(agg_level_desc)",
             value_status_column="value_status",
             unit_expression="unit_desc",
             dimension_expressions=(

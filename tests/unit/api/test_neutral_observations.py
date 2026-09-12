@@ -401,13 +401,37 @@ def test_supported_filters_bind_their_declared_conditions() -> None:
 
     assert response.status_code == 200
     sql = _dispatched(session)[-1]
-    assert "UPPER(geo_type) = UPPER(:geo_level)" in sql
+    assert "gold_glossary.geo_grain(geo_type) = UPPER(:geo_level)" in sql
     assert "stratum_id = :stratum_id" in sql
     assert "period_end >= :year_from" in sql
     assert "period_start <= :year_to" in sql
     bound = session.parameters[-1]
-    assert bound["geo_level"] == "state"
+    # Bound as the vocabulary word: the served rows carry STATE, and a
+    # lower-case request is the same grain, not a different one.
+    assert bound["geo_level"] == "STATE"
     assert bound["year_from"] == 2019
+
+
+def test_a_grain_alias_binds_the_vocabulary_word() -> None:
+    """Covers: API-073 — a word the catalog once published keeps answering.
+
+    CDC, PEP, and NASS published ``NATION`` before the grain vocabulary was
+    unified; a saved configuration or a shared link holding it must not stop
+    answering, per the versioning decision record. The filter binds ``NATIONAL``, the word the served
+    rows carry, and never the alias itself.
+    """
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={"metric_code": _CDC_METRIC["metric_code"], "geo_level": "nation"},
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    assert session.parameters[-1]["geo_level"] == "NATIONAL"
 
 
 def test_release_pin_requires_the_as_released_scope() -> None:
@@ -862,9 +886,10 @@ def test_newest_per_geography_keeps_the_declared_filters() -> None:
         # relation and filtering afterwards would answer the newest period
         # that survived the filter, not the newest period of the selection.
         ranked = sql.split("ROW_NUMBER() OVER", 1)[1]
-        # PEP publishes its grain as geo_type, which is the condition its
+        # PEP carries its grain as geo_type and both projects and filters it
+        # through the one vocabulary mapping, which is the condition its
         # dispatch entry declares for the neutral geo_level filter.
-        assert "UPPER(geo_type) = UPPER(:geo_level)" in ranked
+        assert "gold_glossary.geo_grain(geo_type) = UPPER(:geo_level)" in ranked
         assert "observation_year >= :year_from" in ranked
     assert session.parameters[-1]["geo_level"] == "COUNTY"
     assert session.parameters[-1]["year_from"] == 2020

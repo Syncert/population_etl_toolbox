@@ -282,8 +282,8 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
-| Database integration | DB-001–DB-027 | None |
-| API | API-001–API-072 | None |
+| Database integration | DB-001–DB-028 | None |
+| API | API-001–API-073 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,13 +291,13 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **289 of 289** | **0 of 289** |
+| **Total** | **291 of 291** | **0 of 291** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 289-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 291-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -511,6 +511,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-025 | P0 | Database + API / `integration api database` | A published catalog code is answerable | An ACS metric published end to end — real refresh procedures, real publisher view, real glossary harvest — is stored in the serving relations under the same code the catalog publishes, and every registered source's `current` catalog codes are answered by `/api/v1/observations` with at least one row; the sweep is driven by the reviewed observation-dispatch registry and fails, rather than passing vacuously, when no source published a code to check | A source advertising codes its serving layer has never heard of, or a guard that reports green because it exercised nothing |
 | DB-026 | P0 | Database / `integration database` | An abandoned metric spelling does not survive a re-serve | After a forced full re-serve no ACS serving row remains under the retired `ACS:` spelling, in either the latest materialized view or the durable reporting relation | A partially re-served warehouse carrying both identities and answering differently depending on which code a consumer happens to hold |
 | DB-027 | P0 | Database / `integration database` | Packet storage cascade and per-owner uniqueness | Deleting an account deletes its evidence packets in the same statement and leaves another owner's untouched; two owners may each hold a packet of the same name while one owner may not hold two | An orphaned packet surviving its account, or a name clash across accounts leaking that a name is in use |
+| DB-028 | P0 | Contract / `integration api database` | A published grain is answerable, in one vocabulary | For every registered source and each sampled current catalog code, every grain in `valid_geo_grains` sent as `geo_level` to `/api/v1/observations` answers at least one row, every returned row's `geo_level` equals that grain, and the grain is one of `NATIONAL`, `STATE`, `COUNTY`, `PLACE`, `AGENCY`; the ACS fixture publishes exactly the grain it seeded, proving grains are derived from served rows rather than declared | A catalog advertising a grain nothing serves (ACS declared 2,487 such pairs; every national USDA NASS statistic), a served row carrying a word outside the vocabulary (`nation`, `fbi_agency:…`), or a publisher that declares grains from configuration |
 
 ### API and Redis Tests
 
@@ -590,6 +591,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-070 | P0 | Service / `unit api` | Contradictions refused, incompleteness reported | A write is `422` naming the `block_id` when an envelope names a measure its query does not ask for, records a scope or release its query does not, when a prose block carries a query or an envelope, when a block id repeats, when a block's query is one the live contracts refuse, or when the analytical-block cap is exceeded; an empty or partially filled analytical block is stored and reported per block with the exact envelope fields missing; a measure retired after storage is reported on the block that carries it with the document unmodified; each distinct query is resolved once per request however many blocks share it; unknown block types and stray fields are refused at the schema boundary | A stored block that displays one measure's name over another's numbers, a half-composed packet that cannot be saved, a retired measure hidden behind a packet-level boolean, a stale document silently repaired, or validation cost multiplying with block count |
 | API-071 | P0 | Service + Cache / `unit api` | Packet concurrency, deletion, privacy, and list without verdict | An update states the version it read and a mismatch answers `409` naming the current version without modifying the row; a name the caller already uses answers `409`; deletion is a hard delete and a second delete is `404`; every packet response is `private, no-store`, never carries `x-cache`, and lies outside the cacheable prefixes; the list summary carries `block_count` and `analytical_block_count`, never a validation verdict, and performs no glossary lookup | A silent overwrite, private content in a shared cache, or a summary read as valid because it carried no verdict |
 | API-072 | P0 | Contract / `integration api database` | Real-schema evidence packet contract | The checked-in `sql/bootstrap/002_app_api.sql` creates exactly the packet table the service queries; create, read, list, update, delete round-trip through PostgreSQL with block order and every envelope field intact, owner scoping and optimistic concurrency enforced by the database, an incomplete block stored and reported, and both an envelope/query contradiction and a refused query answered `422` by the real stack | Unit fakes agreeing with each other while the bootstrap DDL and the service disagree |
+| API-073 | P0 | Contract / `unit api` | Grain filter matches grain projection | Every dispatch entry that declares the `geo_level` filter compares the same expression it projects as a row's `geo_level`, against `UPPER(:geo_level)`; the incoming value is normalized to the vocabulary word before binding, with `NATION` and `US` accepted as aliases of `NATIONAL` so words the catalog once published keep answering; CDC and PEP project and filter through `gold_glossary.geo_grain(geo_type)`, FBI through `UPPER(subject_type)`, NASS through `UPPER(agg_level_desc)` | A source whose catalog word cannot reach its own rows because filter and projection read different columns, or a previously published word that stops answering |
 
 ### Frontend Tests
 
