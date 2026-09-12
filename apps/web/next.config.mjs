@@ -1,29 +1,8 @@
-// The application loads only same-origin code and data: the API and the
-// tile server are reached through this server's own /api and /tiles
-// rewrites, so `connect-src 'self'` covers both. MapLibre builds its
-// workers from blob URLs and decodes tiles into blob-backed images, which
-// is why worker-src and img-src admit `blob:`.
-//
-// `'unsafe-inline'` for scripts is Next's inline bootstrap and flight
-// payload; removing it needs a per-request nonce, which is a deliberate
-// follow-on rather than something to switch on untested. `'unsafe-eval'`
-// is development-only — the production bundle never needs it.
-const isDevelopment = process.env.NODE_ENV === "development";
-
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "worker-src 'self' blob:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'self'",
-].join("; ");
-
+// The Content-Security-Policy is not set here. It carries a per-request nonce
+// so that `script-src` can forbid inline scripts without forbidding Next's
+// own bootstrap, and a per-request value has to be produced per request --
+// see `middleware.ts`, which owns the policy. The static headers below apply
+// to every response and do not vary.
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
@@ -37,7 +16,6 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
         ],
       },

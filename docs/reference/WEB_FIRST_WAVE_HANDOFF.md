@@ -43,6 +43,8 @@ Contract-boundary modules are TypeScript under `strict` plus
 | `lib/urlState.ts` | Parse/serialize for explorer, comparison, catalog, and profile links | Any shareable state |
 | `components/StatusPill.js` | The one visual mapping of request state | Every status surface |
 | `components/ChoroplethMap.tsx` | A read-only choropleth over the shared colouring model | A new map that does not need the explorer's interaction |
+| `components/useMapLibre.ts` + `lib/mapWiring.ts` | The one way a map is brought up and taken down, and the one way its layers are painted, filtered, shown, and hidden | Any new map; add a source and layers in `onLoad`, never a second construction |
+| `components/ChoroplethLegend.tsx` | The one legend | Any coloured presentation; a legend is the textual carrier colour alone must not be |
 | `components/EvidenceEnvelope.tsx` | The one presentation of an analytical block's reproducibility envelope and its live/frozen basis | Any surface that shows a composed block — composer, reader, or a later publishing screen |
 
 ## Saved-analysis contract
@@ -113,6 +115,10 @@ boundary above.
 These are the rules the first wave is built on. Every one is gated by a
 catalog entry in `docs/reference/TESTING_CONTRACT.md` (WEB-001–WEB-025).
 
+- **No inline script runs without this response's nonce.** `middleware.ts`
+  owns the Content-Security-Policy; a later plan that needs an inline
+  script reads the `x-nonce` request header and stamps it, never widens
+  `script-src`. Styles still admit `'unsafe-inline'`.
 - **The API owns semantics.** Membership, access shapes, declared filters,
   compatibility verdicts, distribution bins, freshness, and validation are
   read from the API and never recomputed. A rule this client has never heard
@@ -164,7 +170,3 @@ Named so they are picked up deliberately rather than rediscovered:
   in `lib/evidencePackets.packetToDocument`/`documentToPacket`. Nothing about
   a packet reaches the address bar from either screen; sharing a packet is
   publishing, and publishing is that later plan's to define.
-- The comparison map and the explorer map are separate MapLibre wirings over
-  one shared colouring model; unifying the presentations is a consolidation
-  task, not a contract gap.
-- Script `'unsafe-inline'` in the CSP needs a per-request nonce to remove.
