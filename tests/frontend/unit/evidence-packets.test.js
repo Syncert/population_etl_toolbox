@@ -19,7 +19,7 @@ import {
 } from "../../../apps/web/lib/evidencePackets";
 
 const envelope = {
-  metricCodes: ["ACS:acs5:B01003_001"],
+  metricCodes: ["CENSUS_ACS:acs5:B01003_001"],
   sourceCodes: ["CENSUS_ACS"],
   geoId: "state:55|county:025",
   geoLevel: "COUNTY",
@@ -28,7 +28,7 @@ const envelope = {
   period: "2023",
   units: "people",
   transformation: "none",
-  apiQuery: "/api/v1/observations?metric_code=ACS%3Aacs5%3AB01003_001",
+  apiQuery: "/api/v1/observations?metric_code=CENSUS_ACS%3Aacs5%3AB01003_001",
   caveats: ["ACS estimates carry a margin of error"],
 };
 
@@ -139,9 +139,9 @@ describe("blocks reopen and export with their evidence intact", () => {
         id: "b",
         type: "analysis",
         title: "t",
-        document: { kind: "observations", metric_code: "ACS:acs5:B01003_001", filters: {} },
+        document: { kind: "observations", metric_code: "CENSUS_ACS:acs5:B01003_001", filters: {} },
       }),
-    ).toContain("metric=ACS%3Aacs5%3AB01003_001");
+    ).toContain("metric=CENSUS_ACS%3Aacs5%3AB01003_001");
     expect(blockReopenHref({ id: "b", type: "text", title: "t" })).toBe("/explore");
   });
 
@@ -175,7 +175,7 @@ describe("blocks reopen and export with their evidence intact", () => {
     expect(exported.filename).toBe("needs-assessment-evidence.csv");
 
     const analysisRow = exported.rows.find((row) => row[1] === "evidence");
-    expect(analysisRow).toContain("ACS:acs5:B01003_001");
+    expect(analysisRow).toContain("CENSUS_ACS:acs5:B01003_001");
     expect(analysisRow).toContain("CENSUS_ACS");
     expect(analysisRow).toContain("2023");
     expect(analysisRow).toContain("ACS estimates carry a margin of error");

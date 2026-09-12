@@ -30,7 +30,7 @@ pytestmark = [
     pytest.mark.slow,
 ]
 
-METRIC_CODE = "ACS:acs5:B01003_001_MARTIN_TEST"
+METRIC_CODE = "CENSUS_ACS:acs5:B01003_001_MARTIN_TEST"
 
 
 def test_real_api_county_joins_one_to_one_to_decoded_tile_and_rejects_mismatch(

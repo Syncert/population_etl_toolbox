@@ -150,7 +150,7 @@ describe("deterministic catalog paging", () => {
 
 describe("published provenance and quality context", () => {
   const metric = {
-    metric_code: "ACS:acs5:B01003_001",
+    metric_code: "CENSUS_ACS:acs5:B01003_001",
     units: "people",
     measure_kind: "count",
     aggregation_characteristic: "additive",

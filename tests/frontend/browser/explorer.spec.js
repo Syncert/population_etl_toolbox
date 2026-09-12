@@ -17,14 +17,14 @@ const MVT = Buffer.from(
 
 const metrics = [
   {
-    metric_code: "ACS:acs5:B01003_001",
+    metric_code: "CENSUS_ACS:acs5:B01003_001",
     metric_display_name: "Total population",
     source_code: "CENSUS_ACS",
     valid_geo_grains: ["STATE", "COUNTY"],
     valid_time_grains: ["ANNUAL"],
   },
   {
-    metric_code: "ACS:acs1:B01003_001",
+    metric_code: "CENSUS_ACS:acs1:B01003_001",
     metric_display_name: "Total population ACS1",
     source_code: "CENSUS_ACS",
     valid_geo_grains: ["STATE", "COUNTY"],
@@ -33,7 +33,7 @@ const metrics = [
   // A measure published only at the national grain. The vector boundary
   // publishes no national geometry, so this series has no map at all.
   {
-    metric_code: "ACS:acs5:B01003_001_US",
+    metric_code: "CENSUS_ACS:acs5:B01003_001_US",
     metric_display_name: "Total population, United States",
     source_code: "CENSUS_ACS",
     valid_geo_grains: ["NATIONAL"],
@@ -226,7 +226,7 @@ const county = {
   county_name: "Dane County",
   geo_latitude: 43.0667,
   geo_longitude: -89.4,
-  metric_code: "ACS:acs5:B01003_001",
+  metric_code: "CENSUS_ACS:acs5:B01003_001",
   metric_display_name: "Total population",
   value: "561504",
   units: "people",
@@ -264,7 +264,7 @@ async function installRoutes(
   await page.route("**/api/v1/observations/releases?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     releaseRequests.push(Object.fromEntries(params));
-    const items = params.get("metric_code")?.startsWith("ACS:") ? acsReleases : [];
+    const items = params.get("metric_code")?.startsWith("CENSUS_ACS:") ? acsReleases : [];
     return route.fulfill({
       json: {
         metric_code: params.get("metric_code"),
@@ -285,7 +285,7 @@ async function installRoutes(
     if (params.get("scope") === "as_released") {
       const pinned = params.get("release");
       const rows = [acsReleasedRow("2023", "561504"), acsReleasedRow("2022", "555000")];
-      const items = metric.startsWith("ACS:")
+      const items = metric.startsWith("CENSUS_ACS:")
         ? rows.filter((row) => !pinned || row.release === pinned)
         : [];
       return route.fulfill({
@@ -354,7 +354,7 @@ async function installRoutes(
       return answer(metric === "BLS:CES0000000001" ? [] : [blsRow], "BLS");
     }
 
-    if (metric.startsWith("ACS:")) {
+    if (metric.startsWith("CENSUS_ACS:")) {
       if (failLatest) {
         return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
       }
@@ -520,7 +520,7 @@ test("catalog, observation coloring, Martin tile, selection, history, and keyboa
   await expect(page.getByRole("heading", { name: "Dane County, Wisconsin" })).toBeVisible();
 
   // The URL reproduces the selected exploration state without navigation.
-  await expect(page).toHaveURL(/metric=ACS%3Aacs5%3AB01003_001/);
+  await expect(page).toHaveURL(/metric=CENSUS_ACS%3Aacs5%3AB01003_001/);
   await expect(page).toHaveURL(/state=55/);
   await expect(page).toHaveURL(/geo=state%3A55%7Ccounty%3A025/);
 
@@ -561,7 +561,7 @@ test("source tabs derive from capability discovery and switch the explored sourc
   await expect(page).toHaveURL(/source=pep/);
 
   await page.getByTestId("source-tab-census").click();
-  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "CENSUS_ACS:acs5:B01003_001");
   await expect(page).not.toHaveURL(/source=/);
 
   // A shared URL reproduces the non-default source directly.
@@ -641,14 +641,14 @@ test("as-released exploration pins a published release and reproduces it", async
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "CENSUS_ACS:acs5:B01003_001");
   await expect(dashboard).toHaveAttribute("data-scope", "latest");
 
   // The release identities come from /observations/releases for the selected
   // metric; nothing infers them from a period or a vintage.
   await expect(page.getByTestId("releases-status")).toContainText("2 published releases");
   await expect(dashboard).toHaveAttribute("data-release-count", "2");
-  expect(releaseRequests.at(-1).metric_code).toBe("ACS:acs5:B01003_001");
+  expect(releaseRequests.at(-1).metric_code).toBe("CENSUS_ACS:acs5:B01003_001");
 
   // Reading every published release: the request moves to the neutral
   // resource with scope=as_released, and the geography now carries one row
@@ -665,7 +665,7 @@ test("as-released exploration pins a published release and reproduces it", async
   let request = neutralRequests.at(-1);
   expect(request.scope).toBe("as_released");
   expect(request.release).toBeUndefined();
-  expect(request.metric_code).toBe("ACS:acs5:B01003_001");
+  expect(request.metric_code).toBe("CENSUS_ACS:acs5:B01003_001");
 
   // /distribution/bins declares no scope: its bins describe the latest
   // publication, so they are not requested for an as-released read and the
@@ -697,7 +697,7 @@ test("as-released exploration pins a published release and reproduces it", async
   const shared = await page.context().newPage();
   const sharedNeutral = [];
   await installRoutes(shared, { neutralRequests: sharedNeutral });
-  await shared.goto("/explore?metric=ACS%3Aacs5%3AB01003_001&scope=as_released&release=2022");
+  await shared.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001&scope=as_released&release=2022");
   await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-scope", "as_released");
   await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-release", "2022");
   await expect(shared.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
@@ -725,7 +725,7 @@ test("a national series gets the explicit non-spatial experience, not an empty m
 
   // A measure published only at the national grain resolves the geography
   // level to NATIONAL, and the tile boundary publishes no national geometry.
-  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001_US");
+  await page.getByTestId("metric-select").selectOption("CENSUS_ACS:acs5:B01003_001_US");
   await expect(dashboard).toHaveAttribute("data-map-supported", "false");
 
   // The map is not rendered at all: an uncoloured map reads as "no data",
@@ -743,12 +743,12 @@ test("a national series gets the explicit non-spatial experience, not an empty m
   // Returning to a mappable measure brings the map back as the rendered
   // view without the user re-choosing it: the tab the user asked for is
   // remembered, so a mode that is briefly unavailable is not a lost one.
-  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001");
+  await page.getByTestId("metric-select").selectOption("CENSUS_ACS:acs5:B01003_001");
   await expect(dashboard).toHaveAttribute("data-map-supported", "true");
   await expect(page.getByTestId("map-canvas")).toBeVisible();
 
   // Every non-spatial mode still answers, and the value is still retrievable.
-  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001_US");
+  await page.getByTestId("metric-select").selectOption("CENSUS_ACS:acs5:B01003_001_US");
   await expect(page.getByRole("tab", { name: "table" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "quality" })).toBeVisible();
   await expect(page.getByTestId("export-csv")).toBeEnabled();
@@ -825,7 +825,7 @@ test("the retired source dashboards land on the live explorer for their source",
   await expect(page).toHaveURL(/\/explore/);
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toHaveAttribute("data-source-key", "census");
-  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "CENSUS_ACS:acs5:B01003_001");
   // Nothing illustrative survives the retirement.
   await expect(page.getByTestId("demo-banner")).toHaveCount(0);
   // The site navigation, which the dashboards suppressed, is back.
@@ -976,8 +976,8 @@ test("the view level offers only the grains the measure declares, and says why",
 
   // ACS county population declares STATE and COUNTY, so NATIONAL is absent
   // rather than offered and then revoked.
-  await page.getByTestId("metric-select").selectOption("ACS:acs5:B01003_001");
-  await expect(dashboard).toHaveAttribute("data-selected-metric", "ACS:acs5:B01003_001");
+  await page.getByTestId("metric-select").selectOption("CENSUS_ACS:acs5:B01003_001");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "CENSUS_ACS:acs5:B01003_001");
   await expect(level.locator("option")).toHaveCount(2);
   await expect(level.locator('option[value="STATE"]')).toHaveCount(1);
   await expect(level.locator('option[value="COUNTY"]')).toHaveCount(1);

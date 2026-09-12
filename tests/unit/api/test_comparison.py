@@ -312,14 +312,15 @@ def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
     assert "state_fips" in rejected.json()["detail"]
     assert "CENSUS_PEP" in rejected.json()["detail"]
 
-    # Without the unsupported filter the cross-relation pair serves, PEP side
-    # bound through its published lineage key.
+    # Without the unsupported filter the cross-relation pair serves: the ACS
+    # side binds the composed catalog code its serving relation now carries,
+    # and the PEP side its published lineage key.
     assert served.status_code == 200
     sql = _dispatched(session)[-1]
     assert "FROM gold_pep.population_estimate_latest" in sql
     assert "FROM gold_census.mv_acs_latest" in sql
     bound = session.parameters[-1]
-    assert bound["a_lineage_key"] == "ACS:acs5:B01003_001E"
+    assert bound["a_metric_code_value"] == "CENSUS_ACS:acs5:B01003_001E"
     assert bound["b_lineage_key"] == "POP"
 
 

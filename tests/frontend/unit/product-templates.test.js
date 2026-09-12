@@ -82,20 +82,20 @@ describe("slots resolve only to identities the catalog published", () => {
     // Only the second candidate for total population is published here.
     const resolved = resolveTemplate(
       template,
-      catalogIndex(["ACS:acs1:B01003_001", "BLS:LAU:UNEMP_RATE"]),
+      catalogIndex(["CENSUS_ACS:acs1:B01003_001", "BLS:LAU:UNEMP_RATE"]),
     );
     const population = resolved[0].measures[0];
     expect(population.available).toBe(true);
-    expect(population.metricCode).toBe("ACS:acs1:B01003_001");
+    expect(population.metricCode).toBe("CENSUS_ACS:acs1:B01003_001");
     // The resolved identity and the publisher's own name travel with it, so
     // the reader sees which measure answered rather than the slot's label.
-    expect(population.metric.metric_display_name).toContain("ACS:acs1:B01003_001");
-    expect(population.metric.source_code).toBe("ACS");
+    expect(population.metric.metric_display_name).toContain("CENSUS_ACS:acs1:B01003_001");
+    expect(population.metric.source_code).toBe("CENSUS_ACS");
   });
 
   test("a slot nothing satisfies reports what it looked for", () => {
     const template = findTemplate("community-conditions");
-    const resolved = resolveTemplate(template, catalogIndex(["ACS:acs5:B01003_001"]));
+    const resolved = resolveTemplate(template, catalogIndex(["CENSUS_ACS:acs5:B01003_001"]));
     const health = resolved.find((entry) => entry.section.id === "health").measures[0];
     expect(health.available).toBe(false);
     expect(health.metric).toBeNull();
@@ -110,10 +110,10 @@ describe("slots resolve only to identities the catalog published", () => {
     const template = findTemplate("community-conditions");
     // The catalog publishes an ACS measure but none of the safety
     // candidates. The safety slot must stay empty rather than borrowing it.
-    const resolved = resolveTemplate(template, catalogIndex(["ACS:acs5:B01003_001"]));
+    const resolved = resolveTemplate(template, catalogIndex(["CENSUS_ACS:acs5:B01003_001"]));
     const safety = resolved.find((entry) => entry.section.id === "safety").measures[0];
     expect(safety.available).toBe(false);
-    expect(safety.metricCode).not.toBe("ACS:acs5:B01003_001");
+    expect(safety.metricCode).not.toBe("CENSUS_ACS:acs5:B01003_001");
   });
 
   test("partial coverage is counted, not hidden", () => {
@@ -123,7 +123,7 @@ describe("slots resolve only to identities the catalog published", () => {
     expect(fullCoverage.unavailable).toBe(0);
     expect(fullCoverage.available).toBe(fullCoverage.requested);
 
-    const partial = resolveTemplate(template, catalogIndex(["ACS:acs5:B01003_001"]));
+    const partial = resolveTemplate(template, catalogIndex(["CENSUS_ACS:acs5:B01003_001"]));
     const partialCoverage = templateCoverage(partial);
     expect(partialCoverage.available).toBe(1);
     expect(partialCoverage.unavailable).toBe(partialCoverage.requested - 1);

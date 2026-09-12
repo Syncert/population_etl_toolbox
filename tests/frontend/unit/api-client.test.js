@@ -155,11 +155,11 @@ describe("versioned API client", () => {
     const latest = recordingFetch([jsonResponse({ items: [] })]);
     await getSourceLatestObservations(
       "census",
-      { metric_code: "ACS:acs5:B01003_001", geo_level: "COUNTY" },
+      { metric_code: "CENSUS_ACS:acs5:B01003_001", geo_level: "COUNTY" },
       { fetchImpl: latest.fetchImpl },
     );
     expect(latest.calls[0].path).toBe(
-      "/api/v1/census/observations/latest?metric_code=ACS%3Aacs5%3AB01003_001&geo_level=COUNTY",
+      "/api/v1/census/observations/latest?metric_code=CENSUS_ACS%3Aacs5%3AB01003_001&geo_level=COUNTY",
     );
 
     const bins = recordingFetch([jsonResponse({ items: [] })]);

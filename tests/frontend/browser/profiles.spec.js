@@ -19,7 +19,7 @@ const capabilities = {
   total: 3,
   items: [
     {
-      source_code: "ACS",
+      source_code: "CENSUS_ACS",
       display_name: "Census American Community Survey",
       route_segment: "census",
       served_by_neutral_routes: true,
@@ -49,10 +49,10 @@ const capabilities = {
 // here: health, safety, and rural context are not, which the product must
 // state rather than hide.
 const publishedMetrics = {
-  "ACS:acs5:B01003_001": {
-    metric_code: "ACS:acs5:B01003_001",
+  "CENSUS_ACS:acs5:B01003_001": {
+    metric_code: "CENSUS_ACS:acs5:B01003_001",
     metric_display_name: "Total population",
-    source_code: "ACS",
+    source_code: "CENSUS_ACS",
     units: "people",
     freshness_state: "fresh",
     valid_geo_grains: ["COUNTY"],
@@ -73,10 +73,10 @@ const publishedMetrics = {
     freshness_state: "fresh",
     valid_geo_grains: ["COUNTY"],
   },
-  "ACS:acs5:B19013_001": {
-    metric_code: "ACS:acs5:B19013_001",
+  "CENSUS_ACS:acs5:B19013_001": {
+    metric_code: "CENSUS_ACS:acs5:B19013_001",
     metric_display_name: "Median household income",
-    source_code: "ACS",
+    source_code: "CENSUS_ACS",
     units: "dollars",
     freshness_state: "fresh",
     valid_geo_grains: ["COUNTY"],
@@ -89,10 +89,10 @@ const GEO_ID = "state:55|county:025";
 // median-income slot answers with a suppressed row: a value the source did
 // not publish, which must never render as a number.
 const observationsByMetric = {
-  "ACS:acs5:B01003_001": [
+  "CENSUS_ACS:acs5:B01003_001": [
     {
-      metric_code: "ACS:acs5:B01003_001",
-      source_code: "ACS",
+      metric_code: "CENSUS_ACS:acs5:B01003_001",
+      source_code: "CENSUS_ACS",
       geo_id: GEO_ID,
       geo_level: "COUNTY",
       value: "561504",
@@ -116,10 +116,10 @@ const observationsByMetric = {
       period_end: "2024-12-31",
     },
   ],
-  "ACS:acs5:B19013_001": [
+  "CENSUS_ACS:acs5:B19013_001": [
     {
-      metric_code: "ACS:acs5:B19013_001",
-      source_code: "ACS",
+      metric_code: "CENSUS_ACS:acs5:B19013_001",
+      source_code: "CENSUS_ACS",
       geo_id: GEO_ID,
       geo_level: "COUNTY",
       value: null,
@@ -171,7 +171,7 @@ async function installRoutes(page, { observationRequests = [] } = {}) {
     return route.fulfill({
       json: {
         metric_code: params.get("metric_code"),
-        source_code: "ACS",
+        source_code: "CENSUS_ACS",
         scope: "latest",
         total: items.length,
         limit: 50,
@@ -204,9 +204,9 @@ test("the community profile reads a place through published identities", async (
   // that answered rather than only the slot's label.
   await expect(page.getByTestId("measure-value-total-population")).toContainText("561,504");
   await expect(page.getByTestId("measure-total-population")).toContainText(
-    "ACS:acs5:B01003_001",
+    "CENSUS_ACS:acs5:B01003_001",
   );
-  await expect(page.getByTestId("measure-total-population")).toContainText("Source: ACS");
+  await expect(page.getByTestId("measure-total-population")).toContainText("Source: CENSUS_ACS");
   await expect(page.getByTestId("measure-total-population")).toContainText("2023-01-01");
   await expect(page.getByTestId("measure-total-population")).toContainText("1,200");
 
@@ -250,7 +250,7 @@ test("the community profile reads a place through published identities", async (
   // Each measure keeps a direct path into the explorer.
   await expect(page.getByTestId("measure-explore-total-population")).toHaveAttribute(
     "href",
-    /metric=ACS%3Aacs5%3AB01003_001/,
+    /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
   );
 
   // The link reproduces the product and the place.

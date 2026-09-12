@@ -19,7 +19,7 @@ def test_acs_latest_refresh_recomputes_each_affected_key_across_history(
     token = uuid4().hex[:12].upper()
     geo_id = f"test:acs-latest:{token}"
     variable_code = f"B99999_{token}E"
-    metric_code = f"ACS:acs5:{variable_code}"
+    metric_code = f"CENSUS_ACS:acs5:{variable_code}"
 
     database_connection = postgres_connection_factory()
     try:

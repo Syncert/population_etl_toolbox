@@ -36,7 +36,7 @@ export default function HomePage() {
   }, []);
 
   const featuredMetric = useMemo(
-    () => metrics.items.find((item) => item.metric_code === "ACS:acs5:B01003_001") || metrics.items[0],
+    () => metrics.items.find((item) => item.metric_code === "CENSUS_ACS:acs5:B01003_001") || metrics.items[0],
     [metrics],
   );
 
@@ -74,7 +74,7 @@ export default function HomePage() {
             <div className="section-kicker">National snapshot</div>
             <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
             <p>Latest source-backed metric metadata and observation coverage.</p>
-            <Link className="text-link" href={explorerHref({ metric: featuredMetric?.metric_code || "ACS:acs5:B01003_001" })}>Open map <ArrowRight size={15} /></Link>
+            <Link className="text-link" href={explorerHref({ metric: featuredMetric?.metric_code || "CENSUS_ACS:acs5:B01003_001" })}>Open map <ArrowRight size={15} /></Link>
           </div>
         </article>
       </section>

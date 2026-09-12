@@ -22,17 +22,17 @@ import {
 } from "../../../apps/web/lib/explorerViewModel";
 
 const metrics = [
-  { metric_code: "ACS:acs1:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
-  { metric_code: "ACS:acs5:B01003_001", metric_display_name: "Population!!Total", source_code: "CENSUS_ACS" },
-  { metric_code: "ACS:acs5:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
+  { metric_code: "CENSUS_ACS:acs1:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
+  { metric_code: "CENSUS_ACS:acs5:B01003_001", metric_display_name: "Population!!Total", source_code: "CENSUS_ACS" },
+  { metric_code: "CENSUS_ACS:acs5:B19013_001", metric_display_name: "Income", source_code: "CENSUS_ACS" },
 ];
 
 describe("explorer metric, selection, and legend contracts", () => {
   test("selects the requested dataset and canonical metric deterministically", () => {
-    expect(pickPreferredMetric(metrics, "acs5")).toBe("ACS:acs5:B01003_001");
-    expect(pickPreferredMetric(metrics, "acs1", "B19013_001")).toBe("ACS:acs1:B19013_001");
+    expect(pickPreferredMetric(metrics, "acs5")).toBe("CENSUS_ACS:acs5:B01003_001");
+    expect(pickPreferredMetric(metrics, "acs1", "B19013_001")).toBe("CENSUS_ACS:acs1:B19013_001");
     expect(metricOptions(metrics)[1]).toMatchObject({
-      value: "ACS:acs5:B01003_001",
+      value: "CENSUS_ACS:acs5:B01003_001",
       source: "CENSUS_ACS",
     });
   });

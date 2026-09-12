@@ -1,22 +1,18 @@
 -- Seed for the frontend live-stack smoke tier.
 --
--- Its whole purpose is to reproduce one production fact the browser fixtures
--- could not: a metric's glossary identity and its serving identity are spelled
--- differently for Census ACS.
+-- This seed used to keep two spellings of one ACS metric apart on purpose: the
+-- glossary published 'CENSUS_ACS:<dataset>:<variable>' while the serving
+-- relations stored 'ACS:<dataset>:<variable>', so a catalog code sent to the
+-- legacy /census/observations/latest pair matched nothing and answered an
+-- empty page that looked exactly like a geography with no published values.
 --
--- apps.api.registry declares CENSUS_ACS with lineage_key_prefix 'ACS:' — the
--- glossary publishes 'CENSUS_ACS:<dataset>:<variable>' while the serving
--- relations spell the same identity 'ACS:<dataset>:<variable>'. The neutral
--- /observations resource bridges the two through the published lineage key.
--- The legacy /census/observations/latest pair does not: it filters the serving
--- relation on the requested string, so a glossary code sent there matches
--- nothing and answers an empty page that looks exactly like a geography with
--- no published values.
---
--- Every other fixture in this repository spells both identities the same way,
--- which is why a client that read observations through the legacy pair stayed
--- green everywhere and returned nothing against a real deployment. This seed
--- keeps the two spellings apart on purpose, so that regression is expressible.
+-- ARC-005 removed the disagreement at its source rather than bridging it: the
+-- ACS refresh now composes the served metric_code from the same source_code
+-- gold_census.metric_publisher publishes, so both surfaces spell one identity.
+-- This seed spells it once, as the warehouse now does. What the tier still
+-- proves is the client's own reading of the deployment — that it selects an
+-- access shape the API declares and reaches real rows through it — which no
+-- fixture can establish.
 
 -- The catalog identity, as the glossary publishes it: CENSUS_ACS-prefixed,
 -- with a physical_lineage whose schema/relation agree with the reviewed
@@ -34,9 +30,8 @@ INSERT INTO gold_glossary.dim_metric_catalog (
 ) ON CONFLICT (metric_code) DO UPDATE SET
     physical_lineage = EXCLUDED.physical_lineage;
 
--- The serving identity, as the gold relations spell it: ACS-prefixed. This is
--- the row the neutral resource reaches by composing the lineage key, and the
--- row the legacy pair cannot reach from the catalog's own metric code.
+-- The serving row, keyed on the same code the catalog publishes above, as
+-- gold_census.refresh_rpt_acs_observations now composes it.
 --
 -- The geography is the county the Martin seed publishes a polygon for
 -- (state:55|county:025), so a discovered tile layer and a served observation
@@ -52,11 +47,11 @@ INSERT INTO gold_census.rpt_acs_observations (
     '2098-12-31', NOW(), 'state:55|county:025', 'COUNTY', '55', '025',
     'Wisconsin', 'Dane County', 43.0667, -89.4000, 561504,
     'acs5', 2098, 'B01003', 'B01003_001_SMOKE', 561504,
-    'ESTIMATE', 'people', 'ACS:acs5:B01003_001_SMOKE',
+    'ESTIMATE', 'people', 'CENSUS_ACS:acs5:B01003_001_SMOKE',
     'Total population (smoke fixture)'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO gold_census.mv_acs_latest
 SELECT * FROM gold_census.rpt_acs_observations
-WHERE metric_code = 'ACS:acs5:B01003_001_SMOKE'
+WHERE metric_code = 'CENSUS_ACS:acs5:B01003_001_SMOKE'
 ON CONFLICT DO NOTHING;

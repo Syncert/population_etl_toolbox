@@ -148,15 +148,16 @@ class ObservationDispatch:
     Metric identity uses exactly one of three declared strategies:
 
     - ``metric_code_column`` -- the serving relation carries the same composed
-      metric code the glossary publishes (BLS, FRED), so the requested code
-      binds directly.
+      metric code the glossary publishes (BLS, FRED, Census ACS), so the
+      requested code binds directly.
     - ``lineage_key_column`` (+ ``lineage_key_prefix``) -- the serving relation
-      keys rows by the publisher's lineage ``key``, optionally under a
-      different composed prefix. Census ACS publishes glossary codes as
-      ``CENSUS_ACS:<dataset>:<variable>`` while its serving relations spell the
-      same identity ``ACS:<dataset>:<variable>``; Census PEP's serving revision
-      relation carries the bare measure code. The lineage key, not string
-      surgery on the request, is the published bridge.
+      keys rows by the publisher's lineage ``key`` rather than by the composed
+      code. Census PEP's serving revision relation carries the bare measure
+      code, so its prefix is empty. The lineage key, not string surgery on the
+      request, is the published bridge, and a non-empty prefix may only be the
+      glossary's own composition ``<source_code>:`` -- a prefix that rewrites
+      one metric into a second identity is the defect ARC-005 exists to
+      prevent, not a supported strategy.
     - ``identity_columns`` -- the source publishes discrete identity fields in
       ``physical_lineage`` (CDC, FBI UCR, USDA NASS) that match same-named
       relation columns.
@@ -285,8 +286,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             released_relation="gold_census.rpt_acs_observations",
             lineage_schema="gold_census",
             lineage_relation="fact_acs_observation",
-            lineage_key_column="metric_code",
-            lineage_key_prefix="ACS:",
+            metric_code_column="metric_code",
             release_expression="vintage_year::TEXT",
             release_order_expression="vintage_year",
             as_of_expression="as_of_date::TEXT",

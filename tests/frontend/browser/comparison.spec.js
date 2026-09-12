@@ -76,7 +76,7 @@ const capabilities = {
   ],
 };
 
-const METRIC_A = "ACS:acs5:B01003_001";
+const METRIC_A = "CENSUS_ACS:acs5:B01003_001";
 const METRIC_B = "CENSUS_PEP:pep_cty_alldata:POPESTIMATE";
 const METRIC_CDC = "CDC:cdc_places_county:OBESITY";
 
@@ -287,7 +287,7 @@ test("a comparable pair is preflighted, then compared with inputs and derivation
   const preflightRequests = [];
   const comparisonRequests = [];
   await installRoutes(page, { preflightRequests, comparisonRequests });
-  await page.goto("/compare?a=ACS%3Aacs5%3AB01003_001&b=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&source_a=census&source_b=pep");
+  await page.goto("/compare?a=CENSUS_ACS%3Aacs5%3AB01003_001&b=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&source_a=census&source_b=pep");
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-metric-a", METRIC_A);
@@ -397,7 +397,7 @@ test("the comparison link reproduces the pair and carries no verdict", async ({ 
 
   const workspace = page.getByTestId("comparison-workspace");
   await expect(workspace).toHaveAttribute("data-comparable", "true");
-  await expect(page).toHaveURL(/a=ACS%3Aacs5%3AB01003_001/);
+  await expect(page).toHaveURL(/a=CENSUS_ACS%3Aacs5%3AB01003_001/);
   await expect(page).toHaveURL(/b=CENSUS_PEP/);
   // The verdict belongs to the API and is re-asked on open, so a link can
   // never reproduce a stale "comparable".
@@ -513,7 +513,7 @@ test("a comparison saves to the account when signed in, storing the pair and not
   });
 
   await page.goto(
-    "/compare?a=ACS%3Aacs5%3AB01003_001&b=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&source_a=census&source_b=pep",
+    "/compare?a=CENSUS_ACS%3Aacs5%3AB01003_001&b=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&source_a=census&source_b=pep",
   );
   const save = page.getByTestId("comparison-save");
   await expect(save).toBeEnabled();

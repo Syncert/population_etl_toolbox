@@ -270,7 +270,7 @@ describe("requests carry only declared filters", () => {
   test("a source-scoped-only source keeps its own routes and parameter discipline", () => {
     expect(
       buildLatestObservationRequest(scopedOnly, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoLevel: "COUNTY",
         stateFips: "55",
         limit: "4000",
@@ -278,7 +278,7 @@ describe("requests carry only declared filters", () => {
     ).toEqual({
       resource: "/census/observations/latest",
       params: {
-        metric_code: "ACS:acs5:B01003_001",
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
         limit: "4000",
         geo_level: "COUNTY",
         state_fips: "55",
@@ -286,14 +286,14 @@ describe("requests carry only declared filters", () => {
     });
     expect(
       buildHistoryObservationRequest(scopedOnly, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",
       }),
     ).toEqual({
       resource: "/census/observations/timeseries",
       params: {
-        metric_code: "ACS:acs5:B01003_001",
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
         geo_id: "state:55|county:025",
         limit: "1000",
       },
@@ -473,7 +473,7 @@ describe("as-released reads", () => {
     // parameters of any source-scoped route the same source also publishes.
     expect(
       buildLatestObservationRequest(census, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoLevel: "COUNTY",
         stateFips: "55",
         limit: "4000",
@@ -483,7 +483,7 @@ describe("as-released reads", () => {
     ).toEqual({
       resource: "/observations",
       params: {
-        metric_code: "ACS:acs5:B01003_001",
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
         scope: "as_released",
         release: "2022",
         limit: "4000",
@@ -548,7 +548,7 @@ describe("as-released reads", () => {
   test("history reads carry the same scope so a pinned release reproduces", () => {
     expect(
       buildHistoryObservationRequest(census, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",
         scope: SCOPE_AS_RELEASED,
@@ -557,7 +557,7 @@ describe("as-released reads", () => {
     ).toEqual({
       resource: "/observations",
       params: {
-        metric_code: "ACS:acs5:B01003_001",
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
         scope: "as_released",
         release: "2022",
         limit: "1000",
@@ -569,7 +569,7 @@ describe("as-released reads", () => {
     // resource too, so both scopes resolve the same metric identity.
     expect(
       buildHistoryObservationRequest(census, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",
       }).resource,
@@ -578,7 +578,7 @@ describe("as-released reads", () => {
     // Only a source publishing no neutral route uses its own timeseries.
     expect(
       buildHistoryObservationRequest(scopedOnly, {
-        metricCode: "ACS:acs5:B01003_001",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
         geoId: "state:55|county:025",
         limit: "1000",
       }).resource,

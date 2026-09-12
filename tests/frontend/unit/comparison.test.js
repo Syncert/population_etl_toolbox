@@ -33,7 +33,7 @@ import {
 
 // Shaped exactly like the served ComparisonPreflightResponse.
 const comparablePreflight = {
-  metric_code_a: "ACS:acs5:B01003_001",
+  metric_code_a: "CENSUS_ACS:acs5:B01003_001",
   metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
@@ -58,7 +58,7 @@ const comparablePreflight = {
 
 const blockedPreflight = {
   metric_code_a: "CDC:cdc_places_county:OBESITY",
-  metric_code_b: "ACS:acs5:B01003_001",
+  metric_code_b: "CENSUS_ACS:acs5:B01003_001",
   source_code_a: "CDC",
   source_code_b: "CENSUS_ACS",
   comparable: false,
@@ -78,7 +78,7 @@ const blockedPreflight = {
 
 // Shaped exactly like the served ComparisonResponse.
 const comparison = {
-  metric_code_a: "ACS:acs5:B01003_001",
+  metric_code_a: "CENSUS_ACS:acs5:B01003_001",
   metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
@@ -95,7 +95,7 @@ const comparison = {
       geo_level: "COUNTY",
       state_name: "Wisconsin",
       county_name: "Dane County",
-      metric_code_a: "ACS:acs5:B01003_001",
+      metric_code_a: "CENSUS_ACS:acs5:B01003_001",
       metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
       period_a: "2023",
       period_b: "2024",
@@ -191,13 +191,13 @@ describe("comparison requests carry only declared parameters", () => {
   test("preflight names both measures", () => {
     expect(
       preflightRequestParams({
-        a: { sourceCode: "CENSUS_ACS", metricCode: "ACS:acs5:B01003_001" },
+        a: { sourceCode: "CENSUS_ACS", metricCode: "CENSUS_ACS:acs5:B01003_001" },
         b: { sourceCode: "CENSUS_PEP", metricCode: "PEP:X" },
         geoLevel: "COUNTY",
         stateFips: "55",
       }),
     ).toEqual({
-      metric_code_a: "ACS:acs5:B01003_001",
+      metric_code_a: "CENSUS_ACS:acs5:B01003_001",
       metric_code_b: "PEP:X",
     });
   });
@@ -252,7 +252,7 @@ describe("published inputs and derived values stay distinct", () => {
     ]);
     // Each side's column is headed by its own metric code, so the two
     // published inputs can never be read as one measure.
-    expect(columns[1].label).toBe("ACS:acs5:B01003_001");
+    expect(columns[1].label).toBe("CENSUS_ACS:acs5:B01003_001");
     expect(columns[3].label).toBe("CENSUS_PEP:pep_cty_alldata:POPESTIMATE");
     expect(columns.filter((column) => column.derived).map((column) => column.key)).toEqual([
       "difference",
@@ -319,7 +319,7 @@ describe("the export carries its own interpretation envelope", () => {
       "caveats",
     ]);
     expect(exported.filename).toBe(
-      "comparison-ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
     );
 
     const [first, second] = exported.rows;

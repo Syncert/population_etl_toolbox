@@ -72,7 +72,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           {
             id: "total-population",
             label: "Total population",
-            candidates: ["ACS:acs5:B01003_001", "ACS:acs1:B01003_001"],
+            candidates: ["CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS:acs1:B01003_001"],
             note: "American Community Survey estimate, with its own margin of error.",
           },
           {
@@ -100,7 +100,7 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           {
             id: "median-household-income",
             label: "Median household income",
-            candidates: ["ACS:acs5:B19013_001", "ACS:acs1:B19013_001"],
+            candidates: ["CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS:acs1:B19013_001"],
           },
         ],
       },
@@ -178,17 +178,17 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           {
             id: "total-population",
             label: "Total population",
-            candidates: ["ACS:acs5:B01003_001", "ACS:acs1:B01003_001"],
+            candidates: ["CENSUS_ACS:acs5:B01003_001", "CENSUS_ACS:acs1:B01003_001"],
           },
           {
             id: "households",
             label: "Households",
-            candidates: ["ACS:acs5:B11001_001"],
+            candidates: ["CENSUS_ACS:acs5:B11001_001"],
           },
           {
             id: "housing-units",
             label: "Housing units",
-            candidates: ["ACS:acs5:B25001_001"],
+            candidates: ["CENSUS_ACS:acs5:B25001_001"],
           },
         ],
       },
@@ -228,12 +228,12 @@ export const PRODUCT_TEMPLATES: ProductTemplate[] = [
           {
             id: "total-population",
             label: "Total population",
-            candidates: ["ACS:acs5:B01003_001"],
+            candidates: ["CENSUS_ACS:acs5:B01003_001"],
           },
           {
             id: "educational-attainment",
             label: "Educational attainment",
-            candidates: ["ACS:acs5:B15003_001"],
+            candidates: ["CENSUS_ACS:acs5:B15003_001"],
           },
         ],
       },
