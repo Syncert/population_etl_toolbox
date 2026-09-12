@@ -15,19 +15,21 @@ verify:
 ## Plan status
 
 - **Status:** Implementation complete; awaiting human review
-- **Last updated:** 2026-09-10
+- **Last updated:** 2026-09-12
 - **Owner surface:** `src/data_ingestion_toolbox/utility/gold_schema.py`, each source's `refresh_dashboard_serving_layer_*` procedure, `control.serving_refresh_chunk_state`
 - **Depends on:** nothing open. Found while delivering `BLS_LAUS_MEASURE_METRICS_PLAN.md`, whose ACS acceptance criterion it blocks.
 
 ## Implementation checkpoint
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-12
 
 **Current milestone:** none; every phase is delivered.
 
-**Next pickup:** none. Human review. Running the ACS re-serve itself is
-`BLS_LAUS_MEASURE_METRICS_PLAN.md`'s outstanding acceptance criterion, not
-this plan's; this plan supplies the tooling it needs.
+**Next pickup:** none. Human review. The tooling this plan delivers has now
+been used for the job it was built for: the ACS re-serve that was
+`BLS_LAUS_MEASURE_METRICS_PLAN.md`'s outstanding acceptance criterion completed
+on 2026-09-12, 20 of 20 chunks, 0 failed, across four operator-initiated runs
+and one machine restart. See "Proven in use" at the end of the evidence.
 
 ### Completed in the current slice
 
@@ -73,17 +75,26 @@ Measured on the development stack (`docker-analytics_postgres-1`).
   in one statement at all — it is far past the 60-minute timeout, so the
   supported call cannot complete it.
 
-  The figure first recorded here, "about 2.5 hours", was wrong: it extrapolated
-  the BLS rate onto a relation twelve times larger carrying eight indexes.
-  Measured during the first real forced re-serve, ACS sustains roughly 1,200 to
-  1,500 rows per second against BLS's 7,700 — per-row cost is a property of the
-  relation, not of the driver — which puts the full re-serve at **12 to 16
-  hours**. `BETA_RESET_REINGESTION.md` section 7 carries the per-year
-  measurements.
-- **Contention makes it far worse.** With a scheduled `acs_ingest` run writing
-  `silver_census.fact_demographics` concurrently, a single ACS year (2005,
-  685,717 rows) had not finished after 8 minutes — about 1,500 rows per second,
-  extrapolating to roughly twelve hours for the relation.
+  Three successive estimates recorded here were wrong, and the pattern in all
+  three was the same: extrapolating one measured year onto the rest. "About 2.5
+  hours" extrapolated BLS's rate onto a relation twelve times larger carrying
+  eight indexes. "12 to 16 hours" extrapolated the early ACS years and assumed
+  constant throughput. A third, made after tuning, compared a warm-cache year
+  against a cold one and claimed 2.4x when like-for-like was 1.3x.
+
+  The completed re-serve took **46,305 seconds of chunk work across twenty
+  years**, and the per-year throughput spans 360 to 3,986 rows per second — an
+  eleven-fold range on one box with one dataset. The variable is not the driver
+  and not the relation: it is how much of the relation fits in
+  `shared_buffers`. `BETA_RESET_REINGESTION.md` section 7 carries every year's
+  measurement and says plainly not to multiply a single year's rate.
+- **Contention makes it worse, but it was never the main term.** With a
+  scheduled `acs_ingest` run writing `silver_census.fact_demographics`
+  concurrently, a single ACS year (2005, 685,717 rows) had not finished after 8
+  minutes. Pausing ingestion is still required. But the same relation at stock
+  Postgres settings ran at a 59.8% heap cache hit ratio and read roughly 1.2 TB
+  off disk with nothing else touching it, and raising `shared_buffers` to 48 GB
+  moved throughput six to eight times more than pausing ingestion ever did.
 - The current workaround, now written into
   `docs/reference/BETA_RESET_REINGESTION.md` section 7, is a hand-driven loop:
 
@@ -353,10 +364,55 @@ finished and rewriting only the outstanding one, then a later run opens a new
 marker; and a forced run leaves `last_silver_ingested_at` at or below the
 genuine silver maximum.
 
-`tests/run.ps1 dags` is not runnable on this host — Airflow's logging
-configuration fails to initialise on Windows and the pinned scheduler image has
-no pytest — so the DAG-tier additions (`serving_full_reserve` in
-`EXPECTED_DAG_IDS`, its `None` schedule contract, its retry count) run in CI's
-`scheduler-image` job. The DAG is verified to parse against the running
-Airflow, which mounts this code, and the "no scheduled run selects the forced
-plan" invariant is asserted at unit level over the DAG source instead.
+### The dags tier, and the two failures it found
+
+An earlier revision of this section said the dags tier could not be run here
+and left the DAG-tier additions to CI. The host virtualenv genuinely cannot run
+it — it pins SQLAlchemy 2 for the API while Airflow 2.9.3 needs SQLAlchemy < 2
+— but the pinned scheduler image can, once the repo's pytest is installed into
+it. Run properly, the tier failed twice on this branch's own DAG:
+
+- **DAG-004** asserted every DAG carries a non-null `schedule_interval`.
+  `serving_full_reserve` deliberately carries none, which is the safety
+  property this plan is built around. DAG-005 had already been updated for the
+  `None` case; DAG-004 was missed. It now requires the DAG to appear in
+  `EXPECTED_SCHEDULES`, so the schedule question must still be answered
+  deliberately for every new DAG.
+- **DAG-015** required every DAG in the DagBag to be executed by the
+  orchestrated pipeline suite. This one cannot be: it refuses to run without a
+  `source_code` conf, and if it did run it would rewrite a serving relation.
+  The set is now split into orchestrated and operator-triggered, with two
+  assertions keeping the exemption honest — a DAG cannot be in both lists, and
+  an operator-triggered DAG must carry no schedule. Removing the entry makes
+  the guard fire, which was checked rather than assumed.
+
+Final: **117 passed, 5 skipped** in the scheduler image.
+
+### Proven in use
+
+`serving_full_reserve` completed the ACS re-serve on 2026-09-12: run
+`manual__2026-09-11T20:09:41+00:00`, state `success`, 20 of 20 year chunks
+`COMPLETE`, 0 failed, 68,302,467 rows. Both served ACS relations now carry only
+`COUNTY`, `NATIONAL` and `STATE`.
+
+Two of this plan's contracts were exercised for real rather than only in tests:
+
+- **Resumability.** The work spanned four operator-initiated runs, three of
+  which were stopped deliberately, plus a machine restart that took the whole
+  stack down mid-run. Each subsequent run resumed at the year the previous one
+  reached — 2013 in the final case — rather than restarting at 2005. Without
+  the durable `last_full_reserve_started_at` marker from migration 017 this
+  would have rewritten nineteen finished years.
+- **Watermark safety.** `last_silver_ingested_at` for `CENSUS_ACS` still reads
+  `2026-08-31 05:27:25.071076+00`, exactly `MAX(ingested_at)` in
+  `silver_census.fact_demographics`, after all twenty forced chunks.
+
+The one defect the real run exposed that the tests could not: the first forced
+plan took each year's watermark from a correlated subquery, so the planner read
+the whole silver fact table once per calendar year. On a fixture that is
+invisible; on ACS it is twenty passes over tens of millions of rows, and
+planning alone had not returned after ten minutes. Fixed by aggregating once
+and joining to the year series, with
+`test_the_forced_plan_reads_the_silver_fact_table_exactly_once` pinning the
+shape — runtime is not assertable at unit scale, but naming the table once
+instead of three times is.
