@@ -46,10 +46,13 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
 CREATE OR REPLACE VIEW gold_census.fact_acs_observation AS
 SELECT
     s.geo_id,
+    -- The vocabulary through `gold_glossary.geo_grain` (migration 018, moved
+    -- ahead of this phase by 021); the identity-shape inference below is a
+    -- different rule and stays. The final ELSE keeps the downstream
+    -- `geo_level TEXT NOT NULL` satisfiable (DB-037).
     CASE
-        WHEN LOWER(s.geo_level) = 'us'     THEN 'NATIONAL'
-        WHEN LOWER(s.geo_level) = 'state'  THEN 'STATE'
-        WHEN LOWER(s.geo_level) = 'county' THEN 'COUNTY'
+        WHEN COALESCE(TRIM(s.geo_level), '') <> ''
+            THEN gold_glossary.geo_grain(s.geo_level)
         WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'
         WHEN s.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
         WHEN s.geo_id LIKE 'state:%'       THEN 'STATE'

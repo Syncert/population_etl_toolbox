@@ -111,12 +111,13 @@ BEGIN
     )
     SELECT DISTINCT ON (g.geo_id)
         g.geo_id,
-        CASE
-            WHEN g.geo_level = 'us'     THEN 'NATIONAL'
-            WHEN g.geo_level = 'state'  THEN 'STATE'
-            WHEN g.geo_level = 'county' THEN 'COUNTY'
-            ELSE UPPER(g.geo_level)
-        END,
+        -- `gold_glossary.geo_grain` is this CASE, and `dim_geo_current` has
+        -- already mapped the entity's own `geo_type` ('nation' -> 'us')
+        -- before the projection sees it, so 'us' is what arrives here and
+        -- the function's US alias is what matches it. Both hops stay
+        -- visible: collapsing the first onto the function would make
+        -- 'nation' arrive where only 'us' is matched (DB-037).
+        gold_glossary.geo_grain(g.geo_level),
         CASE WHEN g.state_fips  IS NOT NULL THEN LPAD(g.state_fips::TEXT,  2, '0') ELSE NULL END,
         CASE WHEN g.county_fips IS NOT NULL THEN LPAD(g.county_fips::TEXT, 3, '0') ELSE NULL END,
         CASE WHEN g.place_fips IS NOT NULL THEN LPAD(g.place_fips::TEXT, 5, '0') ELSE NULL END,

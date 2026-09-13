@@ -101,7 +101,7 @@ def test_latest_relation_keys_on_geography_series_and_metric() -> None:
 
 
 def test_publisher_reads_laus_grains_from_the_served_rows() -> None:
-    """Covers: ETL-048, DB-036 — grains are aggregated from what is served.
+    """Covers: ETL-048, DB-036, DB-037 — grains come from what is served.
 
     Aggregated rather than declared as a constant (ETL-048), and aggregated
     from `mv_bls_latest` rather than the fact view over silver (DB-036): a
@@ -112,7 +112,9 @@ def test_publisher_reads_laus_grains_from_the_served_rows() -> None:
     export = sql.split("CREATE OR REPLACE VIEW gold_bls.measure_export AS", 1)[1]
     export = export.split("CREATE OR REPLACE VIEW gold_bls.metric_publisher AS", 1)[0]
 
-    assert "ARRAY_AGG(DISTINCT UPPER(latest.geo_level)" in export
+    # Through the one vocabulary mapping (DB-037), not this view's own
+    # upper-casing of the served word.
+    assert "ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)" in export
     assert "FROM gold_bls.mv_bls_latest AS latest" in export
     assert "ARRAY['STATE']" not in export
     assert "ARRAY['COUNTY']" not in export

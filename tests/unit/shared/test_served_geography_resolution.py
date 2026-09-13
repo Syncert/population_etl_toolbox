@@ -168,3 +168,86 @@ def test_every_publisher_derives_its_grains_from_served_rows() -> None:
         "these publishers advertise grains taken from unresolved geographies: "
         + ", ".join(offenders)
     )
+
+
+# ---------------------------------------------------------------------------
+# One grain vocabulary, called rather than copied (DB-037)
+# ---------------------------------------------------------------------------
+
+#: A grain-bearing column each source spells in its own words. Upper-casing one
+#: is a copy of the vocabulary; `gold_glossary.geo_grain` is the vocabulary.
+_GRAIN_COLUMNS = ("geo_level", "geo_type", "subject_type", "agg_level_desc")
+_UPPER_CASED_GRAIN = re.compile(
+    r"UPPER\(\s*[A-Za-z_]*\.?(?:" + "|".join(_GRAIN_COLUMNS) + r")\s*\)",
+    re.IGNORECASE,
+)
+#: A provider's own word, and the word the catalog publishes. A routine that
+#: contains both is mapping one onto the other.
+_PROVIDER_WORD = re.compile(r"'(?:us|nation|state|county|place|agency)'", re.IGNORECASE)
+_PUBLISHED_WORD = re.compile(r"'(?:NATIONAL|STATE|COUNTY|PLACE|AGENCY)'")
+_VOCABULARY_CALL = "gold_glossary.geo_grain("
+
+_PROCEDURE_PATTERN = re.compile(
+    r"CREATE\s+OR\s+REPLACE\s+PROCEDURE\s+(?P<name>[a-z_]+\.[a-z_]+)\s*\((?P<body>.*?)\n\$\$;",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _effective_routines() -> dict[str, tuple[str, Path]]:
+    """Each view's and procedure's last definition in bootstrap order.
+
+    Both, because the vocabulary was copied into both: publisher and fact
+    views spelled it, and so did `gold_glossary.refresh_dim_geo_latest`.
+    """
+    definitions: dict[str, tuple[str, Path]] = {}
+    for path in _bootstrap_sql():
+        source = _without_comments(path.read_text(encoding="utf-8"))
+        for pattern in (_VIEW_PATTERN, _PROCEDURE_PATTERN):
+            for match in pattern.finditer(source):
+                definitions[match.group("name").lower()] = (match.group("body"), path)
+    return definitions
+
+
+def test_the_grain_vocabulary_is_called_and_never_copied() -> None:
+    """Covers: DB-037 — one mapping, and every routine that spells it calls it.
+
+    Migration 018 created `gold_glossary.geo_grain` and said why: "The mapping
+    lives here once. Publisher views call it to say what they publish; the
+    API's dispatch entries call it to say what they serve. A mapping written
+    in five places is how this defect happened." It then routed two publishers
+    through the function and left five, plus three serving routines, spelling
+    the vocabulary themselves — `UPPER(fact.geo_level)`, `UPPER(fact.subject_type)`,
+    and two `CASE ... = 'us' THEN 'NATIONAL'` copies. None of them was wrong;
+    the structure that produced the USDA NASS defect was simply still
+    standing in eight more places.
+
+    Read from the routines the bootstrap actually leaves behind, so a ninth
+    copy fails here rather than in a client. A routine that *infers* a grain
+    from a row's identity (`geo_id LIKE 'state:%|county:%'`) is a different
+    rule and stays; what it may not do is map a provider's grain word itself.
+    """
+    offenders: list[str] = []
+    checked = 0
+    for name, (body, path) in sorted(_effective_routines().items()):
+        checked += 1
+        upper_cased = sorted(
+            {match.group(0) for match in _UPPER_CASED_GRAIN.finditer(body)}
+        )
+        if upper_cased:
+            offenders.append(
+                f"{name} ({path.name}) upper-cases a grain column itself: {upper_cased}"
+            )
+            continue
+        transcribes = bool(_PROVIDER_WORD.search(body)) and bool(
+            _PUBLISHED_WORD.search(body)
+        )
+        if transcribes and _VOCABULARY_CALL not in body:
+            offenders.append(
+                f"{name} ({path.name}) maps a provider grain word onto a "
+                "published one without calling gold_glossary.geo_grain"
+            )
+    assert checked, "no routine was read from the bootstrap SQL"
+    assert not offenders, (
+        "these routines carry their own copy of the grain vocabulary: "
+        + "; ".join(offenders)
+    )

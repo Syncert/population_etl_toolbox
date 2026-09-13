@@ -13,8 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13; **no present
-  defect found**, see Findings.
+- **Status:** Needs review. Implemented 2026-09-13 as catalog row DB-037.
 - **Last updated (inventory extended, still unclaimed):** 2026-09-13
 - **Owner surface:** `sql/migrations/`, `src/**/gold_*/DDL/`
 
@@ -114,8 +113,69 @@ Two details worth carrying into the work:
 
 ## Validation
 
-To be recorded by the agent that claims this.
+- **Criterion 1.** `sql/migrations/021_geo_grain_vocabulary_early.sql` defines
+  `gold_glossary.geo_grain` in the `glossary-migration` phase, right after
+  002 creates the schema — before the `gold` and `publisher` phases that now
+  call it. 018 is left exactly as it shipped, as
+  `sql/migrations/README.md` requires; its `CREATE OR REPLACE` of the same
+  body is a no-op. Registered in the manifest, the Compose bootstrap
+  (`001a_`), and the README's numbered sequence.
+  - **Proved against an empty database**, not only the shared test one: a new
+    `vocab_fresh_test` database with PostGIS and pgcrypto, the reviewed
+    manifest applied in order — `FRESH BOOTSTRAP OK`, with
+    `geo_grain('nation') = NATIONAL`, `geo_grain('place') = PLACE`, and all
+    seven `metric_publisher` views created.
+  - And that the ordering is what makes it work: dropping the function and
+    re-applying the `publisher` phase fails with `function
+    gold_glossary.geo_grain(text) does not exist`.
+- **Criterion 2.** All seven publishers now derive `valid_geo_grains` through
+  the function: BLS (both arms), Census ACS, FRED, Census PEP (whose export
+  carried the `NATION -> NATIONAL` CASE verbatim, and whose publisher
+  upper-cased the result a second time) and FBI UCR, joining the CDC and
+  USDA NASS pair 018 routed. FBI's last definition sat in migration 020, and
+  a pushed step is not edited in place, so
+  `022_fbi_publisher_geo_grain.sql` replaces it. No published grain changes:
+  FBI's `subject_type` is `national`, `state` or `agency` by constraint.
+- **Criterion 3, with the decision the plan asked for.** The two fact views
+  (`gold_bls.fact_bls_observation`, `gold_census.fact_acs_observation`) and
+  `gold_glossary.refresh_dim_geo_latest` no longer carry their own `CASE`.
+  Two rules were tangled in one expression, and only the first is the
+  vocabulary:
+  - a row's own grain word now goes through the function;
+  - a row whose producer wrote *no* grain word has its grain **inferred from
+    its identity** (`geo_id = 'us:1'`, `LIKE 'state:%|county:%'`). That is a
+    different decision and stays in the view, named as such.
+  - the final `ELSE 'NATIONAL'` stays, deliberately: the downstream
+    `geo_level TEXT NOT NULL` has to be satisfiable, and the branch is
+    unreachable for a parsed series because the BLS and ACS geography
+    parsers' vocabularies are closed. `geo_grain(NULL)` is NULL, which is why
+    the call is guarded by `COALESCE(TRIM(...), '') <> ''` rather than
+    replacing the whole expression.
+  - the projection's two hops stay visible, as the plan required:
+    `dim_geo_current` still maps the entity's `geo_type` (`nation` -> `us`)
+    before the projection sees it, and the function's `US` alias is what
+    matches there. The comment says so, because collapsing the first hop onto
+    the function would make `nation` arrive where only `us` is matched.
+- **Criterion 4.** `test_served_geography_resolution.py::test_the_grain_vocabulary_is_called_and_never_copied`
+  reads every **view and procedure** the bootstrap manifest leaves behind
+  (last definition wins, comments stripped) and fails when one upper-cases a
+  grain-bearing column itself or maps a provider's word onto a published one
+  without calling the function. Procedures matter because one of the three
+  copies was in one.
+  - Break-test: restoring FRED's `UPPER(latest.geo_level)` and the
+    projection's `CASE` fails it, naming `gold_fred.metric_publisher` and
+    `gold_glossary.refresh_dim_geo_latest`.
+- **Criterion 5.** No served grain changes: `pytest tests/integration/database
+  -m "integration and database and not slow"` 115 passed, 1 skipped, 11
+  deselected, and the catalog/serving agreement file runs in the same
+  integration tier, re-run whole: `pytest tests/integration -m "integration
+  and (redis or database) and not slow"` 161 passed, 2 skipped, 14 deselected.
+  `pytest tests/unit` 1564 passed.
+- Two static tests asserted the old shape and are corrected with their intent
+  intact: ETL-047's fact-view node now asserts the function *and* the
+  identity-shape inference it must not take with it, and ETL-048's BLS node
+  asserts the served relation through the function.
 
 ## Remaining work
 
-- Everything.
+- None.

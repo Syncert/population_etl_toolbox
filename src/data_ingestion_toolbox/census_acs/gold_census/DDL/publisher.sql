@@ -37,13 +37,15 @@ FROM gold_census.dim_acs_variable AS variable
 JOIN gold_census.dim_acs_table AS table_definition USING (acs_table_sk)
 LEFT JOIN (
     -- One row per served metric with the grains its latest rows carry, in
-    -- the vocabulary the API filters on (gold_glossary.geo_grain is defined
-    -- in the glossary phase, after this file runs at bootstrap, so the
-    -- served relation's own upper-cased word is used; it already is that
-    -- vocabulary for ACS).
+    -- the vocabulary the API filters on -- through `gold_glossary.geo_grain`,
+    -- the one mapping. Migration 021 moved that function's definition ahead
+    -- of the `gold` and `publisher` phases precisely so this call is legal at
+    -- bootstrap; before it, this file upper-cased the served word itself,
+    -- which was right for ACS and one more copy of the vocabulary (DB-037).
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT UPPER(latest.geo_level)
-                     ORDER BY UPPER(latest.geo_level))::TEXT[] AS valid_geo_grains
+           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+               AS valid_geo_grains
     FROM gold_census.mv_acs_latest AS latest
     GROUP BY latest.metric_code
 ) AS served

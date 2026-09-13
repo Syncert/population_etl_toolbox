@@ -28,6 +28,11 @@
 -- wrong until something else republished (DB-036). `gold_fred` and
 -- `gold_census` were changed this way first.
 --
+-- Through `gold_glossary.geo_grain`, the one mapping (migration 018, moved
+-- earlier in the bootstrap by 021 so the phases that call it run after it):
+-- a grain spelled here is the word the catalog publishes and the API
+-- filters on, and no view carries its own copy (DB-037).
+--
 -- The identity rule matches the serving refresh exactly. The refresh writes
 -- `COALESCE('BLS:' || measure.metric_key, 'BLS:' || series.series_id)` per
 -- row, so a series keeps its own identity when *its rows* carry a
@@ -57,8 +62,9 @@ JOIN gold_bls.fact_bls_observation AS fact
  AND fact.measure_code = measure.measure_code
 LEFT JOIN (
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT UPPER(latest.geo_level)
-                     ORDER BY UPPER(latest.geo_level))::TEXT[] AS valid_geo_grains,
+           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+               AS valid_geo_grains,
            MAX(latest.updated_at) AS publication_time
     FROM gold_bls.mv_bls_latest AS latest
     GROUP BY latest.metric_code
@@ -91,8 +97,9 @@ FROM gold_bls.dim_bls_series AS series
 JOIN gold_bls.dim_bls_survey AS survey USING (bls_survey_sk)
 LEFT JOIN (
     SELECT latest.series_id,
-           ARRAY_AGG(DISTINCT UPPER(latest.geo_level)
-                     ORDER BY UPPER(latest.geo_level))::TEXT[] AS valid_geo_grains,
+           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+               AS valid_geo_grains,
            MAX(latest.updated_at) AS publication_time
     FROM gold_bls.mv_bls_latest AS latest
     WHERE latest.metric_code = 'BLS:' || latest.series_id

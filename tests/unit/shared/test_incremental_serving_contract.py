@@ -176,11 +176,21 @@ def test_reporting_refreshes_never_write_the_raw_geography_vocabulary() -> None:
 
 
 def test_fact_views_normalise_the_national_geography_level() -> None:
-    """Covers: ETL-047 — the normalised vocabulary has one definition."""
+    """Covers: ETL-047, DB-037 — the normalised vocabulary has one definition.
+
+    It now has exactly one: `gold_glossary.geo_grain`. The ACS and BLS fact
+    views each carried their own `CASE ... LOWER(geo_level) = 'us' THEN
+    'NATIONAL' ...` copy of it, which is the structure migration 018 exists to
+    end. What stays in the views is the *other* rule beside it — a grain
+    inferred from the row's identity when its producer wrote no grain word —
+    and that is asserted here too, so consolidating the vocabulary cannot
+    quietly take the inference with it.
+    """
     for name in ("acs", "bls"):
         sql = _read(SOURCE_FILES[name]["gold"])
-        assert "LOWER(s.geo_level) = 'us'" in sql or "LOWER(ao.geo_level) = 'us'" in sql
-        assert "THEN 'NATIONAL'" in sql
+        assert "gold_glossary.geo_grain(s.geo_level)" in sql
+        assert "LOWER(s.geo_level) = 'us'" not in sql
+        assert "WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'" in sql
 
     fred = _read(SOURCE_FILES["fred"]["gold"])
     assert "'NATIONAL'," in fred

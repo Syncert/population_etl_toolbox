@@ -70,10 +70,17 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_measure (
 CREATE OR REPLACE VIEW gold_bls.fact_bls_observation AS
 SELECT
     s.geo_id,
+    -- Two different rules, and only the first is the vocabulary. A parsed
+    -- row's own grain word goes through `gold_glossary.geo_grain` (migration
+    -- 018, defined ahead of this phase by 021); a row whose producer wrote
+    -- none has its grain *inferred from its identity*, which is a separate
+    -- decision and stays here. The final ELSE keeps the downstream
+    -- `geo_level TEXT NOT NULL` satisfiable; the BLS geography parser's
+    -- vocabulary is closed (us, state, county, or nothing), so it is
+    -- unreachable for a parsed series (DB-037).
     CASE
-        WHEN LOWER(s.geo_level) = 'us'     THEN 'NATIONAL'
-        WHEN LOWER(s.geo_level) = 'state'  THEN 'STATE'
-        WHEN LOWER(s.geo_level) = 'county' THEN 'COUNTY'
+        WHEN COALESCE(TRIM(s.geo_level), '') <> ''
+            THEN gold_glossary.geo_grain(s.geo_level)
         WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'
         WHEN s.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
         WHEN s.geo_id LIKE 'state:%'       THEN 'STATE'
