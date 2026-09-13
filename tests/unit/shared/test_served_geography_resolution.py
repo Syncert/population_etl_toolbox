@@ -82,7 +82,10 @@ def _effective_views() -> dict[str, tuple[str, Path]]:
 
 def _reads_directly(body: str, table: str) -> bool:
     """Whether a view body reads the table itself, not a view over it."""
-    return re.search(rf"\b(?:FROM|JOIN)\s+{re.escape(table)}\b", body, re.IGNORECASE) is not None
+    return (
+        re.search(rf"\b(?:FROM|JOIN)\s+{re.escape(table)}\b", body, re.IGNORECASE)
+        is not None
+    )
 
 
 def _excludes_unresolved(body: str) -> bool:
