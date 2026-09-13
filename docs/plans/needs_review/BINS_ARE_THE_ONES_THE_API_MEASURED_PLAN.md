@@ -119,6 +119,21 @@ first run after the change are that drift, caught.
 | Unit | `pytest tests/unit` | 1488 passed |
 | Lint / format | `ruff format --check .`, `ruff check .` | clean |
 
+**The declaration that hid it.** `DistributionBin` in `lib/api/types.ts`
+named `bin_index` and `count` and nothing else, behind an index signature —
+so `lower_bound` and `upper_bound`, both *required* fields of the served
+schema, were invisible to every reader of the interface while still
+typechecking when accessed. They are now declared, which is why the
+recomputation was plausible to write in the first place.
+
+A general fixture-completeness guard — "a fixture literal naming fields of a
+served schema must name every field that schema requires" — was considered
+and declined: matching object literals to schemas by key overlap is a
+heuristic, and a false alarm in a guard is worse than the gap. The
+behavioural node covers it exactly where it counts: a bins fixture that omits
+the published bounds now makes the model return no bins, which is how the six
+browser stubs announced themselves.
+
 **Register.** 357 rows.
 
 ## Remaining work

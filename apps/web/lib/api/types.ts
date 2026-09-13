@@ -116,6 +116,14 @@ export interface MetricReleaseListResponse extends CollectionResponse<MetricRele
 export interface DistributionBin {
   bin_index: number;
   count: number;
+  /**
+   * The bin's own bounds, as `/distribution/bins` publishes them — required
+   * fields of the served `DistributionBin`, and undeclared here until
+   * WEB-057, which is why every reader of this interface rebuilt them from
+   * the response's `min_value`/`max_value` instead.
+   */
+  lower_bound: number;
+  upper_bound: number;
   [key: string]: unknown;
 }
 
