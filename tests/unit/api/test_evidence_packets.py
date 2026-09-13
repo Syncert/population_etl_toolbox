@@ -76,7 +76,9 @@ class _WarehouseSession:
     """Answers glossary metric lookups only, and counts them."""
 
     def __init__(self, metrics: dict[str, dict] | None = None):
-        self._metrics = metrics if metrics is not None else {"FRED:UNRATE": _FRED_METRIC}
+        self._metrics = (
+            metrics if metrics is not None else {"FRED:UNRATE": _FRED_METRIC}
+        )
         self.lookups: list[str] = []
 
     def execute(self, query, params=None):
@@ -220,8 +222,15 @@ def _packet(*blocks, title="Needs assessment") -> dict:
         "schema_version": 1,
         "title": title,
         "purpose": "Describe the need",
-        "blocks": list(blocks) if blocks else [
-            {"block_id": "summary", "type": "text", "title": "Summary", "content": "..."},
+        "blocks": list(blocks)
+        if blocks
+        else [
+            {
+                "block_id": "summary",
+                "type": "text",
+                "title": "Summary",
+                "content": "...",
+            },
             _block(),
         ],
     }
@@ -253,7 +262,10 @@ def _auth(token: str = _TOKEN) -> dict[str, str]:
 
 @pytest.fixture
 def accounts() -> dict[str, tuple[int, str]]:
-    return {hash_token(_TOKEN): (1, "primary"), hash_token(_OTHER_TOKEN): (2, "secondary")}
+    return {
+        hash_token(_TOKEN): (1, "primary"),
+        hash_token(_OTHER_TOKEN): (2, "secondary"),
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -267,7 +279,9 @@ def _clear_overrides():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/api/v1/evidence-packets", "/api/v1/analysis-configurations"])
+@pytest.mark.parametrize(
+    "path", ["/api/v1/evidence-packets", "/api/v1/analysis-configurations"]
+)
 def test_oversize_declared_body_is_refused_before_parsing(
     accounts, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
@@ -317,7 +331,12 @@ def test_chunked_oversize_body_is_refused_as_it_streams() -> None:
 
     asyncio.run(
         middleware(
-            {"type": "http", "method": "POST", "path": "/api/v1/evidence-packets", "headers": []},
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/v1/evidence-packets",
+                "headers": [],
+            },
             receive,
             send,
         )
@@ -350,7 +369,12 @@ def test_body_exactly_at_the_bound_is_accepted() -> None:
 
     asyncio.run(
         middleware(
-            {"type": "http", "method": "POST", "path": "/x", "headers": [(b"content-length", b"10")]},
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/x",
+                "headers": [(b"content-length", b"10")],
+            },
             receive,
             send,
         )
@@ -378,7 +402,10 @@ def test_another_owners_packet_is_a_404_not_a_403(accounts, monkeypatch) -> None
 
     for method, kwargs in (
         ("get", {}),
-        ("put", {"json": {"name": "stolen", "document": _packet(), "expected_version": 1}}),
+        (
+            "put",
+            {"json": {"name": "stolen", "document": _packet(), "expected_version": 1}},
+        ),
         ("delete", {}),
     ):
         response = getattr(client, method)(
@@ -401,8 +428,16 @@ def test_unauthenticated_requests_are_refused(accounts, monkeypatch) -> None:
     """Covers: API-069 — every packet route requires a bearer token."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     assert client.get("/api/v1/evidence-packets").status_code == 401
-    assert client.post("/api/v1/evidence-packets", json={"name": "x", "document": _packet()}).status_code == 401
-    assert client.get("/api/v1/evidence-packets/1", headers=_auth("wrong")).status_code == 401
+    assert (
+        client.post(
+            "/api/v1/evidence-packets", json={"name": "x", "document": _packet()}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get("/api/v1/evidence-packets/1", headers=_auth("wrong")).status_code
+        == 401
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +445,9 @@ def test_unauthenticated_requests_are_refused(accounts, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_incomplete_analytical_block_is_stored_and_reported(accounts, monkeypatch) -> None:
+def test_incomplete_analytical_block_is_stored_and_reported(
+    accounts, monkeypatch
+) -> None:
     """Covers: API-070 — save-and-come-back-to-it must work."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     empty = {"block_id": "condition", "type": "analysis", "title": "Condition"}
@@ -428,15 +465,28 @@ def test_incomplete_analytical_block_is_stored_and_reported(accounts, monkeypatc
     assert validation["valid"] is False
     assert validation["reason"] == "2 of 3 analytical blocks cannot be read as evidence"
     by_id = {state["block_id"]: state for state in validation["blocks"]}
-    assert by_id["unemployment"] == {"block_id": "unemployment", "valid": True, "reason": None, "missing": []}
+    assert by_id["unemployment"] == {
+        "block_id": "unemployment",
+        "valid": True,
+        "reason": None,
+        "missing": [],
+    }
     assert by_id["condition"]["valid"] is False
     assert "no reproducibility envelope" in by_id["condition"]["reason"]
-    assert by_id["condition"]["missing"] == ["metric_codes", "source_codes", "geo_id", "period", "api_query"]
+    assert by_id["condition"]["missing"] == [
+        "metric_codes",
+        "source_codes",
+        "geo_id",
+        "period",
+        "api_query",
+    ]
     assert by_id["partial"]["missing"] == ["period", "api_query"]
     assert "without the context" in by_id["partial"]["reason"]
 
     # The document is stored exactly as composed, gaps and all.
-    detail = client.get(f"/api/v1/evidence-packets/{created.json()['packet_id']}", headers=_auth())
+    detail = client.get(
+        f"/api/v1/evidence-packets/{created.json()['packet_id']}", headers=_auth()
+    )
     stored = {block["block_id"]: block for block in detail.json()["document"]["blocks"]}
     assert stored["condition"]["envelope"] is None
     assert stored["partial"]["envelope"]["period"] == ""
@@ -464,17 +514,30 @@ def test_incomplete_analytical_block_is_stored_and_reported(accounts, monkeypatc
             id="envelope-release-disagrees-with-query",
         ),
         pytest.param(
-            {"block_id": "limits", "type": "caveat", "title": "Limits", "envelope": _envelope()},
+            {
+                "block_id": "limits",
+                "type": "caveat",
+                "title": "Limits",
+                "envelope": _envelope(),
+            },
             "is caveat prose and cannot carry a query or an envelope",
             id="prose-block-carrying-an-envelope",
         ),
         pytest.param(
-            {"block_id": "method", "type": "methodology", "title": "Method", "document": _query()},
+            {
+                "block_id": "method",
+                "type": "methodology",
+                "title": "Method",
+                "document": _query(),
+            },
             "is methodology prose and cannot carry a query or an envelope",
             id="prose-block-carrying-a-query",
         ),
         pytest.param(
-            _block(document=_query(metric_code="NO:SUCH:METRIC"), envelope=_envelope(metric_codes=["NO:SUCH:METRIC"])),
+            _block(
+                document=_query(metric_code="NO:SUCH:METRIC"),
+                envelope=_envelope(metric_codes=["NO:SUCH:METRIC"]),
+            ),
             "block 'unemployment': metric_code 'NO:SUCH:METRIC' is not a published metric",
             id="query-the-live-contracts-refuse",
         ),
@@ -492,7 +555,9 @@ def test_contradictions_are_refused_at_write_naming_the_block(
     storage = _StorageSession(accounts)
     client = _client(storage, monkeypatch=monkeypatch)
     response = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "bad", "document": _packet(block)}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "bad", "document": _packet(block)},
     )
     assert response.status_code == 422, response.text
     assert fragment in response.json()["detail"]
@@ -514,20 +579,27 @@ def test_duplicate_block_ids_are_refused(accounts, monkeypatch) -> None:
 def test_unknown_block_type_and_stray_fields_never_reach_storage() -> None:
     """Covers: API-070 — the schema boundary refuses shapes the contract lacks."""
     with pytest.raises(ValueError):
-        EvidencePacketDocument.model_validate(_packet({"block_id": "f", "type": "forecast"}))
+        EvidencePacketDocument.model_validate(
+            _packet({"block_id": "f", "type": "forecast"})
+        )
     with pytest.raises(ValueError):
         EvidencePacketDocument.model_validate({**_packet(), "version": 2})
     with pytest.raises(ValueError):
         EvidencePacketDocument.model_validate({**_packet(), "schema_version": 2})
 
 
-def test_retired_measure_is_reported_on_its_block_not_repaired(accounts, monkeypatch) -> None:
+def test_retired_measure_is_reported_on_its_block_not_repaired(
+    accounts, monkeypatch
+) -> None:
     """Covers: API-070 — stale names the block and keeps the document."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     created = client.post(
         "/api/v1/evidence-packets",
         headers=_auth(),
-        json={"name": "goes-stale", "document": _packet(_block("kept"), _block("retired"))},
+        json={
+            "name": "goes-stale",
+            "document": _packet(_block("kept"), _block("retired")),
+        },
     )
     packet_id = created.json()["packet_id"]
     assert created.json()["validation"]["valid"] is True
@@ -546,7 +618,11 @@ def test_retired_measure_is_reported_on_its_block_not_repaired(accounts, monkeyp
             assert "not a published metric" in state["reason"]
             assert state["missing"] == [], "stale, not incomplete"
     blocks = stale.json()["document"]["blocks"]
-    assert all(b["document"]["metric_code"] == "FRED:UNRATE" for b in blocks if b.get("document"))
+    assert all(
+        b["document"]["metric_code"] == "FRED:UNRATE"
+        for b in blocks
+        if b.get("document")
+    )
 
 
 def test_repeated_measures_are_resolved_once_per_request(accounts, monkeypatch) -> None:
@@ -555,7 +631,9 @@ def test_repeated_measures_are_resolved_once_per_request(accounts, monkeypatch) 
     client = _client(_StorageSession(accounts), warehouse, monkeypatch=monkeypatch)
     blocks = [_block(f"b{i}") for i in range(12)]
     created = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "dozen", "document": _packet(*blocks)}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "dozen", "document": _packet(*blocks)},
     )
     assert created.status_code == 201
     # One write-time check and one read-time check of the single distinct query.
@@ -565,7 +643,9 @@ def test_repeated_measures_are_resolved_once_per_request(accounts, monkeypatch) 
 def test_analytical_block_cap_is_enforced() -> None:
     """Covers: API-070 — the ADR's bound is a contract, not a hope."""
     warehouse = _WarehouseSession()
-    document = EvidencePacketDocument.model_validate(_packet(*[_block(f"b{i}") for i in range(51)]))
+    document = EvidencePacketDocument.model_validate(
+        _packet(*[_block(f"b{i}") for i in range(51)])
+    )
     with pytest.raises(evidence_packet_service.PacketInvalid) as raised:
         evidence_packet_service.validate_packet(warehouse, document)
     assert "at most 50 analytical blocks" in raised.value.detail
@@ -580,7 +660,9 @@ def test_update_requires_the_version_the_caller_read(accounts, monkeypatch) -> N
     """Covers: API-071 — a stale update is refused with the current version."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     created = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "c", "document": _packet()}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "c", "document": _packet()},
     )
     packet_id = created.json()["packet_id"]
     first = client.put(
@@ -600,9 +682,14 @@ def test_update_requires_the_version_the_caller_read(accounts, monkeypatch) -> N
     assert unchanged.json()["document"]["title"] == "second"
 
     taken = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "c", "document": _packet()}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "c", "document": _packet()},
     )
-    assert taken.status_code == 409 and "a packet named 'c' exists" in taken.json()["detail"]
+    assert (
+        taken.status_code == 409
+        and "a packet named 'c' exists" in taken.json()["detail"]
+    )
 
 
 def test_delete_is_immediate_and_a_second_delete_is_404(accounts, monkeypatch) -> None:
@@ -610,11 +697,23 @@ def test_delete_is_immediate_and_a_second_delete_is_404(accounts, monkeypatch) -
     storage = _StorageSession(accounts)
     client = _client(storage, monkeypatch=monkeypatch)
     packet_id = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "t", "document": _packet()}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "t", "document": _packet()},
     ).json()["packet_id"]
-    assert client.delete(f"/api/v1/evidence-packets/{packet_id}", headers=_auth()).status_code == 204
+    assert (
+        client.delete(
+            f"/api/v1/evidence-packets/{packet_id}", headers=_auth()
+        ).status_code
+        == 204
+    )
     assert storage.rows == []
-    assert client.delete(f"/api/v1/evidence-packets/{packet_id}", headers=_auth()).status_code == 404
+    assert (
+        client.delete(
+            f"/api/v1/evidence-packets/{packet_id}", headers=_auth()
+        ).status_code
+        == 404
+    )
 
 
 def test_list_carries_size_but_never_a_verdict(accounts, monkeypatch) -> None:
@@ -628,11 +727,17 @@ def test_list_carries_size_but_never_a_verdict(accounts, monkeypatch) -> None:
         json={
             "name": "b-second",
             "document": _packet(
-                {"block_id": "summary", "type": "text", "title": "Summary"}, _block(), empty
+                {"block_id": "summary", "type": "text", "title": "Summary"},
+                _block(),
+                empty,
             ),
         },
     )
-    client.post("/api/v1/evidence-packets", headers=_auth(), json={"name": "a-first", "document": _packet()})
+    client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "a-first", "document": _packet()},
+    )
     lookups_before = len(warehouse.lookups)
 
     listing = client.get("/api/v1/evidence-packets", headers=_auth())
@@ -642,16 +747,22 @@ def test_list_carries_size_but_never_a_verdict(accounts, monkeypatch) -> None:
     second = payload["items"][1]
     assert second["block_count"] == 3 and second["analytical_block_count"] == 2
     assert "validation" not in second and "valid" not in second
-    assert len(warehouse.lookups) == lookups_before, "listing performed no glossary lookup"
+    assert len(warehouse.lookups) == lookups_before, (
+        "listing performed no glossary lookup"
+    )
 
 
 def test_user_content_is_never_publicly_cacheable(accounts, monkeypatch) -> None:
     """Covers: API-071 — private no-store, outside the cacheable prefixes."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     created = client.post(
-        "/api/v1/evidence-packets", headers=_auth(), json={"name": "p", "document": _packet()}
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "p", "document": _packet()},
     )
-    detail = client.get(f"/api/v1/evidence-packets/{created.json()['packet_id']}", headers=_auth())
+    detail = client.get(
+        f"/api/v1/evidence-packets/{created.json()['packet_id']}", headers=_auth()
+    )
     listing = client.get("/api/v1/evidence-packets", headers=_auth())
     for response in (created, detail, listing):
         assert response.headers["cache-control"] == "private, no-store"

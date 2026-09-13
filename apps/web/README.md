@@ -87,7 +87,31 @@ response's nonce (and the chunks they load) run, and an injected inline
 script does not. The CSP is same-origin only: the API and tile server are
 reached through this server's own rewrites, so nothing needs a third-party
 script or connect origin. `worker-src blob:` and `img-src blob:` exist for
-MapLibre. Styles keep `'unsafe-inline'`; a style nonce is a separate change.
+MapLibre.
+
+Styles are split rather than blanket-trusted. CSP3 separates the two things
+`style-src` conflates, and only one of the doors can be closed:
+
+- `style-src-elem 'self'` in production. No page emits or creates a `<style>`
+  element -- there is one global stylesheet, which the build extracts to a
+  file -- so an injected `<style>` block does not apply. Measured against the
+  production server: zero style elements on `/`, `/explore` with the map
+  rendered and hovered, and `/builder`. Under `next dev` the directive keeps
+  `'unsafe-inline'`, because the dev overlay injects its own `@font-face`
+  block; the build folds that exception away, and `npm run check:csp` reads
+  the built middleware and fails if the shipped `style-src-elem` admits an
+  inline element.
+- `style-src-attr 'unsafe-inline'`, deliberately and narrowly. MapLibre writes
+  style attributes on the canvas and controls it creates, Next writes one on
+  its route announcer, and three of this application's own styles are values
+  rather than rules: the legend swatch's colour, a coverage bar segment's
+  width, the map tooltip's pointer position. A nonce cannot cover an
+  attribute, and `'unsafe-hashes'` needs one hash per exact declaration, which
+  a data-driven value cannot have. `csp-nonce.spec.js` lists every element
+  allowed to carry one and fails on any other.
+
+`style-src 'self' 'unsafe-inline'` is kept as the CSP2 fallback for browsers
+without the split, which behave exactly as they did before.
 
 The cost of the nonce is that every route is dynamically rendered rather
 than static (`export const dynamic = "force-dynamic"` in `app/layout.js`) —

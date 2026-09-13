@@ -69,13 +69,23 @@ class PacketNameTaken(Exception):
 
 #: Envelope fields an analytical block needs before it can be read as
 #: evidence. The same list the client's ``packetIssues`` reports.
-_REQUIRED_ENVELOPE_FIELDS = ("metric_codes", "source_codes", "geo_id", "period", "api_query")
+_REQUIRED_ENVELOPE_FIELDS = (
+    "metric_codes",
+    "source_codes",
+    "geo_id",
+    "period",
+    "api_query",
+)
 
 
 def _document_metric_codes(document: AnalysisDocument) -> set[str]:
     return {
         code
-        for code in (document.metric_code, document.metric_code_a, document.metric_code_b)
+        for code in (
+            document.metric_code,
+            document.metric_code_a,
+            document.metric_code_b,
+        )
         if code
     }
 
@@ -155,7 +165,9 @@ def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
             raise PacketInvalid(f"block '{block.block_id}': {verdicts[key]}")
 
 
-def _block_state(block: PacketBlock, warehouse: Session, verdicts: dict) -> BlockValidation:
+def _block_state(
+    block: PacketBlock, warehouse: Session, verdicts: dict
+) -> BlockValidation:
     if not block.analytical:
         return BlockValidation(block_id=block.block_id, valid=True)
     if block.envelope is None:
@@ -209,7 +221,9 @@ def _block_state(block: PacketBlock, warehouse: Session, verdicts: dict) -> Bloc
     return BlockValidation(block_id=block.block_id, valid=True)
 
 
-def _validation_state(warehouse: Session, packet: EvidencePacketDocument) -> PacketValidation:
+def _validation_state(
+    warehouse: Session, packet: EvidencePacketDocument
+) -> PacketValidation:
     verdicts: dict[str, Optional[str]] = {}
     blocks = [_block_state(block, warehouse, verdicts) for block in packet.blocks]
     failing = [state for state in blocks if not state.valid]
@@ -303,7 +317,9 @@ def _document_of(row) -> EvidencePacketDocument:
     return EvidencePacketDocument.model_validate(row["document"])
 
 
-def _detail(row, document: EvidencePacketDocument, validation: PacketValidation) -> EvidencePacket:
+def _detail(
+    row, document: EvidencePacketDocument, validation: PacketValidation
+) -> EvidencePacket:
     return EvidencePacket(
         packet_id=int(row["packet_id"]),
         name=str(row["name"]),
@@ -328,7 +344,9 @@ def _summary(row) -> EvidencePacketSummary:
     )
 
 
-def _refuse_taken_name(storage: Session, owner_user_id: int, name: str, packet_id: int) -> None:
+def _refuse_taken_name(
+    storage: Session, owner_user_id: int, name: str, packet_id: int
+) -> None:
     taken = storage.execute(
         _NAME_TAKEN,
         {"owner_user_id": owner_user_id, "name": name, "packet_id": packet_id},
@@ -366,7 +384,9 @@ def get_packet(
     storage: Session, warehouse: Session, owner_user_id: int, packet_id: int
 ) -> EvidencePacket:
     row = (
-        storage.execute(_SELECT_ONE, {"packet_id": packet_id, "owner_user_id": owner_user_id})
+        storage.execute(
+            _SELECT_ONE, {"packet_id": packet_id, "owner_user_id": owner_user_id}
+        )
         .mappings()
         .first()
     )
@@ -382,7 +402,8 @@ def list_packets(
     total = int(storage.execute(_COUNT, {"owner_user_id": owner_user_id}).scalar() or 0)
     rows = (
         storage.execute(
-            _SELECT_PAGE, {"owner_user_id": owner_user_id, "limit": limit, "offset": offset}
+            _SELECT_PAGE,
+            {"owner_user_id": owner_user_id, "limit": limit, "offset": offset},
         )
         .mappings()
         .all()
