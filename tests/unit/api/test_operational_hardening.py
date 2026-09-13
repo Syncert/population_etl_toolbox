@@ -263,6 +263,137 @@ def test_rate_limits_are_off_by_default_and_split_by_cost_class() -> None:
         assert client.get("/health").status_code == 200
 
 
+def _identity_app(peer: str, trusted: tuple[str, ...]) -> TestClient:
+    """One analytical request per call, from ``peer``, with ``trusted`` declared."""
+
+    async def endpoint(_request: Request) -> Response:
+        return Response(b"ok")
+
+    application = Starlette(routes=[Route("/api/v1/observations", endpoint)])
+    return TestClient(
+        RateLimitMiddleware(
+            application,
+            catalog_per_minute=0,
+            analysis_per_minute=1,
+            trusted_proxies=trusted,
+        ),
+        client=(peer, 44444),
+    )
+
+
+def test_a_trusted_proxy_reports_the_client_it_forwarded_for() -> None:
+    """Covers: API-075 — two clients behind one proxy hold two budgets.
+
+    The whole public surface reaches this API through a proxy, so keying the
+    bucket on the peer address makes the per-client budget one budget for the
+    deployment: one client's loop denies service to every other client.
+    """
+    client = _identity_app("10.1.0.9", ("10.0.0.0/8",))
+
+    first = {"X-Forwarded-For": "203.0.113.7"}
+    second = {"X-Forwarded-For": "198.51.100.4"}
+    assert client.get("/api/v1/observations", headers=first).status_code == 200
+    assert client.get("/api/v1/observations", headers=first).status_code == 429
+    # A different client behind the same proxy still has its own budget.
+    assert client.get("/api/v1/observations", headers=second).status_code == 200
+    assert client.get("/api/v1/observations", headers=second).status_code == 429
+
+
+def test_a_declared_proxy_chain_resolves_to_the_address_that_entered_it() -> None:
+    """Covers: API-075 — trusted hops are skipped from the right."""
+    client = _identity_app("10.1.0.9", ("10.0.0.0/8", "172.16.0.0/12"))
+    chained = {"X-Forwarded-For": "203.0.113.7, 172.16.4.4, 10.1.0.9"}
+    other = {"X-Forwarded-For": "198.51.100.4, 172.16.4.4, 10.1.0.9"}
+
+    assert client.get("/api/v1/observations", headers=chained).status_code == 200
+    assert client.get("/api/v1/observations", headers=chained).status_code == 429
+    assert client.get("/api/v1/observations", headers=other).status_code == 200
+
+
+def test_an_untrusted_peer_cannot_mint_a_budget_with_a_header() -> None:
+    """Covers: API-075 — a forwarded address is evidence only from a trusted hop.
+
+    Reading the header unconditionally would be worse than ignoring it: a
+    direct client could vary one header per request and never be limited.
+    """
+    client = _identity_app("203.0.113.7", ("10.0.0.0/8",))
+
+    assert (
+        client.get(
+            "/api/v1/observations", headers={"X-Forwarded-For": "198.51.100.1"}
+        ).status_code
+        == 200
+    )
+    for spoofed in ("198.51.100.2", "198.51.100.3", "198.51.100.4"):
+        assert (
+            client.get(
+                "/api/v1/observations", headers={"X-Forwarded-For": spoofed}
+            ).status_code
+            == 429
+        ), spoofed
+
+
+@pytest.mark.parametrize(
+    "header",
+    [None, "", "   ", "not-an-address", "10.1.0.9", ", ,"],
+    ids=("absent", "empty", "blank", "unparseable", "only-trusted-hops", "separators"),
+)
+def test_degenerate_forwarding_falls_back_to_the_peer(header: str | None) -> None:
+    """Covers: API-075 — no header means the peer, never an invented identity."""
+    client = _identity_app("10.1.0.9", ("10.0.0.0/8",))
+    headers = {} if header is None else {"X-Forwarded-For": header}
+
+    assert client.get("/api/v1/observations", headers=headers).status_code == 200
+    assert client.get("/api/v1/observations", headers=headers).status_code == 429
+
+
+def test_a_malformed_trusted_proxy_entry_fails_at_startup() -> None:
+    """Covers: API-075 — a typo is a configuration error, not silent distrust."""
+    with pytest.raises(ValueError) as raised:
+        RateLimitMiddleware(
+            Starlette(routes=[]), trusted_proxies=("10.0.0.0/8", "not-a-network")
+        )
+    assert "not-a-network" in str(raised.value)
+
+
+def test_the_declared_proxies_reach_the_built_application() -> None:
+    """Covers: API-075 — the setting is wired, not merely accepted.
+
+    A limiter that supports trusted proxies but is never told about them is
+    the same single deployment-wide bucket with more code behind it.
+    """
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setenv("API_TRUSTED_PROXY_IPS", " 10.0.0.0/8 , 192.168.1.5 ,")
+        settings = Settings()
+    finally:
+        monkeypatch.undo()
+
+    assert settings.api_trusted_proxy_ips == ("10.0.0.0/8", "192.168.1.5")
+
+    application = create_app(settings)
+    declared = [
+        middleware.kwargs.get("trusted_proxies")
+        for middleware in application.user_middleware
+        if middleware.cls is RateLimitMiddleware
+    ]
+    assert declared == [("10.0.0.0/8", "192.168.1.5")]
+
+
+def test_no_declared_proxy_keeps_the_peer_as_the_client() -> None:
+    """Covers: API-075 — the default is exactly the previous behavior."""
+    client = _identity_app("10.1.0.9", ())
+    headers = {"X-Forwarded-For": "203.0.113.7"}
+
+    assert client.get("/api/v1/observations", headers=headers).status_code == 200
+    assert (
+        client.get(
+            "/api/v1/observations", headers={"X-Forwarded-For": "198.51.100.4"}
+        ).status_code
+        == 429
+    )
+
+
 def test_rate_limit_refills_continuously() -> None:
     """Covers: API-056 — the budget is sustained, not a fixed-window cliff."""
     now = [0.0]

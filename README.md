@@ -286,6 +286,13 @@ budgets (`API_DB_*`); optional per-client rate limits split catalog from
 analytical cost (`API_RATE_LIMIT_*`, off by default); and every response
 carries an `X-Request-ID` logged with a structured completion line.
 
+The limiter's client is the address the request arrived from, so a deployment
+that fronts the API with a proxy — every topology here does — must declare
+that proxy in `API_TRUSTED_PROXY_IPS` (addresses or CIDR blocks) or the
+per-client budgets become one budget for the whole deployment. A forwarded
+address is read only from a declared hop; from anywhere else the header is
+ignored, so it can never be used to claim a second budget.
+
 Metric identity: `metric_code` is required wherever a metric is named, and is
 its only spelling. The `metric_id` alias and the `population` convenience
 mapping were retired with the route aliases — one spelling means a request

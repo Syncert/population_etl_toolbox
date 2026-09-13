@@ -26,6 +26,11 @@ services:
       API_DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-15000}
       API_RATE_LIMIT_CATALOG_PER_MINUTE: ${API_RATE_LIMIT_CATALOG_PER_MINUTE:-600}
       API_RATE_LIMIT_ANALYSIS_PER_MINUTE: ${API_RATE_LIMIT_ANALYSIS_PER_MINUTE:-240}
+      # Whose X-Forwarded-For the limiter believes (API-075). Every public
+      # request arrives from the `web` container, so an empty value makes the
+      # budgets above one budget for the deployment. Empty by default: a
+      # forwarded address read from an undeclared hop is attacker-controlled.
+      API_TRUSTED_PROXY_IPS: ${API_TRUSTED_PROXY_IPS:-}
     depends_on:
       - redis
     ports:

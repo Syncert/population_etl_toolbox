@@ -366,7 +366,11 @@ responses must not be usable to probe deployment state.
   than after the TTL. You do not need to bust anything.
 - Rate limits, when enabled, are per client and split by cost class: catalog
   reads and analytical reads spend independent budgets. Cache hits cost no
-  budget.
+  budget. "Per client" means the address the request arrived from — or, when
+  the deployment has declared the reverse proxies in front of the API, the
+  address those proxies forwarded. Sending your own `X-Forwarded-For` from an
+  undeclared hop changes nothing: the header is read only from a hop the
+  deployment trusts, so it can never be used to claim a second budget.
 - Every response carries `X-Request-ID`. Send your own (`[A-Za-z0-9._-]`, ≤64
   chars) to correlate your logs with the server's; anything else is replaced.
 - Pagination is `limit`/`offset` with documented deterministic ordering per

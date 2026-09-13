@@ -129,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
         analysis_per_minute=configured.api_rate_limit_analysis_per_minute,
+        trusted_proxies=configured.api_trusted_proxy_ips,
     )
     application.add_middleware(
         RedisResponseCacheMiddleware,
