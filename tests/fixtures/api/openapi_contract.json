@@ -755,6 +755,68 @@
         "comparison"
       ]
     },
+    "GET /api/v1/comparison/correlation": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 9999,
+            "minimum": 1000
+          },
+          "in": "query",
+          "name": "year",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonCorrelationResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
     "GET /api/v1/comparison/preflight": {
       "parameters": [
         {
@@ -2099,6 +2161,36 @@
         "offset",
         "release_selection",
         "total"
+      ]
+    },
+    "ComparisonCorrelationResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "contemporaneous_pairs": "integer",
+        "derivations": "array<string>",
+        "derived": "boolean",
+        "geo_level": "string | null",
+        "geographies_a": "integer",
+        "geographies_b": "integer",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "n": "integer",
+        "pearson_r": "number | null",
+        "period_a": "string | null",
+        "period_b": "string | null",
+        "periods_differ": "boolean",
+        "source_code_a": "string | null",
+        "source_code_b": "string | null",
+        "spearman_rho": "number | null",
+        "state_fips": "string | null",
+        "units_a": "string | null",
+        "units_b": "string | null",
+        "year": "integer | null"
+      },
+      "required": [
+        "metric_code_a",
+        "metric_code_b",
+        "n"
       ]
     },
     "ComparisonPreflightResponse": {

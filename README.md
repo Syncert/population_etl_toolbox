@@ -244,6 +244,11 @@ Provider-neutral endpoints:
   one newest value per geography per side, with both inputs' periods and
   identities on every API-derived difference/ratio; an incompatible pair is
   rejected with the failed rules
+- `GET /api/v1/comparison/correlation` — API-derived Pearson and Spearman
+  coefficients over exactly the pairs `/comparison` would page, with the
+  pair count, each side's coverage, how many pairs were contemporaneous, an
+  optional same-year pin, and caveats led by association-not-causation; a
+  coefficient the pairs cannot support is `null` with its reason, never `0`
 - `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
   metric's latest values, dispatched to the owning source; stratified
   sources are declined with their declared restriction

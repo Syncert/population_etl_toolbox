@@ -42,6 +42,26 @@ RULE_AGGREGATION = "aggregation"
 #: every row.
 COMPARISON_DERIVATIONS = ("difference", "ratio")
 
+#: The derived statistics ``/comparison/correlation`` computes over the same
+#: pairs. Pearson because it is the coefficient a reader expects; Spearman
+#: because published economic and demographic measures are routinely skewed
+#: and a rank correlation is the honest companion to a linear one. Both are
+#: API-derived, and both are named here rather than at the route so a caller
+#: reading the compatibility policy sees every statistic it authorises.
+CORRELATION_DERIVATIONS = ("pearson_r", "spearman_rho")
+
+#: The sentence every correlation answer leads with. The product rules make
+#: this a rule rather than a courtesy: "Cross-source association must never be
+#: presented as causation" (``docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md``).
+#: Written once, here, because the route, the consumer guide and the web
+#: panel all present it and three wordings of one rule read as three rules.
+CORRELATION_CAUSATION_CAVEAT = (
+    "association, not causation: a coefficient describes how two published "
+    "measures move together across geographies, never that one causes the "
+    "other; a third measure, a shared geography effect, or the way each "
+    "source defines its universe can produce any coefficient here"
+)
+
 
 def _upper(word: str) -> str:
     """Time grains are published as one word each and have no aliases."""

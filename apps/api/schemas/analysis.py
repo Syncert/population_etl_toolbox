@@ -94,6 +94,71 @@ class ComparisonPreflightResponse(BaseModel):
     caveats: list[str] = []
 
 
+class ComparisonCorrelationResponse(BaseModel):
+    """API-derived Pearson and Spearman coefficients over one comparable pair.
+
+    The pairs are exactly the rows ``/comparison`` would page under the same
+    parameters: the same per-side newest-value-per-geography reduction, the
+    same inner join on geography identity, unpaged. Nothing here is a
+    provider fact, which is why ``derived`` is true, every coefficient is
+    named in ``derivations``, and both inputs' identities, units and periods
+    travel with the answer.
+
+    A coefficient is ``null`` rather than ``0`` whenever the pairs cannot
+    support one -- fewer than three of them, or a side publishing a single
+    distinct value -- and ``caveats`` says which. Zero is a real coefficient
+    meaning "no linear association", and answering it for "there was nothing
+    to measure" would be the same class of defect as coercing a suppressed
+    value to zero.
+    """
+
+    metric_code_a: str
+    metric_code_b: str
+    source_code_a: Optional[str] = None
+    source_code_b: Optional[str] = None
+    units_a: Optional[str] = None
+    units_b: Optional[str] = None
+    #: Always true. The coefficients are computed by the API from
+    #: provider-published inputs; no source publishes them.
+    derived: bool = True
+    #: The grain the pairs were read at, in the vocabulary -- not the word the
+    #: caller typed (API-094).
+    geo_level: Optional[str] = None
+    state_fips: Optional[str] = None
+    #: The year each side was reduced within, when the caller pinned one.
+    #: ``None`` means each side reduced to its newest published period, which
+    #: is what ``/comparison`` does.
+    year: Optional[int] = None
+    #: Pairs where both sides published a number. A pair with a null,
+    #: suppressed or non-numeric side is excluded from it, never counted as
+    #: zero.
+    n: int
+    #: How many geographies each side published under this request's filters,
+    #: before the join -- the same intersection reporting ``/comparison``
+    #: carries (API-087), so ``n`` reads as an intersection rather than as a
+    #: universe.
+    geographies_a: int = 0
+    geographies_b: int = 0
+    #: Pairs whose two sides describe the same period. The reduction takes
+    #: each side's own newest value, so a pair can combine two years; this
+    #: counts how often it did not.
+    contemporaneous_pairs: int = 0
+    pearson_r: Optional[float] = None
+    spearman_rho: Optional[float] = None
+    #: The single period every pair's side came from, or ``None`` when they
+    #: differ or nothing was paired -- the ``/distribution/bins`` convention
+    #: (API-097), one field per side because a correlation has two.
+    period_a: Optional[str] = None
+    period_b: Optional[str] = None
+    #: True when at least one pair combined two different periods, which is
+    #: exactly ``contemporaneous_pairs < n``.
+    periods_differ: bool = False
+    derivations: list[str] = []
+    #: What this analysis could not carry, led by the association-not-causation
+    #: sentence, which is present in every answer.
+    caveats: list[str] = []
+
+
 class DistributionBin(BaseModel):
     bin_index: int
     lower_bound: float

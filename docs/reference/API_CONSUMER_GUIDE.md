@@ -548,6 +548,64 @@ stratified, multi-dimensional, or agency-grain observations that an aligned
 one-value-per-geography analysis would silently collapse. Query them through
 `/observations` with the appropriate stratum, domain, or subject filters.
 
+`GET /api/v1/comparison/correlation?metric_code_a=…&metric_code_b=…` answers
+two API-derived coefficients over **exactly the pairs `/comparison` would
+page** under the same `geo_level` and `state_fips`: the same per-side
+reduction to one newest value per geography, the same inner join on geography
+identity. It takes no `limit` or `offset` — a coefficient over one page would
+describe a hundred geographies and be read as describing the country — and it
+inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
+with the failed rules for an incompatible pair, `422` with the source's own
+restriction for CDC, USDA NASS and FBI UCR.
+
+`pearson_r` is the linear coefficient; `spearman_rho` is the same computed
+over each side's ranks. Both are published because published economic and
+demographic measures are routinely skewed, and a rank correlation is the
+honest companion to a linear one: where the two disagree sharply, the linear
+one is being carried by the tail. Both are named in `derivations`, and the
+answer carries `derived: true`, both metric codes, both source codes and both
+units — a coefficient is unit-free, the measures behind it are not.
+
+**A coefficient you cannot compute is `null`, never `0`.** Zero is a real
+answer meaning "these two measures do not move together". The API reports
+`null` with its reason in `caveats` when fewer than three geographies paired
+(two points determine a line exactly, so Pearson over them is ±1 whatever the
+measures are) or when either side publishes one distinct value across the
+paired geographies. Check `pearson_r !== null` before formatting it; do not
+default it.
+
+**Read `n` against the coverage counts.** `n` is the number of pairs where
+*both* sides published a number — a pair with a null, suppressed or
+non-numeric side is excluded, not counted as zero — while `geographies_a` and
+`geographies_b` report what each side published under the same filters, as
+they do on `/comparison`. A coefficient over 50 of 3,143 counties is a
+different claim from one over all of them, and `caveats` says so when `n`
+falls short.
+
+**The pairs are not aligned to a shared period unless you ask.** Each side
+reduces to its own newest value, so a pair can combine a 2023 estimate with a
+2019 one. `contemporaneous_pairs` counts the pairs whose two sides describe
+the same period, `periods_differ` is true when any pair did not, and
+`period_a` / `period_b` name the single period each side's inputs came from or
+are `null` when they differ — the `/distribution/bins` convention. Passing
+`year=YYYY` reduces **both** sides within that calendar year instead, which
+buys contemporaneity at the cost of coverage; the answer reports the coverage
+you actually got rather than predicting it.
+
+**Every answer leads with the same caveat, and it is not decoration.** A
+correlation is an association between two published measures, never evidence
+that one causes the other: a third measure, a shared geography effect, or the
+way each source defines its universe can produce any coefficient here. The
+sentence is the first entry in `caveats` on every answer, including the ones
+whose coefficients are null. Present it with the number, not behind a
+disclosure control. The rest of `caveats` is `/comparison/preflight`'s own —
+the rules it could not verify, each side's published uncertainty — plus the
+coverage and contemporaneity notes above, so a correlation and the comparison
+it is a statistic of describe their inputs identically.
+
+The saved-analysis contract needs nothing new for a correlation: it is a
+statistic of a pair, and a `comparison` document already records that pair.
+
 ## Saved analysis configurations
 
 Authenticated, user-owned storage — see ADR-0003.
@@ -719,7 +777,7 @@ status code on the one class of error the API can explain.
 
 - **Every** public analytical GET is cacheable — the catalog, `/observations`
   and its releases, the legacy pair, all eight source-scoped observation
-  routes, CDC, USDA NASS, distribution, and both comparison routes. They
+  routes, CDC, USDA NASS, distribution, and all three comparison routes. They
   answer with `x-cache: HIT|MISS` and
   `Cache-Control: public, max-age=<ttl>`. The authenticated resources never
   do, and neither does a health probe, whose answer must describe now. The cache key includes the served

@@ -30,16 +30,22 @@ from sqlalchemy.orm import Session
 
 from apps.api.registry import (
     ObservationDispatch,
+    normalize_geo_level,
     observation_dispatch,
     ranking_tie_break,
 )
 from apps.api.schemas import (
     CompatibilityFinding,
+    ComparisonCorrelationResponse,
     ComparisonPreflightResponse,
     ComparisonResponse,
     ComparisonRow,
 )
-from apps.api.services.compatibility import evaluate_comparison
+from apps.api.services.compatibility import (
+    CORRELATION_CAUSATION_CAVEAT,
+    CORRELATION_DERIVATIONS,
+    evaluate_comparison,
+)
 from apps.api.services.contracts import require_relation
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
@@ -284,4 +290,249 @@ def list_metric_comparison(
         limit=limit,
         offset=offset,
         items=items,
+    )
+
+
+#: Below this many pairs a coefficient is not reported. Two points determine a
+#: line exactly, so Pearson over them is ``±1`` whatever the measures are --
+#: a number with no information in it, which is worse than no number.
+MINIMUM_CORRELATION_PAIRS = 3
+
+
+def _year_pin_condition(dispatch: ObservationDispatch) -> str:
+    """Constrain a side's reduction to one calendar year.
+
+    The condition closes over the dispatch entry's own
+    ``period_start_expression`` -- the same expression the reduction ranks by
+    -- rather than over a per-source ``year`` filter, for two reasons. The
+    analysis-ready sources do not all declare one (``year_from``/``year_to``
+    belong to the union family), so reading it from ``filter_conditions``
+    would answer a same-year correlation for some sources and refuse it for
+    others with no difference a caller could see. And the pin's meaning is
+    "rank within this year", which is a statement about the reduction, not
+    about which rows the relation offers; writing it against the ranking
+    expression is what makes those the same sentence.
+
+    Every ``period_start_expression`` in the registry projects to text whose
+    first four characters are the calendar year -- an ISO date, or a bare
+    year for the annual sources -- which is what lets one condition serve all
+    of them.
+    """
+    return f"SUBSTRING({dispatch.period_start_expression} FROM 1 FOR 4) = :year_pin"
+
+
+def _correlation_caveats(
+    decision_caveats: tuple[str, ...],
+    n: int,
+    geographies_a: int,
+    geographies_b: int,
+    contemporaneous_pairs: int,
+    distinct_a: int,
+    distinct_b: int,
+) -> list[str]:
+    """Everything this answer could not carry, association first.
+
+    The preflight's own caveats -- the rules it could not verify, and each
+    side's published uncertainty -- come through unchanged, so a correlation
+    and the comparison it is a statistic of describe their inputs the same
+    way. What is added is what only a correlation can say: why a coefficient
+    is absent, how much of each side was paired, and how often the two sides
+    described the same period.
+    """
+    caveats = [CORRELATION_CAUSATION_CAVEAT, *decision_caveats]
+
+    if n < MINIMUM_CORRELATION_PAIRS:
+        caveats.append(
+            f"no coefficient is reported: {n} paired geographies is fewer "
+            f"than the {MINIMUM_CORRELATION_PAIRS} a correlation needs to "
+            "carry any information"
+        )
+    else:
+        for label, distinct in (("a", distinct_a), ("b", distinct_b)):
+            if distinct <= 1:
+                caveats.append(
+                    f"no coefficient is reported: metric_code_{label} "
+                    "publishes one distinct value across the paired "
+                    "geographies, so it varies with nothing"
+                )
+
+    unpaired = max(geographies_a, geographies_b) - n
+    if unpaired > 0:
+        caveats.append(
+            f"coverage: {n} of the {max(geographies_a, geographies_b)} "
+            "geographies either side published were paired; a geography one "
+            "side publishes and the other does not is absent from the "
+            "coefficient entirely"
+        )
+
+    if contemporaneous_pairs < n:
+        caveats.append(
+            f"{n - contemporaneous_pairs} of {n} pairs combine two different "
+            "periods, because each side reduces to its own newest published "
+            "value; pin a year to ask for a same-year answer, at the cost of "
+            "the coverage that answer will report"
+        )
+
+    return caveats
+
+
+def metric_correlation(
+    db: Session,
+    metric_code_a: str,
+    metric_code_b: str,
+    geo_level: Optional[str],
+    state_fips: Optional[str],
+    year: Optional[int],
+) -> ComparisonCorrelationResponse:
+    """Pearson and Spearman over exactly the pairs ``/comparison`` would page.
+
+    The reduction, the join and the refusals are the comparison route's, by
+    construction rather than by resemblance: the same ``evaluate_comparison``
+    verdict gates the request, and the same ``ranked_latest_cte`` reduces each
+    side. What differs is that the statistic is measured over the whole join
+    rather than over a page, which is why this route takes no ``limit``.
+
+    Spearman is computed as Pearson over each side's average ranks. The
+    average -- ``RANK()`` plus half the tie group's excess -- is the
+    definition that keeps a tied measure's coefficient bounded by ``±1``;
+    the min-rank ``RANK()`` alone silently deflates it, and published
+    measures tie constantly (a county-level rate rounded to one decimal, a
+    count of zero).
+
+    One statement, one snapshot. Every number in the answer -- the pair
+    count, each side's geography count, the contemporaneity count, the
+    distinct-value counts that decide whether a coefficient exists, and the
+    coefficients themselves -- is read from one evaluation of the two
+    reductions, for the reason API-084 and API-087 record: a serving refresh
+    committing between two statements leaves the coefficient describing rows
+    the counts beside it no longer measure.
+    """
+    metric_a = _resolved(db, metric_code_a, "metric_code_a")
+    metric_b = _resolved(db, metric_code_b, "metric_code_b")
+
+    decision = evaluate_comparison(metric_a, metric_b)
+    if not decision.comparable:
+        raise NeutralQueryError(
+            f"{decision.failure_summary()}; see /comparison/preflight for the "
+            "full rule evaluation"
+        )
+
+    dispatch_a = _analysis_dispatch(metric_a)
+    dispatch_b = _analysis_dispatch(metric_b)
+    filters = {"geo_level": geo_level, "state_fips": state_fips}
+    conditions_a, params_a = _side_conditions(
+        db, dispatch_a, metric_code_a, metric_a, filters, "a_"
+    )
+    conditions_b, params_b = _side_conditions(
+        db, dispatch_b, metric_code_b, metric_b, filters, "b_"
+    )
+
+    params: dict[str, Any] = {**params_a, **params_b}
+    if year is not None:
+        conditions_a.append(_year_pin_condition(dispatch_a))
+        conditions_b.append(_year_pin_condition(dispatch_b))
+        params["year_pin"] = f"{year:04d}"
+
+    query = text(
+        f"""
+    WITH side_a AS ({ranked_latest_cte(dispatch_a, conditions_a)}),
+    side_b AS ({ranked_latest_cte(dispatch_b, conditions_b)}),
+    paired AS (
+        SELECT
+            side_a.period_start AS period_a,
+            side_b.period_start AS period_b,
+            side_a.value AS value_a,
+            side_b.value AS value_b
+        FROM side_a
+        JOIN side_b USING (geo_id)
+        WHERE side_a.value IS NOT NULL AND side_b.value IS NOT NULL
+    ),
+    ranked AS (
+        SELECT
+            period_a, period_b, value_a, value_b,
+            RANK() OVER (ORDER BY value_a)
+                + (COUNT(*) OVER (PARTITION BY value_a) - 1) / 2.0
+                AS rank_a,
+            RANK() OVER (ORDER BY value_b)
+                + (COUNT(*) OVER (PARTITION BY value_b) - 1) / 2.0
+                AS rank_b
+        FROM paired
+    )
+    SELECT
+        (SELECT COUNT(*)::INT FROM paired) AS n,
+        (SELECT COUNT(*)::INT FROM side_a) AS geographies_a,
+        (SELECT COUNT(*)::INT FROM side_b) AS geographies_b,
+        (SELECT COUNT(*)::INT FROM paired WHERE period_a IS NOT DISTINCT FROM period_b)
+            AS contemporaneous_pairs,
+        (SELECT COUNT(DISTINCT value_a)::INT FROM paired) AS distinct_a,
+        (SELECT COUNT(DISTINCT value_b)::INT FROM paired) AS distinct_b,
+        (SELECT COUNT(DISTINCT period_a)::INT FROM paired) AS period_count_a,
+        (SELECT COUNT(DISTINCT period_b)::INT FROM paired) AS period_count_b,
+        (SELECT MIN(period_a)::TEXT FROM paired) AS period_a,
+        (SELECT MIN(period_b)::TEXT FROM paired) AS period_b,
+        (SELECT corr(value_a, value_b)::DOUBLE PRECISION FROM paired) AS pearson_r,
+        (SELECT corr(rank_a, rank_b)::DOUBLE PRECISION FROM ranked) AS spearman_rho
+    """
+    )
+
+    row = db.execute(query, params).mappings().one()
+
+    n = int(row["n"] or 0)
+    geographies_a = int(row["geographies_a"] or 0)
+    geographies_b = int(row["geographies_b"] or 0)
+    contemporaneous_pairs = int(row["contemporaneous_pairs"] or 0)
+    distinct_a = int(row["distinct_a"] or 0)
+    distinct_b = int(row["distinct_b"] or 0)
+
+    # A coefficient exists only where the pairs can carry one. `corr` already
+    # answers null for a constant side, but the decision is taken here from
+    # the counts rather than inherited from the aggregate, so the answer and
+    # the caveat explaining it are made by one rule -- and so a coefficient
+    # over two points is never served as the ±1 it arithmetically is.
+    measurable = (
+        n >= MINIMUM_CORRELATION_PAIRS and distinct_a > 1 and distinct_b > 1
+    )
+    pearson_r = float(row["pearson_r"]) if measurable and row["pearson_r"] is not None else None
+    spearman_rho = (
+        float(row["spearman_rho"])
+        if measurable and row["spearman_rho"] is not None
+        else None
+    )
+
+    # One period per side when every pair's side came from the same one; none
+    # when they differ, for the reason /distribution/bins reports it that way:
+    # naming the earliest would label the whole statistic with a period most
+    # of its inputs are not from (API-097).
+    period_a = row["period_a"] if int(row["period_count_a"] or 0) == 1 else None
+    period_b = row["period_b"] if int(row["period_count_b"] or 0) == 1 else None
+
+    return ComparisonCorrelationResponse(
+        metric_code_a=metric_code_a,
+        metric_code_b=metric_code_b,
+        source_code_a=metric_a.get("source_code"),
+        source_code_b=metric_b.get("source_code"),
+        units_a=metric_a.get("units"),
+        units_b=metric_b.get("units"),
+        geo_level=normalize_geo_level(geo_level) if geo_level else None,
+        state_fips=state_fips,
+        year=year,
+        n=n,
+        geographies_a=geographies_a,
+        geographies_b=geographies_b,
+        contemporaneous_pairs=contemporaneous_pairs,
+        pearson_r=pearson_r,
+        spearman_rho=spearman_rho,
+        period_a=None if period_a is None else str(period_a),
+        period_b=None if period_b is None else str(period_b),
+        periods_differ=contemporaneous_pairs < n,
+        derivations=list(CORRELATION_DERIVATIONS),
+        caveats=_correlation_caveats(
+            decision.caveats,
+            n=n,
+            geographies_a=geographies_a,
+            geographies_b=geographies_b,
+            contemporaneous_pairs=contemporaneous_pairs,
+            distinct_a=distinct_a,
+            distinct_b=distinct_b,
+        ),
     )

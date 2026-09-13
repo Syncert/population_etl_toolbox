@@ -43,6 +43,7 @@ from apps.api.schemas.cdc import (
 )
 from apps.api.schemas.analysis import (
     CompatibilityFinding,
+    ComparisonCorrelationResponse,
     ComparisonPreflightResponse,
     ComparisonRow,
     ComparisonResponse,
@@ -86,6 +87,7 @@ __all__ = [
     "CdcObservation",
     "CdcObservationListResponse",
     "CompatibilityFinding",
+    "ComparisonCorrelationResponse",
     "ComparisonPreflightResponse",
     "ConfigurationValidation",
     "ComparisonResponse",

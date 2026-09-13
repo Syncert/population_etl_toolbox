@@ -15,10 +15,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Approved, unclaimed. Authored 2026-09-13 from a product request
-  and an inspection of the comparison workspace, the explorer, the analysis
-  routes, and the saved-analysis contract.
+- **Status:** In progress. Claimed 2026-09-13. Authored the same day from a
+  product request and an inspection of the comparison workspace, the explorer,
+  the analysis routes, and the saved-analysis contract.
 - **Last updated:** 2026-09-13
+- **Phase order taken:** WB-3, WB-4, WB-1, WB-2, WB-5, WB-6, WB-7. The plan
+  leaves WB-1 and WB-3 in either order; the API-first order is taken because
+  `AGENTS.md` builds frontend behaviour against stable API contracts, and
+  because WB-5 needs WB-4 while WB-2 ships an interim refusal until it lands.
+- **Progress:** see "Evidence record" below.
 - **Owner surfaces:** `apps/web/app/workbench/` (new), `apps/web/lib/workbench.ts`
   (new), `apps/web/components/{LineChart,BarChart,HeatmapChart}.tsx` (new),
   `apps/api/routers/comparison.py`, `apps/api/services/comparison_service.py`,
@@ -526,6 +531,129 @@ Integration checks that need a warehouse (the reduction-parity fixture in
 WB-3) run under `./tests/run.ps1 integration`; if that environment is
 unavailable, record the exact command and keep the plan in `in_progress/`.
 
+## Assessment at claim (2026-09-13)
+
+The plan was read against the surfaces it names before any work began. It
+holds, with these confirmations and one correction:
+
+- **Confirmed.** `apps/api/routers/comparison.py` and
+  `apps/api/services/comparison_service.py` already expose `ranked_latest_cte`
+  as a shared reduction — `distribution_service` imports it — so WB-3 can
+  reuse the same per-side newest-per-geography ranking rather than restate it,
+  which is what "the pairs are the rows `/comparison` would return" requires.
+- **Confirmed.** `evaluate_comparison` in `apps/api/services/compatibility.py`
+  returns the whole three-valued verdict including the `source_analysis_ready`
+  rule that carries each refused source's `analysis_refusal()`, so WB-3's
+  refusal parity with `/comparison` is a matter of calling the same function,
+  not of restating three source names.
+- **Confirmed.** `uncertainty_caveat` is already shared by `/comparison` and
+  `/distribution/bins`; WB-3's caveat set extends it rather than forking it.
+- **Correction to WB-3 criterion 6.** The plan asks the route to be "declared
+  under the analytical rate-limit class" and "publicly cacheable under the
+  same key discipline as `/comparison`". Both are already true by
+  construction and neither is a declaration to add: `main.CACHEABLE_ROUTERS`
+  derives `PUBLIC_CACHE_TARGETS` from the routers' own paths (API-076), and
+  `RateLimitMiddleware._classify` puts everything that is not a catalog path
+  in the `analysis` bucket. The criterion is therefore discharged by a test
+  asserting both, not by an edit to a list. Recorded here so a reviewer does
+  not look for a list entry that should not exist.
+- **Confirmed.** The three grain-vocabulary helpers the plan leans on
+  (`normalize_geo_level`, `_filter_conditions`'s normalisation, and
+  `GEO_GRAIN_ORDER` on the web side) exist and are single-sourced, so the
+  grain contract's rule 1 intersection can be computed from published
+  evidence rather than from a second copy of the vocabulary.
+
 ## Evidence record
 
-Empty until claimed.
+### WB-3 — `GET /api/v1/comparison/correlation`
+
+Status: **complete**, 2026-09-13.
+
+Implementation:
+
+- `apps/api/services/compatibility.py` — `CORRELATION_DERIVATIONS` and
+  `CORRELATION_CAUSATION_CAVEAT`. The caveat sentence is written once because
+  the route, the consumer guide and (at WB-5) the web panel all present it,
+  and three wordings of one product rule read as three rules.
+- `apps/api/schemas/analysis.py` — `ComparisonCorrelationResponse`.
+- `apps/api/services/comparison_service.py` — `metric_correlation`,
+  `_year_pin_condition`, `_correlation_caveats`, `MINIMUM_CORRELATION_PAIRS`.
+- `apps/api/routers/comparison.py` — the route, with `/comparison`'s three
+  exception translations unchanged.
+- `tests/unit/api/test_comparison_correlation.py` — 21 tests.
+- `docs/reference/TESTING_CONTRACT.md` — API-130, API-131, and the register
+  totals beside them (432 → 434); `tests/support/catalog_evidence.py`'s
+  audited API count 129 → 131.
+- `docs/reference/API_CONSUMER_GUIDE.md` — the route's Analysis section
+  paragraphs; "both comparison routes" → "all three" in the caching bullet.
+- `README.md` — the route in the API surface list.
+- `tests/fixtures/api/openapi_contract.json` — regenerated; the diff is
+  purely additive (one operation, one schema), no existing entry moved.
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **Spearman is Pearson over average ranks, computed in SQL.** The average
+   rank is `RANK()` plus half its tie group's excess. `RANK()` alone is the
+   minimum rank, which deflates the coefficient wherever a measure ties — and
+   published measures tie constantly (a rate rounded to one decimal, a count
+   of zero in a small county). Computing it in the same statement as
+   everything else is what makes API-084's one-snapshot rule hold for it.
+2. **The whole answer is one statement.** The pair count, both geography
+   counts, the contemporaneity count, the two distinct-value counts that
+   decide whether a coefficient exists, and both coefficients come from one
+   evaluation of the two reductions. Measuring them separately would let a
+   serving refresh land between them and leave the coefficient describing
+   rows the counts beside it no longer measure — API-084 and API-087, whose
+   recorded defects are exactly this.
+3. **The null decision is taken from the counts, not inherited from `corr`.**
+   Postgres already answers null for a constant side, but the answer and the
+   caveat explaining it must be made by one rule, and `corr` would happily
+   answer ±1 over two points. `MINIMUM_CORRELATION_PAIRS = 3` is enforced
+   here.
+4. **The `year` pin constrains the period expression the reduction ranks on**
+   (`SUBSTRING(<period_start_expression> FROM 1 FOR 4)`), not a per-source
+   declared `year` filter. The analysis-ready sources do not all declare one —
+   `year_from`/`year_to` belong to the union family — so reading it from
+   `filter_conditions` would serve a same-year correlation for some sources
+   and refuse it for others with no difference a caller could see. And the
+   pin means "rank within this year", which is a statement about the
+   reduction; writing it against the ranking expression makes those one
+   sentence. Recorded because it is the one place this phase touches SQL the
+   plan did not specify.
+5. **`source_code_*` and `units_*` are on the response** though the plan's
+   example JSON omitted them. Every other analysis response carries its
+   inputs' identity, a coefficient is unit-free while the measures behind it
+   are not, and the alternative is a client re-fetching the catalog to label
+   its own chart.
+6. **Criterion 6 needed no edit, only evidence** — see the assessment above.
+   `test_the_route_is_a_public_cache_target_and_costs_analysis_budget`
+   asserts both against the derived target set and the limiter's classifier.
+7. **Reduction parity is proved at the unit tier, not only at integration.**
+   The plan put the parity fixture behind a warehouse. A stronger and cheaper
+   assertion was available: render `ranked_latest_cte` from the same dispatch
+   entry and conditions both routes build from, and assert the text appears
+   in *both* routes' statements. Two reductions that rank alike but break
+   ties differently answer different published rows (API-083), and equal text
+   makes that a failing test rather than a discrepancy someone notices in two
+   answers. The warehouse fixture is still worth having and is recorded as
+   not run below.
+
+Validation run:
+
+```text
+python -m pytest tests/unit -q          # 1671 passed
+python -m pytest tests/unit/api/test_comparison_correlation.py -q   # 21 passed
+ruff check .                            # All checks passed
+python -m tests.support.regenerate_openapi_contract   # 40 operations, 58 schemas
+```
+
+Not run, with the reason:
+
+- `./tests/run.ps1 integration` (the warehouse reduction-parity fixture, and
+  every other integration node). No PostgreSQL/PostGIS is reachable from this
+  environment. The unit-tier parity assertion above covers the same property
+  at the level of the emitted statement; what remains unproven is that the
+  two statements return identical rows from a real relation.
+- `python -m pytest tests/dags -q` — Airflow is not installed, and installing
+  `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x, which is why CI
+  runs those tiers in separate jobs. Untouched by this phase.
