@@ -267,12 +267,32 @@ const acsReleasedRow = (release, value) => ({
 
 async function installRoutes(
   page,
-  { failLatest = false, neutralRequests = [], releaseRequests = [] } = {},
+  {
+    failLatest = false,
+    neutralRequests = [],
+    releaseRequests = [],
+    truncateReleases = false,
+  } = {},
 ) {
   let tileRequests = 0;
   await page.route("**/api/v1/observations/releases?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     releaseRequests.push(Object.fromEntries(params));
+    if (truncateReleases) {
+      // More published releases than the client's page bound can read: one
+      // per page against a total no number of pages will meet.
+      const offset = Number(params.get("offset") || 0);
+      return route.fulfill({
+        json: {
+          metric_code: params.get("metric_code"),
+          source_code: "CENSUS_ACS",
+          total: 99999,
+          limit: Number(params.get("limit") || 100),
+          offset,
+          items: [{ release: `r${offset}`, as_of: "2024-01-01", observation_count: 1 }],
+        },
+      });
+    }
     const items = params.get("metric_code")?.startsWith("CENSUS_ACS:") ? acsReleases : [];
     return route.fulfill({
       json: {
@@ -1054,4 +1074,29 @@ test("a measure published at an agency grain is offered that grain, and asked fo
   // The map still declines, with the published reason it already gives: this
   // plan did not make agencies mappable.
   await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
+});
+
+test("a metric with more releases than the page bound says so, and pages toward them", async ({
+  page,
+}) => {
+  // Covers: WEB-045 — the release control is a picker: selecting a release is
+  // the only way this screen sends `scope=as_released&release=…` or builds
+  // the link that reproduces it. Asking once for two hundred left every
+  // release past the two hundredth unreachable and unshareable, and reported
+  // that in green.
+  const releaseRequests = [];
+  await installRoutes(page, { releaseRequests, truncateReleases: true });
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  const status = page.getByTestId("releases-status");
+  await expect(status).toContainText("the page bound cut the answer short");
+  await expect(status).toContainText("of 99999 published releases");
+  // A partial listing is never green.
+  await expect(status).toHaveClass(/pill bad/);
+
+  // It paged rather than asking once, and each page asked for the next rows.
+  const offsets = releaseRequests.map((entry) => Number(entry.offset));
+  expect(offsets.length).toBeGreaterThan(1);
+  expect(offsets[0]).toBe(0);
+  expect(offsets[1]).toBe(1);
 });

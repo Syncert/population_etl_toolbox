@@ -33,7 +33,6 @@ import type {
   DistributionResponse,
   GeographySummary,
   MetricRelease,
-  MetricReleaseListResponse,
   MetricSummary,
   Observation,
 } from "../lib/api/types";
@@ -104,6 +103,7 @@ import { displayMetricName } from "../lib/format";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
+  describeLibraryLoad,
   describeSaveFailure,
   describeSaveSuccess,
   explorerDocument,
@@ -169,6 +169,11 @@ const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // published releases than this is reported as such rather than truncated
 // into a silently partial option list.
 const RELEASE_PAGE_SIZE = 200;
+// The release control is a picker: selecting a release is the only way this
+// screen sends `scope=as_released&release=…` or builds the link that
+// reproduces it, so a release it did not list is unreachable and
+// unshareable. Paged like every other collection read (WEB-045).
+const RELEASE_PAGE_LIMIT = 10;
 // One geography's history. Paged like every other collection read, so a
 // publication longer than a single page is loaded rather than truncated --
 // and when the bound is reached the panel says so instead of labelling a
@@ -713,21 +718,24 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     async function loadReleases() {
       try {
-        const payload = await apiFetch<MetricReleaseListResponse>(listRequest!.resource, {
+        const pages = await fetchCollectionPages<MetricRelease>(listRequest!.resource, {
           params: listRequest!.params,
+          pageSize: RELEASE_PAGE_SIZE,
+          maxPages: RELEASE_PAGE_LIMIT,
         });
-        const items = Array.isArray(payload.items) ? payload.items : [];
         if (!request.isCurrent()) {
           return;
         }
-        setReleases(items);
-        const total = typeof payload.total === "number" ? payload.total : items.length;
+        setReleases(pages.items);
         setReleasesStatus({
-          state: "ok",
-          message:
-            items.length < total
-              ? `${items.length} of ${total} published releases listed`
-              : `${items.length} published release${items.length === 1 ? "" : "s"}`,
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            pages.items.length,
+            pages.total,
+            pages.complete,
+            "published release",
+            "published releases",
+          ),
         });
       } catch (error) {
         if (request.isCurrent()) {
