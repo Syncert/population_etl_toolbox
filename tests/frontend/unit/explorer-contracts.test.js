@@ -9,6 +9,7 @@ import {
   buildSelectionFilter,
   distributionBins,
   metricOptions,
+  observationExportFilename,
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
@@ -411,5 +412,49 @@ describe("the bins are the API's, not recomputed from its bounds", () => {
     expect(
       distributionBins({ total: 6, bin_count: 6, min_value: 0, max_value: 6, items }),
     ).toEqual([]);
+  });
+});
+
+// Covers: WEB-059 — a CSV of a bounded read says it is a prefix.
+//
+// The explorer is honest about the bound on screen ("the page bound cut the
+// answer short, so the map is incomplete") and then wrote those rows to a
+// file whose name and columns record the scope, the release and each row's
+// release identity -- everything except that the answer was cut short. A
+// file outlives the screen that produced it.
+describe("the exported filename says what the file holds", () => {
+  const base = {
+    metricCode: "CENSUS_PEP:pep:POP",
+    geoLevel: "COUNTY",
+    scope: "latest",
+    release: "",
+    loaded: 3143,
+    total: 3143,
+    complete: true,
+  };
+
+  test("a complete read's filename is unchanged", () => {
+    expect(observationExportFilename(base)).toBe("CENSUS_PEP-pep-POP-county-latest.csv");
+    expect(
+      observationExportFilename({
+        ...base,
+        scope: "as_released",
+        release: "2024:07:01",
+      }),
+    ).toBe("CENSUS_PEP-pep-POP-county-as-released-2024-07-01.csv");
+  });
+
+  test("a prefix names what it holds and what the API reported", () => {
+    expect(
+      observationExportFilename({ ...base, loaded: 40000, total: 51234, complete: false }),
+    ).toBe("CENSUS_PEP-pep-POP-county-latest-partial-40000-of-51234.csv");
+  });
+
+  test("a prefix of an unreported total still says it is a prefix", () => {
+    // `fetchCollectionPages` calls a read with no reported total incomplete,
+    // because without one the client cannot know whether more exist.
+    expect(
+      observationExportFilename({ ...base, loaded: 40000, total: null, complete: false }),
+    ).toBe("CENSUS_PEP-pep-POP-county-latest-partial-40000.csv");
   });
 });

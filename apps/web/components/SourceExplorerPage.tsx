@@ -55,6 +55,7 @@ import {
   metricSupportedGeoLevels,
   metricVariable,
   normalizeGeoLevel,
+  observationExportFilename,
   observationJoinValue,
   observationName,
   observationToFeature,
@@ -141,6 +142,7 @@ export {
   buildSelectionFilter,
   distributionBins,
   metricOptions,
+  observationExportFilename,
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../lib/explorerViewModel";
@@ -296,6 +298,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     message: "selecting metric",
   });
   const [observations, setObservations] = useState<ObservationRow[]>([]);
+  // What the last observation read was, beyond its rows: the loader computed
+  // `complete` and the API's `total` for the status line and then dropped
+  // them, so an export of a prefix could not say it was one (WEB-059).
+  const [observationLoad, setObservationLoad] = useState<{
+    total: number | null;
+    complete: boolean;
+  }>({ total: null, complete: true });
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
   // The polygons currently drawn, kept so a state selection can fit their
   // extent; set once the layers exist so the fit never runs ahead of them.
@@ -815,6 +824,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
         if (request.isCurrent()) {
           setObservations(items);
+          setObservationLoad({ total: pages.total, complete: pages.complete });
           setObservationStatus({
             state: pages.complete ? "ok" : "bad",
             message: describeObservationLoad(
@@ -828,6 +838,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       } catch (error) {
         if (request.isCurrent()) {
           setObservations([]);
+          setObservationLoad({ total: null, complete: true });
           setObservationStatus({ state: "bad", message: apiErrorMessage(error) });
         }
       }
@@ -1692,10 +1703,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    const scopeSuffix = asReleased
-      ? `as-released${selectedRelease ? `-${selectedRelease.replaceAll(":", "-")}` : ""}`
-      : "latest";
-    link.download = `${selectedMetric.replaceAll(":", "-")}-${selectedGeoLevel.toLowerCase()}-${scopeSuffix}.csv`;
+    // A prefix names itself: the screen said the page bound cut the answer
+    // short, and the file has to say it too (WEB-059).
+    link.download = observationExportFilename({
+      metricCode: selectedMetric,
+      geoLevel: selectedGeoLevel,
+      // The same `asReleased` the export's `scope` column carries: a
+      // release-pinned name only where releases are actually declared.
+      scope: asReleased ? "as_released" : "latest",
+      release: selectedRelease,
+      loaded: observations.length,
+      total: observationLoad.total,
+      complete: observationLoad.complete,
+    });
     link.click();
     URL.revokeObjectURL(link.href);
   }

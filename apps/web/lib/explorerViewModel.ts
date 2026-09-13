@@ -599,6 +599,43 @@ export function distributionBins(
   return bins.map((bin, index) => ({ ...bin, color: CHOROPLETH_PALETTE[index]! }));
 }
 
+/**
+ * The filename an observation export is written under (WEB-059).
+ *
+ * The export carries its own reproducibility envelope in its columns --
+ * which scope and release answered, each row's own release identity -- and
+ * the one thing it did not record is that the answer was cut short, which is
+ * the fact the screen it came from led with. A file outlives the screen, so
+ * a prefix names itself: what it holds, and what the API reported.
+ *
+ * A complete read's name is unchanged, so nothing about today's exports
+ * moves. `total` is null when the collection reported none, which
+ * `fetchCollectionPages` already treats as incomplete -- without a total the
+ * client cannot know whether more exist -- so the name says it is a prefix
+ * without claiming a denominator it was not given.
+ */
+export function observationExportFilename(load: {
+  metricCode: string;
+  geoLevel: string;
+  scope: string;
+  release?: string | null;
+  loaded: number;
+  total?: number | null;
+  complete: boolean;
+}): string {
+  const scope =
+    load.scope === "as_released"
+      ? `as-released${load.release ? `-${load.release.replaceAll(":", "-")}` : ""}`
+      : "latest";
+  const stem = `${load.metricCode.replaceAll(":", "-")}-${load.geoLevel.toLowerCase()}-${scope}`;
+  if (load.complete) {
+    return `${stem}.csv`;
+  }
+  const of =
+    typeof load.total === "number" && Number.isFinite(load.total) ? `-of-${load.total}` : "";
+  return `${stem}-partial-${load.loaded}${of}.csv`;
+}
+
 export function colorForDistributionValue(
   value: number,
   bins: DistributionBinModel[],
