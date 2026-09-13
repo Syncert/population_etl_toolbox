@@ -386,6 +386,53 @@ export function describeHistoryLoad(
 }
 
 
+/**
+ * One geography's settled history: each period as its newest release left it.
+ *
+ * A source whose latest relation keeps one row per geography -- Census ACS
+ * holds only the newest vintage -- has no history under `scope=latest`, so a
+ * geography's trend is every release that published it, reduced to the
+ * newest release of each period. This client used to do that reduction
+ * itself, and to do it had to decide which release identity is newer from
+ * its spelling -- a rule the warehouse publishes and every dispatch entry
+ * declares, which a guess can contradict (`2023.10` and `2023.9` order one
+ * way as numbers and the other as text).
+ *
+ * API-081 serves the reduction, ranked by the source's own declared release
+ * order. `null` where the capability entry does not declare the parameter,
+ * so a deployment on an older API keeps the client-side fallback rather than
+ * losing its trend, and so this client never sends something undeclared.
+ * A pinned release is never carried: the resource refuses that pair, because
+ * one pins a single release and the other asks for the newest of every
+ * period.
+ */
+export function buildSettledHistoryRequest(
+  source: ExplorerSource | null | undefined,
+  query: HistoryObservationQuery,
+): ObservationRequest | null {
+  // The route's own declarations, not the release listing: pinning a release
+  // needs `/observations/releases` to discover an identity, and a settled
+  // history pins nothing.
+  if (!source || !source.supportsSettledHistory || !source.supportsAsReleased) {
+    return null;
+  }
+  return {
+    resource: NEUTRAL_OBSERVATIONS_PATH,
+    params: {
+      metric_code: query.metricCode,
+      scope: SCOPE_AS_RELEASED,
+      newest_release_per_period: "true",
+      limit: query.limit,
+      ...declaredOnly(source, { geo_id: query.geoId }, source.neutralFilters),
+      ...dimensionParams(
+        scopedDimensionFilters(source, SCOPE_AS_RELEASED),
+        query.dimensions,
+      ),
+    },
+  };
+}
+
+
 function firstText(...values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value === "string" && value !== "") {

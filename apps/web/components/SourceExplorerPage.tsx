@@ -79,6 +79,7 @@ import {
   describeHistoryLoad,
   buildLatestObservationRequest,
   buildReleaseListRequest,
+  buildSettledHistoryRequest,
   collapseToNewestRelease,
   countObservationPeriods,
   describeStratification,
@@ -992,21 +993,35 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         // that geography's history; read it and keep the newest release of
         // each period, which is what "latest" means period by period.
         if (items.length <= 1 && observationScope === SCOPE_LATEST && servesAsReleased(source)) {
-          const released = buildHistoryObservationRequest(source, {
+          // The settled history is the resource's answer where it declares
+          // one (API-081): each period as its newest release left it, ranked
+          // by the source's own declared release order. Where it does not,
+          // the releases are read and reduced here as before, so a
+          // deployment on an older API keeps its trend (WEB-046).
+          const settled = buildSettledHistoryRequest(source, {
             metricCode: selectedMetric,
             geoId: selectedGeoId,
             limit: String(HISTORY_PAGE_SIZE),
-            scope: SCOPE_AS_RELEASED,
             dimensions: dimensionSelections,
           });
+          const released = settled
+            ? settled
+            : buildHistoryObservationRequest(source, {
+                metricCode: selectedMetric,
+                geoId: selectedGeoId,
+                limit: String(HISTORY_PAGE_SIZE),
+                scope: SCOPE_AS_RELEASED,
+                dimensions: dimensionSelections,
+              });
           const releasedPages = await fetchCollectionPages<Observation>(released.resource, {
             params: released.params,
             pageSize: HISTORY_PAGE_SIZE,
             maxPages: HISTORY_PAGE_LIMIT,
           });
-          const releasedItems = collapseToNewestRelease(
-            normalizeObservationRows(source, releasedPages.items),
-          );
+          const releasedRows = normalizeObservationRows(source, releasedPages.items);
+          const releasedItems = settled
+            ? releasedRows
+            : collapseToNewestRelease(releasedRows);
           if (releasedItems.length > items.length) {
             items = releasedItems;
             // The reported total counts released rows, which collapse to

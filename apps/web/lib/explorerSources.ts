@@ -107,6 +107,8 @@ export interface ExplorerSource {
    * whole latest publication and reducing it here.
    */
   supportsNewestPerGeography: boolean;
+  /** True when `/observations` declares `newest_release_per_period` (API-081). */
+  supportsSettledHistory: boolean;
 }
 
 const LATEST_SUFFIX = "/observations/latest";
@@ -188,6 +190,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     supportsAsReleased: false,
     supportsReleasePin: false,
     supportsNewestPerGeography: false,
+    supportsSettledHistory: false,
   },
 ];
 
@@ -286,6 +289,9 @@ export function buildExplorerSources(
       supportsReleasePin: neutralParameters.includes("release"),
       supportsNewestPerGeography: neutralParameters.includes(
         "newest_per_geography",
+      ),
+      supportsSettledHistory: neutralParameters.includes(
+        "newest_release_per_period",
       ),
     });
   }

@@ -20,6 +20,7 @@ import {
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
   buildNewestValueRequest,
+  buildSettledHistoryRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
   describeHistoryLoad,
@@ -937,5 +938,106 @@ describe("the history panel's status line", () => {
     expect(describeHistoryLoad(5000, 9000, false, true)).toContain(
       "across published releases; the page bound cut the answer short",
     );
+  });
+});
+
+// Covers: WEB-046 — the settled history is asked for, not computed. Deciding
+// which release is newer is a rule the warehouse publishes and every dispatch
+// entry declares; the client's own comparison could disagree with it, because
+// `2023.10` and `2023.9` order one way as numbers and the other as text.
+describe("a settled history is the resource's answer", () => {
+  const declaring = buildExplorerSources([
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: servedParameters("/api/v1/observations"),
+        },
+      ],
+    },
+  ])[0];
+
+  const olderApi = buildExplorerSources([
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: servedParametersWithout("/api/v1/observations", [
+            "newest_release_per_period",
+          ]),
+        },
+      ],
+    },
+  ])[0];
+
+  test("it asks the resource to reduce across releases", () => {
+    const request = buildSettledHistoryRequest(declaring, {
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      geoId: "state:55|county:025",
+      limit: "1000",
+    });
+    expect(request).not.toBeNull();
+    expect(request.resource).toBe("/observations");
+    expect(request.params.scope).toBe(SCOPE_AS_RELEASED);
+    expect(request.params.newest_release_per_period).toBe("true");
+    expect(request.params.geo_id).toBe("state:55|county:025");
+    // A pinned release contradicts the reduction, and the resource refuses
+    // the pair; this client does not send it.
+    expect(request.params.release).toBeUndefined();
+  });
+
+  test("a deployment whose API does not declare it is not sent it", () => {
+    // The trend must not be lost against an older API: the caller falls back
+    // to reading the releases and reducing them, which is why this answers
+    // null rather than a request without the parameter.
+    expect(
+      buildSettledHistoryRequest(olderApi, {
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }),
+    ).toBeNull();
+  });
+
+  test("a source with no as-released surface is not asked at all", () => {
+    const scopedOnly = buildExplorerSources([
+      {
+        source_code: "CENSUS_ACS",
+        display_name: "Census American Community Survey",
+        route_segment: "census",
+        served_by_neutral_routes: false,
+        datasets: [],
+        observation_filters: [],
+        observation_routes: [
+          {
+            path: "/api/v1/census/observations/latest",
+            parameters: ["geo_level", "limit", "metric_code"],
+          },
+          {
+            path: "/api/v1/census/observations/timeseries",
+            parameters: ["geo_id", "limit", "metric_code"],
+          },
+        ],
+      },
+    ])[0];
+    expect(
+      buildSettledHistoryRequest(scopedOnly, {
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }),
+    ).toBeNull();
   });
 });

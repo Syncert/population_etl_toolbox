@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-045 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-046 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **312 of 312** | **0 of 312** |
+| **Total** | **313 of 313** | **0 of 313** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 312-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 313-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -653,6 +653,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-043 | P0 | Contract / `frontend` | A frontend fixture cannot describe a contract the API does not serve | The fixtures that claim to be the served parameter list read it from `tests/fixtures/api/openapi_contract.json` instead of copying it, a deliberate narrowing is expressed as a subtraction from that list and throws on a name the route does not serve, and a guard reads every `{path, parameters}` literal under `tests/frontend` -- resolving per-source templates against every path they name -- and fails on a query parameter or a route the snapshot does not declare, while reporting how many literals it examined so it cannot pass vacuously | A capability fixture modelling a weaker API than the one that ships, so the client's real behaviour goes untested and a test written against it fails for the fixture rather than the code |
 | WEB-044 | P0 | Browser + Unit / `frontend` | An account's library is not capped at its first page | `fetchCollectionPages` forwards a bearer token -- on every page, and only as an `Authorization` header, never in a query string -- so the saved-analysis and evidence-packet libraries page to their reported total or to a declared bound instead of taking one request at the route's maximum; a complete load reads as what it is and counts one entry correctly, a bound-limited one is failure-shaped and names the shortfall in the WEB-036 wording, and a resource publishing no total is never reported as short | An account past two hundred saved analyses or packets shown two hundred of them under a green status, with the rest impossible to open, edit, or compose from |
 | WEB-045 | P0 | Browser / `frontend` | Every published release a metric has is one the picker can pin | The explorer's release control pages `/observations/releases` with `limit`/`offset` to the reported total or to a declared bound instead of asking once for two hundred; a complete listing reports `ok` with its count, a bound-limited one is failure-shaped and names the shortfall in the WEB-036 wording, a resource publishing no total is not reported as short, and the request is still built by `buildReleaseListRequest` so a source that does not declare the route is not asked | A release past the two hundredth being unreachable and unshareable -- the control is the only way this screen sends `scope=as_released&release=…` or builds the link that reproduces it -- reported under a green status |
+| WEB-046 | P0 | Browser + Unit / `frontend` | The explorer asks for a settled history | Where the capability entry declares `newest_release_per_period`, the explorer's cross-release history is one `scope=as_released` request carrying it -- never a pinned `release`, which the resource refuses alongside it -- and the rows it returns are used as they arrive rather than reduced again; where the entry does not declare it, the request is `null` and the client-side reduction still answers, so a deployment on an older API keeps its trend; a source with no as-released surface is not asked at all | The client deciding which release is newer from the identity's spelling and disagreeing with the order the warehouse published -- `2023.10` and `2023.9` sort one way as numbers, the other as text |
 
 ### Deployment Tests
 

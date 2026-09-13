@@ -272,6 +272,7 @@ async function installRoutes(
     neutralRequests = [],
     releaseRequests = [],
     truncateReleases = false,
+    settledHistory = false,
   } = {},
 ) {
   let tileRequests = 0;
@@ -404,6 +405,24 @@ async function installRoutes(
     if (metric.startsWith("CENSUS_ACS:")) {
       if (failLatest) {
         return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
+      }
+      if (settledHistory && geoId && params.get("scope") === "as_released") {
+        // The resource's own reduction: one row per period, already ranked
+        // by the source's declared release order (API-081). The client must
+        // not reduce it again.
+        return answer(
+          [
+            { ...county, metric_code: metric, observation_date: "2022-01-01", period: "2022", value: "555000", release: "2024" },
+            { ...county, metric_code: metric, observation_date: "2023-01-01", period: "2023", value: "561504", release: "2024" },
+          ],
+          "CENSUS_ACS",
+        );
+      }
+      if (settledHistory && geoId) {
+        // A latest read over one geography: ACS serves only its newest
+        // vintage, so this is the single point that sends the client to the
+        // as-released surface.
+        return answer([{ ...county, metric_code: metric }], "CENSUS_ACS");
       }
       if (geoId) {
         return answer(
@@ -1099,4 +1118,27 @@ test("a metric with more releases than the page bound says so, and pages toward 
   expect(offsets.length).toBeGreaterThan(1);
   expect(offsets[0]).toBe(0);
   expect(offsets[1]).toBe(1);
+});
+
+test("a geography's history is the settled one the resource answers", async ({ page }) => {
+  // Covers: WEB-046 — the client used to read every release and decide which
+  // was newer from the identity's spelling, a rule the warehouse publishes
+  // and every dispatch entry declares. It now asks for the reduction.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests, settledHistory: true });
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001&geo=state%3A55%7Ccounty%3A025");
+
+  await expect(page.getByTestId("history-status")).toContainText("historical observation");
+
+  const settled = observationRequests.filter(
+    (entry) => entry.newest_release_per_period === "true",
+  );
+  expect(settled.length).toBeGreaterThan(0);
+  for (const request of settled) {
+    expect(request.scope).toBe("as_released");
+    expect(request.geo_id).toBe("state:55|county:025");
+    // A pinned release contradicts the reduction; the resource refuses the
+    // pair and this client never sends it.
+    expect(request.release).toBeUndefined();
+  }
 });
