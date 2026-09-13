@@ -340,6 +340,16 @@ a metric with no numeric values answers `total: 0`, null bounds and no items;
 a metric whose values are all the same answers one bin whose bounds are that
 value.
 
+**The bins say which period they describe and what they could not carry.**
+The reduction behind them ranks each geography's *own* newest period, so an
+answer can be built from more than one: `period` is the single period every
+binned row came from, or `null` when they differ, and `periods_differ` says
+which case you are in. A mixed answer names no period on purpose — the
+earliest or the latest would label a whole histogram with a period most of
+it is not from. `caveats` carries what the analysis could not carry, the same
+note `/comparison` publishes: where the source publishes an uncertainty,
+equal-width bins draw boundaries the margins can straddle.
+
 A metric whose source the API has not registered yet — the catalog answers it
 with its published semantics and no routes — is declined by `/observations`
 and `/distribution/bins` with the same `422` naming the source and pointing
