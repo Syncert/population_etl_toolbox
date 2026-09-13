@@ -511,7 +511,7 @@ def test_no_acs_serving_row_survives_under_the_abandoned_spelling(
 
 
 def test_every_registered_source_answers_each_current_catalog_code(
-    api_client: TestClient, published_acs_metric: str
+    api_client: TestClient, published_acs_metric: str, published_cdc_metric: str
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -547,6 +547,11 @@ def test_every_registered_source_answers_each_current_catalog_code(
         "no registered source published a current catalog code, so this guard "
         "proved nothing; the warehouse under test carries no catalog content"
     )
+    # Census ACS is identified by a metric-code column. CDC is identified by
+    # `identity_columns` -- three lineage keys composed into a row predicate --
+    # and no fixture published one, so on a warehouse with no CDC content this
+    # sweep skipped that whole strategy while reading green (DB-032).
+    assert f"CDC:{published_cdc_metric}" in exercised, exercised
 
 
 def _current_catalog_grains(
@@ -566,7 +571,10 @@ def _current_catalog_grains(
 
 
 def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
-    api_client: TestClient, published_acs_metric: str, published_fred_metric: str
+    api_client: TestClient,
+    published_acs_metric: str,
+    published_fred_metric: str,
+    published_cdc_metric: str,
 ) -> None:
     """Covers: DB-028 — a grain read from the catalog can be sent straight back.
 
@@ -636,6 +644,10 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
     assert f"{published_fred_metric}@NATIONAL" in exercised
     assert f"{published_fred_metric}@STATE" not in exercised
     assert f"{published_fred_metric}@COUNTY" not in exercised
+    # And CDC, the source this sweep's docstring names first and had never
+    # actually asked: it is identified by `identity_columns`, and nothing
+    # published a code under that strategy until DB-032 seeded one.
+    assert f"{published_cdc_metric}@STATE" in exercised
 
 
 # ---------------------------------------------------------------------------
@@ -987,3 +999,254 @@ def test_every_catalog_code_answers_on_every_route_that_accepts_one(
     # does not publish. If it was not exercised the sweep proved nothing about
     # the case it exists for.
     assert any(entry.startswith("pep:") for entry in exercised), exercised
+
+
+# ---------------------------------------------------------------------------
+# DB-032 — the sweeps reach a source identified by `identity_columns`
+# ---------------------------------------------------------------------------
+
+CDC_ASSET = "cdi"
+#: Socrata publishes a release watermark as epoch seconds, and both the
+#: publisher view and ``gold_cdc.latest_release_observation`` order releases by
+#: ``release_watermark::BIGINT``. A far-future value keeps this fixture's
+#: release the newest one for its asset whatever else the database holds, so
+#: the seeded row is the one the latest surface serves.
+CDC_WATERMARK = "3975004800"
+#: CDC periods are years, not dates: the fact table stores them as integers.
+CDC_PERIOD = 2096
+
+
+def _digest_token() -> str:
+    """A 64-character lowercase hex token.
+
+    ``dim_stratum.stratum_id`` and ``fact_health_observation.source_record_id``
+    are both constrained to ``^[0-9a-f]{64}$`` -- they are content digests in
+    production, and the schema says so. A fixture that invented a readable
+    identifier would be rejected by the same constraint that keeps a
+    hand-edited row out of the warehouse.
+    """
+    return uuid4().hex + uuid4().hex
+
+
+@pytest.fixture
+def published_cdc_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one CDC metric end to end, for the third identity strategy.
+
+    The registry identifies a metric's serving rows three ways, and
+    ``identity_columns`` -- where the service binds ``lineage.get(field)`` for
+    each declared column and refuses the metric if the lineage publishes no
+    such key -- had never been asked to answer a code the catalog published.
+    CDC is the smallest source that uses it, and its rows carry a stratum and
+    an adjustment status, so the sweeps exercise more of the envelope than a
+    single-series source does.
+    """
+    from tests.support.capture_seed import seed_capture
+
+    token = uuid4().hex[:8].upper()
+    measure_id = f"SWEEP_{token}"
+    value_type_id = "crude"
+    stratum_id = _digest_token()
+    source_record_id = _digest_token()
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as database_cursor:
+            capture_id = seed_capture(database_cursor, "CDC")
+            # Both silver_cdc tables carry a foreign key to the ingestion run,
+            # so the run the capture was recorded under is the one to cite --
+            # a fresh uuid would name a run that never happened.
+            database_cursor.execute(
+                "SELECT run_id FROM raw_capture.response_capture WHERE capture_id = %s",
+                (capture_id,),
+            )
+            run_id = database_cursor.fetchone()[0]
+            geo_sk = seed_geography(
+                database_cursor,
+                geo_type="state",
+                state_fips="94",
+                vintage=CDC_PERIOD,
+                name="Sweep state",
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_cdc.dim_dataset_release (
+                    asset_id, release_watermark, socrata_id, title,
+                    methodology_url, geography_basis, parser_contract_version,
+                    estimate_method, population_basis, metadata_capture_id,
+                    source_run_id, source_record_count, quarantine_count,
+                    status, reconciled_at, published_at, created_at, updated_at
+                ) VALUES (
+                    %s, %s, 'abcd-1234', 'Sweep dataset',
+                    'https://www.cdc.gov/sweep', 'state', '1',
+                    'model-based', 'adults', %s, %s, 1, 0,
+                    'published', NOW(), NOW(), NOW(), NOW()
+                )
+                """,
+                (CDC_ASSET, CDC_WATERMARK, capture_id, run_id),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_cdc.dim_measure (
+                    asset_id, measure_id, value_type_id, measure_label, topic,
+                    value_type_label, unit, adjustment_status, estimate_method,
+                    population_basis, created_at, updated_at
+                ) VALUES (
+                    %s, %s, %s, 'Sweep measure', 'Sweep topic',
+                    'Crude prevalence', 'percent', 'crude', 'model-based',
+                    'adults', NOW(), NOW()
+                )
+                """,
+                (CDC_ASSET, measure_id, value_type_id),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_cdc.dim_stratum (stratum_id, strata, created_at)
+                VALUES (%s, '{"overall": "overall"}'::jsonb, NOW())
+                """,
+                (stratum_id,),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_cdc.fact_health_observation (
+                    asset_id, release_watermark, source_record_id, source_run_id,
+                    capture_id, source_row_index, measure_id, value_type_id,
+                    stratum_id, period_start, period_end, geo_id, geo_sk,
+                    geo_type, geography_status, value_source, value,
+                    value_status, unit, adjustment_status, estimate_method,
+                    population_basis, transformation_version
+                ) VALUES (
+                    %s, %s, %s, %s, %s, 0, %s, %s, %s,
+                    %s, %s, 'state:94', %s, 'state', 'resolved',
+                    '12.5', 12.5, 'valid', 'percent', 'crude', 'model-based',
+                    'adults', '1'
+                )
+                """,
+                (
+                    CDC_ASSET,
+                    CDC_WATERMARK,
+                    source_record_id,
+                    run_id,
+                    capture_id,
+                    measure_id,
+                    value_type_id,
+                    stratum_id,
+                    CDC_PERIOD,
+                    CDC_PERIOD,
+                    geo_sk,
+                ),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    registered_before = _registration_state(postgres_connection_factory, "CDC")
+    harvest_publisher(postgres_connection_factory, Publisher("gold_cdc"))
+
+    source_object_key = f"{CDC_ASSET}:{measure_id}:{value_type_id}"
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = 'CDC' AND source_object_key = %s
+                """,
+                (source_object_key,),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, "the harvest published no CDC catalog row"
+
+    try:
+        yield published[0]
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as database_cursor:
+                # `cdi` is one of two asset ids the schema permits, so every
+                # delete names this fixture's own release, measure or stratum.
+                # A delete scoped to the asset alone would take a neighbouring
+                # fixture's rows with it.
+                database_cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_object_key = %s AND source_code = 'CDC'",
+                    (source_object_key,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_cdc.fact_health_observation "
+                    "WHERE asset_id = %s AND release_watermark = %s",
+                    (CDC_ASSET, CDC_WATERMARK),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_cdc.dim_measure "
+                    "WHERE asset_id = %s AND measure_id = %s",
+                    (CDC_ASSET, measure_id),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_cdc.dim_dataset_release "
+                    "WHERE asset_id = %s AND release_watermark = %s",
+                    (CDC_ASSET, CDC_WATERMARK),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_cdc.dim_stratum WHERE stratum_id = %s",
+                    (stratum_id,),
+                )
+                delete_geography(database_cursor, "state:94")
+                _remove_registration(database_cursor, registered_before, "CDC")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_source_identified_by_its_lineage_columns_answers_its_catalog_code(
+    api_client: TestClient, published_cdc_metric: str
+) -> None:
+    """Covers: DB-032 — the third identity strategy, actually exercised.
+
+    `identity_columns` binds `lineage.get(field)` for each declared column and
+    refuses a metric whose lineage publishes no such key. DB-025 and DB-028
+    sweep every registered source, but a source publishing no catalog row
+    contributes nothing -- and until now none of the three sources using this
+    strategy published one, so the strategy had never answered a code the
+    catalog composed. Seeding Census PEP is what revealed DB-030; this is the
+    same gap, one strategy over.
+    """
+    from apps.api.registry import GEO_GRAINS
+
+    catalog = api_client.get(
+        "/api/v1/catalog/metrics",
+        params={"source_code": "CDC", "active_only": "true", "limit": 50},
+    )
+    assert catalog.status_code == 200, catalog.text
+    published = {
+        item["metric_code"]: list(item.get("valid_geo_grains") or [])
+        for item in catalog.json()["items"]
+    }
+    assert published_cdc_metric in published, published
+
+    grains = published[published_cdc_metric]
+    assert grains, "the publisher derived no grain from the seeded row"
+    for grain in grains:
+        assert grain in GEO_GRAINS, grain
+        answer = api_client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": published_cdc_metric,
+                "geo_level": grain,
+                "limit": 5,
+            },
+        )
+        assert answer.status_code == 200, answer.text
+        payload = answer.json()
+        assert int(payload["total"]) >= 1, (
+            f"CDC publishes grain '{grain}' for '{published_cdc_metric}', "
+            "which /api/v1/observations answers with no rows"
+        )
+        for row in payload["items"]:
+            assert row["geo_level"] == grain, row
+            # The stratified envelope this source is served through: its own
+            # stratum and adjustment status travel with the value.
+            assert row["dimensions"].get("stratum_id"), row
