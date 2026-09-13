@@ -671,10 +671,131 @@ def publisher_registry_reconciliation(
 
 
 #: Every DQ-004 executor keyed by the rule it measures.
+
+
+def fred_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-007 — the served views carry the published fact, unaltered.
+
+    The conformance direction, which is the one that cannot lag: every row a
+    contract view serves must trace to a fact the warehouse published, with
+    the metric code derived from that fact's own series and the same value.
+    An invented row, an altered value, or a metric code that names no series
+    is a number the API presents and the warehouse does not hold -- the worst
+    thing this warehouse can do -- and nothing measured it.
+
+    The completeness direction is deliberately *not* measured here. The
+    serving layer is rebuilt a calendar year at a time with a commit per
+    chunk (DB-041), so a fact published after the last refresh is legitimately
+    absent, and DQ-FRED-002 measures that ledger. For the same reason the
+    value comparison exempts a fact revised after the refresh watermark:
+    ETL-037 advances `ingested_at` only when a row's content changed, so a
+    revision inside the window is a served value the next refresh will
+    replace, not a value the serving layer invented.
+
+    A source with no `control.serving_refresh_state` row is read strictly --
+    `infinity`, so nothing is exempt -- rather than leniently. The chunked
+    driver seeds that row before it refreshes anything, so its absence means
+    no refresh has run, and served rows that exist anyway are the anomaly
+    this rule is for. Defaulting the other way would have made the value
+    comparison unreachable: every fact is ingested after `-infinity`.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_fred.fact_observation")
+    if total == 0:
+        return [
+            RuleOutcome("gold_fred.fact_observation", "not_applicable"),
+            RuleOutcome("gold_fred.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_fred.metric_publisher", "not_applicable"),
+        ]
+
+    unbacked, unbacked_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code, served.observation_date
+          FROM gold_fred.fact_observation AS served
+          LEFT JOIN control.serving_refresh_state AS refreshed
+            ON refreshed.source_code = 'FRED'
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM silver_fred.fact_economic_indicators AS published
+                    WHERE 'FRED:' || published.series_id = served.metric_code
+                      AND published.observation_date = served.observation_date
+                      AND published.is_missing = FALSE
+                      AND (
+                          published.value IS NOT DISTINCT FROM served.value
+                          OR published.ingested_at > COALESCE(
+                              refreshed.last_silver_ingested_at,
+                              'infinity'::TIMESTAMPTZ
+                          )
+                      )
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.observation_date
+          FROM gold_fred.v_metric_latest_by_geo AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_fred.fact_observation AS released
+                    WHERE released.metric_code = latest.metric_code
+                      AND released.observation_date = latest.observation_date
+                      AND released.value IS NOT DISTINCT FROM latest.value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT DISTINCT served.metric_code
+          FROM gold_fred.fact_observation AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_fred.metric_publisher AS exported
+                    WHERE 'FRED:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_fred.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-FRED-002": fred_slice_reconciliation,
+    "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,
     "DQ-PEP-003": pep_registry_reconciliation,
     "DQ-PEP-004": pep_sentinel_conformance,

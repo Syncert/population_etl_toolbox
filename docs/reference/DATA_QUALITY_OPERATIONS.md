@@ -184,8 +184,8 @@ returns a promotability verdict with rule totals by severity and result.
 ### What a certification actually runs, and what it does not
 
 "The deterministic suite" is every registered executor, and the registered
-executors are **20 of the 64 rules the inventory declares**. Each of the other
-44 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
+executors are **21 of the 64 rules the inventory declares**. Each of the other
+43 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
 covers it instead, under one of two states:
 
 - **7 are `enforced`.** The warehouse itself refuses the violation — each one
@@ -196,7 +196,7 @@ covers it instead, under one of two states:
   certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
   holds each declared grain against the bootstrapped warehouse, so a migration
   that drops or widens one fails there.
-- **37 are `unimplemented`** — no executor runs them, and 25 of those are
+- **36 are `unimplemented`** — no executor runs them, and 24 of those are
   BLOCK severity. The note says what running each one would have to read,
   and where part of a rule *is* refused by the warehouse it says which part
   and names the constraint: `DQ-SHARED-006`'s terminal-finish CHECK and its

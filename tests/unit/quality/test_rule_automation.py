@@ -62,11 +62,12 @@ REGISTERED = (
 #: The rules DQ-001 declared and nothing implements or stands in for. This
 #: list is the gap, written down: a rule leaves it by gaining an executor or
 #: by being shown to be `enforced`, and nothing may join it without this file
-#: changing in the same commit. Twenty-five of the thirty-seven are BLOCK
+#: changing in the same commit. Twenty-four of the thirty-six are BLOCK
 #: severity, which is the fact the plan behind DQ-012 existed to make visible
 #: rather than to hide behind a passing suite. Seven rules left this set in
 #: DQ-013, not by being implemented but by being measured against the
-#: warehouse and found already refused there.
+#: warehouse and found already refused there, and DQ-FRED-007 left it in
+#: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
         "DQ-SHARED-004",
@@ -92,7 +93,6 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-FRED-003",
         "DQ-FRED-004",
         "DQ-FRED-005",
-        "DQ-FRED-007",
         "DQ-PEP-001",
         "DQ-PEP-005",
         "DQ-PEP-006",
@@ -201,7 +201,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 25, unbuilt
+    assert len(unbuilt) == 24, unbuilt
     # The other seven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it.

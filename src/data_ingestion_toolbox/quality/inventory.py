@@ -2529,11 +2529,6 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fred.v_metric_timeseries_by_geo",
             "gold_fred.metric_publisher",
         ),
-        automation="unimplemented",
-        automation_note=(
-            "Unimplemented: no executor confirms the FRED contract views "
-            "preserve the published fact's identity, values and metric codes."
-        ),
     ),
     # -- Census PEP --------------------------------------------------------
     _rule(
