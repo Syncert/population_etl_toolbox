@@ -39,6 +39,14 @@ export interface GeographySummary {
   county_fips?: string | null;
   state_name?: string | null;
   county_name?: string | null;
+  /**
+   * The place a row is, where the row is a place. Published by
+   * `/catalog/geographies` on every row and undeclared here until WEB-064,
+   * which is why the picker had no name to show for Census PEP's own grain
+   * and offered states instead.
+   */
+  place_fips?: string | null;
+  place_name?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   [key: string]: unknown;

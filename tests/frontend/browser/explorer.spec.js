@@ -48,7 +48,10 @@ const pepMetric = {
   metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
   metric_display_name: "Resident population estimate",
   source_code: "CENSUS_PEP",
-  valid_geo_grains: ["STATE", "COUNTY"],
+  // Census PEP publishes places as well as states and counties, which is why
+  // the served geography rows carry `place_fips`/`place_name` at all, and why
+  // the explorer's grain selector needed all five words (WEB-038).
+  valid_geo_grains: ["STATE", "COUNTY", "PLACE"],
   valid_time_grains: ["ANNUAL"],
 };
 
@@ -505,10 +508,19 @@ async function installRoutes(
     });
   });
   await page.route("**/api/v1/catalog/geographies?*", (route) => {
+    // Answers per grain, as the projection does. Every grain used to fall to
+    // the county row, which is what let the picker offer one grain's
+    // geographies for another (WEB-064). `gold_glossary.dim_geo_latest`
+    // carries us/state/county/place and no agency identity, so AGENCY is
+    // empty here for the same reason it is empty there.
     const level = new URL(route.request().url()).searchParams.get("geo_level");
-    const items = level === "STATE"
-      ? [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }]
-      : [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }];
+    const byGrain = {
+      STATE: [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }],
+      COUNTY: [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }],
+      PLACE: [{ geo_id: "state:55|place:48000", geo_level: "PLACE", state_fips: "55", state_name: "Wisconsin", place_fips: "48000", place_name: "Madison city", latitude: 43.07, longitude: -89.4 }],
+      AGENCY: [],
+    };
+    const items = byGrain[level] || [];
     return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
   });
   await page.route("**/api/v1/census/observations/latest?*", (route) => {
@@ -1116,6 +1128,54 @@ test("the view level offers only the grains the measure declares, and says why",
   // No request is ever sent for a grain the measure does not declare.
   const requestedLevels = observationRequests.map((entry) => entry.geo_level).filter(Boolean);
   expect(requestedLevels).not.toContain("NATIONAL");
+});
+
+test("the geography picker offers the grain that was asked for", async ({ page }) => {
+  // Covers: WEB-064 — the grain selector publishes all five declared words
+  // (WEB-038); the picker answered two and fell through to a third. At PLACE
+  // — Census PEP's own grain, and the only grain the API publishes
+  // `place_fips`/`place_name` for — it offered *states*, labelled by their
+  // state names, as the places to choose from. Picking one sent a geo_id
+  // that cannot exist at that grain, and the control could not even hold the
+  // choice: its value was checked against a list that is empty for every
+  // grain but STATE and COUNTY.
+  await installRoutes(page);
+  await page.goto("/explore?source=pep");
+
+  const picker = page.getByTestId("county-select");
+  const level = page.getByTestId("geo-level-select");
+  await expect(level.locator('option[value="PLACE"]')).toHaveCount(1);
+
+  // Counties are chosen after a state, and places are chosen the same way:
+  // the projection carries some 32k of them and a picker is not the place to
+  // load them all.
+  await level.selectOption("COUNTY");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText(["Select a state first"]);
+
+  await level.selectOption("PLACE");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText(["Select a state first"]);
+  // The defect: none of these is a place.
+  await expect(picker.locator("option", { hasText: "Wisconsin" })).toHaveCount(0);
+  await expect(picker.locator("option", { hasText: "Dane County" })).toHaveCount(0);
+});
+
+test("a grain the projection publishes nothing for says so", async ({ page }) => {
+  // Covers: WEB-064 — `gold_glossary.dim_geo_latest` takes its grains from
+  // `dim_geo_current.geo_level` (us/state/county/place), so it carries no
+  // agency identity. Offering states there is not a smaller version of the
+  // right answer; it is a different grain's list under this grain's label.
+  await installRoutes(page);
+  await page.goto("/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME");
+
+  const picker = page.getByTestId("county-select");
+  await expect(page.getByTestId("geo-level-select")).toHaveValue("AGENCY");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText([
+    "No agencies are published to choose from",
+  ]);
+  await expect(picker.locator("option", { hasText: "Wisconsin" })).toHaveCount(0);
 });
 
 test("a measure published at an agency grain is offered that grain, and asked for it", async ({

@@ -113,6 +113,12 @@ import {
   unsupportedViewModes,
 } from "../lib/viewModes";
 import { displayMetricName } from "../lib/format";
+import {
+  GEO_GRAIN_LABELS,
+  GEO_GRAIN_ORDER,
+  GRAINS_WITHIN_A_STATE,
+  geographyPickerState,
+} from "../lib/geographyPicker";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -164,15 +170,12 @@ const DEFAULT_GEO_LEVEL = "COUNTY";
  * at all and was queried at a grain it does not publish (WEB-038). The map
  * still declines any grain the tile boundary has no geometry for, with the
  * reason it already gives.
+ *
+ * Read from `GEO_LEVELS` through the picker module rather than spelled here:
+ * the declared order *is* broadest-first, and two copies of a vocabulary is
+ * how the picker came to offer states as places (WEB-064).
  */
-const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY"];
-const GEO_LEVEL_LABEL: Record<string, string> = {
-  NATIONAL: "National",
-  STATE: "State",
-  COUNTY: "County",
-  PLACE: "Place",
-  AGENCY: "Agency",
-};
+const GEO_LEVEL_ORDER = GEO_GRAIN_ORDER;
 const DEFAULT_MAP_MODE = "choropleth";
 const DEFAULT_VALUE_SCALE: ValueScale = "linear";
 // Presentation panels that are not measure-dependent: they describe the
@@ -246,6 +249,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const distributionTracker = useRef(createRequestTracker()).current;
   const timeseriesTracker = useRef(createRequestTracker()).current;
   const releasesTracker = useRef(createRequestTracker()).current;
+  const grainGeographyTracker = useRef(createRequestTracker()).current;
   // The metric a pinned release was chosen for. A release identity belongs
   // to one metric, so the pin is dropped when the metric changes — but not
   // when a shared link selects the metric and its pin together.
@@ -278,7 +282,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [selectedMetric, setSelectedMetric] = useState("");
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [countyGeographies, setCountyGeographies] = useState<GeographySummary[]>([]);
+  // Geographies for a grain the eager pair does not cover -- PLACE, and
+  // whatever the vocabulary grows. Read for the selected grain rather than
+  // all at once: the projection carries some 32k places (WEB-064).
+  const [grainGeographies, setGrainGeographies] = useState<GeographySummary[]>([]);
+  const [grainGeographiesRead, setGrainGeographiesRead] = useState(false);
   const [geographiesError, setGeographiesError] = useState("");
+  // Whether the eager state/county read has answered. "None published"
+  // and "none has arrived" are different statements, and only the first
+  // is about the warehouse.
+  const [geographiesRead, setGeographiesRead] = useState(false);
   const [selectedStateFips, setSelectedStateFips] = useState("");
   // Selected values for the active source's own declared dimension filters
   // (CDC strata/adjustment, FBI UCR subject, USDA NASS domain). Keyed by the
@@ -482,9 +495,32 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       if (selectedGeoLevel === "COUNTY") {
         return countyGeographies;
       }
-      return [];
+      // Any other grain the vocabulary declares. Empty here is what made the
+      // picker unable to hold a choice it had just offered (WEB-064).
+      return grainGeographies;
     },
-    [selectedGeoLevel, states, countyGeographies],
+    [selectedGeoLevel, states, countyGeographies, grainGeographies],
+  );
+  // Which geographies the picker offers, what its empty option says, and
+  // whether it can be used at all -- decided in one place, over the selected
+  // grain, so no grain is ever answered with another grain's list.
+  const geographyPicker = useMemo(
+    () => geographyPickerState(selectedGeoLevel, {
+      geographies: selectedGeoLevel === "COUNTY" ? counties : allGeographies,
+      stateSelected: Boolean(selectedStateFips),
+      read:
+        selectedGeoLevel === "STATE" || selectedGeoLevel === "COUNTY"
+          ? geographiesRead
+          : grainGeographiesRead,
+    }),
+    [
+      selectedGeoLevel,
+      counties,
+      allGeographies,
+      selectedStateFips,
+      geographiesRead,
+      grainGeographiesRead,
+    ],
   );
   const observationIndex = useMemo(
     () => buildObservationIndex(mappableObservations, tileMetadata?.joinKey || "geo_id"),
@@ -991,6 +1027,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             countyItems.sort((left, right) =>
               String(left.county_name).localeCompare(String(right.county_name))),
           );
+          setGeographiesRead(true);
         }
       } catch (error) {
         if (request.isCurrent()) {
@@ -1012,6 +1049,60 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     activeSource,
     asReleased,
   ]);
+
+  // Geographies for a grain the eager state/county read does not cover.
+  //
+  // Read for the grain actually selected, and bounded the way counties are:
+  // a grain that sits inside a state waits for one, because the projection
+  // carries some 32k places and a picker is not the place to load them. A
+  // grain the projection publishes nothing for -- AGENCY, whose identities
+  // the geography dimension does not carry -- answers empty, and the picker
+  // says so instead of offering another grain's list (WEB-064).
+  useEffect(() => {
+    const grain = normalizeGeoLevel(selectedGeoLevel);
+    if (!grain || grain === "NATIONAL" || grain === "STATE" || grain === "COUNTY") {
+      setGrainGeographies([]);
+      setGrainGeographiesRead(false);
+      return;
+    }
+    if (GRAINS_WITHIN_A_STATE.includes(grain) && !selectedStateFips) {
+      setGrainGeographies([]);
+      setGrainGeographiesRead(false);
+      return;
+    }
+
+    const request = grainGeographyTracker.begin();
+    setGrainGeographies([]);
+    setGrainGeographiesRead(false);
+
+    async function loadGrainGeographies() {
+      try {
+        const items = await fetchAllCatalogItems<GeographySummary>(
+          "/catalog/geographies",
+          selectedStateFips
+            ? { geo_level: grain, state_fips: selectedStateFips }
+            : { geo_level: grain },
+        );
+        if (!request.isCurrent()) {
+          return;
+        }
+        setGrainGeographies(items);
+        setGrainGeographiesRead(true);
+      } catch (error) {
+        if (request.isCurrent()) {
+          setGeographiesError(
+            apiErrorMessage(error) || "Unable to load geography selectors.",
+          );
+        }
+      }
+    }
+
+    loadGrainGeographies();
+
+    return () => {
+      grainGeographyTracker.invalidate();
+    };
+  }, [grainGeographyTracker, selectedGeoLevel, selectedStateFips]);
 
   useEffect(() => {
     // No declared history route means no trend to request. Asking anyway
@@ -1868,7 +1959,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               >
                 {offeredGeoLevels.map((level) => (
                   <option key={level} value={level}>
-                    {GEO_LEVEL_LABEL[level] || level}
+                    {GEO_GRAIN_LABELS[level]?.one || level}
                   </option>
                 ))}
               </select>
@@ -2041,31 +2132,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </div>
 
             <div className="control-group">
-              <label htmlFor="county-select">{selectedGeoLevel === "COUNTY" ? "County" : "State geography"}</label>
+              <label htmlFor="county-select">{geographyPicker.label}</label>
               <select
                 id="county-select"
                 className="select"
                 data-testid="county-select"
-                value={allGeographies.some((item) => item.geo_id === selectedGeoId) ? selectedGeoId : ""}
-                onChange={(event) => setSelectedGeoId(event.target.value)}
-                disabled={
-                  selectedGeoLevel === "NATIONAL"
-                    ? true
-                    : selectedGeoLevel === "COUNTY"
-                      ? (!selectedStateFips || counties.length === 0)
-                      : states.length === 0
+                value={
+                  geographyPicker.options.some((option) => option.geoId === selectedGeoId)
+                    ? selectedGeoId
+                    : ""
                 }
+                onChange={(event) => setSelectedGeoId(event.target.value)}
+                disabled={geographyPicker.disabled}
               >
-                <option value="">
-                  {selectedGeoLevel === "NATIONAL"
-                    ? "Not applicable for national view"
-                    : selectedGeoLevel === "COUNTY"
-                    ? (selectedStateFips ? "All counties" : "Select a state first")
-                    : "All states"}
-                </option>
-                {(selectedGeoLevel === "COUNTY" ? counties : states).map((county) => (
-                  <option value={county.geo_id} key={county.geo_id}>
-                    {selectedGeoLevel === "COUNTY" ? county.county_name : county.state_name}
+                <option value="">{geographyPicker.placeholder}</option>
+                {geographyPicker.options.map((option) => (
+                  <option value={option.geoId} key={option.geoId}>
+                    {option.name}
                   </option>
                 ))}
               </select>
@@ -2127,7 +2210,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           {geoLevelsNarrowed ? (
             <p className="subtle" data-testid="geo-grain-note">
               {displayMetricName(selectedMetricMeta)} is published at{" "}
-              {offeredGeoLevels.map((level) => GEO_LEVEL_LABEL[level] || level).join(", ")} only,
+              {offeredGeoLevels.map((level) => GEO_GRAIN_LABELS[level]?.one || level).join(", ")} only,
               so the other view levels are not offered for it. A narrower list is the
               publisher&apos;s declaration, not a limit of this screen.
             </p>
