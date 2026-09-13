@@ -2444,7 +2444,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     row as published.
                   </p>
                 ) : (
-                  <TimeSeriesChart items={timeseries} />
+                  <TimeSeriesChart
+                    items={timeseries}
+                    publishesValueStatus={
+                      activeSource?.publishesValueStatus !== false
+                    }
+                  />
                 )}
               </>
             ) : (

@@ -79,6 +79,14 @@ export interface SourceCapability {
    * through.
    */
   observation_dimensions?: string[] | null;
+  /**
+   * Whether a row of this source can arrive with `value: null` and a
+   * published `value_status` (API-127). Declared here for WEB-057's reason,
+   * and read for a concrete one: where it is false the serving relations
+   * carry only published numbers, so a period published without one is
+   * absent from the series rather than present and marked.
+   */
+  publishes_value_status?: boolean | null;
   observation_routes?: ObservationRouteCapability[] | null;
   [key: string]: unknown;
 }

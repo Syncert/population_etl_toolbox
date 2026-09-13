@@ -1,6 +1,33 @@
 import { formatObservationValue, publishedNumber } from "../lib/explorerViewModel";
 
-export default function TimeSeriesChart({ items }) {
+/**
+ * Whether the plotted points leave an interval materially wider than the rest.
+ *
+ * Only asked of a source that serves no value state, where a period without a
+ * published number is absent from the series rather than present and marked
+ * (API-127): the row the counted note below reads does not exist, so the only
+ * evidence of the gap is the spacing. Those sources publish regular
+ * histories -- monthly or annual -- so the median interval is the series' own
+ * cadence, and a gap is an interval half again as long. Not twice as long:
+ * calendar months are 28 to 31 days, so one skipped month is 1.94x a 31-day
+ * neighbour and would slip under a doubling threshold, while February beside
+ * January is 1.11x and stays well under this one. A series of two points has
+ * one interval and therefore no cadence to compare it against.
+ */
+function hasAnIntervalWiderThanTheCadence(times) {
+  if (times.length < 3) {
+    return false;
+  }
+  const gaps = [];
+  for (let index = 1; index < times.length; index += 1) {
+    gaps.push(times[index] - times[index - 1]);
+  }
+  const ordered = [...gaps].sort((left, right) => left - right);
+  const median = ordered[Math.floor(ordered.length / 2)];
+  return median > 0 && Math.max(...gaps) >= median * 1.5;
+}
+
+export default function TimeSeriesChart({ items, publishesValueStatus = true }) {
   const rows = items || [];
   // `Number(null)` and `Number("")` are both 0, and 0 is finite -- so a
   // period the source suppressed or never published would join the line at
@@ -46,6 +73,9 @@ export default function TimeSeriesChart({ items }) {
     : 0;
   const firstTime = datedSpan > 0 ? Math.min(...times) : 0;
 
+  const gapInTheCadence =
+    datedSpan > 0 && hasAnIntervalWiderThanTheCadence(times);
+
   const points = series.map((item, index) => {
     const position = datedSpan > 0
       ? (times[index] - firstTime) / datedSpan
@@ -85,6 +115,18 @@ export default function TimeSeriesChart({ items }) {
           {unpublished} period{unpublished === 1 ? "" : "s"} in this history published no value and
           {unpublished === 1 ? " is" : " are"} not plotted. An unpublished period is not a period
           with a value of zero.
+        </p>
+      ) : null}
+      {/* The same fact for a source that never sends the row. Its serving
+          relations carry only published numbers, so the count above is
+          always zero and the gap shows only as spacing -- which reads as an
+          interval the measure moved across rather than one it was not
+          published for. */}
+      {unpublished === 0 && !publishesValueStatus && gapInTheCadence ? (
+        <p className="subtle chart-note" data-testid="chart-cadence-gap">
+          This source serves only the periods it published a value for, so the
+          wider span in this line is a period without a published value — not a
+          period the measure moved across, and not a value of zero.
         </p>
       ) : null}
     </div>

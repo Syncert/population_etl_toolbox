@@ -122,6 +122,17 @@ export interface ExplorerSource {
   supportsNewestPerGeography: boolean;
   /** True when `/observations` declares `newest_release_per_period` (API-081). */
   supportsSettledHistory: boolean;
+  /**
+   * True when this source's rows can arrive with `value: null` and a
+   * published `value_status` saying why — the capability's own
+   * `publishes_value_status` (API-127).
+   *
+   * False is the fact a chart needs: the serving relations then carry only
+   * published numbers, so a period the source published *without* one is
+   * absent from the series rather than present and marked, and a gap in a
+   * line is that period rather than an interval the measure moved across.
+   */
+  publishesValueStatus: boolean;
 }
 
 const LATEST_SUFFIX = "/observations/latest";
@@ -205,6 +216,10 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     supportsReleasePin: false,
     supportsNewestPerGeography: false,
     supportsSettledHistory: false,
+    // Claiming a published value state with discovery unavailable would be
+    // this client inventing a contract; claiming none is the conservative
+    // reading, and the note it produces is true of the fallback source.
+    publishesValueStatus: false,
   },
 ];
 
@@ -308,6 +323,7 @@ export function buildExplorerSources(
       supportsSettledHistory: neutralParameters.includes(
         "newest_release_per_period",
       ),
+      publishesValueStatus: Boolean(capability.publishes_value_status),
     });
   }
 
