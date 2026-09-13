@@ -120,11 +120,13 @@ class WarehouseObject:
 #:
 #: `automated` -- an executor runs it and writes evidence.
 #: `enforced` -- no executor, because the warehouse itself refuses the
-#: violation: the rule declares `enforced_grains`, and every one of them is a
-#: unique constraint or unique index in shipped DDL. Stronger than a
-#: measurement, which reports a violation after the fact; weaker in one
-#: respect, which the note has to say -- a constraint produces no evidence
-#: row, so a certification cannot cite it.
+#: violation *entirely*: the rule declares `enforced_grains`, and every one
+#: of them is a unique constraint or unique index in shipped DDL. Stronger
+#: than a measurement, which reports a violation after the fact; weaker in
+#: one respect, which the note has to say -- a constraint produces no
+#: evidence row, so a certification cannot cite it. A rule the warehouse
+#: refuses only in part declares its grains too and stays `unimplemented`,
+#: with the note saying which part is left (DQ-015).
 #: `manual` -- no executor; a named operator procedure covers it, and the note
 #: names that procedure.
 #: `unimplemented` -- declared, and nothing runs it or stands in for it. The
@@ -194,9 +196,22 @@ class QualityRule:
     #: Required unless automated: what covers the rule instead, or what
     #: implementing it would take.
     automation_note: str = ""
-    #: Where the warehouse refuses the violation, for an `enforced` rule.
-    #: Required for that state and forbidden for every other, so a
-    #: declaration cannot outlive the claim it was written for.
+    #: Where the warehouse refuses the violation.
+    #:
+    #: `enforced_grains` says what the warehouse refuses; `automation` says
+    #: whether that covers the whole rule. An `enforced` rule must declare at
+    #: least one, and an `unimplemented` one may -- DQ-SHARED-006 is the case
+    #: that needed it: two of its three claims are constraints
+    #: (`data_quality_run_terminal_has_finish`,
+    #: `data_quality_result_one_per_rule_object_partition`) and the third,
+    #: that a stored result is never mutated, leaves no trace to measure
+    #: because the relation carries no audit column. Declaring the grain gets
+    #: the constraint *checked* against the warehouse rather than asserted in
+    #: the note, which is what DQ-013 exists for; the state stays
+    #: `unimplemented` because the rule is not wholly refused (DQ-015).
+    #:
+    #: An `automated` rule declares none: it has an executor, and a second
+    #: answer to the same question is a contradiction waiting to be found.
     enforced_grains: tuple[EnforcedGrain, ...] = ()
 
     def __post_init__(self) -> None:
@@ -220,10 +235,11 @@ class QualityRule:
                 f"{self.rule_id}: an enforced rule must name the relations and "
                 f"grains the warehouse refuses to violate."
             )
-        if self.automation != "enforced" and self.enforced_grains:
+        if self.automation == "automated" and self.enforced_grains:
             raise QualityInventoryError(
-                f"{self.rule_id}: only an enforced rule declares enforced "
-                f"grains; this one is '{self.automation}'."
+                f"{self.rule_id}: an automated rule is measured by its "
+                f"executor; a grain here would claim two answers to one "
+                f"question."
             )
         declared = set(self.objects)
         outside = sorted(
@@ -1877,9 +1893,24 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ("control.data_quality_run", "control.data_quality_result"),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: the evidence relations' append-only discipline is a "
-            "convention of the writer, and no executor reads them back to "
-            "confirm results were not mutated or runs left unfinished."
+            "Two of these three claims the warehouse refuses and the third "
+            "leaves no trace to measure. A terminal run with no finish is "
+            "rejected by `data_quality_run_terminal_has_finish`, and a second "
+            "result for one (run, rule, object, partition) by "
+            "`data_quality_result_one_per_rule_object_partition` -- the grain "
+            "declared below, so the constraint is checked against the warehouse "
+            "rather than asserted here. What is unimplemented is the append- "
+            "only claim itself: `control.data_quality_result` carries "
+            "`evaluated_at` and no audit column, so a row whose counts or "
+            "verdict were rewritten after the run is indistinguishable from one "
+            "written that way. Measuring it needs a column or a trigger first, "
+            "which is a schema decision."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "control.data_quality_result",
+                ("quality_run_id", "rule_id", "object_name", "partition_key"),
+            ),
         ),
     ),
     # -- shared geography reference ----------------------------------------

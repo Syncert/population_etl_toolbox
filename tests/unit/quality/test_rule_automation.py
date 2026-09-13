@@ -259,7 +259,7 @@ def test_an_enforced_rule_names_where_the_warehouse_refuses_the_violation() -> N
     unique keys and holds them to these columns. A rule that said `enforced`
     and named nothing would be `unimplemented` with a nicer word.
     """
-    enforced = [rule for rule in ALL_RULES if rule.automation == "enforced"]
+    enforced = [rule for rule in ALL_RULES if rule.enforced_grains]
     assert enforced, "no rule claims enforcement; the rule read nothing"
     for rule in enforced:
         assert rule.enforced_grains, rule.rule_id
@@ -284,25 +284,33 @@ def test_an_enforced_rule_is_one_no_executor_runs() -> None:
     )
 
 
-def test_only_an_enforced_rule_declares_a_grain() -> None:
-    """Covers: DQ-013 — a declaration cannot outlive the claim it was for.
+def test_a_declared_grain_belongs_to_a_rule_that_is_not_measured() -> None:
+    """Covers: DQ-015 — the grain says what the warehouse refuses, the state what that covers.
 
-    Asserted through the inventory's own validation, so the rule holds for a
-    rule added later rather than only for the ones declared today.
+    DQ-013 required the two to move together: only an `enforced` rule could
+    declare a grain. DQ-SHARED-006 is why that was too strict -- two of its
+    three claims are constraints and the third leaves no trace to measure, so
+    the rule is not wholly refused and the constraint still deserves
+    checking rather than asserting in prose. What remains forbidden is a
+    grain on an `automated` rule: it has an executor, and a second answer to
+    the same question is a contradiction waiting to be found.
+
+    Asserted through the inventory's own validation, so it holds for a rule
+    added later rather than only for the ones declared today.
     """
     for rule in ALL_RULES:
-        if rule.automation != "enforced":
+        if rule.automation == "automated":
             assert rule.enforced_grains == (), rule.rule_id
+        if rule.enforced_grains and rule.automation != "enforced":
+            assert rule.automation_note.strip(), rule.rule_id
 
-    with pytest.raises(QualityInventoryError, match="only an enforced rule"):
+    with pytest.raises(QualityInventoryError, match="an automated rule is measured"):
         QualityRule(
             rule_id="DQ-REF-999",
             severity="BLOCK",
             dimension="uniqueness",
-            summary="A rule that declares a grain it does not claim.",
+            summary="A measured rule that also claims a constraint.",
             objects=("silver_ref.dim_time",),
-            automation="manual",
-            automation_note="An operator eyeballs it.",
             enforced_grains=(EnforcedGrain("silver_ref.dim_time", ("date_key",)),),
         )
     with pytest.raises(QualityInventoryError, match="must name the relations"):

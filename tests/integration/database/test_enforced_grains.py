@@ -60,10 +60,15 @@ _UNIQUE_KEYS = """
 
 
 def _enforced_grains() -> list[tuple[str, str, tuple[str, ...]]]:
+    """Every declared grain, whatever the rule's automation state.
+
+    `enforced_grains` says what the warehouse refuses and `automation` says
+    whether that covers the rule, so a partly-refused rule declares its grain
+    too and the constraint behind it is checked the same way (DQ-015).
+    """
     return [
         (rule.rule_id, grain.relation, grain.columns)
         for rule in ALL_RULES
-        if rule.automation == "enforced"
         for grain in rule.enforced_grains
     ]
 
@@ -229,3 +234,60 @@ def test_the_pep_natural_key_index_is_still_not_unique(
         "the same PEP vintage -- the case "
         "gold_pep.population_estimate_revision resolves by capture recency"
     )
+
+
+def test_the_evidence_relations_refuse_what_dq_shared_006_says_they_do(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DQ-015 — the two claims that are constraints, named and checked.
+
+    The grain above covers the result relation's uniqueness. The run's other
+    half is a CHECK rather than a key, so it is read here: a terminal run
+    with no finish is what `data_quality_run_terminal_has_finish` refuses,
+    and the note for the rule names it. The third claim -- that a stored
+    result is never rewritten -- has no constraint and no audit column, which
+    is why the rule stays unimplemented.
+    """
+    rule = next(rule for rule in ALL_RULES if rule.rule_id == "DQ-SHARED-006")
+    assert rule.automation == "unimplemented"
+    note = rule.automation_note
+    assert "data_quality_run_terminal_has_finish" in note
+    assert "data_quality_result_one_per_rule_object_partition" in note
+
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT pg_get_constraintdef(c.oid)
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = 'control'
+                  AND t.relname = 'data_quality_run'
+                  AND c.conname = 'data_quality_run_terminal_has_finish'
+                """
+            )
+            row = cursor.fetchone()
+            assert row is not None, (
+                "DQ-SHARED-006's note says a terminal run with no finish is "
+                "refused, and the constraint it names is gone"
+            )
+            definition = " ".join(row[0].split())
+            assert "finished_at IS NOT NULL" in definition, definition
+
+            cursor.execute(
+                """
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = 'control'
+                  AND table_name = 'data_quality_result'
+                  AND column_name IN ('updated_at', 'mutated_at', 'revised_at')
+                """
+            )
+            assert cursor.fetchone()[0] == 0, (
+                "the result relation gained an audit column, which is the "
+                "prerequisite DQ-SHARED-006's append-only claim waits on -- "
+                "measure it rather than leaving the note"
+            )
+    finally:
+        database_connection.close()

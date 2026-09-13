@@ -196,9 +196,14 @@ covers it instead, under one of two states:
   certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
   holds each declared grain against the bootstrapped warehouse, so a migration
   that drops or widens one fails there.
-- **37 are `unimplemented`** — nothing runs them and nothing stands in for
-  them, and 25 of those are BLOCK severity. The note says what running each
-  one would have to read.
+- **37 are `unimplemented`** — no executor runs them, and 25 of those are
+  BLOCK severity. The note says what running each one would have to read,
+  and where part of a rule *is* refused by the warehouse it says which part
+  and names the constraint: `DQ-SHARED-006`'s terminal-finish CHECK and its
+  result-uniqueness key are both checked against the warehouse, and only its
+  append-only claim is unmeasured — the result relation carries no audit
+  column, so a row rewritten after the run cannot be told from one written
+  that way.
 
 A certification cannot report on a rule nobody wrote, and it does not pretend
 to: neither an unimplemented nor an enforced rule appears in a result row, so
