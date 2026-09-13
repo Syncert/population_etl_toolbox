@@ -161,6 +161,74 @@ def test_distribution_bin_boundaries_and_counts(bin_count: int) -> None:
     assert payload["items"][-1]["upper_bound"] == 40.0
 
 
+def test_every_bin_asked_for_is_reported() -> None:
+    """Covers: API-079 — an empty bin is a measured zero, not an absence.
+
+    ``GROUP BY bin_index`` returns no row for a bin nothing falls into, so a
+    request for 7 bins over a long-tailed measure could answer with 2 while
+    still declaring ``bin_count: 7``. Every consumer then had to rebuild the
+    gaps from ``min_value``/``max_value`` -- or draw a histogram whose bars
+    sit adjacent where empty ranges belong.
+    """
+    session = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={"total": 3, "min_value": 0.0, "max_value": 100.0},
+        bins=[{"bin_index": 1, "count": 2}, {"bin_index": 5, "count": 1}],
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 5},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["bin_index"] for item in items] == [1, 2, 3, 4, 5]
+    assert [item["count"] for item in items] == [2, 0, 0, 0, 1]
+    assert sum(item["count"] for item in items) == response.json()["total"] == 3
+    # Contiguous, and the last bin closes on the observed maximum.
+    assert [item["lower_bound"] for item in items] == [0.0, 20.0, 40.0, 60.0, 80.0]
+    assert [item["upper_bound"] for item in items] == [20.0, 40.0, 60.0, 80.0, 100.0]
+
+
+def test_degenerate_distributions_are_unchanged() -> None:
+    """Covers: API-079 — no range to bin stays one bin, or none at all."""
+    empty = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={"total": 0, "min_value": None, "max_value": None},
+    )
+    client = _client_with(empty)
+    try:
+        no_values = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 5},
+        ).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert no_values["total"] == 0
+    assert no_values["items"] == []
+    assert no_values["min_value"] is None and no_values["max_value"] is None
+
+    single = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={"total": 4, "min_value": 7.5, "max_value": 7.5},
+    )
+    client = _client_with(single)
+    try:
+        one_value = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 5},
+        ).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert one_value["items"] == [
+        {"bin_index": 1, "lower_bound": 7.5, "upper_bound": 7.5, "count": 4}
+    ]
+
+
 @pytest.mark.parametrize("bin_count", [0, 21])
 def test_distribution_invalid_bin_counts_are_rejected(bin_count: int) -> None:
     """Covers: API-014 — invalid bin counts fail before database work."""

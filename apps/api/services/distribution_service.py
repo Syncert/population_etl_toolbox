@@ -156,19 +156,26 @@ def list_distribution_bins(
         .all()
     )
 
+    # Every bin the caller asked for, including the ones nothing falls into
+    # (API-079). ``GROUP BY bin_index`` returns no row for an empty bin, and
+    # an absent bin and a bin holding zero geographies are different
+    # statements: the second is a fact this query measured, and reporting it
+    # as the first makes every consumer rebuild the gaps from min/max.
+    counts = {int(row["bin_index"]): int(row["count"]) for row in bins_rows}
     width = (max_value - min_value) / float(bin_count)
-    items: list[DistributionBin] = []
-    for row in bins_rows:
-        bin_index = int(row["bin_index"])
-        lower = min_value + (bin_index - 1) * width
-        upper = max_value if bin_index == bin_count else min_value + bin_index * width
-        items.append(
-            DistributionBin(
-                bin_index=bin_index,
-                lower_bound=lower,
-                upper_bound=upper,
-                count=int(row["count"]),
-            )
+    items = [
+        DistributionBin(
+            bin_index=bin_index,
+            lower_bound=min_value + (bin_index - 1) * width,
+            # The last bin closes on the observed maximum rather than on
+            # min + n*width, so floating-point width never leaves the largest
+            # value outside the range it was binned into.
+            upper_bound=(
+                max_value if bin_index == bin_count else min_value + bin_index * width
+            ),
+            count=counts.get(bin_index, 0),
         )
+        for bin_index in range(1, bin_count + 1)
+    ]
 
     return _response(total, min_value, max_value, items)

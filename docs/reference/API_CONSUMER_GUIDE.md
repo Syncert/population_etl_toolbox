@@ -282,6 +282,14 @@ metric's latest values, labelled `derived: true` with its `source_code` and
 `units`. Counts are exact counts of provider-published numeric values; null,
 suppressed, and missing values are excluded rather than binned.
 
+`items` holds exactly `bin_count` entries, `bin_index` 1..`bin_count`, with
+contiguous bounds running from `min_value` to `max_value` — a bin no
+geography falls into carries `count: 0` rather than being left out, so you
+can draw the histogram straight from `items`. Two degenerate answers differ:
+a metric with no numeric values answers `total: 0`, null bounds and no items;
+a metric whose values are all the same answers one bin whose bounds are that
+value.
+
 A metric whose source the API has not registered yet — the catalog answers it
 with its published semantics and no routes — is declined by `/observations`
 and `/distribution/bins` with the same `422` naming the source and pointing
