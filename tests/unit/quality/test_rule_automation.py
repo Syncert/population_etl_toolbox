@@ -21,6 +21,7 @@ pinned, so the gap can shrink and cannot grow unnoticed.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -42,6 +43,7 @@ from data_ingestion_toolbox.quality.reconciliation import (
     SHARED_RECONCILIATION_EXECUTORS,
 )
 from data_ingestion_toolbox.quality.sources import SOURCE_EXECUTORS
+from data_ingestion_toolbox.utility.gold_schema import GOLD_SCHEMA_COMPONENTS
 
 pytestmark = pytest.mark.unit
 
@@ -324,3 +326,78 @@ def test_only_an_enforced_rule_declares_a_grain() -> None:
             automation_note="The database refuses it.",
             enforced_grains=(EnforcedGrain("silver_ref.dim_geo_type", ("geo_type",)),),
         )
+
+
+# ---------------------------------------------------------------------------
+# DQ-014 — a note says what the relation records, not what the rule wants
+# ---------------------------------------------------------------------------
+
+MIGRATION_STATE_RELATION = "control.schema_migration_state"
+MANIFEST = REPOSITORY_ROOT / "sql/bootstrap/warehouse_manifest.json"
+
+
+def test_only_the_gold_bootstrap_writes_the_schema_migration_state() -> None:
+    """Covers: DQ-014 — the applied set is four gold components and nothing else.
+
+    `DQ-SHARED-004` wants the manifest's schema components compared against
+    what a warehouse has applied, and its note used to read as though only
+    the comparison was missing. The applied set is missing: this relation
+    records a content hash per source's gold DDL, written by
+    `ensure_gold_schema_from_files`, and no manifest asset is recorded
+    anywhere. Read from the source, so a second writer -- which is exactly
+    what implementing the rule needs -- fails here and sends the next reader
+    to the note.
+    """
+    writers = sorted(
+        str(path.relative_to(REPOSITORY_ROOT))
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+        if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
+    )
+    assert writers == ["src/data_ingestion_toolbox/utility/gold_schema.py"], (
+        f"{MIGRATION_STATE_RELATION} is written from more than one place, so "
+        f"DQ-SHARED-004's note no longer describes what it records: {writers}"
+    )
+
+    sql_writers = sorted(
+        str(path.relative_to(REPOSITORY_ROOT))
+        for path in (REPOSITORY_ROOT / "sql").rglob("*.sql")
+        if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
+    )
+    assert sql_writers == [], (
+        f"a shipped SQL asset now records itself in {MIGRATION_STATE_RELATION}, "
+        f"which is the prerequisite DQ-SHARED-004 is waiting on -- implement "
+        f"the rule rather than leaving the note: {sql_writers}"
+    )
+
+
+def test_the_component_each_source_records_is_declared_once() -> None:
+    """Covers: DQ-014 — four sources, one declaration of what each records.
+
+    The component name decides whether a re-applied DDL is recognised as
+    already applied, and it was a literal in each of the four gold
+    transforms. `serving_reserve`'s own header says why that shape is worth
+    removing: "a second copy of a relation name, a procedure name, or a chunk
+    plan is exactly the kind of thing that drifts".
+    """
+    literals = sorted(
+        str(path.relative_to(REPOSITORY_ROOT))
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+        if '"gold_ddl_' in path.read_text(encoding="utf-8")
+    )
+    assert literals == ["src/data_ingestion_toolbox/utility/gold_schema.py"], (
+        f"a gold component name is spelled outside the one declaration: {literals}"
+    )
+    assert set(GOLD_SCHEMA_COMPONENTS) == {"BLS", "CENSUS_ACS", "CENSUS_PEP", "FRED"}
+    assert len(set(GOLD_SCHEMA_COMPONENTS.values())) == len(GOLD_SCHEMA_COMPONENTS), (
+        "two sources record their gold DDL under one component name, so each "
+        "would see the other's hash and re-apply its own DDL every run"
+    )
+
+
+def test_the_note_names_the_manifest_it_cannot_yet_be_compared_against() -> None:
+    """Covers: DQ-014 — the count in the note is the manifest's actual count."""
+    assets = json.loads(MANIFEST.read_text(encoding="utf-8"))["assets"]
+    rule = _by_id()["DQ-SHARED-004"]
+    assert f"{len(assets)} assets" in rule.automation_note, (
+        f"the manifest carries {len(assets)} assets and the note says otherwise"
+    )

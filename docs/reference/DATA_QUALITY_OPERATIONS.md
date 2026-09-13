@@ -219,6 +219,16 @@ executor under an id the inventory does not declare fails, a rule claiming
 `enforced` alongside an executor fails, and the set of unimplemented rules is
 pinned so it can shrink and cannot grow unnoticed.
 
+**One BLOCK rule is waiting on a prerequisite, not on an executor.**
+`DQ-SHARED-004` wants the bootstrap manifest's schema components compared
+against what a warehouse has applied. `control.schema_migration_state` does
+not hold that: it holds one row per source's gold DDL — a content hash
+written when that DDL is applied — and nothing records a manifest asset at
+all, so there is no applied set to compare the manifest's assets against. A
+comparison written today would report every asset missing. Recording them is
+a deployment decision: the manifest is applied by numbered initdb mounts and
+by the documented reset, neither of which reports back.
+
 **One BLOCK uniqueness rule is only half enforceable, and says so.**
 `DQ-PEP-001` declares PEP facts unique at the capture grain *and* at the
 natural key. The capture grain is the fact table's primary key; the natural

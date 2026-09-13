@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.census_pep.config import CONFIG
-from data_ingestion_toolbox.utility.gold_schema import ensure_gold_schema_from_files
+from data_ingestion_toolbox.utility.gold_schema import (
+    GOLD_SCHEMA_COMPONENTS,
+    ensure_gold_schema_from_files,
+)
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -26,7 +29,7 @@ def ensure_pep_gold_schema(hook: PostgresHook | None = None) -> None:
     """Apply idempotent source-owned publication views."""
     ensure_gold_schema_from_files(
         ddl_files=[_DDL_PATH],
-        component_name="gold_ddl_pep",
+        component_name=GOLD_SCHEMA_COMPONENTS["CENSUS_PEP"],
         required_relations=(
             "gold_pep.population_estimate_revision",
             "gold_pep.population_estimate_latest",

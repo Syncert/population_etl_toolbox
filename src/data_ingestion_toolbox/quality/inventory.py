@@ -1835,9 +1835,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ("control.schema_migration_state",),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: no executor compares the applied schema components "
-            "against the bootstrap manifest, so a warehouse missing one can "
-            "still be certified."
+            "Unimplemented, and not implementable as written until the applied "
+            "set is recorded. `control.schema_migration_state` holds one row "
+            "per source's gold DDL -- the four components "
+            "`utility.gold_schema.GOLD_SCHEMA_COMPONENTS` names, each a content "
+            "hash written when that source's DDL is applied -- and nothing else "
+            "writes to it. No bootstrap-manifest asset is recorded anywhere, so "
+            "there is no applied set to compare the manifest's 43 assets "
+            "against, and an executor written to compare them today would "
+            "report every one of them missing. Recording them is the "
+            "prerequisite, and it is a deployment decision: the manifest is "
+            "applied by numbered initdb mounts and by the documented reset, "
+            "neither of which reports back."
         ),
     ),
     _rule(
