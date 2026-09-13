@@ -332,3 +332,26 @@ def test_a_pair_publishing_no_uncertainty_earns_no_such_caveat() -> None:
     assert not [caveat for caveat in decision.caveats if "margin_of_error" in caveat], (
         decision.caveats
     )
+
+
+def test_a_same_source_pair_says_it_once() -> None:
+    """Covers: API-096 — one caveat per source, not one per side.
+
+    The note names the source rather than the side, for both reasons that
+    matters: a distribution has one metric and no side to name, and a
+    comparison whose two sides are the same source would otherwise say the
+    same thing twice under two labels. Saying it twice is noise, not
+    emphasis.
+    """
+    same_source = evaluate_comparison(
+        _metric(metric_code="CENSUS_ACS:acs5:A", source_code="CENSUS_ACS"),
+        _metric(metric_code="CENSUS_ACS:acs5:B", source_code="CENSUS_ACS"),
+    )
+    published = [
+        caveat for caveat in same_source.caveats if "margin_of_error" in caveat
+    ]
+    assert len(published) == 1, published
+    # And it says "a derived value", not "a difference or a ratio": the same
+    # sentence labels a distribution's bins, which derive neither.
+    assert "a derived value" in published[0]
+    assert "difference or a ratio" not in published[0]

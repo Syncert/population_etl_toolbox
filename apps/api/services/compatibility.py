@@ -102,7 +102,7 @@ def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
     )
 
 
-def uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
+def uncertainty_caveat(metric: Mapping[str, Any]) -> Optional[str]:
     """What an aligned analysis cannot carry, for one metric, or ``None``.
 
     ``ComparisonRow`` publishes no uncertainty, and that is the right shape:
@@ -120,6 +120,12 @@ def uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
     Shared with ``/distribution/bins``, which reads the same rows through the
     same reduction: one analysis saying what it dropped and the other, of the
     same published figures, saying nothing was the inconsistency (API-098).
+
+    It names the source rather than the side, for both reasons that matters:
+    a distribution has one metric and no side to name, and a comparison whose
+    two sides are the same source would otherwise say the same thing twice
+    under two labels. "A derived value" rather than "a difference or a ratio"
+    for the same reason -- a distribution derives bins, not a difference.
     """
     source_code = str(metric.get("source_code") or "")
     dispatch = OBSERVATION_DISPATCH.get(source_code)
@@ -127,10 +133,9 @@ def uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
         return None
     fields = ", ".join(name for name, _ in dispatch.uncertainty_expressions)
     return (
-        f"{label} is served by source '{source_code}', which publishes "
-        f"{fields}; an aligned comparison carries neither, so read the "
-        "published uncertainty on /observations before treating a difference "
-        "or a ratio as exact"
+        f"source '{source_code}' publishes {fields}; an aligned analysis "
+        "carries none of it, so read the published uncertainty on "
+        "/observations before treating a derived value as exact"
     )
 
 
@@ -247,10 +252,10 @@ def evaluate_comparison(
 
     # Not a rule: a published margin does not make two metrics incomparable,
     # it makes the difference less precise than the numbers look. One caveat
-    # per side that publishes one, deduplicated when both sides are the same
-    # source saying the same thing twice.
-    for metric, label in ((metric_a, "metric_code_a"), (metric_b, "metric_code_b")):
-        caveat = uncertainty_caveat(metric, label)
+    # per source that publishes one -- the two sides of a same-source pair
+    # say the same thing, and saying it twice is noise, not emphasis.
+    for metric in (metric_a, metric_b):
+        caveat = uncertainty_caveat(metric)
         if caveat is not None and caveat not in caveats:
             caveats.append(caveat)
 

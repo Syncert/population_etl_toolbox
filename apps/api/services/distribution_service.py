@@ -175,9 +175,7 @@ def list_distribution_bins(
             # two analyses of one source's figures must not describe it
             # differently (API-098).
             caveats=[
-                caveat
-                for caveat in (uncertainty_caveat(metric, "metric_code"),)
-                if caveat is not None
+                caveat for caveat in (uncertainty_caveat(metric),) if caveat is not None
             ],
             total=total,
             bin_count=bin_count,

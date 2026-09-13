@@ -113,6 +113,17 @@ an edit, and the test reads the same registry rather than the string.
 comparison cannot carry, beside what its caveats already said about what it
 could not verify.
 
+### Corrected after delivery
+
+The note first named the side (`metric_code_a is served by source …`), which
+made a same-source pair say the same thing twice under two labels, and read
+"an aligned comparison carries neither … before treating a difference or a
+ratio as exact" — wording API-098 then reused verbatim on a distribution,
+which derives neither. It names the source and "a derived value" instead, and
+a same-source pair earns one caveat. Verified live: `/comparison/preflight`
+and `/comparison` carry it, and the same string labels the distribution's
+bins.
+
 ## Remaining work
 
 - None. `/distribution/bins` has no `caveats` field and is named under

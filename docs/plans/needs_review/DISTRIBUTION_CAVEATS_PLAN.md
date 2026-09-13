@@ -100,6 +100,14 @@ analysis that says what it dropped.
 
 **Register.** 348 rows.
 
+### Corrected after delivery
+
+The shared note read "an aligned comparison carries neither … a difference or
+a ratio", which is the wrong analysis on this route: a distribution derives
+bins. The helper now names the source and "a derived value", which is true of
+both, and the same-source duplication it caused on the comparison is gone.
+Verified live on all three routes.
+
 ## Remaining work
 
 - None.

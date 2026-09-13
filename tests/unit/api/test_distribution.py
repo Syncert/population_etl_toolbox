@@ -621,7 +621,7 @@ def test_a_distribution_says_what_uncertainty_it_could_not_carry() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200, response.text
-    expected = uncertainty_caveat(metric, "metric_code")
+    expected = uncertainty_caveat(metric)
     assert expected is not None
     assert response.json()["caveats"] == [expected]
 
