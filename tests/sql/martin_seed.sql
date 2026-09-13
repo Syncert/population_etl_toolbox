@@ -65,7 +65,8 @@ INSERT INTO gold_census.rpt_acs_observations (
     value_type, units, metric_code, metric_display_name
 ) VALUES (
     'CENSUS_ACS', '2099-01-01', '2095-01-01', '2099-12-31', 20990101,
-    '2099-12-31', NOW(), 'state:55|county:025', 'COUNTY', '55', '025',
+    -- One fact, not two: see the note in frontend_smoke_seed.sql (DB-039).
+    '2099-12-31', '2099-12-31 00:00:00+00', 'state:55|county:025', 'COUNTY', '55', '025',
     'Wisconsin', 'Dane County', 43.0667, -89.4000, 600000,
     'acs5', 2099, 'B01003', 'B01003_001', 600000,
     'ESTIMATE', 'people', 'CENSUS_ACS:acs5:B01003_001_MARTIN_TEST',

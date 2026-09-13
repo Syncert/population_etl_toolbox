@@ -44,7 +44,13 @@ INSERT INTO gold_census.rpt_acs_observations (
     value_type, units, metric_code, metric_display_name
 ) VALUES (
     'CENSUS_ACS', '2098-01-01', '2094-01-01', '2098-12-31', 20980101,
-    '2098-12-31', NOW(), 'state:55|county:025', 'COUNTY', '55', '025',
+    -- `as_of_date` and `updated_at` are one fact about this row, not
+    -- two: the serving refresh derives the release date from the silver
+    -- row's `ingested_at`, which is what `updated_at` publishes
+    -- (DB-039). `NOW()` here made the fixture encode a state the
+    -- refresh can no longer produce -- a release date unrelated to the
+    -- row's ingestion -- and made the seed non-reproducible besides.
+    '2098-12-31', '2098-12-31 00:00:00+00', 'state:55|county:025', 'COUNTY', '55', '025',
     'Wisconsin', 'Dane County', 43.0667, -89.4000, 561504,
     'acs5', 2098, 'B01003', 'B01003_001_SMOKE', 561504,
     'ESTIMATE', 'people', 'CENSUS_ACS:acs5:B01003_001_SMOKE',

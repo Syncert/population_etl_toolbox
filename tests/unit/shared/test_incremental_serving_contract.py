@@ -254,3 +254,39 @@ def test_a_served_release_is_never_the_refresh_clock() -> None:
         "so a re-serve invents a release the provider never published: "
         + "; ".join(offenders)
     )
+
+
+def test_no_seeded_serving_row_dates_itself_from_the_clock() -> None:
+    """Covers: DB-039 — the live-stack fixtures encode what the refresh produces.
+
+    `as_of_date` and `updated_at` on a served row are one fact: the refresh
+    derives the release date from the silver row's `ingested_at`, and
+    `updated_at` publishes that same value. The two live-stack seeds set
+    `as_of_date` to a fixed date and `updated_at` to `NOW()`, so the fixture
+    encoded a row the refresh can no longer produce -- and the seeds were not
+    reproducible, since the row's timestamp moved with the day it was applied.
+    That is the shape of defect the smoke tier's own header warns about: "the
+    fixtures encoded a shape the real services do not serve".
+    """
+    offenders = []
+    for path in sorted((REPO_ROOT / "tests/sql").glob("*.sql")):
+        source = _read(path)
+        for statement in source.split(";"):
+            if "INSERT INTO" not in statement.upper():
+                continue
+            target = statement.upper().split("INSERT INTO", 1)[1].strip()
+            if not (".RPT_" in target or ".MV_" in target):
+                continue
+            body = "\n".join(
+                line
+                for line in statement.splitlines()
+                if not line.strip().startswith("--")
+            )
+            named = any(clock in body.upper() for clock in _STATEMENT_CLOCKS)
+            if named:
+                offenders.append(f"{path.name}: {target.splitlines()[0]}")
+    assert not offenders, (
+        "these fixtures date a served row from the clock, so the seed is not "
+        "reproducible and the row is one the refresh would not write: "
+        + "; ".join(offenders)
+    )

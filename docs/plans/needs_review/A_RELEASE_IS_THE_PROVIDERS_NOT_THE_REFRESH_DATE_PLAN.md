@@ -197,6 +197,19 @@ calendar day a chunk of it was last re-served.
   14 deselected -- twice in a row. `ruff check .` and `ruff format --check .`
   clean.
 
+- **A fixture found afterwards, by running the stack.** `tests/sql/martin_seed.sql`
+  and `tests/sql/frontend_smoke_seed.sql` -- the two live-stack seeds -- set
+  `as_of_date` to a fixed date and `updated_at` to `NOW()`. After this change
+  those are one fact, so the seeds encoded a row the refresh can no longer
+  write, and they were not reproducible either: the row's timestamp moved with
+  the day it was applied. Both now carry a fixed timestamp matching the
+  release date, and
+  `test_no_seeded_serving_row_dates_itself_from_the_clock` reads every
+  `tests/sql/*.sql` insert into a `rpt_*` or `mv_*` relation and fails on a
+  statement clock in it. The smoke tier's own header warns about exactly this
+  shape of defect -- "the fixtures encoded a shape the real services do not
+  serve".
+
 ## Remaining work
 
 - None. FRED's own revision identity (`realtime_start`) reaching gold is the
