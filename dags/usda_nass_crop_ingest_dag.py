@@ -1,7 +1,8 @@
 """Capture-first USDA NASS Quick Stats crop release pipeline.
 
-Ordinary business-day runs retrieve the bounded recent window; the first day of
-each month sweeps the whole registered history so revisions to earlier years are
+Ordinary business-day runs retrieve the bounded recent window; the run on the
+first of each month -- scheduled whatever day of the week the first falls on --
+sweeps the whole registered history so revisions to earlier years are
 reconciled on a stable cadence. Every request is generated from a reviewed
 registry entry, preflighted through the provider count facility, and captured
 before anything is parsed.
@@ -144,7 +145,14 @@ with DAG(
         "Capture, replay, reconcile, and publish USDA NASS Quick Stats crop data"
     ),
     default_args=DEFAULT_ARGS,
-    schedule="0 10 * * 1-5",
+    # Weekdays, **and the first of the month whatever day it falls on**.
+    # POSIX cron takes the union when day-of-month and day-of-week are both
+    # restricted, which is the only way one expression can say this. With
+    # `* * 1-5` and `catchup=False`, a first that fell on a weekend had no
+    # logical date and was never backfilled, so the monthly history sweep
+    # this DAG's docstring promises was skipped in six of twenty-four
+    # months (DAG-018).
+    schedule="0 10 1 * 1-5",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     catchup=False,
     max_active_runs=1,

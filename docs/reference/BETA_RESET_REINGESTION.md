@@ -132,7 +132,11 @@ Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 reference succeeds. A USDA NASS run whose logical date falls on the first of
 the month sweeps the whole registered year range, so a bootstrap should be
 triggered on that date, or with that logical date, to reproduce the reviewed
-history in one run. Check geography resolution rather than silently
+history in one run. The schedule reaches that date whatever day of the week
+it is: `0 10 1 * 1-5` is weekdays *and* the first, because cron takes the
+union when day-of-month and day-of-week are both restricted. It used to be
+weekdays only, so a first that fell on a weekend produced no run and, with
+`catchup=False`, was never backfilled (DAG-018). Check geography resolution rather than silently
 accepting misses:
 
 ```sql

@@ -280,7 +280,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-010 | None |
-| Airflow DAGs | DAG-001–DAG-017 | None |
+| Airflow DAGs | DAG-001–DAG-018 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
 | API | API-001–API-116 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-069 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **383 of 383** | **0 of 383** |
+| **Total** | **384 of 384** | **0 of 384** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 383-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 384-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -431,6 +431,7 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | DAG-015 | P0 | Coverage / `dag` | Orchestrated pipeline coverage | Every DAG in the DagBag is either executed by the orchestrated suite or declared in `OPERATOR_TRIGGERED_DAGS`, no DAG is both, an operator-triggered DAG carries no schedule, and the DagBag has no import errors | A production DAG is added without orchestrated execution coverage, a scheduled DAG is parked in the exemption list, or a stale DAG id lingers in the suite |
 | DAG-016 | P1 | Execution / `dag integration database slow` | Orchestrated pipeline execution | Every DAG in `dags/` completes a real DagRun with all task instances successful against the disposable PostGIS warehouse, driving a bounded reviewed provider sample from capture through replay to publication, with shared geography and time dimensions populated at production scale | Any task instance in any pipeline fails, the DAG-to-function wiring rejects its arguments or connection, or a task reaches a live provider |
 | DAG-017 | P1 | Configuration / `dag` | Warehouse connection resolution | Resolving the warehouse connection from Airflow uses only non-deprecated hook arguments and honors the database override | A provider deprecation warning escalates to a task failure under strict filters, or the override is ignored |
+| DAG-018 | P1 | Configuration / `dag`, Unit / `unit` | The history sweep day is one the schedule reaches | `usda_nass_crop_ingest` is scheduled `0 10 1 * 1-5` — weekdays *and* the first of the month, because POSIX cron takes the union of day-of-month and day-of-week when both are restricted — so the monthly full-history sweep the DAG's docstring and `BETA_RESET_REINGESTION.md` both promise always has a logical date to land on. The DAG tier derives the dates from `croniter`, which is what Airflow's own cron timetable uses, and asserts exactly one `full` run per month over the DAG's two-year window; the unit tier reasons about the same cadence from the declared cron without croniter, so the wiring is proved in the cheap tier and the cron semantics in the tier that has the library | The schedule was `0 10 * * 1-5` with `catchup=False`. `resolve_slice_mode` decides the sweep from `logical_date.day <= full_reconciliation_day_of_month` (default 1), and weekdays-only means a first falling on a weekend produced no logical date at all — with no catch-up the interval was never backfilled. In the DAG's own window six months of twenty-four therefore ran every slice in `recent` mode and never re-requested prior crop years: 2026-02, 2026-03, 2026-08, 2026-11, 2027-05 and 2027-08. Nothing reported it: DQ-NASS-002 measures ledger and preflight agreement, not sweep cadence, and the cadence test hand-picked 2026-04-01, a Wednesday, without asking whether the cron could produce the date |
 
 ### ETL and Shared Unit Tests
 
