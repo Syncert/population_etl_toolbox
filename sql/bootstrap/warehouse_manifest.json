@@ -112,6 +112,11 @@
       "path": "sql/migrations/014_release_publisher_measure_identity.sql"
     },
     {
+      "id": "migration-019",
+      "phase": "source-fix",
+      "path": "sql/migrations/019_stratum_shape_contract.sql"
+    },
+    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"

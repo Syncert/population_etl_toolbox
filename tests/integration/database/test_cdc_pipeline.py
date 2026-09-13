@@ -192,3 +192,107 @@ def test_cdc_fixtures_replay_reconcile_and_publish_idempotently(
             assert cursor.fetchone() == (2,)
     finally:
         reader.close()
+
+
+#: Shapes `jsonb` accepts and `CdcObservation.strata` -- declared `list[Any]`
+#: -- cannot be validated from. Every one of them reached the response model
+#: as an unhandled exception before the shape was constrained at the write.
+NON_ARRAY_STRATA = (
+    '{"overall": "overall"}',
+    '"overall"',
+    "12",
+    "null",
+    "true",
+)
+
+
+def _minimal_revision_columns(
+    capture_id, run_id, stratum_id: str, strata: str
+) -> tuple[str, tuple]:
+    """One `silver_cdc.observation_revision` row, every NOT NULL column filled."""
+    statement = """
+        INSERT INTO silver_cdc.observation_revision (
+            capture_id, source_row_index, run_id, asset_id, release_watermark,
+            source_record_id, source_record, measure_id, measure_label, topic,
+            period_start, period_end, geo_source_code, geo_type, value_status,
+            value_type_id, value_type_label, adjustment_status, stratum_id,
+            strata, estimate_method, population_basis
+        ) VALUES (
+            %s, 0, %s, 'cdi', '3975004801',
+            %s, '{}'::jsonb, 'SHAPE', 'Shape measure', 'Shape topic',
+            2096, 2096, 'US', 'nation', 'missing',
+            'crude', 'Crude prevalence', 'crude', %s,
+            %s::jsonb, 'model-based', 'adults'
+        )
+    """
+    return statement, (capture_id, run_id, stratum_id, stratum_id, strata)
+
+
+def test_a_stratum_that_is_not_a_json_array_cannot_be_written(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-033 — the warehouse refuses a stratum the API cannot serve.
+
+    `/api/v1/cdc/observations` publishes a stratum with every value, and
+    `CdcObservation.strata` is `list[Any]`. The parser produces one -- a tuple
+    of `(category, category_label, value, value_label)` tuples that psycopg2
+    stores as an array of arrays -- but `jsonb` accepts an object, a string, a
+    number, or `null` just as happily, and neither the column nor the service
+    said otherwise. A stratum stored as an object was accepted by every write
+    path and then crashed the read path with a pydantic `ValidationError`,
+    which the caller sees as `500 The API failed to complete this request`
+    with no way to tell which row is unserveable.
+
+    So the shape is decided where it is written. Both relations that store a
+    stratum are checked: `observation_revision` is where a replay lands it,
+    and `dim_stratum` is what the gold view -- and therefore the API -- reads.
+    """
+    from psycopg2.errors import CheckViolation
+
+    from tests.support.capture_seed import seed_capture
+
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            capture_id = seed_capture(cursor, "CDC")
+            cursor.execute(
+                "SELECT run_id FROM raw_capture.response_capture WHERE capture_id = %s",
+                (capture_id,),
+            )
+            run_id = cursor.fetchone()[0]
+        database_connection.commit()
+
+        stratum_id = "f" * 64
+        for strata in NON_ARRAY_STRATA:
+            with database_connection.cursor() as cursor:
+                with pytest.raises(CheckViolation):
+                    cursor.execute(
+                        "INSERT INTO silver_cdc.dim_stratum (stratum_id, strata) "
+                        "VALUES (%s, %s::jsonb)",
+                        (stratum_id, strata),
+                    )
+            database_connection.rollback()
+
+            statement, values = _minimal_revision_columns(
+                capture_id, run_id, stratum_id, strata
+            )
+            with database_connection.cursor() as cursor:
+                with pytest.raises(CheckViolation):
+                    cursor.execute(statement, values)
+            database_connection.rollback()
+
+        # The shape the parser actually produces is accepted, so the guard
+        # refuses a wrong shape rather than the column's whole vocabulary.
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO silver_cdc.dim_stratum (stratum_id, strata) "
+                'VALUES (%s, \'[["OVERALL","Overall","OVR","Overall"]]\'::jsonb)',
+                (stratum_id,),
+            )
+            cursor.execute(
+                "DELETE FROM silver_cdc.dim_stratum WHERE stratum_id = %s",
+                (stratum_id,),
+            )
+        database_connection.commit()
+    finally:
+        database_connection.close()

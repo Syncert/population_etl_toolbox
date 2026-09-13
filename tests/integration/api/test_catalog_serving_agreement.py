@@ -1103,7 +1103,11 @@ def published_cdc_metric(
             database_cursor.execute(
                 """
                 INSERT INTO silver_cdc.dim_stratum (stratum_id, strata, created_at)
-                VALUES (%s, '{"overall": "overall"}'::jsonb, NOW())
+                VALUES (
+                    %s,
+                    '[["OVERALL", "Overall", "OVR", "Overall"]]'::jsonb,
+                    NOW()
+                )
                 """,
                 (stratum_id,),
             )
@@ -1250,3 +1254,47 @@ def test_a_source_identified_by_its_lineage_columns_answers_its_catalog_code(
             # The stratified envelope this source is served through: its own
             # stratum and adjustment status travel with the value.
             assert row["dimensions"].get("stratum_id"), row
+
+
+# ---------------------------------------------------------------------------
+# DB-033 — a stratum the warehouse accepts is a stratum the API can serve
+# ---------------------------------------------------------------------------
+
+
+def test_the_stratum_the_warehouse_accepts_is_the_stratum_the_api_serves(
+    api_client: TestClient, published_cdc_metric: str
+) -> None:
+    """Covers: DB-033 — the CDC source-explorer route serves its own rows.
+
+    `CdcObservation.strata` is `list[Any]`, and `jsonb` is not. A stratum
+    stored as an object was accepted by every write path and then crashed
+    `CdcObservation.model_validate`, which the caller sees as
+    `500 The API failed to complete this request` -- with no way to tell which
+    row is unserveable, and the row still there for the next page that
+    includes it. Migration 019 refuses the shape at the write; this is the
+    other half, and the only tier that can see it: the row the fixture
+    publishes is fetched back through the route that declares the list.
+
+    It is also what keeps the DB-032 fixture honest. A fixture is only
+    evidence while the rows it seeds are rows the warehouse could hold, and
+    this one seeded a shape no parser produces until the route it feeds was
+    asked to serve it.
+    """
+    answer = api_client.get(
+        "/api/v1/cdc/observations", params={"dataset": CDC_ASSET, "limit": 50}
+    )
+    assert answer.status_code == 200, answer.text
+    payload = answer.json()
+    seeded = [
+        item for item in payload["items"] if item["release_watermark"] == CDC_WATERMARK
+    ]
+    assert seeded, (
+        f"the CDC source-explorer route answers no row for release "
+        f"{CDC_WATERMARK}, which the catalog publishes as "
+        f"'{published_cdc_metric}'"
+    )
+    for item in seeded:
+        # The published shape, not merely a truthy one: a mapping validates as
+        # neither, and that is exactly what used to reach the response model.
+        assert isinstance(item["strata"], list), item["strata"]
+        assert all(isinstance(entry, list) for entry in item["strata"]), item["strata"]
