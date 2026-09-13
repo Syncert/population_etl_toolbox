@@ -13,8 +13,10 @@ from apps.api.services.comparison_service import (
     preflight_metric_comparison,
 )
 from apps.api.services.neutral_observations_service import NeutralQueryError
+from apps.api.services.comparison_matrix_service import metric_matrix
 from apps.api.schemas import (
     ComparisonCorrelationResponse,
+    ComparisonMatrixResponse,
     ComparisonPreflightResponse,
     ComparisonResponse,
 )
@@ -125,6 +127,58 @@ def get_comparison_correlation(
             geo_level=geo_level,
             state_fips=state_fips,
             year=year,
+        )
+    except UnknownAnalysisMetric as exc:
+        raise HTTPException(
+            status_code=404, detail=f"{exc.parameter} not found"
+        ) from exc
+    except NeutralQueryError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/comparison/matrix",
+    response_model=ComparisonMatrixResponse,
+    name="get_comparison_matrix",
+    summary="Two to eight measures aligned on geography, with pairwise verdicts",
+    responses=NOT_FOUND,
+)
+def get_comparison_matrix(
+    metric_codes: str = Query(..., min_length=1, max_length=1700),
+    geo_level: Optional[str] = Query(None, max_length=50),
+    state_fips: Optional[str] = Query(None, max_length=2),
+    year: Optional[int] = Query(None, ge=1000, le=9999),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> ComparisonMatrixResponse:
+    """Two to eight comma-separated measures, aligned on geography.
+
+    Answers three things a pair cannot: a wide row holding every measure for
+    one geography, a compatibility verdict per unordered pair, and that pair's
+    API-derived coefficients where the verdict allows them.
+
+    A pair the policy declines is a **cell** — ``comparable: false`` with its
+    failed rules — and the request still answers ``200``. A measure whose
+    source the analysis routes decline, an unknown code, and a request in
+    which every pair is declined refuse the whole request instead: those are
+    refusals about a measure, not about a combination.
+
+    ``items`` pages the union of the geographies the measures published, in
+    ``(geo_level, geo_id)`` order; the statistics are measured over the whole
+    join, never over the page.
+    """
+    try:
+        return metric_matrix(
+            db,
+            metric_codes=metric_codes,
+            geo_level=geo_level,
+            state_fips=state_fips,
+            year=year,
+            limit=limit,
+            offset=offset,
         )
     except UnknownAnalysisMetric as exc:
         raise HTTPException(

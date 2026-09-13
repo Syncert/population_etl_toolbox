@@ -80,6 +80,7 @@ def _analysis_dispatch(metric: Mapping[str, Any]) -> ObservationDispatch:
 def ranked_latest_cte(
     dispatch: ObservationDispatch,
     conditions: list[str],
+    include_release: bool = False,
 ) -> str:
     """One newest value per geography from the source's own latest relation.
 
@@ -91,21 +92,35 @@ def ranked_latest_cte(
     the same order the neutral resource's own reduction uses: two reductions
     that rank by the same expression and then break ties differently would
     align, bin, and page different published rows for one geography (API-083).
+
+    ``include_release`` projects the entry's own ``release_expression``
+    alongside the value, for ``/comparison/matrix``, whose wide rows publish
+    the release each cell's value came from. It is off by default and the
+    default rendering is unchanged character for character, because the
+    comparison and distribution routes' reduction being *this* text is what
+    API-130 asserts -- a reduction that differs by a column is still a
+    different reduction to explain.
     """
     attribution = (
         ", ".join(_ATTRIBUTION_COLUMNS)
         if dispatch.publishes_geo_attribution
         else ", ".join(f"NULL::TEXT AS {column}" for column in _ATTRIBUTION_COLUMNS)
     )
+    release_projection = ", release" if include_release else ""
+    release_expression = (
+        f"\n                {dispatch.release_expression} AS release,"
+        if include_release
+        else ""
+    )
     where_sql = " AND ".join(conditions)
     return f"""
         SELECT geo_id, geo_level, {", ".join(_ATTRIBUTION_COLUMNS)},
-               period_start, value
+               period_start, value{release_projection}
         FROM (
             SELECT
                 {dispatch.geo_id_expression} AS geo_id,
                 {dispatch.geo_level_expression} AS geo_level,
-                {attribution},
+                {attribution},{release_expression}
                 {dispatch.period_start_expression} AS period_start,
                 {dispatch.analysis_value_expression} AS value,
                 ROW_NUMBER() OVER (
@@ -321,7 +336,7 @@ def _year_pin_condition(dispatch: ObservationDispatch) -> str:
     return f"SUBSTRING({dispatch.period_start_expression} FROM 1 FOR 4) = :year_pin"
 
 
-def _correlation_caveats(
+def correlation_caveats(
     decision_caveats: tuple[str, ...],
     n: int,
     geographies_a: int,
@@ -329,6 +344,7 @@ def _correlation_caveats(
     contemporaneous_pairs: int,
     distinct_a: int,
     distinct_b: int,
+    include_causation_lead: bool = True,
 ) -> list[str]:
     """Everything this answer could not carry, association first.
 
@@ -338,8 +354,18 @@ def _correlation_caveats(
     way. What is added is what only a correlation can say: why a coefficient
     is absent, how much of each side was paired, and how often the two sides
     described the same period.
+
+    ``include_causation_lead`` is false for a matrix cell, whose response
+    carries the sentence once at the top rather than repeating a 40-word rule
+    in each of up to twenty-eight cells. The rule is still stated in every
+    answer; it is stated where a reader reads it rather than where a loop
+    happens to put it.
     """
-    caveats = [CORRELATION_CAUSATION_CAVEAT, *decision_caveats]
+    caveats = (
+        [CORRELATION_CAUSATION_CAVEAT, *decision_caveats]
+        if include_causation_lead
+        else list(decision_caveats)
+    )
 
     if n < MINIMUM_CORRELATION_PAIRS:
         caveats.append(
@@ -526,7 +552,7 @@ def metric_correlation(
         period_b=None if period_b is None else str(period_b),
         periods_differ=contemporaneous_pairs < n,
         derivations=list(CORRELATION_DERIVATIONS),
-        caveats=_correlation_caveats(
+        caveats=correlation_caveats(
             decision.caveats,
             n=n,
             geographies_a=geographies_a,

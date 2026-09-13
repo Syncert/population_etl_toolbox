@@ -657,3 +657,87 @@ Not run, with the reason:
 - `python -m pytest tests/dags -q` — Airflow is not installed, and installing
   `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x, which is why CI
   runs those tiers in separate jobs. Untouched by this phase.
+
+### WB-4 — `GET /api/v1/comparison/matrix`
+
+Status: **complete**, 2026-09-13.
+
+Implementation:
+
+- `apps/api/services/comparison_matrix_service.py` (new) — `metric_matrix`,
+  `parse_metric_codes`, and the four SQL builders the statements are composed
+  from.
+- `apps/api/schemas/analysis.py` — `ComparisonMatrixResponse`,
+  `MatrixMetricSummary`, `MatrixPair`, `MatrixRow`, `MatrixCell`, and
+  `CorrelationStatistic`, which is the per-cell shape WB-5 reads.
+- `apps/api/services/comparison_service.py` — `ranked_latest_cte` gains
+  `include_release`; `_correlation_caveats` becomes public
+  `correlation_caveats` with `include_causation_lead`.
+- `apps/api/routers/comparison.py` — the route.
+- `tests/unit/api/test_comparison_matrix.py` — 16 tests.
+- `docs/reference/TESTING_CONTRACT.md` — API-132, API-133, totals 434 → 436;
+  `tests/support/catalog_evidence.py` audited API count 131 → 133.
+- `docs/reference/API_CONSUMER_GUIDE.md` — the route's prose, its row in the
+  paging-order table (the gate `test_every_paged_read_declares_what_orders_it`
+  demanded it, which is criterion 4 enforcing itself), "all three" → "all
+  four" comparison routes.
+- `README.md`, `tests/fixtures/api/openapi_contract.json` (additive again:
+  one operation, six schemas).
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **The wide rows are a union built from a `keys` CTE, keyed on `geo_id`
+   alone.** Keying on `(geo_id, geo_level)` would turn a single disagreement
+   about a grain word into two half-empty rows for one geography; the grain is
+   coalesced across the sides instead, which answers the word every side that
+   published the geography agrees on. Each side then `LEFT JOIN`s onto the
+   keys, which is obviously correct in a way a chain of `FULL OUTER JOIN`s
+   with coalesced keys is not.
+2. **Spearman is ranked inside each pair's own non-null subset.** Ranking once
+   over the wide relation would rank every geography including those the other
+   measure did not publish — a different statistic wearing the same name. Each
+   comparable pair therefore gets three generated CTEs (`_rows`, `_ranked`,
+   the aggregate), evaluated once each.
+3. **Every number is one labelled union in one statement.** A `kind` column
+   (`total` / `metric` / `pair`) rather than a column per pair, because the
+   result shape must not grow quadratic in the measure count: eight measures
+   is twenty-eight pairs. The page of wide rows is the second statement, which
+   is the shape `/comparison` already has.
+4. **A repeated code is refused, not de-duplicated** — de-duplicating answers
+   a two-measure matrix for a three-code request, and a measure against itself
+   correlates 1 with no information in it.
+5. **The requested order is kept, not sorted.** It is the order the reader's
+   own legend will be in, and sorting would make `metrics` disagree with the
+   request that produced it for no gain.
+6. **`ranked_latest_cte`'s default rendering is unchanged character for
+   character** under the new `include_release` flag, because API-130 asserts
+   the comparison and distribution reduction *is that text*. A reduction that
+   differs by a column is still a different reduction to explain.
+7. **The causation sentence is response-level, not per cell.** Repeating a
+   40-word rule in each of up to twenty-eight cells makes it scenery;
+   `correlation_caveats(include_causation_lead=False)` builds the cell's own
+   caveats and the response carries the sentence once, first.
+
+Validation run:
+
+```text
+python -m pytest tests/unit -q                                   # 1687 passed
+python -m pytest tests/unit/api/test_comparison_matrix.py -q      # 16 passed
+ruff check .                                                      # passed
+python -m tests.support.regenerate_openapi_contract    # 41 operations, 64 schemas
+```
+
+The generated SQL was additionally parse-checked against the PostgreSQL
+grammar (`sqlglot.parse_one(..., dialect="postgres")`) for the matrix's two
+statements and the correlation's one, with bind parameters substituted. All
+three parse. `sqlglot` was installed in this environment for the check only
+and is deliberately **not** added to the project's dependencies: the
+repository already proves SQL acceptance where it matters, against a real
+warehouse, in `tests/integration/api/test_dispatch_expressions_execute.py`.
+A parser agreeing is weaker evidence than PostgreSQL agreeing; it is recorded
+because it is the strongest check this environment can run.
+
+Not run, with the reason: the integration tier, as for WB-3 — no PostgreSQL is
+reachable here, so `corr`, `RANK()`'s tie arithmetic, and `width_bucket`-style
+planner behaviour over the generated statements are unproven against a real
+database. `./tests/run.ps1 integration` is the command.

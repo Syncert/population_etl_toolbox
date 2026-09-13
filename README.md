@@ -249,6 +249,11 @@ Provider-neutral endpoints:
   pair count, each side's coverage, how many pairs were contemporaneous, an
   optional same-year pin, and caveats led by association-not-causation; a
   coefficient the pairs cannot support is `null` with its reason, never `0`
+- `GET /api/v1/comparison/matrix` — two to eight measures aligned on
+  geography: a compatibility verdict and, where it allows one, a correlation
+  per unordered pair, plus wide rows over the union of the geographies the
+  measures published, each cell carrying its own period and release. A
+  declined pair is a cell; a declined source refuses the whole request
 - `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
   metric's latest values, dispatched to the owning source; stratified
   sources are declined with their declared restriction

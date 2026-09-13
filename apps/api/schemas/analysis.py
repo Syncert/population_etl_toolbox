@@ -159,6 +159,126 @@ class ComparisonCorrelationResponse(BaseModel):
     caveats: list[str] = []
 
 
+class CorrelationStatistic(BaseModel):
+    """One cell's API-derived coefficients, and what they were measured over.
+
+    The same statistic ``/comparison/correlation`` serves for a pair, carried
+    per cell so a matrix cell can be read on its own terms: a coefficient over
+    3,000 counties and one over 40 are different claims, and a matrix that
+    showed only the numbers would present them as the same.
+    """
+
+    #: Pairs where both measures published a number for the geography.
+    n: int
+    #: Pairs whose two measures describe the same period.
+    contemporaneous_pairs: int = 0
+    pearson_r: Optional[float] = None
+    spearman_rho: Optional[float] = None
+    #: True when at least one pair combined two different periods.
+    periods_differ: bool = False
+    derivations: list[str] = []
+
+
+class MatrixMetricSummary(BaseModel):
+    """One requested measure, as the matrix read it.
+
+    ``geographies`` is what this measure published under the request's own
+    filters, before any join -- the counterpart of ``/comparison``'s
+    ``geographies_a``/``geographies_b``, one per measure because a matrix has
+    more than two sides.
+    """
+
+    metric_code: str
+    source_code: Optional[str] = None
+    units: Optional[str] = None
+    valid_time_grains: list[str] = []
+    valid_geo_grains: list[str] = []
+    geographies: int = 0
+    #: The single period this measure's published values came from, or
+    #: ``None`` when they differ -- the ``/distribution/bins`` convention.
+    period: Optional[str] = None
+    periods_differ: bool = False
+
+
+class MatrixPair(BaseModel):
+    """One unordered pair of the requested measures: served, or declined.
+
+    A declined cell is an answer, not an omission: ``comparable`` is false,
+    ``rules`` carries the verdict that decided it, and ``statistic`` is
+    ``None``. The request as a whole still answers ``200`` as long as one pair
+    is comparable, because a six-measure matrix with two declined cells is
+    still six measures' worth of answer.
+    """
+
+    metric_code_a: str
+    metric_code_b: str
+    comparable: bool
+    rules: list[CompatibilityFinding] = []
+    caveats: list[str] = []
+    statistic: Optional[CorrelationStatistic] = None
+
+
+class MatrixCell(BaseModel):
+    """One measure's published value for one geography, or its absence.
+
+    A measure the geography has no published value for carries ``null`` in
+    all three fields rather than being left out of the row, so the shape says
+    "asked, and not published" instead of leaving a client to infer it from a
+    missing key.
+    """
+
+    metric_code: str
+    value: Optional[float] = None
+    period: Optional[str] = None
+    release: Optional[str] = None
+
+
+class MatrixRow(BaseModel):
+    """One geography, with one cell per requested measure."""
+
+    geo_id: Optional[str] = None
+    geo_level: Optional[str] = None
+    state_fips: Optional[str] = None
+    county_fips: Optional[str] = None
+    state_name: Optional[str] = None
+    county_name: Optional[str] = None
+    values: list[MatrixCell] = []
+
+
+class ComparisonMatrixResponse(BaseModel):
+    """Two to eight measures aligned on geography, with pairwise statistics.
+
+    ``/comparison`` is a pair by contract -- in its schema, its preflight and
+    its saved kind -- so this is a separate resource rather than a widening of
+    it. What it adds is the two things a pair cannot express: a wide row
+    holding every measure for one geography, and a verdict per pair rather
+    than one verdict for the request.
+
+    The rows are the **union** of the geographies the measures published, not
+    an intersection: the question a matrix answers is which measures a given
+    geography is published for, and an inner join would delete exactly the
+    geographies that answer it interestingly. The statistics are measured over
+    the whole join, never over the page ``items`` returns.
+    """
+
+    #: Always true. Every coefficient here is computed by the API.
+    derived: bool = True
+    geo_level: Optional[str] = None
+    state_fips: Optional[str] = None
+    year: Optional[int] = None
+    metrics: list[MatrixMetricSummary]
+    pairs: list[MatrixPair]
+    #: What applies to the whole answer, led by the association-not-causation
+    #: sentence. Per-pair caveats ride each pair, so the long sentence is said
+    #: once rather than twenty-eight times.
+    caveats: list[str] = []
+    #: Geographies in the union, which is what ``items`` pages over.
+    total: int
+    limit: int
+    offset: int
+    items: list[MatrixRow]
+
+
 class DistributionBin(BaseModel):
     bin_index: int
     lower_bound: float

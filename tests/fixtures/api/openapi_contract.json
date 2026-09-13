@@ -817,6 +817,80 @@
         "comparison"
       ]
     },
+    "GET /api/v1/comparison/matrix": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 1700,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 9999,
+            "minimum": 1000
+          },
+          "in": "query",
+          "name": "year",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonMatrixResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
     "GET /api/v1/comparison/preflight": {
       "parameters": [
         {
@@ -2193,6 +2267,29 @@
         "n"
       ]
     },
+    "ComparisonMatrixResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "geo_level": "string | null",
+        "items": "array<MatrixRow>",
+        "limit": "integer",
+        "metrics": "array<MatrixMetricSummary>",
+        "offset": "integer",
+        "pairs": "array<MatrixPair>",
+        "state_fips": "string | null",
+        "total": "integer",
+        "year": "integer | null"
+      },
+      "required": [
+        "items",
+        "limit",
+        "metrics",
+        "offset",
+        "pairs",
+        "total"
+      ]
+    },
     "ComparisonPreflightResponse": {
       "properties": {
         "caveats": "array<string>",
@@ -2275,6 +2372,19 @@
       },
       "required": [
         "valid"
+      ]
+    },
+    "CorrelationStatistic": {
+      "properties": {
+        "contemporaneous_pairs": "integer",
+        "derivations": "array<string>",
+        "n": "integer",
+        "pearson_r": "number | null",
+        "periods_differ": "boolean",
+        "spearman_rho": "number | null"
+      },
+      "required": [
+        "n"
       ]
     },
     "DistributionBin": {
@@ -2467,6 +2577,59 @@
         "service",
         "status"
       ]
+    },
+    "MatrixCell": {
+      "properties": {
+        "metric_code": "string",
+        "period": "string | null",
+        "release": "string | null",
+        "value": "number | null"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "MatrixMetricSummary": {
+      "properties": {
+        "geographies": "integer",
+        "metric_code": "string",
+        "period": "string | null",
+        "periods_differ": "boolean",
+        "source_code": "string | null",
+        "units": "string | null",
+        "valid_geo_grains": "array<string>",
+        "valid_time_grains": "array<string>"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "MatrixPair": {
+      "properties": {
+        "caveats": "array<string>",
+        "comparable": "boolean",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "rules": "array<CompatibilityFinding>",
+        "statistic": "CorrelationStatistic | null"
+      },
+      "required": [
+        "comparable",
+        "metric_code_a",
+        "metric_code_b"
+      ]
+    },
+    "MatrixRow": {
+      "properties": {
+        "county_fips": "string | null",
+        "county_name": "string | null",
+        "geo_id": "string | null",
+        "geo_level": "string | null",
+        "state_fips": "string | null",
+        "state_name": "string | null",
+        "values": "array<MatrixCell>"
+      },
+      "required": []
     },
     "MetricCapability": {
       "properties": {

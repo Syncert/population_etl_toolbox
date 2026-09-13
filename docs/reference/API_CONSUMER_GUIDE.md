@@ -606,6 +606,46 @@ it is a statistic of describe their inputs identically.
 The saved-analysis contract needs nothing new for a correlation: it is a
 statistic of a pair, and a `comparison` document already records that pair.
 
+`GET /api/v1/comparison/matrix?metric_codes=a,b,c` answers **two to eight**
+comma-separated measures at once. `/comparison` is a pair by contract — in its
+response, its preflight and its saved document — so this is a separate
+resource rather than a widening of it, and it adds the two things a pair
+cannot express.
+
+**A verdict per pair.** `pairs` holds every unordered pair with its own
+`comparable`, its `rules`, its `caveats`, and — where the pair is comparable —
+the same `statistic` block `/comparison/correlation` returns, with the same
+null rules. A pair the policy declines is a **cell**: `comparable: false`,
+`statistic: null`, its failed rules on the cell. The request still answers
+`200`; a six-measure matrix with two declined cells is still six measures'
+worth of answer. Draw those cells as declined rather than as zero.
+
+**A wide row.** `items` holds one row per geography with one `values` cell per
+requested measure, each carrying that measure's own `value`, `period` and
+`release`. A measure the geography has no published value for carries `null`
+in all three rather than being left out, so the row says "asked, and not
+published" rather than leaving you to infer it from a missing key.
+
+**The rows are a union, not an intersection.** `/comparison` joins its two
+sides inner, which is right for a pair: a row with one side missing has no
+difference and no ratio. The matrix asks the opposite question — which
+measures is this geography published for — so its rows are the union of the
+geographies the measures published, `total` is the size of that union, and
+each measure's own coverage is `metrics[].geographies`. Read the two against
+each other the way you read `total` against `geographies_a` on `/comparison`.
+
+**Three things refuse the whole request**, and the line is deliberate. A
+measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR)
+answers `422` naming that measure — a matrix with a row of holes labelled
+"stratified" invites exactly the reading the refusal exists to prevent. An
+unknown code answers `404`. And a request in which *every* pair is declined
+answers `422` naming each failure, because there is nothing in it to answer.
+Anything else about a *combination* is a cell.
+
+`items` pages `(geo_level, geo_id)` under the usual `limit`/`offset`; the
+statistics are measured over the whole join, never over the page you asked
+for. `year` works as it does on `/comparison/correlation` and pins every side.
+
 ## Saved analysis configurations
 
 Authenticated, user-owned storage — see ADR-0003.
@@ -777,7 +817,7 @@ status code on the one class of error the API can explain.
 
 - **Every** public analytical GET is cacheable — the catalog, `/observations`
   and its releases, the legacy pair, all eight source-scoped observation
-  routes, CDC, USDA NASS, distribution, and all three comparison routes. They
+  routes, CDC, USDA NASS, distribution, and all four comparison routes. They
   answer with `x-cache: HIT|MISS` and
   `Cache-Control: public, max-age=<ttl>`. The authenticated resources never
   do, and neither does a health probe, whose answer must describe now. The cache key includes the served
@@ -811,6 +851,7 @@ status code on the one class of error the API can explain.
 | `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
+| `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/analysis-configurations` | `name`, then `configuration_id`. Names are unique per owner, and the id closes the order regardless |
 | `/evidence-packets` | `name`, then `packet_id`, on the same basis |
