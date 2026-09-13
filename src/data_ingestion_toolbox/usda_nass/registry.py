@@ -22,6 +22,16 @@ STATE = "STATE"
 COUNTY = "COUNTY"
 SUPPORTED_AGG_LEVELS: tuple[str, ...] = (NATIONAL, STATE, COUNTY)
 
+#: The two source programs Quick Stats publishes under, and the only values
+#: the ``source_desc`` filter accepts. Declared here beside the grains because
+#: it is the same kind of fact -- a closed provider vocabulary this adapter
+#: registers products against -- and because the API refuses a word outside it
+#: (``apps.api.services.usda_nass_service``); two copies of a closed set is
+#: two chances for one route to accept what its sibling refuses.
+SURVEY = "SURVEY"
+CENSUS = "CENSUS"
+SOURCE_PROGRAMS: tuple[str, ...] = (SURVEY, CENSUS)
+
 #: Slice selection modes. ``recent`` retrieves the bounded recent window used by
 #: ordinary operation; ``full`` sweeps the whole registered history for periodic
 #: reconciliation and for a fresh historical bootstrap.
@@ -150,7 +160,7 @@ class NassProduct:
                 f"registered product {self.product_id!r} selects unsupported "
                 f"aggregate levels: {unsupported}"
             )
-        if self.source_desc not in {"SURVEY", "CENSUS"}:
+        if self.source_desc not in SOURCE_PROGRAMS:
             raise ValueError(
                 f"registered product {self.product_id!r} has an unknown source_desc"
             )

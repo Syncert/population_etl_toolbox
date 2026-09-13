@@ -49,7 +49,7 @@ def _validated_grain(value: Optional[str]) -> Optional[str]:
     lowercase relation words, so the catalog's own `COUNTY` was a 422 and so
     was the alias the guide guarantees (API-116).
     """
-    if value is None:
+    if value is None or not value.strip():
         return None
     word = normalize_geo_level(value)
     if word not in _REQUEST_GRAINS:
@@ -62,11 +62,25 @@ def _validated_grain(value: Optional[str]) -> Optional[str]:
 def _validated_choice(
     value: Optional[str], allowed: tuple[str, ...], field: str
 ) -> Optional[str]:
+    """The registered word for a requested choice, or a 422 naming the set.
+
+    Two rules this shares with every other closed value the API takes
+    (API-124). An empty value is absent -- `?dataset=` is the same request as
+    omitting it, which is what the rest of the API reads and what a saved
+    document records for a filter its source does not declare (API-117,
+    WEB-075) -- and the comparison is case-insensitive, returning the word the
+    relation stores, for the reason `_validated_grain` above records: a value
+    read from a response and sent back is the same question.
+    """
     if value is None:
         return None
-    if value not in allowed:
-        raise HTTPException(422, f"{field} must be one of: {', '.join(allowed)}")
-    return value
+    word = value.strip()
+    if not word:
+        return None
+    for registered in allowed:
+        if word.casefold() == registered.casefold():
+            return registered
+    raise HTTPException(422, f"{field} must be one of: {', '.join(allowed)}")
 
 
 @router.get("/observations", response_model=CdcObservationListResponse)

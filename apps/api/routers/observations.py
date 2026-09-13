@@ -39,7 +39,7 @@ REVERSED_YEAR_DETAIL = "year_from must be less than or equal to year_to"
 def get_neutral_observations(
     metric_code: str = Query(..., min_length=1, max_length=200),
     scope: Literal["latest", "as_released"] = Query("latest"),
-    release: Optional[str] = Query(None, min_length=1, max_length=100),
+    release: Optional[str] = Query(None, max_length=100),
     geo_id: Optional[str] = Query(
         None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
     ),

@@ -1149,8 +1149,7 @@
         },
         {
           "constraints": {
-            "maxLength": 100,
-            "minLength": 1
+            "maxLength": 100
           },
           "in": "query",
           "name": "release",

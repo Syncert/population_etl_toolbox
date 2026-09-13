@@ -28,10 +28,14 @@ from apps.api.schemas import (
 )
 from data_ingestion_toolbox.usda_nass.registry import (
     ALL_PRODUCTS,
+    SOURCE_PROGRAMS,
     SUPPORTED_AGG_LEVELS,
     SUPPRESSION_SYMBOLS,
 )
-from data_ingestion_toolbox.usda_nass.silver_nass.values import SYMBOL_STATUS
+from data_ingestion_toolbox.usda_nass.silver_nass.values import (
+    SYMBOL_STATUS,
+    VALUE_STATUSES,
+)
 
 #: As-released history and the newest validated release, as separate relations.
 AS_RELEASED_RELATION = "gold_nass.crop_observation"
@@ -72,6 +76,80 @@ _EQUALITY_FILTERS: dict[str, str] = {
 
 class NassQueryError(ValueError):
     """A caller filter cannot produce a well-defined USDA NASS query."""
+
+
+def _absent_if_blank(value: Optional[str]) -> Optional[str]:
+    """``None`` for a filter the caller sent empty, else the trimmed value.
+
+    The rest of the API reads an empty filter value as no filter -- the
+    catalog's `if geo_level:`, `closed_value_refusal`'s "an empty value is
+    absent" -- and a saved analysis document records `""` for a filter its
+    source does not declare (API-117, WEB-075). This router alone tested
+    `is not None`, so `?commodity_desc=` bound `commodity_desc = ''`, matched
+    no row the provider can publish, and answered 200 with `total: 0`
+    (API-124).
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+#: The value states a row can carry, as the warehouse's own CHECK constraint
+#: spells them (``sql/migrations/012_usda_nass_crop_pipeline.sql``), read from
+#: the adapter that writes them rather than re-listed here. Sorted so the
+#: refusal names them in one order.
+_VALUE_STATUS_VOCABULARY: tuple[str, ...] = tuple(sorted(VALUE_STATUSES))
+
+
+def _validated_closed_value(
+    field: str, value: Optional[str], vocabulary: tuple[str, ...], word: str
+) -> Optional[str]:
+    """``word`` when it is in ``vocabulary``, else a refusal naming the words.
+
+    The same rule `_validated_grain` applies to the grain, for the other two
+    closed provider vocabularies these routes filter on. Bound and matched
+    instead, an unknown word answered 200 with ``total: 0`` -- the API-122
+    defect on this router's own parameters: `value_status=suppressed`, the
+    word the consumer guide prints as an example, reads as "nothing was
+    suppressed" when the vocabulary's word is `withheld` (API-124).
+    """
+    if value is None:
+        return None
+    if word not in vocabulary:
+        raise NassQueryError(f"{field} must be one of " + ", ".join(vocabulary))
+    return word
+
+
+def _validated_source_program(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested ``source_desc``, or a refusal.
+
+    Case is normalised for the reason `_validated_grain` records: the relation
+    stores the vocabulary word, so a caller echoing a published `SURVEY` and a
+    caller typing `survey` are asking one question. Only `/observations`
+    checked this at all, and only by exact match -- so its sibling
+    `/series` bound `BOGUS` into the filter and answered an empty page
+    (API-124).
+    """
+    if value is None:
+        return None
+    return _validated_closed_value(
+        "source_desc", value, SOURCE_PROGRAMS, str(value).strip().upper()
+    )
+
+
+def _validated_value_status(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested ``value_status``, or a refusal.
+
+    Lower-cased rather than upper: this vocabulary is published lower-case,
+    so `WITHHELD` and `withheld` are one word here exactly as `COUNTY` and
+    `county` are one grain.
+    """
+    if value is None:
+        return None
+    return _validated_closed_value(
+        "value_status", value, _VALUE_STATUS_VOCABULARY, str(value).strip().lower()
+    )
 
 
 def _validated_grain(value: Optional[str]) -> Optional[str]:
@@ -127,12 +205,11 @@ class NassObservationFilters:
                 raise NassQueryError(
                     "year_start must be less than or equal to year_end"
                 )
+        for name in _EQUALITY_FILTERS:
+            setattr(self, name, _absent_if_blank(getattr(self, name)))
         self.agg_level_desc = _validated_grain(self.agg_level_desc)
-        if self.source_desc is not None and self.source_desc not in {
-            "SURVEY",
-            "CENSUS",
-        }:
-            raise NassQueryError("source_desc must be SURVEY or CENSUS")
+        self.source_desc = _validated_source_program(self.source_desc)
+        self.value_status = _validated_value_status(self.value_status)
         if self.release_watermark is not None and self.latest_release_only:
             raise NassQueryError("release_watermark and latest cannot be combined")
 
@@ -189,7 +266,10 @@ class NassSeriesFilters:
     )
 
     def __post_init__(self) -> None:
+        for name in self._columns:
+            setattr(self, name, _absent_if_blank(getattr(self, name)))
         self.agg_level_desc = _validated_grain(self.agg_level_desc)
+        self.source_desc = _validated_source_program(self.source_desc)
 
     def clauses(self) -> tuple[list[str], dict[str, Any]]:
         conditions: list[str] = []

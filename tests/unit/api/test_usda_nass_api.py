@@ -17,7 +17,11 @@ from apps.api.services.usda_nass_service import (
     NassQueryError,
     NassSeriesFilters,
 )
-from data_ingestion_toolbox.usda_nass.registry import SUPPRESSION_SYMBOLS
+from data_ingestion_toolbox.usda_nass.registry import (
+    SOURCE_PROGRAMS,
+    SUPPRESSION_SYMBOLS,
+)
+from data_ingestion_toolbox.usda_nass.silver_nass.values import VALUE_STATUSES
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -474,3 +478,154 @@ def test_an_unknown_grain_is_refused_with_the_vocabulary() -> None:
     detail = str(response.json())
     assert "NATIONAL, STATE, COUNTY" in detail
     assert session.statements == []
+
+
+# ---------------------------------------------------------------------------
+# API-124 — every closed provider vocabulary these routes filter on
+# ---------------------------------------------------------------------------
+
+#: The closed provider vocabularies these routes take as filters, each with
+#: the case the relation stores it in. Read from the declarations that create
+#: the values -- the product registry's two source programs, and the value
+#: states the warehouse's own CHECK constraint enumerates -- so a word added
+#: to either reaches this sweep without an edit here.
+CLOSED_NASS_VOCABULARIES: dict[str, tuple[str, ...]] = {
+    "source_desc": SOURCE_PROGRAMS,
+    "value_status": tuple(sorted(VALUE_STATUSES)),
+}
+
+#: A word outside each vocabulary. `suppressed` is not chosen at random: it is
+#: the word the consumer guide prints as an example of a `value_status`, and
+#: the vocabulary's word for the same idea is `withheld`.
+OUTSIDE_THE_VOCABULARY = {"source_desc": "ADMIN", "value_status": "suppressed"}
+
+
+def _optional_string(schema: dict) -> bool:
+    """Whether a served parameter is an optional string -- that is, a filter.
+
+    ``limit`` and the two years are bounded numbers and cannot be sent empty;
+    ``latest`` is a flag. The optional strings are exactly the filters.
+    """
+    branches = schema.get("anyOf") or [schema]
+    return {branch.get("type") for branch in branches} == {"string", "null"}
+
+
+def _routes_declaring(parameter: str) -> tuple[str, ...]:
+    """The served GET paths that accept ``parameter``, read from the document.
+
+    Which routes take a filter is not a list to keep in step: `/series` took
+    `source_desc` and never checked it precisely because the check lived
+    beside one route's filter set instead of beside the vocabulary.
+    """
+    document = app.openapi()
+    return tuple(
+        sorted(
+            path
+            for path, operations in document["paths"].items()
+            if "usda-nass" in path
+            for method, operation in operations.items()
+            if method.upper() == "GET"
+            and any(
+                declared.get("in") == "query" and declared.get("name") == parameter
+                for declared in operation.get("parameters") or []
+            )
+        )
+    )
+
+
+@pytest.mark.parametrize("parameter", sorted(CLOSED_NASS_VOCABULARIES))
+def test_every_route_refuses_a_word_outside_a_closed_nass_vocabulary(
+    parameter: str,
+) -> None:
+    """Covers: API-124 — a value that is not one of the words is refused.
+
+    API-122 refused a grain that is not a grain; these are the same defect on
+    this router's own parameters. `source_desc` was checked on
+    `/observations` and not on `/series`, so one route refused `ADMIN` and its
+    sibling bound it into the filter and answered an empty page; `value_status`
+    was never checked at all, so `suppressed` -- the word the guide prints --
+    read as "nothing was suppressed" when the word is `withheld`.
+    """
+    paths = _routes_declaring(parameter)
+    assert paths, f"no served route declares {parameter}; the rule read nothing"
+    refused = OUTSIDE_THE_VOCABULARY[parameter]
+    for path in paths:
+        session = _RecordingSession()
+        response = _client(session).get(path, params={parameter: refused})
+        assert response.status_code == 422, (
+            f"{path} answered {response.status_code} for {parameter}={refused}: "
+            f"{response.text}"
+        )
+        detail = str(response.json())
+        assert parameter in detail
+        for word in CLOSED_NASS_VOCABULARIES[parameter]:
+            assert word in detail, f"{path} refused without naming {word}"
+        assert session.statements == [], (
+            f"{path} queried the warehouse for a word it refused"
+        )
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("parameter", sorted(CLOSED_NASS_VOCABULARIES))
+def test_a_vocabulary_word_is_accepted_in_any_case_and_bound_as_published(
+    parameter: str,
+) -> None:
+    """Covers: API-124 — the refusal narrows nothing the vocabulary offers.
+
+    The reason `_validated_grain` normalises rather than compares (API-116):
+    the relation stores the vocabulary word, so a caller echoing a published
+    `SURVEY` and a caller typing `survey` are asking one question. Each word
+    is sent to every route that declares the parameter, in the case the
+    relation stores and in the other one.
+    """
+    for path in _routes_declaring(parameter):
+        for word in CLOSED_NASS_VOCABULARIES[parameter]:
+            for sent in (word, word.swapcase(), f"  {word}  "):
+                session = _RecordingSession()
+                response = _client(session).get(path, params={parameter: sent})
+                assert response.status_code == 200, (
+                    f"{path} refused {parameter}={sent!r}: {response.text}"
+                )
+                bound = {
+                    parameters[parameter]
+                    for parameters in session.parameters
+                    if parameter in parameters
+                }
+                assert bound == {word}, (
+                    f"{path} bound {bound} for {parameter}={sent!r}, not {word!r}"
+                )
+                app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/v1/usda-nass/observations", "/api/v1/usda-nass/series"]
+)
+def test_an_empty_filter_value_is_absent_not_a_filter_on_nothing(path: str) -> None:
+    """Covers: API-124 — `?commodity_desc=` is no filter, not an empty answer.
+
+    The rest of the API reads an empty filter value as no filter, and a saved
+    analysis document records `""` for a filter its source does not declare
+    (API-117, WEB-075). These routes tested `is not None`, so an empty value
+    became `commodity_desc = ''` -- a condition no row the provider publishes
+    can satisfy -- and the caller got 200 with a total that reads as an
+    answer. Every filter the route declares is swept, so a filter added later
+    is covered without an edit.
+    """
+    operation = app.openapi()["paths"][path]["get"]
+    declared = sorted(
+        parameter["name"]
+        for parameter in operation.get("parameters") or []
+        if parameter.get("in") == "query" and _optional_string(parameter["schema"])
+    )
+    assert declared, f"no string filter read from {path}"
+    for parameter in declared:
+        session = _RecordingSession()
+        response = _client(session).get(path, params={parameter: ""})
+        assert response.status_code == 200, (
+            f"{path} refused an empty {parameter}: {response.text}"
+        )
+        bound = [
+            parameters for parameters in session.parameters if parameter in parameters
+        ]
+        assert bound == [], f"{path} bound an empty {parameter} into the query: {bound}"
+        app.dependency_overrides.clear()

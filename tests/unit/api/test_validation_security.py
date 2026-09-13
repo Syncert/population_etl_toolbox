@@ -456,3 +456,60 @@ def test_a_closed_parameter_still_accepts_what_the_guide_promises() -> None:
                     f"{path} refused {name}={value!r} and the contract offers "
                     f"it: {response.text}"
                 )
+
+
+def _optional_string_filters(operation: dict) -> tuple[str, ...]:
+    """The optional plain-string query parameters of one served operation.
+
+    A parameter typed `string | null` with no `format` is a filter: its whole
+    value space is "some text, or nothing". `limit`, the years and the flags
+    are numbers and booleans, and `start_date` carries `format: date` -- a
+    typed value space where an empty string is malformed rather than absent,
+    and where FastAPI's own machine-readable refusal is the right answer.
+    """
+    filters = []
+    for parameter in operation.get("parameters") or []:
+        if parameter.get("in") != "query":
+            continue
+        schema = parameter["schema"]
+        branches = schema.get("anyOf") or [schema]
+        types = {branch.get("type") for branch in branches}
+        formats = {branch.get("format") for branch in branches} - {None}
+        if types == {"string", "null"} and not formats:
+            filters.append(parameter["name"])
+    return tuple(sorted(filters))
+
+
+def test_an_empty_filter_value_is_absent_on_every_route() -> None:
+    """Covers: API-124 — `?filter=` is the same request as omitting it.
+
+    The rule is already the API's: `closed_value_refusal` reads an empty
+    value as absent because "a saved analysis document records `state_fips:
+    ""` for a source that declares no state filter (API-117, WEB-075)", and
+    a client that serialises its whole parameter set sends every filter it is
+    not using that way. Three routes disagreed -- `/cdc/observations` refused
+    an empty `dataset`, `geo_type` and `adjustment` by naming the vocabulary,
+    `/usda-nass/*` turned an empty value into `commodity_desc = ''` and
+    answered 200 with `total: 0`, and `/observations` declared `release` with
+    `minLength: 1` so an unpinned release was a 422.
+
+    Read from the served document, so a filter or a route added later is
+    covered without an edit here. A request that gets past validation reaches
+    a session that refuses to answer, which is a 503 rather than a 422: what
+    is asserted is only that no refusal named the parameter sent empty.
+    """
+    document = app.openapi()
+    refused: list[str] = []
+    failing = _FailingSession(OperationalError("read refused", None, Exception()))
+    with _client_for(failing) as client:
+        for template, operations in sorted(document["paths"].items()):
+            operation = operations.get("get")
+            if operation is None:
+                continue
+            for name in _optional_string_filters(operation):
+                response = client.get(_example_path(template), params={name: ""})
+                if response.status_code == 422 and name in response.text:
+                    refused.append(
+                        f"GET {template} refused an empty {name}: {response.text}"
+                    )
+    assert refused == [], "\n".join(refused)

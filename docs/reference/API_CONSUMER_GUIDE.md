@@ -54,6 +54,29 @@ same filter `geo_type` and names the three grains CDC publishes.
 and three digits; a well-formed code that names no geography answers an empty
 page, because that is a fact about the warehouse rather than the request.
 
+A provider's own closed vocabulary is held to the same rule. On
+`/usda-nass/observations` and `/usda-nass/series`, `source_desc` is `SURVEY`
+or `CENSUS` — the two programs Quick Stats publishes under — and
+`value_status` is one of `valid`, `missing`, `withheld`,
+`insufficient_reports`, `not_applicable`, `not_available`,
+`below_rounding_unit`, `quality_flagged`. On `/cdc/observations`, `dataset`
+is one of the registered dataset identities `/catalog/capabilities` lists and
+`adjustment` is `crude`, `age_adjusted` or `source_specific`. A word outside
+any of these is a `422` naming the words, on every route that takes the
+parameter; within one, case does not matter and the value is filtered as the
+relation stores it. The status vocabulary is **per source** — CDC says
+`suppressed` where NASS says `withheld` — so read the source's own words
+rather than carrying one source's over.
+
+**An empty filter value is no filter.** `?geo_level=`, `?commodity_desc=`
+and `?release=` are the same requests as omitting them, on every route. A
+client that serialises its whole parameter set therefore needs no special
+case for the filters it is not using, and a saved configuration that records
+`""` for a filter its source does not declare replays unchanged. The
+exceptions are the two dates: `start_date` and `end_date` are typed, so an
+empty value is malformed there rather than absent and is refused with the
+field named.
+
 `q` on `/catalog/metrics` and `/catalog/geographies` is a case-insensitive
 **literal** substring search, not a pattern: `%` and `_` match themselves, so
 `q=CENSUS_ACS` and `q=B01003_001` find those exact strings rather than

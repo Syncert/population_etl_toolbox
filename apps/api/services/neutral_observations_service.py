@@ -391,7 +391,7 @@ def list_neutral_observations(
 
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
-    if release is not None and scope != SCOPE_AS_RELEASED:
+    if release and scope != SCOPE_AS_RELEASED:
         raise NeutralQueryError(
             "release can only be combined with scope=as_released; scope=latest "
             "always serves the source's own latest publication"
@@ -409,7 +409,7 @@ def list_neutral_observations(
             "scope=as_released; a latest read answers one publication, which "
             "has no releases to reduce"
         )
-    if newest_release_per_period and release is not None:
+    if newest_release_per_period and release:
         raise NeutralQueryError(
             "release and newest_release_per_period contradict each other: one "
             "pins a single published release, the other asks for the newest "
@@ -447,7 +447,12 @@ def list_neutral_observations(
     )
     conditions.extend(filter_conditions)
     params.update(filter_params)
-    if release is not None:
+    # Falsy, not `is not None`: an empty value is absent everywhere else in
+    # this API, and `release` alone declared `min_length=1`, so a client that
+    # serialises its whole parameter set -- or replays a stored document, which
+    # records `""` for a release it does not pin -- was refused for sending no
+    # release at all (API-124).
+    if release:
         conditions.append(f"{dispatch.release_expression} = :release")
         params["release"] = release
 
