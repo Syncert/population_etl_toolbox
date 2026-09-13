@@ -277,7 +277,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-013 | None |
-| Data-layer architecture boundaries | ARC-001–ARC-006 | None |
+| Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **333 of 333** | **0 of 333** |
+| **Total** | **334 of 334** | **0 of 334** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 333-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 334-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -402,6 +402,7 @@ These static tests enforce [ADR-0001](../decisions/0001-data-layer-boundaries.md
 | ARC-004 | P0 | Contract + database / `unit integration database` | A publisher-contract change reaches the catalog | The harvest skips only when the publisher has published nothing newer *and* a digest of the content it would write is unchanged; an unrecorded digest harvests rather than skips; a changed display name, units, grains, lineage, object type, contract version, or set of keys harvests even though no fact watermark moved; a skipped harvest still counts against keys the publisher no longer emits, so retirement reaches `retired` on scheduled harvests alone; an empty or unreadable publisher counts against nothing; and an explicit force re-harvests identical content and is recorded on the harvest state row | A metric-identity, rename, units, or grain change that leaves the catalog serving what the warehouse no longer publishes while the harvest reports success, a key stranded at `stale` because only a skip ever follows it, or a provider outage retiring live metrics |
 | ARC-005 | P0 | Static / `unit` | Catalog and serving spell one metric identity | Every serving relation composes its `metric_code` from the same `source_code` its schema's `metric_publisher` publishes, so the code the catalog advertises is the code the serving relation stores; no serving relation composes a prefix no publisher publishes; and an observation-dispatch entry may declare a lineage prefix only when it is the glossary's own `<source_code>:` composition, never a rewrite into a second identity | A source publishing one metric under two identities, so a consumer that follows the catalog correctly reads an empty page, or a registry prefix quietly translating one spelling into another instead of the producers agreeing |
 | ARC-006 | P0 | Static + database / `unit integration database` | A published grain is a fact about served rows | No `metric_publisher` view assigns a string literal to `valid_geo_grains`: every source reads its grains from the relation the dispatch entry serves, so a metric nothing serves publishes no grain and a metric served at one grain publishes exactly that one. Proved end to end on FRED, whose two seeded series are refreshed into gold and only one served before the real harvest runs: the served series publishes the word its own rows carry and the unserved one publishes the empty array | A grain spelled in a publisher view -- ACS declared them from its dataset code and advertised 2,487 metric/grain pairs nothing served; FRED declared `ARRAY['NATIONAL']` for every series, true only until the first regional series is configured; BLS mapped a configured series attribute through a `CASE` whose `ELSE` made an unrecognised level national -- or a harvest that runs before the serving refresh and publishes the empty array for everything |
+| ARC-007 | P0 | Static / `unit` | The publisher's lineage and the registry's identity strategy agree | For every publishing schema with a reviewed dispatch entry, the `schema` and `relation` its `metric_publisher` declares in `physical_lineage` equal the ones that entry declares, and the lineage carries every key the entry binds -- each `identity_columns` name, or `key` for a lineage-key source; read statically from the repository's own SQL and the registry, so a source added later is checked without an edit and a schema with no dispatch entry is out of scope rather than a failure | A publication/registry drift the API is right to refuse and nothing notices until deployment: the lineage check answers a sanitized 503 on every request for that source, or a bound identity key the lineage does not publish refuses each metric with "publishes no '<field>', so its serving rows cannot be identified" |
 
 ### Airflow DAG Tests
 
