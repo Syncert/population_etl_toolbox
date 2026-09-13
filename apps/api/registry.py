@@ -969,3 +969,42 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         ),
     )
 }
+
+
+# ---------------------------------------------------------------------------
+# What a saved analysis document's own route can send
+# ---------------------------------------------------------------------------
+
+#: The route each saved-analysis kind replays through. Named here so the
+#: document's meaning and the route's parameters are checked against one
+#: another rather than each being maintained alone.
+CONFIGURATION_ROUTES: dict[str, str] = {
+    "observations": "/api/v1/observations",
+    "distribution": "/api/v1/distribution/bins",
+    "comparison": "/api/v1/comparison",
+}
+
+#: The ``AnalysisDocument`` fields each kind's route accepts, beyond the
+#: per-source `filters` the capability contract governs and the opaque
+#: `visualization` the API never reads.
+#:
+#: One model carries three kinds, so a field belonging to another kind is a
+#: field its route has nowhere to send. `/distribution/bins` and
+#: `/comparison` take neither a scope, a release, nor a reduction: a stored
+#: distribution pinned to a release would reopen as the latest publication
+#: with nothing saying the pin was dropped (API-112). The sets are asserted
+#: against the served contract, so a parameter added to one of the three
+#: routes without a line here fails.
+CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
+    "observations": frozenset(
+        {
+            "metric_code",
+            "scope",
+            "release",
+            "newest_per_geography",
+            "newest_release_per_period",
+        }
+    ),
+    "distribution": frozenset({"metric_code", "bin_count"}),
+    "comparison": frozenset({"metric_code_a", "metric_code_b"}),
+}

@@ -831,6 +831,192 @@ def test_the_document_still_forbids_an_undeclared_key(
 
 
 # ---------------------------------------------------------------------------
+# API-112 — a document carries only what its own route can send
+# ---------------------------------------------------------------------------
+
+
+def test_the_fields_each_kind_carries_are_the_ones_its_route_declares() -> None:
+    """Covers: API-112 — the per-kind field sets are read, not asserted.
+
+    `AnalysisDocument` is one model for three kinds, and the three routes do
+    not take the same parameters. The registry says which fields each kind
+    carries; this checks that claim against the served contract in both
+    directions, so a parameter added to one of the three routes without a
+    line in the registry fails rather than becoming a field nothing validates.
+    """
+    from apps.api.registry import CONFIGURATION_DOCUMENT_FIELDS, CONFIGURATION_ROUTES
+
+    document = app.openapi()
+    # `kind` names the route; `filters` is the per-source capability
+    # contract, checked elsewhere; `visualization` is opaque user content.
+    fields = set(AnalysisDocument.model_fields) - {"kind", "filters", "visualization"}
+    assert fields, "parsing broke: the document declares no request fields"
+
+    assert set(CONFIGURATION_ROUTES) == set(CONFIGURATION_DOCUMENT_FIELDS)
+    for kind, path in CONFIGURATION_ROUTES.items():
+        operation = document["paths"][path]["get"]
+        declared = {
+            parameter["name"]
+            for parameter in operation.get("parameters") or []
+            if parameter.get("in") == "query"
+        }
+        credited = CONFIGURATION_DOCUMENT_FIELDS[kind]
+        assert credited <= declared, (
+            f"{path} declares no {sorted(credited - declared)}, which the "
+            f"registry says a {kind} configuration carries"
+        )
+        withheld = (fields - credited) & declared
+        assert not withheld, (
+            f"{path} accepts {sorted(withheld)}, which the registry withholds "
+            f"from a {kind} configuration: a storable field nothing validates"
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "refused"),
+    [
+        # A release pinned on a kind whose route has no release to send it
+        # to: the reader saved "as released in 2022" and would reopen to the
+        # latest publication, told nothing.
+        (
+            {
+                "kind": "distribution",
+                "scope": "as_released",
+                "release": "2022-01-01",
+            },
+            ("release", "scope"),
+        ),
+        (
+            {"kind": "distribution", "newest_per_geography": True},
+            ("newest_per_geography",),
+        ),
+        (
+            {
+                "kind": "comparison",
+                "metric_code": None,
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "FRED:UNRATE",
+                "bin_count": 5,
+            },
+            ("bin_count",),
+        ),
+        # The pair belongs to the comparison route alone; an observations
+        # document carrying one stores a second intent nothing replays.
+        ({"metric_code_a": "FRED:UNRATE"}, ("metric_code_a",)),
+        ({"bin_count": 7}, ("bin_count",)),
+    ],
+)
+def test_a_field_the_route_cannot_send_is_not_stored(
+    accounts, monkeypatch: pytest.MonkeyPatch, overrides: dict, refused: tuple
+) -> None:
+    """Covers: API-112 — an intent the API cannot honour is not stored.
+
+    The document's own docstring promises a stored configuration "can never
+    encode a request the API would refuse". This is the case that is worse:
+    not a request the API refuses, but one it accepted and could not replay.
+    `/distribution/bins` and `/comparison` take neither a scope, a release
+    nor a reduction, so those values were stored, reported `valid: true`
+    every time they were read, and dropped silently on the way back to the
+    route.
+
+    The asymmetry was the tell: `extra="forbid"` refused a field the API had
+    never heard of and accepted one it knew its route could not use.
+    """
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "cross-kind", "document": _document(**overrides)},
+    )
+
+    assert response.status_code == 422, response.json()
+    detail = response.json()["detail"]
+    for name in refused:
+        assert name in detail, detail
+    # The refusal says where the value could not have gone, and what the
+    # kind does carry, so the reader can fix the document rather than guess.
+    assert overrides.get("kind", "observations") in detail
+    assert "has no such parameter" in detail
+
+
+@pytest.mark.parametrize(
+    "kind_fields",
+    [
+        {"kind": "distribution", "bin_count": 9},
+        {"kind": "distribution"},
+        {
+            "kind": "comparison",
+            "metric_code": None,
+            "metric_code_a": "FRED:UNRATE",
+            "metric_code_b": "FRED:UNRATE",
+        },
+        {"scope": "as_released", "release": "2022-01-01"},
+        {"scope": "latest", "newest_per_geography": True},
+    ],
+)
+def test_a_field_the_kind_does_carry_is_stored_as_it_is(
+    accounts, monkeypatch: pytest.MonkeyPatch, kind_fields: dict
+) -> None:
+    """Covers: API-112 — the refusal is narrow.
+
+    A field left at its default changes no request, so it is never a refusal:
+    every kind's document spells `scope`, `release` and both reductions in
+    JSONB whether or not its route can use them, and a document written
+    before this check existed must keep validating exactly as it did.
+    """
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "carried", "document": _document(**kind_fields)},
+    )
+
+    assert response.status_code == 201, response.json()
+    stored = response.json()["document"]
+    for name, value in kind_fields.items():
+        assert stored[name] == value
+    assert response.json()["validation"] == {"valid": True, "reason": None}
+
+
+def test_a_stored_cross_kind_field_is_reported_on_read_not_repaired(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-112 — a document already stored is stated, never rewritten.
+
+    A configuration written before this check keeps its content: the read
+    reports it invalid with the reason, which is the same answer this API
+    gives a configuration whose metric was retired. Repairing it would
+    substitute the API's guess for the reader's intent -- and the guess here
+    would be either "you meant the latest publication" or "you meant a
+    different kind", which are different analyses.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "written-before", "document": _document(kind="distribution")},
+    )
+    configuration_id = created.json()["configuration_id"]
+    assert created.json()["validation"]["valid"] is True
+
+    # What such a row looks like in storage: a pin the route never took.
+    storage.rows[0]["document"]["scope"] = "as_released"
+    storage.rows[0]["document"]["release"] = "2022-01-01"
+
+    read = client.get(
+        f"/api/v1/analysis-configurations/{configuration_id}", headers=_auth()
+    )
+    assert read.status_code == 200, "the reader's content is still readable"
+    payload = read.json()
+    assert payload["validation"]["valid"] is False
+    assert "release" in payload["validation"]["reason"]
+    assert payload["document"]["release"] == "2022-01-01", (
+        "the document is returned verbatim, never repaired"
+    )
+
+
+# ---------------------------------------------------------------------------
 # API-091 — a stored filter value the live route would refuse
 # ---------------------------------------------------------------------------
 

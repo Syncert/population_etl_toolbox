@@ -424,6 +424,17 @@ Authenticated, user-owned storage — see ADR-0003.
 - Documents are validated on write against the same capability and
   compatibility contracts above, so a saved configuration cannot encode a
   request the API would refuse.
+- **A document carries only its own kind's fields.** One shape serves three
+  kinds, and the three routes do not take the same parameters: an
+  `observations` document carries `metric_code`, `scope`, `release` and the
+  two reductions; a `distribution` document carries `metric_code` and
+  `bin_count`; a `comparison` document carries `metric_code_a` and
+  `metric_code_b`. A field belonging to another kind is refused rather than
+  stored, because `/distribution/bins` and `/comparison` have no scope,
+  release or reduction to send it to — a distribution saved "as released in
+  2022" would reopen as the latest publication with nothing saying the pin
+  was dropped. A field left at its default is not a refusal: it changes no
+  request, so a document that simply spells `scope: "latest"` is unaffected.
 - `filters` maps a filter name to **one value**, the value the route would
   receive as a query parameter. An array, an object, or a null is refused:
   these parameters are single-valued, so a document naming two cannot replay

@@ -27,7 +27,11 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.registry import (
+    CONFIGURATION_DOCUMENT_FIELDS,
+    CONFIGURATION_ROUTES,
+    OBSERVATION_DISPATCH,
+)
 from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
 from apps.api.schemas import (
     AnalysisDocument,
@@ -42,6 +46,11 @@ from apps.api.services.neutral_observations_service import resolve_metric
 #: Filters every source accepts on the analysis routes, beyond its declared
 #: per-source filter set.
 _ANALYSIS_UNIVERSAL_FILTERS = frozenset({"geo_level", "state_fips"})
+
+#: Document fields that belong to no single kind: the kind itself, the
+#: per-source `filters` the capability contract governs, and the opaque
+#: `visualization` the API stores verbatim and never reads.
+_DOCUMENT_FIELDS_EVERY_KIND_CARRIES = frozenset({"kind", "filters", "visualization"})
 
 
 class ConfigurationInvalid(ValueError):
@@ -111,9 +120,42 @@ def _require_declared_filters(metric, filters: dict[str, Any], allowed_extra) ->
     return dispatch
 
 
+def _require_fields_the_route_can_send(document: AnalysisDocument) -> None:
+    """Refuse a value the document's own kind has nowhere to send.
+
+    One model carries three kinds, and the three routes do not take the same
+    parameters: `/distribution/bins` and `/comparison` accept neither a
+    scope, a release, nor a reduction. A stored distribution pinned to a
+    release is not a request the API would refuse -- it is worse, an intent
+    the API accepts and then cannot honour, reopening as the latest
+    publication with nothing saying the pin was dropped, and reporting
+    `valid: true` every time it is read (API-112).
+
+    A field left at its default is never a refusal: it changes no request, so
+    a document written before this existed -- or one that spells
+    ``scope: "latest"`` outright -- validates exactly as it did.
+    """
+    allowed = CONFIGURATION_DOCUMENT_FIELDS[document.kind]
+    carried = sorted(
+        name
+        for name, field in type(document).model_fields.items()
+        if name not in allowed
+        and name not in _DOCUMENT_FIELDS_EVERY_KIND_CARRIES
+        and getattr(document, name) != field.default
+    )
+    if carried:
+        raise ConfigurationInvalid(
+            f"a configuration of kind '{document.kind}' cannot carry "
+            f"{', '.join(carried)}: {CONFIGURATION_ROUTES[document.kind]} has "
+            f"no such parameter, so the value could not be replayed. This "
+            f"kind carries: {', '.join(sorted(allowed))}"
+        )
+
+
 def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
     """Raise ``ConfigurationInvalid`` unless the live contracts accept it."""
     filters = dict(document.filters or {})
+    _require_fields_the_route_can_send(document)
 
     if document.kind == "observations":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
