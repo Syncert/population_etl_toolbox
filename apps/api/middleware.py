@@ -76,6 +76,19 @@ def build_cache_targets(routers) -> CacheTargets:
     return CacheTargets(frozenset(exact), tuple(sorted(parameterized)))
 
 
+#: The response headers every response this API serves carries, declared once.
+#: Read by the middleware below and by the failure `apps.api.telemetry`
+#: answers when nothing else caught the exception -- a response the middleware
+#: cannot reach, because it is created outside it. Restating them there would
+#: be a second list to keep in step (API-088).
+SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+    (b"cross-origin-resource-policy", b"same-site"),
+)
+
+
 class SecurityHeadersMiddleware:
     def __init__(self, app) -> None:
         self.app = app
@@ -90,17 +103,7 @@ class SecurityHeadersMiddleware:
         async def send_with_headers(message: Message) -> None:
             if message.get("type") == "http.response.start":
                 headers = list(message.get("headers", []))
-                headers.extend(
-                    [
-                        (b"x-content-type-options", b"nosniff"),
-                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
-                        (
-                            b"permissions-policy",
-                            b"camera=(), microphone=(), geolocation=()",
-                        ),
-                        (b"cross-origin-resource-policy", b"same-site"),
-                    ]
-                )
+                headers.extend(SECURITY_HEADERS)
                 message["headers"] = headers
             await send(message)
 

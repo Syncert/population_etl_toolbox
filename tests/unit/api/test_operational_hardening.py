@@ -43,7 +43,8 @@ from apps.api.freshness import (
 from apps.api.main import PUBLIC_CACHE_TARGETS, app, contract_fingerprint, create_app
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
 from apps.api.ratelimit import RATE_LIMITED_DETAIL, RateLimitMiddleware
-from apps.api.telemetry import RequestTelemetryMiddleware
+from apps.api.middleware import SECURITY_HEADERS
+from apps.api.telemetry import INTERNAL_FAILURE_DETAIL, RequestTelemetryMiddleware
 from data_ingestion_toolbox.config import Settings
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -631,3 +632,130 @@ def test_an_empty_harvest_state_still_answers() -> None:
     """Covers: API-085 — nothing published is a state, and a cacheable one."""
     assert publication_epoch([]) == NEVER_PUBLISHED
     assert publication_epoch([]) != publication_epoch([_state()])
+
+
+# ---------------------------------------------------------------------------
+# API-088 — an unhandled failure is answered like every other failure
+# ---------------------------------------------------------------------------
+
+
+async def _raising_app(scope, receive, send):
+    """The production arrangement: telemetry sees the exception first.
+
+    `Starlette(...)` builds its own `ServerErrorMiddleware` inside itself, so
+    wrapping one would put this middleware *outside* that boundary -- the
+    reverse of how `create_app` mounts it, where `add_middleware` leaves
+    telemetry inside Starlette's error boundary and therefore the first thing
+    an escaping exception meets. A bare ASGI app models that.
+    """
+    raise RuntimeError("password=hunter2 in the connection string")
+
+
+def _raising_telemetry_app() -> TestClient:
+    return TestClient(
+        RequestTelemetryMiddleware(_raising_app), raise_server_exceptions=False
+    )
+
+
+def _completion_line(caplog: pytest.LogCaptureFixture) -> str:
+    """The one structured completion line, not the failure line beside it."""
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("api_request ")
+    ]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+def test_an_unhandled_failure_carries_its_correlation_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Covers: API-088 — the id reaches the one caller who needs it.
+
+    Starlette builds `ServerErrorMiddleware` outside every middleware the
+    application adds, so the 500 that answered an unhandled exception never
+    passed through this one's `send`: the response carried no `X-Request-ID`,
+    and the completion line reported `status=0`. The id existed, and was in
+    the log, and the only person who could not see it was the one opening a
+    ticket about the failure.
+    """
+    client = _raising_telemetry_app()
+    with caplog.at_level(logging.INFO, logger="apps.api.request"):
+        response = client.get(
+            "/api/v1/catalog/metrics", headers={"x-request-id": "trace-500"}
+        )
+
+    assert response.status_code == 500
+    assert response.headers["x-request-id"] == "trace-500"
+
+    line = _completion_line(caplog)
+    assert "status=500" in line, line
+    assert "status=0" not in line, line
+    assert "request_id=trace-500" in line
+
+
+def test_an_unhandled_failure_answers_the_sanitized_shape(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Covers: API-088 — a JSON detail, carrying nothing from the exception."""
+    client = _raising_telemetry_app()
+    with caplog.at_level(logging.INFO, logger="apps.api.request"):
+        response = client.get("/api/v1/catalog/metrics")
+
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"detail": INTERNAL_FAILURE_DETAIL}
+    # Nothing the exception said reaches the caller.
+    assert "hunter2" not in response.text
+    assert "RuntimeError" not in response.text
+
+
+def test_an_unhandled_failure_still_reaches_the_operator(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Covers: API-088 — answering the caller does not hide the stack.
+
+    A log search from the caller's own id must reach the traceback, or the
+    sanitized body would have cost the operator the failure.
+    """
+    client = _raising_telemetry_app()
+    with caplog.at_level(logging.ERROR, logger="apps.api.request"):
+        client.get("/api/v1/catalog/metrics", headers={"x-request-id": "trace-501"})
+
+    failures = [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert failures, "the exception must be logged"
+    logged = failures[0]
+    assert logged.exc_info is not None, "the traceback travels with it"
+    assert "trace-501" in logged.getMessage()
+
+
+def test_a_request_that_does_not_raise_is_unchanged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Covers: API-088 — the success path keeps every byte it had."""
+    client = _telemetry_app()
+    with caplog.at_level(logging.INFO, logger="apps.api.request"):
+        response = client.get("/api/v1/catalog/metrics")
+
+    assert response.status_code == 200
+    assert response.content == b"ok"
+    assert response.headers["x-cache"] == "HIT"
+    assert len(response.headers["x-request-id"]) == 32
+    (record,) = [r for r in caplog.records if "api_request" in r.getMessage()]
+    assert "status=200" in record.getMessage()
+
+
+def test_an_unhandled_failure_carries_the_declared_security_headers() -> None:
+    """Covers: API-088 — answered like every other response, headers included.
+
+    `SecurityHeadersMiddleware` sits inside this one, so the response it
+    synthesizes is the single response that middleware cannot reach. The
+    header set is read from where it is declared rather than restated, so the
+    two cannot drift.
+    """
+    client = _raising_telemetry_app()
+    response = client.get("/api/v1/catalog/metrics")
+
+    assert response.status_code == 500
+    for name, value in SECURITY_HEADERS:
+        assert response.headers[name.decode()] == value.decode()

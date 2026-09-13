@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-087 | None |
+| API | API-001–API-088 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-050 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **324 of 324** | **0 of 324** |
+| **Total** | **325 of 325** | **0 of 325** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 324-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 325-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -611,6 +611,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-085 | P0 | Service / `unit api` | The cache epoch rotates when the published state changes | The epoch is a digest over every source's recorded publication state -- publication time, content fingerprint, and source watermark -- so it changes when any of them changes and stays put when none do; a source republishing behind another's declared time still rotates it, the row order it is read in does not, an empty harvest state answers `never-published`, and the token stays a short opaque hex string nothing can read a date out of | A republication that changes what a publisher *says* without moving its declared publication time -- the case migration 016 gave the harvest guard a content fingerprint for -- serving the retired identities from cache for a whole TTL, reported as fresh |
 | API-086 | P0 | Contract / `unit api` | The durable fallback picks a geography's newest row, not any of them | `/observations/latest`'s as-published fallback ranks each geography on a total order over the union -- newest period, then the published release identity the view is already declared to be keyed by (`as_of_date`, `dataset_code` ascending so `acs1` precedes `acs5`, `vintage_year`), with `NULLS LAST` so a row recording no release identity never outranks one that does -- and that order is the module's own declared paging order read for recency, not a restatement of the three refresh procedures' rules; paging, projection, filters, and the count are unchanged | An ACS metric whose newest period is published under two datasets and several vintages answering whichever row the plan produced, so two identical requests return two different published values for a county and neither is reported as a choice |
 | API-087 | P0 | Service / `unit api` | A comparison says how much of each side it could not pair | `/comparison` reports `geographies_a` and `geographies_b` -- how many geographies each reduced side published under the request's own filters -- beside the `total` its inner join paired, all three measured in one statement over one evaluation of the two reductions so they describe one reading; `total` keeps its meaning as the rows the request can page, a comparison that pairs everything reports all three equal, and the addition is additive under ADR-0002 with the reviewed snapshot regenerated | A county comparison of a measure covering 3,143 counties against one covering 500 answering `total: 500` with nothing saying what it is an intersection of, so the response reads as "500 counties" and 2,643 dropped geographies are invisible |
+| API-088 | P0 | Service / `unit api` | An unhandled failure is answered like every other failure | A request whose handler raises answers 500 with the correlation id the completion line carries, a sanitized JSON `detail` body carrying nothing from the exception, and the declared security headers read from where they are declared rather than restated; the completion line reports `status=500` instead of `status=0`, the traceback is logged server-side under the same correlation id so a search from the caller's id reaches the stack, and a request that does not raise keeps every header, byte, and log field it had | The one response a caller opens a ticket about carrying no correlation id, in Starlette's plain-text default where every other failure is JSON, while the operational signal reports it as `status=0` so an error-rate query on `status>=500` misses exactly the errors it is for |
 
 ### Frontend Tests
 
