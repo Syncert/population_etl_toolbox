@@ -437,3 +437,92 @@ def test_the_guide_describes_both_shapes_of_a_refused_request() -> None:
             f"the guide's Errors section does not name the `{key}` a client "
             "must read on a validation refusal"
         )
+
+
+#: Every name a served parameter gives the geography grain. `geo_level` is
+#: the neutral one; the two source-scoped routes keep their providers' own
+#: spellings, which is what let them drift (API-116).
+_GRAIN_PARAMETERS = ("geo_level", "geo_type", "agg_level_desc")
+
+
+class _EmptyWarehouse:
+    """Answers every read with nothing, so only validation can refuse."""
+
+    def execute(self, query, params=None):  # noqa: ANN001, ANN201
+        class _Result:
+            def mappings(self):
+                return self
+
+            def all(self):
+                return []
+
+            def first(self):
+                return None
+
+            def scalar(self):
+                return 0
+
+        return _Result()
+
+
+def test_every_parameter_that_carries_a_grain_takes_the_vocabulary() -> None:
+    """Covers: API-116 — one vocabulary, whatever a route calls the parameter.
+
+    The guide promises "a grain read from the catalog can be sent straight
+    back … The filter is case-insensitive, and it accepts `NATION` as an
+    alias for `NATIONAL`". API-092 and API-094 swept `geo_level`. Two routes
+    take the grain under another name -- CDC's `geo_type`, USDA NASS's
+    `agg_level_desc` -- and were not swept, so the catalog's own `COUNTY`
+    was a 422 on one and `NATION` on both.
+
+    Read off the served document: every route declaring any of the three
+    names is sent the lowercase alias, and none may refuse it *for that
+    parameter*. A 404 for an unpublished metric is fine; a 422 naming the
+    grain is the defect.
+    """
+    from apps.api.dependencies import get_db_session_dep
+
+    document = app.openapi()
+    served: dict[str, list[str]] = {}
+    for path, operations in document["paths"].items():
+        get = operations.get("get")
+        if get is None:
+            continue
+        names = {
+            parameter["name"]
+            for parameter in get.get("parameters") or []
+            if parameter.get("in") == "query"
+        }
+        required = tuple(
+            parameter["name"]
+            for parameter in get.get("parameters") or []
+            if parameter.get("in") == "query" and parameter.get("required")
+        )
+        for name in sorted(names & set(_GRAIN_PARAMETERS)):
+            served.setdefault(name, []).append((path, required))
+
+    assert set(served) == set(_GRAIN_PARAMETERS), (
+        f"the served contract declares {sorted(served)}; a grain parameter "
+        "renamed or retired must be reflected here"
+    )
+
+    app.dependency_overrides[get_db_session_dep] = lambda: _EmptyWarehouse()
+    try:
+        client = TestClient(app)
+        for parameter, entries in sorted(served.items()):
+            for path, required in sorted(entries):
+                # Only what the route itself declares: a NASS route refuses
+                # an unknown parameter by naming the ones it accepts, and
+                # `agg_level_desc` appears in that list.
+                params = {parameter: "nation"}
+                for name in required:
+                    params.setdefault(name, "FRED:UNRATE")
+                response = client.get(path, params=params)
+                if response.status_code != 422:
+                    continue
+                detail = str(response.json().get("detail"))
+                assert parameter not in detail, (
+                    f"{path} refused the alias 'nation' for {parameter}: {detail}"
+                )
+    finally:
+        app.dependency_overrides.pop(get_db_session_dep, None)

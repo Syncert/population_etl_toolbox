@@ -22,8 +22,12 @@ from sqlalchemy.sql.elements import TextClause
 LATEST_RELEASE_RELATION = "gold_cdc.latest_release_observation"
 RELEASE_HISTORY_RELATION = "gold_cdc.health_observation"
 
-# Values a consumer may filter on. The router validates before the service runs
-# so an unknown value is a 422 rather than a silently empty result.
+# The grains this relation carries, in CDC's own words. The *request*
+# vocabulary is these words through `gold_glossary.geo_grain`, which the
+# router derives rather than writing a second list: `nation` is `NATIONAL`
+# to a consumer, and the catalog publishes it that way (API-116). The router
+# validates before the service runs, so an unknown grain is a 422 rather
+# than a silently empty result.
 GEOGRAPHY_TYPES: tuple[str, ...] = ("nation", "state", "county")
 ADJUSTMENT_STATUSES: tuple[str, ...] = ("crude", "age_adjusted", "source_specific")
 
@@ -107,7 +111,12 @@ def build_cdc_observation_queries(
         clauses.append("geo_id = :geo_id")
         params["geo_id"] = geo_id
     if geo_type:
-        clauses.append("geo_type = :geo_type")
+        # Matched through the one warehouse mapping (migration 018), so the
+        # request speaks the published grain vocabulary -- `COUNTY`, and the
+        # `NATION`/`US` aliases the guide guarantees -- while the relation
+        # keeps CDC's own lowercase `geo_type`. Comparing the column
+        # directly made the catalog's own word a 422 (API-116).
+        clauses.append("gold_glossary.geo_grain(geo_type) = :geo_type")
         params["geo_type"] = geo_type
     if year_from is not None:
         clauses.append("period_end >= :year_from")

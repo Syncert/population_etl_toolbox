@@ -232,7 +232,8 @@ def test_cdc_filters_reach_the_query_as_bound_parameters() -> None:
             "measure_id": "DIABETES",
             "value_type_id": "CrdPrv",
             "geo_id": "state:48|county:301",
-            "geo_type": "county",
+            # The catalog's own word, which this route used to refuse.
+            "geo_type": "COUNTY",
             "year_from": 2021,
             "year_to": 2023,
             "stratum_id": "c" * 64,
@@ -249,7 +250,10 @@ def test_cdc_filters_reach_the_query_as_bound_parameters() -> None:
         "measure_id": "DIABETES",
         "value_type_id": "CrdPrv",
         "geo_id": "state:48|county:301",
-        "geo_type": "county",
+        # Bound as the vocabulary word and matched through
+        # `gold_glossary.geo_grain(geo_type)`, so the relation keeps CDC's
+        # own lowercase word without the request having to know it (API-116).
+        "geo_type": "COUNTY",
         "year_from": 2021,
         "year_to": 2023,
         "stratum_id": "c" * 64,
@@ -342,7 +346,7 @@ def test_cdc_empty_result_returns_the_stable_empty_contract() -> None:
         ),
         (
             {"geo_type": "tract"},
-            "geo_type must be one of: nation, state, county",
+            "geo_type must be one of: NATIONAL, STATE, COUNTY",
         ),
         (
             {"adjustment": "seasonally_adjusted"},
@@ -402,3 +406,47 @@ def test_cdc_database_failure_returns_a_sanitized_503() -> None:
     assert response.status_code == 503
     assert response.json() == {"detail": "Database service is temporarily unavailable."}
     assert "cdc-warehouse-secret" not in response.text
+
+
+# ---------------------------------------------------------------------------
+# API-116 — the grain parameter speaks the published vocabulary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("requested", "bound"),
+    [
+        ("COUNTY", "COUNTY"),
+        ("county", "COUNTY"),
+        ("  State ", "STATE"),
+        ("NATIONAL", "NATIONAL"),
+        # `nation` is CDC's own relation word and `NATION` is the alias the
+        # guide guarantees; both are the national grain to a consumer.
+        ("nation", "NATIONAL"),
+        ("US", "NATIONAL"),
+    ],
+)
+def test_the_grain_parameter_takes_the_vocabulary_in_any_case(
+    requested: str, bound: str
+) -> None:
+    """Covers: API-116 — `geo_type` is the grain under CDC's own name.
+
+    API-092 and API-094 made every `geo_level` parameter normalise its
+    value. This route takes the grain under another name and was not swept:
+    it compared the request to CDC's lowercase relation words by exact
+    match, so the catalog's own `COUNTY` was a 422, and so was `NATION`.
+
+    The relation keeps its own word; the match now goes through
+    `gold_glossary.geo_grain(geo_type)`, the one warehouse mapping, so the
+    request never has to know it.
+    """
+    session = _RecordingSession([_places_row()], total=1)
+    response = _client(session).get(
+        "/api/v1/cdc/observations", params={"geo_type": requested}
+    )
+
+    assert response.status_code == 200, response.text
+    assert session.list_params["geo_type"] == bound
+    assert "gold_glossary.geo_grain(geo_type)" in session.list_sql, (
+        "the grain is matched through the warehouse mapping, not the raw column"
+    )

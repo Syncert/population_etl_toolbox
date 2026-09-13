@@ -418,3 +418,59 @@ def test_nass_list_routes_page_a_total_order(path: str) -> None:
     rendered = " ".join(listing[0].split())
     order = rendered.split("ORDER BY", 1)[1].split("LIMIT", 1)[0].strip()
     assert order.endswith(column), order
+
+
+# ---------------------------------------------------------------------------
+# API-116 — the grain parameter speaks the published vocabulary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("requested", "bound"),
+    [
+        ("COUNTY", "COUNTY"),
+        # The catalog's word in another case. A grain read from the catalog
+        # can be sent straight back, which is what the guide promises.
+        ("county", "COUNTY"),
+        ("  State  ", "STATE"),
+        ("NATIONAL", "NATIONAL"),
+        # The two aliases the guide guarantees for the national grain.
+        ("NATION", "NATIONAL"),
+        ("us", "NATIONAL"),
+    ],
+)
+def test_the_grain_parameter_takes_the_vocabulary_in_any_case(
+    requested: str, bound: str
+) -> None:
+    """Covers: API-116 — `agg_level_desc` is the grain under NASS's own name.
+
+    API-092 and API-094 made every `geo_level` parameter normalise its value.
+    This route takes the grain under another name and was not swept: it
+    compared the request to the upper-case registry words by exact match, so
+    `county` was a 422 and so was `NATION`, which the guide guarantees.
+    """
+    session = _RecordingSession()
+    response = _client(session).get(
+        "/api/v1/usda-nass/observations", params={"agg_level_desc": requested}
+    )
+
+    assert response.status_code == 200, response.text
+    bound_values = {
+        parameters.get("agg_level_desc")
+        for parameters in session.parameters
+        if "agg_level_desc" in parameters
+    }
+    assert bound_values == {bound}
+
+
+def test_an_unknown_grain_is_refused_with_the_vocabulary() -> None:
+    """Covers: API-116 — the refusal names the words, not NASS's own list."""
+    session = _RecordingSession()
+    response = _client(session).get(
+        "/api/v1/usda-nass/observations", params={"agg_level_desc": "WATERSHED"}
+    )
+
+    assert response.status_code == 422
+    detail = str(response.json())
+    assert "NATIONAL, STATE, COUNTY" in detail
+    assert session.statements == []

@@ -15,6 +15,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from apps.api.registry import normalize_geo_level
 from apps.api.schemas import (
     NassMeasureListResponse,
     NassMeasureRow,
@@ -73,6 +74,28 @@ class NassQueryError(ValueError):
     """A caller filter cannot produce a well-defined USDA NASS query."""
 
 
+def _validated_grain(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested `agg_level_desc`, or a refusal.
+
+    The guide promises "a grain read from the catalog can be sent straight
+    back", case-insensitively and with `NATION` accepted for `NATIONAL`.
+    This parameter is the grain under NASS's own name, and it was compared
+    by exact match against the upper-case registry words -- so `county` was
+    a 422, and so was the alias the guide guarantees (API-116).
+
+    The relation stores the vocabulary word, so normalising the request is
+    the whole fix; nothing about the comparison changes.
+    """
+    if value is None:
+        return None
+    word = normalize_geo_level(value)
+    if word not in SUPPORTED_AGG_LEVELS:
+        raise NassQueryError(
+            "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
+        )
+    return word
+
+
 @dataclass
 class NassObservationFilters:
     """Bound, validated filter set for one USDA NASS observation query."""
@@ -104,12 +127,7 @@ class NassObservationFilters:
                 raise NassQueryError(
                     "year_start must be less than or equal to year_end"
                 )
-        if self.agg_level_desc is not None and (
-            self.agg_level_desc not in SUPPORTED_AGG_LEVELS
-        ):
-            raise NassQueryError(
-                "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
-            )
+        self.agg_level_desc = _validated_grain(self.agg_level_desc)
         if self.source_desc is not None and self.source_desc not in {
             "SURVEY",
             "CENSUS",
@@ -171,12 +189,7 @@ class NassSeriesFilters:
     )
 
     def __post_init__(self) -> None:
-        if self.agg_level_desc is not None and (
-            self.agg_level_desc not in SUPPORTED_AGG_LEVELS
-        ):
-            raise NassQueryError(
-                "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
-            )
+        self.agg_level_desc = _validated_grain(self.agg_level_desc)
 
     def clauses(self) -> tuple[list[str], dict[str, Any]]:
         conditions: list[str] = []

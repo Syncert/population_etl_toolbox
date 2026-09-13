@@ -60,10 +60,41 @@ private vocabularies.
 
 - Renaming the parameters. The source-scoped routes keep their names.
 
+## What changed
+
+- **CDC.** The router normalises `geo_type` and validates it against the
+  grains the relation carries *through the normaliser* --
+  `tuple(normalize_geo_level(word) for word in GEOGRAPHY_TYPES)` is
+  `NATIONAL, STATE, COUNTY` -- so the request vocabulary is derived from
+  CDC's own words rather than written a second time. The filter became
+  `gold_glossary.geo_grain(geo_type) = :geo_type`, migration 018's one
+  mapping, so the relation keeps its lowercase word and the request does not
+  have to know it. Translating `NATIONAL` back to `nation` in the client
+  would have been the inverse of a warehouse function written in Python.
+- **USDA NASS.** `agg_level_desc` normalises in both query shapes through
+  one helper. The relation already stores the vocabulary word, so
+  normalising the request is the whole fix.
+- Both refusals name the vocabulary words.
+- The guide's grain section names the two parameters and says the names stay
+  as they are.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `pytest tests/unit/api` — **454 passed**.
+- The two pinned tests are corrected: CDC's bound-parameter node now sends
+  the catalog's `COUNTY` and asserts both the bound word and the mapping in
+  the statement; its refusal message names the vocabulary.
+- **The sweep catches both routes.** Restoring either exact-match validation
+  fails `test_every_parameter_that_carries_a_grain_takes_the_vocabulary` by
+  name and path: `/api/v1/usda-nass/observations refused the alias 'nation'
+  for agg_level_desc`. Both files were restored byte-for-byte afterwards.
+- The sweep sends only what each route declares: NASS refuses an unknown
+  parameter by listing the ones it accepts, and `agg_level_desc` appears in
+  that list, so a blanket `metric_code` made the assertion trip on its own
+  error message.
+- `ruff check .` / `ruff format --check .` — clean.
+- `python -m tests.support.catalog_evidence` renders API-116 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

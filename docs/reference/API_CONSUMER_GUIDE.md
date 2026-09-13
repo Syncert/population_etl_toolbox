@@ -261,6 +261,14 @@ vocabulary was unified; a saved configuration or a shared link holding it
 keeps answering. Every source that publishes grains declares the `geo_level`
 filter, including FBI UCR.
 
+**Two routes take the grain under their provider's own name, and speak the
+same vocabulary.** `/cdc/observations` calls it `geo_type` and
+`/usda-nass/observations` calls it `agg_level_desc`; both accept the
+vocabulary words case-insensitively with the same `NATION`/`US` aliases, and
+both refuse an unknown grain by naming the words they publish. The parameter
+names stay as they are — they are the providers' own — but you never have to
+learn a second vocabulary to use them.
+
 The vocabulary is one warehouse function, `gold_glossary.geo_grain(text)`,
 which the publisher views and the serving routes both go through; a grain
 in the catalog is derived from the rows a source actually serves, never
