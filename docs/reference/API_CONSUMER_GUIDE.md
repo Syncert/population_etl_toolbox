@@ -260,10 +260,14 @@ neither repeat a row nor skip one:
 
 | Read | Ordered by |
 | --- | --- |
+| `/observations` | the source's own declared key for the scope you asked: its latest order for `scope=latest`, its as-released order for `scope=as_released`. Both end in a column no two rows of one metric share, which is why a reduction (`newest_per_geography`, `newest_release_per_period`) picks the same row every time |
+| `/observations/releases` | the release ordering the source declares, descending, then the release identity itself — the group key, so no two rows can tie |
 | `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
 | `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
 | `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |
 | `/{source}/observations/timeseries` | `observation_date`, then the source's own remaining key (the BLS/FRED series, the Census dataset/vintage/variable, the PEP vintage and capture) |
+| `/cdc/observations` | `asset_id`, `measure_id`, `value_type_id`, `geo_id`, `period_start`, `period_end`, `stratum_id`, then `observation_sk` — the stratified grain answers several rows for one measure and geography, so the surrogate key closes the order |
+| `/usda-nass/observations` | `product_id`, `release_watermark`, `short_desc`, `geo_id`, the year, then `observation_sk` — a commodity published across several domain categories answers several rows carrying one `short_desc`, so the surrogate key closes the order |
 
 A period can hold more than one row wherever a source republishes it, so
 `observation_date` alone is not an order — pin the release with

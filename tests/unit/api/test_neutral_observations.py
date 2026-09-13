@@ -1199,3 +1199,75 @@ def test_every_dispatch_entry_declares_the_order_its_reductions_need() -> None:
         "these sources reduce their released relation on an order that can "
         f"tie: {missing_released}"
     )
+
+
+# ---------------------------------------------------------------------------
+# API-095 — the releases listing pages a total order
+# ---------------------------------------------------------------------------
+
+
+def _metric_row_for(source_code: str, dispatch) -> dict[str, Any]:
+    """A glossary row that resolves and dispatches to one source.
+
+    Built from the dispatch entry itself -- its lineage relation, its lineage
+    key, its identity columns -- so a source added to the registry is
+    exercised without an edit here.
+    """
+    lineage: dict[str, Any] = {
+        "schema": dispatch.lineage_schema,
+        "relation": dispatch.lineage_relation,
+        "key": "RELEASE_ORDER_KEY",
+    }
+    lineage.update({column: "IDENTITY" for column in dispatch.identity_columns})
+    return {
+        "metric_code": f"{source_code}:RELEASE_ORDER",
+        "source_code": source_code,
+        "metric_display_name": "Release order",
+        "units": None,
+        "physical_lineage": lineage,
+    }
+
+
+def test_every_source_lists_its_releases_in_a_total_order() -> None:
+    """Covers: API-095 — the releases listing cannot repeat or skip a release.
+
+    The guide promises every paged read a total order. This one had it only by
+    coincidence of the registry: it ordered by `MAX(release_order_expression)`
+    alone, and every dispatch entry's ordering expression happens to be its
+    release identity with a cast, so no two groups could share a value. A
+    source whose release identity is a name ordered by a date -- the obvious
+    next shape -- pages non-deterministically the moment two releases land on
+    one date.
+
+    The release identity is the `GROUP BY` key, so naming it as the tie-break
+    makes the order total by construction rather than by inspection. Swept
+    over the reviewed registry, so a source added later is covered here.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    for source_code, dispatch in sorted(OBSERVATION_DISPATCH.items()):
+        row = _metric_row_for(source_code, dispatch)
+        session = _DispatchSession(metric_row=row, rows=[], total=0)
+        client = _client_with(session)
+        try:
+            response = client.get(
+                "/api/v1/observations/releases",
+                params={"metric_code": row["metric_code"]},
+            )
+        finally:
+            _clear_overrides()
+        assert response.status_code == 200, response.text
+
+        listing = _dispatched(session)[-1]
+        order = listing.split("ORDER BY", 1)[1].split("LIMIT", 1)[0].strip()
+        assert order.startswith(f"MAX({dispatch.release_order_expression}) DESC"), (
+            f"{source_code} orders its releases by {order!r}, which does not "
+            "begin with the release ordering the dispatch declares"
+        )
+        tie_break = order.split("DESC", 1)[1].strip()
+        assert dispatch.release_expression in tie_break, (
+            f"{source_code} orders its releases by {order!r}, whose tie-break "
+            f"does not name the release identity {dispatch.release_expression!r}; "
+            "two releases sharing an ordering value could then repeat or skip "
+            "across a page boundary"
+        )

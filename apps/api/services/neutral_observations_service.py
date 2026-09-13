@@ -469,6 +469,16 @@ def list_metric_releases(
 ) -> Optional[MetricReleaseListResponse]:
     """The published releases holding one metric's observations, newest first.
 
+    Ordered by the release ordering each dispatch entry declares, then by the
+    release identity itself. The identity is the ``GROUP BY`` key, so the
+    second term makes the order total by construction: two consecutive pages
+    can neither repeat a release nor skip one whatever the first term does.
+    Ordering by the first term alone was total only by coincidence of the
+    registry -- every entry's ordering expression is its identity with a cast
+    -- and a source whose release identity is a name ordered by a date would
+    have paged non-deterministically the moment two releases shared one date
+    (API-095).
+
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
     metric = resolve_metric(db, metric_code)
@@ -494,7 +504,8 @@ def list_metric_releases(
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1
-        ORDER BY MAX({dispatch.release_order_expression}) DESC
+        ORDER BY MAX({dispatch.release_order_expression}) DESC,
+                 {dispatch.release_expression} DESC
         LIMIT :limit OFFSET :offset
         """
     )
