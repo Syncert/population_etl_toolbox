@@ -464,7 +464,14 @@ Rules are evaluated over published semantics — units, time grains, geography
 grains, aggregation characteristic, and whether the owning source has an
 aligned analysis surface. **`unknown` is not incompatible**: where a source
 publishes nothing to check (Census ACS publishes no units), the comparison is
-served and the unverified rule travels as a caveat.
+served and the unverified rule travels as a caveat, naming which of
+`metric_code_a` and `metric_code_b` published nothing.
+
+Grains are compared in the vocabulary, not by spelling: the geography rule
+reads the same five words and the same `NATION`/`US` aliases as the
+`geo_level` filter, so a catalog row carrying a word the vocabulary replaced
+shares a grain with one carrying its replacement rather than reading as a
+measure published somewhere else.
 
 Caveats also name what the comparison **cannot carry**. A comparison row
 publishes `value_a`, `value_b`, `difference` and `ratio` and no uncertainty,

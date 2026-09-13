@@ -21,11 +21,11 @@ verdict is deterministic for a given publication.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.registry import OBSERVATION_DISPATCH, normalize_geo_level
 
 STATUS_PASS = "pass"
 STATUS_FAIL = "fail"
@@ -41,6 +41,11 @@ RULE_AGGREGATION = "aggregation"
 #: Both are explicitly API-derived; the provider-published inputs travel with
 #: every row.
 COMPARISON_DERIVATIONS = ("difference", "ratio")
+
+
+def _upper(word: str) -> str:
+    """Time grains are published as one word each and have no aliases."""
+    return word.strip().upper()
 
 
 @dataclass(frozen=True)
@@ -74,9 +79,24 @@ def _units_of(metric: Mapping[str, Any]) -> Optional[str]:
     return str(units).strip()
 
 
-def _grains_of(metric: Mapping[str, Any], field: str) -> frozenset[str]:
+def _grains_of(
+    metric: Mapping[str, Any], field: str, normalize: Callable[[str], str]
+) -> frozenset[str]:
+    """One metric's published grains for ``field``, in one vocabulary.
+
+    ``normalize`` is the geography vocabulary's own function for
+    ``valid_geo_grains`` and a plain upper-case for ``valid_time_grains``,
+    whose words have no aliases. Upper-casing alone was a third local copy of
+    grain normalisation, and it disagreed with the registry: a metric whose
+    catalog row still carries `NATION` -- the word the catalog published for
+    CDC, PEP and USDA NASS before the grains were unified, which ADR-0002
+    promises keeps answering -- shared no grain with one carrying `NATIONAL`,
+    so two measures both published nationally were declared `fail`, "no
+    shared geography grains (NATION vs NATIONAL)", and the comparison route
+    refused the pair (API-126).
+    """
     grains = metric.get(field) or ()
-    return frozenset(str(grain).upper() for grain in grains if grain)
+    return frozenset(normalize(str(grain)) for grain in grains if grain)
 
 
 def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
@@ -187,12 +207,12 @@ def evaluate_comparison(
         findings.append(RuleFinding(RULE_UNITS, STATUS_UNKNOWN, reason))
         caveats.append(reason)
 
-    for rule, field, label in (
-        (RULE_TIME_GRAINS, "valid_time_grains", "time grains"),
-        (RULE_GEO_GRAINS, "valid_geo_grains", "geography grains"),
+    for rule, field, label, normalize in (
+        (RULE_TIME_GRAINS, "valid_time_grains", "time grains", _upper),
+        (RULE_GEO_GRAINS, "valid_geo_grains", "geography grains", normalize_geo_level),
     ):
-        grains_a = _grains_of(metric_a, field)
-        grains_b = _grains_of(metric_b, field)
+        grains_a = _grains_of(metric_a, field, normalize)
+        grains_b = _grains_of(metric_b, field, normalize)
         if grains_a and grains_b:
             shared = grains_a & grains_b
             if shared:
@@ -214,9 +234,20 @@ def evaluate_comparison(
                     )
                 )
         else:
+            # Named the way the units rule beside it names them: a caveat
+            # saying only that something is incomplete leaves the caller to
+            # guess which of the two measures to go and look at.
+            unpublished = " and ".join(
+                label_of
+                for label_of, grains in (
+                    ("metric_code_a", grains_a),
+                    ("metric_code_b", grains_b),
+                )
+                if not grains
+            )
             reason = (
-                f"published {label} are incomplete; {label} compatibility "
-                "cannot be verified"
+                f"{unpublished} publish no {label}; {label} compatibility "
+                "cannot be verified from the publication"
             )
             findings.append(RuleFinding(rule, STATUS_UNKNOWN, reason))
             caveats.append(reason)

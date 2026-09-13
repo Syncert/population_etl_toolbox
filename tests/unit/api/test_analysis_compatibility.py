@@ -29,6 +29,8 @@ from apps.api.services.compatibility import (
     evaluate_comparison,
 )
 
+from apps.api.registry import GEO_GRAIN_ALIASES
+
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
 
@@ -355,3 +357,75 @@ def test_a_same_source_pair_says_it_once() -> None:
     # sentence labels a distribution's bins, which derive neither.
     assert "a derived value" in published[0]
     assert "difference or a ratio" not in published[0]
+
+
+# ---------------------------------------------------------------------------
+# API-126 — one grain vocabulary decides comparability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("alias", sorted(GEO_GRAIN_ALIASES))
+def test_a_grain_the_vocabulary_replaced_is_the_grain_it_names(alias: str) -> None:
+    """Covers: API-126 — comparability reads the vocabulary, not the spelling.
+
+    The catalog published `NATION` for CDC, Census PEP and USDA NASS before
+    the grains were unified, and ADR-0002 promises a value carrying one keeps
+    answering. This policy upper-cased and compared, so a metric whose
+    catalog row still carries the old word shared no grain with one carrying
+    the new one -- and `no shared geography grains` is a `fail`, which makes
+    the comparison route refuse a pair both measures publish nationally.
+    """
+    decision = evaluate_comparison(
+        _metric(valid_geo_grains=[alias]),
+        _metric(valid_geo_grains=[GEO_GRAIN_ALIASES[alias]]),
+    )
+    finding = _finding(decision, RULE_GEO_GRAINS)
+    assert finding.status == STATUS_PASS, finding.reason
+    assert GEO_GRAIN_ALIASES[alias] in finding.reason
+    assert decision.comparable is True
+
+
+def test_the_time_grain_rule_does_not_borrow_the_geography_aliases() -> None:
+    """Covers: API-126 — each vocabulary is normalised as its own.
+
+    `US` and `NATION` are geography words. A time grain spelled one of them
+    is not a time grain, and mapping it to `NATIONAL` here would invent a
+    shared grain out of two measures that publish none.
+    """
+    decision = evaluate_comparison(
+        _metric(valid_time_grains=["NATION"]),
+        _metric(valid_time_grains=["NATIONAL"]),
+    )
+    assert _finding(decision, RULE_TIME_GRAINS).status == STATUS_FAIL
+
+
+@pytest.mark.parametrize(
+    ("field", "rule", "label"),
+    [
+        ("valid_time_grains", RULE_TIME_GRAINS, "time grains"),
+        ("valid_geo_grains", RULE_GEO_GRAINS, "geography grains"),
+    ],
+)
+def test_an_unpublished_grain_says_which_measure_did_not_publish_it(
+    field: str, rule: str, label: str
+) -> None:
+    """Covers: API-126 — an unknown names the side to go and look at.
+
+    `unknown` is not incompatibility -- the comparison is served with the
+    unverified rule as a caveat -- and the units rule beside this one already
+    names which metric published nothing. This one said only that the grains
+    were "incomplete", leaving a caller to guess which of two measures to
+    check.
+    """
+    decision = evaluate_comparison(_metric(**{field: []}), _metric())
+    finding = _finding(decision, rule)
+    assert finding.status == STATUS_UNKNOWN
+    assert finding.reason == (
+        f"metric_code_a publish no {label}; {label} compatibility cannot be "
+        f"verified from the publication"
+    )
+    assert finding.reason in decision.caveats
+    assert decision.comparable is True, "an unknown is served with a caveat"
+
+    both = evaluate_comparison(_metric(**{field: []}), _metric(**{field: None}))
+    assert _finding(both, rule).reason.startswith("metric_code_a and metric_code_b")
