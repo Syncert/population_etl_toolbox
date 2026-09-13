@@ -13,6 +13,20 @@ import type { ValueScale } from "./urlState";
 export { normalizeGeoLevel };
 
 export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
+/**
+ * A geography whose row the source sent **with** a reason for having no
+ * number, as distinct from one it sent no row for.
+ *
+ * Two different facts, and the map used to paint them the same grey under
+ * one label reading "No observation" -- which is false of the first: there
+ * is an observation, and the source said why it carries no value. CDC
+ * PLACES suppresses a small-cell estimate, USDA NASS withholds one as
+ * `(D)`, FBI UCR reports a period as not reported, and the consumer guide
+ * spends a paragraph on the distinction. A reader looking at a county map
+ * could not tell "the source withheld this" from "nobody published this"
+ * (WEB-078).
+ */
+export const CHOROPLETH_WITHHELD_COLOR = "#c8b7a6";
 export const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
 export const DEFAULT_POPULATION_VARIABLE = "B01003_001";
 
@@ -756,6 +770,7 @@ function buildLogChoroplethModel(
   joinKey: string,
   bounds: { logMin: number; logMax: number },
   missingValueLabel: string,
+  withheld: WithheldGeographies,
 ): ChoroplethModel {
   const binCount = CHOROPLETH_PALETTE.length;
   const counts = new Array<number>(binCount).fill(0);
@@ -780,10 +795,17 @@ function buildLogChoroplethModel(
             : `${formatLegendValue(edge(index))} - ${formatLegendValue(edge(index + 1))}`,
     count: counts[index],
   }));
+  legendItems.push(...withheldLegendItem(withheld));
   legendItems.push({ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel });
 
   return {
-    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    expression: [
+      "match",
+      ["to-string", ["get", joinKey]],
+      ...keyedValues,
+      ...withheldMatchPairs(withheld),
+      CHOROPLETH_FALLBACK_COLOR,
+    ],
     legendItems,
     minValue: 10 ** bounds.logMin,
     maxValue: 10 ** bounds.logMax,
@@ -791,6 +813,72 @@ function buildLogChoroplethModel(
     valueCount: keyedMap.size,
     scale: "log",
   };
+}
+
+interface WithheldGeographies {
+  /** Map keys whose row published a status instead of a number. */
+  keys: string[];
+  /** The distinct statuses those rows carried, in the source's own words. */
+  statuses: string[];
+}
+
+/**
+ * The geographies whose rows say why they carry no number.
+ *
+ * A row with neither a value nor a status is silence -- nothing to report
+ * beyond the absence the fallback colour already shows -- so it stays out of
+ * this set and out of the legend row it produces.
+ */
+function withheldGeographies(
+  observations: ObservationRow[],
+  joinKey: string,
+  plotted: Map<string, number>,
+): WithheldGeographies {
+  const keys: string[] = [];
+  const statuses: string[] = [];
+  for (const item of observations) {
+    const joinValue = observationJoinValue(item, joinKey);
+    if (!joinValue || publishedNumber(item.value) !== null) {
+      continue;
+    }
+    const status = String(item.value_status || "").trim();
+    if (!status) {
+      continue;
+    }
+    const key = String(joinValue);
+    if (plotted.has(key) || keys.includes(key)) {
+      continue;
+    }
+    keys.push(key);
+    if (!statuses.includes(status)) {
+      statuses.push(status);
+    }
+  }
+  return { keys, statuses };
+}
+
+/** The legend row for the withheld set, or nothing when there is none. */
+function withheldLegendItem(withheld: WithheldGeographies): LegendItem[] {
+  if (withheld.keys.length === 0) {
+    return [];
+  }
+  // The source's own words, so the legend says what the publisher said. A
+  // long vocabulary is trimmed rather than wrapped past the legend's width;
+  // the count is what a reader needs first either way.
+  const shown = withheld.statuses.slice(0, 3).join(", ");
+  const label = withheld.statuses.length > 3 ? `${shown}, …` : shown;
+  return [
+    {
+      color: CHOROPLETH_WITHHELD_COLOR,
+      label: `Value not published: ${label}`,
+      count: withheld.keys.length,
+    },
+  ];
+}
+
+/** `["key", colour, …]` pairs painting the withheld set its own colour. */
+function withheldMatchPairs(withheld: WithheldGeographies): string[] {
+  return withheld.keys.flatMap((key) => [key, CHOROPLETH_WITHHELD_COLOR]);
 }
 
 export function buildChoroplethModel(
@@ -826,10 +914,21 @@ export function buildChoroplethModel(
   }
 
   const values = [...keyedMap.values()];
+  const withheld = withheldGeographies(observations, joinKey, keyedMap);
   if (values.length === 0) {
+    // Nothing to scale, and still something to say: a page of rows that all
+    // carry a reason instead of a number is a published answer, not silence.
     return {
-      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
+      expression: [
+        "match",
+        ["to-string", ["get", joinKey]],
+        ...withheldMatchPairs(withheld),
+        CHOROPLETH_FALLBACK_COLOR,
+      ],
+      legendItems: [
+        ...withheldLegendItem(withheld),
+        { color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel },
+      ],
       minValue: null,
       maxValue: null,
       usesDistribution: false,
@@ -840,7 +939,13 @@ export function buildChoroplethModel(
 
   const logBounds = valueScale === "log" ? logRange(values) : null;
   if (logBounds) {
-    return buildLogChoroplethModel(keyedMap, joinKey, logBounds, missingValueLabel);
+    return buildLogChoroplethModel(
+      keyedMap,
+      joinKey,
+      logBounds,
+      missingValueLabel,
+      withheld,
+    );
   }
 
   const apiBins = distributionBins(distribution);
@@ -891,13 +996,20 @@ export function buildChoroplethModel(
     };
   });
 
+  legendItems.push(...withheldLegendItem(withheld));
   legendItems.push({
     color: CHOROPLETH_FALLBACK_COLOR,
     label: missingValueLabel,
   });
 
   return {
-    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    expression: [
+      "match",
+      ["to-string", ["get", joinKey]],
+      ...keyedValues,
+      ...withheldMatchPairs(withheld),
+      CHOROPLETH_FALLBACK_COLOR,
+    ],
     legendItems,
     minValue,
     maxValue,

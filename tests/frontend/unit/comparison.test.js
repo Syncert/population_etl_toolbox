@@ -450,7 +450,7 @@ describe("aligned presentations read the same rows without inventing values", ()
     // A geography the API could not derive stays null, so the shared
     // choropleth model leaves it uncoloured rather than colouring a zero.
     expect(rows[1].value).toBeNull();
-    expect(rows[1].value_status).toBe("not published on both sides");
+    expect(rows[1].value_status).toBe("not on both sides");
 
     // A field the response never named as derived is not mappable: colouring
     // by a published input would present one side as the comparison.

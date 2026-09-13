@@ -14,6 +14,9 @@ import {
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
 import {
+  CHOROPLETH_FALLBACK_COLOR,
+  CHOROPLETH_PALETTE,
+  CHOROPLETH_WITHHELD_COLOR,
   boundsOfFeatures,
   buildExtrusionHeightExpression,
   formatObservationValue,
@@ -127,12 +130,67 @@ describe("a value the source did not publish is never a zero", () => {
   test("the choropleth colours only the geography that published a number", () => {
     const model = buildChoroplethModel(suppressed, "geo_id");
     expect(model.valueCount).toBe(1);
-    // A suppressed geography must not appear in the colour expression at
-    // all; leaving it out is what makes the map render it as no-data.
-    expect(JSON.stringify(model.expression)).not.toContain("county:001");
-    expect(JSON.stringify(model.expression)).not.toContain("county:003");
-    // Its absence must not drag the scale to zero either.
+    // A geography that published no number carries no palette colour, which
+    // is what keeps a withheld value from reading as a quantity. It used to
+    // be left out of the expression entirely; WEB-078 paints it a colour
+    // that is explicitly not one of the data colours instead, because "not
+    // in the expression" made a withheld value and an absent row the same
+    // grey under one label saying "No observation".
+    const painted = JSON.parse(JSON.stringify(model.expression));
+    const colorFor = (key) => painted[painted.indexOf(key) + 1];
+    expect(CHOROPLETH_PALETTE).not.toContain(colorFor("state:55|county:001"));
+    expect(CHOROPLETH_PALETTE).not.toContain(colorFor("state:55|county:003"));
+    expect(colorFor("state:55|county:001")).toBe(CHOROPLETH_WITHHELD_COLOR);
+    expect(colorFor("state:55|county:003")).toBe(CHOROPLETH_WITHHELD_COLOR);
+    // And it must not drag the scale or the count either.
     expect(model.minValue).toBe(561504);
+    expect(model.maxValue).toBe(561504);
+  });
+
+  test("a withheld value is legended apart from a geography with no row", () => {
+    // Covers: WEB-078 — two different facts, two legend rows.
+    const model = buildChoroplethModel(suppressed, "geo_id");
+    const withheldRow = model.legendItems.find(
+      (item) => item.color === CHOROPLETH_WITHHELD_COLOR,
+    );
+    expect(withheldRow).toBeDefined();
+    // The source's own words, and how many geographies carried them.
+    expect(withheldRow.label).toBe("Value not published: suppressed, missing");
+    expect(withheldRow.count).toBe(2);
+    const fallbackRow = model.legendItems.find(
+      (item) => item.color === CHOROPLETH_FALLBACK_COLOR,
+    );
+    expect(fallbackRow.label).toBe("No observation");
+    expect(fallbackRow.count).toBeUndefined();
+  });
+
+  test("a row with neither a value nor a status is silence, not a claim", () => {
+    // Covers: WEB-078 — the legend row says what the publisher said, so a
+    // row that said nothing produces no row to say it with.
+    const model = buildChoroplethModel(
+      [
+        { geo_id: "state:55|county:025", value: "5" },
+        { geo_id: "state:55|county:001", value: null },
+      ],
+      "geo_id",
+    );
+    expect(
+      model.legendItems.some((item) => item.color === CHOROPLETH_WITHHELD_COLOR),
+    ).toBe(false);
+    expect(JSON.stringify(model.expression)).not.toContain("county:001");
+  });
+
+  test("a page whose every row withheld its value still says so", () => {
+    // Covers: WEB-078 — nothing to scale is not nothing to report.
+    const model = buildChoroplethModel(
+      [{ geo_id: "state:55|county:001", value: null, value_status: "suppressed" }],
+      "geo_id",
+    );
+    expect(model.valueCount).toBe(0);
+    expect(model.legendItems.map((item) => item.label)).toEqual([
+      "Value not published: suppressed",
+      "No observation",
+    ]);
   });
 
   test("extrusion heights exclude the geographies with no published value", () => {

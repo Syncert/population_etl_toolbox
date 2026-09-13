@@ -679,7 +679,11 @@ export function comparisonMapRows(
       state_name: row.state_name,
       county_name: row.county_name,
       value: usable ? String(value) : null,
-      value_status: usable ? null : "not published on both sides",
+      // Read by the shared choropleth model as the reason this geography
+      // carries no number, and rendered into its legend after "Value not
+      // published:" (WEB-078) -- so the words are the phrase that completes
+      // that sentence rather than a sentence of their own.
+      value_status: usable ? null : "not on both sides",
     } as ObservationRow;
   });
 }
