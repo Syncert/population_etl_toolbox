@@ -28,6 +28,9 @@ class _FakeResult:
     def scalar(self):
         return self._scalar_value
 
+    def first(self):
+        return self._rows[0] if self._rows else None
+
     def scalars(self):
         return self
 
@@ -75,9 +78,14 @@ def _observation_row(
 
 
 class _SourceSchemaSession:
-    def __init__(self, source_schema: str, rows: list):
+    def __init__(self, source_schema: str, rows: list, lineage_key: str | None = None):
         self._schema = source_schema
         self._rows = rows
+        # A relation that composes its own metric identity is matched against
+        # the lineage key its publisher declares, which the glossary answers
+        # (API-093). Sources whose relations store the catalog's own code
+        # never reach this lookup.
+        self._lineage_key = lineage_key
         self.calls: list[tuple[str, dict]] = []
 
     def execute(self, query, params=None):
@@ -86,6 +94,24 @@ class _SourceSchemaSession:
 
         if "to_regclass" in sql:
             return _FakeResult(scalar_value=True)
+
+        if "gold_glossary.dim_metric" in sql:
+            requested = (params or {}).get("metric_code", "")
+            return _FakeResult(
+                rows=[
+                    {
+                        "metric_code": requested,
+                        "source_code": "CENSUS_PEP",
+                        "physical_lineage": {
+                            "schema": "gold_pep",
+                            "relation": "population_estimate_revision",
+                            "key": self._lineage_key,
+                        },
+                    }
+                ]
+                if self._lineage_key
+                else []
+            )
 
         if "information_schema.columns" in sql:
             return _FakeResult(
@@ -399,6 +425,17 @@ def test_source_filters_reach_exact_source_queries(
         if f"from {history_table}" in sql and "metric_code" in params
     ]
     assert len(latest_calls) == len(history_calls) == 2
+    # A contract whose relation composes its own metric identity also binds
+    # the lineage key it is matched against; one that stores the catalog's
+    # own code binds nothing extra (API-093). Read from the contract so this
+    # stays source-agnostic.
+    from apps.api.registry import serving_contract
+
+    identity = (
+        {"metric_key": "METRIC"}
+        if serving_contract(source_path).binds_lineage_key
+        else {}
+    )
     assert all(
         params
         == {
@@ -407,6 +444,7 @@ def test_source_filters_reach_exact_source_queries(
             "state_fips": "06",
             "limit": 17,
             "offset": 4,
+            **identity,
         }
         for _, params in latest_calls
     )
@@ -419,6 +457,7 @@ def test_source_filters_reach_exact_source_queries(
             "end_date": date(2024, 12, 31),
             "limit": 19,
             "offset": 6,
+            **identity,
         }
         for _, params in history_calls
     )
@@ -459,8 +498,10 @@ def test_source_timeseries_echoes_the_page_it_was_asked_for() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _source_session(schema: str) -> _SourceSchemaSession:
-    return _SourceSchemaSession(schema, [_observation_row()])
+def _source_session(
+    schema: str, lineage_key: str | None = None
+) -> _SourceSchemaSession:
+    return _SourceSchemaSession(schema, [_observation_row()], lineage_key)
 
 
 def _override_with(session: _SourceSchemaSession) -> None:
@@ -487,7 +528,7 @@ def test_a_source_route_filters_and_projects_the_vocabulary_word() -> None:
     defect migration 018 wrote down, on the one serving surface it did not
     reach. STATE, COUNTY and PLACE coincided, which is why it stayed hidden.
     """
-    session = _source_session("gold_pep")
+    session = _source_session("gold_pep", lineage_key="POP")
     _override_with(session)
     try:
         response = TestClient(app).get(
@@ -516,7 +557,7 @@ def test_a_legacy_grain_word_still_answers() -> None:
     alias is resolved on the way in rather than left to match a raw value by
     accident.
     """
-    session = _source_session("gold_pep")
+    session = _source_session("gold_pep", lineage_key="POP")
     _override_with(session)
     try:
         TestClient(app).get(

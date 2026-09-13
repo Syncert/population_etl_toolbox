@@ -31,6 +31,7 @@ from apps.api.registry import (
     normalize_geo_level,
     serving_contract,
 )
+from apps.api.services.neutral_observations_service import resolve_metric
 from apps.api.services.contracts import (
     ServingContractUnavailable as ServingContractUnavailable,  # re-export
 )
@@ -194,6 +195,26 @@ def list_timeseries_observations(
     return _rows_to_response(rows, total, limit, offset)
 
 
+def _metric_identity(
+    db: Session, contract: ServingContract, metric_code: str
+) -> dict[str, object]:
+    """The extra parameter a contract's metric condition binds, if any.
+
+    A relation that stores the catalog's own code needs nothing beyond the
+    request. One that composes its own identity is matched against the
+    lineage key its publisher declares -- read from the glossary, never cut
+    out of the request -- and an unknown code binds an identity nothing
+    stores, so the route answers an empty page exactly as it did before
+    (API-093).
+    """
+    if not contract.binds_lineage_key:
+        return {}
+    metric = resolve_metric(db, metric_code)
+    lineage = (metric or {}).get("physical_lineage") or {}
+    key = lineage.get("key") if isinstance(lineage, dict) else None
+    return {"metric_key": key if key else metric_code}
+
+
 def list_latest_observations_for_source(
     db: Session,
     source: str,
@@ -207,8 +228,9 @@ def list_latest_observations_for_source(
     contract = serving_contract(source)
     _require_relation(db, contract.latest_relation)
 
-    where_clauses = ["metric_code = :metric_code"]
+    where_clauses = [contract.metric_match_condition]
     params: dict = {"metric_code": metric_code, "limit": limit, "offset": offset}
+    params.update(_metric_identity(db, contract, metric_code))
     if geo_level:
         # The contract's own expression, and the caller's word normalized on
         # the way in: a shared link or a saved configuration holding the
@@ -257,13 +279,14 @@ def list_timeseries_observations_for_source(
     contract = serving_contract(source)
     _require_relation(db, contract.history_relation)
 
-    where_clauses = ["metric_code = :metric_code", "geo_id = :geo_id"]
+    where_clauses = [contract.metric_match_condition, "geo_id = :geo_id"]
     params: dict = {
         "metric_code": metric_code,
         "geo_id": geo_id,
         "limit": limit,
         "offset": offset,
     }
+    params.update(_metric_identity(db, contract, metric_code))
     if start_date:
         where_clauses.append("observation_date >= :start_date")
         params["start_date"] = start_date

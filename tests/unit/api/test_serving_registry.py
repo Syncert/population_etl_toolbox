@@ -41,6 +41,12 @@ class _RecordingResult:
     def all(self):
         return self._rows
 
+    def first(self):
+        # A contract whose relation composes its own metric identity resolves
+        # the lineage key through the glossary first; an unresolved code binds
+        # the request's own, which is what this harness models (API-093).
+        return self._rows[0] if self._rows else None
+
 
 class _RecordingSession:
     """A session that records statements and reports every relation present."""
@@ -127,7 +133,14 @@ def test_latest_read_targets_only_the_declared_latest_relation(segment: str) -> 
         offset=0,
     )
 
-    queries = [s for s in session.statements if "to_regclass" not in s]
+    # The glossary lookup a composed-identity contract resolves its lineage
+    # key through is not a serving read, and is the only other statement this
+    # route may issue (API-093).
+    queries = [
+        s
+        for s in session.statements
+        if "to_regclass" not in s and "gold_glossary.dim_metric" not in s
+    ]
     assert queries, "no query was issued"
     for statement in queries:
         assert f"FROM {contract.latest_relation}" in statement
@@ -154,7 +167,14 @@ def test_history_read_targets_only_the_declared_history_relation(segment: str) -
         offset=0,
     )
 
-    queries = [s for s in session.statements if "to_regclass" not in s]
+    # The glossary lookup a composed-identity contract resolves its lineage
+    # key through is not a serving read, and is the only other statement this
+    # route may issue (API-093).
+    queries = [
+        s
+        for s in session.statements
+        if "to_regclass" not in s and "gold_glossary.dim_metric" not in s
+    ]
     assert queries
     for statement in queries:
         assert f"FROM {contract.history_relation}" in statement
@@ -332,7 +352,11 @@ def test_reads_order_by_the_declared_order(segment: str) -> None:
     latest_list = [
         s
         for s in latest_session.statements
-        if "to_regclass" not in s and "COUNT(*)" not in s
+        if "to_regclass" not in s
+        and "COUNT(*)" not in s
+        # The glossary lookup a composed-identity contract resolves its
+        # lineage key through is not a serving read (API-093).
+        and "gold_glossary.dim_metric" not in s
     ]
     assert latest_list
     expected_latest = "ORDER BY " + ", ".join(contract.latest_order)
@@ -352,7 +376,11 @@ def test_reads_order_by_the_declared_order(segment: str) -> None:
     history_list = [
         s
         for s in history_session.statements
-        if "to_regclass" not in s and "COUNT(*)" not in s
+        if "to_regclass" not in s
+        and "COUNT(*)" not in s
+        # The glossary lookup a composed-identity contract resolves its
+        # lineage key through is not a serving read (API-093).
+        and "gold_glossary.dim_metric" not in s
     ]
     assert history_list
     expected_history = "ORDER BY " + ", ".join(contract.history_order)

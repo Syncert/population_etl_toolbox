@@ -73,6 +73,25 @@ class ServingContract:
     publishes_vintage_and_error: bool = False
     #: True when the source publishes place-level geography names.
     publishes_place_names: bool = False
+    #: How a request's catalog metric code binds to this relation's own code.
+    #:
+    #: Most serving relations store the code the catalog publishes, so the
+    #: condition is equality. Census PEP's reporting view composes a third
+    #: segment from the dataset -- ``'CENSUS_PEP:' || dataset_code || ':' ||
+    #: metric_code`` -- while the catalog publishes ``CENSUS_PEP:<measure>``,
+    #: so the two never met and every PEP metric answered no rows on these
+    #: routes while the same metric answered normally on ``/observations``
+    #: (API-093).
+    #:
+    #: The relation's measure segment is matched against the glossary's own
+    #: published lineage key, not against a segment cut out of the request:
+    #: deriving one identity from another by string surgery on caller text is
+    #: the defect ARC-005 exists to prevent.
+    metric_match_condition: str = "metric_code = :metric_code"
+    #: True when the condition above binds ``:metric_key`` -- the lineage key
+    #: the publisher declares in ``physical_lineage`` -- instead of the
+    #: request's own ``:metric_code``.
+    binds_lineage_key: bool = False
     #: How this source's serving relations spell the geography grain.
     #:
     #: Most of them derive the vocabulary word already, so the column is the
@@ -181,6 +200,8 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             publishes_vintage_and_error=True,
             publishes_place_names=True,
             geo_level_expression=f"{_GRAIN_OF_GEO_TYPE_COLUMN}",
+            metric_match_condition="SPLIT_PART(metric_code, ':', 3) = :metric_key",
+            binds_lineage_key=True,
             # PEP's latest publication is a series, not a value: every
             # estimated year of the current vintage, so one geography carries
             # several rows and geo_id alone leaves ties a page boundary can

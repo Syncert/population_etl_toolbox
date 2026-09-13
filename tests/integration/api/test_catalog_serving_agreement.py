@@ -636,3 +636,293 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
     assert f"{published_fred_metric}@NATIONAL" in exercised
     assert f"{published_fred_metric}@STATE" not in exercised
     assert f"{published_fred_metric}@COUNTY" not in exercised
+
+
+# ---------------------------------------------------------------------------
+# DB-030 — the published-grain sweep reaches every route that accepts a grain
+# ---------------------------------------------------------------------------
+
+PEP_VINTAGE = 2095
+PEP_YEAR = 2095
+PEP_ESTIMATE_DATE = "2095-07-01"  # make_date(year, 7, 1), per the fact's own check
+PEP_DATASET = "pep_agreement_test"
+
+
+@pytest.fixture
+def published_pep_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one Census PEP metric at the national grain, end to end.
+
+    PEP is the source the grain mapping exists for: its reporting view
+    projects ``revision.geo_type AS geo_level``, so the served relation stores
+    ``nation`` under a column named for the vocabulary. The catalog publishes
+    ``NATIONAL`` for it, and the two must still meet -- which is what nothing
+    exercised, because no fixture published a PEP metric at all.
+
+    Seeded through the real views: silver rows, then `population_estimate_revision`
+    and `_latest` and `rpt_pep_observations` and `mv_pep_latest` compose
+    themselves, then the real glossary harvest reads `gold_pep.metric_publisher`.
+    Neither side is told what the other spelled.
+    """
+    from tests.support.capture_seed import seed_capture
+
+    token = uuid4().hex[:8].upper()
+    # POPESTIMATE-family codes carry a non-negative check; any other code
+    # is unconstrained, and the sweep cares about the grain, not the measure.
+    measure_code = f"AGREEMENT_{token}"
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as database_cursor:
+            capture_id = seed_capture(database_cursor, "CENSUS_PEP")
+            geo_sk = seed_geography(
+                database_cursor,
+                geo_type="nation",
+                vintage=PEP_VINTAGE,
+                name="Grain sweep nation",
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.pep_dataset (
+                    dataset_code, title, transport, geography_levels,
+                    summary_levels, variable_families, parser_version,
+                    text_encoding, release_page_url, decennial_base, is_active,
+                    created_at, updated_at, series_kind, era, native_grain
+                ) VALUES (
+                    %s, 'Grain sweep dataset', 'bulk_csv', ARRAY['nation'],
+                    ARRAY['010'], ARRAY['POP'], '1', 'utf-8',
+                    'https://www.census.gov/grain-sweep', 2090, TRUE, NOW(), NOW(),
+                    'postcensal', 'test', '010'
+                ) ON CONFLICT (dataset_code) DO NOTHING
+                """,
+                (PEP_DATASET,),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.dim_measure (
+                    metric_code, display_name, unit, value_type, is_component,
+                    allows_negative, population_universe, updated_at
+                ) VALUES (%s, 'Grain sweep population', 'persons', 'count',
+                          FALSE, FALSE, 'resident population', NOW())
+                """,
+                (measure_code,),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.pep_release (
+                    dataset_code, vintage_year, product_code, data_url,
+                    layout_url, release_date, observation_start_year,
+                    observation_end_year, geography_basis_date, schema_version,
+                    status, media_type, created_at, updated_at, series_kind
+                ) VALUES (
+                    %s, %s, 'alldata',
+                    'https://www2.census.gov/grain-sweep/data.csv',
+                    'https://www2.census.gov/grain-sweep/layout.txt',
+                    %s, %s, %s, %s, '1', 'published', 'text/csv',
+                    NOW(), NOW(), 'postcensal'
+                ) ON CONFLICT DO NOTHING
+                """,
+                (
+                    PEP_DATASET,
+                    PEP_VINTAGE,
+                    PEP_ESTIMATE_DATE,
+                    PEP_YEAR,
+                    PEP_YEAR,
+                    PEP_ESTIMATE_DATE,
+                ),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.release_load (
+                    capture_id, dataset_code, release_vintage, product_code,
+                    source_record_count, observation_count, completeness_status,
+                    validated_at
+                ) VALUES (%s, %s, %s, 'alldata', 1, 1, 'complete', NOW())
+                """,
+                (capture_id, PEP_DATASET, PEP_VINTAGE),
+            )
+            # The fact keys back to the revision it was parsed from, so the
+            # parsed row exists first -- the same order the loader writes in.
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.observation_revision (
+                    capture_id, source_row_index, source_column_index,
+                    source_header, dataset_code, release_vintage, product_code,
+                    observation_year, metric_code, unit, summary_level,
+                    state_fips_source, name_source, value_source, value,
+                    value_status, parser_version, parsed_at
+                ) VALUES (
+                    %s, 1, 1, %s, %s, %s, 'alldata', %s, %s, 'persons', '010',
+                    NULL, 'United States', '331000000', 331000000,
+                    'valid', '1', NOW()
+                )
+                """,
+                (
+                    capture_id,
+                    measure_code,
+                    PEP_DATASET,
+                    PEP_VINTAGE,
+                    PEP_YEAR,
+                    measure_code,
+                ),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_pep.fact_population_estimate (
+                    capture_id, source_row_index, source_column_index,
+                    dataset_code, release_vintage, product_code, metric_code,
+                    observation_year, estimate_date, geo_id, geo_sk, geo_type,
+                    geography_basis_date, resolution_status, summary_level,
+                    source_geo_code, source_name, value_source, value, unit,
+                    transformed_at
+                ) VALUES (
+                    %s, 1, 1, %s, %s, 'alldata', %s, %s, %s,
+                    'nation:us', %s,
+                    'nation', %s, 'resolved', '010', '1', 'United States',
+                    '331000000', 331000000, 'persons', NOW()
+                )
+                """,
+                (
+                    capture_id,
+                    PEP_DATASET,
+                    PEP_VINTAGE,
+                    measure_code,
+                    PEP_YEAR,
+                    PEP_ESTIMATE_DATE,
+                    geo_sk,
+                    PEP_ESTIMATE_DATE,
+                ),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    registered_before = _registration_state(postgres_connection_factory, "CENSUS_PEP")
+    harvest_publisher(postgres_connection_factory, Publisher("gold_pep"))
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = 'CENSUS_PEP' AND source_object_key = %s
+                """,
+                (measure_code,),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, "the harvest published no PEP catalog row"
+
+    try:
+        yield published[0]
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as database_cursor:
+                database_cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_object_key = %s AND source_code = 'CENSUS_PEP'",
+                    (measure_code,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.fact_population_estimate "
+                    "WHERE metric_code = %s",
+                    (measure_code,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.observation_revision "
+                    "WHERE dataset_code = %s",
+                    (PEP_DATASET,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.release_load WHERE dataset_code = %s",
+                    (PEP_DATASET,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.pep_release WHERE dataset_code = %s",
+                    (PEP_DATASET,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.dim_measure WHERE metric_code = %s",
+                    (measure_code,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM silver_pep.pep_dataset WHERE dataset_code = %s",
+                    (PEP_DATASET,),
+                )
+                delete_geography(database_cursor, "nation:us")
+                _remove_registration(
+                    database_cursor, registered_before, "CENSUS_PEP"
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_every_published_grain_answers_on_every_route_that_accepts_one(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: DB-030 — the sweep asks every route, not only the neutral one.
+
+    DB-028 sweeps `/api/v1/observations` and nothing else, and its docstring
+    says of the four defects it was written for that "no tier saw any of
+    them". API-092 was the fifth, on a route it does not ask: the
+    source-scoped latest route filtered the caller's vocabulary word against
+    a relation storing the source's own, so `geo_level=NATIONAL` reached none
+    of Census PEP's national rows. Two gaps let it through -- the sweep never
+    asked that route, and no fixture published a PEP metric, so even the
+    neutral sweep was vacuous for the source the mapping exists for.
+    """
+    from apps.api.registry import GEO_GRAINS, SERVING_CONTRACTS
+
+    segments = {
+        contract.source_code: segment
+        for segment, contract in SERVING_CONTRACTS.items()
+    }
+    unanswered: list[str] = []
+    off_vocabulary: list[str] = []
+    exercised: list[str] = []
+
+    for source_code, segment in sorted(segments.items()):
+        grains_by_code = _current_catalog_grains(api_client, source_code)
+        for metric_code, grains in list(grains_by_code.items())[:SWEEP_SAMPLE]:
+            for grain in grains:
+                assert grain in GEO_GRAINS, (
+                    f"{source_code} publishes grain '{grain}', which is not in "
+                    f"the vocabulary {GEO_GRAINS}"
+                )
+                route = f"/api/v1/{segment}/observations/latest"
+                exercised.append(f"{segment}:{metric_code}@{grain}")
+                response = api_client.get(
+                    route,
+                    params={
+                        "metric_code": metric_code,
+                        "geo_level": grain,
+                        "limit": 5,
+                    },
+                )
+                assert response.status_code == 200, (
+                    f"{route} {metric_code}@{grain}: {response.text}"
+                )
+                payload = response.json()
+                if int(payload["total"]) < 1:
+                    unanswered.append(
+                        f"{source_code} publishes grain '{grain}' for "
+                        f"'{metric_code}', which {route} answers with no rows"
+                    )
+                for row in payload["items"]:
+                    if row.get("geo_level") != grain:
+                        off_vocabulary.append(
+                            f"{route} {metric_code}@{grain} served a row whose "
+                            f"geo_level is {row.get('geo_level')!r}"
+                        )
+
+    assert not unanswered, "\n".join(unanswered)
+    assert not off_vocabulary, "\n".join(off_vocabulary)
+    # The PEP fixture seeds one national row, and PEP is the source whose
+    # relation stores `nation` under a column named `geo_level`. If this pair
+    # is absent the sweep proved nothing about the case it exists for.
+    assert f"pep:{published_pep_metric}@NATIONAL" in exercised, exercised
