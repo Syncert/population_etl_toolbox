@@ -14,8 +14,9 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present defect:
-  the `dag-parse` tier is red on this branch because of it.**
+- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
+  assessment agent, claimed and completed 2026-09-13. It was a present
+  defect: `dag-parse` was red on this branch because of it.
 - **Last updated:** 2026-09-13
 - **Owner surface:** `src/data_ingestion_toolbox/quality/reconciliation.py`,
   `src/data_ingestion_toolbox/quality/sources.py`,
@@ -106,12 +107,61 @@ STATEMENT:  SELECT COUNT(*) OVER () AS offender_total, offender.*
   reasoning stands; the FRED site simply did not follow it.
 - Changing what any rule counts as an offender.
 
+## What changed
+
+- `fred_slice_reconciliation` orders by `1, 2` — the positions of its own
+  select list, like every other rule.
+- `_offenders` refuses an ordering that qualifies a column with any relation
+  but `offender`, naming the three accepted spellings, beside its existing
+  refusal of an embedded `ORDER BY`/`LIMIT`. Its docstring now states what an
+  ordering may name.
+- `tests/unit/quality/test_offender_queries.py` (new) covers the refusal, the
+  accepted forms, and — because the run-time guard only fires for a rule a
+  suite reaches — a sweep of every `order_by=` literal in the two quality
+  modules. Restoring the old FRED ordering fails the sweep by name.
+- `tests/integration/database/test_source_quality_checks.py` gains the
+  reproduction (criterion 1) and, for criterion 3,
+  `test_every_offender_statement_is_one_postgresql_can_run`.
+
+## How criterion 3 was met, and where it was adapted
+
+Seeding one offender per rule means writing a capture, release, geography and
+fact chain per source — four of the fifteen rules read `silver_*` fact tables
+whose rows cannot be inserted without them. What the defect is about is
+whether each statement can *run*, so every `_offenders` call site is handed to
+the planner instead: an `_ExplainingCursor` answers each rule's preliminary
+count with one row so it proceeds past `not_applicable`, and runs `EXPLAIN`
+on each offender statement, which resolves every name, type and scope without
+an offender existing. The node asserts at least 19 statements were planned —
+the number of call sites — so a rule returning before its own fails it.
+
+The rules whose *fail* outcome is separately seeded from real rows, in the
+nodes above it: the ACS, BLS and FRED slice ledgers, the FRED dataset join
+(new), USDA NASS's slice ledger, Census PEP's sentinel conformance, the CDC
+watermark, the reference resolution accounting, and the publisher registry.
+The rest — `pep_release_completeness`, `pep_registry_reconciliation`,
+`cdc_suppression_conformance`, `fbi_participation_coverage`,
+`fbi_reported_vs_absent`, `nass_suppression_vocabulary`, and the two shared
+lineage rules — are proved runnable there, by name, rather than skipped.
+
 ## Validation
 
-To be recorded by the agent that claims this. The `dag-parse` tier needs
-Airflow 2.9.3 and a PostGIS service; if it cannot run locally, cite the CI
-run on the landing commit rather than reporting it as passing.
+- `pytest tests/unit` — **1515 passed**.
+- `pytest tests/unit/quality` — 46 passed, and **the sweep fails on the old
+  ordering**: restoring `order_by="dataset.domain, dataset.series_id"` leaves
+  `1 failed, 45 passed`.
+- `pytest tests/integration/database/test_source_quality_checks.py -m
+  "integration and database"` — **9 passed**. With the old ordering restored
+  the run fails on the new nodes: with the run-time guard in place as
+  `QualityRunError` naming the relation, and with the guard also removed as
+  `psycopg2.errors.UndefinedTable: missing FROM-clause entry for table
+  "dataset"` — the CI failure, reproduced locally.
+- `ruff format --check .` / `ruff check .` — clean (444 files).
+- **`dag-parse` cannot run locally**: Airflow is not installed in this
+  environment (`ModuleNotFoundError: No module named 'airflow'`). Criterion 4
+  is cited from CI on the landing commit rather than reported as passing
+  here; see the follow-up note added below once that run completes.
 
 ## Remaining work
 
-- Everything.
+- Confirm `dag-parse` green on the landing commit (criterion 4).

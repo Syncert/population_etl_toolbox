@@ -130,7 +130,9 @@ def fred_slice_reconciliation(
             ON series.series_id = dataset.series_id
          WHERE series.series_id IS NULL
         """,
-        order_by="dataset.domain, dataset.series_id",
+        # Positions of this select list, like every other rule: the ordering
+        # is applied outside the subquery, where `dataset` is not in scope.
+        order_by="1, 2",
     )
     outcomes.append(
         RuleOutcome(

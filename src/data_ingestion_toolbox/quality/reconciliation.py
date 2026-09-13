@@ -128,6 +128,39 @@ def comparison_outcome(
 _FORBIDDEN_CLAUSE = re.compile(r"\b(?:ORDER\s+BY|LIMIT)\b", re.IGNORECASE)
 
 
+#: A term that qualifies its column with a relation alias -- ``dataset.domain``.
+_QUALIFIED_TERM = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\.")
+
+#: The one relation in scope on the wrapping statement.
+_WRAPPER_ALIAS = "offender"
+
+
+def _reject_inner_qualifiers(order_by: str) -> None:
+    """Refuse an ordering that names a relation the wrapper cannot see.
+
+    The ordering is applied outside the subquery, where the only relation in
+    scope is ``offender``. A term qualified with the *inner* alias --
+    ``ORDER BY dataset.domain`` over ``FROM (...) AS offender`` -- is not a
+    different sort order, it is a statement PostgreSQL refuses outright, and
+    the rule that carries it errors instead of reporting the offenders it
+    exists to find. Fourteen sites wrote positions and the fifteenth wrote
+    names, which is how DQ-008 shipped a rule that raised the first time a
+    FRED dataset had no series row (DQ-009).
+    """
+    for term in order_by.split(","):
+        for match in _QUALIFIED_TERM.finditer(term):
+            alias = match.group(1)
+            if alias.lower() == _WRAPPER_ALIAS:
+                continue
+            raise QualityRunError(
+                f"an offender ordering cannot name the relation '{alias}': the "
+                "ordering is applied outside the subquery, where only "
+                f"'{_WRAPPER_ALIAS}' is in scope. Write the positions of the "
+                "wrapped select list (`1, 2`), its bare output column names, "
+                f"or qualify them with '{_WRAPPER_ALIAS}'"
+            )
+
+
 def _shifted(order_by: str) -> str:
     """``order_by`` with positional references moved past the count column.
 
@@ -171,7 +204,11 @@ def _offenders(
     inside the subquery, so the sample is deterministic by the statement's
     own contract instead of by a planner preserving a subquery's sort.
 
-    ``sql`` therefore carries neither ``ORDER BY`` nor ``LIMIT``.
+    ``sql`` therefore carries neither ``ORDER BY`` nor ``LIMIT``, and
+    ``order_by`` names only what the wrapping statement can see: positions of
+    the wrapped select list, its bare output column names, or names qualified
+    with ``offender``. An ordering naming the subquery's own relation alias is
+    refused here rather than by PostgreSQL at run time (DQ-009).
     """
     # Matched as SQL words, not substrings: a status literal named
     # `over_limit` is not a LIMIT clause, and the first version of this guard
@@ -181,6 +218,7 @@ def _offenders(
             "an offender query must carry neither ORDER BY nor LIMIT: the "
             "ordering is passed as `order_by` and the bound is this helper's"
         )
+    _reject_inner_qualifiers(order_by)
     cursor.execute(
         f"SELECT COUNT(*) OVER () AS offender_total, offender.*\n"
         f"FROM (\n{sql}\n) AS offender\n"
