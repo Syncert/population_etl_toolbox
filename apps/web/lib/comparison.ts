@@ -427,12 +427,26 @@ export interface ScatterPoint {
   x: number;
   /** Measure B's published value. */
   y: number;
+  /** The period each side's value describes, or `""` where none was published. */
+  periodA: string;
+  periodB: string;
+  /** True when the two published periods differ, so the pair is not contemporaneous. */
+  periodsDiffer: boolean;
 }
 
 export interface ScatterModel {
   points: ScatterPoint[];
   /** Geographies left out because one side published no usable number. */
   excluded: number;
+  /**
+   * Plotted points whose two sides describe different published periods.
+   *
+   * The route combines each side's own newest value rather than aligning
+   * them to a shared period, and carries both periods so that is visible.
+   * Counting it here lets the chart say so; the table already marks the row
+   * (WEB-049).
+   */
+  differingPeriods: number;
   minX: number;
   maxX: number;
   minY: number;
@@ -442,6 +456,7 @@ export interface ScatterModel {
 const EMPTY_SCATTER: ScatterModel = Object.freeze({
   points: [],
   excluded: 0,
+  differingPeriods: 0,
   minX: 0,
   maxX: 0,
   minY: 0,
@@ -483,7 +498,15 @@ export function comparisonScatterModel(
       excluded += 1;
       continue;
     }
-    points.push({ geoId: String(row.geo_id ?? ""), name: comparisonRowName(row), x, y });
+    points.push({
+      geoId: String(row.geo_id ?? ""),
+      name: comparisonRowName(row),
+      x,
+      y,
+      periodA: String(row.period_a ?? ""),
+      periodB: String(row.period_b ?? ""),
+      periodsDiffer: periodsDiffer(row),
+    });
   }
 
   if (points.length === 0) {
@@ -495,12 +518,49 @@ export function comparisonScatterModel(
   return {
     points,
     excluded,
+    differingPeriods: points.filter((point) => point.periodsDiffer).length,
     minX: Math.min(...xs),
     maxX: Math.max(...xs),
     minY: Math.min(...ys),
     maxY: Math.max(...ys),
   };
 }
+
+/**
+ * What the comparison map must say about the periods it coloured, or `""`.
+ *
+ * The map is the sharper of the two aligned views: it colours one number per
+ * polygon, and that number is an API-derived subtraction or ratio between two
+ * publications that may be years apart. "Coloured by difference" reads as a
+ * difference at a time, and the route deliberately does not align its sides
+ * to one.
+ *
+ * Empty when nothing differs, so this is a fact about the answer rather than
+ * a standing disclaimer, and empty when the map is not drawn at all
+ * (WEB-049).
+ */
+export function mapPeriodMismatchNote(
+  response: ComparisonResponse | null | undefined,
+  field: string,
+): string {
+  const rows = comparisonMapRows(response, field);
+  if (rows.length === 0) {
+    return "";
+  }
+  const items = Array.isArray(response?.items) ? response.items : [];
+  const coloured = rows.filter((row) => row.value !== null).length;
+  const differing = items.filter(
+    (row, index) => rows[index]?.value !== null && periodsDiffer(row),
+  ).length;
+  if (differing === 0) {
+    return "";
+  }
+  return (
+    `${differing} of ${coloured} coloured geographies combine values published ` +
+    "for different periods; each row's two periods are in the table below."
+  );
+}
+
 
 /** The derived field a comparison map colours: the first the API named. */
 export function defaultDerivedField(

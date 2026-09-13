@@ -6,6 +6,13 @@
 // only way to read a value — the comparison table beside it carries every
 // row — and it says how many geographies it could not plot rather than
 // quietly dropping them.
+//
+// It also says which points are not contemporaneous. The route combines each
+// side's own newest value rather than aligning them to a shared period, and
+// carries both periods so that is visible; a pair four years apart drawn like
+// any other implies an alignment the route refused to make. Such points are
+// outlined rather than filled and counted in the caption — never dropped,
+// because both values are published and real (WEB-049).
 
 import type { ScatterModel } from "../lib/comparison";
 
@@ -43,7 +50,11 @@ export default function ScatterChart({
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
-        aria-label={`Scatter plot of ${points.length} geographies: ${labelX} on the horizontal axis against ${labelY} on the vertical axis. The comparison table below lists every value.`}
+        aria-label={`Scatter plot of ${points.length} geographies: ${labelX} on the horizontal axis against ${labelY} on the vertical axis.${
+          model.differingPeriods > 0
+            ? ` ${model.differingPeriods} of them pair values published for different periods and are drawn as hollow points.`
+            : ""
+        } The comparison table below lists every value.`}
       >
         <line
           className="dash-gridline"
@@ -66,13 +77,22 @@ export default function ScatterChart({
         {points.map((point) => (
           <circle
             key={`${point.geoId}-${point.x}-${point.y}`}
+            data-testid={point.periodsDiffer ? "scatter-point-differing" : "scatter-point"}
             cx={scale(point.x, minX, maxX, PAD, WIDTH - PAD)}
             cy={scale(point.y, minY, maxY, HEIGHT - PAD, PAD / 2)}
             r="4"
-            fill="#0b6b57"
-            fillOpacity="0.75"
+            // Outlined, not a second colour: the difference is about what the
+            // pair is, not about where it sits on either scale.
+            fill={point.periodsDiffer ? "none" : "#0b6b57"}
+            fillOpacity={point.periodsDiffer ? undefined : "0.75"}
+            stroke="#0b6b57"
+            strokeWidth={point.periodsDiffer ? "1.5" : "0"}
           >
-            <title>{`${point.name}: ${axisLabel(point.x)}, ${axisLabel(point.y)}`}</title>
+            <title>
+              {`${point.name}: ${axisLabel(point.x)}, ${axisLabel(point.y)}${
+                point.periodsDiffer ? ` (${point.periodA} and ${point.periodB})` : ""
+              }`}
+            </title>
           </circle>
         ))}
         <text x={PAD} y={HEIGHT - PAD + 18} fontSize="11" fill="currentColor">
@@ -97,6 +117,17 @@ export default function ScatterChart({
       <figcaption className="subtle">
         Horizontal: {labelX}. Vertical: {labelY}. Each point is one geography&apos;s own pair
         of published values.
+        {model.differingPeriods > 0 ? (
+          <>
+            {" "}
+            <strong data-testid="scatter-differing-periods">
+              {`${model.differingPeriods} of ${points.length} plotted geographies ${
+                model.differingPeriods === 1 ? "pairs" : "pair"
+              } values published for different periods, drawn hollow.`}
+            </strong>{" "}
+            Each side keeps its own published period; the table below carries both.
+          </>
+        ) : null}
         {model.excluded > 0 ? (
           <>
             {" "}

@@ -30,6 +30,7 @@ import {
   comparisonColumns,
   comparisonExport,
   comparisonMapRows,
+  mapPeriodMismatchNote,
   comparisonMetricOptions,
   comparisonRequestParams,
   comparisonScatterModel,
@@ -410,6 +411,13 @@ export default function ComparisonWorkspace() {
   const derivedField = useMemo(() => defaultDerivedField(comparison), [comparison]);
   const mapRows = useMemo(
     () => comparisonMapRows(comparison, derivedField),
+    [comparison, derivedField],
+  );
+  // The map colours one API-derived number per polygon, and that number can
+  // be a subtraction between two publications years apart. Empty unless some
+  // coloured geography is actually in that state (WEB-049).
+  const mapPeriodNote = useMemo(
+    () => mapPeriodMismatchNote(comparison, derivedField),
     [comparison, derivedField],
   );
 
@@ -804,6 +812,11 @@ export default function ComparisonWorkspace() {
               where one side published nothing stays uncoloured rather than being coloured
               as zero, and every value remains in the table below.
             </p>
+            {mapPeriodNote ? (
+              <p className="subtle">
+                <strong data-testid="map-period-note">{mapPeriodNote}</strong>
+              </p>
+            ) : null}
             <ChoroplethMap
               rows={mapRows}
               tileMetadata={tileMetadata}

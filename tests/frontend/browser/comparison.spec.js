@@ -187,7 +187,7 @@ const comparisonPayload = {
 
 async function installRoutes(
   page,
-  { preflightRequests = [], comparisonRequests = [], truncate = false } = {},
+  { preflightRequests = [], comparisonRequests = [], truncate = false, payload = null } = {},
 ) {
   await page.route("**/api/v1/catalog/capabilities", (route) =>
     route.fulfill({ json: capabilities }),
@@ -239,7 +239,7 @@ async function installRoutes(
         },
       });
     }
-    return route.fulfill({ json: comparisonPayload });
+    return route.fulfill({ json: payload || comparisonPayload });
   });
 
   // The Martin boundary. Its published fields are what decide whether this
@@ -576,4 +576,66 @@ test("a comparison too large for the page bound says so, and is not reported hea
   expect(offsets.length).toBeGreaterThan(1);
   expect(offsets[0]).toBe(0);
   expect(offsets[1]).toBe(1);
+});
+
+test("an aligned view says when a pair is not contemporaneous", async ({ page }) => {
+  // Covers: WEB-049 — the route combines each side's own newest value rather
+  // than aligning them to a shared period, and carries both periods so that
+  // is visible. The table marked it; the scatter drew a pair four years apart
+  // as a point like any other, and the map coloured it by a difference
+  // computed across those years, with nothing on either panel saying so.
+  const payload = {
+    ...comparisonPayload,
+    total: 3,
+    items: [
+      // Not contemporaneous.
+      comparisonPayload.items[0],
+      {
+        ...comparisonPayload.items[0],
+        geo_id: "state:55|county:009",
+        county_name: "Brown County",
+        period_a: "2023",
+        period_b: "2023",
+        value_a: 268740,
+        value_b: 270000,
+        difference: -1260,
+        ratio: 0.99533,
+      },
+      comparisonPayload.items[1],
+    ],
+  };
+  await installRoutes(page, { payload });
+  await page.goto("/compare");
+
+  const workspace = page.getByTestId("comparison-workspace");
+  await expect(workspace).toHaveAttribute("data-plottable-points", "2");
+
+  // The chart marks the pair, counts it, and keeps it: both values are
+  // published, so dropping it would answer a narrower question.
+  await expect(page.getByTestId("scatter-point-differing")).toHaveCount(1);
+  await expect(page.getByTestId("scatter-point")).toHaveCount(1);
+  const note = page.getByTestId("scatter-differing-periods");
+  await expect(note).toContainText("1 of 2 plotted geographies pairs values");
+  await expect(note).toContainText("different periods");
+
+  // And the map, which colours one API-derived number per polygon, says how
+  // many of those numbers span two publications.
+  await expect(page.getByTestId("map-period-note")).toContainText(
+    "1 of 2 coloured geographies combine values published for different periods",
+  );
+});
+
+test("a comparison whose sides share a period says nothing extra", async ({ page }) => {
+  // Covers: WEB-049 — the note is a fact about this answer, not a standing
+  // disclaimer on every comparison.
+  const contemporaneous = {
+    ...comparisonPayload,
+    items: comparisonPayload.items.map((row) => ({ ...row, period_b: row.period_a })),
+  };
+  await installRoutes(page, { payload: contemporaneous });
+  await page.goto("/compare");
+
+  await expect(page.getByTestId("comparison-map-panel")).toBeVisible();
+  await expect(page.getByTestId("map-period-note")).toHaveCount(0);
+  await expect(page.getByTestId("scatter-differing-periods")).toHaveCount(0);
 });

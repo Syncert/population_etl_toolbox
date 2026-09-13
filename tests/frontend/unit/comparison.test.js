@@ -26,6 +26,7 @@ import {
   incompatibleAlternatives,
   isDerivedField,
   mayRequestComparison,
+  mapPeriodMismatchNote,
   periodsDiffer,
   preflightRequestParams,
   selectionIsComplete,
@@ -348,7 +349,17 @@ describe("aligned presentations read the same rows without inventing values", ()
     // A scatter of the two inputs needs no shared axis or unit, and shows
     // each geography's own pair rather than a series implying one scale.
     expect(model.points).toEqual([
-      { geoId: "state:55|county:025", name: "Dane County, Wisconsin", x: 561504, y: 568203 },
+      {
+        geoId: "state:55|county:025",
+        name: "Dane County, Wisconsin",
+        x: 561504,
+        y: 568203,
+        // Each point carries the period each side describes, so the chart can
+        // say what the table already marks (WEB-049).
+        periodA: "2023",
+        periodB: "2024",
+        periodsDiffer: true,
+      },
     ]);
     // The geography missing measure A is excluded and counted — plotting it
     // at zero would state a value neither source published.
@@ -388,5 +399,71 @@ describe("aligned presentations read the same rows without inventing values", ()
     expect(comparisonMapRows(comparison, "value_a")).toEqual([]);
     expect(comparisonMapRows(comparison, "")).toEqual([]);
     expect(defaultDerivedField({ ...comparison, derivations: [] })).toBe("");
+  });
+});
+
+describe("an aligned view says when a pair is not contemporaneous", () => {
+  // Covers: WEB-049 — `periodsDiffer` had one call site, in the table body.
+  // The scatter drew a 2023-with-2019 pair as a point like any other and the
+  // map coloured it by a difference computed across those years, while both
+  // panels were otherwise careful about units, derivation, and missing
+  // values. The API carries both periods precisely so the difference is
+  // visible rather than implied away.
+
+  const pairs = {
+    metric_code_a: "A",
+    metric_code_b: "B",
+    derivations: ["difference"],
+    items: [
+      { geo_id: "g1", value_a: 10, value_b: 20, period_a: "2023", period_b: "2019", difference: -10 },
+      { geo_id: "g2", value_a: 30, value_b: 40, period_a: "2023", period_b: "2023", difference: -10 },
+      { geo_id: "g3", value_a: 50, value_b: 60, period_a: "2023", period_b: null, difference: -10 },
+      { geo_id: "g4", value_a: null, value_b: 70, period_a: "2023", period_b: "2019", difference: null },
+    ],
+  };
+
+  test("the scatter counts and marks the points that are not contemporaneous", () => {
+    const model = comparisonScatterModel(pairs);
+    // g4 has no usable pair and is excluded, as it already was.
+    expect(model.points.map((point) => point.geoId)).toEqual(["g1", "g2", "g3"]);
+    expect(model.excluded).toBe(1);
+    // Only g1 pairs two published periods that differ.
+    expect(model.differingPeriods).toBe(1);
+    expect(model.points.map((point) => point.periodsDiffer)).toEqual([true, false, false]);
+    // The periods travel with the point so the reader can see which two.
+    expect(model.points[0].periodA).toBe("2023");
+    expect(model.points[0].periodB).toBe("2019");
+  });
+
+  test("an absent period is not a mismatch", () => {
+    // g3 publishes one period and not the other. That is incompleteness, and
+    // asserting a mismatch from it would state something the row does not.
+    const model = comparisonScatterModel(pairs);
+    const g3 = model.points.find((point) => point.geoId === "g3");
+    expect(g3.periodsDiffer).toBe(false);
+    expect(g3.periodB).toBe("");
+  });
+
+  test("a comparison whose sides share a period says nothing extra", () => {
+    const model = comparisonScatterModel({
+      ...pairs,
+      items: [pairs.items[1]],
+    });
+    expect(model.differingPeriods).toBe(0);
+    expect(model.points[0].periodsDiffer).toBe(false);
+  });
+
+  test("the map reports how many coloured geographies are not contemporaneous", () => {
+    // The map is the sharper half: it colours one number per polygon, and
+    // that number is a subtraction between two publications years apart.
+    expect(mapPeriodMismatchNote(pairs, "difference")).toBe(
+      "1 of 3 coloured geographies combine values published for different periods; " +
+        "each row's two periods are in the table below.",
+    );
+    // Nothing extra where nothing differs, and nothing at all where the map
+    // is not drawn.
+    expect(mapPeriodMismatchNote({ ...pairs, items: [pairs.items[1]] }, "difference")).toBe("");
+    expect(mapPeriodMismatchNote(pairs, "not_a_derived_field")).toBe("");
+    expect(mapPeriodMismatchNote(null, "difference")).toBe("");
   });
 });
