@@ -11,6 +11,7 @@ from apps.api.middleware import (
     RedisResponseCacheMiddleware,
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,
+    build_cache_targets,
 )
 from apps.api.ratelimit import RateLimitMiddleware
 from apps.api.appdb import dispose_app_engine
@@ -40,8 +41,13 @@ from data_ingestion_toolbox.config import Settings, get_settings
 #: manifest asset creates and reported whichever happened to exist -- naming
 #: them in the response body. Modelling surfaces are a plan non-goal; when one
 #: is designed, it arrives as a declared contract, not a probe.
-PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
-    health.router,
+#: The public analytical reads. Every one is a bounded, provider-published GET
+#: over the warehouse, so every one is cacheable -- and the cache targets are
+#: built from these routers' own paths (API-076) rather than from a list of
+#: path fragments that nothing checked against the served contract. The
+#: fragment list this replaced missed 13 of them, including the neutral
+#: ``/observations`` resource the consumer guide tells clients to prefer.
+CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     catalog.router,
     observations.router,
     distribution.router,
@@ -52,12 +58,28 @@ PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
     *SOURCE_ROUTERS,
     cdc.router,
     usda_nass.router,
-    # API-owned, user-scoped storage (ADR-0003). Authenticated and never
-    # publicly cached; its paths sit outside the cacheable prefixes.
+)
+
+#: API-owned, user-scoped storage: saved analysis (ADR-0003) and evidence
+#: packets (ADR-0004). Authenticated, answered ``private, no-store``, and
+#: never publicly cached -- they are deliberately absent from
+#: ``CACHEABLE_ROUTERS`` above, and API-063 and API-076 both hold them there.
+PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     saved_analysis.router,
-    # Evidence packets (ADR-0004): the same discipline, a separate resource.
     evidence_packets.router,
 )
+
+PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
+    # The versioned health resource. Never cached: a probe answer must
+    # describe now, not the last five minutes.
+    health.router,
+    *CACHEABLE_ROUTERS,
+    *PRIVATE_ROUTERS,
+)
+
+#: The exact paths the response cache may serve from, derived once from the
+#: routers above.
+PUBLIC_CACHE_TARGETS = build_cache_targets(CACHEABLE_ROUTERS)
 
 
 def contract_fingerprint(application: FastAPI) -> str:
@@ -137,6 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ttl_seconds=configured.api_cache_ttl_seconds,
         contract_fingerprint=contract_fingerprint(application),
         epoch_provider=PublicationEpochProvider(configured.api_cache_freshness_seconds),
+        targets=PUBLIC_CACHE_TARGETS,
     )
     application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(RequestTelemetryMiddleware)

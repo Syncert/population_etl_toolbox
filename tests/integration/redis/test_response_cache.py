@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from apps.api.main import PUBLIC_CACHE_TARGETS
 from apps.api.middleware import RedisResponseCacheMiddleware
 from tests.support.redis import EXPECTED_REDIS_MAJOR, RedisTestConfig
 
@@ -47,6 +48,9 @@ def _cache_application(
             application,
             redis_url=redis_url,
             ttl_seconds=ttl_seconds,
+            # API-076: the application declares what it caches; the middleware
+            # caches nothing it was not told about.
+            targets=PUBLIC_CACHE_TARGETS,
         ),
         state,
     )

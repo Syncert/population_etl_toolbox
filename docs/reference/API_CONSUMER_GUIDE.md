@@ -359,8 +359,12 @@ responses must not be usable to probe deployment state.
 
 ## Caching, limits, and correlation
 
-- Cacheable public analytical GETs answer with `x-cache: HIT|MISS` and
-  `Cache-Control: public, max-age=<ttl>`. The cache key includes the served
+- **Every** public analytical GET is cacheable — the catalog, `/observations`
+  and its releases, the legacy pair, all eight source-scoped observation
+  routes, CDC, USDA NASS, distribution, and both comparison routes. They
+  answer with `x-cache: HIT|MISS` and
+  `Cache-Control: public, max-age=<ttl>`. The authenticated resources never
+  do, and neither does a health probe, whose answer must describe now. The cache key includes the served
   contract's fingerprint and the **warehouse publication epoch**, so a
   republication is reflected within the deployment's freshness window rather
   than after the TTL. You do not need to bust anything.

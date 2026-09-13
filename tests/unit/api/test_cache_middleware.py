@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
+from apps.api.main import PUBLIC_CACHE_TARGETS
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -45,7 +46,10 @@ def _middleware_for(
         ]
     )
     middleware = RedisResponseCacheMiddleware(
-        application, redis_url="redis://unused.test/15", ttl_seconds=30
+        application,
+        redis_url="redis://unused.test/15",
+        ttl_seconds=30,
+        targets=PUBLIC_CACHE_TARGETS,
     )
     fake_redis = _FakeRedis()
     middleware._client = fake_redis  # type: ignore[assignment]

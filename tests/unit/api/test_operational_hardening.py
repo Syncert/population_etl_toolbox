@@ -34,7 +34,7 @@ from starlette.routing import Route
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.freshness import UNKNOWN_EPOCH, PublicationEpochProvider
-from apps.api.main import app, contract_fingerprint, create_app
+from apps.api.main import PUBLIC_CACHE_TARGETS, app, contract_fingerprint, create_app
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
 from apps.api.ratelimit import RATE_LIMITED_DETAIL, RateLimitMiddleware
 from apps.api.telemetry import RequestTelemetryMiddleware
@@ -84,6 +84,7 @@ def _cache_app(
         ttl_seconds=30,
         contract_fingerprint=fingerprint,
         epoch_provider=epoch_provider,
+        targets=PUBLIC_CACHE_TARGETS,
     )
     fake = _FakeRedis(fail_with=fail_with)
     middleware._client = fake  # type: ignore[assignment]

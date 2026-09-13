@@ -5,6 +5,7 @@ import json
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
@@ -18,20 +19,61 @@ Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 
-#: Version-relative prefixes of the bounded public analytical reads that may be
-#: cached. Building the concrete prefixes from ``API_PREFIXES`` keeps a resource
-#: cacheable under every version it is served on; listing literal paths meant a
-#: new version silently lost its cache.
-CACHEABLE_SUFFIXES = (
-    "/catalog/",
-    "/observations/",
-    "/distribution/",
-    "/comparison",
-)
-CACHEABLE_PREFIXES = tuple(
-    f"{root}{suffix}" for root in API_PREFIXES for suffix in CACHEABLE_SUFFIXES
-)
 MAX_CACHE_BODY_BYTES = 2_000_000
+
+
+@dataclass(frozen=True)
+class CacheTargets:
+    """The exact public GET paths whose responses may enter the shared cache.
+
+    Built from the routers the application mounts (API-076), not from
+    hand-written path fragments. The fragment list this replaced read
+
+    ``("/catalog/", "/observations/", "/distribution/", "/comparison")``
+
+    and reached 8 of the 21 public analytical GETs. ``/observations`` -- the
+    resource the consumer guide tells clients to prefer -- missed because the
+    fragment carried a trailing slash the path does not, and every
+    source-scoped route missed because it begins with a source segment no
+    fragment named. Those routes answered every request from PostgreSQL, with
+    no ``x-cache`` and no ``Cache-Control``, while the guide promised both.
+
+    A path with no parameter is matched exactly. A parameterised template
+    contributes a prefix that ends at the separator before its parameter, so
+    ``/catalog/metrics/{metric_code}`` covers ``/catalog/metrics/ANY:CODE``
+    and a sibling resource sharing a name cannot be swept in by a bare string
+    prefix.
+    """
+
+    #: Served paths carrying no path parameter.
+    exact: frozenset[str]
+    #: Prefixes of parameterised templates, each ending at its separator.
+    parameterized: tuple[str, ...]
+
+    def covers(self, path: str) -> bool:
+        return path in self.exact or path.startswith(self.parameterized)
+
+
+def build_cache_targets(routers) -> CacheTargets:
+    """Cache targets for every GET route of ``routers``, under every version.
+
+    Mounting a resource under each supported version keeps it cacheable under
+    all of them; the previous fragment list had the same property and it is
+    kept.
+    """
+    exact: set[str] = set()
+    parameterized: set[str] = set()
+    for router in routers:
+        for route in router.routes:
+            if "GET" not in (getattr(route, "methods", None) or set()):
+                continue
+            for root in API_PREFIXES:
+                path = f"{root}{route.path}"
+                if "{" in path:
+                    parameterized.add(path.split("{", 1)[0])
+                else:
+                    exact.add(path)
+    return CacheTargets(frozenset(exact), tuple(sorted(parameterized)))
 
 
 class SecurityHeadersMiddleware:
@@ -199,12 +241,18 @@ class RedisResponseCacheMiddleware:
         ttl_seconds: int = 300,
         contract_fingerprint: str = "unversioned",
         epoch_provider: Callable[[], Awaitable[str]] | None = None,
+        targets: CacheTargets | None = None,
     ) -> None:
         self.app = app
         self.redis_url = redis_url
         self.ttl_seconds = max(1, ttl_seconds)
         self.contract_fingerprint = contract_fingerprint
         self.epoch_provider = epoch_provider
+        #: Nothing is cacheable until the application declares what is. An
+        #: empty default caches nothing rather than guessing, so a caller that
+        #: forgets to pass targets loses an optimization instead of caching a
+        #: resource nobody classified.
+        self.targets = targets or CacheTargets(frozenset(), ())
         self._client: Redis | None = None
 
     def _is_cacheable(self, scope: dict[str, Any]) -> bool:
@@ -212,7 +260,7 @@ class RedisResponseCacheMiddleware:
             bool(self.redis_url)
             and scope.get("type") == "http"
             and scope.get("method") == "GET"
-            and str(scope.get("path", "")).startswith(CACHEABLE_PREFIXES)
+            and self.targets.covers(str(scope.get("path", "")))
         )
 
     async def _cache_key(self, scope: dict[str, Any]) -> str:

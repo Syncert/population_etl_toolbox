@@ -27,8 +27,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
-from apps.api.main import app
-from apps.api.middleware import CACHEABLE_PREFIXES
+from apps.api.main import PUBLIC_CACHE_TARGETS, app
 from apps.api.schemas import AnalysisDocument
 from apps.api.services import saved_analysis_service
 
@@ -706,7 +705,7 @@ def test_user_content_is_never_publicly_cacheable(
 
     for path in app.openapi()["paths"]:
         if "analysis-configurations" in path:
-            assert not path.startswith(CACHEABLE_PREFIXES), path
+            assert not PUBLIC_CACHE_TARGETS.covers(path), path
 
 
 def test_validation_helper_rejects_unknown_kinds_at_the_schema_boundary() -> None:

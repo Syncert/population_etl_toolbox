@@ -25,9 +25,8 @@ from fastapi.testclient import TestClient
 
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
-from apps.api.main import app
+from apps.api.main import PUBLIC_CACHE_TARGETS, app
 from apps.api.middleware import (
-    CACHEABLE_PREFIXES,
     REQUEST_TOO_LARGE_DETAIL,
     RequestBodyLimitMiddleware,
 )
@@ -769,4 +768,4 @@ def test_user_content_is_never_publicly_cacheable(accounts, monkeypatch) -> None
         assert "x-cache" not in response.headers
     for path in app.openapi()["paths"]:
         if "evidence-packets" in path:
-            assert not path.startswith(CACHEABLE_PREFIXES), path
+            assert not PUBLIC_CACHE_TARGETS.covers(path), path
