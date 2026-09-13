@@ -15,7 +15,7 @@ verify:
 
 - **Status:** To do. Investigated and authored 2026-09-13; **no present
   defect found**, see Findings.
-- **Last updated:** 2026-09-13
+- **Last updated (inventory extended, still unclaimed):** 2026-09-13
 - **Owner surface:** `sql/migrations/`, `src/**/gold_*/DDL/`
 
 ## Context
@@ -65,6 +65,23 @@ Two details worth carrying into the work:
   by transcription. The BLS geography parser's own vocabulary is closed
   (`us`, `state`, `county`, or nothing), so the branch is unreachable for a
   parsed series today.
+- The chain into `dim_geo_latest` crosses **two** translations, not one, and
+  the second only works because of the first. `silver_ref.dim_geo_current`
+  maps the entity's own type before the projection ever sees it:
+
+  ```sql
+  CASE WHEN entity.geo_type = 'nation' THEN 'us' ELSE entity.geo_type END
+      AS geo_level
+  ```
+
+  so `geo_type` ∈ {nation, state, county, place} becomes `geo_level` ∈ {us,
+  state, county, place}, and only then does the refresh's `CASE WHEN
+  g.geo_level = 'us' THEN 'NATIONAL'` match. Verified end to end against a
+  live database: `place` reaches the projection as `PLACE` through the
+  refresh's `ELSE UPPER(...)`, and nothing leaks `NATION`. Whoever
+  consolidates the mapping has to keep both hops in view — collapsing the
+  second onto `geo_grain()` without the first would make `nation` arrive
+  where only `us` is matched.
 - `gold_glossary.geo_grain` is created by migration 018, which the bootstrap
   manifest applies in the `glossary` phase — **after** the `gold` and
   `publisher` phases. A publisher DDL file that calls it would fail at
