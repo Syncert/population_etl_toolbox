@@ -10,7 +10,6 @@ import {
   apiFetch,
   buildApiPath,
   fetchAllPages,
-  fetchAllPages,
   fetchCollectionPages,
   fetchComparisonPages,
   getDistributionBins,
@@ -95,6 +94,77 @@ describe("versioned API client", () => {
       (caught) => caught,
     );
     expect(down.kind).toBe("unavailable");
+  });
+
+  test("a validation refusal keeps the explanation it was handed", async () => {
+    // Covers: WEB-063 — `422` answers two bodies. The API's own refusals are
+    // a string; a request refused against the declared parameter and body
+    // schemas answers HTTPValidationError, an array of {loc, msg, type}.
+    // Only a string survived `decodeErrorDetail`, so the one status the
+    // guide calls "a request the API can explain" reached the reader as a
+    // bare number.
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(
+        {
+          detail: [
+            {
+              type: "less_than_equal",
+              loc: ["query", "limit"],
+              msg: "Input should be less than or equal to 1000",
+              input: "5000",
+              ctx: { le: 1000 },
+            },
+          ],
+        },
+        { status: 422 },
+      ),
+    ]);
+    const error = await apiFetch("/catalog/metrics", { fetchImpl }).catch(
+      (caught) => caught,
+    );
+    expect(error.status).toBe(422);
+    expect(error.detail).toBe(
+      "query.limit: Input should be less than or equal to 1000",
+    );
+    // The submitted value is not echoed back to the screen: it is the
+    // caller's own, of unbounded size, and says nothing the message does not.
+    expect(error.detail).not.toContain("5000");
+    expect(apiErrorMessage(error)).toBe(
+      "status 422: query.limit: Input should be less than or equal to 1000",
+    );
+  });
+
+  test("several refused fields are counted rather than listed without end", async () => {
+    const entries = Array.from({ length: 5 }, (unused, index) => ({
+      loc: ["body", "blocks", index, "type"],
+      msg: "Input should be a valid block type",
+      type: "enum",
+    }));
+    const { fetchImpl } = recordingFetch([
+      jsonResponse({ detail: entries }, { status: 422 }),
+    ]);
+    const error = await apiFetch("/evidence-packets", { fetchImpl }).catch(
+      (caught) => caught,
+    );
+    expect(error.detail).toBe(
+      "body.blocks.0.type: Input should be a valid block type; " +
+        "body.blocks.1.type: Input should be a valid block type; " +
+        "body.blocks.2.type: Input should be a valid block type (and 2 more)",
+    );
+  });
+
+  test("a refusal with nothing readable still shows its status", async () => {
+    // An empty array, and entries carrying no message, are not sentences.
+    // Reporting the status alone is what this did for every array before
+    // WEB-063; it stays the answer where there is nothing to add.
+    for (const detail of [[], [{ loc: ["query", "limit"] }], [null, 7, "x"]]) {
+      const { fetchImpl } = recordingFetch([jsonResponse({ detail }, { status: 422 })]);
+      const error = await apiFetch("/catalog/metrics", { fetchImpl }).catch(
+        (caught) => caught,
+      );
+      expect(error.detail).toBeNull();
+      expect(apiErrorMessage(error)).toBe("status 422");
+    }
   });
 
   test("renders status-first user-facing error messages", () => {

@@ -138,11 +138,61 @@ export function buildApiPath(resource: string, params: QueryParams = {}): string
   return `${API_BASE}${path}${buildQuery(params)}`;
 }
 
+/** How many field refusals a message carries before it counts the rest. */
+const VALIDATION_DETAIL_LIMIT = 3;
+
+/**
+ * A refusal the API made before the endpoint ran, as a readable sentence.
+ *
+ * `422` answers two bodies (see the consumer guide's Errors section): a
+ * string for a refusal the API decided, and `HTTPValidationError` -- an
+ * array of `{loc, msg, type}` -- for a request refused against the declared
+ * parameter and body schemas. This renders the second, because a reader told
+ * only "status 422" on the one class of error the API can explain has been
+ * handed the explanation and shown the number.
+ *
+ * `loc` is the path to what was refused, so it is what names the parameter.
+ * The entry's `input` is deliberately not rendered: it is the caller's own
+ * submitted value, of unbounded size, and it says nothing the `loc` and the
+ * message do not. The count is bounded for the same reason.
+ */
+function describeValidationDetail(entries: unknown[]): string | null {
+  const described: string[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const { loc, msg } = entry as { loc?: unknown; msg?: unknown };
+    if (typeof msg !== "string" || !msg) {
+      continue;
+    }
+    const where = Array.isArray(loc)
+      ? loc
+          .filter((part) => typeof part === "string" || typeof part === "number")
+          .join(".")
+      : "";
+    described.push(where ? `${where}: ${msg}` : msg);
+  }
+  if (described.length === 0) {
+    return null;
+  }
+  const shown = described.slice(0, VALIDATION_DETAIL_LIMIT);
+  const remaining = described.length - shown.length;
+  return remaining > 0
+    ? `${shown.join("; ")} (and ${remaining} more)`
+    : shown.join("; ");
+}
+
 async function decodeErrorDetail(response: Response): Promise<string | null> {
   try {
     const payload: unknown = await response.json();
     const detail = (payload as { detail?: unknown } | null)?.detail;
-    return typeof detail === "string" ? detail : null;
+    if (typeof detail === "string") {
+      return detail;
+    }
+    // A body carrying no usable entry falls through to null, so the caller
+    // still shows the status line rather than an empty sentence.
+    return Array.isArray(detail) ? describeValidationDetail(detail) : null;
   } catch {
     return null;
   }

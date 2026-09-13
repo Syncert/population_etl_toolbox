@@ -494,13 +494,35 @@ any parsing. Public analytical reads carry no body and are unaffected.
 | `404` | Unknown identifier, or a configuration you do not own (indistinguishable on purpose) |
 | `409` | Version conflict, or a name you already use |
 | `413` | The request body is over the accepted size. Refused before parsing |
-| `422` | A request the API can explain: an unsupported filter, a contradictory scope, an incompatible comparison, a reversed range, or an invalid document |
+| `422` | A refused request. One the API can explain — an unsupported filter, a contradictory scope, an incompatible comparison, a reversed range, an invalid document — or one refused before the endpoint ran: a missing, malformed or out-of-bounds parameter. Two body shapes; see below |
 | `429` | Rate limited. Honour `Retry-After` |
 | `503` | The API cannot serve: database unavailable, a required serving contract missing, or (for saved analysis) storage not configured. The body is deliberately sanitized and never names warehouse objects |
 
-Every error body is `{"detail": "..."}`. A `503` never tells you which
-warehouse relation is missing — that detail goes to the server log, because
-responses must not be usable to probe deployment state.
+A `503` never tells you which warehouse relation is missing — that detail
+goes to the server log, because responses must not be usable to probe
+deployment state.
+
+**`422` has two bodies, and which one you get says who refused the
+request.** A refusal the API itself decided — an unsupported filter, a
+contradictory scope, an incompatible comparison, a reversed range, a
+document whose meaning the API rejects — answers `{"detail": "<sentence>"}`,
+the same shape every other status above uses. A request refused before the
+endpoint ran — a missing required parameter, one outside its declared
+bounds, a value of the wrong type, a body that fails schema validation —
+answers the `HTTPValidationError` the contract declares for it:
+
+```json
+{"detail": [{"loc": ["query", "limit"],
+             "msg": "Input should be less than or equal to 1000",
+             "type": "less_than_equal"}]}
+```
+
+`loc` is the path to what was refused (`["query", "limit"]`,
+`["body", "blocks", 0, "type"]`), `msg` says why, and `type` is the stable
+machine-readable reason. Entries also carry the `input` they refused and a
+`ctx` holding the bound; treat those as diagnostic. Read `detail`'s type
+before rendering it: a client that assumes a string shows the reader a bare
+status code on the one class of error the API can explain.
 
 ## Caching, limits, and correlation
 

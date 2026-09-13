@@ -351,3 +351,89 @@ def test_the_guide_names_each_routes_release_default() -> None:
         assert field in snapshot["schemas"][schema_name]["properties"], (
             f"{path} answers {schema_name}, which publishes no `{field}`"
         )
+
+
+def _snapshot() -> dict:
+    """The reviewed OpenAPI snapshot the guide's preamble says pins it."""
+    import json
+
+    return json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "tests/fixtures/api/openapi_contract.json"
+        ).read_text(encoding="utf-8")
+    )
+
+
+def test_the_guide_describes_both_shapes_of_a_refused_request() -> None:
+    """Covers: API-111 — `422` answers two bodies, and the guide says so.
+
+    The guide's preamble stakes everything in it on the reviewed snapshot,
+    and its Errors section then said "Every error body is
+    `{"detail": "..."}`" -- which the snapshot contradicts for the one status
+    the same section calls a request the API can explain: every read declares
+    `422` as `HTTPValidationError`, whose `detail` is an array. Read off the
+    running application, the snapshot is right.
+
+    Both halves are read here rather than restated, so the prose fails if
+    either shape moves in either direction.
+    """
+    from apps.api.dependencies import get_db_session_dep
+
+    # The refusals below happen before the session is touched; the override
+    # exists because FastAPI resolves dependencies before the endpoint runs,
+    # and this tier has no database.
+    app.dependency_overrides[get_db_session_dep] = lambda: object()
+    try:
+        client = TestClient(app)
+        framework = client.get("/api/v1/catalog/metrics", params={"limit": 5000})
+        explained = client.get(
+            "/api/v1/observations",
+            params={"metric_code": "ANY:thing", "year_from": 2020, "year_to": 2000},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db_session_dep, None)
+
+    # Refused before the endpoint ran: the declared array.
+    assert framework.status_code == 422, framework.text
+    entries = framework.json()["detail"]
+    assert isinstance(entries, list) and entries, framework.text
+
+    snapshot = _snapshot()
+    required = set(snapshot["schemas"]["ValidationError"]["required"])
+    assert required == {"loc", "msg", "type"}, required
+    for entry in entries:
+        assert required <= set(entry), entry
+        assert isinstance(entry["loc"], list) and entry["loc"], entry
+    assert entries[0]["loc"][:2] == ["query", "limit"], entries
+
+    # Refused by the API itself: the sentence every other status answers.
+    assert explained.status_code == 422, explained.text
+    assert isinstance(explained.json()["detail"], str), explained.text
+
+    # And the contract declares exactly one 422 shape, so the array is not an
+    # accident of this one route.
+    declared = {
+        media
+        for operation in snapshot["operations"].values()
+        for status, media in (operation.get("responses") or {}).items()
+        if status == "422"
+    }
+    assert declared == {"application/json:HTTPValidationError"}, sorted(declared)
+    assert snapshot["schemas"]["HTTPValidationError"]["properties"]["detail"] == (
+        "array<ValidationError>"
+    )
+
+    text = GUIDE.read_text(encoding="utf-8")
+    assert 'Every error body is `{"detail": "..."}`' not in text, (
+        "the blanket promise the snapshot contradicts is still in the guide"
+    )
+    errors = text.split("## Errors", 1)[1].split("\n## ", 1)[0]
+    assert '{"detail": "<sentence>"}' in errors, (
+        "the guide does not show the shape an API-explained refusal answers"
+    )
+    for key in sorted(required):
+        assert f'"{key}"' in errors, (
+            f"the guide's Errors section does not name the `{key}` a client "
+            "must read on a validation refusal"
+        )
