@@ -291,8 +291,8 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-075 | None |
-| Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **401 of 401** | **0 of 401** |
+| Deployment | DEPLOY-001–DEPLOY-006 | None |
+| **Total** | **402 of 402** | **0 of 402** |
 
 Awaiting implementation IDs: None.
 
@@ -300,7 +300,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 401-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 402-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -753,6 +753,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | DEPLOY-003 | P0 | CI / `deployment` | Controlled shutdown | The disposable stack is always stopped with volumes/orphans removed and Compose reports no remaining project containers | Leaked container, volume-backed test state, or skipped teardown |
 | DEPLOY-004 | P0 | Static / `unit deployment` | Immutable images and users | Every explicit Compose/Docker base image has a digest and API, web, and Airflow final users are non-root | Mutable image or root application runtime |
 | DEPLOY-005 | P0 | Static / `unit deployment` | Runtime hardening | Application services are read-only with no-new-privileges and every published port binds loopback by default | Writable runtime, privilege escalation, or unbounded host port |
+| DEPLOY-006 | P1 | Static / `unit deployment` | Stack configuration is complete and read | Each deployment stack's env example declares every value the stack needs and nothing it ignores, both stacks pass the same environment to the same DAGs, and a stack that serves the API either configures application storage or states in a comment that it is unset | An operator env example that omits a required credential or asks for one no stack reads, one stack's DAGs credentialled differently from the other's, or account routes dead with nothing saying that was the intent |
 
 ### Martin Vector-Tile Tests
 

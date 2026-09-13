@@ -23,6 +23,9 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 ```bash
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
 python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
+# The API's own application storage (ADR-0003). Without this role the account,
+# saved-analysis, and evidence-packet routes answer an explicit 503.
+python scripts/provision_app_api.py --env-file infra/docker/stack.external.env --apply-schema
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 
@@ -34,6 +37,7 @@ This is the recommended local workflow when an existing Airflow deployment and p
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
 # fill secrets/host values in infra/docker/stack.external.env
 python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
+python scripts/provision_app_api.py --env-file infra/docker/stack.external.env --apply-schema
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 
