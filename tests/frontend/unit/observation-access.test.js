@@ -28,6 +28,8 @@ import {
   describeStratification,
   newestPerGeography,
   normalizeObservationRows,
+  observationCoverageValue,
+  publishesCoverage,
   observationDimensionOptions,
   observationDimensionValue,
   observationPeriodLabel,
@@ -1039,5 +1041,91 @@ describe("a settled history is the resource's answer", () => {
         limit: "1000",
       }),
     ).toBeNull();
+  });
+});
+
+describe("a published coverage qualifier travels with its value", () => {
+  // Covers: WEB-051 — FBI UCR is the one source the API refuses to serve
+  // through the per-source row shape, because it publishes agency-level facts
+  // with a participation basis that shape cannot represent honestly. The
+  // neutral envelope carries that basis under `coverage`; normalization
+  // mapped `uncertainty` onto the row and left `coverage` behind, so an
+  // agency's offence count was rendered with no indication of the
+  // participation it rests on.
+
+  const neutralSource = {
+    key: "fbi",
+    accessShape: "neutral",
+    neutralFilters: ["geo_id", "geo_level"],
+    requestFilters: ["geo_id", "geo_level"],
+    dimensionFilters: [],
+    neutralDimensionFilters: [],
+  };
+
+  const reportingRow = {
+    metric_code: "FBI_UCR:summarized:VIOLENT",
+    source_code: "FBI_UCR",
+    geo_id: "agency:WI0130000",
+    geo_level: "AGENCY",
+    value: "412",
+    value_status: "valid",
+    period_start: "2023-01-01",
+    period_end: "2023-12-31",
+    coverage: {
+      population: "269840",
+      participated_population: "167000",
+      coverage_percent: "61.9",
+      coverage_basis: "reported months",
+      participation_status: "partial",
+      population_denominator: "agency service population",
+    },
+  };
+
+  test("every published coverage field survives normalization", () => {
+    // Normalization carries the envelope through by construction -- it
+    // spreads the row it was given -- so this pins that rather than a change
+    // it needed. What was missing was any surface that read the field.
+    const [row] = normalizeObservationRows(neutralSource, [reportingRow]);
+    for (const [field, value] of Object.entries(reportingRow.coverage)) {
+      expect(observationCoverageValue(row, field)).toBe(value);
+    }
+  });
+
+  test("a source that publishes no coverage publishes none", () => {
+    // Absent stays absent: an unpublished qualifier is not an empty one, and
+    // inventing a dash in the data would make the two indistinguishable.
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...reportingRow, coverage: undefined },
+    ]);
+    expect(observationCoverageValue(row, "participation_status")).toBe("");
+    expect(publishesCoverage([row])).toBe(false);
+  });
+
+  test("the answer says whether any row published a participation", () => {
+    // Read from the loaded rows rather than from a list of sources, so a
+    // source that starts publishing coverage is shown it without an edit
+    // here, and one that does not grows no empty column.
+    const [row] = normalizeObservationRows(neutralSource, [reportingRow]);
+    expect(publishesCoverage([row])).toBe(true);
+    expect(publishesCoverage([])).toBe(false);
+    expect(publishesCoverage(null)).toBe(false);
+  });
+
+  test("a not-reported agency keeps its explanation", () => {
+    // The schema's own reason for the field: a not-reported subject keeps
+    // null values, and the coverage context explains the gap instead of the
+    // API inventing a zero. The gap is only explained if it is shown.
+    const [row] = normalizeObservationRows(neutralSource, [
+      {
+        ...reportingRow,
+        value: null,
+        value_status: "not_reported",
+        coverage: { participation_status: "did not report", coverage_percent: "0" },
+      },
+    ]);
+    expect(row.value).toBeNull();
+    expect(observationCoverageValue(row, "participation_status")).toBe("did not report");
+    // `0` is a published number here, not a missing one.
+    expect(observationCoverageValue(row, "coverage_percent")).toBe("0");
   });
 });

@@ -502,7 +502,6 @@ export function normalizeObservationRows(
     ) {
       normalized.margin_of_error_pct = uncertainty.margin_of_error_pct;
     }
-
     return normalized;
   });
 }
@@ -585,6 +584,44 @@ export function newestPerGeography(rows: ObservationRow[] | null | undefined): O
     }
   }
   return [...newestByGeo.values()];
+}
+
+/**
+ * The published coverage fields, in the order the envelope declares them.
+ *
+ * Not a client-authored list of "the interesting ones": these are the six the
+ * neutral envelope's `ObservationCoverage` publishes, and an export that
+ * carried a subset would be this client deciding which part of a source's
+ * participation basis a reader may have.
+ */
+export const OBSERVATION_COVERAGE_FIELDS = [
+  "participation_status",
+  "coverage_percent",
+  "coverage_basis",
+  "population",
+  "participated_population",
+  "population_denominator",
+] as const;
+
+/** One published coverage field on a row, or `""` when the source published none. */
+export function observationCoverageValue(
+  row: ObservationRow | null | undefined,
+  field: string,
+): string {
+  const coverage = (row?.coverage || {}) as Record<string, unknown>;
+  const value = coverage[field];
+  return value === undefined || value === null ? "" : String(value);
+}
+
+/**
+ * True when any loaded row published a participation status.
+ *
+ * Read from the answer rather than from a list of sources: a source that
+ * begins publishing coverage is shown it without an edit here, and one that
+ * does not grows no empty column.
+ */
+export function publishesCoverage(rows: ObservationRow[] | null | undefined): boolean {
+  return (rows || []).some((row) => observationCoverageValue(row, "participation_status") !== "");
 }
 
 /** A declared dimension's published value on one row, or `""` when absent. */

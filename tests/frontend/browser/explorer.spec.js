@@ -366,6 +366,19 @@ async function installRoutes(
         unit: "offences",
         period_start: "2023-01-01",
         period_end: "2023-12-31",
+        // The participation basis the neutral envelope publishes for this
+        // source, and the reason it is served through that envelope at all
+        // (WEB-051). A fixture without it models a weaker contract than the
+        // one that ships, and the client then goes untested for the field it
+        // is missing (WEB-043).
+        coverage: {
+          population: "269840",
+          participated_population: "167000",
+          coverage_percent: "61.9",
+          coverage_basis: "reported months",
+          participation_status: "partial",
+          population_denominator: "agency service population",
+        },
       };
       return answer([agencyRow], "FBI_UCR");
     }
@@ -1193,4 +1206,32 @@ test("a saved map view records the reduction the map asked for", async ({ page }
   expect(document.scope).toBe("latest");
   expect(document.newest_release_per_period).toBe(false);
   expect(document.release).toBeNull();
+});
+
+test("a published participation basis is shown beside the value it qualifies", async ({
+  page,
+}) => {
+  // Covers: WEB-051 — FBI UCR is served through the neutral envelope because
+  // its agency-level facts cannot be read without their participation basis.
+  // The client mapped `uncertainty` onto the row and left `coverage` behind,
+  // so an agency covering 61.9% of its population showed an offence count
+  // that read as the whole jurisdiction.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  const coverage = page.getByTestId("coverage-agency:WI0130000");
+  await expect(coverage).toContainText("partial");
+  await expect(coverage).toContainText("61.9% covered");
+});
+
+test("a source that publishes no participation grows no column for it", async ({ page }) => {
+  // Covers: WEB-051 — read from the loaded rows, not from a list of sources.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await expect(page.getByRole("columnheader", { name: "Participation" })).toHaveCount(0);
 });

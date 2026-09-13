@@ -87,7 +87,10 @@ import {
   normalizeObservationRows,
   observationDimensionOptions,
   observationDimensionValue,
+  OBSERVATION_COVERAGE_FIELDS,
+  observationCoverageValue,
   observationPeriodLabel,
+  publishesCoverage,
   scopedDimensionFilters,
   servesAsReleased,
   stratificationDimensions,
@@ -393,6 +396,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => (stratification.stratified ? [] : newestPerGeography(observations)),
     [observations, stratification.stratified],
   );
+  // A source that publishes a participation basis is shown it; one that does
+  // not grows no empty column. Read from the loaded rows, not from a list of
+  // sources (WEB-051).
+  const showsCoverage = useMemo(() => publishesCoverage(observations), [observations]);
   const historyStratification = useMemo(
     () => describeStratification(timeseries, seriesDimensions),
     [timeseries, seriesDimensions],
@@ -1627,7 +1634,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   function exportCsv() {
     // The export carries its own reproducibility envelope: which scope and
     // release answered, and each row's own published release identity.
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", "scope", "release", "as_of", ...dimensionFilters];
+    // Every published coverage field travels, the way `margin_of_error`
+    // already does whether or not the source publishes one: a file that
+    // carried a subset would be this client deciding which part of a source's
+    // participation basis a reader may have (WEB-051).
+    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", ...OBSERVATION_COVERAGE_FIELDS, "scope", "release", "as_of", ...dimensionFilters];
     const rows = observations.map((item) => [
       item.geo_id,
       observationName(item),
@@ -1639,6 +1650,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       item.source || item.source_code,
       item.dataset || item.dataset_code,
       item.margin_of_error,
+      ...OBSERVATION_COVERAGE_FIELDS.map((field) => observationCoverageValue(item, field)),
       observationScope,
       item.release,
       item.as_of,
@@ -2265,6 +2277,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <th>Value</th>
                   <th>Status</th>
                   <th>Units</th>
+                  {showsCoverage ? <th>Participation</th> : null}
                   {asReleased ? <th>Release</th> : null}
                   {dimensionFilters.map((name) => (
                     <th key={name}>{name.replaceAll("_", " ")}</th>
@@ -2285,6 +2298,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{item.value ?? "-"}</td>
                     <td>{String(item.value_status || (item.value === null ? "not published" : "-"))}</td>
                     <td>{observationUnit(item)}</td>
+                    {showsCoverage ? (
+                      <td data-testid={`coverage-${item.geo_id}`}>
+                        {observationCoverageValue(item, "participation_status") || "-"}
+                        {observationCoverageValue(item, "coverage_percent")
+                          ? ` (${observationCoverageValue(item, "coverage_percent")}% covered)`
+                          : ""}
+                      </td>
+                    ) : null}
                     {asReleased ? (
                       <td>{observationDimensionValue(item, RELEASE_DIMENSION) || "-"}</td>
                     ) : null}
@@ -2296,7 +2317,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 {observations.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7 + (asReleased ? 1 : 0) + dimensionFilters.length}
+                      colSpan={
+                        7 +
+                        (showsCoverage ? 1 : 0) +
+                        (asReleased ? 1 : 0) +
+                        dimensionFilters.length
+                      }
                       className="subtle"
                     >
                       No observations available for selected metric.
