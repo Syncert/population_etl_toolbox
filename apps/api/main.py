@@ -2,10 +2,13 @@ import hashlib
 import json
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 
 from apps.api.database import DatabaseNotConfigured, dispose_engine
-from apps.api.dependencies import serving_contract_unavailable
+from apps.api.dependencies import (
+    reject_undeclared_query_parameters,
+    serving_contract_unavailable,
+)
 from apps.api.freshness import PublicationEpochProvider
 from apps.api.middleware import (
     RedisResponseCacheMiddleware,
@@ -114,6 +117,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=configured.api_version,
         description=configured.api_description,
         lifespan=_lifespan,
+        # Applied to every route the application serves, including the health
+        # resource and the private ones, and solved before any route's own
+        # dependencies. A query parameter no route declares is a caller
+        # mistake this API used to answer with a confident wrong page
+        # (API-093); it declares no parameters of its own, so the published
+        # contract is unchanged.
+        dependencies=[Depends(reject_undeclared_query_parameters)],
     )
 
     @application.exception_handler(ServingContractUnavailable)
