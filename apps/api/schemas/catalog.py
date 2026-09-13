@@ -122,6 +122,20 @@ class SourceCapability(BaseModel):
     #: client codes against a declared contract instead of inferring one
     #: from whatever a row happened to hold (API-109).
     observation_dimensions: list[str] = []
+    #: Whether this source's served relations carry a value state, and
+    #: therefore whether a row of it can arrive with ``value: null``.
+    #:
+    #: The two shapes are different contracts and a client has to code for
+    #: one of them. Where this is true (CDC, FBI UCR, USDA NASS) a value the
+    #: source did not publish arrives as a row with ``value: null`` and a
+    #: ``value_status`` saying why. Where it is false (BLS, FRED, Census ACS,
+    #: Census PEP) the serving relation carries only published numbers, so
+    #: ``value`` is never null, ``value_status`` is always null, and a period
+    #: the source published without a usable number is **absent from the
+    #: series** rather than present and marked -- which is what a client
+    #: charting a monthly history has to know before it draws a line across
+    #: the gap (API-127).
+    publishes_value_status: bool = False
 
 
 class CapabilityListResponse(BaseModel):
@@ -145,6 +159,10 @@ class MetricCapability(MetricCatalog):
     #: a metric had to enumerate ``/catalog/capabilities`` to learn the shape
     #: of its own rows; the declaration belongs on both (API-119).
     observation_dimensions: list[str] = []
+    #: Whether a row of this metric's source can arrive with ``value: null``,
+    #: the same declaration the source resource publishes and on both for the
+    #: reason API-119 records.
+    publishes_value_status: bool = False
 
 
 class SourceFreshness(BaseModel):

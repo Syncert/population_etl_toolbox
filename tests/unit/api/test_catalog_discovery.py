@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import SERVICE_UNAVAILABLE_DETAIL, get_db_session_dep
 from apps.api.main import app
+from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.registry import SOURCE_DISCOVERY
 from apps.api.services.catalog_service import list_source_capabilities
 from data_ingestion_toolbox.sql import catalog_queries
@@ -474,3 +475,45 @@ def test_empty_catalog_results_are_stable_empty_pages() -> None:
     assert metrics.json() == {"total": 0, "limit": 100, "offset": 0, "items": []}
     assert geographies.status_code == 200
     assert geographies.json() == {"total": 0, "limit": 100, "offset": 0, "items": []}
+
+
+def test_the_value_state_capability_is_derived_from_the_dispatch() -> None:
+    """Covers: API-127 — whether a row can be null is read, not listed.
+
+    A source's serving relations either carry a value state or they do not,
+    and the dispatch entry already says which by declaring the column the
+    neutral read projects. Publishing a second list here would be the thing
+    the registry exists to avoid; publishing nothing left a client to infer
+    the shape from whichever row it happened to read, which is exactly what
+    `observation_dimensions` exists to prevent (API-109).
+
+    Both shapes have to be represented, or the sweep proves only one of them.
+    """
+    sources = list_source_capabilities(app.openapi()["paths"])
+    declared = {
+        item.source_code: item.publishes_value_status
+        for item in sources.items
+        if item.source_code in OBSERVATION_DISPATCH
+    }
+    assert declared, "no discovered source has a dispatch entry"
+    for source_code, publishes in declared.items():
+        dispatch = OBSERVATION_DISPATCH[source_code]
+        assert publishes == (dispatch.value_status_column is not None), source_code
+    assert set(declared.values()) == {True, False}, (
+        f"both shapes must be represented for the rule to mean anything: {declared}"
+    )
+
+
+def test_a_metric_declares_whether_its_own_rows_can_be_null() -> None:
+    """Covers: API-127 — on both resources, for API-119's reason."""
+    row = dict(_METRIC_ROW)
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{row['metric_code']}")
+        sources = list_source_capabilities(app.openapi()["paths"])
+    finally:
+        _clear_overrides()
+
+    declared = {item.source_code: item.publishes_value_status for item in sources.items}
+    assert response.json()["publishes_value_status"] == declared[row["source_code"]]
+    assert declared[row["source_code"]] is True, "CDC publishes a value state"

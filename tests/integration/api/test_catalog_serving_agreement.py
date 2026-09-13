@@ -16,6 +16,7 @@ rather than the services behind them, because a consumer only ever has those.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -1979,3 +1980,92 @@ def test_re_serving_a_chunk_publishes_no_new_release(
         writer.commit()
     finally:
         writer.close()
+
+
+def test_a_source_that_publishes_no_value_state_serves_only_numbers(
+    api_client: TestClient,
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: API-127 — `publishes_value_status` says which shape a row takes.
+
+    Two contracts, and a client has to code for one of them. Where a source
+    publishes a value state, an unpublished figure arrives as a row with
+    `value: null` and a reason. Where it does not, the serving relation
+    carries only published numbers -- the gold view selects on the value
+    being present -- so `value` is never null and a period the source
+    published without one is **absent from the series** rather than present
+    and marked.
+
+    The capability is derived from the dispatch entry's `value_status_column`,
+    and this holds the warehouse to it in both directions: a source declaring
+    one has the column on both served relations, and a source declaring none
+    has it on neither. Without that, `publishes_value_status: false` would be
+    a claim about a projection rather than about the rows.
+    """
+    capabilities = api_client.get("/api/v1/catalog/capabilities").json()["items"]
+    declared = {
+        entry["source_code"]: entry["publishes_value_status"]
+        for entry in capabilities
+        if entry["source_code"] in OBSERVATION_DISPATCH
+    }
+    assert declared, "no source declares a value-state capability"
+
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            for source_code, publishes in sorted(declared.items()):
+                dispatch = OBSERVATION_DISPATCH[source_code]
+                for relation in (dispatch.latest_relation, dispatch.released_relation):
+                    schema, name = relation.split(".", 1)
+                    cursor.execute(
+                        """
+                        SELECT count(*) FROM information_schema.columns
+                        WHERE table_schema = %s AND table_name = %s
+                          AND column_name = 'value_status'
+                        """,
+                        (schema, name),
+                    )
+                    carries = bool(cursor.fetchone()[0])
+                    assert carries == publishes, (
+                        f"/catalog/capabilities says {source_code} "
+                        f"publishes_value_status={publishes} and {relation} "
+                        f"{'carries' if carries else 'does not carry'} a "
+                        f"value_status column"
+                    )
+    finally:
+        database_connection.close()
+
+
+def test_a_metric_carries_the_same_value_state_declaration_as_its_source(
+    api_client: TestClient,
+) -> None:
+    """Covers: API-127 — the declaration is on both resources.
+
+    The reason API-119 records for the dimensions: a client that discovered a
+    metric should not have to enumerate sources to learn the shape of its own
+    rows.
+    """
+    capabilities = {
+        entry["source_code"]: entry["publishes_value_status"]
+        for entry in api_client.get("/api/v1/catalog/capabilities").json()["items"]
+    }
+    metrics = api_client.get(
+        "/api/v1/catalog/metrics", params={"limit": SWEEP_SAMPLE}
+    ).json()["items"]
+    assert metrics, "the catalog published no metric; the rule read nothing"
+    checked = 0
+    for metric in metrics:
+        detail = api_client.get(
+            f"/api/v1/catalog/metrics/{quote(metric['metric_code'], safe='')}"
+        )
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        source_code = body["source_code"]
+        if source_code not in capabilities:
+            continue
+        assert body["publishes_value_status"] == capabilities[source_code], (
+            f"{metric['metric_code']} and its source {source_code} disagree "
+            f"about whether a row can arrive with a null value"
+        )
+        checked += 1
+    assert checked, "no sampled metric belonged to a discovered source"

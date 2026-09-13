@@ -245,11 +245,22 @@ under `observation_dimensions`. Read it once at startup, the way you read
 source-scoped routes serve it; that is what they are for.
 
 - `value` is **text**, to preserve provider precision. Parse it yourself.
-- `value` is `null` whenever the source did not publish a usable number, and
-  `value_status` says why in the source's own vocabulary (`suppressed`,
-  `withheld`, `missing`, `not_reported`, …). `value_status` is `null` when the
-  source publishes no status vocabulary at all — which is distinguishable
-  from a published `valid`. **Nothing is ever coerced to zero.**
+- `value` is **text**, and `null` whenever the source published no usable
+  number — never zero. **Nothing is ever coerced to zero.**
+- **Two sources shapes, and `publishes_value_status` on
+  `/catalog/capabilities` tells you which you are reading.** Where it is
+  `true` (CDC, FBI UCR, USDA NASS), an unpublished figure arrives as a row
+  with `value: null` and a `value_status` saying why in the source's own
+  vocabulary — `suppressed`, `withheld`, `not_reported`, each source's own
+  word. Where it is `false` (BLS, FRED, Census ACS, Census PEP), the serving
+  relations carry only published numbers: `value` is never null,
+  `value_status` is always null, and a period the source published **without**
+  a usable number is *absent from the series* rather than present and marked.
+  If you chart a history from one of those sources, a gap is a gap — do not
+  draw across it as though the period were continuous with its neighbours.
+  The flag is on the metric resource too, so a client that searched the
+  catalog does not have to enumerate sources to learn the shape of its own
+  rows.
 - `dimensions` carries the source's declared fields under the source's own
   published names — CDC strata and footnotes, FBI subject/offense/program,
   NASS commodity/domain/practice, Census dataset and vintage. The exact set
