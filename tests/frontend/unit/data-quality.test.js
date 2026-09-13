@@ -15,6 +15,11 @@ import {
   freshnessRows,
   metricQualityRows,
 } from "../../../apps/web/lib/dataQuality";
+import {
+  servedContractWords,
+  servedFieldNames,
+  servesPath,
+} from "../support/servedContract.js";
 
 const healthy = {
   source_code: "CENSUS_ACS",
@@ -116,7 +121,7 @@ describe("per-metric quality is the publisher's own", () => {
 });
 
 describe("evidence the API publishes elsewhere is pointed at, not fabricated", () => {
-  test("each kind of quality evidence names its real publisher", () => {
+  test("each kind of evidence is stated with what it is not", () => {
     const kinds = EVIDENCE_LOCATIONS.map((entry) => entry.kind);
     expect(kinds).toContain("Revisions and as-released values");
     expect(kinds).toContain("Suppression and missing values");
@@ -137,6 +142,50 @@ describe("evidence the API publishes elsewhere is pointed at, not fabricated", (
       entry.kind.startsWith("Reporting"),
     );
     expect(participation.meaning).toContain("not zero crime");
+  });
+
+  test("each kind of quality evidence names its real publisher", () => {
+    // Covers: WEB-065 — this node's name used to be the whole claim: the
+    // check was `expect(entry.publishedBy).toBeTruthy()`, so a route retired
+    // or a field renamed would leave the screen pointing a reader at a
+    // surface that no longer exists and nothing would fail. It is WEB-043's
+    // own finding one layer up — "a fixture that models a weaker API than
+    // the one that ships does not fail; it quietly stops testing the
+    // behaviour it names" — and the shape of the two unfailable guards
+    // WEB-051 and WEB-053 left behind.
+    const fields = servedFieldNames();
+    const words = servedContractWords();
+
+    for (const entry of EVIDENCE_LOCATIONS) {
+      expect(entry.publishedBy, entry.kind).toBeTruthy();
+      expect(entry.inspectHere, entry.kind).toBeTruthy();
+      expect(entry.meaning, entry.kind).toBeTruthy();
+
+      // A path the prose gives relative to the versioned root, as the guide
+      // writes them, must be a route the contract actually serves.
+      const paths = entry.publishedBy.match(/\/[a-z0-9/_-]+/g) || [];
+      for (const path of paths) {
+        expect(servesPath(`/api/v1${path}`), `${entry.kind} names ${path}`).toBe(
+          true,
+        );
+      }
+
+      // Every snake_case name it uses is one the contract uses: a field
+      // (`value_status`) or a value a parameter accepts (`as_released`).
+      const named = entry.publishedBy.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g) || [];
+      for (const name of named) {
+        expect(words.has(name), `${entry.kind} names ${name}`).toBe(true);
+      }
+
+      // And it names something concrete. Without this, prose naming nothing
+      // would satisfy both checks above by having nothing to check.
+      const concrete =
+        paths.length > 0 ||
+        entry.publishedBy
+          .split(/[^A-Za-z0-9_]+/)
+          .some((word) => fields.has(word));
+      expect(concrete, `${entry.kind} names no published field or route`).toBe(true);
+    }
   });
 
   test("what the API does not publish is stated rather than invented", () => {

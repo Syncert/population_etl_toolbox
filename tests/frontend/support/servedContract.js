@@ -77,6 +77,36 @@ export function servedParameters(path) {
 }
 
 /**
+ * Every field name the contract publishes, from every schema.
+ *
+ * The union rather than one schema's: a claim naming `value_status` or
+ * `coverage` is naming a field of whichever envelope publishes it, and a
+ * reader following the name does not care which schema it came from.
+ */
+export function servedFieldNames() {
+  const names = new Set();
+  for (const schema of Object.values(snapshot.schemas || {})) {
+    for (const field of Object.keys(schema.properties || {})) {
+      names.add(field);
+    }
+  }
+  return names;
+}
+
+/**
+ * Every `snake_case` word the contract mentions anywhere.
+ *
+ * Wider than the field names on purpose: `scope=as_released` names a
+ * *value* a parameter accepts, and a client's prose points a reader at it
+ * the same way it points at a field. A name absent from the whole document
+ * is one the API does not use at all.
+ */
+export function servedContractWords() {
+  const found = JSON.stringify(snapshot).match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g);
+  return new Set(found || []);
+}
+
+/**
  * The served `GET` paths a fixture's path expression names.
  *
  * Several fixtures build their per-source routes from a template --
