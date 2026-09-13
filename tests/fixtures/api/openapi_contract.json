@@ -15,7 +15,11 @@
       ],
       "responses": {
         "204": "no-content",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -35,7 +39,11 @@
       ],
       "responses": {
         "204": "no-content",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -68,7 +76,10 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisListResponse",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -88,7 +99,11 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -149,7 +164,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "bls"
@@ -213,7 +230,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "bls"
@@ -222,7 +241,10 @@
     "GET /api/v1/catalog/capabilities": {
       "parameters": [],
       "responses": {
-        "200": "application/json:CapabilityListResponse"
+        "200": "application/json:CapabilityListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -231,7 +253,10 @@
     "GET /api/v1/catalog/freshness": {
       "parameters": [],
       "responses": {
-        "200": "application/json:FreshnessListResponse"
+        "200": "application/json:FreshnessListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -291,7 +316,9 @@
       ],
       "responses": {
         "200": "application/json:GeographyListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -348,7 +375,9 @@
       ],
       "responses": {
         "200": "application/json:MetricListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -369,7 +398,10 @@
       ],
       "responses": {
         "200": "application/json:MetricCapability",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -378,7 +410,10 @@
     "GET /api/v1/catalog/sources": {
       "parameters": [],
       "responses": {
-        "200": "application/json:array<SourceSystem>"
+        "200": "application/json:array<SourceSystem>",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -503,7 +538,9 @@
       ],
       "responses": {
         "200": "application/json:CdcObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "cdc"
@@ -564,7 +601,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census"
@@ -628,7 +667,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census"
@@ -699,7 +740,10 @@
       ],
       "responses": {
         "200": "application/json:ComparisonResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "comparison"
@@ -730,7 +774,10 @@
       ],
       "responses": {
         "200": "application/json:ComparisonPreflightResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "comparison"
@@ -780,7 +827,10 @@
       ],
       "responses": {
         "200": "application/json:DistributionBinsResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "distribution"
@@ -813,7 +863,10 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacketListResponse",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -833,7 +886,11 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -894,7 +951,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "fred"
@@ -958,7 +1017,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "fred"
@@ -967,7 +1028,8 @@
     "GET /api/v1/health": {
       "parameters": [],
       "responses": {
-        "200": "application/json:HealthResponse"
+        "200": "application/json:HealthResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError"
       },
       "tags": [
         "health"
@@ -1161,7 +1223,10 @@
       ],
       "responses": {
         "200": "application/json:NeutralObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1222,7 +1287,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1265,7 +1332,10 @@
       ],
       "responses": {
         "200": "application/json:MetricReleaseListResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1329,7 +1399,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1390,7 +1462,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census-pep"
@@ -1454,7 +1528,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census-pep"
@@ -1463,7 +1539,10 @@
     "GET /api/v1/usda-nass/measures": {
       "parameters": [],
       "responses": {
-        "200": "application/json:NassMeasureListResponse"
+        "200": "application/json:NassMeasureListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1660,7 +1739,9 @@
       ],
       "responses": {
         "200": "application/json:NassObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1774,7 +1855,9 @@
       ],
       "responses": {
         "200": "application/json:NassSeriesListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1783,7 +1866,10 @@
     "GET /api/v1/usda-nass/source-notes": {
       "parameters": [],
       "responses": {
-        "200": "application/json:NassSourceNotesResponse"
+        "200": "application/json:NassSourceNotesResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1792,7 +1878,8 @@
     "GET /health": {
       "parameters": [],
       "responses": {
-        "200": "application/json:HealthResponse"
+        "200": "application/json:HealthResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError"
       },
       "tags": [
         "health"
@@ -1801,7 +1888,9 @@
     "GET /health/ready": {
       "parameters": [],
       "responses": {
-        "200": "application/json:ReadinessResponse"
+        "200": "application/json:ReadinessResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "503": "application/json:ReadinessResponse | ErrorDetail"
       },
       "tags": [
         "health"
@@ -1811,7 +1900,12 @@
       "parameters": [],
       "responses": {
         "201": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -1821,7 +1915,12 @@
       "parameters": [],
       "responses": {
         "201": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -1841,7 +1940,13 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -1861,7 +1966,13 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -2104,6 +2215,14 @@
         "items",
         "metric_code",
         "total"
+      ]
+    },
+    "ErrorDetail": {
+      "properties": {
+        "detail": "string"
+      },
+      "required": [
+        "detail"
       ]
     },
     "EvidencePacket": {

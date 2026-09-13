@@ -547,9 +547,22 @@ any parsing. Public analytical reads carry no body and are unaffected.
 | `429` | Rate limited. Honour `Retry-After` |
 | `503` | The API cannot serve: database unavailable, a required serving contract missing, or (for saved analysis) storage not configured. The body is deliberately sanitized and never names warehouse objects |
 
+Every status above is **declared in `/openapi.json`**, on each route that can
+answer it, with the body it answers: `{"detail": "<sentence>"}` as the
+`ErrorDetail` schema, and the two 422 bodies as a union of it and
+`HTTPValidationError`. So a generated client has a branch for each of them,
+and this table cannot change without a snapshot diff. The declarations follow
+what the application does: a route declares a `404` only where it resolves an
+identifier, a `409` only where it holds a name unique, a `413` only where it
+parses a body, a `429` only where the limiter meters it (the health resource
+and the deployment probes are exempt), and a `401` only where a token is
+required.
+
 A `503` never tells you which warehouse relation is missing — that detail
 goes to the server log, because responses must not be usable to probe
-deployment state.
+deployment state. `/health/ready` is the one route whose `503` has two
+bodies: its own readiness report, or the sanitized refusal when no session
+could be opened at all. Both are declared.
 
 **`422` has two bodies, and which one you get says who refused the
 request.** A refusal the API itself decided — an unsupported filter, a

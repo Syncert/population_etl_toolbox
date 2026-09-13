@@ -172,6 +172,50 @@ def test_guide_reduction_claim_is_the_reduction_gate() -> None:
             )
 
 
+def test_guide_errors_table_is_the_declared_contract() -> None:
+    """Covers: API-121 — the promised failures are in the published document.
+
+    The guide opens by promising that everything in it is "pinned by the
+    reviewed OpenAPI snapshot ... so a change to anything below appears in
+    review as a snapshot diff". Its Errors table promised 401, 404, 409, 413,
+    422, 429 and 503 while the document declared 200, 201, 204 and 422 — so
+    the table could change without a snapshot diff, which is the opposite of
+    what the guide says, and a generated client had no branch for a 404 or a
+    429.
+    """
+    text = GUIDE.read_text(encoding="utf-8")
+    table = text.split("## Errors", 1)[1].split("\n\n", 2)[1]
+    promised = {
+        int(match)
+        for match in re.findall(r"^\| `(\d{3})` \|", table, flags=re.MULTILINE)
+    }
+    assert promised == {401, 404, 409, 413, 422, 429, 503}, (
+        "the guide's Errors table changed; the contract check below is written "
+        "against the table, not a copy of it"
+    )
+
+    document = app.openapi()
+    declared: dict[int, int] = {}
+    for item in document["paths"].values():
+        for operation in item.values():
+            for status in operation.get("responses", {}):
+                if int(status) >= 400:
+                    declared[int(status)] = declared.get(int(status), 0) + 1
+    undeclared = sorted(promised - set(declared))
+    assert not undeclared, f"the guide promises {undeclared} and no route declares them"
+    invented = sorted(set(declared) - promised)
+    assert not invented, f"the contract declares {invented} and the guide does not"
+
+    # And the body: every failure the API raises by hand answers a sentence
+    # under `detail`, which is what the guide says of them.
+    error_detail = document["components"]["schemas"]["ErrorDetail"]
+    assert error_detail["properties"]["detail"]["type"] == "string"
+    assert error_detail["required"] == ["detail"]
+    # The one status with two bodies, as the guide's own paragraph says.
+    validation = document["components"]["schemas"]["HTTPValidationError"]
+    assert validation["properties"]["detail"]["type"] == "array"
+
+
 def test_guide_documents_every_neutral_observation_filter() -> None:
     """Covers: API-065 — the documented filter union is the accepted one."""
     text = GUIDE.read_text(encoding="utf-8")
@@ -471,15 +515,20 @@ def test_the_guide_describes_both_shapes_of_a_refused_request() -> None:
     assert explained.status_code == 422, explained.text
     assert isinstance(explained.json()["detail"], str), explained.text
 
-    # And the contract declares exactly one 422 shape, so the array is not an
-    # accident of this one route.
+    # And the contract declares *both* shapes, on every operation, so neither
+    # is an accident of this one route. It used to declare only the array,
+    # which is how a generated client came to have no branch for the sentence
+    # the API answers on the one class of refusal it can explain (API-121).
     declared = {
         media
         for operation in snapshot["operations"].values()
         for status, media in (operation.get("responses") or {}).items()
         if status == "422"
     }
-    assert declared == {"application/json:HTTPValidationError"}, sorted(declared)
+    assert declared == {"application/json:ErrorDetail | HTTPValidationError"}, sorted(
+        declared
+    )
+    assert snapshot["schemas"]["ErrorDetail"]["properties"]["detail"] == "string"
     assert snapshot["schemas"]["HTTPValidationError"]["properties"]["detail"] == (
         "array<ValidationError>"
     )

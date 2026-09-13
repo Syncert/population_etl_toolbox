@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.auth import Account, get_app_session_dep, require_account
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import BODY_LIMIT, CONFLICT, NOT_FOUND
 from apps.api.schemas.evidence_packet import (
     EvidencePacket,
     EvidencePacketCreateRequest,
@@ -70,7 +71,12 @@ def list_evidence_packets(
         raise db_service_unavailable(exc) from exc
 
 
-@router.post("", response_model=EvidencePacket, status_code=201)
+@router.post(
+    "",
+    response_model=EvidencePacket,
+    status_code=201,
+    responses={**CONFLICT, **BODY_LIMIT},
+)
 def create_evidence_packet(
     payload: EvidencePacketCreateRequest,
     response: Response,
@@ -96,7 +102,7 @@ def create_evidence_packet(
         raise db_service_unavailable(exc) from exc
 
 
-@router.get("/{packet_id}", response_model=EvidencePacket)
+@router.get("/{packet_id}", response_model=EvidencePacket, responses=NOT_FOUND)
 def get_evidence_packet(
     response: Response,
     packet_id: int = Path(..., ge=1),
@@ -119,7 +125,11 @@ def get_evidence_packet(
         raise db_service_unavailable(exc) from exc
 
 
-@router.put("/{packet_id}", response_model=EvidencePacket)
+@router.put(
+    "/{packet_id}",
+    response_model=EvidencePacket,
+    responses={**NOT_FOUND, **CONFLICT, **BODY_LIMIT},
+)
 def update_evidence_packet(
     payload: EvidencePacketUpdateRequest,
     response: Response,
@@ -158,7 +168,7 @@ def update_evidence_packet(
         raise db_service_unavailable(exc) from exc
 
 
-@router.delete("/{packet_id}", status_code=204)
+@router.delete("/{packet_id}", status_code=204, responses=NOT_FOUND)
 def delete_evidence_packet(
     packet_id: int = Path(..., ge=1),
     account: Account = Depends(require_account),

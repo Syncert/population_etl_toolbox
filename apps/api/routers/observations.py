@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     list_metric_releases,
@@ -33,6 +34,7 @@ REVERSED_YEAR_DETAIL = "year_from must be less than or equal to year_to"
     response_model=NeutralObservationListResponse,
     name="get_neutral_observations",
     summary="Observations for any completed source's metric",
+    responses=NOT_FOUND,
 )
 def get_neutral_observations(
     metric_code: str = Query(..., min_length=1, max_length=200),
@@ -163,6 +165,7 @@ def get_neutral_observations(
     response_model=MetricReleaseListResponse,
     name="get_metric_releases",
     summary="Published releases holding a metric's observations",
+    responses=NOT_FOUND,
 )
 def get_metric_releases(
     metric_code: str = Query(..., min_length=1, max_length=200),

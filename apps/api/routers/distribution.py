@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import NOT_FOUND
 from apps.api.services.comparison_service import UnknownAnalysisMetric
 from apps.api.services.distribution_service import list_distribution_bins
 from apps.api.services.neutral_observations_service import NeutralQueryError
@@ -13,7 +14,7 @@ from apps.api.schemas import DistributionBinsResponse
 router = APIRouter(prefix="/distribution", tags=["distribution"])
 
 
-@router.get("/bins", response_model=DistributionBinsResponse)
+@router.get("/bins", response_model=DistributionBinsResponse, responses=NOT_FOUND)
 def get_distribution_bins(
     metric_code: str = Query(..., min_length=1, max_length=200),
     geo_level: Optional[str] = Query(None, max_length=50),

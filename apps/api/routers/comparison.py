@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import NOT_FOUND
 from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
     list_metric_comparison,
@@ -21,6 +22,7 @@ router = APIRouter(tags=["comparison"])
     response_model=ComparisonPreflightResponse,
     name="get_comparison_preflight",
     summary="Whether two metrics can be compared, and why",
+    responses=NOT_FOUND,
 )
 def get_comparison_preflight(
     metric_code_a: str = Query(..., min_length=1, max_length=200),
@@ -45,7 +47,7 @@ def get_comparison_preflight(
         raise db_service_unavailable(exc) from exc
 
 
-@router.get("/comparison", response_model=ComparisonResponse)
+@router.get("/comparison", response_model=ComparisonResponse, responses=NOT_FOUND)
 def get_metric_comparison(
     metric_code_a: str = Query(..., min_length=1, max_length=200),
     metric_code_b: str = Query(..., min_length=1, max_length=200),

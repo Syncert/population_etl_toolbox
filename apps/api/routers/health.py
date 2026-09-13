@@ -1,3 +1,5 @@
+from typing import Union
+
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -5,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.schemas import HealthResponse, ReadinessResponse
+from apps.api.schemas.errors import ErrorDetail
 from data_ingestion_toolbox.config import get_settings
 
 #: Mounted under the versioned prefix, so ``/api/v1/health`` answers as an
@@ -28,7 +31,26 @@ def health_probe() -> HealthResponse:
     return HealthResponse(status="ok", service="data-ingestion-toolbox-api")
 
 
-@probe_router.get("/health/ready", response_model=ReadinessResponse)
+@probe_router.get(
+    "/health/ready",
+    response_model=ReadinessResponse,
+    # The only route whose 503 has two bodies, and both are declared: an
+    # unready answer is this resource's own report (`status: "unready"` with
+    # the database and cache states), while a session the dependency cannot
+    # open at all is the sanitized `detail` sentence every other route's 503
+    # carries. A client that typed one shape would mis-read the other
+    # (API-121).
+    responses={
+        503: {
+            "model": Union[ReadinessResponse, ErrorDetail],
+            "description": (
+                "Not ready to serve. The readiness report when the database "
+                "check failed, or the sanitized refusal when no session could "
+                "be opened."
+            ),
+        }
+    },
+)
 def readiness_probe(
     response: Response,
     db: Session = Depends(get_db_session_dep),

@@ -9,6 +9,11 @@ from apps.api.dependencies import (
     reject_undeclared_query_parameters,
     serving_contract_unavailable,
 )
+from apps.api.failures import (
+    EVERY_ROUTE_FAILURES,
+    PRIVATE_STORE_FAILURES,
+    WAREHOUSE_READ_FAILURES,
+)
 from apps.api.freshness import PublicationEpochProvider
 from apps.api.middleware import (
     RedisResponseCacheMiddleware,
@@ -124,6 +129,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # (API-093); it declares no parameters of its own, so the published
         # contract is unchanged.
         dependencies=[Depends(reject_undeclared_query_parameters)],
+        # And declared on every route for the same reason: that dependency
+        # refuses an undeclared query parameter with a 422 before any route
+        # runs, so every operation can answer one. The published document
+        # declared only the statuses FastAPI generates, so a client built from
+        # it typed `422.detail` as an array and had no branch for the failures
+        # the guide promises (API-121).
+        responses=EVERY_ROUTE_FAILURES,
     )
 
     @application.exception_handler(ServingContractUnavailable)
@@ -142,7 +154,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Each router is mounted once, under the versioned prefix. API-008 retired
     # the unversioned aliases; /api/v1 is the whole public surface.
     for router in PUBLIC_ROUTERS:
-        application.include_router(router, prefix=VERSIONED_ROOT)
+        # What the shared middleware and dependencies behind each group can
+        # answer. A route adds the failures only it can raise -- a 404 for an
+        # identifier it resolves, a 409 for a name it holds unique, a 413 for
+        # a body it parses -- beside its own declaration.
+        if router in PRIVATE_ROUTERS:
+            group = PRIVATE_STORE_FAILURES
+        elif router is health.router:
+            # The versioned health resource reads nothing and is exempt from
+            # the rate limiter, so the application-wide 422 is all it can
+            # answer.
+            group = EVERY_ROUTE_FAILURES
+        else:
+            group = WAREHOUSE_READ_FAILURES
+        application.include_router(router, prefix=VERSIONED_ROOT, responses=group)
 
     application.include_router(health.probe_router)
 
