@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.api import database
+from apps.api import appdb, database
 from data_ingestion_toolbox.config import Settings
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -144,3 +144,93 @@ def test_dispose_returns_connections_and_resets_the_factory(
     assert engine.disposed is True
     assert database._engine is None
     assert database._session_factory is None
+
+
+# ---------------------------------------------------------------------------
+# API-090 — the application-storage engine carries the same budgets
+# ---------------------------------------------------------------------------
+
+
+def _fresh_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(appdb, "_engine", None)
+    monkeypatch.setattr(appdb, "_session_factory", None)
+
+
+def _recorded_budgets(module, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Build one engine with a stubbed factory and return its keyword budgets."""
+    recorded: dict = {}
+
+    def create_engine(url, **kwargs):
+        recorded.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(module, "create_engine", create_engine)
+    if module is appdb:
+        _fresh_app(monkeypatch)
+        appdb.get_app_engine(Settings())
+    else:
+        _fresh(monkeypatch)
+        database.get_api_engine(Settings())
+    return recorded
+
+
+def test_application_storage_carries_the_cancellation_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-090 — a blocked write must not hold a connection forever.
+
+    `app_api` is where saved configurations and evidence packets live, and it
+    is also where authentication reads: `require_account` runs its token
+    lookup on this engine. Without a server-side statement timeout a blocked
+    statement keeps its connection with nothing to cancel it, and because
+    `pool_timeout` only bounds how long a *new* request waits, the pool cannot
+    recover until the blocker clears on its own -- taking every account's
+    authentication with it, not just the caller's feature.
+    """
+    monkeypatch.setenv("APP_API_DATABASE_URL", "postgresql://fixture.invalid/app")
+    monkeypatch.setenv("API_DB_STATEMENT_TIMEOUT_MS", "1234")
+    recorded = _recorded_budgets(appdb, monkeypatch)
+
+    assert recorded["connect_args"]["options"] == "-c statement_timeout=1234"
+
+
+def test_application_storage_statement_timeout_zero_disables_the_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-090 — 0 disables it rather than passing a malformed option."""
+    monkeypatch.setenv("APP_API_DATABASE_URL", "postgresql://fixture.invalid/app")
+    monkeypatch.setenv("API_DB_STATEMENT_TIMEOUT_MS", "0")
+    recorded = _recorded_budgets(appdb, monkeypatch)
+
+    assert "options" not in recorded["connect_args"]
+
+
+def test_both_engines_declare_the_same_budgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-090 — a budget added to one engine and not the other shows.
+
+    The application engine copied every budget the warehouse engine declares
+    except the one that bounds a statement, with nothing saying why. Asserting
+    them together is what makes the next omission visible instead of silent.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fixture.invalid/test")
+    monkeypatch.setenv("APP_API_DATABASE_URL", "postgresql://fixture.invalid/app")
+    monkeypatch.setenv("API_DB_POOL_SIZE", "3")
+    monkeypatch.setenv("API_DB_MAX_OVERFLOW", "4")
+    monkeypatch.setenv("API_DB_POOL_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("API_DB_CONNECT_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("API_DB_STATEMENT_TIMEOUT_MS", "1234")
+
+    warehouse = _recorded_budgets(database, monkeypatch)
+    application = _recorded_budgets(appdb, monkeypatch)
+
+    for budget in (
+        "pool_pre_ping",
+        "pool_size",
+        "max_overflow",
+        "pool_timeout",
+        "pool_recycle",
+        "connect_args",
+    ):
+        assert application[budget] == warehouse[budget], budget
