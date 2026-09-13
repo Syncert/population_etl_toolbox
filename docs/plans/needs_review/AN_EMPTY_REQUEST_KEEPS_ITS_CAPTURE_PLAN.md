@@ -13,9 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect; blocks release certification on any ACS1 county slice with no
-  data.**
+- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
+  assessment agent; claimed and completed 2026-09-13. It was a present
+  defect blocking release certification on any ACS1 county slice with no
+  data. Register row **DQ-010**.
 - **Last updated:** 2026-09-13
 - **Owner surface:** `src/data_ingestion_toolbox/quality/reconciliation.py`,
   `tests/integration/database/test_layer_reconciliation.py`
@@ -76,10 +77,43 @@ contract working; both are counted as orphans.
 - Changing when the adapters commit the capture. Capture-before-parse is
   ADR-0001.
 
+## What changed
+
+- `_CAPTURE_BEARING_STATUSES` declares the three terminal statuses that hold
+  a capture, with the capture-before-parse reason recorded beside them.
+- The orphan-capture query reads `request.status <> ALL(%s)` against that
+  declaration, and joins **LEFT**: a capture whose request row is missing
+  altogether used to drop out of the query rather than be reported, which is
+  the worst version of the defect the rule exists for.
+- `inventory.py`'s DQ-SHARED-002 summary names the statuses that legitimately
+  hold a capture and the three that do not.
+- `test_layer_reconciliation.py` gains a parametrized node over all six
+  statuses the ledger admits, and a node for the missing request row.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `pytest tests/unit` — **1520 passed**.
+- `pytest tests/integration/database/test_layer_reconciliation.py -m
+  "integration and database"` — **9 passed** (2 before: +7 parametrised
+  cases).
+- **The coverage fails on the old rule.** Restoring the inner join and
+  `status <> 'captured'` leaves `3 failed, 6 passed`: the `empty` case, the
+  `quarantined` case, and the missing-request case.
+  `reconciliation.py` was restored byte-for-byte afterwards.
+- `ruff format --check .` / `ruff check .` — clean (444 files).
+- `python -m tests.support.catalog_evidence` renders DQ-010 `FULL`.
+
+### One guard widened on the way
+
+`test_python_tests_reference_known_catalog_ids` read catalog ids with
+`[A-Z][A-Z0-9]*-\d{3}`, which matches `SHARED-002` inside the *rule* id
+`DQ-SHARED-002` and reported it as an unknown catalog id — so a test
+docstring could not name the warehouse rule it is about. The pattern now
+requires a catalog id to start a word. The set of register rows it
+recognises is unchanged (379 both ways, verified by comparing the two
+patterns over the whole document), and the only test docstring whose
+referenced ids change is the new one.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

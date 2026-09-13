@@ -66,6 +66,162 @@ def _seed_lineage_fixture(
     return str(run_id), str(capture.capture_id)
 
 
+def _seed_capture_with_status(
+    connection_factory: Callable[[], connection],
+    source_code: str,
+    status: str,
+    page: int,
+) -> str:
+    """One run/request/capture chain finished at ``status``.
+
+    The capture is committed before the request is finished, which is the
+    order the ledger adapters use and ADR-0001 requires: the bytes are
+    persisted, then the terminal status is written from what the parse found.
+    """
+    control = CaptureControl(connection_factory, source_code=source_code)
+    run_id = control.start_run(watermark={"status": status})
+    request = control.start_request(
+        run_id=run_id, endpoint="/probe", parameters={"page": page}
+    )
+    capture = ResponseCapture(
+        capture_id=uuid4(),
+        request_id=request.request_id,
+        run_id=run_id,
+        source_code=source_code,
+        endpoint="/probe",
+        request_parameters={"page": page},
+        retrieved_at=datetime.now(timezone.utc),
+        http_status=200,
+        response_headers={"content-type": "application/json"},
+        media_type="application/json",
+        payload=json.dumps({"status": status}).encode("utf-8"),
+        payload_schema_version="probe-v1",
+    )
+    persist_response_capture(connection_factory, capture)
+    control.finish_request(request.request_id, status=status)
+    control.finish_run(run_id, status="success")
+    return str(capture.capture_id)
+
+
+@pytest.mark.parametrize(
+    ("status", "accounted"),
+    [
+        ("captured", True),
+        # An empty provider answer: captured bytes, nothing to load. The ACS1
+        # county slices are full of them, and `acs_ingest_dag.py` says so --
+        # "ingest_slice returns 0 when there is nothing to load (perfect for
+        # ACS1 county coverage)".
+        ("empty", True),
+        # A payload that could not be parsed, or a release that was not
+        # publishable. The bytes are the evidence of what failed, which is
+        # why quarantine keeps them.
+        ("quarantined", True),
+        # No terminal accounting for bytes that exist: the defect this rule
+        # is for.
+        ("planned", False),
+        ("running", False),
+        ("failed", False),
+    ],
+)
+def test_a_capture_is_an_orphan_only_when_nothing_accounts_for_it(
+    postgres_connection_factory: Callable[[], connection],
+    status: str,
+    accounted: bool,
+) -> None:
+    """Covers: DQ-010 — `empty` and `quarantined` hold a capture on purpose.
+
+    DQ-SHARED-002 called a capture an orphan whenever its request's status
+    was anything but `captured`, and `control.ingestion_request.status`
+    admits six words. The adapters commit the capture first and then write
+    the terminal status from the parse: `captured` when rows loaded, `empty`
+    when the provider answered nothing, `quarantined` when the payload could
+    not be parsed. Two of the three were counted as orphans, so after a
+    re-ingestion every ACS1 county slice with no published data made
+    `warehouse_data_quality` red, `certify_release` return
+    `promotable=False`, and -- because the monthly plausibility sweep reports
+    `not_applicable` when no promotable certification exists -- the whole
+    plausibility tier turn off quietly.
+
+    This module's own healthy fixture only ever finished a request as
+    `captured`, so its "everything passes" assertion never saw the statuses
+    the adapters actually emit.
+    """
+    source_code = f"LINEAGEPROBE{uuid4().hex[:10].upper()}"
+    capture_id = _seed_capture_with_status(
+        postgres_connection_factory, source_code, status, page=1
+    )
+    scope = {"source_code": source_code}
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            outcomes = {
+                outcome.object_name: outcome
+                for outcome in verify_capture_lineage(cursor, scope)
+            }
+    finally:
+        reader.close()
+
+    captures = outcomes["raw_capture.response_capture"]
+    if accounted:
+        assert captures.result == "pass", (
+            f"a capture bound to a '{status}' request is the contract working"
+        )
+        assert captures.observed_count == 0
+        assert captures.evidence == []
+    else:
+        assert captures.result == "fail"
+        assert captures.observed_count == 1
+        assert captures.evidence == [capture_id]
+
+
+def test_a_capture_whose_request_row_is_missing_is_an_orphan(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DQ-010 — the case the inner join hid.
+
+    The rule joined the request, so a capture with no request row at all --
+    bytes with no accounting whatsoever, the worst version of the defect the
+    rule exists for -- dropped out of the query rather than being reported.
+    """
+    source_code = f"LINEAGEPROBE{uuid4().hex[:10].upper()}"
+    capture_id = _seed_capture_with_status(
+        postgres_connection_factory, source_code, "captured", page=1
+    )
+    scope = {"source_code": source_code}
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            # Foundation rows are append-only, so the deletion happens inside
+            # this never-committed transaction with the triggers bypassed:
+            # the state a lost or truncated control table leaves behind.
+            cursor.execute("SET session_replication_role = replica")
+            cursor.execute(
+                """
+                DELETE FROM control.ingestion_request
+                 WHERE request_id = (
+                     SELECT request_id FROM raw_capture.response_capture
+                      WHERE capture_id = %s
+                 )
+                """,
+                (capture_id,),
+            )
+            cursor.execute("SET session_replication_role = origin")
+
+            outcomes = {
+                outcome.object_name: outcome
+                for outcome in verify_capture_lineage(cursor, scope)
+            }
+            captures = outcomes["raw_capture.response_capture"]
+            assert captures.result == "fail"
+            assert captures.observed_count == 1
+            assert captures.evidence == [capture_id]
+        reader.rollback()
+    finally:
+        reader.close()
+
+
 def test_injected_lineage_defects_fail_with_bounded_evidence(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:

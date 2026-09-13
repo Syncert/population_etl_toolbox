@@ -283,6 +283,22 @@ def verify_capture_checksums(
     ]
 
 
+#: Request statuses that legitimately hold a capture.
+#:
+#: The capture is committed before the payload is parsed (ADR-0001), and the
+#: terminal status is written from what the parse found: ``captured`` when
+#: rows were loaded, ``empty`` when the provider answered nothing to load,
+#: ``quarantined`` when the payload could not be parsed or the release was
+#: not publishable. All three are the contract working, and all three leave
+#: captured bytes behind on purpose -- quarantined most of all, since the
+#: bytes are the evidence of what could not be parsed.
+#:
+#: A capture bound to ``planned``, ``running`` or ``failed`` is the defect
+#: this rule looks for: bytes with no accounting, or accounting that never
+#: reached a terminal state (DQ-010).
+_CAPTURE_BEARING_STATUSES = ("captured", "empty", "quarantined")
+
+
 def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-SHARED-002 — captured requests and captures agree in both directions."""
     clause, params = _source_filter(scope, "request.source_code")
@@ -301,17 +317,21 @@ def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     )
 
     clause, params = _source_filter(scope, "capture.source_code")
+    # LEFT JOIN, because the inner join hid the worst case: a capture whose
+    # request row is missing altogether disappeared from the rule instead of
+    # being reported as bytes with no accounting at all.
     orphan_captures, orphan_capture_total = _offenders(
         cursor,
         f"""
         SELECT capture.capture_id
           FROM raw_capture.response_capture AS capture
-          JOIN control.ingestion_request AS request
+          LEFT JOIN control.ingestion_request AS request
             ON request.request_id = capture.request_id
-         WHERE request.status <> 'captured'{clause}
+         WHERE (request.request_id IS NULL
+                OR request.status <> ALL(%s)){clause}
         """,
         order_by="1",
-        params=tuple(params),
+        params=(list(_CAPTURE_BEARING_STATUSES), *params),
     )
 
     return [

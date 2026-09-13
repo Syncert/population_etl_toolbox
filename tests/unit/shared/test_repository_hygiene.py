@@ -180,7 +180,13 @@ def test_python_tests_reference_known_catalog_ids() -> None:
     plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
         encoding="utf-8"
     )
-    catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
+    # A catalog id starts a word. Warehouse *rule* ids live in a different
+    # namespace and embed something that looks like one -- `DQ-SHARED-002`
+    # would otherwise be read as the catalog id `SHARED-002` and reported
+    # unknown, so a test docstring could not name the rule it is about. The
+    # lookbehind changes nothing about which register rows are recognised;
+    # they are matched at the start of a table cell.
+    catalog_id_pattern = r"(?<![A-Z0-9-])[A-Z][A-Z0-9]*-\d{3}"
     known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
     failures: list[str] = []
 

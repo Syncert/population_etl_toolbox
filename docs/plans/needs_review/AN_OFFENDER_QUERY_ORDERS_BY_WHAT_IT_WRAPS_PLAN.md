@@ -158,10 +158,15 @@ lineage rules — are proved runnable there, by name, rather than skipped.
   "dataset"` — the CI failure, reproduced locally.
 - `ruff format --check .` / `ruff check .` — clean (444 files).
 - **`dag-parse` cannot run locally**: Airflow is not installed in this
-  environment (`ModuleNotFoundError: No module named 'airflow'`). Criterion 4
-  is cited from CI on the landing commit rather than reported as passing
-  here; see the follow-up note added below once that run completes.
+  environment (`ModuleNotFoundError: No module named 'airflow'`), so
+  criterion 4 is cited from CI rather than reported as passing here.
+  **It is green on the landing commit `bf76c4a`** — run
+  [34762273220](https://github.com/Syncert/population_etl_toolbox/actions/runs/34762273220),
+  job "DAG parse tests (Airflow 2.9.3 + Python 3.11)", conclusion `success`,
+  the "Run DAG tests" step included. It had failed on `706d658` and
+  `f0a74f8` with the `missing FROM-clause entry` statement in the PostgreSQL
+  service log.
 
 ## Remaining work
 
-- Confirm `dag-parse` green on the landing commit (criterion 4).
+- None. Review is the remaining step.

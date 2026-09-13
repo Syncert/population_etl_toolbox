@@ -1682,7 +1682,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-SHARED-002",
         "BLOCK",
         "capture_integrity",
-        "Every capture has exactly one valid request/run lineage chain.",
+        (
+            "Every capture has exactly one valid request/run lineage chain: "
+            "a request claiming capture has one, and a capture's request "
+            "reached a terminal status that holds bytes -- captured, empty, "
+            "or quarantined. Planned, running, failed, or a missing request "
+            "row is bytes nothing accounts for."
+        ),
         (
             "raw_capture.response_capture",
             "control.ingestion_request",
