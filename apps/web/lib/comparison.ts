@@ -562,6 +562,47 @@ export function mapPeriodMismatchNote(
 }
 
 
+function publishedCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * What this comparison's geography count is an intersection of, or `""`.
+ *
+ * The route joins its two reduced sides on geography identity with an inner
+ * join, so a geography only one side publishes is absent from the answer
+ * entirely. "500 aligned geographies" then reads as the universe when it is
+ * 500 of 3,143. API-087 serves each side's own count; this says it.
+ *
+ * Empty when both sides published exactly what was paired, so this is a fact
+ * about the answer rather than a standing disclaimer, and empty when the API
+ * publishes no counts at all -- an older deployment states no shortfall, and
+ * reading an absent count as zero would report every geography as dropped
+ * (WEB-050).
+ */
+export function describeComparisonCoverage(
+  response: ComparisonResponse | null | undefined,
+): string {
+  const total = publishedCount(response?.total);
+  const countA = publishedCount(response?.geographies_a);
+  const countB = publishedCount(response?.geographies_b);
+  if (total === null || countA === null || countB === null) {
+    return "";
+  }
+  if (countA <= total && countB <= total) {
+    return "";
+  }
+  const codeA = response?.metric_code_a || "measure A";
+  const codeB = response?.metric_code_b || "measure B";
+  return (
+    `${total.toLocaleString()} geographies are paired here. ` +
+    `${codeA} publishes ${countA.toLocaleString()} and ${codeB} publishes ` +
+    `${countB.toLocaleString()} under these filters; a geography only one of ` +
+    "the two publishes is not in this comparison."
+  );
+}
+
+
 /** The derived field a comparison map colours: the first the API named. */
 export function defaultDerivedField(
   response: ComparisonResponse | null | undefined,

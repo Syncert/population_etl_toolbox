@@ -203,7 +203,15 @@ export interface ComparisonResponse {
   units_b?: string | null;
   derivations?: string[];
   caveats?: string[];
+  /** Rows this request can page: the geographies both sides published. */
   total?: number;
+  /**
+   * How many geographies each side published under the same filters, before
+   * the inner join (API-087). Absent on a deployment serving an older
+   * contract, which is not the same as zero.
+   */
+  geographies_a?: number;
+  geographies_b?: number;
   limit?: number;
   offset?: number;
   items: ComparisonRow[];

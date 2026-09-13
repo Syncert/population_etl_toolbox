@@ -639,3 +639,37 @@ test("a comparison whose sides share a period says nothing extra", async ({ page
   await expect(page.getByTestId("map-period-note")).toHaveCount(0);
   await expect(page.getByTestId("scatter-differing-periods")).toHaveCount(0);
 });
+
+test("the screen says what its geographies are an intersection of", async ({ page }) => {
+  // Covers: WEB-050 — the route joins its two reduced sides on geography
+  // identity with an inner join. "500 aligned geographies" reads as the
+  // universe when it is 500 of 3,143, and the map and the scatter draw only
+  // the intersection with nothing saying so.
+  const narrowed = {
+    ...comparisonPayload,
+    total: 2,
+    geographies_a: 3143,
+    geographies_b: 2,
+  };
+  await installRoutes(page, { payload: narrowed });
+  await page.goto("/compare");
+
+  const note = page.getByTestId("comparison-coverage-note");
+  await expect(note).toContainText("2 geographies are paired here");
+  await expect(note).toContainText("publishes 3,143");
+  await expect(note).toContainText("not in this comparison");
+  // A different fact from the page-bound shortfall, which this comparison
+  // does not have: the status stays what it was.
+  await expect(page.getByTestId("comparison-status")).toContainText("aligned geographies");
+});
+
+test("a comparison that paired everything says nothing extra", async ({ page }) => {
+  // Covers: WEB-050 — a fact about this answer, not a standing disclaimer.
+  await installRoutes(page, {
+    payload: { ...comparisonPayload, total: 2, geographies_a: 2, geographies_b: 2 },
+  });
+  await page.goto("/compare");
+
+  await expect(page.getByTestId("comparison-table-panel")).toBeVisible();
+  await expect(page.getByTestId("comparison-coverage-note")).toHaveCount(0);
+});

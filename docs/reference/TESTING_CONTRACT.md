@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-049 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-050 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **322 of 322** | **0 of 322** |
+| **Total** | **323 of 323** | **0 of 323** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 322-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 323-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -663,6 +663,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-047 | P0 | Browser + Unit / `frontend` | A saved explorer view records the reduction it was viewed with | `explorerDocument` stores `newest_per_geography` / `newest_release_per_period` read back from the request the view issued -- so a source whose capability entry does not declare a reduction is never saved as though it had been reduced -- and it drops, rather than stores, a pairing the live route refuses: a reduction under the wrong scope, a pinned release alongside a settled history, or the two reductions together; a document stored before API-082, carrying neither field, still reopens as it did | A map saved without its reduction reopening as the source's whole latest publication -- for Census PEP every estimated year of the vintage, about 54 rows per county -- joined to one polygon and coloured by whichever row arrived last |
 | WEB-048 | P0 | Browser + Unit / `frontend` | A packet block replays the request its envelope records | `documentFromSavedChart` builds an attached block's query through the same `explorerDocument`/`comparisonDocument` the explorer saves with, so a map block carries the reduction its envelope's `api_query` shows and a release without an as-released scope is dropped rather than stored as a document the API refuses; the explorer's browser-local save records the scope, release, and reduction its request asked for, which the account migration then carries; a chart saved before this, carrying none of those fields, attaches and migrates exactly as it did | An issued evidence packet -- the resource whose purpose is that a reader can re-derive its evidence without this application -- whose block replays a different set of rows than the envelope beside it names |
 | WEB-049 | P0 | Browser + Unit / `frontend` | The aligned views say when a pair is not contemporaneous | `comparisonScatterModel` carries each point's two published periods and counts the points whose periods differ; the scatter draws those hollow, names the count in its caption and in its accessible description, and never drops them; the comparison map's note states how many coloured geographies combine values from different periods; a row publishing only one period is not counted as a mismatch, and a comparison whose rows all share a period shows neither note | A scatter point pairing a 2023 value with a 2019 one drawn like any other, and a polygon coloured by a difference computed across those four years, implying an alignment `/comparison` explicitly refuses to make and the table beside it already marks |
+| WEB-050 | P0 | Browser + Unit / `frontend` | The comparison screen says what its geographies are an intersection of | Where either side published more geographies than the inner join paired, `describeComparisonCoverage` names both counts and both measures and the workspace renders it; a comparison that paired everything shows nothing, an API publishing neither count reports no shortfall rather than reading an absent count as zero, and the note stays distinct from the page-bound shortfall WEB-039 reports | "500 aligned geographies" reported in green over a map of 500 polygons when 3,143 publish one of the two measures -- a correct answer to a narrower question than the reader asked, presented as the answer to theirs |
 
 ### Deployment Tests
 

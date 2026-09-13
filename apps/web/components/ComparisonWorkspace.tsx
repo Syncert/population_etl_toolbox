@@ -30,6 +30,7 @@ import {
   comparisonColumns,
   comparisonExport,
   comparisonMapRows,
+  describeComparisonCoverage,
   mapPeriodMismatchNote,
   comparisonMetricOptions,
   comparisonRequestParams,
@@ -420,6 +421,10 @@ export default function ComparisonWorkspace() {
     () => mapPeriodMismatchNote(comparison, derivedField),
     [comparison, derivedField],
   );
+  // The join is an inner one, so the geographies here are an intersection.
+  // Empty unless one of the two measures published more than was paired
+  // (WEB-050).
+  const coverageNote = useMemo(() => describeComparisonCoverage(comparison), [comparison]);
 
   // Which aligned presentations this comparison can answer, from the same
   // published evidence the explorer's modes read: the verdict, the rows the
@@ -609,6 +614,16 @@ export default function ComparisonWorkspace() {
           testId="comparison-status"
         />
       </section>
+
+      {coverageNote ? (
+        <section className="grid">
+          <article className="card span-2">
+            <p className="subtle" data-testid="comparison-coverage-note">
+              {coverageNote}
+            </p>
+          </article>
+        </section>
+      ) : null}
 
       <section className="grid">
         <article className="card span-2">

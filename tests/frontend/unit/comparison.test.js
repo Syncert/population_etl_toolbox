@@ -26,6 +26,7 @@ import {
   incompatibleAlternatives,
   isDerivedField,
   mayRequestComparison,
+  describeComparisonCoverage,
   mapPeriodMismatchNote,
   periodsDiffer,
   preflightRequestParams,
@@ -465,5 +466,44 @@ describe("an aligned view says when a pair is not contemporaneous", () => {
     expect(mapPeriodMismatchNote({ ...pairs, items: [pairs.items[1]] }, "difference")).toBe("");
     expect(mapPeriodMismatchNote(pairs, "not_a_derived_field")).toBe("");
     expect(mapPeriodMismatchNote(null, "difference")).toBe("");
+  });
+});
+
+describe("the screen says what its geographies are an intersection of", () => {
+  // Covers: WEB-050 — the route joins its two reduced sides on geography
+  // identity with an inner join, so `total` is the size of the intersection.
+  // The screen reported "N aligned geographies", which reads as the universe.
+
+  const paired = {
+    metric_code_a: "CENSUS_ACS:acs5:B01003_001",
+    metric_code_b: "BLS:LAU:UNEMP_RATE",
+    total: 500,
+    geographies_a: 3143,
+    geographies_b: 500,
+    items: [],
+  };
+
+  test("a side that published more than was paired is named", () => {
+    expect(describeComparisonCoverage(paired)).toBe(
+      "500 geographies are paired here. CENSUS_ACS:acs5:B01003_001 publishes 3,143 " +
+        "and BLS:LAU:UNEMP_RATE publishes 500 under these filters; a geography only " +
+        "one of the two publishes is not in this comparison.",
+    );
+  });
+
+  test("a comparison that paired everything says nothing extra", () => {
+    expect(
+      describeComparisonCoverage({ ...paired, geographies_a: 500, geographies_b: 500 }),
+    ).toBe("");
+  });
+
+  test("an API that publishes neither count reports no shortfall", () => {
+    // An older deployment serves no coverage. Reading an absent count as zero
+    // would report every geography as dropped.
+    expect(describeComparisonCoverage({ metric_code_a: "A", metric_code_b: "B", total: 7 })).toBe(
+      "",
+    );
+    expect(describeComparisonCoverage(null)).toBe("");
+    expect(describeComparisonCoverage({ ...paired, total: undefined })).toBe("");
   });
 });
