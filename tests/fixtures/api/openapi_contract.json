@@ -2007,6 +2007,8 @@
       "properties": {
         "caveats": "array<string>",
         "derivations": "array<string>",
+        "geographies_a": "integer",
+        "geographies_b": "integer",
         "items": "array<ComparisonRow>",
         "limit": "integer",
         "metric_code_a": "string",

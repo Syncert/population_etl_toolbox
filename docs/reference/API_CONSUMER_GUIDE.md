@@ -300,6 +300,20 @@ a multi-period source cannot create Cartesian rows. Every row carries
 `value_b` alongside the API-derived `difference` and `ratio`, which are named
 in `derivations`. An incompatible pair answers `422` with the failed rules.
 
+Two things about that answer are easy to read past.
+
+The join is an **inner** one: a geography one side publishes and the other
+does not is absent from the answer entirely, and `total` is the size of the
+intersection, not of either measure. `geographies_a` and `geographies_b`
+report how many geographies each side published under the same filters, so
+you can see how much of each was paired — 500 counties out of 3,143 is a
+different answer from 500 counties.
+
+The two sides are **not aligned to a shared period**. Each is its own newest
+value, so `period_a` and `period_b` can differ on any row, and `difference`
+and `ratio` are then computed across two publications. Compare them per row
+rather than assuming the pair is contemporaneous.
+
 `GET /api/v1/distribution/bins` returns API-derived equal-width bins over one
 metric's latest values, labelled `derived: true` with its `source_code` and
 `units`. Counts are exact counts of provider-published numeric values; null,

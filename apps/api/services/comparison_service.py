@@ -215,7 +215,20 @@ def list_metric_comparison(
     )
     """
 
-    count_query = text(base_sql + "SELECT COUNT(*)::INT FROM joined")
+    # One statement, one evaluation of both reductions. The three counts are
+    # read against each other -- `total` is meaningful only beside what it is
+    # an intersection of -- so measuring them separately would let a refresh
+    # land between them and report a narrowing that never happened (API-087,
+    # following API-084).
+    count_query = text(
+        base_sql
+        + """
+        SELECT
+            (SELECT COUNT(*)::INT FROM joined) AS total,
+            (SELECT COUNT(*)::INT FROM side_a) AS geographies_a,
+            (SELECT COUNT(*)::INT FROM side_b) AS geographies_b
+        """
+    )
     list_query = text(
         base_sql
         + """
@@ -235,7 +248,8 @@ def list_metric_comparison(
     if state_fips is not None:
         params["state_fips"] = state_fips
 
-    total = int(db.execute(count_query, params).scalar() or 0)
+    counts = db.execute(count_query, params).mappings().one()
+    total = int(counts["total"] or 0)
     rows = (
         db.execute(list_query, {**params, "limit": limit, "offset": offset})
         .mappings()
@@ -264,6 +278,8 @@ def list_metric_comparison(
         derivations=list(decision.derivations),
         caveats=list(decision.caveats),
         total=total,
+        geographies_a=int(counts["geographies_a"] or 0),
+        geographies_b=int(counts["geographies_b"] or 0),
         limit=limit,
         offset=offset,
         items=items,

@@ -54,7 +54,15 @@ class ComparisonResponse(BaseModel):
     units_b: Optional[str] = None
     derivations: list[str] = []
     caveats: list[str] = []
+    #: Rows this request can page: the geographies both sides published.
     total: int
+    #: How many geographies each side published under this request's own
+    #: filters, before the join. The join is an inner one, so a geography one
+    #: side publishes and the other does not is absent from the answer
+    #: entirely; without these, `total` reads as the universe rather than as
+    #: the intersection it is (API-087).
+    geographies_a: int = 0
+    geographies_b: int = 0
     limit: int
     offset: int
     items: list[ComparisonRow]

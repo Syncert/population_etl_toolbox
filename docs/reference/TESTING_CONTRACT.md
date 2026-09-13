@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-086 | None |
+| API | API-001–API-087 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-049 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **321 of 321** | **0 of 321** |
+| **Total** | **322 of 322** | **0 of 322** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 321-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 322-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -609,6 +609,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-084 | P0 | Service / `unit api` | A distribution's range and its bins describe one reading | `/distribution/bins` measures `total`, `min_value`, `max_value` and every bin count in one statement over one evaluation of its reduction, so no refresh can land between the range and the counts: `sum(count)` equals `total`, the reported bounds enclose every value counted, and `width_bucket` is never handed a range whose bounds are equal (which PostgreSQL rejects); the degenerate answers are unchanged -- nothing published stays `total: 0` with null bounds and no items, one distinct value stays the single bin closing on itself -- and every bin asked for is still reported | A histogram whose bars do not add up to the total beside them: a value published below a stale `min_value` buckets to 0 and is dropped from `items` entirely, one above a stale `max_value` is clamped into a last bin whose upper bound the response reports as a maximum it is not |
 | API-085 | P0 | Service / `unit api` | The cache epoch rotates when the published state changes | The epoch is a digest over every source's recorded publication state -- publication time, content fingerprint, and source watermark -- so it changes when any of them changes and stays put when none do; a source republishing behind another's declared time still rotates it, the row order it is read in does not, an empty harvest state answers `never-published`, and the token stays a short opaque hex string nothing can read a date out of | A republication that changes what a publisher *says* without moving its declared publication time -- the case migration 016 gave the harvest guard a content fingerprint for -- serving the retired identities from cache for a whole TTL, reported as fresh |
 | API-086 | P0 | Contract / `unit api` | The durable fallback picks a geography's newest row, not any of them | `/observations/latest`'s as-published fallback ranks each geography on a total order over the union -- newest period, then the published release identity the view is already declared to be keyed by (`as_of_date`, `dataset_code` ascending so `acs1` precedes `acs5`, `vintage_year`), with `NULLS LAST` so a row recording no release identity never outranks one that does -- and that order is the module's own declared paging order read for recency, not a restatement of the three refresh procedures' rules; paging, projection, filters, and the count are unchanged | An ACS metric whose newest period is published under two datasets and several vintages answering whichever row the plan produced, so two identical requests return two different published values for a county and neither is reported as a choice |
+| API-087 | P0 | Service / `unit api` | A comparison says how much of each side it could not pair | `/comparison` reports `geographies_a` and `geographies_b` -- how many geographies each reduced side published under the request's own filters -- beside the `total` its inner join paired, all three measured in one statement over one evaluation of the two reductions so they describe one reading; `total` keeps its meaning as the rows the request can page, a comparison that pairs everything reports all three equal, and the addition is additive under ADR-0002 with the reviewed snapshot regenerated | A county comparison of a measure covering 3,143 counties against one covering 500 answering `total: 500` with nothing saying what it is an intersection of, so the response reads as "500 counties" and 2,643 dropped geographies are invisible |
 
 ### Frontend Tests
 
