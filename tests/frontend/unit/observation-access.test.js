@@ -33,6 +33,7 @@ import {
   newestPerGeography,
   normalizeObservationRows,
   OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
   OBSERVATION_UNCERTAINTY_FIELDS,
   observationCoverageValue,
   observationUncertaintyLabel,
@@ -1220,6 +1221,33 @@ describe("a published uncertainty travels with its value", () => {
     const [row] = normalizeObservationRows(neutralSource, [intervalRow]);
     expect(publishesUncertainty([row])).toBe(true);
     expect(publishesUncertainty([])).toBe(false);
+  });
+
+  test("the label can be asked for the fields beyond the margin", () => {
+    // The profile product decodes the margin itself -- `marginOfErrorText`
+    // knows the Census sentinel margins, which a field-value join cannot --
+    // and needs the rest of what the row published beside it, without
+    // repeating the margin (WEB-060).
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...intervalRow, uncertainty: { ...intervalRow.uncertainty, margin_of_error: "1200" } },
+    ]);
+    expect(observationUncertaintyLabel(row)).toContain("margin of error 1200");
+    const beyond = observationUncertaintyLabel(row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN);
+    expect(beyond).not.toContain("margin of error");
+    expect(beyond).toContain("confidence lower");
+  });
+
+  test("the fields beyond the margin are derived from the one list", () => {
+    // Not a second list: a field added to OBSERVATION_UNCERTAINTY_FIELDS
+    // reaches every surface that reads it without an edit.
+    expect(OBSERVATION_UNCERTAINTY_BEYOND_MARGIN.every((field) =>
+      OBSERVATION_UNCERTAINTY_FIELDS.includes(field),
+    )).toBe(true);
+    expect([...OBSERVATION_UNCERTAINTY_BEYOND_MARGIN].sort()).toEqual(
+      OBSERVATION_UNCERTAINTY_FIELDS.filter(
+        (field) => !field.startsWith("margin_of_error"),
+      ).slice().sort(),
+    );
   });
 
   test("the label names each published field rather than composing a notation", () => {

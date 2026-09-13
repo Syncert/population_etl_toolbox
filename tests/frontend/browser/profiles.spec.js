@@ -298,3 +298,99 @@ test("the products are configuration: switching rebuilds the same screen", async
   await expect(product).toHaveAttribute("data-geo-id", GEO_ID);
   await expect(page.getByTestId("measure-value-population-estimate")).toContainText("568,203");
 });
+
+// Covers: WEB-060 — the profile shows every field that qualifies a value.
+//
+// The card ended with `Margin of error: {marginOfErrorText(row)}` and nothing
+// else. CDC publishes a confidence interval, not a margin, so a filled CDC
+// slot read "Margin of error: Not published" -- true, and reading as though
+// the value carried no published uncertainty at all. The slot is in the
+// shipped template; the test above asserts the unfilled path, this one the
+// filled one.
+test("a filled CDC slot shows the interval CDC published", async ({ page }) => {
+  const cdcMetric = {
+    metric_code: "CDC:cdi:ALC1_1:crude",
+    metric_display_name: "Binge drinking among adults",
+    source_code: "CDC",
+    units: "percent",
+    freshness_state: "fresh",
+    valid_geo_grains: ["COUNTY"],
+  };
+  await installRoutes(page);
+  // Published after the shared stubs, so these win for this test only; a
+  // source the capability map does not declare cannot be asked at all, so
+  // CDC has to be declared as well as published.
+  await page.route("**/api/v1/catalog/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        total: capabilities.items.length + 1,
+        items: [
+          ...capabilities.items,
+          {
+            source_code: "CDC",
+            display_name: "Centers for Disease Control and Prevention",
+            route_segment: "cdc",
+            served_by_neutral_routes: true,
+            observation_filters: ["geo_id", "geo_level"],
+            observation_routes: neutralRoutes,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/catalog/metrics/*", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const code = decodeURIComponent(path.split("/catalog/metrics/")[1] || "");
+    return code === cdcMetric.metric_code
+      ? route.fulfill({ json: cdcMetric })
+      : route.fallback();
+  });
+  await page.route("**/api/v1/observations?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get("metric_code") !== cdcMetric.metric_code) {
+      return route.fallback();
+    }
+    return route.fulfill({
+      json: {
+        metric_code: cdcMetric.metric_code,
+        source_code: "CDC",
+        scope: "latest",
+        total: 1,
+        limit: 50,
+        offset: 0,
+        items: [
+          {
+            metric_code: cdcMetric.metric_code,
+            source_code: "CDC",
+            geo_id: GEO_ID,
+            geo_level: "COUNTY",
+            value: "18.2",
+            value_status: "valid",
+            unit: "percent",
+            period_start: "2022-01-01",
+            period_end: "2022-12-31",
+            // The neutral envelope, where these fields actually arrive.
+            uncertainty: { confidence_lower: "16.9", confidence_upper: "19.5" },
+          },
+        ],
+      },
+    });
+  });
+
+  await page.goto("/profiles?place=state%3A55%7Ccounty%3A025");
+
+  await expect(page.getByTestId("measure-cdc-indicator")).toHaveAttribute(
+    "data-available",
+    "true",
+  );
+  await expect(page.getByTestId("measure-value-cdc-indicator")).toContainText("18.2");
+  // The interval is shown, not suppressed behind an absent margin.
+  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
+    "confidence lower 16.9",
+  );
+  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
+    "confidence upper 19.5",
+  );
+  // A measure that published no interval grows no such line.
+  await expect(page.getByTestId("measure-uncertainty-population-estimate")).toHaveCount(0);
+});

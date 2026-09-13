@@ -662,6 +662,20 @@ export function observationUncertaintyValue(
 }
 
 /**
+ * The uncertainty fields a surface presenting the margin itself still needs.
+ *
+ * The profile product decodes the margin with `marginOfErrorText`, which
+ * knows the Census sentinel margins (`-555555555` is a controlled estimate,
+ * not a negative interval) that a field-value join cannot. It needs
+ * everything else the row published beside that, and it must not get a
+ * second list: derived here, so a field added to
+ * `OBSERVATION_UNCERTAINTY_FIELDS` reaches every surface that reads it
+ * (WEB-060).
+ */
+export const OBSERVATION_UNCERTAINTY_BEYOND_MARGIN: readonly string[] =
+  OBSERVATION_UNCERTAINTY_FIELDS.filter((field) => !field.startsWith("margin_of_error"));
+
+/**
  * True when any loaded row published any uncertainty field.
  *
  * Read from the answer rather than from a list of sources, exactly as
@@ -688,11 +702,9 @@ export function publishesUncertainty(rows: ObservationRow[] | null | undefined):
  */
 export function observationUncertaintyLabel(
   row: ObservationRow | null | undefined,
+  fields: readonly string[] = OBSERVATION_UNCERTAINTY_FIELDS,
 ): string {
-  return OBSERVATION_UNCERTAINTY_FIELDS.map((field) => [
-    field,
-    observationUncertaintyValue(row, field),
-  ])
+  return fields.map((field) => [field, observationUncertaintyValue(row, field)])
     .filter(([, value]) => value !== "")
     .map(([field, value]) => `${String(field).replaceAll("_", " ")} ${value}`)
     .join(" · ");

@@ -30,9 +30,11 @@ import { metricQualityState } from "../lib/catalog";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
+  OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
   buildNewestValueRequest,
   normalizeObservationRows,
   observationPeriodLabel,
+  observationUncertaintyLabel,
 } from "../lib/observationAccess";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
@@ -41,24 +43,18 @@ import {
   DEFAULT_TEMPLATE_ID,
   PRODUCT_TEMPLATES,
   findTemplate,
+  profileExport,
   resolveTemplate,
   templateCoverage,
   templateMetricCodes,
 } from "../lib/productTemplates";
-import type { ResolvedMeasure } from "../lib/productTemplates";
+import type { MeasureAnswer, ResolvedMeasure } from "../lib/productTemplates";
 import { saveChart } from "../lib/savedCharts";
 import { explorerHref, parseProfileState, serializeProfileState } from "../lib/urlState";
 
 const CATALOG_PAGE_SIZE = 1000;
 
 interface RequestStatus {
-  state: string;
-  message: string;
-}
-
-interface MeasureAnswer {
-  /** The published row for this place, or `null` when none was published. */
-  row: ObservationRow | null;
   state: string;
   message: string;
 }
@@ -332,45 +328,10 @@ export default function ProfileProduct() {
   }, [templateId, geoId]);
 
   function exportCsv() {
-    const headings = [
-      "product",
-      "section",
-      "slot",
-      "metric_code",
-      "metric_name",
-      "source",
-      "geo_id",
-      "geo_name",
-      "period",
-      "value",
-      "value_status",
-      "unit",
-      "margin_of_error",
-      "availability",
-    ];
-    const rows: string[][] = [];
-    for (const entry of resolved) {
-      for (const measure of entry.measures) {
-        const answer = answers[measure.slot.id];
-        const row = answer?.row;
-        rows.push([
-          template.title,
-          entry.section.title,
-          measure.slot.label,
-          measure.metricCode,
-          measure.metric ? displayMetricName(measure.metric) : "",
-          String(measure.metric?.source_code ?? ""),
-          geoId,
-          placeName,
-          row ? observationPeriodLabel(row) : "",
-          row?.value == null ? "" : String(row.value),
-          String(row?.value_status ?? ""),
-          row ? observationUnit(row) : "",
-          row?.margin_of_error == null ? "" : String(row.margin_of_error),
-          measure.available ? answer?.message || "not requested" : measure.reason,
-        ]);
-      }
-    }
+    const { headings, rows } = profileExport(template, resolved, answers, {
+      geoId,
+      placeName,
+    });
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -545,6 +506,10 @@ function MeasureCard({
   const metric = measure.metric;
   const row = answer?.row || null;
   const quality = metricQualityState(metric);
+  const uncertaintyBeyondMargin = observationUncertaintyLabel(
+    row,
+    OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
+  );
 
   return (
     <div data-testid={`measure-${measure.slot.id}`} data-available="true">
@@ -570,6 +535,15 @@ function MeasureCard({
         {row ? ` · Period: ${observationPeriodLabel(row) || "not published"}` : ""}
       </small>
       {row ? <small>Margin of error: {marginOfErrorText(row)}</small> : null}
+      {/* Everything else the row published to qualify this value. A CDC
+          measure publishes confidence bounds and a NASS one the CV trio,
+          and "Margin of error: Not published" alone reads as though the
+          value carried no published uncertainty at all (WEB-060). */}
+      {uncertaintyBeyondMargin ? (
+        <small data-testid={`measure-uncertainty-${measure.slot.id}`}>
+          Published uncertainty: {uncertaintyBeyondMargin}
+        </small>
+      ) : null}
       <small>
         <StatusPill
           state={quality.state}

@@ -10,6 +10,7 @@ import {
   DEFAULT_TEMPLATE_ID,
   PRODUCT_TEMPLATES,
   findTemplate,
+  profileExport,
   resolveTemplate,
   templateCoverage,
   templateMetricCodes,
@@ -162,5 +163,125 @@ describe("profile URL state", () => {
       serializeProfileState({ template: DEFAULT_TEMPLATE_ID }, { template: DEFAULT_TEMPLATE_ID }),
     ).toBe("");
     expect(profileHref({}, {})).toBe("/profiles");
+  });
+});
+
+// Covers: WEB-060 — the profile's file carries every field that qualifies a
+// value.
+//
+// WEB-051 and WEB-053 wrote the rule down for the explorer's export: "a file
+// that carried a subset would be this client deciding which part of a
+// source's participation basis a reader may have", and the same for every
+// field `ObservationUncertainty` publishes. The profile product's export
+// carried `margin_of_error` alone, read straight off the row -- so it saw
+// only the two fields normalization lifts, and only for a neutral-shaped
+// source -- and no coverage column at all.
+describe("the profile export carries every published qualifier", () => {
+  const sections = [
+    {
+      section: { id: "health", title: "Health" },
+      measures: [
+        {
+          slot: { id: "indicator", label: "Indicator", metricCodes: ["CDC:cdi:X:crude"] },
+          metric: { metric_code: "CDC:cdi:X:crude", metric_display_name: "Indicator", source_code: "CDC" },
+          metricCode: "CDC:cdi:X:crude",
+          available: true,
+          reason: "",
+        },
+        {
+          slot: { id: "yield", label: "Yield", metricCodes: ["USDA_NASS:corn:YIELD"] },
+          metric: { metric_code: "USDA_NASS:corn:YIELD", metric_display_name: "Yield", source_code: "USDA_NASS" },
+          metricCode: "USDA_NASS:corn:YIELD",
+          available: true,
+          reason: "",
+        },
+      ],
+    },
+  ];
+  // The neutral shape: every qualifier nested under its own envelope, which
+  // is where these fields actually arrive.
+  const answers = {
+    indicator: {
+      state: "ok",
+      message: "published",
+      row: {
+        metric_code: "CDC:cdi:X:crude",
+        value: "18.2",
+        value_status: "valid",
+        unit: "percent",
+        period_start: "2022-01-01",
+        period_end: "2022-12-31",
+        uncertainty: { confidence_lower: "16.9", confidence_upper: "19.5" },
+        coverage: { population: "5900000", coverage_basis: "state resident population" },
+      },
+    },
+    yield: {
+      state: "ok",
+      message: "published",
+      row: {
+        metric_code: "USDA_NASS:corn:YIELD",
+        value: "181.4",
+        value_status: "valid",
+        unit: "bu / acre",
+        period_start: "2024-01-01",
+        period_end: "2024-12-31",
+        uncertainty: { cv_value: "14.7", cv_status: "unreliable", cv_symbol: "(D)" },
+      },
+    },
+  };
+  const template = { id: "community-conditions", title: "Community conditions" };
+  const place = { geoId: "state:55|county:025", placeName: "Dane County" };
+
+  test("a confidence interval reaches the file", () => {
+    const { headings, rows } = profileExport(template, sections, answers, place);
+    const cell = (row, name) => row[headings.indexOf(name)];
+    const indicator = rows.find((row) => row[3] === "CDC:cdi:X:crude");
+    expect(cell(indicator, "confidence_lower")).toBe("16.9");
+    expect(cell(indicator, "confidence_upper")).toBe("19.5");
+    // The margin column is still there and still empty: CDC publishes an
+    // interval, not a margin, and an empty cell is not a zero.
+    expect(cell(indicator, "margin_of_error")).toBe("");
+  });
+
+  test("the coefficient of variation and its unreliability flag reach the file", () => {
+    const { headings, rows } = profileExport(template, sections, answers, place);
+    const cell = (row, name) => row[headings.indexOf(name)];
+    const yieldRow = rows.find((row) => row[3] === "USDA_NASS:corn:YIELD");
+    expect(cell(yieldRow, "cv_value")).toBe("14.7");
+    expect(cell(yieldRow, "cv_status")).toBe("unreliable");
+    // The symbol NASS publishes precisely to say an estimate is unreliable.
+    expect(cell(yieldRow, "cv_symbol")).toBe("(D)");
+  });
+
+  test("every published coverage field travels too", () => {
+    const { headings, rows } = profileExport(template, sections, answers, place);
+    const cell = (row, name) => row[headings.indexOf(name)];
+    const indicator = rows.find((row) => row[3] === "CDC:cdi:X:crude");
+    expect(cell(indicator, "population")).toBe("5900000");
+    expect(cell(indicator, "coverage_basis")).toBe("state resident population");
+    // A field this row did not publish is empty, never a zero.
+    expect(cell(indicator, "coverage_percent")).toBe("");
+  });
+
+  test("an unavailable slot still exports its stated reason", () => {
+    const unavailable = [
+      {
+        section: { id: "safety", title: "Safety" },
+        measures: [
+          {
+            slot: { id: "crime", label: "Crime", metricCodes: ["FBI_UCR:x"] },
+            metric: null,
+            metricCode: "FBI_UCR:x",
+            available: false,
+            reason: "no published identity satisfies this slot",
+          },
+        ],
+      },
+    ];
+    const { headings, rows } = profileExport(template, unavailable, {}, place);
+    expect(rows[0][headings.indexOf("availability")]).toBe(
+      "no published identity satisfies this slot",
+    );
+    expect(rows[0][headings.indexOf("value")]).toBe("");
   });
 });
