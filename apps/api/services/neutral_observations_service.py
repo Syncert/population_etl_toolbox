@@ -75,7 +75,18 @@ def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]
     return db.execute(detail_query, params).mappings().first()
 
 
-def _dispatch_for(metric: Mapping[str, Any]) -> ObservationDispatch:
+def dispatch_for_metric(metric: Mapping[str, Any]) -> ObservationDispatch:
+    """The reviewed dispatch entry owning ``metric``, or the 422 that explains.
+
+    The glossary can publish a metric whose source has no entry here:
+    warehouse work lands before API registry work by design, and
+    ``catalog_service.get_metric_capability`` answers such a metric's
+    semantics with no routes rather than pretending it is unservable. Every
+    route that dispatches on a metric goes through this one function, so the
+    explanation is the same wherever a caller meets it -- ``/distribution/bins``
+    reached into the registry directly and answered a ``KeyError`` as a 500
+    (API-078).
+    """
     source_code = metric.get("source_code") or ""
     dispatch = OBSERVATION_DISPATCH.get(source_code)
     if dispatch is None:
@@ -322,7 +333,7 @@ def list_neutral_observations(
     metric = resolve_metric(db, metric_code)
     if metric is None:
         return None
-    dispatch = _dispatch_for(metric)
+    dispatch = dispatch_for_metric(metric)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(
@@ -399,7 +410,7 @@ def list_metric_releases(
     metric = resolve_metric(db, metric_code)
     if metric is None:
         return None
-    dispatch = _dispatch_for(metric)
+    dispatch = dispatch_for_metric(metric)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     relation = dispatch.released_relation

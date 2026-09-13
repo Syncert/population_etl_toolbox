@@ -208,6 +208,61 @@ def test_stratified_source_distribution_is_declined_with_its_reason() -> None:
     assert not _dispatched(session), "a declined source must not reach SQL"
 
 
+_UNREGISTERED_METRIC = {
+    "metric_code": "NEWSRC:THING",
+    "source_code": "NEWSRC",
+    "units": "people",
+    "valid_time_grains": ["ANNUAL"],
+    "valid_geo_grains": ["STATE"],
+    "aggregation_characteristic": "additive",
+    "physical_lineage": {},
+}
+
+
+def test_metric_from_an_unregistered_source_is_explained_not_a_500() -> None:
+    """Covers: API-078 — the one analysis route that crashed now explains.
+
+    The glossary can publish a metric whose source has no reviewed dispatch
+    entry: warehouse work lands before API registry work by design, and
+    ``catalog_service.get_metric_capability`` documents exactly that state.
+    ``/observations``, ``/comparison``, ``/comparison/preflight``, and
+    ``/catalog/metrics/{code}`` all answer it honestly; this route raised
+    ``UnknownObservationDispatch`` -- a ``KeyError`` no handler caught.
+    """
+    session = _DistributionSession(metric_row=_UNREGISTERED_METRIC)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins", params={"metric_code": "NEWSRC:THING"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "NEWSRC" in detail
+    assert "/catalog/capabilities" in detail
+    assert _dispatched(session) == [], "no query runs for a source with no dispatch"
+
+
+def test_the_unregistered_explanation_is_the_one_observations_gives() -> None:
+    """Covers: API-078 — one helper, so the two routes cannot drift apart."""
+    session = _DistributionSession(metric_row=_UNREGISTERED_METRIC)
+    client = _client_with(session)
+    try:
+        bins = client.get(
+            "/api/v1/distribution/bins", params={"metric_code": "NEWSRC:THING"}
+        )
+        observations = client.get(
+            "/api/v1/observations", params={"metric_code": "NEWSRC:THING"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert bins.status_code == observations.status_code == 422
+    assert bins.json()["detail"] == observations.json()["detail"]
+
+
 def test_distribution_dispatches_to_the_owning_sources_latest_relation() -> None:
     """Covers: API-052 — bins compute over one newest value per geography."""
     session = _DistributionSession(metric_row=dict(_FRED_METRIC))

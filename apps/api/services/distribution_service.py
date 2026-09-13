@@ -21,7 +21,6 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import observation_dispatch
 from apps.api.schemas import DistributionBin, DistributionBinsResponse
 from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
@@ -32,6 +31,7 @@ from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     _filter_conditions,
     _metric_conditions,
+    dispatch_for_metric,
     resolve_metric,
 )
 
@@ -48,7 +48,12 @@ def list_distribution_bins(
         raise UnknownAnalysisMetric("metric_code")
     source_code = str(metric.get("source_code") or "")
 
-    dispatch = observation_dispatch(source_code)
+    # Through the shared helper, not the registry: a metric whose source has
+    # no reviewed entry is a 422 that names the source and points at
+    # /catalog/capabilities, exactly as /observations answers it. Reaching
+    # into the registry here raised a KeyError this route did not catch
+    # (API-078).
+    dispatch = dispatch_for_metric(metric)
     if not dispatch.analysis_ready:
         restriction = dispatch.analysis_restriction or (
             f"source '{source_code}' is not served by the aligned analysis routes"

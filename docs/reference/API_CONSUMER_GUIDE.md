@@ -282,6 +282,11 @@ metric's latest values, labelled `derived: true` with its `source_code` and
 `units`. Counts are exact counts of provider-published numeric values; null,
 suppressed, and missing values are excluded rather than binned.
 
+A metric whose source the API has not registered yet — the catalog answers it
+with its published semantics and no routes — is declined by `/observations`
+and `/distribution/bins` with the same `422` naming the source and pointing
+here, never a `500`.
+
 **The analysis routes answer for Census ACS, BLS, FRED, and Census PEP.** CDC,
 USDA NASS, and FBI UCR are declined with a stated reason: they publish
 stratified, multi-dimensional, or agency-grain observations that an aligned
