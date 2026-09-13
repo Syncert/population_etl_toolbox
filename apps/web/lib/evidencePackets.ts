@@ -44,6 +44,13 @@ export interface ReproducibilityEnvelope {
   /** Which publication: the source's latest, or a pinned release. */
   scope: "latest" | "as_released";
   release: string;
+  /**
+   * The reduction the block was viewed with. A map shows one value per
+   * geography; the block's document has to ask for the same thing, or the
+   * envelope's single period describes rows the replay does not answer.
+   */
+  newestPerGeography: boolean;
+  newestReleasePerPeriod: boolean;
   /** The period the presented values describe, as published. */
   period: string;
   units: string;
@@ -62,6 +69,8 @@ export const EMPTY_ENVELOPE: ReproducibilityEnvelope = Object.freeze({
   geoLevel: "",
   scope: "latest",
   release: "",
+  newestPerGeography: false,
+  newestReleasePerPeriod: false,
   period: "",
   units: "",
   transformation: "none",
@@ -268,6 +277,15 @@ export function envelopeFromSavedChart(
     geoLevel: text(chart.geoLevel),
     scope: chart.scope === "as_released" ? "as_released" : "latest",
     release: text(chart.release),
+    // The reduction the view was saved with, recorded here as well as in the
+    // document, because it is what makes the envelope's one `period` true: a
+    // map read with `newest_per_geography` shows one period per geography,
+    // and the same block replaying the whole publication shows every
+    // estimated year of the vintage (WEB-071). A view saved before the
+    // explorer recorded a reduction asked for none, which is what these
+    // defaults say about it.
+    newestPerGeography: chart.newestPerGeography === true,
+    newestReleasePerPeriod: chart.newestReleasePerPeriod === true,
     // No fallback. `savedAt` is when someone pressed save, and putting it
     // here made every attached block's envelope state a period no source
     // published -- `2026-09-13T12:41:03.117Z` as the period of a 2023
@@ -324,10 +342,12 @@ export function documentFromSavedChart(
     geoLevel: envelope.geoLevel || undefined,
     stateFips: stateFips || undefined,
     geoId: envelope.geoId || undefined,
-    // A view that did not record a reduction asked for none, which is what a
-    // chart saved before this change says about itself.
-    newestPerGeography: chart?.newestPerGeography === true,
-    newestReleasePerPeriod: chart?.newestReleasePerPeriod === true,
+    // From the envelope, not the chart a second time: the API cross-checks
+    // the two against each other, so reading one field twice is the one way
+    // they could disagree (WEB-071). A view that recorded no reduction asked
+    // for none, which is what the envelope's defaults say about it.
+    newestPerGeography: envelope.newestPerGeography,
+    newestReleasePerPeriod: envelope.newestReleasePerPeriod,
   });
 }
 
@@ -367,6 +387,23 @@ const REPLAY_STATE_LABELS: Record<BlockReadState["state"], string> = {
  * analytical block reports "not checked", which is what an absent verdict
  * means and never "replayable".
  */
+/**
+ * Which reduction an envelope records, in the reader's words, or "" for none.
+ *
+ * The two are mutually exclusive -- each belongs to a different scope and the
+ * API refuses both together -- so one column says which, rather than two
+ * columns of `false`.
+ */
+export function reductionLabel(envelope: ReproducibilityEnvelope | undefined): string {
+  if (envelope?.newestPerGeography) {
+    return "newest period per geography";
+  }
+  if (envelope?.newestReleasePerPeriod) {
+    return "newest release per period";
+  }
+  return "";
+}
+
 export function packetExport(
   packet: EvidencePacket | null | undefined,
   states: BlockReadState[] = [],
@@ -383,6 +420,11 @@ export function packetExport(
     "geo_level",
     "scope",
     "release",
+    // The reduction the block was read with, because the file is where the
+    // envelope has to stand on its own: a column per published row against
+    // one value per geography is a different answer to the same question,
+    // and `period` only reads correctly beside it (WEB-071).
+    "reduction",
     "period",
     "units",
     "transformation",
@@ -411,6 +453,7 @@ export function packetExport(
       envelope?.geoLevel || "",
       envelope?.scope || "",
       envelope?.release || "",
+      reductionLabel(envelope),
       envelope?.period || "",
       envelope?.units || "",
       envelope?.transformation || "",
@@ -457,6 +500,8 @@ function normalizeEnvelope(value: unknown): ReproducibilityEnvelope | undefined 
     geoLevel: text(source.geoLevel),
     scope: source.scope === "as_released" ? "as_released" : "latest",
     release: text(source.release),
+    newestPerGeography: source.newestPerGeography === true,
+    newestReleasePerPeriod: source.newestReleasePerPeriod === true,
     period: text(source.period),
     units: text(source.units),
     transformation: text(source.transformation) || "none",
@@ -590,6 +635,8 @@ function envelopeToApi(envelope: ReproducibilityEnvelope): ApiReproducibilityEnv
     geo_level: envelope.geoLevel,
     scope: envelope.scope,
     release: envelope.release,
+    newest_per_geography: envelope.newestPerGeography,
+    newest_release_per_period: envelope.newestReleasePerPeriod,
     period: envelope.period,
     units: envelope.units,
     transformation: envelope.transformation || "none",
@@ -606,6 +653,8 @@ function envelopeFromApi(envelope: ApiReproducibilityEnvelope): ReproducibilityE
     geoLevel: envelope.geo_level || "",
     scope: envelope.scope === "as_released" ? "as_released" : "latest",
     release: envelope.release || "",
+    newestPerGeography: envelope.newest_per_geography === true,
+    newestReleasePerPeriod: envelope.newest_release_per_period === true,
     period: envelope.period || "",
     units: envelope.units || "",
     transformation: envelope.transformation || "none",

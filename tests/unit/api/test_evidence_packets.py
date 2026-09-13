@@ -562,6 +562,26 @@ def test_incomplete_analytical_block_is_stored_and_reported(
             "names source(s) BLS in its envelope that its query does not read",
             id="envelope-names-only-a-source-the-query-does-not-read",
         ),
+        # The reduction is the third duplicated request parameter, and the one
+        # that decides how many rows the query answers (API-120).
+        pytest.param(
+            _block(envelope=_envelope(newest_per_geography=True)),
+            "records newest_per_geography=true but its query asks for false",
+            id="envelope-records-a-reduction-the-query-does-not-ask-for",
+        ),
+        pytest.param(
+            _block(document=_query(newest_per_geography=True)),
+            "records newest_per_geography=false but its query asks for true",
+            id="query-asks-for-a-reduction-the-envelope-does-not-record",
+        ),
+        pytest.param(
+            _block(
+                envelope=_envelope(scope="as_released", newest_release_per_period=True),
+                document=_query(scope="as_released"),
+            ),
+            "records newest_release_per_period=true but its query asks for false",
+            id="envelope-records-a-settled-history-the-query-does-not-ask-for",
+        ),
     ],
 )
 def test_contradictions_are_refused_at_write_naming_the_block(
@@ -604,6 +624,52 @@ def test_a_retired_measure_is_refused_at_write_naming_the_block(
     assert "block 'unemployment'" in detail, "the reader is told which block"
     assert "retired" in detail
     assert storage.rows == []
+
+
+def test_a_reduction_a_stored_block_did_not_record_is_reported_on_read(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-120 — a contradiction that predates the rule is read, not hidden.
+
+    A contradiction cannot be written. It can be stored *before* the field
+    joined the envelope: rows written while the envelope carried only `scope`
+    and `release` keep the reduction at its default beside a query that asks
+    for one. That is a map block declaring one period over a replay of every
+    estimated year of the vintage, and the read path reported nothing, because
+    it never crossed the envelope against the query at all.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "pre-rule", "document": _packet(_block("unemployment"))},
+    )
+    assert created.json()["validation"]["valid"] is True
+    packet_id = created.json()["packet_id"]
+
+    # What a row stored before the envelope carried the reduction looks like:
+    # the query asks for one, the envelope beside it says nothing.
+    stored = storage.rows[0]["document"]["blocks"][0]
+    stored["document"]["newest_per_geography"] = True
+    for field in ("newest_per_geography", "newest_release_per_period"):
+        assert stored["envelope"].pop(field) is False
+
+    read = client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth())
+    assert read.status_code == 200, "the composer's document is still returned"
+    validation = read.json()["validation"]
+    assert validation["valid"] is False
+    state = next(
+        block for block in validation["blocks"] if block["block_id"] == "unemployment"
+    )
+    assert "records newest_per_geography=false but its query asks for true" in (
+        state["reason"] or ""
+    )
+    assert state["missing"] == [], "contradictory, not incomplete"
+    block = read.json()["document"]["blocks"][0]
+    assert block["document"]["newest_per_geography"] is True, (
+        "the stored query is returned unmodified, never repaired"
+    )
 
 
 def test_duplicate_block_ids_are_refused(accounts, monkeypatch) -> None:

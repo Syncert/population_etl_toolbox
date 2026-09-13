@@ -262,6 +262,45 @@ describe("a block replays the request its envelope records", () => {
     expect(document.filters).toEqual({ geo_level: "COUNTY", state_fips: "55" });
   });
 
+  test("the envelope records the reduction its document asks for", () => {
+    // Covers: WEB-071 — the envelope carried `scope` and `release`, the two
+    // other duplicated request parameters, and not the reduction. A map block
+    // composed from `newest_per_geography=true` records the one period it
+    // showed; the API stored it beside a document whose reduction sat at its
+    // default, and the block replayed every estimated year of the vintage
+    // under an envelope declaring one period. The API cross-checks the two,
+    // so the builder reads the reduction once and both sides carry it.
+    const chart = {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      source: "CENSUS_PEP",
+      geoLevel: "COUNTY",
+      stateFips: "55",
+      period: "2024-07-01",
+      newestPerGeography: true,
+      apiQuery: "/api/v1/observations?metric_code=…&newest_per_geography=true",
+    };
+    const built = envelopeFromSavedChart(chart);
+    expect(built.newestPerGeography).toBe(true);
+    expect(built.newestReleasePerPeriod).toBe(false);
+    expect(documentFromSavedChart(chart).newest_per_geography).toBe(true);
+
+    const settled = {
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      source: "CENSUS_ACS",
+      scope: "as_released",
+      newestReleasePerPeriod: true,
+    };
+    expect(envelopeFromSavedChart(settled).newestReleasePerPeriod).toBe(true);
+    expect(documentFromSavedChart(settled).newest_release_per_period).toBe(true);
+
+    // A view that recorded no reduction asked for none, on both sides, which
+    // is what a chart saved before the explorer recorded one says about
+    // itself.
+    const plain = envelopeFromSavedChart({ metricCode: "M", source: "FRED" });
+    expect(plain.newestPerGeography).toBe(false);
+    expect(plain.newestReleasePerPeriod).toBe(false);
+  });
+
   test("a release without an as-released scope is dropped, not stored", () => {
     // `validate_document` refuses `release` under `scope=latest`, so the hand
     // built literal produced a block the API would not accept.

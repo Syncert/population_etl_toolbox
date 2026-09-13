@@ -341,6 +341,14 @@ export interface ApiReproducibilityEnvelope {
   geo_level: string;
   scope: "latest" | "as_released";
   release: string;
+  /**
+   * The reduction the block's query was viewed with. Cross-checked against
+   * the block's document by the API, like `scope` and `release`: a map of one
+   * value per geography whose stored query replays the whole publication is a
+   * different set of rows than the packet argued from (API-120/WEB-071).
+   */
+  newest_per_geography: boolean;
+  newest_release_per_period: boolean;
   period: string;
   units: string;
   transformation: string;

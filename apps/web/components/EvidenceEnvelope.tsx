@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import StatusPill from "./StatusPill";
-import { blockLiveStatus, blockReopenHref } from "../lib/evidencePackets";
+import { blockLiveStatus, blockReopenHref, reductionLabel } from "../lib/evidencePackets";
 import type { PacketBlock } from "../lib/evidencePackets";
 
 export interface EvidenceEnvelopeProps {
@@ -60,6 +60,10 @@ export default function EvidenceEnvelope({ block, showReopen = true }: EvidenceE
           <dd>
             {envelope.scope}
             {envelope.release ? ` · ${envelope.release}` : ""}
+            {/* The reduction belongs beside the publication it narrows: the
+                period above describes one value per geography only when the
+                block was read that way (WEB-071). */}
+            {reductionLabel(envelope) ? ` · ${reductionLabel(envelope)}` : ""}
           </dd>
         </div>
         <div>

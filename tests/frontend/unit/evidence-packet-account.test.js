@@ -22,6 +22,12 @@ const envelope = {
   geoLevel: "COUNTY",
   scope: "as_released",
   release: "2022",
+  // The reduction the view was read with travels too: the API cross-checks it
+  // against the block's own query, so a block whose envelope declares one
+  // period and whose query replays the whole publication is refused rather
+  // than stored (WEB-071).
+  newestPerGeography: false,
+  newestReleasePerPeriod: true,
   period: "2022",
   units: "people",
   transformation: "none",
@@ -34,6 +40,7 @@ const query = {
   metric_code: "CENSUS_ACS:acs5:B01003_001",
   scope: "as_released",
   release: "2022",
+  newest_release_per_period: true,
   filters: { geo_level: "COUNTY", geo_id: "state:55|county:025" },
 };
 
@@ -68,6 +75,8 @@ describe("the packet crosses the account boundary", () => {
       geo_level: "COUNTY",
       scope: "as_released",
       release: "2022",
+      newest_per_geography: false,
+      newest_release_per_period: true,
       period: "2022",
       units: "people",
       transformation: "none",
@@ -172,6 +181,13 @@ describe("the exported packet says which blocks can no longer be replayed", () =
     // are different facts about the block.
     expect(column(headings, rows, "evidence", "live_or_frozen")).toContain("frozen to release");
     expect(column(headings, rows, "evidence", "replay_state")).toBe("stale");
+    // The reduction the block was read with travels in the file too: a
+    // settled history and the whole set of releases are different answers,
+    // and `period` only reads correctly beside it (WEB-071).
+    expect(column(headings, rows, "evidence", "reduction")).toBe(
+      "newest release per period",
+    );
+    expect(column(headings, rows, "condition", "reduction")).toBe("");
     expect(column(headings, rows, "evidence", "replay_reason")).toContain(
       "not a published metric",
     );

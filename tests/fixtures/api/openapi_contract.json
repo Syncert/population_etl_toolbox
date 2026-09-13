@@ -2754,6 +2754,8 @@
         "geo_id": "string",
         "geo_level": "string",
         "metric_codes": "array<string>",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
         "period": "string",
         "release": "string",
         "scope": "string",

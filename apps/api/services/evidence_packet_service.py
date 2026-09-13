@@ -154,6 +154,22 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
             f"block '{block.block_id}' records release '{envelope.release}' but its "
             f"query asks for '{document.release or ''}'"
         )
+    # The reduction is the third duplicated request parameter, and it decides
+    # how many rows the query answers. A map block composed from
+    # `newest_per_geography=true` records the one period it showed; stored
+    # with the document's reduction left at its default it replays as the
+    # whole publication -- every estimated year of the vintage -- under an
+    # envelope that declares one period. That is a different set of rows than
+    # the packet argued from (API-120).
+    for reduction in ("newest_per_geography", "newest_release_per_period"):
+        recorded = bool(getattr(envelope, reduction))
+        queried = bool(getattr(document, reduction))
+        if recorded != queried:
+            return (
+                f"block '{block.block_id}' records {reduction}="
+                f"{str(recorded).lower()} but its query asks for "
+                f"{str(queried).lower()}"
+            )
     # The geography is a request parameter, not an observation about what the
     # source published: the same names the block's own `filters` carries. Left
     # uncrossed, a packet could store one geography's name over another
@@ -266,6 +282,21 @@ def _block_state(
             block_id=block.block_id,
             valid=False,
             reason="this block records an envelope but no query to replay",
+            missing=missing,
+        )
+    # A contradiction cannot be written, but it can be *read*: a packet stored
+    # before a duplicated request parameter joined the envelope carries that
+    # field at its default while its query carries the composer's answer. The
+    # reduction is the case that made this reachable -- an envelope declaring
+    # one period over a query that replays every estimated year (API-120) --
+    # and it is reported first because it is a fact about the document itself,
+    # decided without asking the warehouse anything.
+    contradiction = _contradiction(block)
+    if contradiction:
+        return BlockValidation(
+            block_id=block.block_id,
+            valid=False,
+            reason=contradiction,
             missing=missing,
         )
     key = block.document.model_dump_json()

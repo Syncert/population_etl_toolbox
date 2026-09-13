@@ -503,15 +503,21 @@ own query rather than referencing a configuration that could later change.
   `422`, naming the `block_id`, when an analytical block's envelope names a
   measure its query does not ask for, names a **source** its query does not
   read — the sources a query reads are the owning sources of its measures,
-  not a field the composer decides — records a scope or release its query
+  not a field the composer decides — records a scope, a release, or a
+  reduction (`newest_per_geography`, `newest_release_per_period`) its query
   does not, when a prose block carries a query or an envelope, when a block
   id repeats, or when a block's query is one the live routes would refuse.
   A source spelled in another case is the same source, not a contradiction.
+  The reduction is checked for the same reason `period` is recorded: a block
+  composed from one value per geography whose query replays the whole
+  publication answers a different set of rows than the envelope describes.
   An analytical block that is still empty or partially filled is **stored**,
   and reported: `validation.blocks[]` names each block, whether it is valid,
   the reason, and the envelope fields still `missing`. A block whose measure
   was retired after it was stored is reported the same way, with the
-  document returned unmodified.
+  document returned unmodified — as is a contradiction a block was stored
+  with before the envelope carried the field, which is read rather than
+  repaired.
 - **A list summary carries `block_count` and `analytical_block_count` and no
   validation verdict.** Validation is a detail-read concern; the absence of a
   verdict on a summary means *not checked*, never *valid*.

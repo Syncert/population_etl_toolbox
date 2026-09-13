@@ -19,6 +19,8 @@ const storedEnvelope = {
   geoLevel: "COUNTY",
   scope: "latest",
   release: "",
+  newestPerGeography: true,
+  newestReleasePerPeriod: false,
   period: "2023",
   units: "people",
   transformation: "none",
