@@ -43,6 +43,48 @@ export interface ExplorerState {
    * a link carrying one alone would not reproduce a valid request.
    */
   release?: string;
+  /**
+   * The per-source dimension narrowing the view was reading under, keyed by
+   * the source's own declared filter name — `stratum_id`,
+   * `adjustment_status`, `domain_desc` — which is the same key the saved
+   * document's `filters` uses.
+   *
+   * A copied link carried none of it. The screen itself refuses to chart a
+   * CDC series until the reader narrows to one stratum, so the link that was
+   * copied *from that view* reopened stratified, with a blank map, while the
+   * saved-view path carried the same narrowing: two records of one view that
+   * disagreed (WEB-073).
+   */
+  dimensions?: Record<string, string>;
+}
+
+// URL keys the explorer's own controls own. A declared filter spelled like
+// one of these is not carried as a dimension, because writing it would
+// overwrite a control rather than narrow anything. No source declares one
+// today; the guard is here so adding one cannot silently break a link.
+const RESERVED_EXPLORER_PARAMS: ReadonlySet<string> = new Set([
+  "source",
+  "metric",
+  "geo_level",
+  "map_mode",
+  "value_scale",
+  "state",
+  "geo",
+  "scope",
+  "release",
+]);
+// The API's own filter-name shape, and a bound on what a link may carry.
+const DIMENSION_NAME_PATTERN = /^[a-z][a-z0-9_]{0,49}$/;
+const DIMENSION_VALUE_MAX_LENGTH = 200;
+
+function isCarriableDimension(name: string, value: unknown): value is string {
+  return (
+    !RESERVED_EXPLORER_PARAMS.has(name) &&
+    DIMENSION_NAME_PATTERN.test(name) &&
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= DIMENSION_VALUE_MAX_LENGTH
+  );
 }
 
 /** Defaults are omitted from serialized links. */
@@ -116,6 +158,21 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
     state.scope = scope;
   }
 
+  // Anything else shaped like a filter name is carried as a dimension. The
+  // parser does not know which names a source declares -- the capability
+  // entry does, and the screen applies only the declared ones -- so this
+  // stays a pure read of the URL and the declaration check stays in the one
+  // place that already makes it (WEB-073).
+  const dimensions: Record<string, string> = {};
+  for (const [name, value] of params.entries()) {
+    if (isCarriableDimension(name, value)) {
+      dimensions[name] = value;
+    }
+  }
+  if (Object.keys(dimensions).length > 0) {
+    state.dimensions = dimensions;
+  }
+
   // A pinned release only reproduces an analysis under `scope=as_released`;
   // carried alone it would build a request the API answers with a 422, so
   // it is dropped rather than propagated.
@@ -169,6 +226,14 @@ export function serializeExplorerState(
   }
   if (state.release && state.scope === "as_released") {
     params.set("release", state.release);
+  }
+  // Sorted, so two equivalent selections produce the same link -- the rule
+  // this serializer is built on.
+  for (const name of Object.keys(state.dimensions || {}).sort()) {
+    const value = (state.dimensions || {})[name];
+    if (isCarriableDimension(name, value)) {
+      params.set(name, value);
+    }
   }
 
   return params.toString();

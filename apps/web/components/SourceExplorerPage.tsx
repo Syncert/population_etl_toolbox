@@ -756,8 +756,32 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           setSelectedDataset(facet);
           setSelectedMetric(pickPreferredMetric(items, facet));
         }
-        if (requested?.geoLevel === "STATE" || requested?.geoLevel === "COUNTY") {
+        // Every grain the published vocabulary names. WEB-038 widened the
+        // vocabulary, the control and the serializer to five words and left
+        // this branch at two, so a link carrying NATIONAL, PLACE or AGENCY
+        // was parsed, validated, and then discarded: the selection fell to
+        // COUNTY and a measure publishing both kept the wrong grain
+        // (WEB-073). The parser has already refused anything outside
+        // `GEO_LEVELS`, and the grain a measure does not publish is narrowed
+        // by `offeredGeoLevels` below, which is where that rule lives.
+        if (requested?.geoLevel) {
           setSelectedGeoLevel(requested.geoLevel);
+        }
+        // The dimension narrowing the copied view was reading under, applied
+        // only for the names this source declares -- the same rule every
+        // request builder applies, so a link cannot introduce a filter the
+        // resource would reject.
+        if (requested?.dimensions) {
+          const declared = new Set([
+            ...source.dimensionFilters,
+            ...source.neutralDimensionFilters,
+          ]);
+          const carried = Object.entries(requested.dimensions).filter(
+            ([name, value]) => declared.has(name) && value,
+          );
+          if (carried.length > 0) {
+            setDimensionSelections(Object.fromEntries(carried));
+          }
         }
         if (requested?.mapMode) {
           setMapMode(requested.mapMode);
@@ -1705,6 +1729,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         geoId: selectedGeoId,
         scope: observationScope,
         release: selectedRelease,
+        // Under the source's own declared filter names, which is what the
+        // saved document records too, so the two records of one view agree.
+        dimensions: dimensionSelections,
       },
       {
         source: sourceKey,
@@ -1731,6 +1758,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     sourceKey,
     observationScope,
     selectedRelease,
+    // Keyed by value, like the observation effect above: the link has to
+    // change when the narrowing does, or it reproduces a different view.
+    dimensionKey,
+    dimensionSelections,
   ]);
 
   function handleSourceChange(key: string) {

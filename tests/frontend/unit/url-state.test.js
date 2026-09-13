@@ -43,6 +43,36 @@ describe("explorer URL state", () => {
     }
   });
 
+  // Covers: WEB-073 — a link carried the source, measure, geography, grain,
+  // view mode and scope of a view and none of its dimension narrowing. The
+  // explorer itself refuses to chart a CDC series until the reader narrows to
+  // one stratum, so the link copied *from that view* reopened stratified with
+  // a blank map, while the saved-view document carried the same narrowing:
+  // two records of one view that disagreed.
+  test("carries the dimension narrowing under the source's own filter names", () => {
+    const parsed = parseExplorerState(
+      "?metric=CDC%3Acdi%3AALC1_1%3Acrude&stratum_id=OVR&adjustment_status=crude",
+    );
+    expect(parsed.dimensions).toEqual({ stratum_id: "OVR", adjustment_status: "crude" });
+
+    // The same names the saved document's `filters` uses, and sorted, so two
+    // equivalent selections produce the same link.
+    expect(
+      serializeExplorerState({
+        metric: "CDC:cdi:ALC1_1:crude",
+        dimensions: { stratum_id: "OVR", adjustment_status: "crude" },
+      }),
+    ).toBe("metric=CDC%3Acdi%3AALC1_1%3Acrude&adjustment_status=crude&stratum_id=OVR");
+
+    // An empty selection is not a narrowing, and a key the explorer's own
+    // controls own is never overwritten by one.
+    expect(serializeExplorerState({ dimensions: { stratum_id: "" } })).toBe("");
+    expect(serializeExplorerState({ source: "cdc", dimensions: { source: "bls" } })).toBe(
+      "source=cdc",
+    );
+    expect(parseExplorerState("?stratum_id=")).toEqual({});
+  });
+
   test("drops invalid values instead of propagating them", () => {
     expect(
       parseExplorerState("?geo_level=PLANET&map_mode=hologram&value_scale=cubic&state=5x5&source=Not%2FValid"),

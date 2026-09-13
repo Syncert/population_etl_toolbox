@@ -1325,6 +1325,68 @@ test("a geography's history is the settled one the resource answers", async ({ p
   }
 });
 
+test("a copied link reopens at the grain it names", async ({ page }) => {
+  // Covers: WEB-073 — WEB-038 widened the grain vocabulary, the control and
+  // the serializer to all five published words, and left the apply step at
+  // two: `NATIONAL`, `PLACE` and `AGENCY` were parsed, validated, and then
+  // discarded, so the selection fell to COUNTY. Census PEP publishes places,
+  // which is why the projection carries `place_fips` at all, and a shared
+  // view of one reopened as a county map of the same measure.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto(
+    "/explore?source=CENSUS_PEP&metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&geo_level=PLACE",
+  );
+
+  await expect(page.getByTestId("geo-level-select")).toHaveValue("PLACE");
+  // The request the explorer issues, not just the control it draws.
+  await expect
+    .poll(() =>
+      neutralRequests.filter(
+        (entry) =>
+          (entry.metric_code || "").startsWith("CENSUS_PEP:") &&
+          entry.geo_level === "PLACE",
+      ).length,
+    )
+    .toBeGreaterThan(0);
+  const grains = neutralRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("CENSUS_PEP:"))
+    .map((entry) => entry.geo_level)
+    .filter(Boolean);
+  expect(new Set(grains)).toEqual(new Set(["PLACE"]));
+});
+
+test("a copied link reopens the dimension narrowing it names", async ({ page }) => {
+  // Covers: WEB-073 — `ExplorerState` had no dimension field and the
+  // serializer omitted `dimensionSelections`, so a CDC view narrowed to one
+  // stratum — the narrowing this screen demands before it will colour a map —
+  // reopened stratified with a blank map. The saved-view document carried the
+  // narrowing all along, so the two records of one view disagreed.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto(
+    "/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY&stratum_id=overall",
+  );
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  // Narrowed, so the map can colour: the state the link was copied from.
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  await expect(page.getByTestId("dimension-select-stratum_id")).toHaveValue("overall");
+
+  const cdcRequests = neutralRequests.filter((entry) =>
+    (entry.metric_code || "").startsWith("CDC:"),
+  );
+  expect(cdcRequests.length).toBeGreaterThan(0);
+  expect(cdcRequests.every((entry) => entry.stratum_id === "overall")).toBe(true);
+
+  // And the link the screen keeps is the one that was opened, so copying it
+  // again reproduces the same view.
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("stratum_id"))
+    .toBe("overall");
+});
+
 test("a saved map view records the reduction the map asked for", async ({ page }) => {
   // Covers: WEB-047 — the document a saved view stores is the request the
   // view issued. It recorded no reduction, so a map of a source whose latest
