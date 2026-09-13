@@ -242,11 +242,12 @@ def list_metric_comparison(
         """
     )
 
+    # Each side's filter parameters are already bound, and `geo_level` among
+    # them is already the vocabulary word: `_filter_conditions` normalizes it
+    # so `NATION` and `US` keep answering (API-092). Re-binding the request's
+    # own text here undid exactly that, and made this route case-sensitive
+    # besides -- `nation` matched nothing a relation stores (API-094).
     params = {**params_a, **params_b}
-    if geo_level is not None:
-        params["geo_level"] = geo_level
-    if state_fips is not None:
-        params["state_fips"] = state_fips
 
     counts = db.execute(count_query, params).mappings().one()
     total = int(counts["total"] or 0)

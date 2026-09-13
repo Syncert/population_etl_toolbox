@@ -162,7 +162,10 @@ def test_latest_forwards_filters_and_uses_count_total() -> None:
     assert item["geo_name"] == "California"
     assert item["margin_of_error"] == "1.5"
     assert item["margin_of_error_pct"] == "0.015"
-    assert fake.params_seen[0]["geo_level"] == "state"
+    # The vocabulary word the cross-source contract views store. This route
+    # compared `UPPER(geo_level)`, so it survived a case difference and failed
+    # on an alias the catalog itself used to publish (API-094).
+    assert fake.params_seen[0]["geo_level"] == "STATE"
     assert fake.params_seen[0]["state_fips"] == "06"
 
 

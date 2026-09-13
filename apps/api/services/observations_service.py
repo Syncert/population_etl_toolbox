@@ -142,9 +142,15 @@ def list_latest_observations(
     """Newest cross-source values, falling back to durable history when empty."""
     _require_relation(db, CROSS_SOURCE_LATEST_RELATION)
 
+    # The cross-source contract views store the vocabulary word, and the
+    # builder compares `UPPER(geo_level)`, so this route survived a case
+    # difference and failed on an alias: `UPPER('US')` is not `NATIONAL`.
+    # API-092 promised the words it replaced keep answering, and that promise
+    # is one function, called here too (API-094).
+    grain = normalize_geo_level(geo_level) if geo_level else None
     mv_list_query, mv_count_query, mv_params = build_latest_mv_queries(
         metric_code=metric_code,
-        geo_level=geo_level,
+        geo_level=grain,
         state_fips=state_fips,
         limit=limit,
         offset=offset,
@@ -159,7 +165,7 @@ def list_latest_observations(
         _require_relation(db, CROSS_SOURCE_HISTORY_RELATION)
         rpt_list_query, rpt_count_query, rpt_params = build_latest_rpt_fallback_queries(
             metric_code=metric_code,
-            geo_level=geo_level,
+            geo_level=grain,
             state_fips=state_fips,
             limit=limit,
             offset=offset,

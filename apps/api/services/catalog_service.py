@@ -23,6 +23,7 @@ from apps.api.registry import (
     OBSERVATION_DISPATCH,
     SOURCE_DISCOVERY,
     SourceDiscovery,
+    normalize_geo_level,
 )
 from apps.api.schemas import (
     CapabilityListResponse,
@@ -88,8 +89,12 @@ def list_geographies(
     offset: int,
 ) -> GeographyListResponse:
     require_relation(db, GEOGRAPHY_RELATION)
+    # `gold_glossary.dim_geo_latest` stores the vocabulary word, and the
+    # builder compares `UPPER(geo_level)`, so an alias the catalog itself
+    # used to publish -- `NATION`, `US` -- matched nothing here while
+    # `/observations` answered it (API-094).
     list_query, count_query, params = build_geographies_queries(
-        geo_level=geo_level,
+        geo_level=normalize_geo_level(geo_level) if geo_level else None,
         state_fips=state_fips,
         q=q,
         limit=limit,

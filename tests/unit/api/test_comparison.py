@@ -268,7 +268,10 @@ def test_comparable_pair_aligns_one_newest_value_per_geography() -> None:
     bound = session.parameters[-1]
     assert bound["a_metric_code_value"] == "FRED:UNRATE"
     assert bound["b_metric_code_value"] == "BLS:LNS14000000"
-    assert bound["geo_level"] == "county"
+    # The vocabulary word, not the caller's: this route normalizes like every
+    # other one that takes a grain, so `county`, `COUNTY` and an alias all
+    # bind the one word the relations store (API-094).
+    assert bound["geo_level"] == "COUNTY"
 
 
 def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:

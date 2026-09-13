@@ -21,6 +21,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from apps.api.registry import normalize_geo_level
 from apps.api.schemas import DistributionBin, DistributionBinsResponse
 from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
@@ -148,7 +149,12 @@ def list_distribution_bins(
             metric_code=metric_code,
             source_code=source_code,
             units=metric.get("units"),
-            geo_level=geo_level,
+            # The grain these bins describe, in the vocabulary -- not the word
+            # the caller happened to type. This field is what a saved analysis
+            # and an evidence packet record as what the analysis measured, so
+            # echoing `us` over a set of `NATIONAL` bins mislabels the record
+            # as well as the response (API-094).
+            geo_level=normalize_geo_level(geo_level) if geo_level else None,
             total=total,
             bin_count=bin_count,
             min_value=min_value,

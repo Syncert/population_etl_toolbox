@@ -1369,3 +1369,133 @@ def test_every_route_answers_the_metric_code_it_published(
     assert any(
         entry.startswith(f"pep:{published_pep_metric}->") for entry in exercised
     ), exercised
+
+
+# ---------------------------------------------------------------------------
+# API-094 — every route that takes a grain takes the same grain words
+# ---------------------------------------------------------------------------
+
+
+def _grain_requests(
+    fred_metric: str, pep_metric: str, acs_metric: str
+) -> dict[str, dict[str, object]]:
+    """One request per route that declares ``geo_level``, minus the grain.
+
+    Keyed by the path the served document publishes, so a route that grows a
+    ``geo_level`` parameter without an entry here fails the sweep instead of
+    quietly skipping the rule.
+    """
+    return {
+        "/api/v1/observations": {"metric_code": pep_metric, "limit": 5},
+        "/api/v1/observations/latest": {"metric_code": fred_metric, "limit": 5},
+        "/api/v1/comparison": {
+            "metric_code_a": pep_metric,
+            "metric_code_b": pep_metric,
+            "limit": 5,
+        },
+        "/api/v1/distribution/bins": {"metric_code": pep_metric, "bin_count": 3},
+        "/api/v1/catalog/geographies": {"limit": 5},
+        "/api/v1/pep/observations/latest": {"metric_code": pep_metric, "limit": 5},
+        "/api/v1/fred/observations/latest": {"metric_code": fred_metric, "limit": 5},
+        "/api/v1/census/observations/latest": {"metric_code": acs_metric, "limit": 5},
+        "/api/v1/bls/observations/latest": {"metric_code": "BLS:UNUSED", "limit": 5},
+    }
+
+
+def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
+    api_client: TestClient,
+    published_pep_metric: str,
+    published_fred_metric: str,
+    published_acs_metric: str,
+) -> None:
+    """Covers: API-094 — an alias answers what its vocabulary word answers.
+
+    API-092 promised more than the words: the words they replaced keep
+    answering, so a shared link or a saved configuration holding the catalog's
+    earlier `NATION` still resolves. `normalize_geo_level` is that promise,
+    and four of the nine routes declaring a `geo_level` never called it.
+
+    `/comparison` was the sharpest -- not merely alias-blind but
+    case-sensitive, because the value each side's filter had normalized was
+    overwritten afterwards with the caller's own text. `/observations/latest`
+    and `/catalog/geographies` compare `UPPER(geo_level)`, so they survived a
+    case difference and failed on an alias.
+
+    Driven by the served document: a route that declares `geo_level` and has
+    no request here fails rather than skipping the rule.
+    """
+    from apps.api.main import app
+    from apps.api.registry import GEO_GRAIN_ALIASES
+
+    declared = {
+        path
+        for path, operations in app.openapi()["paths"].items()
+        for operation in operations.values()
+        if any(
+            parameter.get("name") == "geo_level" and parameter.get("in") == "query"
+            for parameter in operation.get("parameters") or []
+        )
+    }
+    requests = _grain_requests(
+        published_fred_metric, published_pep_metric, published_acs_metric
+    )
+    assert declared == set(requests), (
+        "routes declaring geo_level with no request in this sweep: "
+        f"{sorted(declared - set(requests))}; requests for routes that no "
+        f"longer declare one: {sorted(set(requests) - declared)}"
+    )
+
+    disagreements: list[str] = []
+    exercised: list[str] = []
+
+    for path, base in sorted(requests.items()):
+        for alias, word in sorted(GEO_GRAIN_ALIASES.items()):
+            canonical = api_client.get(path, params={**base, "geo_level": word})
+            assert canonical.status_code == 200, canonical.text
+            expected = int(canonical.json()["total"])
+            if expected:
+                exercised.append(f"{path}@{word}")
+            for spelling in (alias, alias.lower(), word.lower()):
+                answer = api_client.get(path, params={**base, "geo_level": spelling})
+                assert answer.status_code == 200, answer.text
+                actual = int(answer.json()["total"])
+                if actual != expected:
+                    disagreements.append(
+                        f"{path} answers {expected} row(s) for geo_level "
+                        f"'{word}' and {actual} for '{spelling}', which names "
+                        "the same grain"
+                    )
+
+    assert not disagreements, "\n".join(disagreements)
+    # The fixtures publish one national row each through two different
+    # dispatch paths. Without them every comparison above is 0 == 0.
+    assert "/api/v1/comparison@NATIONAL" in exercised, exercised
+    assert "/api/v1/observations@NATIONAL" in exercised, exercised
+    assert "/api/v1/distribution/bins@NATIONAL" in exercised, exercised
+    assert "/api/v1/pep/observations/latest@NATIONAL" in exercised, exercised
+    assert "/api/v1/observations/latest@NATIONAL" in exercised, exercised
+
+
+def test_the_distribution_reports_the_grain_it_binned(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: API-094 — the bins are labelled with the grain they describe.
+
+    The response's `geo_level` is the analysis's own statement of what it
+    measured, and it is what a saved analysis and an evidence packet record.
+    Echoing the caller's text labelled a set of bins over `NATIONAL` rows as
+    `us`.
+    """
+    for spelling in ("NATIONAL", "nation", "NATION", "us", "US"):
+        answer = api_client.get(
+            "/api/v1/distribution/bins",
+            params={
+                "metric_code": published_pep_metric,
+                "geo_level": spelling,
+                "bin_count": 3,
+            },
+        )
+        assert answer.status_code == 200, answer.text
+        payload = answer.json()
+        assert int(payload["total"]) >= 1, payload
+        assert payload["geo_level"] == "NATIONAL", payload["geo_level"]

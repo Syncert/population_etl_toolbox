@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
-| API | API-001–API-093 | None |
+| API | API-001–API-094 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **338 of 338** | **0 of 338** |
+| **Total** | **339 of 339** | **0 of 339** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 338-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 339-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -624,6 +624,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-091 | P0 | Service / `unit api` | A stored configuration cannot encode a filter value the route refuses | `validate_document` checks each stored filter's value against the bound the observation route declares for it -- text length, or the inclusive integer range -- and refuses at write, naming the filter and the bound; a value inside the bound is stored exactly as given, the bounds are declared once and read by both the route and the validator, and a test asserts that declaration against the contract the application actually serves so the two cannot drift | A 5,000-character `geo_id` against the route's declared 200 stored clean, listed clean and reported `valid: true`, failing only when its owner tried to reopen it -- a saved configuration encoding a request the API refuses, which is what `AnalysisDocument` promises cannot happen |
 | API-092 | P0 | Contract / `unit api` | The source-scoped routes speak the warehouse's grain vocabulary | Each serving contract declares how its relations spell the grain, and the source-scoped latest route projects and filters through that declaration: Census PEP's relation, which stores the source's own word under the name `geo_level`, is read through the one warehouse mapping so `geo_level=NATIONAL` answers its national rows and every served row reports the vocabulary word; the caller's word is normalized on the way in so `NATION` and `US` keep answering; a source whose dispatch entry maps the grain and whose serving contract does not is a test failure | `geo_level=NATIONAL` -- the word `valid_geo_grains` publishes and `/observations` accepts -- matching nothing on `/pep/observations/latest` and answering an empty page indistinguishable from a geography with no published values, while every row reported `county` where the rest of the API reports `COUNTY` |
 | API-093 | P0 | Contract / `unit api` | An unknown query parameter is refused, not ignored | Every route the application serves refuses a query parameter it does not declare with a 422 naming both the unknown names and the accepted ones, before any database session is opened; the accepted set is read from the route's own solved dependency tree, so a parameter added to a signature is accepted the moment it exists; the sweep is driven by the served OpenAPI document, so a router added later is covered without an edit, private routes included | A misspelling answered as a whole answer: `geo_levels=COUNTY` reached no validation at all and `/observations` returned every grain at 200 with a complete-looking `total`, and this API gives one idea three spellings across its routes (`adjustment_status` and `adjustment`, `year_from`/`year_to` and `year_start`/`year_end`), so sending one route's name to another is an ordinary mistake |
+| API-094 | P0 | Contract / `integration api database` | Every route that takes a grain takes the same grain words | Each route the served document shows declaring a `geo_level` parameter answers an alias (`NATION`, `US`, and either case) exactly as it answers the vocabulary word it maps to, and `/distribution/bins` reports the grain it binned rather than the caller's text; the sweep is driven by that document, so a route that declares `geo_level` and is not exercised fails rather than skipping the rule | API-092 promised the words it replaced keep answering, and four of the nine routes declaring `geo_level` never called the function that keeps them: `/comparison` re-bound the caller's own text over the value each side had normalized, making it alias-blind and case-sensitive at once; `/observations/latest` and `/catalog/geographies` compared `UPPER(geo_level)` against relations storing `NATIONAL`, so an alias matched nothing; and `/distribution/bins` labelled a set of `NATIONAL` bins `us`, which is what a saved analysis and an evidence packet then record |
 
 ### Frontend Tests
 
