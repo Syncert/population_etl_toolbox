@@ -12,7 +12,7 @@ import {
   createSavedAnalysis,
   fetchAllPages,
   getCapabilities,
-  getComparison,
+  fetchComparisonPages,
   getComparisonPreflight,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
@@ -69,6 +69,9 @@ import type { GeoLevel } from "../lib/urlState";
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const CATALOG_PAGE_SIZE = 1000;
 const COMPARISON_PAGE_SIZE = 1000;
+// Eight pages reach 8,000 aligned geographies: a national county
+// comparison is 3,144, with room for a grain that grows.
+const COMPARISON_PAGE_LIMIT = 8;
 const SIDES = ["a", "b"] as const;
 
 type SideKey = (typeof SIDES)[number];
@@ -341,17 +344,24 @@ export default function ComparisonWorkspace() {
 
     (async () => {
       try {
-        const payload = await getComparison(
+        // Paged: the route caps `limit` at 1000 and a national county
+        // comparison aligns 3,144 geographies, so one request drew the
+        // scatter, the map, and the export from the first thousand rows by
+        // geo_id (WEB-039).
+        const pages = await fetchComparisonPages(
           comparisonRequestParams(selection, COMPARISON_PAGE_SIZE),
+          { pageSize: COMPARISON_PAGE_SIZE, maxPages: COMPARISON_PAGE_LIMIT },
         );
         if (!request.isCurrent()) {
           return;
         }
-        const items = Array.isArray(payload.items) ? payload.items : [];
-        setComparison(payload);
+        setComparison(pages.payload);
         setComparisonStatus({
-          state: "ok",
-          message: `${items.length} of ${payload.total ?? items.length} aligned geographies`,
+          state: pages.complete ? "ok" : "bad",
+          message: pages.complete
+            ? `${pages.items.length} aligned geographies`
+            : `loaded ${pages.items.length} of ${pages.total} aligned geographies; ` +
+              "the page bound cut the answer short, so this comparison is incomplete",
         });
       } catch (error) {
         if (request.isCurrent()) {

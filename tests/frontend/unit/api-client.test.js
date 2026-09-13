@@ -11,6 +11,7 @@ import {
   buildApiPath,
   fetchAllPages,
   fetchCollectionPages,
+  fetchComparisonPages,
   getDistributionBins,
   getSourceLatestObservations,
   searchMetrics,
@@ -218,5 +219,82 @@ describe("request lifecycle state", () => {
     await expect(
       fetchCollectionPages("/observations", { fetchImpl: unreported.fetchImpl }),
     ).resolves.toEqual({ items: [{ id: 1 }], total: null, complete: true });
+  });
+});
+
+// Covers: WEB-039 — the comparison is paged. `/comparison` caps `limit` at
+// 1000 and a national county comparison aligns 3,144 geographies, so a
+// single request held the first thousand rows ordered by geo_id -- Alabama
+// through part of Illinois -- and the scatter, the map, and the export were
+// drawn from them.
+describe("comparison paging", () => {
+  const envelope = (items, total) => ({
+    metric_code_a: "A",
+    metric_code_b: "B",
+    units_a: "people",
+    derivations: ["difference", "ratio"],
+    caveats: ["units unverified"],
+    total,
+    items,
+  });
+
+  test("reads every aligned geography the API reports", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }, { geo_id: "2" }], 3)),
+      jsonResponse(envelope([{ geo_id: "3" }], 3)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 2, fetchImpl },
+    );
+
+    expect(pages.items.map((row) => row.geo_id)).toEqual(["1", "2", "3"]);
+    expect(pages.total).toBe(3);
+    expect(pages.complete).toBe(true);
+    expect(calls[0].path).toContain("offset=0");
+    expect(calls[1].path).toContain("offset=2");
+  });
+
+  test("the envelope comes from the first page and is preserved", async () => {
+    // Units, derivations, and caveats describe the pair, not the page.
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], 2)),
+      jsonResponse({ items: [{ geo_id: "2" }], total: 2 }),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, fetchImpl },
+    );
+    expect(pages.payload?.units_a).toBe("people");
+    expect(pages.payload?.caveats).toEqual(["units unverified"]);
+    expect(pages.payload?.items.map((row) => row.geo_id)).toEqual(["1", "2"]);
+  });
+
+  test("a bound-limited read is reported as incomplete", async () => {
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], 9999)),
+      jsonResponse(envelope([{ geo_id: "2" }], 9999)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, maxPages: 2, fetchImpl },
+    );
+    expect(pages.items).toHaveLength(2);
+    expect(pages.total).toBe(9999);
+    expect(pages.complete).toBe(false);
+  });
+
+  test("an empty page ends the read, and no total is not a shortfall", async () => {
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], null)),
+      jsonResponse(envelope([], null)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, fetchImpl },
+    );
+    expect(pages.items).toHaveLength(1);
+    expect(pages.total).toBe(null);
+    expect(pages.complete).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ import type {
   CollectionResponse,
   ComparisonPreflight,
   ComparisonResponse,
+  ComparisonRow,
   DistributionResponse,
   GeographySummary,
   HealthResponse,
@@ -382,6 +383,79 @@ export function getComparison(
   options: RequestOptions = {},
 ): Promise<ComparisonResponse> {
   return apiFetch<ComparisonResponse>("/comparison", { ...options, params });
+}
+
+/** A paged comparison: one envelope, every aligned row it could reach. */
+export interface ComparisonPages {
+  /** The first page's response, with every page's rows in `items`. */
+  payload: ComparisonResponse | null;
+  items: ComparisonRow[];
+  total: number | null;
+  /** False when a page bound stopped the read before the reported total. */
+  complete: boolean;
+}
+
+/**
+ * Every aligned geography `/comparison` will serve for one selection.
+ *
+ * The route caps `limit` at 1000 and a national county comparison aligns
+ * 3,144 geographies, so a single request held the first thousand rows
+ * ordered by `geo_id` -- Alabama through part of Illinois -- and the scatter
+ * plot, the choropleth, and the export were drawn from them (WEB-039). That
+ * is not a sample of the United States; it is a systematically biased subset
+ * no reader could identify from the chart.
+ *
+ * The envelope -- units, derivations, caveats, the metric and source
+ * identities -- describes the pair rather than the page, so it is taken from
+ * the first response and kept. Only rows accumulate.
+ */
+export async function fetchComparisonPages(
+  params: QueryParams,
+  { pageSize = 1000, maxPages = 8, signal, fetchImpl }: PageOptions = {},
+): Promise<ComparisonPages> {
+  let payload: ComparisonResponse | null = null;
+  const items: ComparisonRow[] = [];
+  let total: number | null = null;
+  let offset = 0;
+  let pages = 0;
+
+  do {
+    const page = await apiFetch<ComparisonResponse>("/comparison", {
+      params: { ...params, limit: String(pageSize), offset: String(offset) },
+      signal,
+      fetchImpl,
+    });
+    const pageItems = Array.isArray(page.items) ? page.items : [];
+    if (payload === null) {
+      payload = page;
+    }
+    total =
+      typeof page.total === "number" && Number.isFinite(page.total) ? page.total : null;
+    items.push(...pageItems);
+    offset += pageItems.length;
+    pages += 1;
+
+    if (pageItems.length === 0) {
+      break;
+    }
+    if (pages >= maxPages) {
+      return {
+        payload: payload === null ? null : { ...payload, items },
+        items,
+        total,
+        // A resource that published no total states no shortfall, and
+        // inventing one would assert a count the API did not publish.
+        complete: total === null || items.length >= total,
+      };
+    }
+  } while (total === null || items.length < total);
+
+  return {
+    payload: payload === null ? null : { ...payload, items },
+    items,
+    total,
+    complete: true,
+  };
 }
 
 // --- Health ---

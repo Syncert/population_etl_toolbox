@@ -185,7 +185,10 @@ const comparisonPayload = {
   ],
 };
 
-async function installRoutes(page, { preflightRequests = [], comparisonRequests = [] } = {}) {
+async function installRoutes(
+  page,
+  { preflightRequests = [], comparisonRequests = [], truncate = false } = {},
+) {
   await page.route("**/api/v1/catalog/capabilities", (route) =>
     route.fulfill({ json: capabilities }),
   );
@@ -223,6 +226,19 @@ async function installRoutes(page, { preflightRequests = [], comparisonRequests 
   await page.route("**/api/v1/comparison?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     comparisonRequests.push(Object.fromEntries(params));
+    if (truncate) {
+      // More aligned geographies than the client's page bound can reach:
+      // one row per page against a total no number of pages will meet.
+      const offset = Number(params.get("offset") || 0);
+      return route.fulfill({
+        json: {
+          ...comparisonPayload,
+          total: 9999,
+          offset,
+          items: [{ ...comparisonPayload.items[0], geo_id: `county:${offset}` }],
+        },
+      });
+    }
     return route.fulfill({ json: comparisonPayload });
   });
 
@@ -534,4 +550,30 @@ test("a comparison saves to the account when signed in, storing the pair and not
   expect(document).not.toHaveProperty("derivations");
   expect(document).not.toHaveProperty("caveats");
   expect(document).not.toHaveProperty("verdict");
+});
+
+test("a comparison too large for the page bound says so, and is not reported healthy", async ({
+  page,
+}) => {
+  // Covers: WEB-039 — `/comparison` caps `limit` at 1000 and a national
+  // county comparison aligns 3,144 geographies. One request held the first
+  // thousand rows ordered by geo_id and reported them as `ok`, so a scatter
+  // plot of alphabetically-first counties read as the comparison.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests, truncate: true });
+  await page.goto(
+    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+  );
+
+  const status = page.getByTestId("comparison-status");
+  await expect(status).toContainText("the page bound cut the answer short");
+  await expect(status).toContainText("of 9999 aligned geographies");
+  // A partial answer is never green.
+  await expect(status).toHaveClass(/pill bad/);
+
+  // It paged rather than asking once, and each page asked for the next rows.
+  const offsets = comparisonRequests.map((entry) => Number(entry.offset));
+  expect(offsets.length).toBeGreaterThan(1);
+  expect(offsets[0]).toBe(0);
+  expect(offsets[1]).toBe(1);
 });
