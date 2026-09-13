@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 import { servedParameters } from "../support/servedContract.js";
 
 // Covers: WEB-021 — the community conditions profile in the browser. The

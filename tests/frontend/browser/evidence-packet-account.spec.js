@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-031 — evidence packets on the account in the browser. The
 // composer saves to the account whenever a token is held and to the browser

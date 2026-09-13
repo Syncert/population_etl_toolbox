@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-023 — the evidence packet composer in the browser. The grant
 // template arrives with methodology and limits already present, an

@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-015 — the catalog's search, filters, deterministic limit/offset
 // paging over the API's published total, published provenance and freshness

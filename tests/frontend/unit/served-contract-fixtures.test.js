@@ -12,7 +12,11 @@ import { describe, expect, test } from "vitest";
 // served list while missing a parameter the API had gained, which does not
 // fail -- it quietly stops testing the behaviour the fixture names.
 
-import { servedParameters, servedPathsMatching } from "../support/servedContract.js";
+import {
+  requestComplaint,
+  servedParameters,
+  servedPathsMatching,
+} from "../support/servedContract.js";
 
 const FRONTEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -87,5 +91,48 @@ describe("frontend capability fixtures describe the served contract", () => {
     expect(unserved).toEqual([
       "unit/explorer-sources.test.js: /api/v1/future/measures",
     ]);
+  });
+});
+
+// Covers: WEB-052 — the request guard the browser tier runs, checked here.
+//
+// `requestComplaint` is what every browser spec's automatic fixture applies
+// to every request its page makes. Its own correctness is deterministic, so
+// it is graded in the unit tier rather than only by the suite that uses it.
+describe("requestComplaint", () => {
+  test("passes a request whose parameters the contract declares", () => {
+    expect(
+      requestComplaint(
+        "http://localhost:3100/api/v1/catalog/metrics?limit=10&offset=0&source_code=BLS",
+      ),
+    ).toBeNull();
+  });
+
+  test("names an undeclared parameter and the ones the operation accepts", () => {
+    const complaint = requestComplaint(
+      "http://localhost:3100/api/v1/catalog/metrics?limit=10&source_codes=BLS",
+    );
+    expect(complaint).toContain("source_codes");
+    expect(complaint).toContain("GET /api/v1/catalog/metrics");
+    // The accepted set comes from the snapshot, so the singular is named.
+    expect(complaint).toContain("source_code");
+  });
+
+  test("matches a path the contract declares with a parameter in it", () => {
+    expect(
+      requestComplaint(
+        "http://localhost:3100/api/v1/catalog/metrics/CENSUS_ACS%3AB01003_001E",
+      ),
+    ).toBeNull();
+  });
+
+  test("refuses a path the contract does not serve", () => {
+    expect(requestComplaint("http://localhost:3100/api/v1/not-a-resource")).toContain(
+      "not a path the reviewed contract serves",
+    );
+  });
+
+  test("ignores a request that is not an API request", () => {
+    expect(requestComplaint("http://localhost:3100/tiles/catalog?x=1")).toBeNull();
   });
 });

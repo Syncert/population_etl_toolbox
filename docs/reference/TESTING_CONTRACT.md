@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-052 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **339 of 339** | **0 of 339** |
+| **Total** | **340 of 340** | **0 of 340** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 339-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 340-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -680,6 +680,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-049 | P0 | Browser + Unit / `frontend` | The aligned views say when a pair is not contemporaneous | `comparisonScatterModel` carries each point's two published periods and counts the points whose periods differ; the scatter draws those hollow, names the count in its caption and in its accessible description, and never drops them; the comparison map's note states how many coloured geographies combine values from different periods; a row publishing only one period is not counted as a mismatch, and a comparison whose rows all share a period shows neither note | A scatter point pairing a 2023 value with a 2019 one drawn like any other, and a polygon coloured by a difference computed across those four years, implying an alignment `/comparison` explicitly refuses to make and the table beside it already marks |
 | WEB-050 | P0 | Browser + Unit / `frontend` | The comparison screen says what its geographies are an intersection of | Where either side published more geographies than the inner join paired, `describeComparisonCoverage` names both counts and both measures and the workspace renders it; a comparison that paired everything shows nothing, an API publishing neither count reports no shortfall rather than reading an absent count as zero, and the note stays distinct from the page-bound shortfall WEB-039 reports | "500 aligned geographies" reported in green over a map of 500 polygons when 3,143 publish one of the two measures -- a correct answer to a narrower question than the reader asked, presented as the answer to theirs |
 | WEB-051 | P0 | Browser + Unit / `frontend` | A published coverage qualifier travels with the value it qualifies | The explorer's table shows a row's published `participation_status` and `coverage_percent` beside its value, and the CSV export carries every field the neutral envelope's `ObservationCoverage` publishes, verbatim; the column appears only when a loaded row actually published a participation, read from the answer rather than from a list of sources; an unpublished field stays absent rather than becoming a zero or a dash in the data, and the browser fixture models the served FBI UCR envelope, coverage included | An agency covering 61.9% of its population showing an offence count that reads as the whole jurisdiction, and a not-reported agency's null value shown with the explanation the API published for it dropped -- the defect the API restructured a whole source to avoid, arriving one layer later |
+| WEB-052 | P0 | Browser + Unit / `frontend` | Every request the web client sends names parameters the API declares | An automatic Playwright fixture observes every request each spec's page makes and checks it against the reviewed OpenAPI snapshot: the path must be one the contract serves, and every query parameter one that operation declares; the fixture is inherited by any spec added later without opting in, and the check itself is graded in the unit tier against the same snapshot | A request the API now refuses: API-093 turned an undeclared parameter from a silently broader answer into a 422 the user sees, and nothing checked what the client sends -- WEB-043 decides what each fixture *declares*, but the browser tier answers every request from a stub, and a stub fulfils an undeclared name exactly like a declared one, so the tier driving the real client against real URLs never looked at the URLs |
 
 ### Deployment Tests
 

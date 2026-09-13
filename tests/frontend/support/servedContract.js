@@ -116,3 +116,64 @@ export function servedParametersWithout(path, names) {
   }
   return parameters.filter((name) => !names.includes(name));
 }
+
+/**
+ * The served `GET` operation a concrete request path belongs to, or `null`.
+ *
+ * A literal match wins outright; otherwise the templated paths are tried,
+ * with each `{name}` standing for exactly one segment. Returning `null` for
+ * an unserved path is deliberate -- the caller decides whether that is a
+ * failure, and for a request the application actually made it is.
+ */
+export function servedOperationFor(path) {
+  if (QUERY_PARAMETERS.has(path)) {
+    return path;
+  }
+  for (const candidate of QUERY_PARAMETERS.keys()) {
+    if (!candidate.includes("{")) {
+      continue;
+    }
+    const shape = new RegExp(
+      `^${candidate
+        .split(/\{[^}]*\}/)
+        .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("[^/]+")}$`,
+    );
+    if (shape.test(path)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+const API_PREFIX = "/api/v1";
+
+/**
+ * The complaint one request earns, or `null` when it is well formed.
+ *
+ * Applied by the browser tier to every request its pages make (WEB-052).
+ * It lives here, beside the snapshot it reads, so the unit tier can grade it
+ * without importing Playwright.
+ */
+export function requestComplaint(rawUrl) {
+  const url = new URL(rawUrl);
+  if (!url.pathname.startsWith(API_PREFIX)) {
+    return null;
+  }
+  const operation = servedOperationFor(url.pathname);
+  if (operation === null) {
+    return `${url.pathname} is not a path the reviewed contract serves`;
+  }
+  const declared = new Set(servedParameters(operation));
+  const undeclared = [...new Set(url.searchParams.keys())]
+    .filter((name) => !declared.has(name))
+    .sort();
+  if (undeclared.length === 0) {
+    return null;
+  }
+  return (
+    `${url.pathname} was sent ${undeclared.join(", ")}, which GET ${operation} ` +
+    `does not declare; it accepts ${[...declared].sort().join(", ") || "no parameters"}`
+  );
+}
+

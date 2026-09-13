@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-025 — the cross-workflow accessibility, responsive, and
 // operational audit. Every core workflow is reachable and operable by

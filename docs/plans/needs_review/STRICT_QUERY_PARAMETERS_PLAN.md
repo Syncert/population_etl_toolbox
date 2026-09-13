@@ -109,8 +109,12 @@ shared dependency's parameters count as declared.
 | Frontend browser | `npm --prefix apps/web run test:browser` | 71 passed |
 | Lint | `ruff format --check .`, `ruff check .` | clean |
 
-Nothing the web application or the suites send is refused (criterion 5): the
-whole browser tier drives the real client against the real routes.
+Nothing the web application or the suites send is refused (criterion 5) —
+though the browser tier is weaker evidence than it looks: it answers every
+request from a `page.route` stub, so those 71 tests would pass against an API
+that refused every request the application makes. WEB-052 is the guard that
+actually checks the client's own URLs against the reviewed contract, and it
+finds nothing to refuse.
 
 **Contract.** `tests/unit/api/test_openapi_contract.py` passes unchanged —
 the dependency declares no parameters of its own, so the published document
