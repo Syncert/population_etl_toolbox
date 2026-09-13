@@ -101,9 +101,19 @@ export class ApiError extends Error {
 
 // Status-first message for UI state pills: the HTTP status stays visible
 // and the API's own `detail` travels with it when present.
+//
+// Where the API published a `Retry-After`, the interval travels too. Its own
+// detail for a limited request reads "rate limit exceeded; retry after the
+// indicated interval" -- a sentence that points at a number the client held
+// on the error object and dropped on the way to the screen (WEB-040). The
+// reader decides whether to retry; this only tells them when they could.
 export function apiErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    return `status ${error.status}${error.detail ? `: ${error.detail}` : ""}`;
+    const status = `status ${error.status}${error.detail ? `: ${error.detail}` : ""}`;
+    const retryAfter = Number(error.retryAfter);
+    return Number.isFinite(retryAfter) && retryAfter > 0
+      ? `${status} (retry in ${retryAfter}s)`
+      : status;
   }
   if (error instanceof Error && error.message) {
     return error.message;

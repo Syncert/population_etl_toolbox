@@ -109,6 +109,35 @@ describe("versioned API client", () => {
     expect(apiErrorMessage(undefined)).toBe("request failed");
   });
 
+  // Covers: WEB-040 — the API publishes how long to wait and the client
+  // captured it, then dropped it. The detail it renders beside the status
+  // says "retry after the indicated interval" and indicated nothing.
+  test("a rate-limited message says how long to wait", () => {
+    expect(
+      apiErrorMessage(
+        new ApiError({
+          status: 429,
+          detail: "rate limit exceeded; retry after the indicated interval",
+          path: "/api/v1/observations",
+          retryAfter: 12,
+        }),
+      ),
+    ).toBe(
+      "status 429: rate limit exceeded; retry after the indicated interval " +
+        "(retry in 12s)",
+    );
+  });
+
+  test("an error the API published no interval for is unchanged", () => {
+    for (const retryAfter of [null, 0, undefined, Number.NaN]) {
+      expect(
+        apiErrorMessage(
+          new ApiError({ status: 503, detail: "unavailable", path: "/x", retryAfter }),
+        ),
+      ).toBe("status 503: unavailable");
+    }
+  });
+
   test("pages deterministically until the reported total is reached", async () => {
     const { calls, fetchImpl } = recordingFetch([
       jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 3 }),

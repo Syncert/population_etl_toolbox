@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-039 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-040 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **304 of 304** | **0 of 304** |
+| **Total** | **305 of 305** | **0 of 305** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 304-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 305-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -645,6 +645,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-037 | P0 | Browser / `frontend` | A request's outcome is announced, not only shown | Every `.status-row` on every core route is a polite live region, so a status pill changing after a request is announced once as a row; the catalog's whole result state -- count, range, loading, empty, and error -- is one always-present region rather than four elements that appear and disappear silently, and the home page's failure notice is announced the same way; no region is assertive, and `StatusPill` itself is never a live region, so a list of metrics does not announce once per freshness pill | A reader who cannot see the screen learning nothing when a comparison comes back incompatible, a catalog search returns nothing, or a read fails |
 | WEB-038 | P0 | Browser + Unit / `frontend` | The explorer offers every grain a measure declares | The explorer and the link contract carry the published five-word grain vocabulary, so a measure declaring only `PLACE` or only `AGENCY` offers that grain, is asked for it, and receives its rows; `preferredGeoLevelForMetric` never returns a grain the measure does not declare, no request is issued while the selected grain is one the measure does not publish, every word survives a link round trip, and a measure declaring no grains keeps the full vocabulary because unknown grains are not none; the map still declines a grain the tile boundary has no geometry for | An FBI UCR measure offering no view levels at all, being queried at `COUNTY`, and reporting \"0 COUNTY records published for this selection\" -- the measure reading as unpublished because the client could not name its grain |
 | WEB-039 | P0 | Browser + Unit / `frontend` | A comparison is paged, and a bounded one is not reported healthy | `/comparison` is read with `limit`/`offset` until its reported total is reached or a declared page bound stops it; the envelope -- units, derivations, caveats, the metric and source identities -- is taken from the first page and preserved while only rows accumulate; a complete load is `ok` and a bound-limited one is failure-shaped and names the shortfall in the WEB-036 wording; an empty page ends the read and a resource publishing no total is never reported as short | A national county comparison drawing its scatter plot, choropleth, and export from the first thousand rows ordered by `geo_id` -- Alabama through part of Illinois -- under a green status |
+| WEB-040 | P0 | Unit / `frontend` | A rate-limited reader is told how long to wait | `apiErrorMessage` renders the API's published `Retry-After` interval beside the status and the API's own detail, so the sentence \"retry after the indicated interval\" indicates it; an error carrying no interval -- absent, zero, or not a finite number -- renders exactly as before, and the message stays status-first with `detail` verbatim | A reader meeting the per-client limit the API now meters correctly, reading \"retry after the indicated interval\" with no interval, while the client holds the number on the error object |
 
 ### Deployment Tests
 
