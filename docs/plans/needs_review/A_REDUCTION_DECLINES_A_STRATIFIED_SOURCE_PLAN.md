@@ -13,8 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect.**
+- **Status:** Needs review. Implemented 2026-09-13 as catalog row API-118.
 - **Last updated:** 2026-09-13
 - **Owner surface:** `apps/api/services/neutral_observations_service.py`
 
@@ -64,8 +63,44 @@ the lexicographically first stratum wins, silently.
 
 ## Validation
 
-To be recorded by the agent that claims this.
+- `ObservationDispatch.analysis_refusal()` is now the one statement of why an
+  aligned single-value read declines a source. All four surfaces that serve
+  it read it: `/distribution/bins`, `/comparison/preflight`
+  (`compatibility._source_finding`), a stored `distribution` document
+  (`saved_analysis_service`), and the reduction. Three carried their own copy
+  of the fallback sentence and the fourth worded it differently -- "has no
+  aligned analysis surface" against "is not served by the aligned analysis
+  routes" -- so two refusals of the same source read as two different facts.
+- `reduction_refusal(dispatch, reduction)` in
+  `neutral_observations_service.py` raises before `resolve_metric`'s result
+  reaches any query builder, so a refused reduction runs no SQL.
+- New nodes:
+  - `tests/unit/api/test_neutral_observations.py::test_a_reduction_declines_a_stratified_source`
+    (parametrised over `newest_per_geography`/`scope=latest` and
+    `newest_release_per_period`/`scope=as_released`) asks the CDC metric and
+    asserts 422, the reduction's name, `CDC`, `stratum_id` in the detail --
+    the filter the reader should ask with instead -- and that no query was
+    dispatched.
+  - `...::test_a_reduction_still_answers_for_a_source_that_reduces` keeps the
+    refusal narrow: Census PEP answers 200.
+  - `tests/unit/api/test_consumer_guide.py::test_guide_reduction_claim_is_the_reduction_gate`
+    makes the guide's "the same ranking" sentence true as a property of the
+    registry rather than of the prose: over every dispatch entry and both
+    reductions, a reduction is refused exactly when the entry is not
+    `analysis_ready`, and the reason served contains the entry's own analysis
+    refusal -- the same sentence `/distribution/bins` returns.
+- Break-test: replacing `refusal = dispatch.analysis_refusal()` with
+  `refusal = None` inside `reduction_refusal` leaves `3 failed, 61 passed`
+  across the two files -- both parametrisations of the CDC node and the
+  consumer-guide property. The gate-less service restored, `tests/unit/api`
+  is `462 passed`.
+- Tiers: `pytest tests/unit` 1544 passed; `pytest tests/integration -m
+  "integration and (redis or database) and not slow"` 157 passed, 2 skipped,
+  14 deselected; `ruff format --check .` and `ruff check .` clean.
+- No OpenAPI snapshot change: the refusal is a runtime 422 with a computed
+  detail, not a parameter description, and
+  `test_openapi_contract.py` passes unchanged.
 
 ## Remaining work
 
-- Everything.
+- None.

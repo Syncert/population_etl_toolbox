@@ -60,6 +60,15 @@ SCOPE_AS_RELEASED = "as_released"
 #: the source's ``filter_conditions`` to be usable for that source.
 UNIVERSAL_PARAMETERS = ("metric_code", "scope", "release", "limit", "offset")
 
+#: The two query parameters that reduce a read to one row per geography (and,
+#: for the second, per period within a geography).
+REDUCTION_NEWEST_PER_GEOGRAPHY = "newest_per_geography"
+REDUCTION_NEWEST_RELEASE_PER_PERIOD = "newest_release_per_period"
+PER_GEOGRAPHY_REDUCTIONS = (
+    REDUCTION_NEWEST_PER_GEOGRAPHY,
+    REDUCTION_NEWEST_RELEASE_PER_PERIOD,
+)
+
 
 class NeutralQueryError(ValueError):
     """A request the resource can explain rather than serve (HTTP 422)."""
@@ -67,6 +76,33 @@ class NeutralQueryError(ValueError):
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
         self.detail = detail
+
+
+def reduction_refusal(dispatch: ObservationDispatch, reduction: str) -> Optional[str]:
+    """Why a per-geography reduction declines this source, or ``None``.
+
+    A reduction to one row per geography -- or, for
+    ``newest_release_per_period``, one row per geography and period -- is the
+    same ranking `/distribution/bins` and `/comparison/preflight` apply, which
+    is what the guide says of it. Those routes decline a source whose rows do
+    not reduce to one number per geography, and this did not: it partitioned on
+    the geography expression alone, so ``ranking_tie_break`` resolved CDC's
+    many rows per geography by ``stratum_id`` and the lexicographically first
+    stratum answered as the geography's value, with ``total`` counting only the
+    survivors. That is the first thing the guide's "What this API will not do"
+    rules out: "Collapse a source's strata, domains, or subject grain into a
+    single number you did not ask for" (API-118).
+
+    The reason is the dispatch entry's own, so the reader is told exactly what
+    the analysis routes tell them about the same source.
+    """
+    refusal = dispatch.analysis_refusal()
+    if refusal is None:
+        return None
+    return (
+        f"{reduction} reduces a source to one row per geography, which "
+        f"'{dispatch.source_code}' does not publish: {refusal}"
+    )
 
 
 def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]:
@@ -392,6 +428,18 @@ def list_neutral_observations(
     if metric is None:
         return None
     dispatch = dispatch_for_metric(metric)
+
+    reduction = (
+        REDUCTION_NEWEST_PER_GEOGRAPHY
+        if newest_per_geography
+        else REDUCTION_NEWEST_RELEASE_PER_PERIOD
+        if newest_release_per_period
+        else None
+    )
+    if reduction is not None:
+        refusal = reduction_refusal(dispatch, reduction)
+        if refusal is not None:
+            raise NeutralQueryError(refusal)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(

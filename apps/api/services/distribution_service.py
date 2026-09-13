@@ -56,11 +56,9 @@ def list_distribution_bins(
     # into the registry here raised a KeyError this route did not catch
     # (API-078).
     dispatch = dispatch_for_metric(metric)
-    if not dispatch.analysis_ready:
-        restriction = dispatch.analysis_restriction or (
-            f"source '{source_code}' is not served by the aligned analysis routes"
-        )
-        raise NeutralQueryError(restriction)
+    refusal = dispatch.analysis_refusal()
+    if refusal is not None:
+        raise NeutralQueryError(refusal)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(

@@ -328,6 +328,23 @@ class ObservationDispatch:
     def supported_filters(self) -> tuple[str, ...]:
         return tuple(sorted(param for param, _ in self.filter_conditions))
 
+    def analysis_refusal(self) -> str | None:
+        """Why an aligned single-value read declines this source, or ``None``.
+
+        One statement, because four served surfaces read it against each
+        other: `/distribution/bins`, `/comparison/preflight`, a stored
+        analysis document, and a per-geography reduction on `/observations`
+        -- which is the same ranking the analysis routes apply (API-118).
+        Three of them carried their own copy of the fallback sentence and the
+        fourth worded it differently, so a reader comparing two refusals of
+        the same source could not tell whether they meant the same thing.
+        """
+        if self.analysis_ready:
+            return None
+        return self.analysis_restriction or (
+            f"source '{self.source_code}' is not served by the aligned analysis routes"
+        )
+
     def published_dimensions(self) -> tuple[str, ...]:
         """The field names a neutral row's ``dimensions`` object carries.
 

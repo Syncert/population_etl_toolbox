@@ -19,6 +19,10 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.services.neutral_observations_service import (
+    PER_GEOGRAPHY_REDUCTIONS,
+    reduction_refusal,
+)
 from apps.api.versioning import CURRENT_VERSION
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -110,6 +114,62 @@ def test_guide_analysis_claims_match_the_capability_registry() -> None:
         )
     for name in ("Census ACS", "BLS", "FRED", "Census PEP"):
         assert name in analysis_section
+
+
+def test_guide_reduction_claim_is_the_reduction_gate() -> None:
+    """Covers: API-118 — "the same ranking" means the same refusal.
+
+    The guide says of `newest_per_geography` that the ranking "is the same
+    ranking `/distribution/bins` and `/comparison/preflight` already apply".
+    Those routes decline a source that is not ``analysis_ready``; the
+    reduction did not, so a CDC read answered 200 with the lexicographically
+    first stratum standing in for each geography. This asserts the claim as a
+    property of the registry rather than of the prose: the sources a reduction
+    declines are the sources an aligned analysis declines, for both reductions,
+    and the reason served is the dispatch entry's own — the same sentence
+    `/distribution/bins` returns.
+    """
+    text = GUIDE.read_text(encoding="utf-8")
+    section = text.split("### A latest publication can be a series", 1)[1]
+    section = section.split("###", 1)[0]
+    assert "the same ranking" in section
+    for reduction in PER_GEOGRAPHY_REDUCTIONS:
+        assert f"`{reduction}`" in section, (
+            f"the guide's reduction section does not name {reduction}"
+        )
+
+    declined = {
+        code
+        for code, dispatch in OBSERVATION_DISPATCH.items()
+        if not dispatch.analysis_ready
+    }
+    for name in ("CDC", "USDA NASS", "FBI UCR"):
+        assert name in section, (
+            f"{name} is declined by the registry but the reduction section "
+            "does not say so"
+        )
+
+    for code, dispatch in OBSERVATION_DISPATCH.items():
+        analysis_refusal = dispatch.analysis_refusal()
+        assert (analysis_refusal is None) is dispatch.analysis_ready, code
+        for reduction in PER_GEOGRAPHY_REDUCTIONS:
+            refusal = reduction_refusal(dispatch, reduction)
+            if code not in declined:
+                assert refusal is None, (
+                    f"{code} reduces to one value per geography, so "
+                    f"{reduction} has nothing to decline"
+                )
+                continue
+            assert refusal is not None, (
+                f"an aligned analysis declines {code}, so {reduction} — the "
+                "same ranking — cannot answer it"
+            )
+            assert reduction in refusal, refusal
+            assert analysis_refusal is not None
+            assert analysis_refusal in refusal, (
+                f"the {reduction} refusal for {code} states a different "
+                "reason than the analysis routes"
+            )
 
 
 def test_guide_documents_every_neutral_observation_filter() -> None:

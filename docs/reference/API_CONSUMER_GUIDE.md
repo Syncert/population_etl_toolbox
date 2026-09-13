@@ -113,6 +113,16 @@ order, and it is the same ranking `/distribution/bins` and
 `/comparison/preflight` already apply. A page taken this way and a set of
 bins therefore describe the same rows.
 
+Because it is that ranking, a reduction declines the sources those routes
+decline. CDC, USDA NASS and FBI UCR publish more than one row per geography
+by design — strata, domains, agency subjects — so `newest_per_geography` and
+`newest_release_per_period` answer 422 for them, carrying the same stated
+reason `/distribution/bins` gives and naming the per-source filters that ask
+the question those sources can answer. Reducing them anyway would present
+whichever stratum the tie-break sorted first as the geography's value, with
+`total` counting only the survivors: collapsing a grain you did not ask to
+collapse.
+
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
 `release=` accepts.

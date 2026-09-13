@@ -1271,3 +1271,79 @@ def test_every_source_lists_its_releases_in_a_total_order() -> None:
             "two releases sharing an ordering value could then repeat or skip "
             "across a page boundary"
         )
+
+
+# ---------------------------------------------------------------------------
+# API-118 — a reduction declines a source that does not reduce
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("reduction", "scope"),
+    [
+        ("newest_per_geography", "latest"),
+        ("newest_release_per_period", "as_released"),
+    ],
+)
+def test_a_reduction_declines_a_stratified_source(reduction: str, scope: str) -> None:
+    """Covers: API-118 — the reduction is the analysis routes' own ranking.
+
+    The guide says of `newest_per_geography` that it is "the same ranking
+    `/distribution/bins` and `/comparison/preflight` already apply", and
+    those routes decline CDC, USDA NASS and FBI UCR with a stated reason:
+    their rows do not reduce to one number per geography. The reduction
+    never consulted `analysis_ready`. It partitioned on `geo_id` alone, and
+    the tie-break then resolved CDC's many rows per geography by
+    `stratum_id`, so the lexicographically first stratum answered as the
+    geography's value and `total` counted only the survivors -- "collapse a
+    source's strata, domains, or subject grain into a single number you did
+    not ask for", which the guide's own "What this API will not do" opens
+    with.
+
+    Every API-066 and API-081 node above uses the Census PEP metric, an
+    analysis-ready source, so the block passed without a stratified one.
+    """
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _CDC_METRIC["metric_code"],
+                "scope": scope,
+                reduction: "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert reduction in detail
+    assert "CDC" in detail
+    # The restriction is the dispatch entry's own, so the reader is told the
+    # same thing the analysis routes tell them, and what to ask instead.
+    assert "stratum_id" in detail
+    assert not _dispatched(session), "no query may run for a refused reduction"
+
+
+def test_a_reduction_still_answers_for_a_source_that_reduces() -> None:
+    """Covers: API-118 — the refusal is narrow.
+
+    Census PEP is analysis-ready and its latest publication is a series per
+    geography, which is the case the reduction exists for.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, response.text

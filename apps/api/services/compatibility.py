@@ -89,11 +89,9 @@ def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
             f"{label} belongs to source '{source_code}', which has no "
             "reviewed observation dispatch entry",
         )
-    if not dispatch.analysis_ready:
-        restriction = dispatch.analysis_restriction or (
-            f"source '{source_code}' is not served by the aligned analysis routes"
-        )
-        return RuleFinding(RULE_SOURCES, STATUS_FAIL, f"{label}: {restriction}")
+    refusal = dispatch.analysis_refusal()
+    if refusal is not None:
+        return RuleFinding(RULE_SOURCES, STATUS_FAIL, f"{label}: {refusal}")
     return RuleFinding(
         RULE_SOURCES,
         STATUS_PASS,

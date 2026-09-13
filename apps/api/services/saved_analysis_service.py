@@ -232,11 +232,9 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
         _require_declared_filters(metric, filters, kind="distribution")
         dispatch = OBSERVATION_DISPATCH[str(metric.get("source_code") or "")]
-        if not dispatch.analysis_ready:
-            raise ConfigurationInvalid(
-                dispatch.analysis_restriction
-                or f"source '{dispatch.source_code}' has no aligned analysis surface"
-            )
+        refusal = dispatch.analysis_refusal()
+        if refusal is not None:
+            raise ConfigurationInvalid(refusal)
         return _owning_sources(metric)
 
     metric_a = _require_metric(warehouse, document.metric_code_a, "metric_code_a")
