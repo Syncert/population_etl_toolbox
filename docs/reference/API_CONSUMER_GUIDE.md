@@ -549,6 +549,14 @@ status code on the one class of error the API can explain.
   contract's fingerprint and the **warehouse publication epoch**, so a
   republication is reflected within the deployment's freshness window rather
   than after the TTL. You do not need to bust anything.
+- **A failure is never cacheable.** Only a `200` carries
+  `Cache-Control: public, max-age=<ttl>` and an `x-cache` label. Every other
+  status on those same paths — a `404`, a `422`, a rate-limited `429`, a
+  sanitized `503` — answers `Cache-Control: no-store` and no `x-cache` at
+  all, because a response the cache was never a candidate to answer has no
+  hit or miss to report. So a shared cache in front of this API cannot serve
+  one client's refusal to another, and `Retry-After` on a `429` means what it
+  says.
 - Rate limits, when enabled, are per client and split by cost class: catalog
   reads and analytical reads spend independent budgets. Cache hits cost no
   budget. "Per client" means the address the request arrived from — or, when

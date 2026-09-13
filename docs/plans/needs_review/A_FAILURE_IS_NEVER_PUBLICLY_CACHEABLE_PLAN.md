@@ -13,8 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect.**
+- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
+  assessment agent; claimed and completed 2026-09-13. It was a present
+  defect. Register row **API-115** (API-112, suggested at authoring time,
+  had been taken).
 - **Last updated:** 2026-09-13
 - **Owner surface:** `apps/api/middleware.py`
 
@@ -56,10 +58,39 @@ TTL and pins an outage.
 
 - Reordering the middleware stack. The decoration is the defect.
 
+## What changed
+
+- `_decorate_miss` labels a `200` as it always did and gives every other
+  status `Cache-Control: no-store` and no `x-cache`. The headers are
+  *replaced* rather than appended, so one response can never carry two
+  contradictory `cache-control` values.
+- The `x-cache` omission is deliberate, and stated in the code: a label
+  belongs to a response the cache could have answered, and `MISS` on a 503
+  says the cache looked and did not have it — which invites a client to
+  retry for a hit that can never arrive.
+- `test_ineligible_response_is_not_stored` now reads the headers, and splits
+  on status: the two ineligible-by-size/emptiness cases are still served
+  responses that say so, and the failure case is `no-store` with no label. A
+  second node sweeps 404, 422, 429, 500 and 503.
+- `API_CONSUMER_GUIDE.md`'s caching section states the rule, naming the
+  statuses and why a shared cache cannot serve one client's refusal to
+  another.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `pytest tests/unit` — **1520 passed**.
+- **The tests fail on the old behaviour.** Decorating every status again
+  (`if True:` in place of `if status == 200:`) leaves `6 failed, 4 passed`
+  in `test_cache_middleware.py`. `apps/api/middleware.py` was restored
+  byte-for-byte afterwards.
+- `pytest tests/integration/api/test_middleware_order_behaviour.py -m
+  "integration and redis"` — 3 passed, the new node included: on the shipped
+  `create_app(Settings())` with real Redis and a budget of one, the 429 the
+  limiter raises *inside* the cache answers `no-store`, carries no `x-cache`,
+  and keeps its `Retry-After`.
+- `ruff format --check .` / `ruff check .` — clean (444 files).
+- `python -m tests.support.catalog_evidence` renders API-115 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

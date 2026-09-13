@@ -340,8 +340,33 @@ class RedisResponseCacheMiddleware:
             return
 
         def _decorate_miss(message: Message) -> Message:
-            if message.get("type") == "http.response.start":
-                headers = list(message.get("headers", []))
+            """Label a served response, and never label a failure cacheable.
+
+            The store below keeps only a 200, and this ran on every status:
+            the rate limiter sits inside the cache in the middleware stack,
+            so its 429 was decorated `public, max-age=<ttl>`, and so were the
+            404, the 422 and the sanitized 503. A shared cache that honours
+            the header serves one client's 429 to every client for the TTL
+            and pins an outage -- the opposite of what `Retry-After` asks a
+            client to do, and the guide scopes the header to successful
+            public analytical GETs (API-115).
+
+            An `x-cache` label belongs to a response the cache could have
+            answered. A failure was never a candidate, so it carries none:
+            `MISS` on a 503 says the cache looked and did not have it, which
+            invites a client to retry for a hit that can never arrive.
+            """
+            if message.get("type") != "http.response.start":
+                return message
+            status = int(message.get("status", 500))
+            # Replaced rather than appended: two `cache-control` headers on
+            # one response is a contradiction a proxy resolves for itself.
+            headers = [
+                (name, value)
+                for name, value in message.get("headers", [])
+                if name.lower() not in {b"cache-control", b"x-cache"}
+            ]
+            if status == 200:
                 headers.extend(
                     [
                         (
@@ -351,7 +376,9 @@ class RedisResponseCacheMiddleware:
                         (b"x-cache", b"MISS"),
                     ]
                 )
-                message["headers"] = headers
+            else:
+                headers.append((b"cache-control", b"no-store"))
+            message["headers"] = headers
             return message
 
         # Buffer the response only up to the cacheable bound. A body that

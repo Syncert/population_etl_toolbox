@@ -149,3 +149,29 @@ def test_a_body_over_the_bound_still_spends_budget(limited_api: TestClient) -> N
     assert refused.status_code == 429, (
         "the refused body spent no budget, so an unbounded sender pays nothing"
     )
+
+
+def test_a_rate_limited_refusal_is_never_publicly_cacheable(
+    limited_api: TestClient,
+) -> None:
+    """Covers: API-115 — the 429 the cache itself wraps, on the shipped stack.
+
+    The limiter sits inside the cache, so its refusal is a response the cache
+    middleware decorated on the way out; it labelled every status
+    `public, max-age=<ttl>` and `x-cache: MISS`. A shared cache honouring
+    that serves one client's refusal to every client for the TTL, which is
+    the opposite of what the `Retry-After` beside it asks a client to do.
+
+    Read here rather than only against a fake, because the decoration and the
+    refusal are two middlewares apart in the real stack.
+    """
+    first = limited_api.get("/api/v1/catalog/metrics", params={"q": "budget"})
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "public, max-age=300"
+
+    refused = limited_api.get("/api/v1/catalog/metrics", params={"q": "spent"})
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["cache-control"] == "no-store"
+    assert "x-cache" not in refused.headers
+    # The one header a client is told to honour survives the decoration.
+    assert refused.headers["retry-after"]
