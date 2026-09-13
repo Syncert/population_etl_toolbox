@@ -55,6 +55,41 @@ INTERNAL_FAILURE_DETAIL = "The API failed to complete this request."
 _INTERNAL_FAILURE_BODY = json.dumps({"detail": INTERNAL_FAILURE_DETAIL}).encode("utf-8")
 
 
+def route_shape(scope: dict[str, Any]) -> str:
+    """The path with each path parameter's value replaced by its name.
+
+    The completion line is the operational signal this module exists to
+    produce, and latency, error rate and cache behaviour are per-route facts.
+    Logging the request path made them uncomputable: `/evidence-packets/12345`
+    and `/evidence-packets/12346` are the same route, and one `path` value per
+    packet leaves nothing to group by. It also put a private identifier on
+    disk -- the one the web client keeps out of the address bar -- when this
+    module's own rule already says parameter values do not belong in logs.
+    That rule had been applied to the query string and not to the path
+    (API-089).
+
+    Replacement is by whole segment. A value that is a substring of a longer
+    segment is left alone; a literal segment that happens to equal a
+    parameter's value is replaced too, which can only remove an identifier and
+    lower cardinality, never add either -- reconstructing which segment the
+    router actually matched would mean re-deriving its own match here.
+
+    A request that matched no route has no template, and its path is what
+    makes a 404 actionable, so it is logged as it arrived. Every route this
+    API serves that takes an identifier does match, so no identifier of a
+    served resource lands there.
+    """
+    path = str(scope.get("path", "-"))
+    parameters = scope.get("path_params") or {}
+    if not parameters:
+        return path
+    names_by_value = {str(value): name for name, value in parameters.items()}
+    return "/".join(
+        "{" + names_by_value[segment] + "}" if segment in names_by_value else segment
+        for segment in path.split("/")
+    )
+
+
 def _incoming_request_id(scope: dict[str, Any]) -> str | None:
     for name, value in scope.get("headers") or ():
         if name == b"x-request-id":
@@ -104,7 +139,7 @@ class RequestTelemetryMiddleware:
                 logger.exception(
                     "api_request_failed method=%s path=%s request_id=%s",
                     scope.get("method", "-"),
-                    scope.get("path", "-"),
+                    route_shape(scope),
                     request_id,
                 )
                 if started_response:
@@ -140,7 +175,7 @@ class RequestTelemetryMiddleware:
                 "api_request method=%s path=%s status=%d duration_ms=%.1f "
                 "cache=%s request_id=%s",
                 scope.get("method", "-"),
-                scope.get("path", "-"),
+                route_shape(scope),
                 status,
                 duration_ms,
                 cache_state,

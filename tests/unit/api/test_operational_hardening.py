@@ -44,7 +44,11 @@ from apps.api.main import PUBLIC_CACHE_TARGETS, app, contract_fingerprint, creat
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
 from apps.api.ratelimit import RATE_LIMITED_DETAIL, RateLimitMiddleware
 from apps.api.middleware import SECURITY_HEADERS
-from apps.api.telemetry import INTERNAL_FAILURE_DETAIL, RequestTelemetryMiddleware
+from apps.api.telemetry import (
+    INTERNAL_FAILURE_DETAIL,
+    RequestTelemetryMiddleware,
+    route_shape,
+)
 from data_ingestion_toolbox.config import Settings
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -759,3 +763,90 @@ def test_an_unhandled_failure_carries_the_declared_security_headers() -> None:
     assert response.status_code == 500
     for name, value in SECURITY_HEADERS:
         assert response.headers[name.decode()] == value.decode()
+
+
+# ---------------------------------------------------------------------------
+# API-089 — the completion line names the route, not the caller's identifiers
+# ---------------------------------------------------------------------------
+
+
+def _shape(path: str, path_params: dict | None) -> str:
+    scope = {"path": path}
+    if path_params is not None:
+        scope["path_params"] = path_params
+    return route_shape(scope)
+
+
+def test_the_completion_line_names_the_route_not_the_identifier() -> None:
+    """Covers: API-089 — one line per route, not one per packet.
+
+    The line is the operational signal this module exists to produce, and
+    latency, error rate and cache behaviour are per-route facts. With the
+    identifier in it, `/evidence-packets/{packet_id}` had as many distinct
+    `path` values as the account has packets, so the p95 of a route could not
+    be computed from the line written to provide it. It also put a private
+    identifier on disk -- the one the web client keeps out of the address bar.
+    """
+    assert (
+        _shape("/api/v1/evidence-packets/12345", {"packet_id": "12345"})
+        == "/api/v1/evidence-packets/{packet_id}"
+    )
+    assert (
+        _shape(
+            "/api/v1/catalog/metrics/CENSUS_ACS:acs5:B01003_001",
+            {"metric_code": "CENSUS_ACS:acs5:B01003_001"},
+        )
+        == "/api/v1/catalog/metrics/{metric_code}"
+    )
+
+
+def test_a_route_without_parameters_logs_what_it_always_did() -> None:
+    """Covers: API-089 — nothing to replace, nothing changed."""
+    assert _shape("/api/v1/catalog/metrics", {}) == "/api/v1/catalog/metrics"
+    assert _shape("/api/v1/observations", {}) == "/api/v1/observations"
+
+
+def test_an_unmatched_path_is_logged_as_it_arrived() -> None:
+    """Covers: API-089 — a 404 has no template, and the path is the signal.
+
+    Every route this API serves that takes an identifier matches, so the
+    identifier of a served resource is never what lands here.
+    """
+    assert _shape("/api/v1/no-such-route/9", None) == "/api/v1/no-such-route/9"
+
+
+def test_a_parameter_value_that_looks_like_a_path_segment_is_still_replaced() -> None:
+    """Covers: API-089 — the replacement is by segment, not by substring.
+
+    A value equal to some other segment of the path must not rewrite that
+    segment too, and a value that is a substring of a longer segment must not
+    rewrite part of it.
+    """
+    assert (
+        _shape("/api/v1/evidence-packets/12", {"packet_id": "12"})
+        == "/api/v1/evidence-packets/{packet_id}"
+    )
+    # `123` is a substring of `1234`, not a segment, so nothing is rewritten.
+    assert _shape("/api/v1/x/1234", {"packet_id": "123"}) == "/api/v1/x/1234"
+    # A literal segment that happens to equal the parameter's value is
+    # replaced too. That is conservative in the right direction -- it can only
+    # remove an identifier and lower cardinality, never add either -- and
+    # reconstructing which segment was the parameter would mean re-deriving
+    # the router's own match.
+    assert (
+        _shape("/api/v1/metrics/metrics", {"metric_code": "metrics"})
+        == "/api/v1/{metric_code}/{metric_code}"
+    )
+
+
+def test_the_line_still_carries_the_route_and_no_query_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Covers: API-089 — end to end through the middleware, query still absent."""
+    client = _telemetry_app()
+    with caplog.at_level(logging.INFO, logger="apps.api.request"):
+        client.get("/api/v1/catalog/metrics?q=sensitive-value")
+
+    line = _completion_line(caplog)
+    assert "path=/api/v1/catalog/metrics" in line
+    assert "sensitive-value" not in line
