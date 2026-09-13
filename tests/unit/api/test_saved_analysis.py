@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import PUBLIC_CACHE_TARGETS, app
-from apps.api.schemas import AnalysisDocument
+from apps.api.schemas import OBSERVATION_FILTER_BOUNDS, AnalysisDocument
 from apps.api.services import saved_analysis_service
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -825,3 +825,78 @@ def test_the_document_still_forbids_an_undeclared_key(
         json={"name": "extra", "document": _document(newest_per_county=True)},
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# API-091 — a stored filter value the live route would refuse
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected"),
+    [
+        ({"geo_id": "x" * 201}, "at most 200 characters"),
+        ({"geo_level": "x" * 51}, "at most 50 characters"),
+        ({"year_from": 99999}, "at most 2200"),
+        ({"year_to": 1600}, "at least 1700"),
+        ({"year_from": "not-a-year"}, "must be a whole number"),
+    ],
+)
+def test_a_filter_value_the_route_refuses_is_not_stored(filters, expected) -> None:
+    """Covers: API-091 — the names were checked and the values were not.
+
+    `AnalysisDocument` promises a stored configuration can never encode a
+    request the API would refuse. A 5,000-character `geo_id` against the
+    route's declared 200 stored clean, listed clean, reported `valid: true`,
+    and failed only when its owner tried to reopen it.
+    """
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_CDC_METRIC["metric_code"],
+        filters=filters,
+    )
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession({_CDC_METRIC["metric_code"]: _CDC_METRIC}), document
+        )
+    assert expected in refused.value.detail
+    assert next(iter(filters)) in refused.value.detail
+
+
+def test_a_filter_value_inside_the_bound_is_stored_as_it_is() -> None:
+    """Covers: API-091 — the check refuses, it does not rewrite."""
+    filters = {"geo_id": "x" * 200, "year_from": 1700, "year_to": 2200}
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_CDC_METRIC["metric_code"],
+        filters=dict(filters),
+    )
+    saved_analysis_service.validate_document(
+        _WarehouseSession({_CDC_METRIC["metric_code"]: _CDC_METRIC}), document
+    )
+    assert document.filters == filters
+
+
+def test_the_declared_bounds_are_the_ones_the_route_serves() -> None:
+    """Covers: API-091 — one declaration, and the contract proves it.
+
+    The route reads these bounds, so the two agree by construction today. This
+    asserts it against the contract the application actually serves, so they
+    still agree if the route ever stops reading the declaration.
+    """
+    parameters = {
+        parameter["name"]: parameter["schema"]
+        for parameter in app.openapi()["paths"]["/api/v1/observations"]["get"][
+            "parameters"
+        ]
+    }
+    for name, bound in OBSERVATION_FILTER_BOUNDS.items():
+        served = parameters[name]
+        # Optional query parameters are served as `anyOf[type, null]`.
+        shape = next(entry for entry in served["anyOf"] if entry.get("type") != "null")
+        if bound.max_length is not None:
+            assert shape["maxLength"] == bound.max_length, name
+        if bound.minimum is not None:
+            assert shape["minimum"] == bound.minimum, name
+        if bound.maximum is not None:
+            assert shape["maximum"] == bound.maximum, name

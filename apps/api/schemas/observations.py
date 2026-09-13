@@ -3,10 +3,64 @@ per-source observation routes."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
+
+
+@dataclass(frozen=True)
+class FilterBound:
+    """What the observation route accepts for one filter value."""
+
+    #: Longest accepted text, for the filters the route declares as strings.
+    max_length: Optional[int] = None
+    #: Inclusive range, for the filters the route declares as integers.
+    minimum: Optional[int] = None
+    maximum: Optional[int] = None
+
+    def rejection(self, value: Any) -> Optional[str]:
+        """Why the route would refuse ``value``, or ``None``."""
+        if self.minimum is not None or self.maximum is not None:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                return "must be a whole number"
+            if self.minimum is not None and number < self.minimum:
+                return f"must be at least {self.minimum}"
+            if self.maximum is not None and number > self.maximum:
+                return f"must be at most {self.maximum}"
+            return None
+        if self.max_length is not None and len(str(value)) > self.max_length:
+            return f"must be at most {self.max_length} characters"
+        return None
+
+
+#: The bound the observation route declares for each filter it accepts.
+#:
+#: Declared here rather than written into the route signature alone, because
+#: two places read it: the route, which enforces it on a live request, and
+#: `saved_analysis_service`, which must refuse to store a configuration
+#: carrying a value that route would refuse. `AnalysisDocument` promises a
+#: stored configuration can never encode a request the API would refuse, and
+#: the names were checked while the values were not -- a 5,000-character
+#: `geo_id` stored clean and failed only when its owner reopened it
+#: (API-091).
+OBSERVATION_FILTER_BOUNDS: dict[str, FilterBound] = {
+    "geo_id": FilterBound(max_length=200),
+    "geo_level": FilterBound(max_length=50),
+    "state_fips": FilterBound(max_length=2),
+    "county_fips": FilterBound(max_length=3),
+    "stratum_id": FilterBound(max_length=200),
+    "adjustment_status": FilterBound(max_length=50),
+    "domain_desc": FilterBound(max_length=200),
+    "domaincat_desc": FilterBound(max_length=200),
+    "subject_type": FilterBound(max_length=50),
+    "subject_code": FilterBound(max_length=50),
+    "year_from": FilterBound(minimum=1700, maximum=2200),
+    "year_to": FilterBound(minimum=1700, maximum=2200),
+}
 
 
 class ObservationDashboard(BaseModel):

@@ -28,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
 from apps.api.schemas import (
     AnalysisDocument,
     ConfigurationValidation,
@@ -96,6 +97,17 @@ def _require_declared_filters(metric, filters: dict[str, Any], allowed_extra) ->
             f"{', '.join(unsupported)}; supported filters: "
             f"{', '.join(sorted(declared))}"
         )
+    # The names were checked and the values were not, so a value the live
+    # route refuses -- a 5,000-character `geo_id` against its declared 200 --
+    # stored clean, reported valid, and failed only when its owner reopened
+    # it. The bound is read from where the route reads it (API-091).
+    for name in sorted(filters):
+        bound = OBSERVATION_FILTER_BOUNDS.get(name)
+        if bound is None:
+            continue
+        rejection = bound.rejection(filters[name])
+        if rejection:
+            raise ConfigurationInvalid(f"filter '{name}' {rejection}")
     return dispatch
 
 

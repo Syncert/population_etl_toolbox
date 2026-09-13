@@ -26,6 +26,8 @@ from apps.api.schemas.catalog import (
     FreshnessListResponse,
 )
 from apps.api.schemas.observations import (
+    OBSERVATION_FILTER_BOUNDS,
+    FilterBound,
     MetricRelease,
     MetricReleaseListResponse,
     NeutralObservation,
@@ -117,6 +119,8 @@ __all__ = [
     "MetricCapability",
     "MetricCatalog",
     "MetricListResponse",
+    "OBSERVATION_FILTER_BOUNDS",
+    "FilterBound",
     "MetricRelease",
     "MetricReleaseListResponse",
     "NassMeasureListResponse",

@@ -16,6 +16,7 @@ from apps.api.services.observations_service import (
     list_timeseries_observations,
 )
 from apps.api.schemas import (
+    OBSERVATION_FILTER_BOUNDS,
     MetricReleaseListResponse,
     NeutralObservationListResponse,
     ObservationListResponse,
@@ -37,18 +38,46 @@ def get_neutral_observations(
     metric_code: str = Query(..., min_length=1, max_length=200),
     scope: Literal["latest", "as_released"] = Query("latest"),
     release: Optional[str] = Query(None, min_length=1, max_length=100),
-    geo_id: Optional[str] = Query(None, max_length=200),
-    geo_level: Optional[str] = Query(None, max_length=50),
-    state_fips: Optional[str] = Query(None, max_length=2),
-    county_fips: Optional[str] = Query(None, max_length=3),
-    stratum_id: Optional[str] = Query(None, max_length=200),
-    adjustment_status: Optional[str] = Query(None, max_length=50),
-    domain_desc: Optional[str] = Query(None, max_length=200),
-    domaincat_desc: Optional[str] = Query(None, max_length=200),
-    subject_type: Optional[str] = Query(None, max_length=50),
-    subject_code: Optional[str] = Query(None, max_length=50),
-    year_from: Optional[int] = Query(None, ge=1700, le=2200),
-    year_to: Optional[int] = Query(None, ge=1700, le=2200),
+    geo_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
+    ),
+    geo_level: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_level"].max_length
+    ),
+    state_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["state_fips"].max_length
+    ),
+    county_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["county_fips"].max_length
+    ),
+    stratum_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["stratum_id"].max_length
+    ),
+    adjustment_status: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["adjustment_status"].max_length
+    ),
+    domain_desc: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["domain_desc"].max_length
+    ),
+    domaincat_desc: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["domaincat_desc"].max_length
+    ),
+    subject_type: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["subject_type"].max_length
+    ),
+    subject_code: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["subject_code"].max_length
+    ),
+    year_from: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_from"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_from"].maximum,
+    ),
+    year_to: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_to"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_to"].maximum,
+    ),
     newest_per_geography: bool = Query(
         False,
         description=(
