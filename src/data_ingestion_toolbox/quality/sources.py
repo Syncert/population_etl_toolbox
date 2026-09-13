@@ -428,6 +428,13 @@ def fbi_reported_vs_absent(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
 
 
 #: What each resolution method is allowed to claim about itself (ETL-050).
+#:
+#: Public because a second reader compares it with the warehouse: the keys
+#: are the methods `silver_fbi.agency_geography_relationship.resolution_method`
+#: allows and the values are a subset of the classes its `confidence_class`
+#: allows, and DB-042 holds both against those CHECK constraints -- so a
+#: migration that adds a method without extending this mapping fails at
+#: build time rather than the next time such a row exists.
 #: `exact` is the registered state-code contract, `reviewed` a crosswalk
 #: carrying a reviewer, an evidence URL and a review note, and `derived` a
 #: name match that is exact and uniqueness-checked and backed by no review.
@@ -435,7 +442,7 @@ def fbi_reported_vs_absent(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
 #: rule's only reading was a fanout count, and a rule that declares
 #: "attribution flows only through exact state codes, reviewed crosswalks, or
 #: a label match published as derived" has to be able to see that.
-_FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
+FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
     {
         "exact_state_code": "exact",
         "reviewed_place_crosswalk": "reviewed",
@@ -448,13 +455,13 @@ def _fbi_confidence_claims(cursor: Any) -> RuleOutcome:
     """Every resolved relationship claims the confidence its method earns.
 
     The allowed pairs are bound as a VALUES list built from
-    ``_FBI_RESOLUTION_CONFIDENCE``, so adding a resolution method to the
+    ``FBI_RESOLUTION_CONFIDENCE``, so adding a resolution method to the
     mapping extends the rule and adding one without extending the mapping
     fails it. A resolved relationship whose method the mapping does not know
     is an offender too: an unreviewed spelling is exactly how the county path
     came to claim `reviewed`.
     """
-    pairs = sorted(_FBI_RESOLUTION_CONFIDENCE.items())
+    pairs = sorted(FBI_RESOLUTION_CONFIDENCE.items())
     values = ", ".join("(%s, %s)" for _ in pairs)
     offenders, offenders_total = _offenders(
         cursor,
