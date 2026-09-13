@@ -54,7 +54,7 @@ write-time cross-check compares `scope`, `release`, and geography
 3. Failing-first tests beside `test_a_block_cannot_name_one_geography_and_query_another`.
 4. The guide and the OpenAPI snapshot carry the field.
 5. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-115 at authoring time).
+   identifier; API-116 at authoring time).
 
 ## Non-goals
 

@@ -54,7 +54,7 @@ private vocabularies.
    grain and asserts the normaliser is applied.
 3. The guide's grain section names the two parameters.
 4. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-116 at authoring time).
+   identifier; API-117 at authoring time).
 
 ## Non-goals
 

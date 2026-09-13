@@ -55,7 +55,7 @@ the lexicographically first stratum wins, silently.
 3. `API_CONSUMER_GUIDE.md` states it under the reduction's section, and
    the OpenAPI snapshot carries any description change.
 4. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-110 at authoring time).
+   identifier; API-111 at authoring time).
 
 ## Non-goals
 

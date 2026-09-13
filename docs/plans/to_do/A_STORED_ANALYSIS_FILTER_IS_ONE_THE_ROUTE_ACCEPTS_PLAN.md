@@ -54,7 +54,7 @@ any name outside `dispatch.filter_conditions`, and Census PEP declares no
    document from before the change is reported invalid on read.
 3. The widened-set test is corrected to read the declaration.
 4. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-113 at authoring time).
+   identifier; API-114 at authoring time).
 
 ## Non-goals
 

@@ -62,7 +62,7 @@ Two services read only existence:
    exercise that state rather than deletion.
 4. The OpenAPI snapshot and the guide carry the new metric field.
 5. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-112 at authoring time).
+   identifier; API-113 at authoring time).
 
 ## Non-goals
 

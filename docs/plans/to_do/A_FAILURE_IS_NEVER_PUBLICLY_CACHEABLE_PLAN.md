@@ -50,7 +50,7 @@ TTL and pins an outage.
 3. `API_CONSUMER_GUIDE.md`'s caching section says a failure is never
    cacheable.
 4. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-111 at authoring time).
+   identifier; API-112 at authoring time).
 
 ## Non-goals
 

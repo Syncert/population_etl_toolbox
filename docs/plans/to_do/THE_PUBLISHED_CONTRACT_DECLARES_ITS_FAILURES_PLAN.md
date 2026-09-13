@@ -51,7 +51,7 @@ in `ratelimit.py:252`, the 413 in `middleware.py:207`, the 409 in
    it names is declared by at least one route, and that the declared error
    schema is the string form.
 3. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-114 at authoring time).
+   identifier; API-115 at authoring time).
 
 ## Non-goals
 
