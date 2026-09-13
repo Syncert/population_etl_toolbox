@@ -51,8 +51,34 @@ RATE_LIMITED_DETAIL = "rate limit exceeded; retry after the indicated interval"
 #: Version-relative path fragments that classify a request as catalog-cost.
 _CATALOG_FRAGMENT = "/catalog/"
 
+#: Never limited: the documentation, which reaches no warehouse.
+_EXEMPT_DOCUMENTATION = ("/docs", "/openapi.json", "/redoc")
+
+
+def _health_paths() -> frozenset[str]:
+    """Every path the health routers serve, versioned and unprefixed.
+
+    Read from the routers rather than written here. A literal list is a second
+    declaration of where health is served, and the versioned resource was
+    missing from it for as long as it has existed: `/api/v1/health` returns a
+    constant -- the same three lines as the probe beside it -- and billed the
+    `analysis` bucket, the budget that protects the expensive queries. The web
+    application calls it on every page load, so a tight budget made the health
+    check itself the request that answered 429, which the explorer presents as
+    an unhealthy API (API-101).
+    """
+    from apps.api.routers import health
+    from apps.api.versioning import API_PREFIXES
+
+    paths = {str(route.path) for route in health.probe_router.routes}
+    paths |= {
+        f"{root}{route.path}" for route in health.router.routes for root in API_PREFIXES
+    }
+    return frozenset(paths)
+
+
 #: Never limited: the deployment probes and documentation.
-_EXEMPT_PATHS = ("/health", "/health/ready", "/docs", "/openapi.json", "/redoc")
+EXEMPT_PATHS: frozenset[str] = _health_paths() | frozenset(_EXEMPT_DOCUMENTATION)
 
 #: Bound on tracked clients; beyond it the oldest state is dropped, which can
 #: only under-throttle briefly and keeps memory bounded under address churn.
@@ -191,7 +217,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         path = str(scope.get("path", ""))
-        if path in _EXEMPT_PATHS:
+        if path in EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
         cost_class, per_minute = self._classify(path)

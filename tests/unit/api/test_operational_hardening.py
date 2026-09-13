@@ -243,6 +243,7 @@ def _limited_app(catalog: int, analysis: int, clock=None) -> TestClient:
         routes=[
             Route("/api/v1/catalog/metrics", endpoint),
             Route("/api/v1/observations", endpoint),
+            Route("/api/v1/health", endpoint),
             Route("/health", endpoint),
         ]
     )
@@ -850,3 +851,45 @@ def test_the_line_still_carries_the_route_and_no_query_values(
     line = _completion_line(caplog)
     assert "path=/api/v1/catalog/metrics" in line
     assert "sensitive-value" not in line
+
+
+def test_the_versioned_health_resource_does_not_spend_the_analysis_budget() -> None:
+    """Covers: API-101 — a health check reaches no SQL, so it bills nothing.
+
+    The limiter's own rule is `analysis` for "everything that reaches
+    observation or analysis SQL", and its own exemption is "the deployment
+    probes and documentation". `/api/v1/health` returns a constant -- the same
+    three lines as the unprefixed probe already exempt -- and was billing the
+    budget that protects the expensive queries.
+
+    `apps/web` calls it on every page load, so each load spent an analysis
+    token before asking for any data; under a tight budget the health check
+    is the request that gets the 429, and the explorer presents that as an
+    unhealthy API.
+    """
+    client = _limited_app(catalog=0, analysis=1)
+    for _ in range(10):
+        assert client.get("/api/v1/health").status_code == 200
+    # And the analytical budget is still whole.
+    assert client.get("/api/v1/observations").status_code == 200
+    assert client.get("/api/v1/observations").status_code == 429
+
+
+def test_the_exempt_paths_are_the_ones_the_health_routers_serve() -> None:
+    """Covers: API-101 — derived from the routers, never a literal list.
+
+    A path written beside the limiter is a second declaration of where health
+    is served, and the versioned resource was missing from it for as long as
+    it has existed. Read from the routers, a health route added later is
+    exempt by construction and one that moves leaves no stale entry behind.
+    """
+    from apps.api.ratelimit import EXEMPT_PATHS
+    from apps.api.routers import health
+    from apps.api.versioning import VERSIONED_ROOT
+
+    served = {f"{VERSIONED_ROOT}{route.path}" for route in health.router.routes} | {
+        str(route.path) for route in health.probe_router.routes
+    }
+    assert served <= EXEMPT_PATHS, sorted(served - EXEMPT_PATHS)
+    # The documentation stays exempt too; it reaches no warehouse either.
+    assert {"/openapi.json", "/docs", "/redoc"} <= EXEMPT_PATHS
