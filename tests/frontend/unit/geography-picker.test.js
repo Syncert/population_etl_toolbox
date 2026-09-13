@@ -13,7 +13,11 @@ import {
   geographyName,
   geographyPickerState,
 } from "../../../apps/web/lib/geographyPicker";
-import { GEO_LEVELS } from "../../../apps/web/lib/urlState";
+import { GEO_GRAIN_ALIASES, GEO_LEVELS } from "../../../apps/web/lib/urlState";
+import {
+  metricSupportedGeoLevels,
+  preferredGeoLevelForMetric,
+} from "../../../apps/web/lib/explorerViewModel";
 
 const STATE_ROW = {
   geo_id: "state:06",
@@ -181,6 +185,22 @@ describe("the picker answers for the selected grain", () => {
       if (grain !== "STATE" && picker.options.length > 0) {
         expect(picker.options[0].name, grain).toBe("state:06");
       }
+    }
+  });
+});
+
+// Covers: WEB-076 — a metric whose catalog entry carries an alias is offered
+// at the grain it publishes.
+describe("a catalog grain the vocabulary replaced", () => {
+  test("valid_geo_grains carrying an alias resolves to the vocabulary word", () => {
+    // The catalog published `NATION` for CDC, PEP and USDA NASS before the
+    // grains were unified. Passed through, the word reached the picker, the
+    // tile filter and the default-grain choice as a sixth grain none of them
+    // knows -- so a national-only measure looked like it published no grain
+    // this application offers.
+    for (const [alias, word] of Object.entries(GEO_GRAIN_ALIASES)) {
+      expect(metricSupportedGeoLevels({ valid_geo_grains: [alias] })).toEqual([word]);
+      expect(preferredGeoLevelForMetric({ valid_geo_grains: [alias] }, "COUNTY")).toBe(word);
     }
   });
 });

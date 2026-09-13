@@ -8,8 +8,11 @@ import { describe, expect, test } from "vitest";
 // and deliberately carries no compatibility verdict.
 
 import {
+  GEO_GRAIN_ALIASES,
+  GEO_LEVELS,
   comparisonHref,
   explorerHref,
+  normalizeGeoLevel,
   parseComparisonState,
   parseExplorerState,
   serializeComparisonState,
@@ -184,5 +187,53 @@ describe("comparison URL state", () => {
     expect(parseComparisonState("?geo_level=PLANET&state=5x5&source_a=Not%2FValid")).toEqual({});
     expect(parseComparisonState("")).toEqual({});
     expect(serializeComparisonState({ geoLevel: "COUNTY" }, { geoLevel: "COUNTY" })).toBe("");
+  });
+});
+
+// Covers: WEB-076 — a grain the vocabulary replaced still opens the view it
+// was saved or shared with.
+describe("the grain vocabulary's aliases", () => {
+  const aliased = Object.entries(GEO_GRAIN_ALIASES);
+
+  test("every alias resolves to its vocabulary word, in any case", () => {
+    expect(aliased.length).toBeGreaterThan(0);
+    for (const [alias, word] of aliased) {
+      for (const sent of [alias, alias.toLowerCase(), `  ${alias}  `]) {
+        expect(normalizeGeoLevel(sent)).toBe(word);
+      }
+    }
+  });
+
+  test("a word that is not a grain comes back unchanged, not repaired", () => {
+    // Normalising is not validating: the readers below decide what to do
+    // with a word that is not a grain, and each drops it.
+    expect(normalizeGeoLevel("COUNTRY")).toBe("COUNTRY");
+    expect(normalizeGeoLevel(null)).toBe("");
+    expect(parseExplorerState("?geo_level=COUNTRY")).toEqual({});
+    expect(parseComparisonState("?geo_level=COUNTRY")).toEqual({});
+  });
+
+  test("an aliased link opens on the grain it names", () => {
+    for (const [alias, word] of aliased) {
+      expect(parseExplorerState(`?geo_level=${alias}`)).toEqual({ geoLevel: word });
+      expect(parseComparisonState(`?geo_level=${alias}`)).toEqual({ geoLevel: word });
+    }
+  });
+
+  test("a state carrying an alias serializes as the vocabulary word", () => {
+    // Which is what makes a link shareable onward: an alias in, the
+    // vocabulary word out, and the same link for the same selection.
+    for (const [alias, word] of aliased) {
+      expect(serializeExplorerState({ geoLevel: alias })).toBe(`geo_level=${word}`);
+      expect(serializeComparisonState({ geoLevel: alias })).toBe(`geo_level=${word}`);
+      expect(serializeExplorerState({ geoLevel: alias }, { geoLevel: word })).toBe("");
+    }
+  });
+
+  test("every vocabulary word survives the round trip", () => {
+    for (const word of GEO_LEVELS) {
+      expect(normalizeGeoLevel(word)).toBe(word);
+      expect(parseExplorerState(`?geo_level=${word}`)).toEqual({ geoLevel: word });
+    }
   });
 });

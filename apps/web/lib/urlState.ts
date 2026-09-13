@@ -16,6 +16,20 @@
 // FBI UCR's; dropping them here made a shared link to either kind of view
 // open on a grain the measure does not publish (WEB-038).
 export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY"] as const;
+
+// The words the vocabulary replaced, and what each one means now. The catalog
+// published `NATION` for CDC, PEP and USDA NASS before the grains were
+// unified, and ADR-0002 promises a saved configuration or a shared link
+// holding one keeps answering -- which is why the API accepts them, from the
+// same mapping under the same name (`registry.GEO_GRAIN_ALIASES`). This
+// application honoured case and not the aliases, so a grain read from outside
+// it -- a link, a stored document's `filters.geo_level`, a metric's
+// `valid_geo_grains` -- was dropped entirely when it carried one, and the
+// view opened on a default grain the measure may not publish (WEB-076).
+export const GEO_GRAIN_ALIASES: Readonly<Record<string, GeoLevel>> = {
+  NATION: "NATIONAL",
+  US: "NATIONAL",
+};
 export const MAP_MODES = ["choropleth", "extrusion"] as const;
 export const VALUE_SCALES = ["linear", "log"] as const;
 export const OBSERVATION_SCOPES = ["latest", "as_released"] as const;
@@ -24,6 +38,24 @@ export type GeoLevel = (typeof GEO_LEVELS)[number];
 export type MapMode = (typeof MAP_MODES)[number];
 export type ValueScale = (typeof VALUE_SCALES)[number];
 export type ObservationScope = (typeof OBSERVATION_SCOPES)[number];
+
+/**
+ * The vocabulary word for a grain read from outside this application.
+ *
+ * Trimmed, upper-cased, and de-aliased -- the same three steps as the API's
+ * `registry.normalize_geo_level`, and for the same stated reason: normalising
+ * is not validating, so a word that is not a grain comes back unchanged and
+ * the caller decides what to do about it. Every grain that enters from a URL,
+ * a stored document, or the catalog goes through here, so the aliases are
+ * honoured in one place rather than at each reader.
+ */
+export function normalizeGeoLevel(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const word = value.trim().toUpperCase();
+  return GEO_GRAIN_ALIASES[word] || word;
+}
 
 export interface ExplorerState {
   /** Published identity of the explored source, from capability discovery. */
@@ -129,7 +161,7 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
     state.metric = metric;
   }
 
-  const geoLevel = (params.get("geo_level") || "").toUpperCase();
+  const geoLevel = normalizeGeoLevel(params.get("geo_level"));
   if (isGeoLevel(geoLevel)) {
     state.geoLevel = geoLevel;
   }
@@ -202,8 +234,12 @@ export function serializeExplorerState(
   if (state.metric && state.metric !== defaults.metric) {
     params.set("metric", state.metric);
   }
-  if (state.geoLevel && isGeoLevel(state.geoLevel) && state.geoLevel !== defaults.geoLevel) {
-    params.set("geo_level", state.geoLevel);
+  // Serialized as the vocabulary word, so a state built from a document or a
+  // link that carries an alias produces a link the rest of this application
+  // reads.
+  const geoLevel = normalizeGeoLevel(state.geoLevel);
+  if (geoLevel && isGeoLevel(geoLevel) && geoLevel !== defaults.geoLevel) {
+    params.set("geo_level", geoLevel);
   }
   if (state.mapMode && isMapMode(state.mapMode) && state.mapMode !== defaults.mapMode) {
     params.set("map_mode", state.mapMode);
@@ -290,7 +326,7 @@ export function parseComparisonState(
     state.sourceB = sourceB;
   }
 
-  const geoLevel = (params.get("geo_level") || "").toUpperCase();
+  const geoLevel = normalizeGeoLevel(params.get("geo_level"));
   if (isGeoLevel(geoLevel)) {
     state.geoLevel = geoLevel;
   }
@@ -321,8 +357,12 @@ export function serializeComparisonState(
   if (state.sourceB && SOURCE_KEY_PATTERN.test(state.sourceB)) {
     params.set("source_b", state.sourceB);
   }
-  if (state.geoLevel && isGeoLevel(state.geoLevel) && state.geoLevel !== defaults.geoLevel) {
-    params.set("geo_level", state.geoLevel);
+  // Serialized as the vocabulary word, so a state built from a document or a
+  // link that carries an alias produces a link the rest of this application
+  // reads.
+  const geoLevel = normalizeGeoLevel(state.geoLevel);
+  if (geoLevel && isGeoLevel(geoLevel) && geoLevel !== defaults.geoLevel) {
+    params.set("geo_level", geoLevel);
   }
   if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
     params.set("state", state.stateFips);

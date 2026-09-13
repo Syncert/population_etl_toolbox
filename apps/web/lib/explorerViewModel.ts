@@ -4,7 +4,13 @@
 
 import type { DistributionResponse, MetricSummary } from "./api/types";
 import { isDrawableTileGrain } from "./tileGrains";
+import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
+
+// Re-exported: the grain vocabulary and its aliases are declared beside
+// `GEO_LEVELS`, and this module's callers have always reached the
+// normalisation through here.
+export { normalizeGeoLevel };
 
 export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
 export const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
@@ -158,13 +164,6 @@ export function metricOptions(metrics: MetricSummary[] | null | undefined): Metr
   }));
 }
 
-export function normalizeGeoLevel(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-  return value.trim().toUpperCase();
-}
-
 export function metricSupportedGeoLevels(metric: MetricSummary | null | undefined): string[] {
   const grains = Array.isArray(metric?.valid_geo_grains)
     ? metric.valid_geo_grains
@@ -252,7 +251,7 @@ export function observationToFeature(
  * another grain's polygons would be a lie.
  */
 export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
-  const level = String(geoLevel || "").toUpperCase();
+  const level = normalizeGeoLevel(geoLevel);
   if (!isDrawableTileGrain(level)) {
     return false;
   }
