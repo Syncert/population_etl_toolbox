@@ -41,6 +41,7 @@ import {
   publishesCoverage,
   publishesUncertainty,
   observationDimensionOptions,
+  observationDimensionLabel,
   observationDimensionValue,
   observationPeriodLabel,
   scopedDimensionFilters,
@@ -1258,5 +1259,42 @@ describe("a published uncertainty travels with its value", () => {
     expect(observationUncertaintyLabel(row)).toBe(
       "cv value 14.7 · cv status unreliable · cv symbol (D)",
     );
+  });
+});
+
+// Covers: WEB-061 — the declared dimensions a table has no column for.
+describe("the declared dimensions ride in one cell", () => {
+  const row = {
+    geo_id: "state:94",
+    dimensions: {
+      footnote_code: "1",
+      footnote_text: "Estimates are model-based",
+      estimate_method: "model-based",
+    },
+  };
+
+  test("each published field is named, under the source's own name", () => {
+    expect(
+      observationDimensionLabel(row, [
+        "footnote_code",
+        "footnote_text",
+        "estimate_method",
+      ]),
+    ).toBe(
+      "footnote code 1 · footnote text Estimates are model-based · "
+        + "estimate method model-based",
+    );
+  });
+
+  test("a field the row did not publish is left out, not shown empty", () => {
+    expect(observationDimensionLabel(row, ["footnote_code", "population_basis"])).toBe(
+      "footnote code 1",
+    );
+  });
+
+  test("a row that published none, or no names asked for, is empty", () => {
+    expect(observationDimensionLabel(row, [])).toBe("");
+    expect(observationDimensionLabel({}, ["footnote_code"])).toBe("");
+    expect(observationDimensionLabel(null, ["footnote_code"])).toBe("");
   });
 });

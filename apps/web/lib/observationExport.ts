@@ -40,16 +40,21 @@ export interface TabularExport {
  *
  * `scope` is the read's own scope, which the explorer only ever holds as
  * `as_released` where the source declares releases, so the column cannot
- * claim a pinned read of a source that publishes none. `dimensionFilters`
- * are the source's declared dimensions, in the order the table shows them,
- * so a stratified source's own names reach the file rather than being
- * flattened away.
+ * claim a pinned read of a source that publishes none.
+ *
+ * `dimensions` is the field set `/catalog/capabilities` declares for the
+ * source (`observation_dimensions`), one column each. It used to be the
+ * source's *filterable* names, which is a different and much smaller list:
+ * four of seven sources wrote no dimension column at all, and CDC wrote two
+ * of fourteen. A file carrying a subset would be this client deciding which
+ * part of a source's published description a reader may have, which is
+ * WEB-051's rule and decides this outright (WEB-061).
  */
 export function observationExport(
   rows: ObservationRow[] | null | undefined,
-  options: { scope: string; dimensionFilters?: readonly string[] },
+  options: { scope: string; dimensions?: readonly string[] },
 ): TabularExport {
-  const dimensions = options.dimensionFilters || [];
+  const dimensions = options.dimensions || [];
   const headings = [
     "geo_id",
     "geo_name",

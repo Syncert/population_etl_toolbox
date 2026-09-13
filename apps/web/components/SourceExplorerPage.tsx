@@ -89,6 +89,7 @@ import {
   describeStratification,
   newestPerGeography,
   normalizeObservationRows,
+  observationDimensionLabel,
   observationDimensionOptions,
   observationDimensionValue,
   OBSERVATION_COVERAGE_FIELDS,
@@ -353,9 +354,35 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const supportsGeoLevelFilter = sourceSupportsParameter(activeSource, "geo_level");
   // As-released reads answer on the neutral resource, so the dimension
   // controls under that scope are the neutral ones the capability declares.
+  // Declared by `/catalog/capabilities`, so a dimension a page happens not to
+  // publish is still shown rather than vanishing with the page (WEB-061).
+  const publishedDimensions = useMemo(
+    () => [...(activeSource?.publishedDimensions || [])],
+    [activeSource],
+  );
   const dimensionFilters = useMemo(
     () => scopedDimensionFilters(activeSource, observationScope),
     [activeSource, observationScope],
+  );
+  // The file carries every declared dimension, plus any filterable name the
+  // declaration does not list, so neither list can drop a column the other
+  // would have written.
+  const exportDimensions = useMemo(() => {
+    const names = [...publishedDimensions];
+    for (const name of dimensionFilters) {
+      if (!names.includes(name)) {
+        names.push(name);
+      }
+    }
+    return names;
+  }, [publishedDimensions, dimensionFilters]);
+  // The table gives a column to what the reader is filtering on and carries
+  // the rest of the declared set in one cell, which is the presentation this
+  // repository already chose for the seven uncertainty fields rather than
+  // seven columns (WEB-061).
+  const tableDimensions = useMemo(
+    () => publishedDimensions.filter((name) => !dimensionFilters.includes(name)),
+    [publishedDimensions, dimensionFilters],
   );
   const releasesDeclared = servesAsReleased(activeSource);
   const asReleased = observationScope === SCOPE_AS_RELEASED && releasesDeclared;
@@ -1675,7 +1702,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // field (WEB-051) travels whether or not this source publishes one.
     const { headings, rows } = observationExport(observations, {
       scope: observationScope,
-      dimensionFilters,
+      // The declared set, not the filterable subset: a file carrying a
+      // subset would be this client deciding which part of a source's
+      // published description a reader may have (WEB-061).
+      dimensions: exportDimensions,
     });
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
@@ -2318,6 +2348,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   {dimensionFilters.map((name) => (
                     <th key={name}>{name.replaceAll("_", " ")}</th>
                   ))}
+                  {/* Every other field the source declares its rows carry:
+                      one cell, as the seven uncertainty fields are one cell
+                      rather than seven columns (WEB-061). */}
+                  {tableDimensions.length > 0 ? <th>Dimensions</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -2353,6 +2387,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     {dimensionFilters.map((name) => (
                       <td key={name}>{observationDimensionValue(item, name) || "-"}</td>
                     ))}
+                    {tableDimensions.length > 0 ? (
+                      <td data-testid={`dimensions-${item.geo_id}`}>
+                        {observationDimensionLabel(item, tableDimensions) || "-"}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
                 {observations.length === 0 ? (
@@ -2360,9 +2399,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td
                       colSpan={
                         7 +
+                        (showsUncertainty ? 1 : 0) +
                         (showsCoverage ? 1 : 0) +
                         (asReleased ? 1 : 0) +
-                        dimensionFilters.length
+                        dimensionFilters.length +
+                        (tableDimensions.length > 0 ? 1 : 0)
                       }
                       className="subtle"
                     >

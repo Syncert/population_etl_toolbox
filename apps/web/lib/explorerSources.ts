@@ -69,6 +69,19 @@ export interface ExplorerSource {
    * becomes a control instead of being dropped.
    */
   dimensionFilters: string[];
+  /**
+   * The field names a row's `dimensions` object carries for this source, as
+   * `/catalog/capabilities` declares them (`observation_dimensions`).
+   *
+   * A different list from `dimensionFilters`, and the reason this exists:
+   * the table and the export took their dimension columns from the
+   * filterable names, so four of seven sources showed no dimension at all
+   * and CDC showed two of fourteen -- `footnote_text`, which is how CDC
+   * qualifies an estimate, among the twelve missing (WEB-061). Read from
+   * the declaration rather than from a loaded row, so a declared dimension
+   * a page happens not to publish is still shown, empty.
+   */
+  publishedDimensions: string[];
   /** True when `/distribution/bins` is declared for this source. */
   servesDistribution: boolean;
   /**
@@ -170,6 +183,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     accessShape: "source-scoped",
     requestFilters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     dimensionFilters: [],
+    publishedDimensions: [],
     servesDistribution: true,
     servesComparison: false,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
@@ -278,6 +292,7 @@ export function buildExplorerSources(
       accessShape: usesNeutral ? "neutral" : "source-scoped",
       requestFilters,
       dimensionFilters: dimensionFiltersOf(requestFilters),
+      publishedDimensions: [...(capability.observation_dimensions || [])],
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
       servesComparison: declaredPaths.has(`${API_BASE}${COMPARISON_PREFLIGHT_PATH}`),
       latestParameters,

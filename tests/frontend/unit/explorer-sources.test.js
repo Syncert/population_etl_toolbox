@@ -413,3 +413,46 @@ describe("distributionCaveats", () => {
     expect(distributionCaveats({ caveats: ["kept", "", 7, null] })).toEqual(["kept"]);
   });
 });
+
+// Covers: WEB-061 — the declared dimensions reach the explorer.
+//
+// The table and the export took their dimension columns from the source's
+// *filterable* names, so four of seven sources showed no dimension at all
+// and CDC showed two of fourteen -- `footnote_text`, which is how CDC
+// qualifies an estimate, among the twelve missing. API-109 publishes the
+// declared set as `observation_dimensions`; this is it reaching the client.
+describe("a source carries the dimensions its capability declares", () => {
+  const capability = {
+    source_code: "CDC",
+    display_name: "Centers for Disease Control and Prevention",
+    route_segment: "cdc",
+    served_by_neutral_routes: true,
+    observation_filters: ["adjustment_status", "geo_id", "geo_level", "stratum_id"],
+    observation_dimensions: [
+      "adjustment_status",
+      "footnote_code",
+      "footnote_text",
+      "estimate_method",
+      "stratum_id",
+    ],
+    observation_routes: [
+      { path: "/api/v1/observations", parameters: ["metric_code", "limit", "offset"] },
+    ],
+  };
+
+  test("the declared set travels, distinct from the filterable one", () => {
+    const [source] = buildExplorerSources([capability]);
+    expect(source.publishedDimensions).toEqual(capability.observation_dimensions);
+    // The two lists are genuinely different: this is the whole finding.
+    expect(source.publishedDimensions).not.toEqual(source.dimensionFilters);
+    expect(source.publishedDimensions).toContain("footnote_text");
+    expect(source.dimensionFilters).not.toContain("footnote_text");
+  });
+
+  test("a capability declaring none leaves an empty list, never undefined", () => {
+    const [source] = buildExplorerSources([
+      { ...capability, observation_dimensions: undefined },
+    ]);
+    expect(source.publishedDimensions).toEqual([]);
+  });
+});

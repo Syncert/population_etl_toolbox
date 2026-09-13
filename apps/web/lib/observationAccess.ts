@@ -710,6 +710,27 @@ export function observationUncertaintyLabel(
     .join(" · ");
 }
 
+/**
+ * The declared dimensions a row published, as `name value` pairs.
+ *
+ * The presentation this repository already chose for the seven uncertainty
+ * fields rather than seven columns, applied to the declared dimensions a
+ * table does not give a column of its own: joined `"name value"` pairs, each
+ * under the source's own published name, with a field the row did not
+ * publish left out rather than shown empty (WEB-061).
+ */
+export function observationDimensionLabel(
+  row: ObservationRow | null | undefined,
+  names: readonly string[],
+): string {
+  return names
+    .map((name) => [name, observationDimensionValue(row, name)])
+    .filter(([, value]) => value !== "")
+    .map(([name, value]) => `${String(name).replaceAll("_", " ")} ${value}`)
+    .join(" · ");
+}
+
+
 /** A declared dimension's published value on one row, or `""` when absent. */
 export function observationDimensionValue(
   row: ObservationRow | null | undefined,

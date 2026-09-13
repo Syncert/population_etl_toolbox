@@ -184,6 +184,17 @@ const capabilities = {
         "year_from",
         "year_to",
       ],
+      // The declared set `/catalog/capabilities` answers: a different and
+      // much longer list than the filterable one, which is the whole of
+      // WEB-061. `footnote_text` is how CDC qualifies an estimate.
+      observation_dimensions: [
+        "adjustment_status",
+        "estimate_method",
+        "footnote_code",
+        "footnote_text",
+        "population_basis",
+        "stratum_id",
+      ],
       observation_routes: neutralRoutes,
     },
     {
@@ -219,7 +230,18 @@ const cdcRow = (stratumId, value, extra = {}) => ({
     value === null
       ? { confidence_lower: null, confidence_upper: null }
       : { confidence_lower: "30.9", confidence_upper: "33.9" },
-  dimensions: { stratum_id: stratumId, adjustment_status: "age-adjusted" },
+  // The dimensions CDC's dispatch entry declares, not only the two the
+  // route happens to filter on. A fixture carrying the filterable subset
+  // models a weaker contract than the one that ships, and the client then
+  // goes untested for the fields it is missing (WEB-043, WEB-061).
+  dimensions: {
+    stratum_id: stratumId,
+    adjustment_status: "age-adjusted",
+    estimate_method: "model-based",
+    footnote_code: "1",
+    footnote_text: "Estimates are model-based",
+    population_basis: "adults",
+  },
   ...extra,
 });
 
@@ -1256,6 +1278,9 @@ test("a source that publishes no participation grows no column for it", async ({
   await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
 
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  // As above: the zero means nothing until the table panel is on screen.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
   await expect(page.getByRole("columnheader", { name: "Participation" })).toHaveCount(0);
 });
 
@@ -1272,6 +1297,48 @@ test("a published uncertainty is shown beside the value it qualifies", async ({ 
   await expect(uncertainty).toContainText("confidence upper 33.9");
 });
 
+test("every dimension the source declares is shown, not just the filterable ones", async ({
+  page,
+}) => {
+  // Covers: WEB-061 — the table's dimension columns came from the source's
+  // *filterable* names, so four of seven sources showed no dimension at all
+  // and CDC showed two of fourteen. `footnote_text` is how CDC qualifies an
+  // estimate, and it reached neither the table nor the export.
+  await installRoutes(page);
+  await page.goto("/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY");
+  // The table panel is `display: none` until its tab is selected, so a
+  // column assertion against the default view sees nothing at all.
+  await page.getByRole("tab", { name: "table" }).click();
+
+  // A control assertion first: a column that certainly exists. Without it a
+  // `toHaveCount(0)` below would pass by seeing nothing rather than by the
+  // column being absent.
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  // The filterable ones keep their own columns: they are what the reader is
+  // filtering on.
+  await expect(page.getByRole("columnheader", { name: "stratum id" })).toHaveCount(1);
+  // The rest of the declared set rides in one cell, as the seven uncertainty
+  // fields do rather than seven columns.
+  const dimensions = page.getByTestId("dimensions-state:55|county:025").first();
+  await expect(dimensions).toContainText("footnote text Estimates are model-based");
+  await expect(dimensions).toContainText("estimate method model-based");
+  await expect(dimensions).toContainText("population basis adults");
+});
+
+test("a source declaring no dimensions grows no cell for them", async ({ page }) => {
+  // Covers: WEB-061 — read from the declaration, so a source that declares
+  // none grows nothing, exactly as an absent uncertainty grows no column.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  await expect(page.getByRole("columnheader", { name: "Dimensions" })).toHaveCount(0);
+});
+
 test("a source that publishes no uncertainty grows no column for it", async ({ page }) => {
   // Covers: WEB-053 — read from the loaded rows, not from a list of sources.
   await installRoutes(page);
@@ -1280,6 +1347,13 @@ test("a source that publishes no uncertainty grows no column for it", async ({ p
   );
 
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  // The table panel is `display: none` until its tab is selected: this
+  // assertion used to run against the default view and pass by seeing no
+  // columns at all, so it could not have failed (WEB-043's lesson, applied
+  // to an assertion rather than a fixture). The control assertion is what
+  // makes the zero mean something.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
   await expect(page.getByRole("columnheader", { name: "Uncertainty" })).toHaveCount(0);
 });
 

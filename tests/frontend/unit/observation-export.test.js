@@ -97,9 +97,11 @@ describe("the observation export carries every published qualifier", () => {
   });
 
   test("a declared dimension becomes a column under the source's own name", () => {
+    // The *declared* set, from `/catalog/capabilities`, not the filterable
+    // subset the explorer used to pass (WEB-061).
     const { headings, rows } = observationExport([nestedRow], {
       scope: "latest",
-      dimensionFilters: ["domain_desc", "domaincat_desc"],
+      dimensions: ["domain_desc", "domaincat_desc"],
     });
     expect(headings.at(-2)).toBe("domain_desc");
     expect(headings.at(-1)).toBe("domaincat_desc");
