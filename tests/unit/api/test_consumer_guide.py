@@ -124,13 +124,19 @@ def test_guide_documents_every_neutral_observation_filter() -> None:
     assert not undocumented, f"the guide omits accepted neutral filters: {undocumented}"
 
 
-def _paged_observation_paths() -> set[str]:
-    """Every served observation read that takes ``limit`` and ``offset``."""
+def _paged_paths() -> set[str]:
+    """Every served read that takes ``limit`` and ``offset``.
+
+    Deliberately not filtered to the observation routes. API-095 fixed the
+    promise for those and its filter was ``"observations" not in path``, so
+    the catalog's two paged reads, `/comparison`, `/usda-nass/series` and
+    both private stores were outside the sweep entirely (API-106).
+    """
     document = app.openapi()
     paged: set[str] = set()
     for path, operations in document["paths"].items():
         get = operations.get("get")
-        if get is None or "observations" not in path:
+        if get is None:
             continue
         names = {
             parameter["name"]
@@ -165,32 +171,44 @@ def _ordering_table_reads() -> set[str]:
     return set(re.findall(r"^\|\s*`(/[^`]+)`\s*\|", text, flags=re.MULTILINE))
 
 
-def test_every_paged_observation_read_declares_what_orders_it() -> None:
-    """Covers: API-095 — a read that pages says what makes its pages stable.
+def test_every_paged_read_declares_what_orders_it() -> None:
+    """Covers: API-095, API-106 — a read that pages says what makes its pages
+    stable.
 
     The guide promises every paged read a total order, "so two consecutive
-    pages can neither repeat a row nor skip one", and then lists four reads.
-    It omitted `/observations` -- the resource the same guide tells clients to
-    prefer -- and `/observations/releases`, whose order was total only by
-    coincidence of the registry until API-095.
+    pages can neither repeat a row nor skip one", and then listed four reads.
+    API-095 found `/observations` missing -- the resource the same guide tells
+    clients to prefer -- and `/observations/releases`, "whose order was total
+    only by coincidence of the registry".
+
+    The guard it left behind swept only paths containing `observations`, so
+    six of the twenty paged reads were outside it: the catalog's two,
+    `/comparison`, `/usda-nass/series`, and both private stores. Every one of
+    those orders is total today, and nothing said so to a client or would
+    have failed if one were narrowed -- which is the same sentence API-095
+    wrote about the releases route (API-106).
 
     Derived from the served document and the serving registry, so a route that
-    grows `limit` and `offset` without a row here fails instead of quietly
-    leaving a client to guess.
+    grows `limit` and `offset` without a row fails instead of quietly leaving
+    a client to guess.
     """
     documented = _ordering_table_reads()
     assert documented, "the guide's ordering table has no rows; parsing broke"
 
+    paged = _paged_paths()
+    # A floor, so a change to the served document that stopped matching
+    # cannot make this pass by sweeping nothing.
+    assert len(paged) >= 20, f"only {len(paged)} paged reads found; parsing broke"
+
     missing = sorted(
         {
             _guide_spelling(path)
-            for path in _paged_observation_paths()
+            for path in paged
             if _guide_spelling(path) not in documented
         }
     )
     assert not missing, (
-        "these paged observation reads name no ordering in the consumer "
-        f"guide: {missing}"
+        f"these paged reads name no ordering in the consumer guide: {missing}"
     )
 
 

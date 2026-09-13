@@ -478,6 +478,20 @@ responses must not be usable to probe deployment state.
   chars) to correlate your logs with the server's; anything else is replaced.
 - Pagination is `limit`/`offset` with documented deterministic ordering per
   resource. `offset` is bounded; page with filters rather than deep offsets.
+  The observation reads' orders are in [Paging a history, and what orders
+  it](#paging-a-history-and-what-orders-it); every other paged read is here:
+
+| Read | Ordered by |
+| --- | --- |
+| `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
+| `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
+| `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
+| `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
+| `/analysis-configurations` | `name`, then `configuration_id`. Names are unique per owner, and the id closes the order regardless |
+| `/evidence-packets` | `name`, then `packet_id`, on the same basis |
+
+  Each of those is a total order for the same reason the observation reads'
+  are: two consecutive pages can neither repeat a row nor skip one.
 
 ## What this API will not do
 
