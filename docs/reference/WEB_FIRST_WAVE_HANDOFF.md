@@ -179,3 +179,11 @@ Named so they are picked up deliberately rather than rediscovered:
   in `lib/evidencePackets.packetToDocument`/`documentToPacket`. Nothing about
   a packet reaches the address bar from either screen; sharing a packet is
   publishing, and publishing is that later plan's to define.
+- A build-your-own analytics surface — several measures on one time axis,
+  cross-sectional scatter, bar and heatmap presentations, and an API-derived
+  correlation — is planned as the workbench in
+  `docs/plans/to_do/ANALYTICS_WORKBENCH_PLAN.md`. It reuses `lib/comparison.ts`,
+  `lib/observationAccess.ts`, `ScatterChart.tsx` and the saved-analysis
+  destination rule, adds `/comparison/correlation` and `/comparison/matrix`
+  on the API, and states its grain rules once, in the plan, so a later
+  reader does not rediscover why nothing is rolled up client-side.
