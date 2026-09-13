@@ -46,6 +46,7 @@ import {
   observationPeriodLabel,
   sharedObservationPeriod,
   scopedDimensionFilters,
+  stateScopeNote,
   servesAsReleased,
   stratificationDimensions,
 } from "../../../apps/web/lib/observationAccess";
@@ -1327,5 +1328,34 @@ describe("the one period a view can honestly name", () => {
     expect(sharedObservationPeriod([ranged("2021", "2023"), ranged("2020", "2022")])).toBe(
       "",
     );
+  });
+});
+
+describe("what a selected state narrowed", () => {
+  // Covers: WEB-075 — a state narrows the map and the geography picker on
+  // every source, and the rows only where the source declares the filter.
+  // The control was gated on the filter, so Census PEP's county and place
+  // pickers said "select a state first" and could never be given one: a PEP
+  // county's history was reachable only by clicking the map, and places —
+  // the grain PEP alone publishes — not at all.
+  test("says the rows are national when the state did not reach them", () => {
+    const note = stateScopeNote({
+      stateSelected: true,
+      narrowsRows: false,
+      sourceTitle: "Census Population Estimates Program",
+    });
+    expect(note).toContain("Census Population Estimates Program");
+    expect(note).toContain("declares no state filter");
+    expect(note).toContain("these rows are national");
+    expect(note).toContain("narrows the map and the geography list only");
+  });
+
+  test("says nothing when there is nothing to qualify", () => {
+    expect(stateScopeNote({ stateSelected: false, narrowsRows: false })).toBe("");
+    expect(stateScopeNote({ stateSelected: true, narrowsRows: true })).toBe("");
+    // No title is still a sentence, not a blank subject.
+    expect(
+      stateScopeNote({ stateSelected: true, narrowsRows: false, sourceTitle: " " }),
+    ).toContain("This source declares no state filter");
   });
 });

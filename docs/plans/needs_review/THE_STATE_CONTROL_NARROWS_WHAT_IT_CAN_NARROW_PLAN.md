@@ -13,9 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Found and recorded 2026-09-13 while implementing
-  WEB-064; **not** fixed there, because fixing it honestly means answering a
-  question about the observations status line (see Open question).
+- **Status:** Needs review. Implemented 2026-09-13 as catalog row WEB-075.
 - **Last updated:** 2026-09-13
 - **Owner surface:** `apps/web/components/SourceExplorerPage.tsx`
 
@@ -107,3 +105,68 @@ So the work is two decisions, not one:
 - Adding `state_fips` to PEP's neutral filter set. The relation has no such
   column; inventing one in the API would be the client's convenience written
   into the contract.
+
+## Validation
+
+**The two decisions the plan asked for, answered:**
+
+1. **Yes** — the state control narrows the picker and the map on a source
+   that cannot narrow its rows. It is now disabled only at NATIONAL, on every
+   source. A state narrows three things and only one of them depends on the
+   source's observation filters; gating the control on that one left the
+   other two unreachable, and the screen instructed an action it did not
+   allow.
+2. The observations status line says what the state did not narrow.
+   `stateScopeNote` in `observationAccess.ts` is the sentence — "… declares
+   no state filter for its observations, so these rows are national: the
+   selected state narrows the map and the geography list only" — appended by
+   `describeObservationLoad` to both its branches, so "0 records published for
+   this selection" cannot read as one state's zero either. It is derived from
+   `params.state_fips` on the request the effect **issued**, not from the
+   selection: `buildLatestObservationRequest` drops a filter the source does
+   not declare, so the request is the only place that knows.
+
+**A third thing the plan did not foresee, and had to be settled here.**
+Enabling the control makes a state selectable on Census PEP, and
+`explorerDocument` wrote `filters.state_fips` from the selection — so saving
+such a view would have been a 422 (API-117: a stored document may carry only
+filters its own route accepts). The document now records the state the
+request carried, which is `""` for PEP. This is WEB-066's third reason, kept.
+
+**WEB-066's link gate is lifted, and its row says so.** That row gated a
+link's `state=` on the source declaring `state_fips` for three reasons; two
+were the disabled control itself (a state the reader could not see or clear,
+and a narrowed map beside national rows with nothing said), and WEB-075
+answers both. The link and the control now agree: a link's state applies
+wherever the control can hold one. The WEB-066 row is annotated as
+superseded in part, names WEB-075 as where the current behaviour lives, and
+keeps its surviving rule; the WEB-075 row records the lift.
+
+- The standing `state-filter-note` now says what the control actually
+  narrows (the map *and* the geography list) and points at the observations
+  line.
+- New tests:
+  - `tests/frontend/unit/observation-access.test.js` — `stateScopeNote` says
+    the rows are national when the state did not reach them, says nothing
+    when there is nothing to qualify, and keeps a real subject without a
+    source title.
+  - `explorer.spec.js` > "a state narrows what it can narrow, and says what
+    it did not": on `?source=pep` the state control is **enabled**, selecting
+    Wisconsin leaves every PEP request without `state_fips`, the observations
+    line says the rows are national, and the county picker — which said
+    "select a state first" with no way to be given one — is then usable, so a
+    PEP county's history is reachable without the map (criterion 3).
+  - `explorer.spec.js` > "a shared link asks for a state, and the view saves
+    only what it sent" replaces WEB-066's node: the link is honoured on PEP,
+    the control is clearable, and the saved document carries no `state_fips`
+    while a Census ACS save carries `55`.
+- Break-test: restoring `|| !supportsStateFilter` on the control fails the
+  new node with `expect(locator).toBeEnabled() … unexpected value
+  "disabled"`.
+- Tiers: frontend units 374 passed; `pytest tests/unit` 1562 passed;
+  `npm run lint` and `tsc --noEmit` clean; browser tier 94 passed in 1.1m
+  against a fresh production build.
+
+## Remaining work
+
+- None.

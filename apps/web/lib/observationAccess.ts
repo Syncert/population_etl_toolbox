@@ -827,3 +827,44 @@ export function describeStratification(
     varyingDimensions: names.filter((name) => (valuesByName.get(name)?.size || 0) > 1),
   };
 }
+
+/**
+ * What a selected state did and did not narrow (WEB-075).
+ *
+ * A state narrows three things on this screen: the map (a selected state is
+ * the whole map), the geography picker (the county and place lists are
+ * "select a state first" until one is chosen), and — only where the source
+ * declares `state_fips` as an observation filter — the rows themselves.
+ *
+ * Census PEP is the source where those come apart. The relation the neutral
+ * route reads (`gold_pep.population_estimate_latest`) carries `geo_id` and
+ * `geo_type` and no fips columns, so the capability entry correctly declares
+ * no `state_fips`, and `buildLatestObservationRequest` correctly drops it.
+ * The state control was disabled there at every grain, so the county and
+ * place pickers said "select a state first" and could never be given one: a
+ * PEP county's history was reachable only by clicking the map, and places —
+ * the grain PEP alone publishes — not at all.
+ *
+ * The control is now usable wherever the picker and the map need it, which
+ * makes this sentence necessary: a reader looking at one state's map and a
+ * nation's rows has to be told which is which.
+ */
+export function stateScopeNote({
+  stateSelected,
+  narrowsRows,
+  sourceTitle,
+}: {
+  stateSelected: boolean;
+  narrowsRows: boolean;
+  sourceTitle?: string | null;
+}): string {
+  if (!stateSelected || narrowsRows) {
+    return "";
+  }
+  const source = (sourceTitle || "").trim() || "This source";
+  return (
+    `${source} declares no state filter for its observations, so these rows ` +
+    "are national: the selected state narrows the map and the geography list " +
+    "only."
+  );
+}

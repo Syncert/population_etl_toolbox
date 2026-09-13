@@ -1130,37 +1130,71 @@ test("the view level offers only the grains the measure declares, and says why",
   expect(requestedLevels).not.toContain("NATIONAL");
 });
 
-test("a shared link asks for a state only where one can be honoured", async ({
+test("a shared link asks for a state, and the view saves only what it sent", async ({
   page,
 }) => {
-  // Covers: WEB-066 — the requested scope was applied only where the source
-  // declares it, "rather than a 422"; the requested state was applied
-  // unconditionally three lines above, and `state_fips` is just as
-  // per-source. Census PEP declares none, because
-  // gold_pep.population_estimate_latest carries no fips columns, so
-  // ?source=pep&state=55 left a state in a control too disabled to clear
-  // it, narrowed the map and the legend while the rows stayed national, and
-  // made saving the view a refusal over a filter the reader never chose.
+  // Covers: WEB-066, WEB-075 — WEB-066 dropped a link's state on a source
+  // that declares no `state_fips`, for three reasons. Two were the disabled
+  // control itself: a state the reader could not see or clear, and a map
+  // narrowed while the rows stayed national with nothing saying so. WEB-075
+  // fixed both — the control is usable because a state narrows the map and
+  // the geography picker on every source — so the link is honoured again.
+  // The third reason stands, and this asserts it: the *saved document*
+  // records the state only where the request carried it, so a save is never
+  // a 422 over a filter the source does not declare.
+  const created = [];
   await installRoutes(page);
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 7,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
   await page.goto("/explore?source=pep&state=55");
 
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toHaveAttribute("data-source-key", "pep");
-  // Read from the selection itself, not from the control: the control is
-  // disabled, and its option list is empty until the projection answers, so
-  // it renders "" whether or not a state was applied. The state that was
-  // applied is what narrowed the map and broke the save.
-  await expect(dashboard).toHaveAttribute("data-selected-state", "");
-  await expect(page.getByTestId("state-select")).toBeDisabled();
-  await expect(page).not.toHaveURL(/state=55/);
+  await expect(dashboard).toHaveAttribute("data-selected-state", "55");
+  await expect(page.getByTestId("state-select")).toBeEnabled();
+  await expect(page).toHaveURL(/state=55/);
+  // And the rows are national, which the observations line says.
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "these rows are national",
+  );
 
-  // A source that does declare the filter keeps answering the same link.
+  await page.getByTestId("save-view").click();
+  await expect(page.getByTestId("save-toast")).toHaveAttribute(
+    "data-destination",
+    "account",
+  );
+  expect(created).toHaveLength(1);
+  // Census PEP's serving relation carries no fips columns, so the document
+  // carries no `state_fips` either: a stored filter its own route would
+  // refuse is a view that cannot be reopened (API-117).
+  expect(created[0].document.filters.state_fips).toBeUndefined();
+  expect(created[0].document.filters.geo_level).toBe("COUNTY");
+
+  // A source that does declare the filter stores it.
   await page.goto("/explore?source=census&state=55");
   await expect(page.getByTestId("dashboard")).toHaveAttribute(
     "data-selected-state",
     "55",
   );
-  await expect(page).toHaveURL(/state=55/);
+  await page.getByTestId("save-view").click();
+  await expect
+    .poll(() => created.length)
+    .toBe(2);
+  expect(created[1].document.filters.state_fips).toBe("55");
 });
 
 test("the geography picker offers the grain that was asked for", async ({ page }) => {
@@ -1192,6 +1226,60 @@ test("the geography picker offers the grain that was asked for", async ({ page }
   // The defect: none of these is a place.
   await expect(picker.locator("option", { hasText: "Wisconsin" })).toHaveCount(0);
   await expect(picker.locator("option", { hasText: "Dane County" })).toHaveCount(0);
+});
+
+test("a state narrows what it can narrow, and says what it did not", async ({
+  page,
+}) => {
+  // Covers: WEB-075 — the state control was disabled unless the source
+  // declared `state_fips` as an observation filter. Census PEP declares none:
+  // `gold_pep.population_estimate_latest`, the relation the neutral route
+  // reads, carries `geo_id` and `geo_type` and no fips columns. So on the one
+  // source that publishes places, the county and place pickers said "select a
+  // state first" and could never be given one — a PEP county's history was
+  // reachable only by clicking the map, and a place not at all. A state
+  // narrows the map and the picker on every source; only the rows depend on
+  // the filter, and now the observations line says which is which.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto("/explore?source=pep");
+
+  const state = page.getByTestId("state-select");
+  await expect(state).toBeEnabled();
+  await state.selectOption("55");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-state", "55");
+  // The rows are national, and the screen says so rather than describing
+  // them as this selection's.
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "declares no state filter",
+  );
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "these rows are national",
+  );
+  const stateFilters = neutralRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("CENSUS_PEP:"))
+    .map((entry) => entry.state_fips)
+    .filter(Boolean);
+  expect(stateFilters).toEqual([]);
+
+  // And the picker has a state now, so a county's history is reachable
+  // without the map.
+  const picker = page.getByTestId("county-select");
+  await expect(picker).toBeEnabled();
+  await picker.selectOption("state:55|county:025");
+  await expect(dashboard).toHaveAttribute(
+    "data-selected-geo-id",
+    "state:55|county:025",
+  );
+  await expect
+    .poll(() =>
+      neutralRequests.filter(
+        (entry) => entry.geo_id === "state:55|county:025",
+      ).length,
+    )
+    .toBeGreaterThan(0);
 });
 
 test("a grain the projection publishes nothing for says so", async ({ page }) => {

@@ -103,6 +103,7 @@ import {
   publishesUncertainty,
   scopedDimensionFilters,
   servesAsReleased,
+  stateScopeNote,
   stratificationDimensions,
 } from "../lib/observationAccess";
 import type { ObservationScope } from "../lib/observationAccess";
@@ -210,9 +211,15 @@ function describeObservationLoad(
   total: number | null,
   complete: boolean,
   geoLevelLabel: string,
+  scopeNote = "",
 ): string {
+  // "this selection" and "these rows" both have to be true. Where a state
+  // narrows the map and the geography list and not the rows, the note says
+  // so, rather than letting a national answer read as one state's
+  // (WEB-075).
+  const qualifier = scopeNote ? ` — ${scopeNote}` : "";
   if (items.length === 0) {
-    return `0 ${geoLevelLabel} records published for this selection`;
+    return `0 ${geoLevelLabel} records published for this selection${qualifier}`;
   }
   const geographies = newestPerGeography(items).length;
   const periods = countObservationPeriods(items);
@@ -222,7 +229,7 @@ function describeObservationLoad(
   const shape = periods > 1
     ? ` (${geographies} geographies across ${periods} periods)`
     : "";
-  return `${loaded}${shape}`;
+  return `${loaded}${shape}${qualifier}`;
 }
 
 type TileMetadata = Awaited<ReturnType<typeof discoverTileMetadata>>;
@@ -789,16 +796,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (requested?.valueScale) {
           setValueScale(requested.valueScale);
         }
-        // A requested state is applied only where the source declares the
-        // filter, for the reason the scope below is: `state_fips` is as
-        // per-source as `scope`, and Census PEP declares none because
-        // `gold_pep.population_estimate_latest` carries no fips columns. A
-        // link setting one anyway left a state in a control too disabled to
-        // clear it, narrowed the map and the legend while the rows stayed
-        // national, and made saving the view a 422 over a filter the reader
-        // never chose (WEB-066). `geo_id` needs no such gate: every source
-        // declares it.
-        if (requested?.stateFips && sourceSupportsParameter(source, "state_fips")) {
+        // A requested state is applied wherever the control can hold one,
+        // which is now every source: a state narrows the map and the
+        // geography picker regardless of what the observation routes accept
+        // (WEB-075). WEB-066 gated this on the source declaring `state_fips`
+        // for three reasons, two of which were the disabled control itself —
+        // a state the reader could not see or clear, and a map narrowed while
+        // the rows stayed national with nothing saying so. The third stands
+        // and is kept below: the saved document records the state only where
+        // the request carried it, so a save is never a 422 over a filter the
+        // source does not declare.
+        if (requested?.stateFips) {
           setSelectedStateFips(requested.stateFips);
         }
         if (requested?.geoId) setSelectedGeoId(requested.geoId);
@@ -956,6 +964,15 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               pages.total,
               pages.complete,
               selectedGeoLevel.toLowerCase(),
+              // Read back from the request the effect issued, not from the
+              // intent above it: `buildLatestObservationRequest` drops a
+              // filter the source does not declare, so `params` is the only
+              // place that knows whether the state reached the rows.
+              stateScopeNote({
+                stateSelected: Boolean(latestQuery.stateFips),
+                narrowsRows: Boolean(params.state_fips),
+                sourceTitle: source.title,
+              }),
             ),
           });
         }
@@ -1711,6 +1728,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // declare it, so a view saved from such a source must not claim a
   // reduction it never asked for (WEB-047).
   const viewedNewestPerGeography = latestRequest?.params.newest_per_geography === "true";
+  // The state the *request* carried, which is "" for a source that declares
+  // no `state_fips`: a document may only hold filters its own route accepts
+  // (API-117), and the reader can now select a state on such a source to
+  // narrow the map and the picker (WEB-075). Read back from the request for
+  // the same reason the reduction above is.
+  const viewedStateFips = String(latestRequest?.params.state_fips || "");
 
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
@@ -1802,7 +1825,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             scope: observationScope === SCOPE_AS_RELEASED ? "as_released" : "latest",
             release: selectedRelease,
             geoLevel: selectedGeoLevel,
-            stateFips: selectedStateFips,
+            stateFips: viewedStateFips,
             geoId: selectedGeoId,
             dimensions: dimensionSelections,
             // A map saved without the reduction reopens as the whole latest
@@ -2200,7 +2223,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   setSelectedStateFips(event.target.value);
                   setSelectedGeoId("");
                 }}
-                disabled={selectedGeoLevel === "NATIONAL" || !supportsStateFilter}
+                // A state narrows the map and the geography picker on every
+                // source; it narrows the rows only where the source declares
+                // the filter. Gating the control on the filter left Census
+                // PEP's county and place pickers saying "select a state
+                // first" with no way to give them one (WEB-075).
+                disabled={selectedGeoLevel === "NATIONAL"}
               >
                 <option value="">All states</option>
                 {states.map((state) => (
@@ -2297,8 +2325,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           ) : null}
           {!supportsStateFilter && supportsGeoLevelFilter ? (
             <p className="subtle" data-testid="state-filter-note">
-              {activeSource?.title} declares no state filter; the state selector scopes
-              the geography list only, not the request.
+              {activeSource?.title} declares no state filter for its observations, so
+              the state selector narrows the map and the geography list and not the
+              rows. The observations line says so whenever a state is selected.
             </p>
           ) : null}
           {requestedMetricNotice ? (
