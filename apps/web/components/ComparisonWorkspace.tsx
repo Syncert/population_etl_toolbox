@@ -23,6 +23,7 @@ import type {
   MetricSummary,
 } from "../lib/api/types";
 import { buildExplorerSources, findExplorerSource } from "../lib/explorerSources";
+import { requestedMetricState } from "../lib/requestedMetric";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
   DEFAULT_COMPARISON_SELECTION,
@@ -110,6 +111,11 @@ export default function ComparisonWorkspace() {
   );
   const [metrics, setMetrics] = useState<Record<SideKey, MetricSummary[]>>({ a: [], b: [] });
   const [metricsError, setMetricsError] = useState<Record<SideKey, string>>({ a: "", b: "" });
+  // What a link asked for on each side that the side's source does not
+  // publish (WEB-072).
+  const [requestedMetricNotice, setRequestedMetricNotice] = useState<
+    Record<SideKey, string>
+  >({ a: "", b: "" });
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [tileMetadata, setTileMetadata] = useState<Awaited<
     ReturnType<typeof discoverTileMetadata>
@@ -210,6 +216,20 @@ export default function ComparisonWorkspace() {
 
           const requested = requestedRef.current;
           const wanted = side === "a" ? requested?.metricA : requested?.metricB;
+          // A link that names a measure this side's source does not publish
+          // is said out loud rather than answered with `items[0]`. Reopening
+          // a saved BLS-versus-FRED comparison on the first two discovered
+          // sources ran a real preflight, and a real comparison, on a pair
+          // the reader never saved (WEB-072).
+          const resolved = requestedMetricState({
+            requested: wanted,
+            items,
+            sourceTitle: findExplorerSource(sources, sourceCode)?.title,
+          });
+          setRequestedMetricNotice((current) => ({
+            ...current,
+            [side]: resolved.notice,
+          }));
           setSelection((current) => {
             if (current[side].sourceCode && current[side].metricCode) {
               // Keep an already valid choice; only fill an empty side.
@@ -220,10 +240,11 @@ export default function ComparisonWorkspace() {
                 return current;
               }
             }
-            const chosen =
-              wanted && items.some((item) => item.metric_code === wanted)
-                ? wanted
-                : items[0]?.metric_code || "";
+            const chosen = resolved.metricCode
+              ? resolved.metricCode
+              : resolved.chooseDefault
+                ? items[0]?.metric_code || ""
+                : "";
             return { ...current, [side]: { ...current[side], metricCode: chosen } };
           });
         } catch (error) {
@@ -689,6 +710,11 @@ export default function ComparisonWorkspace() {
                     </option>
                   ))}
                 </select>
+                {requestedMetricNotice[side] ? (
+                  <p className="subtle" data-testid={`requested-metric-note-${side}`}>
+                    {requestedMetricNotice[side]}
+                  </p>
+                ) : null}
                 {metricsError[side] ? (
                   <p className="subtle">Measures error: {metricsError[side]}</p>
                 ) : null}

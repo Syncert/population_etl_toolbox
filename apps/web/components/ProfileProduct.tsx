@@ -574,7 +574,13 @@ function MeasureCard({
       <small>
         <Link
           className="text-link"
-          href={explorerHref({ metric: measure.metricCode, geoId: geoId || undefined })}
+          href={explorerHref({
+            metric: measure.metricCode,
+            // The source the resolved metric publishes under, from the
+            // catalog row this card already read (WEB-072).
+            source: metric?.source_code || undefined,
+            geoId: geoId || undefined,
+          })}
           data-testid={`measure-explore-${measure.slot.id}`}
         >
           Explore {placeName ? `for ${placeName}` : "this measure"} <ArrowRight size={13} />

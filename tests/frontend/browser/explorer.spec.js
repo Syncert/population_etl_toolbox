@@ -1246,6 +1246,37 @@ test("a measure published at an agency grain is offered that grain, and asked fo
   await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
 });
 
+test("a link naming a measure and its source opens on that measure", async ({ page }) => {
+  // Covers: WEB-072 — a link into the explorer names the source that
+  // publishes its measure, as the metric row publishes it (`source_code`).
+  // The catalog, quality, profile and home links carried the metric alone;
+  // `/explore` mounts Census ACS, the requested code was absent from that
+  // catalog, and the page silently selected `pickPreferredMetric` instead.
+  // `BLS` is the glossary source code and `bls` the route segment the tabs
+  // use: both are published identities, so both resolve.
+  await installRoutes(page);
+  await page.goto("/explore?source=BLS&metric=BLS%3ALAU%3AUNEMP_RATE");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "BLS:LAU:UNEMP_RATE");
+  await expect(page.getByTestId("requested-metric-note")).toHaveCount(0);
+});
+
+test("a link naming a measure this source does not publish says so", async ({ page }) => {
+  // Covers: WEB-072 — the substitution, said out loud. A link that reaches
+  // the explorer without a source still mounts Census ACS, and the measure it
+  // names is published by BLS. Selecting Census ACS total population instead
+  // would answer a question the reader did not ask, with no statement that
+  // anything had changed.
+  await installRoutes(page);
+  await page.goto("/explore?metric=BLS%3ALAU%3AUNEMP_RATE");
+
+  const note = page.getByTestId("requested-metric-note");
+  await expect(note).toContainText("BLS:LAU:UNEMP_RATE");
+  await expect(note).toContainText("Nothing was substituted");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-selected-metric", "");
+});
+
 test("a metric with more releases than the page bound says so, and pages toward them", async ({
   page,
 }) => {
@@ -1323,8 +1354,20 @@ test("a saved map view records the reduction the map asked for", async ({ page }
     window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
   });
 
-  await page.goto("/explore?metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE");
-  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  // The link names the source that publishes the measure, as every link the
+  // app builds now does. Without it this navigation landed on the mounted
+  // Census ACS catalog, which does not list the PEP code, and the page
+  // substituted an ACS metric -- so this spec graded the saved document of a
+  // view the reader never asked for (WEB-072).
+  await page.goto(
+    "/explore?source=CENSUS_PEP&metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE",
+  );
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute(
+    "data-selected-metric",
+    "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  );
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
   await page.getByTestId("save-view").click();
   await expect(page.getByTestId("save-toast")).toHaveAttribute("data-destination", "account");
 

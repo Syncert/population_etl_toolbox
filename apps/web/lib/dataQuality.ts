@@ -146,6 +146,13 @@ export function coverageSegments(row: FreshnessRow | null | undefined): Coverage
 
 export interface MetricQualityRow {
   metricCode: string;
+  /**
+   * The source the catalog says publishes this measure. Read from the metric
+   * row rather than from the source the screen happens to have selected: a
+   * link into the explorer has to name the measure's own source, and the row
+   * is where the API publishes it (WEB-072).
+   */
+  sourceCode: string;
   displayName: string;
   freshness: string;
   publishedAt: string;
@@ -192,6 +199,7 @@ export function metricQualityRows(
 ): MetricQualityRow[] {
   const rows = (Array.isArray(metrics) ? metrics : []).map((metric) => ({
     metricCode: metric.metric_code,
+    sourceCode: text(metric.source_code),
     displayName: text(metric.metric_display_name),
     freshness: text(metric.freshness_state),
     publishedAt: text(metric.publication_time),

@@ -285,7 +285,10 @@ export default function DataQualityExplorer() {
                       {/* Quality evidence links back to the context it affects. */}
                       <Link
                         className="text-link"
-                        href={explorerHref({ metric: row.metricCode })}
+                        href={explorerHref({
+                          metric: row.metricCode,
+                          source: row.sourceCode || undefined,
+                        })}
                         data-testid={`quality-explore-${row.metricCode}`}
                       >
                         Explore

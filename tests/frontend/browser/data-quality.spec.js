@@ -148,11 +148,12 @@ test("per-metric quality shows the publisher's own fields and links back", async
   const partial = page.getByTestId("quality-metric-BLS:LAU:LABOR_FORCE");
   await expect(partial).toContainText("Not published");
 
-  // Quality evidence links back to the context it affects.
-  await expect(page.getByTestId("quality-explore-BLS:LAU:UNEMP_RATE")).toHaveAttribute(
-    "href",
-    /metric=BLS%3ALAU%3AUNEMP_RATE/,
-  );
+  // Quality evidence links back to the context it affects, naming the source
+  // that publishes the measure: without it the link opened Census ACS and
+  // showed one of its metrics instead (WEB-072).
+  const exploreLink = page.getByTestId("quality-explore-BLS:LAU:UNEMP_RATE");
+  await expect(exploreLink).toHaveAttribute("href", /metric=BLS%3ALAU%3AUNEMP_RATE/);
+  await expect(exploreLink).toHaveAttribute("href", /source=BLS/);
 });
 
 test("evidence the rollup does not carry is pointed at, not fabricated", async ({ page }) => {

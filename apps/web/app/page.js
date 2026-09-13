@@ -80,7 +80,10 @@ export default function HomePage() {
             <div className="section-kicker">National snapshot</div>
             <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
             <p>Latest source-backed metric metadata and observation coverage.</p>
-            <Link className="text-link" href={explorerHref({ metric: featuredMetric?.metric_code || "CENSUS_ACS:acs5:B01003_001" })}>Open map <ArrowRight size={15} /></Link>
+            <Link className="text-link" href={explorerHref({
+              metric: featuredMetric?.metric_code || "CENSUS_ACS:acs5:B01003_001",
+              source: featuredMetric?.source_code || "CENSUS_ACS",
+            })}>Open map <ArrowRight size={15} /></Link>
           </div>
         </article>
       </section>

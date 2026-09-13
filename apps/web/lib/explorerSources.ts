@@ -323,7 +323,17 @@ export function findExplorerSource(
     return null;
   }
   const wanted = key.toLowerCase();
-  return sources.find((source) => source.key.toLowerCase() === wanted) || null;
+  return (
+    sources.find((source) => source.key.toLowerCase() === wanted) ||
+    // Either published identity resolves. The tab key is the source's route
+    // segment, which is what the explorer's own links carry; a link built
+    // from a metric row carries `source_code`, because that is the only
+    // source identity a metric publishes. Both come from the API, so the
+    // resolver accepts both rather than making every caller learn that
+    // `CENSUS_ACS` is reached at `census` (WEB-072).
+    sources.find((source) => source.sourceCode.toLowerCase() === wanted) ||
+    null
+  );
 }
 
 /** Whether the API declares this source accepts a filter on its reads. */

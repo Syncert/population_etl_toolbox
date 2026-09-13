@@ -107,6 +107,7 @@ import {
 } from "../lib/observationAccess";
 import type { ObservationScope } from "../lib/observationAccess";
 import { metricProvenance, metricQualityState } from "../lib/catalog";
+import { requestedMetricState } from "../lib/requestedMetric";
 import {
   describeViewModes,
   servesHistory,
@@ -276,6 +277,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [activeSourceKey, setActiveSourceKey] = useState(sourceKey);
   const [metrics, setMetrics] = useState<MetricSummary[]>([]);
   const [metricsError, setMetricsError] = useState("");
+  // What a link asked for and this source does not publish (WEB-072).
+  const [requestedMetricNotice, setRequestedMetricNotice] = useState("");
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedGeoLevel, setSelectedGeoLevel] = useState(DEFAULT_GEO_LEVEL);
   const [mapMode, setMapMode] = useState(DEFAULT_MAP_MODE);
@@ -610,6 +613,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   // Keep the selected metric consistent with the selected dataset facet.
   useEffect(() => {
+    // Except when a link asked for a measure this source does not publish.
+    // Filling the empty selection here is the same substitution the notice
+    // exists to refuse, one effect later (WEB-072); the reader's own choice
+    // below clears the notice and this resumes.
+    if (requestedMetricNotice) {
+      return;
+    }
     if (!showDatasetSelector || !selectedDataset) {
       if (!selectedMetric && metrics.length > 0) {
         setSelectedMetric(pickPreferredMetric(metrics, selectedDataset));
@@ -631,7 +641,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     setSelectedMetric(
       pickPreferredMetric(metrics, selectedDataset, metricVariable(selectedMetric)),
     );
-  }, [datasetMetrics, metrics, selectedDataset, selectedMetric, showDatasetSelector]);
+  }, [
+    datasetMetrics,
+    metrics,
+    requestedMetricNotice,
+    selectedDataset,
+    selectedMetric,
+    showDatasetSelector,
+  ]);
 
   // One-time bootstrap: health, capability discovery, URL state, tiles.
   useEffect(() => {
@@ -721,13 +738,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         setMetrics(items);
         const requested = initialStateRef.current;
         initialStateRef.current = null;
-        if (
-          requested?.metric &&
-          items.some((item) => item.metric_code === requested.metric)
-        ) {
-          setSelectedDataset(metricDataset(requested.metric));
-          setSelectedMetric(requested.metric);
-        } else if (items.length > 0) {
+        // A link that names a measure this source does not publish is
+        // answered, not quietly rewritten: the explorer used to select
+        // `pickPreferredMetric` instead and said nothing, so "Explore" on
+        // `BLS:LAU:UNEMP_RATE` opened Census ACS total population (WEB-072).
+        const wanted = requestedMetricState({
+          requested: requested?.metric,
+          items,
+          sourceTitle: source.title,
+        });
+        setRequestedMetricNotice(wanted.notice);
+        if (wanted.metricCode) {
+          setSelectedDataset(metricDataset(wanted.metricCode));
+          setSelectedMetric(wanted.metricCode);
+        } else if (wanted.chooseDefault && items.length > 0) {
           const facet = preferredDatasetFacet(items);
           setSelectedDataset(facet);
           setSelectedMetric(pickPreferredMetric(items, facet));
@@ -2019,7 +2043,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   className="select"
                   data-testid="dataset-select"
                   value={selectedDataset}
-                  onChange={(event) => setSelectedDataset(event.target.value)}
+                  onChange={(event) => {
+                    setRequestedMetricNotice("");
+                    setSelectedDataset(event.target.value);
+                  }}
                 >
                   {facetOptions.map((facet) => (
                     <option value={facet.value} key={facet.value}>
@@ -2037,7 +2064,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 className="select"
                 data-testid="metric-select"
                 value={selectedMetric}
-                onChange={(event) => setSelectedMetric(event.target.value)}
+                onChange={(event) => {
+                  // The reader has answered the notice; it is no longer true.
+                  setRequestedMetricNotice("");
+                  setSelectedMetric(event.target.value);
+                }}
                 disabled={options.length === 0}
               >
                 {options.map((option) => (
@@ -2237,6 +2268,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             <p className="subtle" data-testid="state-filter-note">
               {activeSource?.title} declares no state filter; the state selector scopes
               the geography list only, not the request.
+            </p>
+          ) : null}
+          {requestedMetricNotice ? (
+            <p className="subtle" data-testid="requested-metric-note">
+              {requestedMetricNotice}
             </p>
           ) : null}
           {metricsError ? <p className="subtle">Metrics error: {metricsError}</p> : null}

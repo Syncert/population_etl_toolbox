@@ -221,7 +221,14 @@ export default function CatalogPage() {
                   return (
                     <div className="metric-row" key={metric.metric_code}>
                       <Link
-                        href={explorerHref({ metric: metric.metric_code })}
+                        href={explorerHref({
+                          metric: metric.metric_code,
+                          // The measure's own source, as the catalog row
+                          // publishes it. Without it `/explore` mounted
+                          // Census ACS and silently selected one of its
+                          // metrics instead (WEB-072).
+                          source: metric.source_code || undefined,
+                        })}
                         data-testid={`catalog-metric-link-${metric.metric_code}`}
                       >
                         <span>
