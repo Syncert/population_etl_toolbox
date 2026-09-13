@@ -80,8 +80,19 @@ def _health_paths() -> frozenset[str]:
 #: Never limited: the deployment probes and documentation.
 EXEMPT_PATHS: frozenset[str] = _health_paths() | frozenset(_EXEMPT_DOCUMENTATION)
 
-#: Bound on tracked clients; beyond it the oldest state is dropped, which can
-#: only under-throttle briefly and keeps memory bounded under address churn.
+#: Bound on tracked clients, keeping memory bounded under address churn.
+#: Beyond it the *least recently used* bucket is dropped, and which one that
+#: is matters: an absent bucket and a full bucket are the same thing -- both
+#: grant a whole budget -- so the entry worth sacrificing is the one closest
+#: to full, and that is the one used least recently. Capacity is the
+#: per-minute rate and refill is rate/60 per second, so any bucket untouched
+#: for sixty seconds is already full and costs nothing to drop.
+#:
+#: Dropping the first *inserted* entry instead, which is what a plain
+#: insertion-ordered mapping gives, sacrificed the client that had been
+#: sending traffic longest and recreated its bucket at full capacity -- so
+#: under churn the limiter stopped limiting the one client it exists to
+#: limit, and every new address reset it again (API-104).
 _MAX_TRACKED_BUCKETS = 10_000
 
 #: The forwarding header the declared proxies set. ``X-Real-IP`` is not read:
@@ -195,16 +206,24 @@ class RateLimitMiddleware:
         now = self._clock()
         capacity = float(per_minute)
         refill_per_second = per_minute / 60.0
-        bucket = self._buckets.get(bucket_key)
+        bucket = self._buckets.pop(bucket_key, None)
         if bucket is None:
             if len(self._buckets) >= _MAX_TRACKED_BUCKETS:
+                # The head of an insertion-ordered mapping whose entries are
+                # re-inserted on use is the least recently used one, reached
+                # in one step. Finding it by comparing every entry's
+                # `updated_at` would make address churn -- the thing this
+                # bound exists to survive -- a scan of ten thousand entries
+                # per request.
                 self._buckets.pop(next(iter(self._buckets)))
             bucket = _TokenBucket(capacity, now)
-            self._buckets[bucket_key] = bucket
         else:
             elapsed = max(0.0, now - bucket.updated_at)
             bucket.tokens = min(capacity, bucket.tokens + elapsed * refill_per_second)
             bucket.updated_at = now
+        # Re-inserted whether it is new or not, so use -- not arrival --
+        # decides what the bound sacrifices.
+        self._buckets[bucket_key] = bucket
         if bucket.tokens >= 1.0:
             bucket.tokens -= 1.0
             return 0.0

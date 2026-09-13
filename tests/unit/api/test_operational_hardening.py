@@ -42,6 +42,7 @@ from apps.api.freshness import (
 )
 from apps.api.main import PUBLIC_CACHE_TARGETS, app, contract_fingerprint, create_app
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
+from apps.api import ratelimit
 from apps.api.ratelimit import RATE_LIMITED_DETAIL, RateLimitMiddleware
 from apps.api.middleware import SECURITY_HEADERS
 from apps.api.telemetry import (
@@ -419,6 +420,91 @@ def test_rate_limit_refills_continuously() -> None:
     now[0] += 1.0  # one second refills one token at 60/minute
     assert client.get("/api/v1/observations").status_code == 200
     assert client.get("/api/v1/observations").status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# API-104 — which bucket the bounded table sacrifices
+# ---------------------------------------------------------------------------
+
+
+def test_the_bucket_dropped_is_the_idle_one_not_the_busiest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-104 — eviction drops state that had already expired.
+
+    An absent bucket and a full bucket are the same thing: both grant a whole
+    budget. So the entry worth sacrificing is the one closest to full, which
+    is the one used least recently -- a bucket refills to capacity after at
+    most sixty seconds of inactivity at any configured rate. Dropping the
+    *first inserted* entry instead sacrifices the client that has been
+    sending traffic longest, and hands it a fresh budget for doing so.
+    """
+    monkeypatch.setattr(ratelimit, "_MAX_TRACKED_BUCKETS", 3)
+    now = [0.0]
+    limiter = RateLimitMiddleware(None, analysis_per_minute=60, clock=lambda: now[0])
+
+    # The sustained client arrives first and spends its whole minute.
+    for _ in range(60):
+        assert limiter._take_token(("analysis", "heavy"), 60) == 0.0
+    assert limiter._take_token(("analysis", "heavy"), 60) > 0.0
+
+    # Two other addresses arrive and fill the table. Each sends once and is
+    # never heard from again; the exhausted client keeps hammering.
+    limiter._take_token(("analysis", "quiet-a"), 60)
+    limiter._take_token(("analysis", "quiet-b"), 60)
+    assert limiter._take_token(("analysis", "heavy"), 60) > 0.0
+
+    # One more address arrives, so something has to go.
+    limiter._take_token(("analysis", "arriving"), 60)
+
+    assert limiter._take_token(("analysis", "heavy"), 60) > 0.0, (
+        "the exhausted client regained its budget because another address "
+        "arrived: under churn the limiter stops limiting the one client it "
+        "exists to limit"
+    )
+    # It was not kept by growing the table past its bound: the entry dropped
+    # is one of the two that sent a single request and stopped.
+    assert len(limiter._buckets) == 3
+    assert ("analysis", "quiet-a") not in limiter._buckets
+
+
+def test_a_client_still_sending_traffic_keeps_its_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: API-104 — use is what keeps an entry, not arrival order."""
+    monkeypatch.setattr(ratelimit, "_MAX_TRACKED_BUCKETS", 2)
+    limiter = RateLimitMiddleware(None, analysis_per_minute=60, clock=lambda: 0.0)
+
+    limiter._take_token(("analysis", "steady"), 60)
+    limiter._take_token(("analysis", "one-shot"), 60)
+    # `steady` keeps going; `one-shot` never comes back.
+    limiter._take_token(("analysis", "steady"), 60)
+
+    limiter._take_token(("analysis", "arriving"), 60)
+    assert ("analysis", "steady") in limiter._buckets
+    assert ("analysis", "one-shot") not in limiter._buckets
+
+
+def test_eviction_does_not_scan_the_table() -> None:
+    """Covers: API-104 — the bound stays cheap under churn.
+
+    The policy is only usable if it costs nothing per request: a table of ten
+    thousand entries scanned on every new address would make address churn
+    the attack it is meant to survive.
+    """
+    limiter = RateLimitMiddleware(None, analysis_per_minute=60, clock=lambda: 0.0)
+    bound = ratelimit._MAX_TRACKED_BUCKETS
+    for index in range(bound):
+        limiter._take_token(("analysis", f"client-{index}"), 60)
+    assert len(limiter._buckets) == bound
+
+    # The least recently used entry is the head of the mapping, reached in
+    # one step -- not found by comparing every entry's timestamp.
+    oldest = next(iter(limiter._buckets))
+    assert oldest == ("analysis", "client-0")
+    limiter._take_token(("analysis", "arriving"), 60)
+    assert oldest not in limiter._buckets
+    assert len(limiter._buckets) == bound
 
 
 # ---------------------------------------------------------------------------
