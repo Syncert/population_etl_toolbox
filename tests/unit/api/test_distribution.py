@@ -87,19 +87,28 @@ class _DistributionSession:
         if "gold_glossary.dim_metric" in rendered:
             return _FakeResult(rows=[self._metric_row] if self._metric_row else [])
         if "width_bucket" in rendered:
+            # One statement answers the range and the bins together, so every
+            # row carries the stats and its own bin; a measure with nothing
+            # published still answers one row, with a null bin (API-084).
             bin_count = int((params or {})["bin_count"])
-            if self._bins is not None:
-                return _FakeResult(rows=self._bins)
-            if bin_count == 1:
-                return _FakeResult(rows=[{"bin_index": 1, "count": 3}])
-            return _FakeResult(
-                rows=[
-                    {"bin_index": 1, "count": 1},
-                    {"bin_index": bin_count, "count": 2},
-                ]
-            )
-        if "MIN(value)" in rendered:
-            return _FakeResult(rows=[dict(self._stats)])
+            bins = self._bins
+            if bins is None:
+                if not self._stats["total"]:
+                    bins = []
+                elif self._stats["min_value"] == self._stats["max_value"]:
+                    bins = [{"bin_index": 1, "count": self._stats["total"]}]
+                elif bin_count == 1:
+                    bins = [{"bin_index": 1, "count": 3}]
+                else:
+                    bins = [
+                        {"bin_index": 1, "count": 1},
+                        {"bin_index": bin_count, "count": 2},
+                    ]
+            if not bins:
+                return _FakeResult(
+                    rows=[{**self._stats, "bin_index": None, "count": None}]
+                )
+            return _FakeResult(rows=[{**self._stats, **entry} for entry in bins])
         return _FakeResult(rows=[])
 
 
@@ -395,3 +404,55 @@ def test_distribution_filter_unsupported_by_the_source_is_rejected() -> None:
     assert "state_fips" in detail
     assert "CENSUS_PEP" in detail
     assert not _dispatched(session)
+
+
+def test_range_and_bins_are_measured_in_one_statement() -> None:
+    """Covers: API-084 — one reading of the warehouse, not two.
+
+    The range came from one statement and every count from a second, each
+    taking its own snapshot. A refresh of the materialized view between them
+    -- which is what that relation is for -- left `min_value` describing rows
+    the counts no longer measured: a value published below it buckets to 0,
+    which `items` never asks for, so the geography vanishes from the bins
+    while `total` still counts it.
+    """
+    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 5},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    serving = _dispatched(session)
+    assert len(serving) == 1, (
+        "the range and the bins must be measured in one statement: "
+        f"{len(serving)} were issued"
+    )
+    sql = serving[0]
+    assert "width_bucket" in sql and "MIN(value)" in sql
+    assert _relations_in(sql) <= ALLOWED_OBSERVATION_RELATIONS, sql
+    # A range whose bounds are equal is not a range; the database rejects it
+    # outright, so the statement must never hand width_bucket one.
+    ranked = sql.split("width_bucket", 1)[1]
+    assert "CASE" in ranked, sql
+
+
+def test_every_counted_value_is_inside_the_reported_range() -> None:
+    """Covers: API-084 — the bins reconcile with the total they report."""
+    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        payload = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 4},
+        ).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert sum(item["count"] for item in payload["items"]) == payload["total"]
+    assert payload["items"][0]["lower_bound"] == payload["min_value"]
+    assert payload["items"][-1]["upper_bound"] == payload["max_value"]

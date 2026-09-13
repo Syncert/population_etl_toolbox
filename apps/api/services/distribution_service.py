@@ -68,25 +68,75 @@ def list_distribution_bins(
     params.update(filter_params)
     require_relation(db, dispatch.latest_relation)
 
-    base_sql = f"""
-    WITH latest AS ({ranked_latest_cte(dispatch, conditions)})
-    """
-    stats_query = text(
-        base_sql
-        + """
+    # One statement, one snapshot, one evaluation of the reduction.
+    #
+    # The range and the counts used to be two executions of this CTE. Each
+    # took its own snapshot, so a `REFRESH MATERIALIZED VIEW CONCURRENTLY`
+    # committing between them -- which is what the relation is for -- left
+    # `min_value` describing rows the counts no longer measured. A value
+    # published below it buckets to 0, a bin `items` never asks for, so the
+    # geography disappeared from the bins while `total` still counted it;
+    # one published above it was clamped into a last bin whose upper bound
+    # the response reported as a maximum it was not. A CTE referenced more
+    # than once is evaluated once, which makes both impossible rather than
+    # handled (API-084).
+    #
+    # `width_bucket` rejects a range whose bounds are equal, so a measure
+    # with one distinct value bins against an upper bound one unit above it:
+    # every value is then the lower bound and falls in bin 1, and the
+    # degenerate answer below replaces the bins anyway.
+    query = text(
+        f"""
+    WITH latest AS ({ranked_latest_cte(dispatch, conditions)}),
+    published AS (
+        SELECT value FROM latest WHERE value IS NOT NULL
+    ),
+    stats AS (
         SELECT
             COUNT(*)::INT AS total,
             MIN(value)::DOUBLE PRECISION AS min_value,
             MAX(value)::DOUBLE PRECISION AS max_value
-        FROM latest
-        WHERE value IS NOT NULL
-        """
+        FROM published
+    ),
+    binned AS (
+        SELECT
+            LEAST(
+                width_bucket(
+                    published.value,
+                    stats.min_value,
+                    CASE
+                        WHEN stats.max_value = stats.min_value
+                        THEN stats.min_value + 1
+                        ELSE stats.max_value
+                    END,
+                    :bin_count
+                ),
+                :bin_count
+            )::INT AS bin_index,
+            COUNT(*)::INT AS count
+        FROM published CROSS JOIN stats
+        GROUP BY 1
+    )
+    SELECT stats.total, stats.min_value, stats.max_value,
+           binned.bin_index, binned.count
+    FROM stats LEFT JOIN binned ON TRUE
+    ORDER BY binned.bin_index
+    """
     )
 
-    stats_row = db.execute(stats_query, params).mappings().one()
-    total = int(stats_row["total"] or 0)
-    min_value = stats_row["min_value"]
-    max_value = stats_row["max_value"]
+    rows = db.execute(query, {**params, "bin_count": bin_count}).mappings().all()
+    # `stats` always produces exactly one row -- an aggregate over no rows is
+    # still a row -- so the LEFT JOIN answers the range even when nothing was
+    # published, and `bin_index` is null on that row.
+    first = rows[0]
+    total = int(first["total"] or 0)
+    min_value = first["min_value"]
+    max_value = first["max_value"]
+    counts = {
+        int(row["bin_index"]): int(row["count"])
+        for row in rows
+        if row["bin_index"] is not None
+    }
 
     def _response(
         total: int,
@@ -127,41 +177,11 @@ def list_distribution_bins(
             ],
         )
 
-    bins_query = text(
-        base_sql
-        + """
-        SELECT
-            LEAST(
-                width_bucket(value, :min_value, :max_value, :bin_count),
-                :bin_count
-            )::INT AS bin_index,
-            COUNT(*)::INT AS count
-        FROM latest
-        WHERE value IS NOT NULL
-        GROUP BY bin_index
-        ORDER BY bin_index
-        """
-    )
-    bins_rows = (
-        db.execute(
-            bins_query,
-            {
-                **params,
-                "min_value": min_value,
-                "max_value": max_value,
-                "bin_count": bin_count,
-            },
-        )
-        .mappings()
-        .all()
-    )
-
     # Every bin the caller asked for, including the ones nothing falls into
-    # (API-079). ``GROUP BY bin_index`` returns no row for an empty bin, and
-    # an absent bin and a bin holding zero geographies are different
-    # statements: the second is a fact this query measured, and reporting it
-    # as the first makes every consumer rebuild the gaps from min/max.
-    counts = {int(row["bin_index"]): int(row["count"]) for row in bins_rows}
+    # (API-079). ``GROUP BY`` returns no row for an empty bin, and an absent
+    # bin and a bin holding zero geographies are different statements: the
+    # second is a fact this query measured, and reporting it as the first
+    # makes every consumer rebuild the gaps from min/max.
     width = (max_value - min_value) / float(bin_count)
     items = [
         DistributionBin(
