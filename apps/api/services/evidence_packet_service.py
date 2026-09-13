@@ -22,7 +22,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import normalize_geo_level
+from apps.api.registry import grain_refusal, normalize_geo_level
 from apps.api.schemas import AnalysisDocument
 from apps.api.schemas.evidence_packet import (
     MAX_ANALYTICAL_BLOCKS,
@@ -188,6 +188,23 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
             f"its query asks for '{queried_geo_id}'"
         )
     queried_grain = str(filters.get("geo_level") or "")
+    # A grain the API does not serve, recorded as the basis of numbers it
+    # does. The vocabulary is closed and the envelope holds this field as a
+    # request parameter, so the rule API-122 applies to the request and
+    # API-123 to a stored query applies here too: a block whose query names
+    # no grain stored `geo_level: "COUNTRY"` clean, read back `valid: true`,
+    # and `EvidenceEnvelope` presented it to the reader as the packet's
+    # geography -- with nothing anywhere that could tell them it is not one
+    # (API-125). Refused before the comparison below, so the block is told
+    # what is wrong with the word rather than which other word it differs
+    # from.
+    if envelope.geo_level:
+        refusal = grain_refusal("geo_level", envelope.geo_level)
+        if refusal is not None:
+            return (
+                f"block '{block.block_id}' records geography grain "
+                f"'{envelope.geo_level}', which is not a grain: {refusal}"
+            )
     if (
         envelope.geo_level
         and queried_grain

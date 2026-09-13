@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import PUBLIC_CACHE_TARGETS, app
+from apps.api.registry import GEO_GRAIN_ALIASES, GEO_GRAINS
 from apps.api.middleware import (
     REQUEST_TOO_LARGE_DETAIL,
     RequestBodyLimitMiddleware,
@@ -565,6 +566,16 @@ def test_incomplete_analytical_block_is_stored_and_reported(
         # The reduction is the third duplicated request parameter, and the one
         # that decides how many rows the query answers (API-120).
         pytest.param(
+            _block(
+                # No grain in the query, so nothing to differ from: the word
+                # itself is what is refused.
+                envelope=_envelope(geo_level="COUNTRY"),
+                document=_query(filters={}),
+            ),
+            "records geography grain 'COUNTRY', which is not a grain",
+            id="envelope-records-a-grain-that-is-not-a-grain",
+        ),
+        pytest.param(
             _block(envelope=_envelope(newest_per_geography=True)),
             "records newest_per_geography=true but its query asks for false",
             id="envelope-records-a-reduction-the-query-does-not-ask-for",
@@ -1058,3 +1069,87 @@ def test_a_geography_recorded_on_one_side_only_is_incompleteness(
         },
     )
     assert response.status_code == 201, response.text
+
+
+# ---------------------------------------------------------------------------
+# API-125 — an envelope's grain is one the API serves
+# ---------------------------------------------------------------------------
+
+
+def test_every_grain_the_api_serves_is_a_grain_a_packet_may_record(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-125 — the refusal narrows nothing the vocabulary offers.
+
+    Read from `registry.GEO_GRAINS` and `GEO_GRAIN_ALIASES` rather than
+    listed, so a grain added to the vocabulary is composable the day it is
+    published, and the words ADR-0002 keeps answering stay composable too --
+    a packet built from a link that carries `NATION` is the case that promise
+    exists for.
+    """
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    words = [*GEO_GRAINS, *GEO_GRAIN_ALIASES]
+    for word in words:
+        for sent in (word, word.lower()):
+            response = client.post(
+                "/api/v1/evidence-packets",
+                headers=_auth(),
+                json={
+                    "name": f"grain {sent}",
+                    "document": _packet(
+                        _block(
+                            envelope=_envelope(geo_level=sent),
+                            document=_query(filters={}),
+                        )
+                    ),
+                },
+            )
+            assert response.status_code == 201, (
+                f"a packet recording the grain {sent!r} was refused: {response.text}"
+            )
+
+
+def test_a_grain_that_is_not_one_is_reported_on_a_packet_stored_before_the_rule(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-125 — a word stored before the rule is read, not hidden.
+
+    The same shape as API-120's read path, for the same reason: the rule
+    arrived after rows were written, and repairing the composer's document or
+    hiding the problem would both leave a reader with a grain the API does not
+    serve presented as the basis of the numbers. The document comes back
+    unmodified with the block named.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "pre-rule grain",
+            "document": _packet(
+                _block(envelope=_envelope(geo_level="NATIONAL"), document=_query())
+            ),
+        },
+    )
+    assert created.json()["validation"]["valid"] is True
+    packet_id = created.json()["packet_id"]
+
+    # What a row written before the rule looks like: a word that is not a
+    # grain, and a query that names none to contradict it.
+    stored = storage.rows[0]["document"]["blocks"][0]
+    stored["envelope"]["geo_level"] = "COUNTRY"
+    stored["document"]["filters"] = {}
+
+    read = client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth())
+    assert read.status_code == 200, "the composer's document is still returned"
+    validation = read.json()["validation"]
+    assert validation["valid"] is False
+    state = next(
+        block for block in validation["blocks"] if block["block_id"] == "unemployment"
+    )
+    assert "which is not a grain" in (state["reason"] or "")
+    assert state["missing"] == [], "contradictory, not incomplete"
+    assert read.json()["document"]["blocks"][0]["envelope"]["geo_level"] == "COUNTRY", (
+        "the stored envelope is returned unmodified, never repaired"
+    )

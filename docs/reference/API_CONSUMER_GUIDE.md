@@ -600,9 +600,12 @@ own query rather than referencing a configuration that could later change.
   read — the sources a query reads are the owning sources of its measures,
   not a field the composer decides — records a scope, a release, or a
   reduction (`newest_per_geography`, `newest_release_per_period`) its query
-  does not, when a prose block carries a query or an envelope, when a block
+  does not, records a `geo_level` that is not one of the five grains at all,
+  when a prose block carries a query or an envelope, when a block
   id repeats, or when a block's query is one the live routes would refuse.
-  A source spelled in another case is the same source, not a contradiction.
+  A source spelled in another case is the same source, not a contradiction,
+  and neither is a grain: the vocabulary and its `NATION`/`US` aliases are
+  the same here as on the routes.
   The reduction is checked for the same reason `period` is recorded: a block
   composed from one value per geography whose query replays the whole
   publication answers a different set of rows than the envelope describes.
