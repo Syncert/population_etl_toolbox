@@ -104,6 +104,14 @@ class SourceCapability(BaseModel):
     #: (``metric_code``, ``scope``, ``release``, ``limit``, ``offset``). A
     #: filter absent here is rejected with an explanation, never ignored.
     observation_filters: list[str] = []
+    #: Field names a neutral observation row's ``dimensions`` object carries
+    #: for this source, under the source's own published names. The set is a
+    #: review of what belongs beside a value, not the serving relation's
+    #: column list -- the source-scoped routes serve that -- and it is
+    #: published here for the same reason ``observation_filters`` is: so a
+    #: client codes against a declared contract instead of inferring one
+    #: from whatever a row happened to hold (API-109).
+    observation_dimensions: list[str] = []
 
 
 class CapabilityListResponse(BaseModel):

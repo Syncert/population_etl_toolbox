@@ -64,6 +64,13 @@ export interface SourceCapability {
   served_by_neutral_routes: boolean;
   datasets?: string[] | null;
   observation_filters?: string[] | null;
+  /**
+   * Field names a neutral row's `dimensions` object carries for this source
+   * (API-109). Declared here because an undeclared field is an invisible
+   * one — WEB-057's lesson — even where an index signature would let it
+   * through.
+   */
+  observation_dimensions?: string[] | null;
   observation_routes?: ObservationRouteCapability[] | null;
   [key: string]: unknown;
 }

@@ -185,9 +185,13 @@ class ObservationCoverage(BaseModel):
 class NeutralObservation(BaseModel):
     """One observation from any completed source, semantics preserved.
 
-    The core fields every source can fill honestly are typed; everything a
-    source publishes beyond them rides in ``dimensions`` under the source's own
-    published field names. ``value`` is text to preserve provider precision and
+    The core fields every source can fill honestly are typed; the source's
+    **declared** fields beyond them ride in ``dimensions`` under the source's
+    own published names. That set is a review, not the serving relation's
+    column list -- the source-scoped routes serve that -- and
+    ``/catalog/capabilities`` answers it per source as
+    ``observation_dimensions``, from the same declaration these rows are
+    built from (API-109). ``value`` is text to preserve provider precision and
     is ``null`` whenever the source did not publish a usable number --
     ``value_status`` (the source's own vocabulary, ``null`` when the source
     publishes none) says why. ``release`` is the source's release identity

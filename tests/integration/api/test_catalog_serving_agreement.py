@@ -1650,3 +1650,53 @@ def test_the_relations_composed_spelling_still_addresses_one_dataset(
         "resolving the composed spelling widened the lineage match from one "
         "dataset to every dataset publishing the measure"
     )
+
+
+def test_a_rows_dimensions_are_what_capabilities_declares(
+    api_client: TestClient,
+    published_acs_metric: str,
+    published_pep_metric: str,
+    published_cdc_metric: str,
+) -> None:
+    """Covers: API-109 — the declared dimension set is the served one.
+
+    `dimensions` was registry-derived and unpublished: the guide claimed the
+    row carried "everything the source publishes" and gestured at four
+    examples, so a consumer coding against it read one row and hard-coded
+    whatever it held. `/catalog/capabilities` now answers the set, from the
+    same declaration the rows are built from.
+
+    Asserted against real published rows for three sources, including the two
+    whose relations are widest -- `gold_nass.latest_release_observation` has
+    53 columns and 14 of them ride here -- so the claim is about what the
+    warehouse actually serves and not about a fixture's shape.
+    """
+    capabilities = api_client.get("/api/v1/catalog/capabilities")
+    assert capabilities.status_code == 200, capabilities.text
+    declared = {
+        item["source_code"]: set(item["observation_dimensions"])
+        for item in capabilities.json()["items"]
+    }
+    assert declared, capabilities.text
+    # Not a vacuous agreement: these sources publish dimensions.
+    assert len(declared["CDC"]) >= 10, declared["CDC"]
+    assert len(declared["USDA_NASS"]) >= 10, declared["USDA_NASS"]
+
+    for metric_code in (
+        published_acs_metric,
+        published_pep_metric,
+        published_cdc_metric,
+    ):
+        answer = api_client.get(
+            "/api/v1/observations", params={"metric_code": metric_code, "limit": 5}
+        )
+        assert answer.status_code == 200, answer.text
+        payload = answer.json()
+        assert payload["items"], f"{metric_code} answered no rows"
+        expected = declared[payload["source_code"]]
+        for item in payload["items"]:
+            assert set(item["dimensions"]) == expected, (
+                f"{payload['source_code']} served dimensions "
+                f"{sorted(set(item['dimensions']))} while the capability map "
+                f"declares {sorted(expected)}"
+            )

@@ -160,6 +160,12 @@ def _observation_filters_for(source_code: str) -> list[str]:
     return list(dispatch.supported_filters()) if dispatch is not None else []
 
 
+def _observation_dimensions_for(source_code: str) -> list[str]:
+    """The `dimensions` field names the source's dispatch entry declares."""
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return list(dispatch.published_dimensions()) if dispatch is not None else []
+
+
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
     """Every completed source's reviewed capability entry, ordered by code."""
     operations = _versioned_get_operations(openapi_paths)
@@ -172,6 +178,7 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             datasets=list(discovery.registered_datasets()),
             observation_routes=_routes_for(discovery, operations),
             observation_filters=_observation_filters_for(discovery.source_code),
+            observation_dimensions=_observation_dimensions_for(discovery.source_code),
         )
         for discovery in sorted(
             SOURCE_DISCOVERY.values(), key=lambda entry: entry.source_code

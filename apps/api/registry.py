@@ -328,6 +328,19 @@ class ObservationDispatch:
     def supported_filters(self) -> tuple[str, ...]:
         return tuple(sorted(param for param, _ in self.filter_conditions))
 
+    def published_dimensions(self) -> tuple[str, ...]:
+        """The field names a neutral row's ``dimensions`` object carries.
+
+        Derived from the same declaration the rows are built from, so the
+        capability map cannot drift from what a row holds. The set is a
+        review -- `gold_nass.latest_release_observation` has 53 columns and
+        14 of them ride here, the rest being surrogate keys, slice
+        bookkeeping and the relation's own shape the source-scoped routes
+        serve -- and publishing it is what makes it a contract a client can
+        code against rather than a shape they infer from one row (API-109).
+        """
+        return tuple(sorted(name for name, _ in self.dimension_expressions))
+
 
 #: Year-window conditions shared by the union-family relations, which carry a
 #: date-typed ``observation_date``.

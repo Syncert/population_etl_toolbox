@@ -49,7 +49,9 @@ anything shaped like them. There is no wildcard syntax to reach for.
 
 `observation_filters` is the contract for per-source filtering: a filter a
 source does not declare is **rejected with a 422 naming the supported set**,
-never silently ignored. Read capabilities once at startup rather than
+never silently ignored. `observation_dimensions` is the same kind of
+contract for reading: the field names a neutral row's `dimensions` object
+carries for that source. Read capabilities once at startup rather than
 guessing.
 
 `/catalog/geographies` answers a **projection refreshed on its own
@@ -169,7 +171,12 @@ without misreporting the period they cover.
 
 ### Reading a row honestly
 
-Each row carries typed core fields plus everything the source publishes:
+Each row carries typed core fields plus the source's **declared** published
+fields — `dimensions` is a reviewed set, not the serving relation's column
+list, and `/catalog/capabilities` answers which fields it holds per source
+under `observation_dimensions`. Read it once at startup, the way you read
+`observation_filters`. When you need a relation's full shape, the
+source-scoped routes serve it; that is what they are for.
 
 - `value` is **text**, to preserve provider precision. Parse it yourself.
 - `value` is `null` whenever the source did not publish a usable number, and
@@ -177,9 +184,13 @@ Each row carries typed core fields plus everything the source publishes:
   `withheld`, `missing`, `not_reported`, …). `value_status` is `null` when the
   source publishes no status vocabulary at all — which is distinguishable
   from a published `valid`. **Nothing is ever coerced to zero.**
-- `dimensions` carries the source's own published fields under their own
-  names (CDC strata and footnotes, FBI subject/offense/program, NASS
-  commodity/domain/practice, Census dataset and vintage).
+- `dimensions` carries the source's declared fields under the source's own
+  published names — CDC strata and footnotes, FBI subject/offense/program,
+  NASS commodity/domain/practice, Census dataset and vintage. The exact set
+  per source is `observation_dimensions` on `/catalog/capabilities`, derived
+  from the same declaration the rows are built from, so a field added to it
+  reaches both at once and you never have to infer the shape from a row you
+  happened to read.
 - `uncertainty` is `null` when the source publishes none, and otherwise
   carries only the fields that source publishes — the rest stay `null`.
   Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
