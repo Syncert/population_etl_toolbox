@@ -119,4 +119,14 @@ class DistributionBinsResponse(BaseModel):
     bin_count: int
     min_value: Optional[float] = None
     max_value: Optional[float] = None
+    #: The period every binned row came from, or ``None`` when they differ or
+    #: nothing was published. The reduction ranks each geography's own newest
+    #: period, so two geographies in one answer can describe two different
+    #: years -- which the comparison route publishes per row as
+    #: ``period_a``/``period_b`` and this one said nothing about (API-097).
+    period: Optional[str] = None
+    #: True when the binned rows came from more than one period. A histogram
+    #: mixing them is a legitimate map of each geography's newest value; a
+    #: histogram mixing them silently is not.
+    periods_differ: bool = False
     items: list[DistributionBin]

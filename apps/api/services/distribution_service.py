@@ -90,13 +90,19 @@ def list_distribution_bins(
         f"""
     WITH latest AS ({ranked_latest_cte(dispatch, conditions)}),
     published AS (
-        SELECT value FROM latest WHERE value IS NOT NULL
+        SELECT value, period_start FROM latest WHERE value IS NOT NULL
     ),
     stats AS (
         SELECT
             COUNT(*)::INT AS total,
             MIN(value)::DOUBLE PRECISION AS min_value,
-            MAX(value)::DOUBLE PRECISION AS max_value
+            MAX(value)::DOUBLE PRECISION AS max_value,
+            -- Measured here, over the same reduced rows the counts are taken
+            -- from, for the reason the range is: a period read in a second
+            -- statement could describe a different set than the bins it
+            -- labels.
+            COUNT(DISTINCT period_start)::INT AS period_count,
+            MIN(period_start)::TEXT AS binned_period
         FROM published
     ),
     binned AS (
@@ -119,6 +125,7 @@ def list_distribution_bins(
         GROUP BY 1
     )
     SELECT stats.total, stats.min_value, stats.max_value,
+           stats.period_count, stats.binned_period,
            binned.bin_index, binned.count
     FROM stats LEFT JOIN binned ON TRUE
     ORDER BY binned.bin_index
@@ -133,6 +140,12 @@ def list_distribution_bins(
     total = int(first["total"] or 0)
     min_value = first["min_value"]
     max_value = first["max_value"]
+    # One period when every binned row came from the same one; none when they
+    # differ, because naming the earliest or the latest would label the whole
+    # histogram with a period most of it is not from (API-097).
+    period_count = int(first["period_count"] or 0)
+    period = first["binned_period"] if period_count == 1 else None
+    periods_differ = period_count > 1
     counts = {
         int(row["bin_index"]): int(row["count"])
         for row in rows
@@ -155,6 +168,8 @@ def list_distribution_bins(
             # echoing `us` over a set of `NATIONAL` bins mislabels the record
             # as well as the response (API-094).
             geo_level=normalize_geo_level(geo_level) if geo_level else None,
+            period=period,
+            periods_differ=periods_differ,
             total=total,
             bin_count=bin_count,
             min_value=min_value,

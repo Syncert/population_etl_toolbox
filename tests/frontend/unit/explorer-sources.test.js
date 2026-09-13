@@ -14,6 +14,7 @@ import {
 } from "../../../apps/web/lib/explorerSources";
 import {
   datasetFacetOptions,
+  distributionPeriodNote,
   preferredDatasetFacet,
 } from "../../../apps/web/lib/explorerViewModel";
 import { servedParameters } from "../support/servedContract.js";
@@ -360,5 +361,32 @@ describe("dataset facets derived from published metric identity", () => {
       { value: "pep_nst_alldata", label: "PEP_NST_ALLDATA" },
     ]);
     expect(preferredDatasetFacet(pepMetrics)).toBe("pep_cty_alldata");
+  });
+});
+
+describe("distributionPeriodNote", () => {
+  // Covers: WEB-054 — the legend's own statement of which period its scale
+  // describes. `/distribution/bins` reduces each geography to its own newest
+  // period, so an answer can be built from a mix of them, and the client
+  // cannot work that out: the bins are computed over every geography the
+  // metric publishes while the client holds one page of rows.
+
+  test("names the one period the bins describe", () => {
+    expect(distributionPeriodNote({ period: "2023-01-01", periods_differ: false })).toBe(
+      "for 2023-01-01",
+    );
+  });
+
+  test("says the bins mix periods instead of naming one", () => {
+    // Naming the earliest or the latest would label the whole scale with a
+    // period most of it is not from.
+    expect(distributionPeriodNote({ period: null, periods_differ: true })).toBe(
+      "bins mix periods: each geography's own newest value",
+    );
+  });
+
+  test("an answer publishing neither fact is described as it is", () => {
+    expect(distributionPeriodNote({})).toBe("");
+    expect(distributionPeriodNote(null)).toBe("");
   });
 });

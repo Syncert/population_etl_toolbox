@@ -46,6 +46,7 @@ import {
   buildSelectionFilter,
   datasetFacetOptions,
   distributionBins,
+  distributionPeriodNote,
   formatObservationValue,
   marginOfErrorText,
   metricDataset,
@@ -905,9 +906,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
         if (request.isCurrent()) {
           setDistribution(payload);
+          // The legend's scale is built from these bins, and the map is
+          // painted from that scale. A scale over a mix of periods is a
+          // legitimate map of each geography's newest value and a misleading
+          // one to read as a snapshot, so the answer's own statement of which
+          // it is travels with the count (WEB-054).
+          const periodNote = distributionPeriodNote(payload);
           setDistributionStatus({
-            state: "ok",
-            message: `${payload.bin_count} API bins across ${payload.total} records`,
+            state: payload.periods_differ === true ? "warn" : "ok",
+            message: [
+              `${payload.bin_count} API bins across ${payload.total} records`,
+              periodNote,
+            ]
+              .filter(Boolean)
+              .join(" "),
           });
         }
       } catch (error) {

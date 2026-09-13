@@ -534,6 +534,11 @@ async function installRoutes(
       bin_count: 1,
       min_value: 561504,
       max_value: 561504,
+      // The period the served answer publishes for its bins. A fixture
+      // without it models an API that does not say which period painted the
+      // map (WEB-043, WEB-054).
+      period: "2023-01-01",
+      periods_differ: false,
       items: [{ bin_index: 1, count: 1 }],
     },
   }));
@@ -1265,4 +1270,43 @@ test("a source that publishes no uncertainty grows no column for it", async ({ p
 
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
   await expect(page.getByRole("columnheader", { name: "Uncertainty" })).toHaveCount(0);
+});
+
+test("the legend says which period the API's bins describe", async ({ page }) => {
+  // Covers: WEB-054 — the bins build the colour scale the choropleth is
+  // painted with, and `/distribution/bins` reduces each geography to its own
+  // newest period, so the answer's own statement of which period that is
+  // travels with the count.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("distribution-status")).toContainText("for 2023-01-01");
+});
+
+test("a legend built from mixed periods says so", async ({ page }) => {
+  // Covers: WEB-054 — a scale over a mix of periods is a legitimate map of
+  // each geography's newest value and a misleading one to read as a
+  // snapshot. The client cannot work it out: the bins are computed over every
+  // geography the metric publishes while it holds one page of rows.
+  await installRoutes(page);
+  await page.route("**/api/v1/distribution/bins?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 2,
+        bin_count: 1,
+        min_value: 1,
+        max_value: 561504,
+        period: null,
+        periods_differ: true,
+        items: [{ bin_index: 1, count: 2 }],
+      },
+    }),
+  );
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  const status = page.getByTestId("distribution-status");
+  await expect(status).toContainText("bins mix periods");
+  // The pill's caution treatment, which is what "not proven good" looks like
+  // in this UI: a stale or partial value can never present as current.
+  await expect(status).toHaveClass(/warn/);
 });

@@ -75,7 +75,15 @@ class _DistributionSession:
 
     def __init__(self, metric_row=None, stats=None, bins=None):
         self._metric_row = metric_row
-        self._stats = stats or {"total": 3, "min_value": 10.0, "max_value": 40.0}
+        # The period columns the same statement measures, so the harness
+        # models the answer the service actually reads (API-097).
+        self._stats = stats or {
+            "total": 3,
+            "min_value": 10.0,
+            "max_value": 40.0,
+            "period_count": 1,
+            "binned_period": "2023-01-01",
+        }
         self._bins = bins
         self.statements: list[str] = []
         self.parameters: list[dict[str, Any]] = []
@@ -181,7 +189,13 @@ def test_every_bin_asked_for_is_reported() -> None:
     """
     session = _DistributionSession(
         metric_row=dict(_FRED_METRIC),
-        stats={"total": 3, "min_value": 0.0, "max_value": 100.0},
+        stats={
+            "total": 3,
+            "min_value": 0.0,
+            "max_value": 100.0,
+            "period_count": 1,
+            "binned_period": "2023-01-01",
+        },
         bins=[{"bin_index": 1, "count": 2}, {"bin_index": 5, "count": 1}],
     )
     client = _client_with(session)
@@ -207,7 +221,13 @@ def test_degenerate_distributions_are_unchanged() -> None:
     """Covers: API-079 — no range to bin stays one bin, or none at all."""
     empty = _DistributionSession(
         metric_row=dict(_FRED_METRIC),
-        stats={"total": 0, "min_value": None, "max_value": None},
+        stats={
+            "total": 0,
+            "min_value": None,
+            "max_value": None,
+            "period_count": 0,
+            "binned_period": None,
+        },
     )
     client = _client_with(empty)
     try:
@@ -223,7 +243,13 @@ def test_degenerate_distributions_are_unchanged() -> None:
 
     single = _DistributionSession(
         metric_row=dict(_FRED_METRIC),
-        stats={"total": 4, "min_value": 7.5, "max_value": 7.5},
+        stats={
+            "total": 4,
+            "min_value": 7.5,
+            "max_value": 7.5,
+            "period_count": 1,
+            "binned_period": "2023-01-01",
+        },
     )
     client = _client_with(single)
     try:
@@ -456,3 +482,102 @@ def test_every_counted_value_is_inside_the_reported_range() -> None:
     assert sum(item["count"] for item in payload["items"]) == payload["total"]
     assert payload["items"][0]["lower_bound"] == payload["min_value"]
     assert payload["items"][-1]["upper_bound"] == payload["max_value"]
+
+
+def test_a_distribution_reports_the_period_its_bins_describe() -> None:
+    """Covers: API-097 — the bins say which period they are of.
+
+    `/distribution/bins` and `/comparison` reduce through the same CTE, which
+    ranks each geography's own newest period, so two geographies in one answer
+    can be describing two different years. The comparison treats that as
+    load-bearing and publishes `period_a`/`period_b` on every row; the
+    distribution published no period at all, and a histogram mixing 2023 and
+    2019 county estimates was indistinguishable from one that did not. The
+    explorer feeds that answer to the map legend, so the bins decide the
+    colour scale a choropleth is painted with.
+    """
+    session = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={
+            "total": 3,
+            "min_value": 10.0,
+            "max_value": 40.0,
+            "period_count": 1,
+            "binned_period": "2023-01-01",
+        },
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": _FRED_METRIC["metric_code"], "bin_count": 4},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["period"] == "2023-01-01"
+    assert payload["periods_differ"] is False
+
+    statement = _dispatched(session)[-1]
+    # Measured in the same statement as the counts, from the same reduced
+    # rows: a period taken separately could describe a different set than the
+    # bins it labels (API-084 is the same reasoning for the range).
+    assert "period_start" in statement.split("WITH", 1)[1].split("binned", 1)[0]
+
+
+def test_a_distribution_that_mixes_periods_says_so() -> None:
+    """Covers: API-097 — the answer names the mismatch instead of hiding it."""
+    session = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={
+            "total": 3,
+            "min_value": 10.0,
+            "max_value": 40.0,
+            "period_count": 2,
+            "binned_period": "2019-01-01",
+        },
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": _FRED_METRIC["metric_code"], "bin_count": 4},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    payload = response.json()
+    assert payload["periods_differ"] is True
+    # No single period is published, because there is not one: naming the
+    # earliest or the latest would label the whole histogram with a year most
+    # of it is not from.
+    assert payload["period"] is None
+
+
+def test_a_distribution_with_nothing_published_reports_no_period() -> None:
+    """Covers: API-097 — unpublished stays unpublished."""
+    session = _DistributionSession(
+        metric_row=dict(_FRED_METRIC),
+        stats={
+            "total": 0,
+            "min_value": None,
+            "max_value": None,
+            "period_count": 0,
+            "binned_period": None,
+        },
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": _FRED_METRIC["metric_code"], "bin_count": 4},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["period"] is None
+    assert payload["periods_differ"] is False

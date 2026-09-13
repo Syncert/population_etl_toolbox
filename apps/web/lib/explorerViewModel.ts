@@ -500,6 +500,29 @@ export function colorForValue(value: number, minValue: number, maxValue: number)
   return CHOROPLETH_PALETTE[index]!;
 }
 
+/**
+ * What period the API's bins describe, for the legend that reads them.
+ *
+ * `/distribution/bins` reduces each geography to its own newest period, so
+ * two geographies in one answer can describe two different years. The API
+ * publishes which it is; before it did, a choropleth could be painted from a
+ * scale built over a mix of years with nothing saying so, and the client
+ * could not work it out -- the bins are computed over every geography the
+ * metric publishes while the client holds one page of rows (WEB-054).
+ *
+ * Returns `""` when the answer publishes neither fact, so an older API is
+ * described as it is rather than guessed at.
+ */
+export function distributionPeriodNote(
+  payload: DistributionResponse | null | undefined,
+): string {
+  if (payload?.periods_differ === true) {
+    return "bins mix periods: each geography's own newest value";
+  }
+  const period = payload?.period;
+  return typeof period === "string" && period ? `for ${period}` : "";
+}
+
 export function distributionBins(
   payload: DistributionResponse | null | undefined,
 ): DistributionBinModel[] {

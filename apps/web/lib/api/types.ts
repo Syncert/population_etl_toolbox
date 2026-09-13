@@ -129,6 +129,10 @@ export interface DistributionResponse {
   derived?: boolean;
   source_code?: string | null;
   units?: string | null;
+  /** The one period every binned row came from, or null when they differ. */
+  period?: string | null;
+  /** True when the bins were built from more than one period (WEB-054). */
+  periods_differ?: boolean;
   [key: string]: unknown;
 }
 

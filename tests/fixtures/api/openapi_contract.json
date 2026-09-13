@@ -2092,6 +2092,8 @@
         "max_value": "number | null",
         "metric_code": "string",
         "min_value": "number | null",
+        "period": "string | null",
+        "periods_differ": "boolean",
         "source_code": "string | null",
         "total": "integer",
         "units": "string | null"
