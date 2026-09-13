@@ -38,7 +38,7 @@ list.
 | `GET /api/v1/catalog/sources` | Every published source system |
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
-| `GET /api/v1/catalog/geographies` | Geography identities and attribution |
+| `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule — see below |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, and `observation_filters` — the neutral filters that source supports |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
@@ -51,6 +51,19 @@ anything shaped like them. There is no wildcard syntax to reach for.
 source does not declare is **rejected with a 422 naming the supported set**,
 never silently ignored. Read capabilities once at startup rather than
 guessing.
+
+`/catalog/geographies` answers a **projection refreshed on its own
+schedule**, by the glossary reconciliation run rather than by the source
+publishers. So a geography absent from it means "not projected yet", not "no
+such geography": the observation routes can serve and fully attribute a
+geography — `geo_id`, `geo_level`, the state and county names — before it
+appears here. This is the same caveat this guide gives
+[`/observations/latest`](#paging-a-history-and-what-orders-it), for the same
+reason, and it matters more than it looks: the projection is also what
+carries the geometry the vector tile layer publishes, so a geography it does
+not hold yet has values and no shape. Build a picker from this resource, but
+treat "not listed" as a statement about the projection, not about the
+warehouse.
 
 ## Observations
 

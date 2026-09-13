@@ -1499,3 +1499,60 @@ def test_the_distribution_reports_the_grain_it_binned(
         payload = answer.json()
         assert int(payload["total"]) >= 1, payload
         assert payload["geo_level"] == "NATIONAL", payload["geo_level"]
+
+
+def test_the_geography_catalog_is_its_own_refresh(
+    api_client: TestClient, published_acs_metric: str
+) -> None:
+    """Covers: API-107 — an absent geography is "not projected yet".
+
+    `/catalog/geographies` answers `gold_glossary.dim_geo_latest`, which
+    `gold_glossary.refresh_dim_geo_latest()` fills from one Airflow task whose
+    own docstring says it refreshes "the glossary-owned geography projection
+    independently" -- in the glossary reconciliation DAG, on that DAG's
+    schedule, not with the publishers that make observations available.
+
+    So one geography can have two correct answers: the observation surface
+    serves it and attributes it from the relation it reads, and the projection
+    does not list it yet. The guide says exactly this for
+    `/observations/latest` and said nothing here, while `apps/web` builds its
+    geography pickers from this resource.
+
+    Pinned so that a change making this resource read the durable relation
+    fails here -- at which point the guide's caveat should be removed
+    deliberately rather than left behind as a stale warning.
+    """
+    served = api_client.get(
+        "/api/v1/observations", params={"metric_code": published_acs_metric}
+    )
+    assert served.status_code == 200, served.text
+    items = served.json()["items"]
+    assert items, served.text
+    geo_id = items[0]["geo_id"]
+    assert items[0]["geo_level"] == "STATE", items[0]
+
+    # The observation surface knows the geography's attribution, not only its
+    # identity: this is a geography the API can name, in full.
+    compared = api_client.get(
+        "/api/v1/comparison",
+        params={
+            "metric_code_a": published_acs_metric,
+            "metric_code_b": published_acs_metric,
+            "geo_level": "STATE",
+        },
+    )
+    assert compared.status_code == 200, compared.text
+    attributed = compared.json()["items"]
+    assert attributed and attributed[0]["geo_id"] == geo_id, compared.text
+    assert attributed[0]["state_name"], compared.text
+
+    # And the projection has not been refreshed, so the catalog does not list
+    # it -- which is a different fact from "no such geography".
+    listed = api_client.get("/api/v1/catalog/geographies", params={"q": geo_id})
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 0, (
+        "this node's premise is that the geography projection is refreshed "
+        "on its own schedule; if the catalog now answers for a geography the "
+        "publishers just served, the guide's caveat should be removed "
+        "deliberately rather than left standing"
+    )
