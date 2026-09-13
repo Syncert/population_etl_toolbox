@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 import pytest
@@ -14,8 +15,9 @@ from data_ingestion_toolbox.cdc.silver_cdc.replay import (
     replay_captured_run,
 )
 from data_ingestion_toolbox.cdc.silver_cdc.transform import transform_release
+from apps.api.registry import GEO_GRAINS
 from tests.support.capture_seed import delete_geography, seed_geography
-from tests.support.cdc_release import persist_fixture_release
+from tests.support.cdc_release import CDC_FIXTURE_DIR, persist_fixture_release
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -296,3 +298,164 @@ def test_a_stratum_that_is_not_a_json_array_cannot_be_written(
         database_connection.commit()
     finally:
         database_connection.close()
+
+
+def test_an_unsupported_geography_is_kept_but_not_served(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> None:
+    """Covers: DB-035 — the row stays in silver and leaves the served surface.
+
+    `gold_fbi.crime_observation` has excluded unresolved geographies since
+    011. `gold_cdc.health_observation` filtered on the release status alone,
+    so a provider location outside the served vocabulary was paged out of
+    `/observations` with `geo_id: null` and a `geo_level` the five-word
+    vocabulary does not name — and the publisher, which aggregates the grain
+    of every fact row, advertised `UNSUPPORTED` as a grain a client could send
+    back.
+    """
+
+    def cleanup() -> None:
+        database_connection = postgres_connection_factory()
+        try:
+            with database_connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM control.publisher_ready_event "
+                    "WHERE source_code = 'CDC'"
+                )
+                cursor.execute(
+                    "DELETE FROM silver_ref.geography_resolution "
+                    "WHERE provider_source = 'CDC'"
+                )
+                cursor.execute("DELETE FROM silver_cdc.fact_health_observation")
+                cursor.execute("DELETE FROM silver_cdc.observation_revision")
+                cursor.execute("DELETE FROM silver_cdc.observation_quarantine")
+                cursor.execute("DELETE FROM silver_cdc.dim_measure")
+                cursor.execute("DELETE FROM silver_cdc.dim_stratum")
+                cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
+                cursor.execute("DELETE FROM control.cdc_dataset_release")
+                delete_geography(cursor, "us:1")
+                delete_geography(cursor, "state:01")
+            database_connection.commit()
+        except BaseException:
+            database_connection.rollback()
+            raise
+        finally:
+            database_connection.close()
+
+    request.addfinalizer(cleanup)
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            seed_geography(
+                cursor, geo_type="nation", vintage=2020, name="United States"
+            )
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="01",
+                vintage=2020,
+                name="Alabama",
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    # One reviewed CDI release, with one row's provider location changed to a
+    # code the adapter does not model. CDC publishes such rows (territories,
+    # regions, sub-state areas) and the parser marks them `unsupported`
+    # rather than coercing them into a state.
+    observations = json.loads(
+        (CDC_FIXTURE_DIR / "cdi_observations.json").read_text(encoding="utf-8")
+    )
+    observations[-1]["locationid"] = "999"
+    observations[-1]["locationabbr"] = "RGN"
+    observations[-1]["locationdesc"] = "Southeast region"
+    release = persist_fixture_release(
+        postgres_connection_factory,
+        asset=CDI_ASSET,
+        metadata_name="cdi_metadata.json",
+        observations_name="cdi_observations.json",
+        observations_payload=json.dumps(observations).encode("utf-8"),
+    )
+    result = replay_captured_run(
+        postgres_connection_factory,
+        run_id=release.run_id,
+        asset=CDI_ASSET,
+        release_watermark=release.metadata.release_version,
+    )
+    persist_replay_result(
+        postgres_connection_factory,
+        run_id=release.run_id,
+        asset=CDI_ASSET,
+        release_watermark=release.metadata.release_version,
+        result=result,
+    )
+    transform_release(
+        postgres_connection_factory,
+        run_id=release.run_id,
+        asset=CDI_ASSET,
+        release_watermark=release.metadata.release_version,
+    )
+    publish_release(
+        postgres_connection_factory,
+        run_id=release.run_id,
+        asset_id=CDI_ASSET.asset_id,
+        release_watermark=release.metadata.release_version,
+    )
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            # Kept: the fact table holds every captured row, unsupported
+            # geography included, and the resolution ledger says why.
+            cursor.execute(
+                """
+                SELECT geography_status, COUNT(*)
+                FROM silver_cdc.fact_health_observation
+                GROUP BY geography_status
+                ORDER BY geography_status
+                """
+            )
+            assert dict(cursor.fetchall()) == {"resolved": 2, "unsupported": 1}
+            cursor.execute(
+                """
+                SELECT status, reason_code, geo_sk
+                FROM silver_ref.geography_resolution
+                WHERE provider_source = 'CDC' AND status = 'unsupported'
+                """
+            )
+            ledger = cursor.fetchall()
+            assert ledger, "the ledger is where an unresolved geography lives"
+            for status, reason_code, geo_sk in ledger:
+                assert (status, reason_code, geo_sk) == (
+                    "unsupported",
+                    "unsupported_provider_code",
+                    None,
+                )
+
+            # Not served: neither the row nor its grain.
+            cursor.execute(
+                """
+                SELECT COUNT(*),
+                       COUNT(*) FILTER (WHERE geo_id IS NULL)
+                FROM gold_cdc.health_observation
+                """
+            )
+            assert cursor.fetchone() == (2, 0)
+            cursor.execute(
+                "SELECT DISTINCT geography_status FROM gold_cdc.health_observation"
+            )
+            assert cursor.fetchall() == [("resolved",)]
+            cursor.execute(
+                """
+                SELECT DISTINCT UNNEST(valid_geo_grains)
+                FROM gold_cdc.metric_publisher
+                ORDER BY 1
+                """
+            )
+            grains = {row[0] for row in cursor.fetchall()}
+            assert grains and grains <= set(GEO_GRAINS), grains
+            assert "UNSUPPORTED" not in grains
+    finally:
+        reader.close()

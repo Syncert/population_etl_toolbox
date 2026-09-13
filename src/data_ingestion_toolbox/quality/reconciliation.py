@@ -501,10 +501,18 @@ def cdc_release_reconciliation(
     if status == "published":
         comparison = compare_identity_sets(
             cursor,
+            # The *publishable* silver population, which is the FBI rule's
+            # own phrase for it: an observation on a published release at a
+            # geography the served vocabulary names. A provider location this
+            # adapter does not model stays in silver with its reason code in
+            # the resolution ledger, and `gold_cdc.health_observation` stopped
+            # serving it, so comparing against every fact row would fail the
+            # release for doing exactly what it should (DB-035).
             expected_sql=(
                 "SELECT source_record_id "
                 "FROM silver_cdc.fact_health_observation "
-                "WHERE asset_id = %s AND release_watermark = %s"
+                "WHERE asset_id = %s AND release_watermark = %s "
+                "AND geography_status <> 'unsupported'"
             ),
             observed_sql=(
                 "SELECT source_record_id "

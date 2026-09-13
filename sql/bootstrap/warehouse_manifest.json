@@ -172,6 +172,11 @@
       "path": "sql/migrations/018_geo_grain_vocabulary.sql"
     },
     {
+      "id": "migration-020",
+      "phase": "glossary",
+      "path": "sql/migrations/020_resolved_geography_serving.sql"
+    },
+    {
       "id": "migration-003",
       "phase": "semantic-cutover",
       "path": "sql/migrations/003_semantic_policy_extraction.sql"

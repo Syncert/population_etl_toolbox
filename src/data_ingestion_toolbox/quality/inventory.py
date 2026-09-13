@@ -1217,11 +1217,12 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_cdc.health_observation",
         "gold",
         "CDC",
-        grain="asset_id, release_watermark, source_record_id (published releases only)",
+        grain="asset_id, release_watermark, source_record_id "
+        "(published, resolved geography only)",
         lineage="silver_cdc.fact_health_observation",
-        scope_method="releases with status published",
+        scope_method="published releases excluding unsupported provider geographies",
         cadence="per publication",
-        empty_behavior="empty only before the first published release",
+        empty_behavior="unsupported provider geographies stay queryable in silver",
     ),
     _obj(
         "gold_cdc.latest_release_observation",
@@ -1576,11 +1577,11 @@ _NASS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold",
         "USDA_NASS",
         grain="product_id, release_watermark, source_record_id "
-        "(published releases only)",
+        "(published, resolved geography only)",
         lineage="silver_nass.fact_crop_observation",
-        scope_method="releases with status published",
+        scope_method="published releases excluding unsupported aggregate levels",
         cadence="per publication",
-        empty_behavior="empty only before the first published release",
+        empty_behavior="unsupported aggregate levels stay queryable in silver",
     ),
     _obj(
         "gold_nass.crop_series",
