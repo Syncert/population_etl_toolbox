@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
-| API | API-001–API-099 | None |
+| API | API-001–API-100 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-055 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **349 of 349** | **0 of 349** |
+| **Total** | **350 of 350** | **0 of 350** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 349-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 350-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -631,6 +631,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-097 | P0 | Contract / `unit api` | A distribution says which period its bins describe | `/distribution/bins` publishes the one period every binned row came from, or states that they differ, measured in the same statement as the counts and over the same reduced rows; a mixed-period answer names no single period, because the earliest or the latest would label a histogram with a period most of it is not from, and an answer with nothing published reports none rather than inventing one; the fields are additive and the reviewed snapshot was regenerated | A histogram mixing 2023 and 2019 county estimates, indistinguishable from one that did not: the route reduces through the same CTE as `/comparison`, which ranks each geography's own newest period and publishes `period_a`/`period_b` per row for exactly that reason, while this response carried no period at all -- and the explorer feeds it to the map legend, so the bins decide the colour scale a choropleth is painted with |
 | API-098 | P0 | Contract / `unit api` | A distribution says what it could not carry | `/distribution/bins` publishes a `caveats` array carrying the uncertainty note when the metric's source publishes one, built by the same helper and from the same registry the comparison uses, so two analyses of one source's figures cannot describe it differently; a source publishing none carries none, and the field is additive with the reviewed snapshot regenerated | An equal-width binning of Census ACS county estimates -- each carrying a margin of error that can straddle a bin boundary -- with nothing saying so, while the comparison route had named exactly that since API-096: one analysis said what it dropped and the other, of the same published figures, did not |
 | API-099 | P0 | Contract / `unit api` | A packet block cannot name one geography and query another | A block whose envelope and query both name a geography, and name different ones, is refused at write naming the block -- as the measure, scope and release disagreements already are -- while a block recording one and not the other is stored, because that is incompleteness this module reports rather than repairs; the grain is compared through `normalize_geo_level`, so an alias and its vocabulary word are one geography, and the envelope's own docstring says which fields are cross-checked and why | One geography's name over another geography's numbers: `geo_id` and `geo_level` are request parameters the block's own `filters` carries, not observations about what a source published, and they sat outside the contradiction table -- the failure the envelope exists to prevent, one identity over from the measure the module's opening rule names |
+| API-100 | P0 | Contract / `integration api database` | A request reads one snapshot of the warehouse | The API's warehouse engine runs `REPEATABLE READ`, so every read in one request sees one snapshot whatever commits between them; proved behaviourally against a real PostgreSQL -- a second connection commits between two reads on an API session and the session does not see it -- and the next request does, because the snapshot is the session's transaction and the session is closed per request; the application-storage engine, which writes, is unchanged | A page and its total describing different sets of rows: API-084 fixed exactly this for one statement, naming a `REFRESH MATERIALIZED VIEW CONCURRENTLY` committing between a range and its counts, and every paged read in the API has the same two-statement shape against the same materialized latest views a refresh rewrites |
 
 ### Frontend Tests
 
