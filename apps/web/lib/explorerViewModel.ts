@@ -539,36 +539,64 @@ export function distributionPeriodNote(
   return typeof period === "string" && period ? `for ${period}` : "";
 }
 
+/**
+ * The API's bins, read rather than rebuilt (WEB-057).
+ *
+ * `/distribution/bins` publishes each bin whole — `bin_index`,
+ * `lower_bound`, `upper_bound`, `count` — and says why it reports the empty
+ * ones too: "an absent bin and a bin holding zero geographies are different
+ * statements ... reporting it as the first makes every consumer rebuild the
+ * gaps from min/max". This model rebuilt them: it recomputed every boundary
+ * from `min_value`/`max_value`/`bin_count` and filled counts with `|| 0`,
+ * discarding the published bounds.
+ *
+ * What made that reachable is the degenerate answer the API documents — one
+ * distinct value is one bin closing on itself. `bin_count` stays what the
+ * caller asked for, so counting bins from it produced five bins over one
+ * point, four of them claiming no geographies, and `colorForDistributionValue`
+ * then fell through `value < upperBound` to the last of them: every
+ * geography drawn in the fifth colour while the legend counted them all in
+ * the first.
+ *
+ * So the bins are the `items`, and a response whose `items` do not cover
+ * `bin_index` 1..N contiguously is refused rather than gap-filled — which is
+ * API-079's own statement read from this side: a bin the API did not report
+ * is not a bin holding nothing.
+ */
 export function distributionBins(
   payload: DistributionResponse | null | undefined,
 ): DistributionBinModel[] {
-  const minValue = Number(payload?.min_value);
-  const maxValue = Number(payload?.max_value);
-  const binCount = Number(payload?.bin_count);
-
-  if (
-    !Number.isFinite(minValue) ||
-    !Number.isFinite(maxValue) ||
-    !Number.isInteger(binCount) ||
-    binCount < 1 ||
-    binCount > CHOROPLETH_PALETTE.length ||
-    Number(payload?.total) < 1
-  ) {
+  if (Number(payload?.total) < 1) {
     return [];
   }
 
-  const counts = new Map(
-    (payload?.items || []).map((item) => [Number(item.bin_index), Number(item.count) || 0]),
-  );
-  const width = (maxValue - minValue) / binCount;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length < 1 || items.length > CHOROPLETH_PALETTE.length) {
+    return [];
+  }
 
-  return CHOROPLETH_PALETTE.slice(0, binCount).map((color, index) => ({
-    binIndex: index + 1,
-    color,
-    lowerBound: minValue + index * width,
-    upperBound: index === binCount - 1 ? maxValue : minValue + (index + 1) * width,
-    count: counts.get(index + 1) || 0,
-  }));
+  const bins = items
+    .map((item) => ({
+      binIndex: Number(item.bin_index),
+      lowerBound: Number(item.lower_bound),
+      upperBound: Number(item.upper_bound),
+      count: Number(item.count),
+    }))
+    .sort((left, right) => left.binIndex - right.binIndex);
+
+  const published = bins.every(
+    (bin, index) =>
+      bin.binIndex === index + 1 &&
+      Number.isFinite(bin.lowerBound) &&
+      Number.isFinite(bin.upperBound) &&
+      Number.isInteger(bin.count) &&
+      bin.count >= 0,
+  );
+  if (!published) {
+    return [];
+  }
+
+  return bins.map((bin, index) => ({ ...bin, color: CHOROPLETH_PALETTE[index]! }));
 }
 
 export function colorForDistributionValue(

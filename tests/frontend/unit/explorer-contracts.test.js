@@ -80,12 +80,18 @@ describe("explorer metric, selection, and legend contracts", () => {
   });
 
   test("uses API distribution bins for observation colors and reconciled legend counts", () => {
+    // The response as the API publishes it: each bin carries its own bounds
+    // (WEB-057). The fixture used to omit them, which is what let the model
+    // recompute every boundary and nothing notice.
     const distribution = {
       min_value: 0,
       max_value: 20,
       bin_count: 2,
       total: 2,
-      items: [{ bin_index: 1, count: 1 }, { bin_index: 2, count: 1 }],
+      items: [
+        { bin_index: 1, lower_bound: 0, upper_bound: 10, count: 1 },
+        { bin_index: 2, lower_bound: 10, upper_bound: 20, count: 1 },
+      ],
     };
     expect(distributionBins(distribution)).toHaveLength(2);
     const observations = [
@@ -239,12 +245,22 @@ describe("a logarithmic value scale", () => {
     { geo_id: "e", value: "100000" },
     { geo_id: "z", value: "0" },
   ];
+  // Every bin the caller asked for, with its bounds, empty ones included --
+  // API-079's contract, which this fixture did not model (WEB-057). Five
+  // equal-width bins over [0, 100000]: the first four decades all fall in the
+  // first, which is the point this test makes about a linear scale.
   const distribution = {
     min_value: 0,
     max_value: 100000,
     bin_count: 5,
     total: 6,
-    items: [{ bin_index: 1, count: 5 }, { bin_index: 5, count: 1 }],
+    items: [
+      { bin_index: 1, lower_bound: 0, upper_bound: 20000, count: 5 },
+      { bin_index: 2, lower_bound: 20000, upper_bound: 40000, count: 0 },
+      { bin_index: 3, lower_bound: 40000, upper_bound: 60000, count: 0 },
+      { bin_index: 4, lower_bound: 60000, upper_bound: 80000, count: 0 },
+      { bin_index: 5, lower_bound: 80000, upper_bound: 100000, count: 1 },
+    ],
   };
   const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
 
@@ -290,5 +306,110 @@ describe("a logarithmic value scale", () => {
     expect(heightOf(buildExtrusionHeightExpression(decades, "geo_id"), "c")).toBe(
       Math.round(200 + ((1000 - 0) / 100000) * 12000),
     );
+  });
+});
+
+// Covers: WEB-057 — the legend's bins are the bins the API measured.
+//
+// `/distribution/bins` publishes each bin whole and says why an absent bin
+// and a bin holding zero geographies are different statements: "reporting it
+// as the first makes every consumer rebuild the gaps from min/max". The model
+// rebuilt them, and the degenerate answer the API documents -- one distinct
+// value, one bin closing on itself -- came out as five bins over one point
+// with the map coloured from a different one than the legend counted.
+describe("the bins are the API's, not recomputed from its bounds", () => {
+  const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
+
+  test("the published bounds are the bounds the legend shows", () => {
+    const distribution = {
+      total: 10,
+      bin_count: 2,
+      min_value: 0.1,
+      max_value: 0.7,
+      // Deliberately not the equal-width split of [0.1, 0.7]: the API owns
+      // the binning rule, and a model that recomputes it cannot tell the
+      // difference between reading the answer and agreeing with it.
+      items: [
+        { bin_index: 1, lower_bound: 0.1, upper_bound: 0.25, count: 4 },
+        { bin_index: 2, lower_bound: 0.25, upper_bound: 0.7, count: 6 },
+      ],
+    };
+    expect(distributionBins(distribution)).toEqual([
+      { binIndex: 1, color: "#edcf63", lowerBound: 0.1, upperBound: 0.25, count: 4 },
+      { binIndex: 2, color: "#9dc57d", lowerBound: 0.25, upperBound: 0.7, count: 6 },
+    ]);
+  });
+
+  test("one distinct value is one bin, and the map colours it that bin", () => {
+    // The answer the API sends for a metric every geography published the
+    // same value for: `bin_count` is what the caller asked for, `items` is
+    // what the query measured.
+    const distribution = {
+      total: 3,
+      bin_count: 5,
+      min_value: 4.2,
+      max_value: 4.2,
+      items: [{ bin_index: 1, lower_bound: 4.2, upper_bound: 4.2, count: 3 }],
+    };
+    const bins = distributionBins(distribution);
+    expect(bins).toHaveLength(1);
+    expect(bins[0].count).toBe(3);
+
+    const observations = [
+      { geo_id: "a", value: "4.2" },
+      { geo_id: "b", value: "4.2" },
+      { geo_id: "c", value: "4.2" },
+    ];
+    const model = buildChoroplethModel(observations, "geo_id", distribution);
+    expect(model.usesDistribution).toBe(true);
+    // The legend already had this case; the bin model never produced it.
+    expect(model.legendItems[0].label).toBe("All numeric values");
+    expect(model.legendItems[0].count).toBe(3);
+    // The colour on the map is the colour beside the count in the legend.
+    for (const key of ["a", "b", "c"]) {
+      expect(colourOf(model, key)).toBe(model.legendItems[0].color);
+    }
+  });
+
+  test("a gap in the published bins is refused, never filled with zeros", () => {
+    // API-079 reports every bin, empty ones included. A response missing one
+    // is a contract regression, and an absent bin is not a bin holding no
+    // geographies -- so it is not rendered as one.
+    expect(
+      distributionBins({
+        total: 6,
+        bin_count: 3,
+        min_value: 0,
+        max_value: 30,
+        items: [
+          { bin_index: 1, lower_bound: 0, upper_bound: 10, count: 5 },
+          { bin_index: 3, lower_bound: 20, upper_bound: 30, count: 1 },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  test("a bin with no published bounds is refused", () => {
+    expect(
+      distributionBins({
+        total: 2,
+        bin_count: 1,
+        min_value: 0,
+        max_value: 10,
+        items: [{ bin_index: 1, count: 2 }],
+      }),
+    ).toEqual([]);
+  });
+
+  test("more bins than the palette can colour renders none", () => {
+    const items = Array.from({ length: 6 }, (_unused, index) => ({
+      bin_index: index + 1,
+      lower_bound: index,
+      upper_bound: index + 1,
+      count: 1,
+    }));
+    expect(
+      distributionBins({ total: 6, bin_count: 6, min_value: 0, max_value: 6, items }),
+    ).toEqual([]);
   });
 });

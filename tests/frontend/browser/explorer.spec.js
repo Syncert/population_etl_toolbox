@@ -548,7 +548,9 @@ async function installRoutes(
         + "uncertainty on /observations before treating a derived value as "
         + "exact",
       ],
-      items: [{ bin_index: 1, count: 1 }],
+      // Each bin carries its own bounds, as the API publishes them
+      // (WEB-057).
+      items: [{ bin_index: 1, lower_bound: 561504, upper_bound: 561504, count: 1 }],
     },
   }));
   await page.route("**/tiles/catalog", (route) =>
@@ -1307,7 +1309,7 @@ test("a legend built from mixed periods says so", async ({ page }) => {
         max_value: 561504,
         period: null,
         periods_differ: true,
-        items: [{ bin_index: 1, count: 2 }],
+        items: [{ bin_index: 1, lower_bound: 1, upper_bound: 561504, count: 2 }],
       },
     }),
   );
@@ -1347,7 +1349,7 @@ test("a distribution with nothing to caveat shows no note", async ({ page }) => 
         period: "2023-01-01",
         periods_differ: false,
         caveats: [],
-        items: [{ bin_index: 1, count: 1 }],
+        items: [{ bin_index: 1, lower_bound: 1, upper_bound: 1, count: 1 }],
       },
     }),
   );

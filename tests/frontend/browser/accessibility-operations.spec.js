@@ -148,7 +148,14 @@ async function installRoutes(page, { failObservations = false } = {}) {
   );
   await page.route("**/api/v1/distribution/bins?*", (route) =>
     route.fulfill({
-      json: { total: 1, bin_count: 1, min_value: 561504, max_value: 561504, items: [{ bin_index: 1, count: 1 }] },
+      json: {
+        total: 1,
+        bin_count: 1,
+        min_value: 561504,
+        max_value: 561504,
+        // The bin's own bounds, as the API publishes them (WEB-057).
+        items: [{ bin_index: 1, lower_bound: 561504, upper_bound: 561504, count: 1 }],
+      },
     }),
   );
   await page.route("**/tiles/catalog", (route) =>
