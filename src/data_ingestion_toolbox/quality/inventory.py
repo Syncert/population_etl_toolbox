@@ -1676,7 +1676,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "capture_integrity",
         "Every response_capture payload_checksum verifies against its "
-        "immutable payload blob.",
+        "immutable payload blob: a release certification rehashes every "
+        "capture in scope, and a scheduled sweep rehashes a bounded window "
+        "of the newest ones and states the window it read, with the number "
+        "of captures outside it in the evidence.",
         ("raw_capture.response_capture", "raw_capture.payload_blob"),
     ),
     _rule(

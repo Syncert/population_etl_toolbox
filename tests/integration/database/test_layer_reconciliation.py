@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -71,6 +71,7 @@ def _seed_capture_with_status(
     source_code: str,
     status: str,
     page: int,
+    retrieved_at: datetime | None = None,
 ) -> str:
     """One run/request/capture chain finished at ``status``.
 
@@ -90,11 +91,13 @@ def _seed_capture_with_status(
         source_code=source_code,
         endpoint="/probe",
         request_parameters={"page": page},
-        retrieved_at=datetime.now(timezone.utc),
+        # Explicit where a test needs one capture to be older than another:
+        # `retrieved_at` is what the checksum rule's window is ordered by.
+        retrieved_at=retrieved_at or datetime.now(timezone.utc),
         http_status=200,
         response_headers={"content-type": "application/json"},
         media_type="application/json",
-        payload=json.dumps({"status": status}).encode("utf-8"),
+        payload=json.dumps({"status": status, "page": page}).encode("utf-8"),
         payload_schema_version="probe-v1",
     )
     persist_response_capture(connection_factory, capture)
@@ -612,4 +615,91 @@ def test_publication_gate_holds_back_a_damaged_release(
             )
             assert cursor.fetchall() == [(watermark_b,)]
     finally:
+        reader.close()
+
+
+def test_a_windowed_checksum_sweep_says_what_it_did_not_read(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DQ-011 — the BLOCK rule's counts describe what it rehashed.
+
+    No caller passed `capture_limit`, so daily, weekly, monthly and release
+    runs all rehashed the same newest thousand captures anchored on
+    `retrieved_at DESC`, while the rule declared "every response_capture
+    payload_checksum verifies against its immutable payload blob" and
+    `expected_count` reported the sample size. A blob corrupted eighteen
+    months ago was unreachable on every run, and `certify_release` reported
+    "1000 of 1000 verified" with `promotable=True` over it.
+    """
+    source_code = f"CHECKSUMWINDOW{uuid4().hex[:10].upper()}"
+    seeded_at = datetime.now(timezone.utc)
+    oldest = _seed_capture_with_status(
+        postgres_connection_factory,
+        source_code,
+        "captured",
+        1,
+        retrieved_at=seeded_at - timedelta(days=600),
+    )
+    for page, age in ((2, 2), (3, 1)):
+        _seed_capture_with_status(
+            postgres_connection_factory,
+            source_code,
+            "captured",
+            page,
+            retrieved_at=seeded_at - timedelta(days=age),
+        )
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            # Corrupt the oldest capture's bytes: same size, different
+            # content. The append-only trigger rightly blocks this, so the
+            # test simulates disk-level corruption inside its own
+            # never-committed transaction with triggers bypassed.
+            cursor.execute("SET session_replication_role = replica")
+            cursor.execute(
+                """
+                UPDATE raw_capture.payload_blob
+                   SET payload = OVERLAY(payload PLACING 'X'::BYTEA FROM 3)
+                 WHERE payload_checksum = (
+                     SELECT payload_checksum
+                       FROM raw_capture.response_capture
+                      WHERE capture_id = %s
+                 )
+                """,
+                (oldest,),
+            )
+            cursor.execute("SET session_replication_role = origin")
+
+            # A scheduled sweep whose window is smaller than the archive:
+            # it passes for the window, and says how much it did not read.
+            [windowed] = verify_capture_checksums(
+                cursor,
+                {"source_code": source_code, "cadence": "daily", "capture_limit": 2},
+            )
+            assert windowed.result == "pass"
+            assert windowed.observed_count == 2
+            assert windowed.expected_count == 2, (
+                "the counts describe the population the rule measured"
+            )
+            assert windowed.partition_detail == {
+                "window": "newest 2 captures by retrieved_at",
+                "captures_in_scope": 3,
+                "captures_rehashed": 2,
+            }
+            assert "captures_outside_window=1" in windowed.evidence
+            assert oldest not in windowed.evidence
+
+            # The release run has no window, because its verdict is what says
+            # a deployment may proceed. It finds the corruption.
+            [release] = verify_capture_checksums(
+                cursor, {"source_code": source_code, "cadence": "release"}
+            )
+            assert release.result == "fail"
+            assert release.evidence == [oldest]
+            assert release.partition_detail["window"] == "every capture in scope"
+            assert release.expected_count == 3
+            assert release.observed_count == 2
+    finally:
+        reader.rollback()
         reader.close()

@@ -13,7 +13,7 @@ append-only: re-running a rule adds evidence, it never rewrites history.
 | Relation | One row per | Use it for |
 | --- | --- | --- |
 | `control.data_quality_run` | assessment execution | run status, commit SHA, rule-set version, bounded failure summary |
-| `control.data_quality_result` | rule × object × partition | exact counts, bounded evidence ids, warning review state |
+| `control.data_quality_result` | rule × object × partition | exact counts for the population the rule measured (`partition_detail` names it where a rule reads a window), bounded evidence ids, warning review state |
 | `control.data_quality_latest_result` | rule × object × partition (latest) | current state of every check without window functions |
 | `control.data_quality_source_status` | source (latest run) | one-line health per source: blocking failures, warnings, open reviews |
 
@@ -187,6 +187,20 @@ returns a promotability verdict with rule totals by severity and result.
 - A release with blocking failures or an errored assessment is not
   promotable, whatever the DAG dashboard says: "all DAGs green" is not
   certification.
+- **A release run rehashes every capture.** `DQ-SHARED-001` is the BLOCK rule
+  that verifies each `response_capture.payload_checksum` against its
+  immutable blob. On a schedule it rehashes a bounded window — the newest
+  1,000 captures by `retrieved_at`, or `scope.capture_limit` if you name one
+  — and the result states the window it read in `partition_detail.window`
+  with `captures_outside_window=N` in its evidence. On a `release` run there
+  is no window: the verdict that says a deployment may proceed reads the
+  whole archive in scope. Before DQ-011 every cadence rehashed the same
+  newest thousand while the rule's declaration said "every", so a blob
+  corrupted eighteen months ago was unreachable on every run and a release
+  certified `promotable=True` over it. Read
+  `partition_detail` on the result before trusting `observed/expected`: on a
+  scheduled run those counts describe the window, and the window is not the
+  archive.
 - After a beta reset and re-ingestion (see
   [`BETA_RESET_REINGESTION.md`](BETA_RESET_REINGESTION.md)), run
   `certify_release` against the candidate commit and store

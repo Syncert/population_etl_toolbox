@@ -33,6 +33,11 @@ EVIDENCE_LIMIT = 20
 #: Default number of recent captures a bounded checksum pass verifies.
 DEFAULT_CAPTURE_LIMIT = 1000
 
+#: The cadence a release certification runs under. A release run rehashes
+#: every capture in scope rather than a window, because its verdict is
+#: what says a deployment may proceed (DQ-011).
+RELEASE_CADENCE = "release"
+
 
 @dataclass(frozen=True, slots=True)
 class IdentityComparison:
@@ -245,9 +250,59 @@ def _source_filter(scope: Mapping[str, Any], column: str) -> tuple[str, list[Any
 def verify_capture_checksums(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-SHARED-001 — recompute checksums for a bounded recent capture window."""
-    limit = int(scope.get("capture_limit", DEFAULT_CAPTURE_LIMIT))
+    """DQ-SHARED-001 — recompute checksums, and say which captures were read.
+
+    A scheduled run rehashes a bounded window of the newest captures; a
+    ``release`` run rehashes **every** capture in scope, because that is the
+    run whose verdict says a deployment may proceed.
+
+    The window used to be silent. No caller passed ``capture_limit``, so
+    daily, weekly, monthly and release runs all rehashed the same newest
+    thousand anchored on ``retrieved_at DESC``, while the rule's declaration
+    said "every response_capture payload_checksum verifies against its
+    immutable payload blob" and ``expected_count`` reported the *sample*
+    size. A blob corrupted eighteen months ago was unreachable on every run,
+    and `certify_release` reported "1000 of 1000 verified" and
+    ``promotable=True`` over it.
+
+    Two things changed and nothing else. A release run has no window, so the
+    BLOCK verdict covers the archive it claims to. And every run states the
+    window it read in ``partition_detail`` and, when one remains, the number
+    of captures outside it in the evidence -- so an operator reading
+    ``observed/expected`` is reading the population the rule actually
+    measured (DQ-011).
+
+    The executor still only reads: the rule-runner contract is that an
+    executor "must not write", which is why the coverage is stated rather
+    than remembered in a watermark table.
+    """
+    cadence = str(scope.get("cadence") or "")
+    requested = scope.get("capture_limit")
+    #: A release certification rehashes everything in scope; a scheduled
+    #: sweep keeps its bounded window unless the caller names one.
+    limit: int | None
+    if requested is not None:
+        limit = int(requested)
+    elif cadence == RELEASE_CADENCE:
+        limit = None
+    else:
+        limit = DEFAULT_CAPTURE_LIMIT
+
     clause, params = _source_filter(scope, "capture.source_code")
+    cursor.execute(
+        f"""
+        SELECT COUNT(*)
+          FROM raw_capture.response_capture AS capture
+         WHERE TRUE{clause}
+        """,
+        tuple(params),
+    )
+    in_scope = int(cursor.fetchone()[0])
+
+    # The window is ordered by a key no two captures share, so "the newest
+    # 1,000" is the same 1,000 on two runs of the same archive: ties on
+    # `retrieved_at` alone read whichever rows the plan happened to return.
+    bound = "" if limit is None else "\n         LIMIT %s"
     cursor.execute(
         f"""
         SELECT capture.capture_id, capture.payload_checksum, blob.payload
@@ -255,10 +310,9 @@ def verify_capture_checksums(
           JOIN raw_capture.payload_blob AS blob
             ON blob.payload_checksum = capture.payload_checksum
          WHERE TRUE{clause}
-         ORDER BY capture.retrieved_at DESC
-         LIMIT %s
+         ORDER BY capture.retrieved_at DESC, capture.capture_id DESC{bound}
         """,
-        (*params, limit),
+        (*params, *(() if limit is None else (limit,))),
     )
     rows = cursor.fetchall()
     mismatched = [
@@ -266,19 +320,35 @@ def verify_capture_checksums(
         for capture_id, checksum, payload in rows
         if hashlib.sha256(bytes(payload)).hexdigest() != checksum
     ]
+    outside_window = max(in_scope - len(rows), 0)
+    window = (
+        "every capture in scope"
+        if limit is None
+        else f"newest {limit} captures by retrieved_at"
+    )
     if not rows:
         result = "not_applicable"
     elif mismatched:
         result = "fail"
     else:
         result = "pass"
+    evidence = [*mismatched[:EVIDENCE_LIMIT]]
+    if outside_window:
+        # Not a failure: a bounded sweep passing is a statement about its
+        # window, and the reader is told how much of the archive that was.
+        evidence.append(f"captures_outside_window={outside_window}")
     return [
         RuleOutcome(
             "raw_capture.response_capture",
             result,
             observed_count=len(rows) - len(mismatched),
             expected_count=len(rows),
-            evidence=mismatched[:EVIDENCE_LIMIT],
+            partition_detail={
+                "window": window,
+                "captures_in_scope": in_scope,
+                "captures_rehashed": len(rows),
+            },
+            evidence=evidence,
         )
     ]
 

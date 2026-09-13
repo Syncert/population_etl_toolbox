@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .plausibility import fred_change_plausibility
-from .reconciliation import SHARED_RECONCILIATION_EXECUTORS
+from .reconciliation import RELEASE_CADENCE, SHARED_RECONCILIATION_EXECUTORS
 from .runner import QualityRunRecord, RuleExecutor, execute_rules
 from .sources import SOURCE_EXECUTORS
 
@@ -211,13 +211,20 @@ def certify_release(
     """
     sha = resolve_commit_sha(code_commit_sha)
     executors = {**SHARED_RECONCILIATION_EXECUTORS, **SOURCE_EXECUTORS}
+    # The cadence travels in the scope, because a rule may measure a release
+    # run differently from a scheduled one: DQ-SHARED-001 rehashes every
+    # capture here and a bounded window on a schedule, and a release verdict
+    # that says "every capture verifies" has to have read every capture
+    # (DQ-011).
+    release_scope = dict(scope or {})
+    release_scope.setdefault("cadence", RELEASE_CADENCE)
     record = execute_rules(
         connection,
         source_code="SHARED",
         assessment_type="release",
         code_commit_sha=sha,
         executors=executors,
-        scope=scope,
+        scope=release_scope,
     )
     with connection.cursor() as cursor:
         cursor.execute(
