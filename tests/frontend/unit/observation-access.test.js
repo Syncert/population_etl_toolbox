@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 // reported as one series per release rather than collapsed.
 
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
+import { servedParameters, servedParametersWithout } from "../support/servedContract.js";
 import {
   RELEASE_DIMENSION,
   SCOPE_AS_RELEASED,
@@ -36,26 +37,10 @@ import {
 
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot).
-// The served neutral parameter list (tests/fixtures/api/openapi_contract.json).
-const NEUTRAL_PARAMETERS = [
-  "adjustment_status",
-  "county_fips",
-  "domain_desc",
-  "domaincat_desc",
-  "geo_id",
-  "geo_level",
-  "limit",
-  "metric_code",
-  "offset",
-  "release",
-  "scope",
-  "state_fips",
-  "stratum_id",
-  "subject_code",
-  "subject_type",
-  "year_from",
-  "year_to",
-];
+// The served neutral parameter list, read from the reviewed snapshot
+// rather than copied: a copy that claims to be the served list and is
+// not models a weaker API than the one that ships (WEB-043).
+const NEUTRAL_PARAMETERS = servedParameters("/api/v1/observations");
 
 const neutralRoutes = [
   { path: "/api/v1/observations", parameters: NEUTRAL_PARAMETERS },
@@ -859,6 +844,10 @@ describe("the newest published value for one geography", () => {
     },
   ])[0];
 
+  // The same capability, except that it does not declare the reduction. The
+  // narrowing is expressed as a subtraction from the served list, so the
+  // client's refusal is caused by that one absence rather than by a fixture
+  // that happens to be narrow in some other way (WEB-043).
   const withoutReduction = buildExplorerSources([
     {
       source_code: "CENSUS_PEP",
@@ -870,7 +859,9 @@ describe("the newest published value for one geography", () => {
       observation_routes: [
         {
           path: "/api/v1/observations",
-          parameters: ["geo_id", "limit", "metric_code", "scope"],
+          parameters: servedParametersWithout("/api/v1/observations", [
+            "newest_per_geography",
+          ]),
         },
       ],
     },

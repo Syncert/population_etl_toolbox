@@ -16,6 +16,7 @@ import {
   datasetFacetOptions,
   preferredDatasetFacet,
 } from "../../../apps/web/lib/explorerViewModel";
+import { servedParameters } from "../support/servedContract.js";
 
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot): every
@@ -25,29 +26,11 @@ import {
 // routes it also publishes. Parameter lists are the served ones (see
 // tests/fixtures/api/openapi_contract.json).
 const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
   {
-    path: "/api/v1/observations",
-    parameters: [
-      "adjustment_status",
-      "county_fips",
-      "domain_desc",
-      "domaincat_desc",
-      "geo_id",
-      "geo_level",
-      "limit",
-      "metric_code",
-      "offset",
-      "release",
-      "scope",
-      "state_fips",
-      "stratum_id",
-      "subject_code",
-      "subject_type",
-      "year_from",
-      "year_to",
-    ],
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const sourceRoutes = (segment) => [

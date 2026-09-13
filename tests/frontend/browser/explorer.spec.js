@@ -1,4 +1,5 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { servedParameters } from "../support/servedContract.js";
 
 // Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
 // WEB-017, WEB-018, WEB-029 —
@@ -101,31 +102,15 @@ const fbiMetric = {
 // a source-scoped latest/timeseries pair, or the neutral /observations
 // resource for a dispatch-shaped source.
 const neutralRoutes = [
+  // Read from the reviewed snapshot rather than copied: a list that claims
+  // to be the served one and is not models a weaker API than the one that
+  // ships, and the client then goes untested for the parameter it is
+  // missing (WEB-043).
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
   {
-    path: "/api/v1/observations",
-    // The served parameter list (tests/fixtures/api/openapi_contract.json):
-    // `scope` and `release` are what make the as-released surface reachable.
-    parameters: [
-      "adjustment_status",
-      "county_fips",
-      "domain_desc",
-      "domaincat_desc",
-      "geo_id",
-      "geo_level",
-      "limit",
-      "metric_code",
-      "offset",
-      "release",
-      "scope",
-      "state_fips",
-      "stratum_id",
-      "subject_code",
-      "subject_type",
-      "year_from",
-      "year_to",
-    ],
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const capabilityRoutes = (segment) => [

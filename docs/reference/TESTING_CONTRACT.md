@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-042 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-043 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **308 of 308** | **0 of 308** |
+| **Total** | **309 of 309** | **0 of 309** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 308-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 309-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -649,6 +649,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-040 | P0 | Unit / `frontend` | A rate-limited reader is told how long to wait | `apiErrorMessage` renders the API's published `Retry-After` interval beside the status and the API's own detail, so the sentence \"retry after the indicated interval\" indicates it; an error carrying no interval -- absent, zero, or not a finite number -- renders exactly as before, and the message stays status-first with `detail` verbatim | A reader meeting the per-client limit the API now meters correctly, reading \"retry after the indicated interval\" with no interval, while the client holds the number on the error object |
 | WEB-041 | P0 | Browser + Unit / `frontend` | The quality sample can contain the problem the screen reports | The per-measure table orders by published `freshness_state` in the order a reader needs -- stale, then a measure the publisher published no state for, then retired, then current, then any word the vocabulary adds later -- with the metric code breaking every tie so two loads agree; no row is dropped, no state is merged, no field is computed, and the screen states the order beside its \"showing N of M\" count | A source reported as \"12 stale of 2,487 published metrics\" showing forty alphabetically first codes that hold none of the twelve -- the screen naming a problem and then a sample that cannot contain it |
 | WEB-042 | P0 | Unit / `frontend` | A trend's horizontal axis is time | A plotted point's `x` is proportional to its date's position between the series' first and last, so an interval the data does not cover is an interval on the axis -- two points a decade apart sit a decade apart, and an evenly spaced series is unchanged; a date the chart cannot parse or a series spanning one instant falls back to even spacing rather than failing or dropping a point, a single point still renders centred, and the unpublished-value rejection, the dropped-period note, the accessible label, and the min/max labels are untouched | The gap this component refuses to fill with a zero being closed by the axis instead: 1979 and 1981 drawn adjacent and evenly spaced, the line between them sloping as though the measure had moved over one ordinary interval |
+| WEB-043 | P0 | Contract / `frontend` | A frontend fixture cannot describe a contract the API does not serve | The fixtures that claim to be the served parameter list read it from `tests/fixtures/api/openapi_contract.json` instead of copying it, a deliberate narrowing is expressed as a subtraction from that list and throws on a name the route does not serve, and a guard reads every `{path, parameters}` literal under `tests/frontend` -- resolving per-source templates against every path they name -- and fails on a query parameter or a route the snapshot does not declare, while reporting how many literals it examined so it cannot pass vacuously | A capability fixture modelling a weaker API than the one that ships, so the client's real behaviour goes untested and a test written against it fails for the fixture rather than the code |
 
 ### Deployment Tests
 

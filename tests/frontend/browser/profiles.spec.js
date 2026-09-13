@@ -1,4 +1,5 @@
 import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { servedParameters } from "../support/servedContract.js";
 
 // Covers: WEB-021 — the community conditions profile in the browser. The
 // product is configuration over published catalog identities: each filled
@@ -7,26 +8,16 @@ import { expect, test } from "../../../apps/web/node_modules/@playwright/test/in
 // instead of disappearing, a measure the place did not publish is never a
 // zero, and the link reproduces the product and place.
 
-// The parameters the served `/observations` operation declares (see
-// tests/fixtures/api/openapi_contract.json). `newest_per_geography` is one of
-// them, and the profile depends on it: a card asks the resource for the
-// place's newest published value rather than reducing a page here.
+// Read from the reviewed snapshot rather than copied (WEB-043). The
+// profile depends on `newest_per_geography` being among them: a card asks
+// the resource for the place's newest published value rather than
+// reducing a page here.
 const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
   {
-    path: "/api/v1/observations",
-    parameters: [
-      "geo_id",
-      "geo_level",
-      "limit",
-      "metric_code",
-      "newest_per_geography",
-      "offset",
-      "release",
-      "scope",
-      "state_fips",
-    ],
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const capabilities = {
