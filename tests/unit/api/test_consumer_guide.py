@@ -181,3 +181,54 @@ def test_every_paged_observation_read_declares_what_orders_it() -> None:
         "these paged observation reads name no ordering in the consumer "
         f"guide: {missing}"
     )
+
+
+def _envelope_qualifier_schemas() -> dict[str, dict]:
+    """The objects the neutral observation envelope nests, from the contract.
+
+    Derived rather than named: whatever `NeutralObservation`'s own properties
+    reference is what qualifies a served value, so a qualifier object added
+    later is covered without an edit here.
+    """
+    import json
+    import re
+
+    snapshot = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "tests/fixtures/api/openapi_contract.json"
+        ).read_text(encoding="utf-8")
+    )
+    schemas = snapshot["schemas"]
+    observation = schemas["NeutralObservation"]["properties"]
+    referenced = {
+        word
+        for value in observation.values()
+        for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", str(value))
+        if word in schemas
+    }
+    return {name: schemas[name] for name in sorted(referenced)}
+
+
+def test_the_guide_names_every_field_that_qualifies_a_value() -> None:
+    """Covers: API-102 — "reading a row honestly" needs the field names.
+
+    The envelope nests exactly the objects that say what a source published
+    about a number, and the guide described them in prose: "margins of error,
+    confidence bounds, or the CV trio". A consumer cannot code against the CV
+    trio, and `cv_symbol` is the flag USDA NASS publishes to say an estimate
+    is unreliable -- a reader who does not know it exists reads the estimate
+    as usable. WEB-053 found the client dropping the same five fields.
+    """
+    guide = GUIDE.read_text(encoding="utf-8")
+    qualifiers = _envelope_qualifier_schemas()
+    assert qualifiers, "the envelope nests no objects; the extraction is broken"
+
+    missing = {
+        name: sorted(field for field in schema["properties"] if field not in guide)
+        for name, schema in qualifiers.items()
+    }
+    unnamed = {name: fields for name, fields in missing.items() if fields}
+    assert not unnamed, (
+        f"the consumer guide does not name these published qualifier fields: {unnamed}"
+    )

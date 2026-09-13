@@ -167,11 +167,18 @@ Each row carries typed core fields plus everything the source publishes:
 - `dimensions` carries the source's own published fields under their own
   names (CDC strata and footnotes, FBI subject/offense/program, NASS
   commodity/domain/practice, Census dataset and vintage).
-- `uncertainty` is `null` when the source publishes none; otherwise margins
-  of error, confidence bounds, or the CV trio.
-- `coverage` carries FBI UCR participation context — a month nobody reported
-  is `not_reported` with `null` value and a `participation_status`, not zero
-  crime.
+- `uncertainty` is `null` when the source publishes none, and otherwise
+  carries only the fields that source publishes — the rest stay `null`.
+  Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
+  publishes `confidence_lower` and `confidence_upper`; USDA NASS publishes
+  `cv_value` with `cv_status` and `cv_symbol`, which is how it says an
+  estimate is unreliable. Read them before treating a value as precise.
+- `coverage` is `null` unless the source publishes a reporting basis. FBI UCR
+  does: `participation_status` (a month nobody reported is `not_reported`
+  with a `null` value, not zero crime), `coverage_percent` and
+  `coverage_basis` for how much of the period was reported, and `population`,
+  `participated_population` and `population_denominator` for what the count
+  rests on.
 - `release`, `as_of`, `source_record_id`, and `capture_id` trace a row back to
   its publication.
 
