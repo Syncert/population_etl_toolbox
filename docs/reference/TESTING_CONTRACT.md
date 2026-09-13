@@ -282,7 +282,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
-| Database integration | DB-001–DB-028 | None |
+| Database integration | DB-001–DB-029 | None |
 | API | API-001–API-073 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
@@ -291,13 +291,13 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **291 of 291** | **0 of 291** |
+| **Total** | **292 of 292** | **0 of 292** |
 
 Awaiting implementation IDs: None.
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 291-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 292-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -512,6 +512,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-026 | P0 | Database / `integration database` | An abandoned metric spelling does not survive a re-serve | After a forced full re-serve no ACS serving row remains under the retired `ACS:` spelling, in either the latest materialized view or the durable reporting relation | A partially re-served warehouse carrying both identities and answering differently depending on which code a consumer happens to hold |
 | DB-027 | P0 | Database / `integration database` | Packet storage cascade and per-owner uniqueness | Deleting an account deletes its evidence packets in the same statement and leaves another owner's untouched; two owners may each hold a packet of the same name while one owner may not hold two | An orphaned packet surviving its account, or a name clash across accounts leaking that a name is in use |
 | DB-028 | P0 | Contract / `integration api database` | A published grain is answerable, in one vocabulary | For every registered source and each sampled current catalog code, every grain in `valid_geo_grains` sent as `geo_level` to `/api/v1/observations` answers at least one row, every returned row's `geo_level` equals that grain, and the grain is one of `NATIONAL`, `STATE`, `COUNTY`, `PLACE`, `AGENCY`; the ACS fixture publishes exactly the grain it seeded, proving grains are derived from served rows rather than declared | A catalog advertising a grain nothing serves (ACS declared 2,487 such pairs; every national USDA NASS statistic), a served row carrying a word outside the vocabulary (`nation`, `fbi_agency:…`), or a publisher that declares grains from configuration |
+| DB-029 | P0 | Static / `unit` | The migration sequence document matches the sequence | Every migration the bootstrap manifest applies is described by filename in `sql/migrations/README.md`, and every filename the README describes exists, so the document a reader learns the *why* from cannot fall behind the files a bootstrap runs | A migration added to the manifest with no README entry -- `015`, `016`, and `017` ran in every bootstrap undescribed for three releases, because DB-001 checks that named assets exist and that numbers are unique, and a missing paragraph violates neither -- or a description left behind by a renamed or removed migration |
 
 ### API and Redis Tests
 
