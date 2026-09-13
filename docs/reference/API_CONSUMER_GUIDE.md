@@ -227,6 +227,30 @@ Source-scoped routes remain for source-specific exploration:
 `/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
 `/api/v1/cdc/observations`, `/api/v1/usda-nass/{observations,series,measures,source-notes}`.
 
+### Paging a history, and what orders it
+
+Every observation route — the neutral resource, the legacy pair, and the
+source-scoped pair — takes `limit` and `offset`, and the envelope echoes the
+page you asked for. The time-series routes gained `offset` in v1 as an
+additive change; before that they counted rows into `total` that no parameter
+could reach, and because history is served oldest-first the rows past `limit`
+that went missing were the newest ones.
+
+Each of those reads pages a **total order**, so two consecutive pages can
+neither repeat a row nor skip one:
+
+| Read | Ordered by |
+| --- | --- |
+| `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
+| `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
+| `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |
+| `/{source}/observations/timeseries` | `observation_date`, then the source's own remaining key (the BLS/FRED series, the Census dataset/vintage/variable, the PEP vintage and capture) |
+
+A period can hold more than one row wherever a source republishes it, so
+`observation_date` alone is not an order — pin the release with
+`scope=as_released&release=…` on `/observations` if you want one publication's
+series rather than all of them.
+
 ## Analysis
 
 **Preflight before you compare.** `GET /api/v1/comparison/preflight?metric_code_a=…&metric_code_b=…`

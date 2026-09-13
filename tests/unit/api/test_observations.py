@@ -219,6 +219,69 @@ def test_timeseries_uses_count_total() -> None:
 
 @pytest.mark.unit
 @pytest.mark.api
+def test_timeseries_pages_past_the_first_page() -> None:
+    """Covers: API-074 — the counted rows are reachable, not just counted.
+
+    Before this the route declared ``limit`` and no ``offset``: it reported a
+    total the caller could not page to, and because the order is ascending the
+    rows it dropped were the newest ones -- the end of the line a chart draws.
+    """
+    session = _TimeseriesSession()
+
+    def _override_db():
+        yield session
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/v1/observations/timeseries",
+            params={
+                "metric_code": "UNEMP",
+                "geo_id": "06001",
+                "limit": 4,
+                "offset": 8,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 9
+    assert payload["limit"] == 4
+    assert payload["offset"] == 8
+    assert any(params.get("offset") == 8 for params in session.params_seen)
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_timeseries_offset_is_bounded_like_every_other_list_route() -> None:
+    """Covers: API-074 — one pagination bound, not a per-route invention."""
+
+    def _override_db():
+        yield _TimeseriesSession()
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        negative = client.get(
+            "/api/v1/observations/timeseries",
+            params={"metric_code": "UNEMP", "geo_id": "06001", "offset": -1},
+        )
+        too_deep = client.get(
+            "/api/v1/observations/timeseries",
+            params={"metric_code": "UNEMP", "geo_id": "06001", "offset": 100001},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert negative.status_code == 422
+    assert too_deep.status_code == 422
+
+
+@pytest.mark.unit
+@pytest.mark.api
 def test_timeseries_rejects_invalid_date_range() -> None:
     """Covers: API-007 — a reversed timeseries date range returns 422."""
 

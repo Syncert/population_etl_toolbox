@@ -269,6 +269,10 @@ Source-scoped endpoints:
 - `GET /api/v1/cdc/observations`
 - `GET /api/v1/usda-nass/{observations,series,measures,source-notes}`
 
+Every observation route pages with `limit`/`offset` over a total order, so
+consecutive pages neither repeat a row nor skip one; the orders are listed in
+[the consumer guide](docs/reference/API_CONSUMER_GUIDE.md).
+
 `GET /health` — without the `/api` prefix — is the container and load-balancer
 liveness probe; `GET /health/ready` is the readiness probe (503 while the
 database is unreachable; Redis never gates readiness). Both sit outside the

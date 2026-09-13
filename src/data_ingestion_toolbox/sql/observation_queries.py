@@ -190,18 +190,34 @@ def build_latest_rpt_fallback_queries(
 # ---------------------------------------------------------------------------
 
 
+#: The order the cross-source history pages. ``observation_date`` alone is not
+#: a total order over the union: the as-published relations behind it hold one
+#: row per release of a period, so an ACS metric published under two vintages
+#: ties on its observation date and PostgreSQL promises nothing about which of
+#: the two a page boundary keeps. The three remaining columns are the release
+#: identity the union carries -- ``as_of_date`` for BLS and FRED revisions,
+#: ``dataset_code``/``vintage_year`` for the Census survey vintages -- which is
+#: what the underlying unique indexes key a period's rows by once a metric and
+#: a geography are pinned.
+_TIMESERIES_ORDER = (
+    "observation_date ASC, as_of_date ASC, dataset_code ASC, vintage_year ASC"
+)
+
+
 def build_timeseries_queries(
     metric_code: str,
     geo_id: str,
     start_date: Optional[date],
     end_date: Optional[date],
     limit: int,
+    offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
-    params: dict = {"limit": limit}
+    params: dict = {"limit": limit, "offset": offset}
     where = _build_where_timeseries(metric_code, geo_id, start_date, end_date, params)
     view = "gold.v_metric_timeseries_by_geo"
     list_q = text(
-        f"SELECT {_OBSERVATION_SELECT} FROM {view} WHERE {where} ORDER BY observation_date ASC LIMIT :limit"
+        f"SELECT {_OBSERVATION_SELECT} FROM {view} WHERE {where} "
+        f"ORDER BY {_TIMESERIES_ORDER} LIMIT :limit OFFSET :offset"
     )
     count_q = text(f"SELECT COUNT(*) FROM {view} WHERE {where}")
     return list_q, count_q, params

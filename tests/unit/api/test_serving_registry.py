@@ -151,6 +151,7 @@ def test_history_read_targets_only_the_declared_history_relation(segment: str) -
         start_date=None,
         end_date=None,
         limit=10,
+        offset=0,
     )
 
     queries = [s for s in session.statements if "to_regclass" not in s]
@@ -286,3 +287,73 @@ def test_every_geo_level_filter_matches_the_grain_the_source_projects() -> None:
     assert normalize_geo_level(" County ") == "COUNTY"
     assert normalize_geo_level("SOMETHING_ELSE") == "SOMETHING_ELSE"
     assert all(normalize_geo_level(word) == word for word in GEO_GRAINS)
+
+
+@pytest.mark.parametrize("segment", sorted(SERVING_CONTRACTS))
+def test_every_contract_declares_a_total_order_for_both_relations(
+    segment: str,
+) -> None:
+    """Covers: API-074 — a source cannot be registered without its paging order.
+
+    The order is the relation's own unique-index key with the columns the
+    query already pins removed, so a page and its successor cannot tie.
+    """
+    contract = serving_contract(segment)
+    assert contract.latest_order, f"{segment} declares no latest_order"
+    assert contract.history_order, f"{segment} declares no history_order"
+    assert contract.latest_order[0] == "geo_id", (
+        f"{segment} pages its latest surface across geographies, so geo_id "
+        "orders it first"
+    )
+    assert contract.history_order[0] == "observation_date", (
+        f"{segment} pages one geography's history, so observation_date orders it first"
+    )
+    for column in (*contract.latest_order, *contract.history_order):
+        assert "," not in column and " " not in column, (
+            f"{segment} declares an order element that is not one column: {column!r}"
+        )
+
+
+@pytest.mark.parametrize("segment", sorted(SERVING_CONTRACTS))
+def test_reads_order_by_the_declared_order(segment: str) -> None:
+    """Covers: API-074 — the declared order is the one the statement carries."""
+    contract = serving_contract(segment)
+
+    latest_session = _RecordingSession()
+    list_latest_observations_for_source(
+        latest_session,
+        source=segment,
+        metric_code="UNEMP",
+        geo_level=None,
+        state_fips=None,
+        limit=10,
+        offset=0,
+    )
+    latest_list = [
+        s
+        for s in latest_session.statements
+        if "to_regclass" not in s and "COUNT(*)" not in s
+    ]
+    assert latest_list
+    expected_latest = "ORDER BY " + ", ".join(contract.latest_order)
+    assert expected_latest in " ".join(latest_list[0].split())
+
+    history_session = _RecordingSession()
+    list_timeseries_observations_for_source(
+        history_session,
+        source=segment,
+        metric_code="UNEMP",
+        geo_id="state:06",
+        start_date=None,
+        end_date=None,
+        limit=10,
+        offset=0,
+    )
+    history_list = [
+        s
+        for s in history_session.statements
+        if "to_regclass" not in s and "COUNT(*)" not in s
+    ]
+    assert history_list
+    expected_history = "ORDER BY " + ", ".join(contract.history_order)
+    assert expected_history in " ".join(history_list[0].split())

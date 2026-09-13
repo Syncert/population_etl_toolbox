@@ -167,6 +167,7 @@ def get_timeseries_observations(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> ObservationListResponse:
     if start_date and end_date and start_date > end_date:
@@ -182,6 +183,7 @@ def get_timeseries_observations(
             start_date=start_date,
             end_date=end_date,
             limit=limit,
+            offset=offset,
         )
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc

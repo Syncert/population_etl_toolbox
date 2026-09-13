@@ -67,6 +67,14 @@ class ServingContract:
     publishes_vintage_and_error: bool = False
     #: True when the source publishes place-level geography names.
     publishes_place_names: bool = False
+    #: The total order the latest route pages, and the total order the
+    #: history route pages. Each is the relation's own unique-index key with
+    #: the columns the query already pins removed, so no two rows of one
+    #: response can tie on the full list and two consecutive pages can neither
+    #: repeat a row nor skip one. Declared here beside the relations they
+    #: order, the way ``ObservationDispatch`` already declares its own.
+    latest_order: tuple[str, ...] = ()
+    history_order: tuple[str, ...] = ()
 
     @property
     def geo_name_expression(self) -> str:
@@ -93,6 +101,11 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_bls.mv_bls_latest",
             history_relation="gold_bls.rpt_bls_observations",
             publishes_seasonal_adjustment=True,
+            # uq_mv_bls_latest is (geo_id, series_id, metric_code) and
+            # uq_rpt_bls_observations_nk adds observation_date; metric_code is
+            # pinned by the query.
+            latest_order=("geo_id", "series_id"),
+            history_order=("observation_date", "series_id"),
         ),
         ServingContract(
             source_code="CENSUS_ACS",
@@ -103,6 +116,17 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_census.mv_acs_latest",
             history_relation="gold_census.rpt_acs_observations",
             publishes_vintage_and_error=True,
+            # uq_mv_acs_latest / uq_rpt_acs_observations_nk are
+            # (geo_id, observation_date, dataset_code, vintage_year,
+            # variable_code, metric_code). An ACS metric is published under
+            # more than one vintage, so the vintage is part of the order.
+            latest_order=("geo_id", "dataset_code", "vintage_year", "variable_code"),
+            history_order=(
+                "observation_date",
+                "dataset_code",
+                "vintage_year",
+                "variable_code",
+            ),
         ),
         ServingContract(
             source_code="FRED",
@@ -113,6 +137,18 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_fred.mv_fred_latest",
             history_relation="gold_fred.rpt_fred_observations",
             publishes_seasonal_adjustment=True,
+            # uq_mv_fred_latest is (series_id, metric_code, realtime_start,
+            # realtime_end); uq_rpt_fred_observations_nk adds
+            # observation_date. The realtime window is FRED's own vintage
+            # identity and belongs in the history order even though the
+            # silver layer serves one window per observation today.
+            latest_order=("geo_id", "series_id"),
+            history_order=(
+                "observation_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
         ),
         ServingContract(
             source_code="CENSUS_PEP",
@@ -124,6 +160,13 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             history_relation="gold_pep.rpt_pep_observations",
             publishes_vintage_and_error=True,
             publishes_place_names=True,
+            # PEP's latest publication is a series, not a value: every
+            # estimated year of the current vintage, so one geography carries
+            # several rows and geo_id alone leaves ties a page boundary can
+            # fall inside. dataset_code is pinned -- a PEP metric code
+            # composes it -- so the vintage and the capture close the order.
+            latest_order=("geo_id", "observation_date", "vintage_year", "capture_id"),
+            history_order=("observation_date", "vintage_year", "capture_id"),
         ),
     )
 }

@@ -380,6 +380,7 @@ def test_source_filters_reach_exact_source_queries(
                 "start_date": "2024-01-01",
                 "end_date": "2024-12-31",
                 "limit": 19,
+                "offset": 6,
             },
         )
     finally:
@@ -416,6 +417,37 @@ def test_source_filters_reach_exact_source_queries(
             "start_date": date(2024, 1, 1),
             "end_date": date(2024, 12, 31),
             "limit": 19,
+            "offset": 6,
         }
         for _, params in history_calls
     )
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_source_timeseries_echoes_the_page_it_was_asked_for() -> None:
+    """Covers: API-074 — the source-scoped history pages like every list route."""
+    session = _SourceSchemaSession("gold_pep", [_observation_row()])
+
+    def _override_db():
+        yield session
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/v1/pep/observations/timeseries",
+            params={
+                "metric_code": "CENSUS_PEP:pep_2020s:POPESTIMATE",
+                "geo_id": "state:06",
+                "limit": 25,
+                "offset": 50,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["limit"] == 25
+    assert payload["offset"] == 50

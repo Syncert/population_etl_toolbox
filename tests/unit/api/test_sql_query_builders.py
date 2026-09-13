@@ -171,7 +171,7 @@ def test_timeseries_query_builder_binds_its_date_window() -> None:
     start = date(2024, 1, 1)
     end = date(2024, 12, 31)
     list_query, count_query, params = observation_queries.build_timeseries_queries(
-        "UNEMP", "county:06001", start, end, 100
+        "UNEMP", "county:06001", start, end, 100, 25
     )
     rendered_list = str(list_query)
 
@@ -179,9 +179,15 @@ def test_timeseries_query_builder_binds_its_date_window() -> None:
     assert "FROM gold.v_metric_timeseries_by_geo" in str(count_query)
     assert "observation_date >= :start_date" in rendered_list
     assert "observation_date <= :end_date" in rendered_list
-    assert "ORDER BY observation_date ASC" in rendered_list
+    # API-074: the order is total, and the page can move past the first one.
+    assert (
+        "ORDER BY observation_date ASC, as_of_date ASC, dataset_code ASC, "
+        "vintage_year ASC" in rendered_list
+    )
+    assert "LIMIT :limit OFFSET :offset" in rendered_list
     assert params == {
         "limit": 100,
+        "offset": 25,
         "metric_code": "UNEMP",
         "geo_id": "county:06001",
         "start_date": start,
@@ -192,7 +198,7 @@ def test_timeseries_query_builder_binds_its_date_window() -> None:
 def test_timeseries_query_omits_absent_date_filters() -> None:
     """Covers: API-010, API-012 — optional dates stay absent when omitted."""
     list_query, _count_query, params = observation_queries.build_timeseries_queries(
-        "POP_TOTAL", "state:06", None, None, 50
+        "POP_TOTAL", "state:06", None, None, 50, 0
     )
     rendered_list = str(list_query)
 
@@ -200,6 +206,7 @@ def test_timeseries_query_omits_absent_date_filters() -> None:
     assert ":end_date" not in rendered_list
     assert params == {
         "limit": 50,
+        "offset": 0,
         "metric_code": "POP_TOTAL",
         "geo_id": "state:06",
     }

@@ -171,7 +171,14 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     servesDistribution: true,
     servesComparison: false,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
-    timeseriesParameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+    timeseriesParameters: [
+      "end_date",
+      "geo_id",
+      "limit",
+      "metric_code",
+      "offset",
+      "start_date",
+    ],
     // The offline fallback claims no neutral surface: with discovery
     // unavailable nothing has declared one, and an as-released control the
     // API never declared would be this client inventing a contract.

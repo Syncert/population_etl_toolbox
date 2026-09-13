@@ -172,6 +172,7 @@ def list_timeseries_observations(
     start_date: Optional[date],
     end_date: Optional[date],
     limit: int,
+    offset: int,
 ) -> ObservationListResponse:
     """As-published cross-source history for one geography."""
     _require_relation(db, CROSS_SOURCE_HISTORY_RELATION)
@@ -182,10 +183,11 @@ def list_timeseries_observations(
         start_date=start_date,
         end_date=end_date,
         limit=limit,
+        offset=offset,
     )
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()
-    return _rows_to_response(rows, total, limit, offset=0)
+    return _rows_to_response(rows, total, limit, offset)
 
 
 def list_latest_observations_for_source(
@@ -217,7 +219,7 @@ def list_latest_observations_for_source(
             {_source_select_sql(contract)}
         FROM {contract.latest_relation}
         WHERE {where_sql}
-        ORDER BY geo_id ASC
+        ORDER BY {", ".join(contract.latest_order)}
         LIMIT :limit OFFSET :offset
         """
     )
@@ -242,13 +244,19 @@ def list_timeseries_observations_for_source(
     start_date: Optional[date],
     end_date: Optional[date],
     limit: int,
+    offset: int,
 ) -> ObservationListResponse:
     """As-published history from one source's own durable serving contract."""
     contract = serving_contract(source)
     _require_relation(db, contract.history_relation)
 
     where_clauses = ["metric_code = :metric_code", "geo_id = :geo_id"]
-    params: dict = {"metric_code": metric_code, "geo_id": geo_id, "limit": limit}
+    params: dict = {
+        "metric_code": metric_code,
+        "geo_id": geo_id,
+        "limit": limit,
+        "offset": offset,
+    }
     if start_date:
         where_clauses.append("observation_date >= :start_date")
         params["start_date"] = start_date
@@ -263,8 +271,8 @@ def list_timeseries_observations_for_source(
             {_source_select_sql(contract)}
         FROM {contract.history_relation}
         WHERE {where_sql}
-        ORDER BY observation_date ASC
-        LIMIT :limit
+        ORDER BY {", ".join(contract.history_order)}
+        LIMIT :limit OFFSET :offset
         """
     )
     count_query = text(
@@ -277,4 +285,4 @@ def list_timeseries_observations_for_source(
 
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()
-    return _rows_to_response(rows, total, limit, offset=0)
+    return _rows_to_response(rows, total, limit, offset)

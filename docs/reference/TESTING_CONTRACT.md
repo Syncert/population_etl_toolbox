@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-073 | None |
+| API | API-001–API-074 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **294 of 294** | **0 of 294** |
+| **Total** | **295 of 295** | **0 of 295** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 294-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 295-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -596,6 +596,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-071 | P0 | Service + Cache / `unit api` | Packet concurrency, deletion, privacy, and list without verdict | An update states the version it read and a mismatch answers `409` naming the current version without modifying the row; a name the caller already uses answers `409`; deletion is a hard delete and a second delete is `404`; every packet response is `private, no-store`, never carries `x-cache`, and lies outside the cacheable prefixes; the list summary carries `block_count` and `analytical_block_count`, never a validation verdict, and performs no glossary lookup | A silent overwrite, private content in a shared cache, or a summary read as valid because it carried no verdict |
 | API-072 | P0 | Contract / `integration api database` | Real-schema evidence packet contract | The checked-in `sql/bootstrap/002_app_api.sql` creates exactly the packet table the service queries; create, read, list, update, delete round-trip through PostgreSQL with block order and every envelope field intact, owner scoping and optimistic concurrency enforced by the database, an incomplete block stored and reported, and both an envelope/query contradiction and a refused query answered `422` by the real stack | Unit fakes agreeing with each other while the bootstrap DDL and the service disagree |
 | API-073 | P0 | Contract / `unit api` | Grain filter matches grain projection | Every dispatch entry that declares the `geo_level` filter compares the same expression it projects as a row's `geo_level`, against `UPPER(:geo_level)`; the incoming value is normalized to the vocabulary word before binding, with `NATION` and `US` accepted as aliases of `NATIONAL` so words the catalog once published keep answering; CDC and PEP project and filter through `gold_glossary.geo_grain(geo_type)`, FBI through `UPPER(subject_type)`, NASS through `UPPER(agg_level_desc)` | A source whose catalog word cannot reach its own rows because filter and projection read different columns, or a previously published word that stops answering |
+| API-074 | P0 | Contract / `unit api` | Observation list routes page a total order | Both time-series routes accept `offset` under the same bound every other list route uses and echo the page they were asked for, so the rows a response counts are reachable instead of silently truncated to the oldest `limit`; each source declares the total order its latest and history relations page -- the relation's own unique-index key with the pinned columns removed -- and a registry guard refuses a contract that declares neither; the cross-source history orders by the release identity the union carries rather than `observation_date` alone | A paging client repeating one row and never seeing another because a page boundary fell inside a tie, or a series longer than `limit` losing its newest values with no parameter that could reach them |
 
 ### Frontend Tests
 

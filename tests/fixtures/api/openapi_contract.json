@@ -194,6 +194,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -598,6 +609,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -915,6 +937,17 @@
           "name": "metric_code",
           "required": true,
           "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
         },
         {
           "in": "query",
@@ -1268,6 +1301,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -1380,6 +1424,17 @@
           "name": "metric_code",
           "required": true,
           "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
         },
         {
           "in": "query",
