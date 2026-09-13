@@ -51,7 +51,11 @@ EXPECTED_SCHEDULES = {
     "census_pep_ingest": "0 6 1 * *",
     "cdc_ingest": "0 9 * * 1",
     "fbi_ucr_ingest": "0 10 * * 1",
-    "usda_nass_crop_ingest": "0 10 * * 1-5",
+    # Weekdays *and* the first of the month: cron takes the union when
+    # day-of-month and day-of-week are both restricted, and the monthly
+    # full-history sweep needs a logical date on the first whatever day it
+    # falls on (DAG-018).
+    "usda_nass_crop_ingest": "0 10 1 * 1-5",
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",

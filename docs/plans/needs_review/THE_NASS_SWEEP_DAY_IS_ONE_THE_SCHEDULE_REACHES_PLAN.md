@@ -111,9 +111,21 @@ that lose their sweep.
 - `ruff check .` / `ruff format --check .` — clean.
 - **The DAG tier cannot run locally**: neither Airflow nor `croniter` is
   installed in this environment (`ModuleNotFoundError: No module named
-  'croniter'`). Criterion 2's node is cited from `dag-parse` on the landing
-  commit rather than reported as passing here.
+  'croniter'`). Criterion 2's node is cited from `dag-parse` rather than
+  reported as passing here.
+- **`dag-parse` on the first landing commit (`604e10c`) failed, and said
+  something useful.** Run
+  [34764104177](https://github.com/Syncert/population_etl_toolbox/actions/runs/34764104177):
+  `122 passed, 1 failed`, and the failure was
+  `test_dagbag.py::test_dag_schedule_contract[usda_nass_crop_ingest-0 10 * * 1-5]`
+  — a reviewed table of every DAG's expected schedule, which this plan had
+  to update and did not. **The new DAG-018 node passed in that same run**,
+  which is the evidence criterion 2 wanted: croniter really does take the
+  union of day-of-month and day-of-week, so one expression means "weekdays
+  and the first", and every month of the window schedules exactly one sweep.
+  The schedule table is corrected in the follow-up commit with the reason
+  recorded beside it.
 
 ## Remaining work
 
-- Confirm `dag-parse` green on the landing commit.
+- Confirm `dag-parse` green on the follow-up commit.
