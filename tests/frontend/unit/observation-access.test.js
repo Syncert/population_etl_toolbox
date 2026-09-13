@@ -30,6 +30,7 @@ import {
   describeHistoryLoad,
   countObservationPeriods,
   describeStratification,
+  dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
   OBSERVATION_COVERAGE_FIELDS,
@@ -598,6 +599,37 @@ describe("as-released reads", () => {
       "stratum_id",
     ]);
     expect(scopedDimensionFilters(null, SCOPE_AS_RELEASED)).toEqual([]);
+  });
+
+  test("a saved view records the stratum its request carried, not its selection", () => {
+    // Covers: WEB-081 — what a saved view records has to be what it asked
+    // for. A document carrying a filter the request never sent replays a
+    // narrower set than the view showed; one missing a filter the request
+    // did send replays a wider one, and for a stratified measure that is a
+    // different population. Read from the request, so a selection that
+    // outlived the scope it was made under cannot be recorded as a narrowing
+    // the view never applied.
+    const stratum = { stratum_id: "female-45-54" };
+    const carried = buildLatestObservationRequest(cdc, {
+      metricCode: "CDC:nvss:INFANT_MORTALITY",
+      geoLevel: "STATE",
+      limit: "500",
+      dimensions: stratum,
+    });
+    expect(carried.params.stratum_id).toBe("female-45-54");
+    expect(dimensionsCarriedBy(carried, cdc.dimensionFilters)).toEqual(stratum);
+
+    // The same selection against a source that declares no such filter: the
+    // builder drops it from the request, so the view records no narrowing.
+    const dropped = buildLatestObservationRequest(fbi, {
+      metricCode: "FBI_UCR:summary:VIOLENT_CRIME",
+      geoLevel: "STATE",
+      limit: "500",
+      dimensions: stratum,
+    });
+    expect(dropped.params.stratum_id).toBeUndefined();
+    expect(dimensionsCarriedBy(dropped, fbi.dimensionFilters)).toEqual({});
+    expect(dimensionsCarriedBy(null, cdc.dimensionFilters)).toEqual({});
   });
 
   test("an unpinned as-released answer is one series per release, not one value", () => {

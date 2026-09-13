@@ -223,6 +223,37 @@ export function stratificationDimensions(
 }
 
 /**
+ * The dimension narrowing a built request actually carried.
+ *
+ * Read from the request rather than from the selection it was built out of,
+ * for the reason the reduction and the state are: `dimensionParams` sends
+ * only the names the capability declares under this scope, and a
+ * source-scoped read sends none at all, so a selection can outlive the
+ * request that would have carried it -- a stratum chosen under
+ * `scope=as_released` and still set after the reader returns to the latest
+ * publication, where the source declares no such filter.
+ *
+ * What a saved view has to record is what it asked for. A document carrying
+ * a filter the request never sent replays a narrower set than the view
+ * showed, and one missing a filter the request did send replays a wider one:
+ * a stratified measure read for one stratum reopening as every stratum the
+ * source publishes is a different population (WEB-081).
+ */
+export function dimensionsCarriedBy(
+  request: ObservationRequest | null | undefined,
+  dimensionFilters: string[] | null | undefined,
+): Record<string, string> {
+  const carried: Record<string, string> = {};
+  for (const name of dimensionFilters || []) {
+    const value = request?.params?.[name];
+    if (typeof value === "string" && value) {
+      carried[name] = value;
+    }
+  }
+  return carried;
+}
+
+/**
  * The cross-geography "latest published values" request for one metric.
  *
  * The source-scoped shape keeps its own route and parameter discipline; the

@@ -543,7 +543,13 @@ def test_incomplete_analytical_block_is_stored_and_reported(
         pytest.param(
             _block(
                 document=_query(metric_code="NO:SUCH:METRIC"),
-                envelope=_envelope(metric_codes=["NO:SUCH:METRIC"]),
+                # The recorded request names the same measure, so the block is
+                # internally consistent and the refusal is the live contract's
+                # (API-129 crosses the recorded request too).
+                envelope=_envelope(
+                    metric_codes=["NO:SUCH:METRIC"],
+                    api_query="/api/v1/observations?metric_code=NO%3ASUCH%3AMETRIC",
+                ),
             ),
             "block 'unemployment': metric_code 'NO:SUCH:METRIC' is not a published metric",
             id="query-the-live-contracts-refuse",
@@ -1153,3 +1159,177 @@ def test_a_grain_that_is_not_one_is_reported_on_a_packet_stored_before_the_rule(
     assert read.json()["document"]["blocks"][0]["envelope"]["geo_level"] == "COUNTRY", (
         "the stored envelope is returned unmodified, never repaired"
     )
+
+
+_RECORDED_REQUEST_CONTRADICTIONS = [
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3ADFF",
+        "records a request for metric_code='FRED:DFF' but its query asks for "
+        "'FRED:UNRATE'",
+        id="another-measure",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&newest_per_geography=true",
+        "records a request for newest_per_geography=true but its query asks for false",
+        id="a-reduction-the-query-does-not-ask-for",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&scope=as_released",
+        "records a request for scope='as_released' but its query asks for 'latest'",
+        id="another-publication",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&release=2024-01-05",
+        "records a request for release='2024-01-05' but its query does not "
+        "ask for release",
+        id="a-release-the-query-does-not-pin",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&geo_level=COUNTY",
+        "records a request for geo_level='COUNTY' but its query asks for 'NATIONAL'",
+        id="another-grain",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&stratum_id=female-45-54",
+        "records a request for stratum_id='female-45-54' but its query does "
+        "not ask for stratum_id",
+        id="a-stratum-the-query-would-replay-past",
+    ),
+]
+
+
+@pytest.mark.parametrize("api_query,fragment", _RECORDED_REQUEST_CONTRADICTIONS)
+def test_a_block_cannot_record_a_request_its_query_does_not_make(
+    accounts, monkeypatch, api_query: str, fragment: str
+) -> None:
+    """Covers: API-129 — the recorded request is crossed like every other one.
+
+    `api_query` is the one envelope field a reader *uses*: it is shown under
+    "Reproducible request" and written into the exported file, so it is the
+    request the evidence gets re-derived from. Every other duplicated request
+    parameter was crossed against the query; this one, which spells all of
+    them out, was not.
+
+    The failure is recorded as having happened on the client (WEB-048): a map
+    block whose `api_query` named `newest_per_geography=true` beside a
+    document asking for no reduction, so "the block did not reproduce the
+    request its own envelope names". That was fixed by building both from one
+    place, which holds for one client. Storage is not a back door for a claim
+    the API would refuse.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "unreproducible",
+            "document": _packet(
+                _block(envelope=_envelope(api_query=api_query), document=_query())
+            ),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert fragment in response.json()["detail"]
+    assert storage.rows == []
+
+
+_RECORDED_REQUESTS_THAT_REPRODUCE = [
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&limit=500&offset=0",
+        _query(),
+        id="paging-is-not-a-narrowing",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&geo_level=NATION",
+        _query(filters={"geo_level": "NATIONAL"}),
+        id="a-grain-alias-and-its-vocabulary-word",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&geo_level=NATIONAL",
+        _query(filters={"geo_level": "NATIONAL", "geo_id": "US"}),
+        id="a-query-narrower-than-the-recorded-request",
+    ),
+    pytest.param(
+        "/fred/observations/latest?metric_code=FRED%3AUNRATE",
+        _query(),
+        id="one-document-served-by-more-than-one-path",
+    ),
+    pytest.param(
+        "the observations resource, paged until its reported total",
+        _query(),
+        id="prose-is-not-a-request-this-may-read",
+    ),
+    pytest.param(
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&geo_level=",
+        _query(),
+        id="an-empty-value-is-no-filter",
+    ),
+]
+
+
+@pytest.mark.parametrize("api_query,document", _RECORDED_REQUESTS_THAT_REPRODUCE)
+def test_a_recorded_request_that_reproduces_its_block_is_stored(
+    accounts, monkeypatch, api_query: str, document: dict
+) -> None:
+    """Covers: API-129 — the refusal narrows nothing a composer legitimately does.
+
+    Paging bounds are not part of what a request asks about. A grain the
+    vocabulary replaced names the same grain as its replacement. A query
+    *narrower* than the recorded request is the composer's own narrowing --
+    the envelope's `geo_id` field records exactly that -- and only a query
+    wider than the recorded request fails to reproduce the block. And one
+    document is legitimately served by more than one path, so the path is
+    never compared: the source-scoped pair and the neutral resource answer the
+    same question.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "reproducible",
+            "document": _packet(
+                _block(envelope=_envelope(api_query=api_query), document=document)
+            ),
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_a_request_a_stored_block_cannot_reproduce_is_reported_on_read(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-129 — a divergence that predates the rule is read, not hidden.
+
+    A packet stored before this check keeps whatever `api_query` it was
+    composed with. The read path crosses the same rule, so the block reports
+    why it cannot be reproduced instead of reading `valid: true`, and the
+    composer's own document comes back unmodified.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "pre-rule request", "document": _packet(_block("unemployment"))},
+    )
+    assert created.json()["validation"]["valid"] is True
+    packet_id = created.json()["packet_id"]
+
+    stored = storage.rows[0]["document"]["blocks"][0]
+    stored["envelope"]["api_query"] = (
+        "/api/v1/observations?metric_code=FRED%3AUNRATE&stratum_id=female-45-54"
+    )
+
+    read = client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth())
+    assert read.status_code == 200, "the composer's document is still returned"
+    validation = read.json()["validation"]
+    assert validation["valid"] is False
+    state = next(
+        block for block in validation["blocks"] if block["block_id"] == "unemployment"
+    )
+    assert "does not ask for stratum_id" in (state["reason"] or "")
+    assert state["missing"] == [], "contradictory, not incomplete"
+    assert "stratum_id" in read.json()["document"]["blocks"][0]["envelope"]["api_query"]

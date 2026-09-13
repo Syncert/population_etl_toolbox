@@ -771,6 +771,76 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   expect(neutralRequests.at(-1).stratum_id).toBe("overall");
 });
 
+test("a saved stratified view records the stratum it was read for", async ({ page }) => {
+  // Covers: WEB-081 — the explorer's account save passed its dimension
+  // selection into the document; the browser save, which is the store the
+  // packet builder attaches from, recorded no dimensions at all. So a CDC
+  // measure read for one stratum attached to a packet as a query asking for
+  // every stratum the source publishes -- a different population -- while
+  // the envelope's `api_query` beside it still named the one the block was
+  // composed from. Both records now carry what the request carried, read
+  // back from the request itself.
+  const created = [];
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 11,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+  await page.goto("/explore?source=cdc");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", cdcMetric.metric_code);
+  await page.getByTestId("dimension-select-stratum_id").selectOption("overall");
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  await expect.poll(() => neutralRequests.at(-1)?.stratum_id).toBe("overall");
+
+  await page.getByTestId("save-view").click();
+  await expect.poll(() => created.length).toBe(1);
+  expect(created[0].document.filters.stratum_id).toBe("overall");
+
+  // Signed out, the same view is saved in the browser, and that is the store
+  // the packet builder composes a block's query from.
+  const browserSave = await page.context().newPage();
+  await installRoutes(browserSave);
+  await browserSave.goto("/explore?source=cdc");
+  await browserSave.getByTestId("dimension-select-stratum_id").selectOption("overall");
+  await expect(browserSave.getByTestId("dashboard")).toHaveAttribute(
+    "data-stratified",
+    "false",
+  );
+  const save = browserSave.getByTestId("save-view");
+  await expect(save).toHaveAttribute("data-destination", "browser");
+  await save.click();
+  await expect(browserSave.getByTestId("save-toast")).toHaveAttribute(
+    "data-destination",
+    "browser",
+  );
+  const stored = await browserSave.evaluate(() =>
+    JSON.parse(
+      window.localStorage.getItem("economic-data-studio:saved-charts:v1") || "[]",
+    ),
+  );
+  expect(stored).toHaveLength(1);
+  expect(stored[0].dimensions).toEqual({ stratum_id: "overall" });
+  // And the request it recorded names the same stratum, which is the pair
+  // the API cross-checks (API-129).
+  expect(stored[0].apiQuery).toContain("stratum_id=overall");
+  await browserSave.close();
+});
+
 test("as-released exploration pins a published release and reproduces it", async ({ page }) => {
   const neutralRequests = [];
   const releaseRequests = [];

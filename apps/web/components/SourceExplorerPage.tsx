@@ -88,6 +88,7 @@ import {
   collapseToNewestRelease,
   countObservationPeriods,
   describeStratification,
+  dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
   observationDimensionLabel,
@@ -1739,6 +1740,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // declare it, so a view saved from such a source must not claim a
   // reduction it never asked for (WEB-047).
   const viewedNewestPerGeography = latestRequest?.params.newest_per_geography === "true";
+  // The dimension narrowing the *request* carried, read back from it for the
+  // same reason the reduction above is. `dimensionParams` sends only the names
+  // the capability declares under this scope, so a selection left from another
+  // scope is not part of what the map shows, and a source-scoped read sends
+  // none at all. A saved view has to record what it asked for: `apiQuery`
+  // beside it records the same request, and a block whose query and recorded
+  // request disagree is one a reader cannot re-derive (WEB-081).
+  const viewedDimensions = useMemo(
+    () => dimensionsCarriedBy(latestRequest, dimensionFilters),
+    [latestRequest, dimensionFilters],
+  );
   // The state the *request* carried, which is "" for a source that declares
   // no `state_fips`: a document may only hold filters its own route accepts
   // (API-117), and the reader can now select a state on such a source to
@@ -1838,7 +1850,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             geoLevel: selectedGeoLevel,
             stateFips: viewedStateFips,
             geoId: selectedGeoId,
-            dimensions: dimensionSelections,
+            dimensions: viewedDimensions,
             // A map saved without the reduction reopens as the whole latest
             // publication -- for a source publishing a series per geography
             // that is every period of it, and the map would colour whichever
@@ -1871,6 +1883,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       geoLevel: selectedGeoLevel,
       stateFips: selectedStateFips || null,
       geoId: selectedGeoId || null,
+      // The narrowing the request carried, under the source's own declared
+      // filter names. Absent, a stratified view -- a CDC measure read for one
+      // stratum, a NASS one for one domain -- reopened as every stratum the
+      // source publishes, which is a different population, while `apiQuery`
+      // below still named the one it was read for (WEB-081).
+      dimensions: viewedDimensions,
       transformation: "raw",
       // What the request asked, beside the request itself. `apiQuery` records
       // the URL, but a consumer rebuilding the query from this chart -- the

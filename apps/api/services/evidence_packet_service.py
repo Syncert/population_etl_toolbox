@@ -18,12 +18,14 @@ the block.
 from __future__ import annotations
 
 from typing import Optional
+from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from apps.api.registry import grain_refusal, normalize_geo_level
 from apps.api.schemas import AnalysisDocument
+from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
 from apps.api.schemas.evidence_packet import (
     MAX_ANALYTICAL_BLOCKS,
     BlockValidation,
@@ -123,6 +125,140 @@ def _stray_sources(
     )
 
 
+#: How the recorded request's own words read as a boolean. The reductions
+#: travel in a URL as text, and these are the tokens the request layer itself
+#: accepts for a boolean query parameter; a token outside them is not read
+#: rather than guessed, because a rule that guesses is a rule that can refuse
+#: a block for something the composer never said.
+_TRUE_TOKENS = frozenset({"true", "1", "yes", "on"})
+_FALSE_TOKENS = frozenset({"false", "0", "no", "off"})
+
+
+def _recorded_boolean(token: str) -> Optional[bool]:
+    word = token.strip().lower()
+    if word in _TRUE_TOKENS:
+        return True
+    if word in _FALSE_TOKENS:
+        return False
+    return None
+
+
+def _recorded_request_contradiction(block: PacketBlock) -> Optional[str]:
+    """The recorded request asking for something the block's query does not.
+
+    ``api_query`` is the one envelope field a reader *uses*: `EvidenceEnvelope`
+    presents it under "Reproducible request" and the export writes it into the
+    file the packet is handed over as, so it is the request someone re-derives
+    the block from. Every other duplicated request parameter is crossed
+    against the query above; this one was not, and it is the same fact spelled
+    out in full.
+
+    The failure is not hypothetical. WEB-048 records it happening on the
+    client: a map block's envelope recorded `newest_per_geography=true` in its
+    `api_query` while the document beside it asked for no reduction, so "the
+    block did not reproduce the request its own envelope names, in the one
+    resource whose purpose is that a reader can re-derive the evidence without
+    this application". That was fixed by building both from one place, which
+    holds for one client. Storage is not a back door for a claim the API would
+    refuse -- the reason API-117 gave for checking a stored filter name and
+    API-123 for checking its value -- and this is the same check for the
+    request itself (API-129).
+
+    The comparison is asymmetric, and deliberately:
+
+    - A parameter the recorded request names and the query does not ask for is
+      refused. The query would then answer a *wider* set than the reader's own
+      request returns -- every stratum where the request named one -- so the
+      block does not reproduce its own numbers.
+    - A filter the query asks for and the request does not name is not.
+      ``api_query`` records the request the view issued, and a block narrating
+      one geography of that view carries `geo_id` in its query while the map's
+      request never sent one; the envelope's `geo_id` field records exactly
+      that narrowing.
+    - The resource path is not compared at all. One document is legitimately
+      served by more than one path -- a source-scoped `/{source}/observations/
+      latest` and the neutral `/observations` answer the same question, and a
+      comparison records `/comparison/preflight` until the pair is comparable
+      -- so a path rule would refuse requests that reproduce the block.
+    """
+    envelope, document = block.envelope, block.document
+    if envelope is None or document is None:
+        return None
+    recorded = envelope.api_query.strip()
+    if "?" not in recorded:
+        # Nothing this can read as a request: a path with no parameters, or a
+        # composer's note. An unfilled `api_query` is incompleteness, which
+        # `_validation_state` reports on read, and a string this cannot parse
+        # is not a contradiction it may claim.
+        return None
+    named = {
+        name: value
+        for name, value in parse_qsl(urlsplit(recorded).query, keep_blank_values=True)
+    }
+
+    def refusal(field: str, recorded_value: str, asked: str) -> str:
+        if asked:
+            return (
+                f"block '{block.block_id}' records a request for "
+                f"{field}='{recorded_value}' but its query asks for '{asked}'"
+            )
+        return (
+            f"block '{block.block_id}' records a request for "
+            f"{field}='{recorded_value}' but its query does not ask for "
+            f"{field}, so replaying it answers a wider set than the recorded "
+            f"request does"
+        )
+
+    for field in ("metric_code", "metric_code_a", "metric_code_b"):
+        recorded_value = (named.get(field) or "").strip()
+        if not recorded_value:
+            continue
+        asked = str(getattr(document, field) or "").strip()
+        if recorded_value != asked:
+            return refusal(field, recorded_value, asked)
+
+    recorded_scope = (named.get("scope") or "").strip()
+    if recorded_scope and recorded_scope != document.scope:
+        return refusal("scope", recorded_scope, document.scope)
+
+    recorded_release = (named.get("release") or "").strip()
+    if recorded_release and recorded_release != str(document.release or ""):
+        return refusal("release", recorded_release, str(document.release or ""))
+
+    for field in ("newest_per_geography", "newest_release_per_period"):
+        recorded_reduction = _recorded_boolean(named.get(field) or "")
+        if recorded_reduction is None:
+            continue
+        asked_reduction = bool(getattr(document, field))
+        if recorded_reduction != asked_reduction:
+            return (
+                f"block '{block.block_id}' records a request for {field}="
+                f"{str(recorded_reduction).lower()} but its query asks for "
+                f"{str(asked_reduction).lower()}"
+            )
+
+    # The filters, under the names the observation resource declares them by,
+    # so a filter added there is crossed here without being named again.
+    filters = document.filters or {}
+    for field in sorted(set(named) & set(OBSERVATION_FILTER_BOUNDS)):
+        recorded_value = (named.get(field) or "").strip()
+        if not recorded_value:
+            continue
+        asked = str(filters.get(field) or "").strip()
+        if field == "geo_level":
+            # Through the one vocabulary mapping, for the reason the envelope's
+            # own grain is: a request recorded when the catalog published
+            # `NATION` and a query asking for `NATIONAL` name one grain.
+            agrees = bool(asked) and normalize_geo_level(
+                recorded_value
+            ) == normalize_geo_level(asked)
+        else:
+            agrees = recorded_value == asked
+        if not agrees:
+            return refusal(field, recorded_value, asked)
+    return None
+
+
 def _contradiction(block: PacketBlock) -> Optional[str]:
     """The reason a block can never be stored, or ``None``."""
     if not block.analytical:
@@ -218,7 +354,9 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
             f"block '{block.block_id}' records geography grain "
             f"'{envelope.geo_level}' but its query asks for '{queried_grain}'"
         )
-    return None
+    # Last, so a disagreement the fields above can name is named in their
+    # terms rather than as a difference between two URLs.
+    return _recorded_request_contradiction(block)
 
 
 def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:

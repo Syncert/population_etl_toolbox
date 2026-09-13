@@ -301,6 +301,50 @@ describe("a block replays the request its envelope records", () => {
     expect(plain.newestReleasePerPeriod).toBe(false);
   });
 
+  test("a stratified view's document carries the stratum its request named", () => {
+    // Covers: WEB-081 — the explorer's account save passed its dimension
+    // selection into `explorerDocument`; the browser save, which is the store
+    // the packet builder attaches from, recorded no dimensions at all. So a
+    // CDC measure read for one stratum -- or a NASS one for one domain --
+    // attached to a packet as a document asking for every stratum the source
+    // publishes, which is a different population, while the envelope's
+    // `api_query` beside it still named the one the block was composed from.
+    // The reader was handed a file whose recorded request and whose replay
+    // answer different questions.
+    const document = documentFromSavedChart({
+      metricCode: "CDC:nvss:INFANT_MORTALITY",
+      source: "CDC",
+      geoLevel: "STATE",
+      dimensions: { stratum_id: "female-45-54", adjustment_status: "" },
+      apiQuery:
+        "/api/v1/observations?metric_code=CDC%3Anvss%3AINFANT_MORTALITY"
+        + "&geo_level=STATE&stratum_id=female-45-54",
+    });
+    expect(document.filters).toEqual({
+      geo_level: "STATE",
+      stratum_id: "female-45-54",
+    });
+  });
+
+  test("a view that recorded no stratum asks for none", () => {
+    // Covers: WEB-081 — an absent field is not "every stratum" filled in by
+    // this builder. A chart saved before the explorer recorded its
+    // dimensions carries none, and the API refuses a block whose recorded
+    // request names a filter its query does not ask for, so such a view is
+    // re-saved rather than replayed wider in silence.
+    expect(
+      documentFromSavedChart({ metricCode: "M", geoLevel: "STATE" }).filters,
+    ).toEqual({ geo_level: "STATE" });
+    // Not an object, and a non-string value, are both no filter rather than
+    // a filter the API would refuse.
+    expect(
+      documentFromSavedChart({ metricCode: "M", dimensions: ["stratum_id"] }).filters,
+    ).toEqual({});
+    expect(
+      documentFromSavedChart({ metricCode: "M", dimensions: { stratum_id: 7 } }).filters,
+    ).toEqual({});
+  });
+
   test("a release without an as-released scope is dropped, not stored", () => {
     // `validate_document` refuses `release` under `scope=latest`, so the hand
     // built literal produced a block the API would not accept.

@@ -302,6 +302,34 @@ export function envelopeFromSavedChart(
 }
 
 /**
+ * The dimension narrowing a saved view recorded, under the API's own filter
+ * names.
+ *
+ * Only strings, and only non-empty ones: an empty value is no filter
+ * everywhere else in this client, and a document may carry only values the
+ * route accepts. A view saved before the explorer recorded its dimensions
+ * carries none, which is what an absent field means and never "every
+ * stratum" -- the API refuses a block whose recorded request names a filter
+ * its query does not ask for, so such a view is re-saved rather than
+ * silently replayed wider (WEB-081).
+ */
+function savedDimensions(
+  chart: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  const source = chart?.dimensions;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return {};
+  }
+  const dimensions: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source as Record<string, unknown>)) {
+    if (typeof value === "string" && value) {
+      dimensions[name] = value;
+    }
+  }
+  return dimensions;
+}
+
+/**
  * The query one attached view replays.
  *
  * Built by the same functions the explorer saves through, rather than as a
@@ -342,6 +370,15 @@ export function documentFromSavedChart(
     geoLevel: envelope.geoLevel || undefined,
     stateFips: stateFips || undefined,
     geoId: envelope.geoId || undefined,
+    // The narrowing the view's own request carried. Without it a stratified
+    // view -- a CDC measure read for one stratum, a NASS one for one domain
+    // -- replayed as every stratum the source publishes, which is a
+    // different population, while the envelope's `apiQuery` beside it still
+    // named the one the block was composed from: the block did not reproduce
+    // its own numbers. The explorer records these under the source's
+    // declared filter names, which is what a document's `filters` takes
+    // (WEB-081).
+    dimensions: savedDimensions(chart),
     // From the envelope, not the chart a second time: the API cross-checks
     // the two against each other, so reading one field twice is the one way
     // they could disagree (WEB-071). A view that recorded no reduction asked

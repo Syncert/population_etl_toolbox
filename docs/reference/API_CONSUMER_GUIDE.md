@@ -627,6 +627,19 @@ own query rather than referencing a configuration that could later change.
   The reduction is checked for the same reason `period` is recorded: a block
   composed from one value per geography whose query replays the whole
   publication answers a different set of rows than the envelope describes.
+  `api_query` is crossed too, because it is the request itself spelled out
+  and the one field a reader re-runs: a write is `422` when the recorded
+  request names a measure, a scope, a release, a reduction, or a filter the
+  block's query does not ask for, since the query would then answer a
+  **wider** set than that request returns. A query *narrower* than the
+  recorded request is the composer's own narrowing and is accepted — a block
+  narrating one geography of a map carries `geo_id` where the map's request
+  carried none, which is what the envelope's `geo_id` field records. Paging
+  bounds are not part of what a request asks about, a string carrying no
+  query is not read as one, and the path is never compared: a source-scoped
+  `/{source}/observations/latest` and the neutral `/observations` answer the
+  same question, and a comparison records its preflight path until the pair
+  is comparable.
   An analytical block that is still empty or partially filled is **stored**,
   and reported: `validation.blocks[]` names each block, whether it is valid,
   the reason, and the envelope fields still `missing`. A block whose measure
