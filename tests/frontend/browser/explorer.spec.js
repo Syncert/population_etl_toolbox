@@ -543,10 +543,10 @@ async function installRoutes(
       // ACS fixture's source publishes a margin of error, so the API names
       // it; a fixture without the field models an analysis that never says.
       caveats: [
-        "metric_code is served by source 'CENSUS_ACS', which publishes "
-        + "margin_of_error, margin_of_error_pct; an aligned comparison carries "
-        + "neither, so read the published uncertainty on /observations before "
-        + "treating a difference or a ratio as exact",
+        "source 'CENSUS_ACS' publishes margin_of_error, margin_of_error_pct; "
+        + "an aligned analysis carries none of it, so read the published "
+        + "uncertainty on /observations before treating a derived value as "
+        + "exact",
       ],
       items: [{ bin_index: 1, count: 1 }],
     },
