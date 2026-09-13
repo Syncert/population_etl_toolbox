@@ -24,6 +24,13 @@ from apps.api.versioning import CURRENT_VERSION
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
 GUIDE = Path(__file__).resolve().parents[3] / "docs/reference/API_CONSUMER_GUIDE.md"
+#: The frontend handoff names routes too, and this module's own docstring has
+#: always claimed to check them. It did not: the extraction below read the
+#: consumer guide alone, so a route the handoff named and the API had retired
+#: would have failed nothing (API-065).
+HANDOFF = (
+    Path(__file__).resolve().parents[3] / "docs/reference/WEB_FIRST_WAVE_HANDOFF.md"
+)
 
 
 def _expand(path: str) -> set[str]:
@@ -39,8 +46,12 @@ def _expand(path: str) -> set[str]:
 
 
 def _documented_paths() -> set[str]:
-    """Every ``/api/v1/...`` path the guide names, expanded from its braces."""
-    text = GUIDE.read_text(encoding="utf-8")
+    """Every ``/api/v1/...`` path the published documents name.
+
+    Both of them: the consumer guide a client builds against, and the
+    frontend handoff that tells a later plan what it may assume.
+    """
+    text = GUIDE.read_text(encoding="utf-8") + HANDOFF.read_text(encoding="utf-8")
     found: set[str] = set()
     for raw in re.findall(r"/api/v1/[A-Za-z0-9/_{},.-]*", text):
         path = raw.rstrip(".,;:)`")
