@@ -343,6 +343,50 @@ def test_the_running_tests_guide_names_the_settings_the_fixtures_read() -> None:
     assert "TEST_REDIS_URL" in guide
 
 
+def test_every_declared_pytest_marker_is_used_and_documented() -> None:
+    """Covers: ENV-016 — a marker nothing carries is a word nothing means.
+
+    `--strict-markers` catches a marker a test uses and `pyproject.toml` does
+    not declare. Nothing caught the other direction: `frontend` was declared
+    for "JavaScript unit, component, or browser contract" tests, which run
+    under vitest and Playwright, so no pytest test could ever carry it — a
+    reader selecting `-m frontend` got an empty run that looked like a passing
+    tier. `deployment` was the mirror image: declared and used, and absent
+    from the contract's own marker table.
+    """
+    declared = re.findall(
+        r'^\s*"([a-z0-9_]+):',
+        (REPOSITORY_ROOT / "pyproject.toml")
+        .read_text(encoding="utf-8")
+        .split("markers = [", 1)[1]
+        .split("]", 1)[0],
+        re.MULTILINE,
+    )
+    assert declared, "pyproject declares no pytest markers"
+
+    used: set[str] = set()
+    for path in (REPOSITORY_ROOT / "tests").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for name in declared:
+            if f"mark.{name}" in text:
+                used.add(name)
+    unused = sorted(set(declared) - used)
+    assert not unused, f"these markers are declared and carried by no test: {unused}"
+
+    table = (
+        (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md")
+        .read_text(encoding="utf-8")
+        .split("| Marker | Meaning | Infrastructure permitted |", 1)[1]
+        .split("\n\n", 1)[0]
+    )
+    documented = set(re.findall(r"^\| `([a-z0-9_]+)` \|", table, re.MULTILINE))
+    assert documented == set(declared), (
+        "the contract's marker table and pyproject disagree: only in the table "
+        f"{sorted(documented - set(declared))}, only declared "
+        f"{sorted(set(declared) - documented)}"
+    )
+
+
 def test_the_guide_documents_a_path_that_needs_no_container_runtime() -> None:
     """Covers: ENV-013 — the tier's requirements, not one way of meeting them.
 

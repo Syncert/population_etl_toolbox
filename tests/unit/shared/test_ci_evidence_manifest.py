@@ -117,6 +117,43 @@ def test_every_plan_branch_prefix_runs_ci_on_push() -> None:
 _TEST_PATH_PATTERN = re.compile(r"tests/[A-Za-z0-9_][A-Za-z0-9_./-]*")
 
 
+TESTING_CONTRACT = ROOT / "docs/reference/TESTING_CONTRACT.md"
+
+
+def _contract_required_jobs() -> set[str]:
+    """The jobs the contract's pull-request/branch table lists."""
+    text = TESTING_CONTRACT.read_text(encoding="utf-8")
+    table = text.split("### Pull-Request and Branch Jobs", 1)[1].split("###", 1)[0]
+    jobs: set[str] = set()
+    for line in table.splitlines():
+        if not line.startswith("| `"):
+            continue
+        jobs.add(line.split("`", 2)[1])
+    return jobs
+
+
+def test_the_contracts_required_jobs_table_is_the_manifests() -> None:
+    """Covers: ENV-016 — one list of required jobs, in two documents.
+
+    The table listed twelve jobs while the manifest required fifteen: `e2e`
+    (added under ENV-014) and `frontend-smoke` were absent, and
+    `scheduler-image` was filed under "Scheduled and Manual Jobs" although
+    the manifest requires it. So the contract contradicted itself — WEB-027
+    and WEB-033 declare their tier as `frontend-smoke`, and ENV-014 requires
+    a per-change end-to-end job, neither of which its own ownership table
+    knew. `CI_EVIDENCE_MAP.md` records the previous `frontend-smoke`
+    omission as an incident; this was the same omission one document over.
+    """
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    required = {item["workflow"].removesuffix(".yml") for item in manifest["required"]}
+    listed = _contract_required_jobs()
+    assert listed == required, (
+        "the contract's required-jobs table and the CI evidence manifest "
+        f"disagree: only in the table {sorted(listed - required)}, only in "
+        f"the manifest {sorted(required - listed)}"
+    )
+
+
 def _identities(*sections: str) -> list[tuple[str, str]]:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     return [

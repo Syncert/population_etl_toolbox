@@ -210,8 +210,9 @@ The project must be installed in editable mode in each test environment so tests
 | `e2e` | Raw-to-API deterministic flow | Disposable PostgreSQL and optionally Redis |
 | `performance` | Load, volume, or benchmark scenario | Explicitly provisioned test services |
 | `slow` | Expected duration exceeds 30 seconds | Depends on companion marker |
+| `deployment` | Container, proxy, or composed-service contract | Disposable pinned Compose services only |
 
-Marker registration uses `strict_markers = true`; an unknown marker is a collection failure. Tests with infrastructure needs carry every applicable marker, for example `@pytest.mark.integration` and `@pytest.mark.database`.
+Marker registration uses `strict_markers = true`; an unknown marker is a collection failure, and this table is the declared set: a marker declared in `pyproject.toml` that no test carries is removed rather than left as a word a reader could reach for. `frontend` was such a declaration -- the frontend tiers run under vitest and Playwright, so no pytest test can carry it (ENV-016). Tests with infrastructure needs carry every applicable marker, for example `@pytest.mark.integration` and `@pytest.mark.database`.
 
 The intended developer command contract is:
 
@@ -276,7 +277,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
-| Environment, collection, and package | ENV-001–ENV-015 | None |
+| Environment, collection, and package | ENV-001–ENV-016 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-010 | None |
@@ -291,7 +292,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-074 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **396 of 396** | **0 of 396** |
+| **Total** | **397 of 397** | **0 of 397** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +300,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 396-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 397-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -350,6 +351,7 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-013 | P1 | Configuration | Integration tiers are documented by their requirements | `RUNNING_TESTS.md` documents the database and Redis tiers by what they actually need -- a PostgreSQL 16 with PostGIS, a database whose name ends in `_test`, the five `TEST_POSTGRES_*` settings, and a loopback Redis on database 15 -- beside the Compose path, with each tier's own CI marker expression; the settings it names are asserted against the ones `tests/support/postgres.py` derives, and the marker expression against the workflow that runs it | A reader without a container runtime concluding the tier cannot be run, or a renamed setting leaving a page of instructions that silently skips every test it claims to run |
 | ENV-014 | P0 | Configuration | The product end-to-end tier grades the change that breaks it | The tier is run by a workflow a push and a pull request both trigger, and that per-change run is graded against the executable product inventory (`E2E_REQUIRE_ALL_PRODUCTS`), so a skipped or deselected product fails rather than shortening the run; derived from the workflows rather than naming one, so renaming or replacing the file keeps the rule | `e2e-performance` declared only `schedule` and `workflow_dispatch`, and a scheduled run grades the default branch, so no branch and no pull request ever received end-to-end feedback: a change could break `tests/e2e` and merge with fourteen green checks, which is how the geography-grain vocabulary left that tier red from the day it merged until a hand-run found it |
 | ENV-015 | P0 | Contract / `unit shared` | The integration tier CI runs is the integration tier the repository defines | `tests/integration/api` is run by a required per-push and per-pull-request job (`api-integration`), in an environment carrying the API extras and both services its own marker expression needs -- a separate workflow because `postgres-integration` installs Airflow, whose SQLAlchemy 1.4 pin cannot share an environment with the API's 2.x. Three guards keep the map honest, each derived from the workflows rather than restated: every directory under `tests/integration` is invoked by some required job; every `tests/integration` file the CI evidence map cites is run by a job that row names; and `RUNNING_TESTS.md` documents, per required job, the exact directories and marker expression that job runs | `TESTING_CONTRACT.md` and `tests/run.ps1` define the integration tier as `tests/integration`, and each workflow ran one subdirectory of it. No workflow ran `tests/integration/api` at all: four of its files -- the catalog/serving agreement sweeps, the evidence-packet contract, the request snapshot, and the stored-work listing -- were graded by nothing, scheduled or otherwise, while eleven plan frontmatters verified against that path and recorded a green local run believing CI would repeat it. The evidence map said those files rode `api-unit`, `postgres-integration` and `frontend`; they rode nothing. `RUNNING_TESTS.md` documented the API path under `postgres-integration`, whose environment cannot run it, and documented a Redis scope its job never had -- ENV-013's guard compared one expression against one workflow, so the other half drifted unnoticed |
+| ENV-016 | P1 | Contract / `unit shared` | The contract's required-jobs table is the manifest's, and every declared marker means something | The "Pull-Request and Branch Jobs" table lists exactly the jobs `tests/support/ci_evidence_manifest.json` marks required, compared by name in both directions, so a job added to CI or retired from it cannot leave the ownership table describing a different gate. And a pytest marker is declared only if some test carries it and the contract's marker table names it -- `--strict-markers` catches the opposite direction and nothing caught this one | The table listed twelve jobs while the manifest required fifteen. `e2e`, added under ENV-014 to grade every change, and `frontend-smoke`, which WEB-027 and WEB-033 name as their own tier, were absent; `scheduler-image` sat under "Scheduled and Manual Jobs" although the manifest requires it. The document contradicted itself, and `CI_EVIDENCE_MAP.md` already records the previous `frontend-smoke` omission as an incident -- this was the same omission one document over. The `frontend` marker was declared for JavaScript tests that run under vitest and Playwright, so no pytest test could carry it: `-m frontend` answered an empty run that reads as a passing tier, and `deployment` was declared and used but missing from the marker table |
 
 ### Plan Dispatcher Tests
 
@@ -872,6 +874,10 @@ Jobs are independent and start from a fresh checkout.
 | `frontend` | Node 24 + Chromium | Audit, lint, unit/component, production build, and browser contracts | Required | Playwright report and traces on failure |
 | `deployment-smoke` | Python 3.11 + pinned PostGIS/Redis/Martin/nginx | Static image/proxy contracts, composed health/dependency smoke, and verified teardown | Required | Sanitized Compose logs on failure |
 | `coverage` | API Python 3.11 | Application-owned Python coverage, `tests/support/changed_coverage.py` changed-line gate, critical-module gate, and overall ratchet | Required | XML/JSON/JUnit coverage report |
+| `api-integration` | API Python 3.11 + fresh pinned PostGIS 16 and Redis 7 | The `tests/integration/api` tier: the catalog/serving agreement sweeps, the evidence-packet and saved-analysis contracts, the request snapshot, the stored-work listing, the middleware order, and the real-database contract. Its own job because `postgres-integration` installs Airflow, whose SQLAlchemy 1.4 pin cannot share an environment with the API's 2.x | Required | JUnit |
+| `e2e` | ETL Python 3.11 + fresh pinned PostGIS 16 and Redis 7 | The raw-to-API product end-to-end tier, per change, graded against the executable product inventory | Required | JUnit and sanitized logs on failure |
+| `frontend-smoke` | Node 24 + pinned Compose stack (API, PostGIS, Martin, nginx) | The live-stack consumer contracts (WEB-027, WEB-033) against the API image the job rebuilds | Required | Playwright report and sanitized Compose logs on failure |
+| `scheduler-image` | Airflow scheduler image | The DAG suite inside the built image; triggered by Airflow image or dependency changes | Required | JUnit |
 
 Coverage is reported explicitly by compatible environment rather than combining incompatible runtimes: `coverage` owns API/ETL application coverage, `api-unit` and `etl-unit` emit their scoped XML files, and `dag-parse` emits `coverage-dags.xml` for DAG code.
 
@@ -885,7 +891,6 @@ CI cancellation groups stop superseded runs on the same branch. Required jobs us
 |---|---|---|
 | `external-contract` | Daily schedule and manual dispatch | Does not block pull requests; contract regressions alert maintainers, while transient upstream outages are reported separately |
 | `e2e-performance` | Weekly schedule and manual dispatch | Runs E2E, resilience, API/database, bounded performance, Locust, and the million-row profile on schedule; publishes JUnit/load artifacts |
-| `scheduler-image` | Airflow image or dependency change | Required for relevant changes; runs DAG compatibility tests in the built image |
 
 ### Change-Based Expectations
 
