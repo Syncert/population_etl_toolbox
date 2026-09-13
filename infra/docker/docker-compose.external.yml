@@ -95,7 +95,12 @@ services:
       # cannot fetch task logs from the scheduler's log server (403 FORBIDDEN).
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-internal-dev-log-signing-key}
       DATA_QUALITY_COMMIT_SHA: ${DATA_QUALITY_COMMIT_SHA:-}
-      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-public_data}
+      # The same expression the `public_data` connection below uses for
+      # --conn-schema. These two named different databases: the connection
+      # resolved to the external warehouse while this told every module to
+      # write `public_data`, so ingestion opened a database the operator
+      # never created.
+      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
@@ -131,7 +136,8 @@ services:
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
-      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit'
+      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 
   airflow-webserver:

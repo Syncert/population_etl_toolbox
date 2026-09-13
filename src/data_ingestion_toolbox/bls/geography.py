@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import os
 import logging
 import re
 from typing import List, Optional
 
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
+from data_ingestion_toolbox.utility.db_connection import (
+    PostgresConnectionFactory,
+    warehouse_database,
+)
 from .config import CONFIG
 
 logger = logging.getLogger(__name__)
 
 # Overridable so self-contained stacks can point at their own warehouse
 # database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+_TARGET_DATABASE = warehouse_database()
 
 
 def _get_pg_connection():

@@ -19,6 +19,8 @@ import os
 
 from pydantic import BaseModel, field_validator
 
+from data_ingestion_toolbox.utility.db_connection import warehouse_database
+
 #: Public Quick Stats host. No path is embedded here; the client owns the
 #: three registered endpoint paths.
 QUICK_STATS_BASE_URL = "https://quickstats.nass.usda.gov"
@@ -31,10 +33,10 @@ QUICK_STATS_MAX_RECORDS = 50_000
 #: Environment variable carrying the required Quick Stats API key.
 API_KEY_ENVIRONMENT_VARIABLE = "USDA_NASS_API_KEY"
 
-# Shared target warehouse database.
-# Overridable so self-contained stacks can point at their own warehouse
-# database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+# The warehouse this source reads and writes, named in one place
+# (``utility.db_connection.warehouse_database``) so a retargeted deployment
+# cannot be half retargeted.
+_TARGET_DATABASE = warehouse_database()
 
 
 class NassConfig(BaseModel):

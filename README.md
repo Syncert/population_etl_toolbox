@@ -411,7 +411,9 @@ PYTHONPATH=/opt/data_ingestion_toolbox/src:/opt/data_ingestion_toolbox
 AIRFLOW__CORE__LOAD_EXAMPLES=False
 ```
 
-Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration + metadata DB.
+Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration.
+It runs one PostGIS cluster with Airflow's metadata database and a separate warehouse database
+(`PUBLIC_DATA_DB_NAME`, default `population_etl`) that the `public_data` connection points at.
 
 Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
 

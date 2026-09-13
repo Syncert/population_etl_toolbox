@@ -4,7 +4,11 @@ Containerization artifacts and runtime definitions.
 
 ## Compose Stacks
 
-- `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + a single Postgres metadata/service DB.
+- `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + one PostGIS
+  cluster holding two databases: Airflow's `airflow` metadata database and the warehouse
+  the DAGs write (`PUBLIC_DATA_DB_NAME`, default `population_etl`), created at first start
+  by `initdb/create_warehouse_database.sh`. They are never the same database: ingestion
+  inside Airflow's metadata database makes the documented reset drop Airflow with it.
 - `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, the Next.js MVP app, and Airflow services.
 - `docker-compose.external.yml`: External integration stack targeting existing analytics and Airflow metadata Postgres hosts. Supports service-only local MVP (`redis`, `api`, `martin`, `web`) by default, with optional local Airflow services under profile `airflow-local`.
 

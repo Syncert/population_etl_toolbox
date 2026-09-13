@@ -24,6 +24,10 @@ they fail differently:
 The reverse direction has no exemption. A key the example declares that its
 compose file never interpolates asks the operator for something that cannot
 take effect.
+
+Compose's own reading of `${...}` -- including a reference nested inside
+another's default -- is in ``tests/support/compose_expressions``, because the
+warehouse-target guard beside this one needs the same answers.
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.support.compose_expressions import interpolations
 
 pytestmark = [pytest.mark.unit, pytest.mark.deployment]
 
@@ -46,81 +52,6 @@ STACK_PAIRS = {
 
 APPLICATION_STORAGE_VARIABLE = "APP_API_DATABASE_URL"
 API_COMMAND = "uvicorn apps.api.main:app"
-
-
-class Interpolation:
-    """One `${...}` reference and whether a value has to be supplied for it."""
-
-    def __init__(self, name: str, separator: str, default: str) -> None:
-        self.name = name
-        self.separator = separator
-        self.default = default
-
-    @property
-    def must_be_supplied(self) -> bool:
-        """True when nothing usable stands behind the reference.
-
-        A `:?` reference carries an error message rather than a fallback, so
-        it needs a value exactly as much as a bare `${VAR}` does.
-        """
-        return self.separator != ":-" or self.default == ""
-
-
-def _interpolations(text: str) -> list[Interpolation]:
-    """Every `${...}` reference in ``text``, including nested ones.
-
-    Compose allows a reference inside another reference's default
-    (`${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}`), and the inner one is
-    the reference with no default of its own. A regex reads that outer default
-    as empty and calls a working fallback a missing value, so the braces are
-    matched by hand.
-    """
-    found: list[Interpolation] = []
-    index = 0
-    while True:
-        start = text.find("${", index)
-        if start == -1:
-            return found
-        depth = 0
-        cursor = start
-        while cursor < len(text):
-            if text.startswith("${", cursor):
-                depth += 1
-                cursor += 2
-                continue
-            if text[cursor] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            cursor += 1
-        body = text[start + 2 : cursor]
-        name, separator, default = _split_default(body)
-        if name.isidentifier() and name.isupper():
-            found.append(Interpolation(name, separator, default))
-        # Re-scan the body so a nested reference is read on its own terms.
-        found.extend(_interpolations(body))
-        index = cursor + 1
-
-
-def _split_default(body: str) -> tuple[str, str, str]:
-    """Split a reference body on its own `:-` or `:?`, not a nested one."""
-    depth = 0
-    for position, character in enumerate(body):
-        if body.startswith("${", position):
-            depth += 1
-        elif character == "}" and depth:
-            depth -= 1
-        elif (
-            character == ":"
-            and depth == 0
-            and body[position + 1 : position + 2]
-            in {
-                "-",
-                "?",
-            }
-        ):
-            return body[:position], body[position : position + 2], body[position + 2 :]
-    return body, "", ""
 
 
 def _declared_keys(example: str) -> list[str]:
@@ -142,7 +73,7 @@ def test_every_value_a_stack_needs_is_in_the_example_it_ships_with(
     compose_name: str, example_name: str
 ) -> None:
     """Covers: DEPLOY-006 — an operator's env example names what the stack needs."""
-    references = _interpolations(_read(compose_name))
+    references = interpolations(_read(compose_name))
     declared = set(_declared_keys(_read(example_name)))
     undeclared = sorted(
         {
@@ -163,7 +94,7 @@ def test_an_example_asks_only_for_values_its_stack_reads(
     compose_name: str, example_name: str
 ) -> None:
     """Covers: DEPLOY-006 — an env example asks for nothing the stack ignores."""
-    referenced = {reference.name for reference in _interpolations(_read(compose_name))}
+    referenced = {reference.name for reference in interpolations(_read(compose_name))}
     unread = [
         key for key in _declared_keys(_read(example_name)) if key not in referenced
     ]

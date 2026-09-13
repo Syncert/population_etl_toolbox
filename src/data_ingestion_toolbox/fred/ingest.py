@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import logging
 import random
@@ -24,6 +23,7 @@ from tenacity import (
 from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
+    warehouse_database,
 )
 from data_ingestion_toolbox.capture import (
     ResponseCapture,
@@ -47,7 +47,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # Target database
 # Overridable so self-contained stacks can point at their own warehouse
 # database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+_TARGET_DATABASE = warehouse_database()
 
 # FRED API base URL
 FRED_API_BASE = "https://api.stlouisfed.org/fred"

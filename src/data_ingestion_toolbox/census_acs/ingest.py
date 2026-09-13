@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 import random
 import time
@@ -15,6 +14,7 @@ import psycopg2
 from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionDetails,
     PostgresConnectionFactory,
+    warehouse_database,
 )
 from tenacity import (
     retry,
@@ -79,7 +79,7 @@ logger = logging.getLogger(__name__)
 # If you want this configurable, put it in CONFIG (recommended).
 # Overridable so self-contained stacks can point at their own warehouse
 # database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+_TARGET_DATABASE = warehouse_database()
 
 
 def _get_pg_conn_details() -> "PostgresConnectionDetails":

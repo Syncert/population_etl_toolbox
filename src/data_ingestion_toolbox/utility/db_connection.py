@@ -17,6 +17,38 @@ except Exception:  # ImportError or airflow not installed
     _AIRFLOW_AVAILABLE = False
 
 
+#: The Airflow connection id every DAG resolves to reach the warehouse. It
+#: names a *connection*, not a database, and confusing the two is how one
+#: shipped stack came to point ingestion at Airflow's own metadata database:
+#: the connection was called ``public_data`` and its schema was ``airflow``.
+WAREHOUSE_CONNECTION_ID = "public_data"
+
+#: The environment variable a deployment uses to name the warehouse database
+#: within that connection.
+WAREHOUSE_DATABASE_VARIABLE = "PUBLIC_DATA_DB_NAME"
+
+#: The name used when a deployment does not say. Every shipped Compose stack
+#: sets the variable from its own warehouse, so this is reached only by a bare
+#: ``python -m`` run outside a stack; it is the name
+#: ``docs/reference/BETA_RESET_REINGESTION.md`` documents.
+DEFAULT_WAREHOUSE_DATABASE = "public_data"
+
+
+def warehouse_database() -> str:
+    """The warehouse database this process reads and writes.
+
+    Ten modules each carried their own ``os.environ.get("PUBLIC_DATA_DB_NAME",
+    "public_data")``, which is ten chances for a deployment to be half
+    retargeted -- and the value is read at import time, so a disagreement
+    shows up as a connection to a database that does not exist rather than as
+    a configuration error. One definition, read here.
+    """
+    return (
+        os.environ.get(WAREHOUSE_DATABASE_VARIABLE, "").strip()
+        or DEFAULT_WAREHOUSE_DATABASE
+    )
+
+
 @dataclass
 class PostgresConnectionDetails:
     host: str

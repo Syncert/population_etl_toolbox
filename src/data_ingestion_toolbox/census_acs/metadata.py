@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-import os
 import httpx
 import logging
 import psycopg2
@@ -15,6 +14,7 @@ import re
 from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionFactory,
     PostgresConnectionDetails,
+    warehouse_database,
 )
 
 from .config import CONFIG
@@ -26,7 +26,7 @@ DATA_JSON_URL = "https://api.census.gov/data.json"
 # Change this if your metadata lives somewhere else.
 # Overridable so self-contained stacks can point at their own warehouse
 # database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+_TARGET_DATABASE = warehouse_database()
 
 # When running inside Airflow, you can let CONFIG.postgres_conn_id drive the
 # connection. In local dev (no Airflow), this will be None and the factory
