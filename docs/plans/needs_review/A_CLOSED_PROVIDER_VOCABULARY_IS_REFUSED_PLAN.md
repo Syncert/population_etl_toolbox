@@ -144,6 +144,22 @@ and `tests/unit/api/test_validation_security.py` holds the app-wide half:
 - `test_an_empty_filter_value_is_absent_on_every_route`, over every optional
   plain-string query parameter of every served GET route.
 
+The unit tier proves which word is *bound*; only a real query proves the bound
+word *matches*, and the two vocabularies are stored in opposite cases --
+`source_desc` upper, `value_status` lower -- so normalising to the wrong one
+would answer an empty page, which is this defect wearing different clothes.
+`tests/integration/api/test_usda_nass_api_contract.py` closes that against the
+published fixture: each word a served row carries, sent in that case and the
+other, answers exactly the rows carrying it, and an empty value answers the
+unfiltered page. Proved by normalising `value_status` to the wrong case:
+
+```text
+E  AssertionError: {"detail":"value_status must be one of
+   below_rounding_unit, insufficient_reports, missing, not_applicable,
+   not_available, quality_flagged, valid, withheld"}
+E  assert 422 == 200
+```
+
 Each was proved by breaking the fix back:
 
 ```text
