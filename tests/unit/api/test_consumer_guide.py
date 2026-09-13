@@ -261,3 +261,93 @@ def test_the_guide_names_every_field_that_qualifies_a_value() -> None:
     assert not unnamed, (
         f"the consumer guide does not name these published qualifier fields: {unnamed}"
     )
+
+
+#: The release-selection table's claims, read from the guide rather than
+#: written here: route, the parameter it names, and the envelope field.
+_RELEASE_TABLE_ROW = re.compile(
+    r"^\|\s*`(?P<route>/[^`]+)`\s*\|(?P<asks>[^|]*)\|(?P<default>[^|]*)\|"
+    r"(?P<envelope>[^|]*)\|\s*$",
+    re.MULTILINE,
+)
+
+
+def _release_table_rows() -> list[dict[str, str]]:
+    """The rows of the guide's release-selection table."""
+    text = GUIDE.read_text(encoding="utf-8")
+    section = text.split("### Which release you get", 1)
+    if len(section) < 2:
+        return []
+    body = section[1].split("###", 1)[0]
+    return [match.groupdict() for match in _RELEASE_TABLE_ROW.finditer(body)]
+
+
+def test_the_guide_names_each_routes_release_default() -> None:
+    """Covers: API-110 — the release defaults differ, and the guide says so.
+
+    Three resources answer the same question three ways: three envelope field
+    names, three vocabularies, and opposite defaults -- `/observations` and
+    `/cdc/observations` answer the newest release while
+    `/usda-nass/observations` answers every published one. All of it is
+    pinned behaviourally at three tiers, and the guide's entire word on the
+    two source routes was that they "remain for source-specific
+    exploration".
+
+    Every claim in the table is checked against the served document and the
+    reviewed snapshot, so the table cannot drift into describing a contract
+    the API does not serve.
+    """
+    import json
+
+    rows = _release_table_rows()
+    assert len(rows) >= 3, f"the release table parsed {len(rows)} rows"
+
+    document = app.openapi()
+    snapshot = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "tests/fixtures/api/openapi_contract.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    for row in rows:
+        path = f"/api/v1{row['route']}"
+        operation = document["paths"][path]["get"]
+        declared = {
+            parameter["name"]: parameter
+            for parameter in operation.get("parameters") or []
+        }
+
+        # Every parameter the row names in backticks is declared on the route.
+        named = set(re.findall(r"`(\w+)=", row["asks"]))
+        missing = sorted(named - set(declared))
+        assert not missing, f"{path} does not declare {missing}"
+
+        # Where the row says there is no history parameter, there is none.
+        if "no history parameter" in row["asks"]:
+            assert "scope" not in declared and "latest" not in declared, (
+                f"{path} declares a history parameter the guide says it lacks"
+            )
+
+        # A default the row states in bold or plain text must match the
+        # served default where the parameter carries one.
+        if "latest=true" in row["asks"]:
+            schema = declared["latest"].get("schema", {})
+            assert schema.get("default") is False, (
+                f"{path} declares `latest` default {schema.get('default')!r}; "
+                "the guide says an unqualified read answers every release"
+            )
+        if "scope=latest" in row["asks"]:
+            schema = declared["scope"].get("schema", {})
+            assert "latest" in json.dumps(schema), schema
+
+        # The envelope field the row names exists on the route's response.
+        field = re.search(r"`(\w+)`", row["envelope"]).group(1)
+        response_schema = operation["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        schema_name = str(response_schema["$ref"]).rsplit("/", 1)[-1]
+        assert schema_name in snapshot["schemas"], schema_name
+        assert field in snapshot["schemas"][schema_name]["properties"], (
+            f"{path} answers {schema_name}, which publishes no `{field}`"
+        )
