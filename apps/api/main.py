@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from apps.api.database import DatabaseNotConfigured, dispose_engine
 from apps.api.dependencies import (
     reject_undeclared_query_parameters,
+    reject_values_outside_a_closed_set,
     serving_contract_unavailable,
 )
 from apps.api.failures import (
@@ -128,7 +129,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # mistake this API used to answer with a confident wrong page
         # (API-093); it declares no parameters of its own, so the published
         # contract is unchanged.
-        dependencies=[Depends(reject_undeclared_query_parameters)],
+        dependencies=[
+            Depends(reject_undeclared_query_parameters),
+            Depends(reject_values_outside_a_closed_set),
+        ],
         # And declared on every route for the same reason: that dependency
         # refuses an undeclared query parameter with a 422 before any route
         # runs, so every operation can answer one. The published document

@@ -42,6 +42,18 @@ list.
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, and `observation_filters` — the neutral filters that source supports |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
+**A value outside a closed set is refused, not answered empty.** `geo_level`
+names a grain, and the vocabulary is closed: `NATIONAL`, `STATE`, `COUNTY`,
+`PLACE`, `AGENCY`. A word outside it is a `422` naming the five, on every
+route — `geo_level=COUNTRY` is not a grain with no rows, it is not a grain,
+and an empty page would read as an answer about the warehouse. Case does not
+matter and `NATION`/`US` are still accepted for `NATIONAL`, so a grain read
+from the catalog can be sent straight back. `/cdc/observations` spells the
+same filter `geo_type` and names the three grains CDC publishes.
+`state_fips` and `county_fips` are refused the same way when they are not two
+and three digits; a well-formed code that names no geography answers an empty
+page, because that is a fact about the warehouse rather than the request.
+
 `q` on `/catalog/metrics` and `/catalog/geographies` is a case-insensitive
 **literal** substring search, not a pattern: `%` and `_` match themselves, so
 `q=CENSUS_ACS` and `q=B01003_001` find those exact strings rather than

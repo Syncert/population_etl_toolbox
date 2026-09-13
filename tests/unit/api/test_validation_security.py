@@ -359,3 +359,100 @@ def test_every_served_route_refuses_an_undeclared_query_parameter() -> None:
                         "parameter"
                     )
     assert not unanswered, "\n".join(unanswered)
+
+
+def _closed_parameter_probes() -> tuple[tuple[str, str, str], ...]:
+    """One rejectable value per closed-value parameter, and one accepted one.
+
+    `geo_level`'s vocabulary is closed (`registry.GEO_GRAINS`); the two FIPS
+    parameters have a closed shape. `geo_type` is CDC's spelling of the grain
+    and that route refuses it against the three words CDC publishes, so the
+    sweep below asserts the refusal without asserting whose message it is.
+    """
+    return (
+        ("geo_level", "COUNTRY", "COUNTY"),
+        ("geo_type", "COUNTRY", "COUNTY"),
+        ("state_fips", "ZZ", "55"),
+        ("county_fips", "ZZZ", "025"),
+    )
+
+
+def test_every_route_refuses_a_value_outside_a_closed_set() -> None:
+    """Covers: API-122 — a grain that is not one is refused, not filtered on.
+
+    API-093 refused a query parameter no route declares. This is the same
+    defect one level down and in its own words: `geo_level=COUNTRY` was bound
+    into the filter, matched nothing, and answered 200 with "a total that
+    reads as a complete answer to the question the caller thought they
+    asked". `/distribution/bins` went further and echoed the invented word
+    back in its envelope beside a bin count.
+
+    Two routes already refused a grain outside their own subset (API-116),
+    which is what made the rest a divergence rather than a design. Read from
+    the served document, so a route added later is covered without an edit.
+    """
+    document = app.openapi()
+    unanswered: list[str] = []
+    with _client_for(_NoExecuteSession()) as client:
+        for template, operations in sorted(document["paths"].items()):
+            for method, operation in sorted(operations.items()):
+                if method.upper() != "GET":
+                    continue
+                declared = {
+                    parameter["name"]
+                    for parameter in operation.get("parameters") or []
+                    if parameter.get("in") == "query"
+                }
+                for name, refused, _accepted in _closed_parameter_probes():
+                    if name not in declared:
+                        continue
+                    response = client.get(
+                        _example_path(template), params={name: refused}
+                    )
+                    if response.status_code != 422 or name not in response.text:
+                        unanswered.append(
+                            f"GET {template} answered {response.status_code} for "
+                            f"{name}={refused}, not a refusal naming the parameter"
+                        )
+    assert unanswered == [], "\n".join(unanswered)
+
+
+def test_a_closed_parameter_still_accepts_what_the_guide_promises() -> None:
+    """Covers: API-122 — the refusal narrows nothing the contract offers.
+
+    The guide promises a grain read from the catalog can be sent straight
+    back, case-insensitively, with `NATION` accepted for `NATIONAL`
+    (ADR-0002 keeps a saved configuration answering). And an empty value is
+    what a saved analysis document records for a filter its source does not
+    declare (API-117, WEB-075): every service reads that as absent, so the
+    refusal must too, or replaying a stored document becomes a 422.
+
+    Each parameter is sent to a route that declares it, so a value accepted
+    here was accepted where it is actually used. The session refuses to be
+    queried, so a request that gets past validation fails loudly rather than
+    passing for want of data.
+    """
+    accepted = (
+        (
+            "/api/v1/catalog/geographies",
+            {},
+            "geo_level",
+            ("COUNTY", "county", "NATION", "us", ""),
+        ),
+        ("/api/v1/catalog/geographies", {}, "state_fips", ("55", "")),
+        (
+            "/api/v1/observations",
+            {"metric_code": "X:1"},
+            "county_fips",
+            ("025", ""),
+        ),
+    )
+    failing = _FailingSession(OperationalError("read refused", None, Exception()))
+    with _client_for(failing) as client:
+        for path, fixed, name, values in accepted:
+            for value in values:
+                response = client.get(path, params={**fixed, name: value})
+                assert response.status_code != 422, (
+                    f"{path} refused {name}={value!r} and the contract offers "
+                    f"it: {response.text}"
+                )

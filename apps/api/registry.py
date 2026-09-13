@@ -384,11 +384,35 @@ def normalize_geo_level(value: str) -> str:
     """The vocabulary word for a requested ``geo_level``, alias-aware.
 
     Upper-cased and trimmed; an alias becomes its vocabulary word; anything
-    else is passed through so the filter fails to match rather than a wrong
-    grain silently answering.
+    else is passed through unchanged. Passing it through is what makes
+    ``grain_refusal`` possible: normalising is not validating, and a request
+    carrying a word that is not a grain is refused rather than filtered on
+    (API-122).
     """
     word = str(value).strip().upper()
     return GEO_GRAIN_ALIASES.get(word, word)
+
+
+def grain_refusal(
+    field: str, value: str, vocabulary: tuple[str, ...] = GEO_GRAINS
+) -> str | None:
+    """Why a requested grain is not one, or ``None`` when it is.
+
+    The vocabulary is closed and published: the catalog carries
+    ``valid_geo_grains`` per metric, the consumer guide promises "a grain read
+    from the catalog can be sent straight back", and two routes already refuse
+    a word outside their own subset of it. Everywhere else an unknown word was
+    bound into the filter, matched nothing, and answered 200 with ``total: 0``
+    -- API-093's defect one level down, in its own words: "a total that reads
+    as a complete answer to the question the caller thought they asked".
+    ``geo_level=COUNTRY`` is not a grain with no rows; it is not a grain.
+
+    ``vocabulary`` narrows the answer for a source that publishes a subset, so
+    CDC and USDA NASS keep naming their own three words rather than all five.
+    """
+    if normalize_geo_level(value) in vocabulary:
+        return None
+    return f"{field} must be one of: {', '.join(vocabulary)}"
 
 
 #: Sources whose served relation carries the grain as a source-shaped

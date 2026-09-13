@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastapi import HTTPException, Request
 from fastapi.dependencies.utils import get_flat_params
@@ -6,6 +7,7 @@ from fastapi.params import Query
 from fastapi.responses import JSONResponse
 
 from apps.api.database import get_db_session
+from apps.api.registry import grain_refusal
 
 logger = logging.getLogger(__name__)
 
@@ -96,3 +98,72 @@ def reject_undeclared_query_parameters(request: Request) -> None:
             f"accepted: {accepted}"
         ),
     )
+
+
+#: Request parameters whose value space is closed, and how a value is checked.
+#:
+#: A filter whose vocabulary or shape is closed must refuse a value outside it
+#: rather than bind it and answer an empty page (API-122). `geo_level` and
+#: `geo_type` name a grain: the vocabulary is `registry.GEO_GRAINS`, published
+#: per metric as `valid_geo_grains`, and the guide promises a grain read from
+#: the catalog can be sent straight back. `state_fips` and `county_fips` have a
+#: closed *shape* rather than a closed set -- the warehouse's own CHECK
+#: constraints are `^[0-9]{2}$` and `^[0-9]{3}$` -- so a well-formed code that
+#: names no state answers nothing (a fact about the warehouse) while `ZZ` is
+#: refused (a fact about the request).
+#:
+#: `geo_id` is deliberately absent. Its shape is source-dependent -- `us:1`,
+#: `state:NN`, `state:NN|county:NNN`, `state:NN|place:NNNNN`, and `agency:<ORI>`
+#: for FBI UCR, whose tail is a provider string -- so a shape rule here would
+#: be a second declaration of something the reference layer owns.
+_FIPS_SHAPES: dict[str, tuple[re.Pattern[str], str]] = {
+    "state_fips": (re.compile(r"\A[0-9]{2}\Z"), "two digits"),
+    "county_fips": (re.compile(r"\A[0-9]{3}\Z"), "three digits"),
+}
+#: `geo_level` is the grain every shared route takes. `geo_type` is absent on
+#: purpose: only `/cdc/observations` declares it, and that route already
+#: refuses it against the three grains CDC actually publishes (API-116) --
+#: a narrower and therefore more accurate refusal than this rule's five-word
+#: vocabulary would give. Listing it here would replace an exact message with
+#: a vaguer one.
+_GRAIN_PARAMETERS = ("geo_level",)
+CLOSED_PARAMETERS: frozenset[str] = frozenset(_GRAIN_PARAMETERS) | frozenset(
+    _FIPS_SHAPES
+)
+
+
+def reject_values_outside_a_closed_set(request: Request) -> None:
+    """Refuse a grain that is not one, and a FIPS code that is not one.
+
+    Runs for every route from the application's own dependency list, so a
+    route added later is covered without being named here -- the same reason
+    `reject_undeclared_query_parameters` is mounted there.
+
+    An empty value is treated as absent, because every service already treats
+    it that way: `if state_fips:` is falsy, so the filter is not applied. A
+    saved analysis document records `state_fips: ""` for a source that
+    declares no state filter (API-117, WEB-075), and replaying one must not
+    become a 422.
+    """
+    route = request.scope.get("route")
+    declared = declared_query_parameters(route)
+    for parameter in sorted(CLOSED_PARAMETERS & declared):
+        value = request.query_params.get(parameter)
+        if not value:
+            continue
+        shape = _FIPS_SHAPES.get(parameter)
+        if shape is not None:
+            pattern, expected = shape
+            if not pattern.match(value):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{parameter} must be {expected}; a well-formed code "
+                        f"that names no geography answers an empty page, and "
+                        f"this is not a well-formed code"
+                    ),
+                )
+            continue
+        refusal = grain_refusal(parameter, value)
+        if refusal:
+            raise HTTPException(status_code=422, detail=refusal)
