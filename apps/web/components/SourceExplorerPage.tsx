@@ -28,6 +28,7 @@ import {
 } from "../lib/api/client";
 import type { QueryParams } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
+import { observationExport } from "../lib/observationExport";
 import type {
   CollectionResponse,
   DistributionResponse,
@@ -1668,37 +1669,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   }
 
   function exportCsv() {
-    // The export carries its own reproducibility envelope: which scope and
-    // release answered, and each row's own published release identity.
-    // Every published coverage field travels, the way `margin_of_error`
-    // already does whether or not the source publishes one: a file that
-    // carried a subset would be this client deciding which part of a source's
-    // participation basis a reader may have (WEB-051). The same rule, and the
-    // same reason, for every field `ObservationUncertainty` publishes: the
-    // export carried `margin_of_error` alone, so CDC's confidence bounds and
-    // USDA NASS's coefficient of variation -- the figure NASS publishes a
-    // symbol for precisely to say an estimate is unreliable -- were dropped
-    // from every file (WEB-053).
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", ...OBSERVATION_UNCERTAINTY_FIELDS, ...OBSERVATION_COVERAGE_FIELDS, "scope", "release", "as_of", ...dimensionFilters];
-    const rows = observations.map((item) => [
-      item.geo_id,
-      observationName(item),
-      observationPeriodLabel(item),
-      item.metric_code,
-      item.value,
-      item.value_status,
-      observationUnit(item),
-      item.source || item.source_code,
-      item.dataset || item.dataset_code,
-      ...OBSERVATION_UNCERTAINTY_FIELDS.map((field) =>
-        observationUncertaintyValue(item, field),
-      ),
-      ...OBSERVATION_COVERAGE_FIELDS.map((field) => observationCoverageValue(item, field)),
-      observationScope,
-      item.release,
-      item.as_of,
-      ...dimensionFilters.map((name) => observationDimensionValue(item, name)),
-    ]);
+    // The columns and rows are `observationExport`'s, so what the file
+    // carries is asserted at the unit tier rather than only reviewed: every
+    // published uncertainty field (WEB-053) and every published coverage
+    // field (WEB-051) travels whether or not this source publishes one.
+    const { headings, rows } = observationExport(observations, {
+      scope: observationScope,
+      dimensionFilters,
+    });
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
