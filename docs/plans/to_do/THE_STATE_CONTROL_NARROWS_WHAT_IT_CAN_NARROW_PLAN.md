@@ -64,6 +64,15 @@ So on Census PEP the state control is disabled at every grain, and therefore:
 The instruction is the problem: the control tells the reader to do something
 the screen does not let them do.
 
+**Since WEB-066 the dead end is total.** A shared link used to apply a state
+unconditionally, so `?source=pep&state=55` was the one way to give the
+picker a state — at the cost of a state the reader could not see or clear, a
+map and legend narrowed while the rows stayed national, and a save the API
+refused over a filter nobody chose. WEB-066 closed that, correctly and for
+the reason the requested scope was already gated. The picker now has no route
+to a state on Census PEP at all, which makes this plan the only remaining
+answer.
+
 ## Open question, which is why this is not folded into WEB-064
 
 Enabling the control would send nothing undeclared — `declaredOnly` in

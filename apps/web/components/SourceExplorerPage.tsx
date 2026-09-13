@@ -740,7 +740,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (requested?.valueScale) {
           setValueScale(requested.valueScale);
         }
-        if (requested?.stateFips) setSelectedStateFips(requested.stateFips);
+        // A requested state is applied only where the source declares the
+        // filter, for the reason the scope below is: `state_fips` is as
+        // per-source as `scope`, and Census PEP declares none because
+        // `gold_pep.population_estimate_latest` carries no fips columns. A
+        // link setting one anyway left a state in a control too disabled to
+        // clear it, narrowed the map and the legend while the rows stayed
+        // national, and made saving the view a 422 over a filter the reader
+        // never chose (WEB-066). `geo_id` needs no such gate: every source
+        // declares it.
+        if (requested?.stateFips && sourceSupportsParameter(source, "state_fips")) {
+          setSelectedStateFips(requested.stateFips);
+        }
         if (requested?.geoId) setSelectedGeoId(requested.geoId);
         // The requested scope is applied only where the source declares it;
         // a link asking for an as-released read of a source that publishes
@@ -1854,6 +1865,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       data-metric-count={metrics.length}
       data-county-count={countyGeographies.length}
       data-selected-geo-id={selectedGeoId}
+      data-selected-state={selectedStateFips}
       data-observation-count={observations.length}
       data-source-key={activeSource?.key || ""}
       data-source-count={explorerSources.length}

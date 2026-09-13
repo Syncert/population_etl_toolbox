@@ -1130,6 +1130,39 @@ test("the view level offers only the grains the measure declares, and says why",
   expect(requestedLevels).not.toContain("NATIONAL");
 });
 
+test("a shared link asks for a state only where one can be honoured", async ({
+  page,
+}) => {
+  // Covers: WEB-066 — the requested scope was applied only where the source
+  // declares it, "rather than a 422"; the requested state was applied
+  // unconditionally three lines above, and `state_fips` is just as
+  // per-source. Census PEP declares none, because
+  // gold_pep.population_estimate_latest carries no fips columns, so
+  // ?source=pep&state=55 left a state in a control too disabled to clear
+  // it, narrowed the map and the legend while the rows stayed national, and
+  // made saving the view a refusal over a filter the reader never chose.
+  await installRoutes(page);
+  await page.goto("/explore?source=pep&state=55");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-source-key", "pep");
+  // Read from the selection itself, not from the control: the control is
+  // disabled, and its option list is empty until the projection answers, so
+  // it renders "" whether or not a state was applied. The state that was
+  // applied is what narrowed the map and broke the save.
+  await expect(dashboard).toHaveAttribute("data-selected-state", "");
+  await expect(page.getByTestId("state-select")).toBeDisabled();
+  await expect(page).not.toHaveURL(/state=55/);
+
+  // A source that does declare the filter keeps answering the same link.
+  await page.goto("/explore?source=census&state=55");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute(
+    "data-selected-state",
+    "55",
+  );
+  await expect(page).toHaveURL(/state=55/);
+});
+
 test("the geography picker offers the grain that was asked for", async ({ page }) => {
   // Covers: WEB-064 — the grain selector publishes all five declared words
   // (WEB-038); the picker answered two and fell through to a third. At PLACE

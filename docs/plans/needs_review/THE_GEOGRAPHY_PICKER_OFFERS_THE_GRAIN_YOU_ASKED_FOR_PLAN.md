@@ -117,10 +117,17 @@ agency identity at all. The picker must say that rather than offer states.
 ## What this does not reach, and why
 
 With today's declared capabilities, **PLACE with a state selected is not
-reachable in the shipped app**: the state control is disabled unless the
+reachable through the controls**: the state control is disabled unless the
 source declares `state_fips` as an observation filter, and Census PEP — the
 only source publishing places — does not, because
-`gold_pep.population_estimate_latest` carries no fips columns. The same gate
+`gold_pep.population_estimate_latest` carries no fips columns.
+
+> **Correction, same day (WEB-066).** It *was* reachable through a link:
+> `/explore?source=pep&state=55` applied a state unconditionally, which is
+> the defect WEB-066 fixes. So the sentence above is right about the controls
+> and was wrong about the shipped app; after WEB-066 it is right about both,
+> and the picker dead end on Census PEP is total — which is what the
+> follow-up plan records. The same gate
 already made the *county* picker unusable on PEP before this plan. That is a
 separate defect with a design question attached (what the observations status
 line should say when a state narrows the map but not the rows), recorded as
