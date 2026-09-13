@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
+from apps.api.registry import OBSERVATION_DISPATCH, SERVING_CONTRACTS
 
 
 class _FakeResult:
@@ -451,3 +452,117 @@ def test_source_timeseries_echoes_the_page_it_was_asked_for() -> None:
     payload = response.json()
     assert payload["limit"] == 25
     assert payload["offset"] == 50
+
+
+# ---------------------------------------------------------------------------
+# API-092 — the source-scoped routes speak the warehouse's grain vocabulary
+# ---------------------------------------------------------------------------
+
+
+def _source_session(schema: str) -> _SourceSchemaSession:
+    return _SourceSchemaSession(schema, [_observation_row()])
+
+
+def _override_with(session: _SourceSchemaSession) -> None:
+    def _override_db():
+        yield session
+
+    app.dependency_overrides[get_db_session_dep] = _override_db
+
+
+def _dispatched_sql(session: _SourceSchemaSession, relation: str) -> list[str]:
+    return [sql for sql, _ in session.calls if f"from {relation}" in sql]
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_a_source_route_filters_and_projects_the_vocabulary_word() -> None:
+    """Covers: API-092 — `NATIONAL` must reach Census PEP's national rows.
+
+    `gold_pep.rpt_pep_observations` projects `revision.geo_type AS geo_level`,
+    so the served relation carries `nation`/`state`/`county`/`place` under a
+    column named `geo_level`. Filtering `UPPER(geo_level) = UPPER(:geo_level)`
+    meant the word the catalog publishes matched nothing and answered an empty
+    page indistinguishable from a geography with no published values -- the
+    defect migration 018 wrote down, on the one serving surface it did not
+    reach. STATE, COUNTY and PLACE coincided, which is why it stayed hidden.
+    """
+    session = _source_session("gold_pep")
+    _override_with(session)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/pep/observations/latest",
+            params={"metric_code": "CENSUS_PEP:x:POP", "geo_level": "NATIONAL"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    dispatched = _dispatched_sql(session, "gold_pep.mv_pep_latest")
+    assert dispatched, "the request reached the PEP relation"
+    for sql in dispatched:
+        assert "gold_glossary.geo_grain(geo_level)" in sql, sql
+        assert "upper(geo_level)" not in sql, sql
+    assert session.calls[-1][1]["geo_level"] == "NATIONAL"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_a_legacy_grain_word_still_answers() -> None:
+    """Covers: API-092 — a shared link holding `NATION` keeps working.
+
+    The versioning decision record requires it: a saved configuration or a
+    link carrying the catalog's earlier word must keep answering, so the
+    alias is resolved on the way in rather than left to match a raw value by
+    accident.
+    """
+    session = _source_session("gold_pep")
+    _override_with(session)
+    try:
+        TestClient(app).get(
+            "/api/v1/pep/observations/latest",
+            params={"metric_code": "CENSUS_PEP:x:POP", "geo_level": "nation"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert session.calls[-1][1]["geo_level"] == "NATIONAL"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_a_source_that_publishes_the_vocabulary_is_not_remapped() -> None:
+    """Covers: API-092 — BLS, ACS and FRED already derive the vocabulary word."""
+    session = _source_session("gold_bls")
+    _override_with(session)
+    try:
+        TestClient(app).get(
+            "/api/v1/bls/observations/latest",
+            params={"metric_code": "BLS:LAU:UNEMP_RATE", "geo_level": "county"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    for sql in _dispatched_sql(session, "gold_bls.mv_bls_latest"):
+        assert "gold_glossary.geo_grain(" not in sql, sql
+    assert session.calls[-1][1]["geo_level"] == "COUNTY"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_the_two_registries_agree_on_which_sources_map_the_grain() -> None:
+    """Covers: API-092 — a mapping in one registry and not the other is the bug.
+
+    The dispatch entry and the serving contract read different relations for
+    the same source, so they cannot share an expression -- but they must agree
+    on *whether* that source's relations store a source-shaped grain.
+    """
+    for segment, contract in SERVING_CONTRACTS.items():
+        dispatch = OBSERVATION_DISPATCH[contract.source_code]
+        maps_dispatch = "gold_glossary.geo_grain(" in dispatch.geo_level_expression
+        maps_contract = "gold_glossary.geo_grain(" in contract.geo_level_expression
+        assert maps_dispatch == maps_contract, (
+            f"'{segment}' maps the grain on one serving surface and not the "
+            f"other: dispatch={dispatch.geo_level_expression!r}, "
+            f"contract={contract.geo_level_expression!r}"
+        )

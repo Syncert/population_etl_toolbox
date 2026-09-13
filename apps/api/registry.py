@@ -28,6 +28,12 @@ from dataclasses import dataclass
 #: its rows carry a ``place_name`` the other sources do not have; selecting it
 #: unconditionally would fail on relations where the column does not exist.
 _PLACE_AWARE_GEO_NAME = "COALESCE(place_name, county_name, state_name, geo_id)"
+
+#: The one warehouse mapping, applied to a relation that stores the source's
+#: own grain under the name ``geo_level``. Defined in
+#: ``sql/migrations/018_geo_grain_vocabulary.sql``; written here once, the way
+#: the dispatch entries write it once for the columns they read.
+_GRAIN_OF_GEO_TYPE_COLUMN = "gold_glossary.geo_grain(geo_level)"
 _DEFAULT_GEO_NAME = "COALESCE(county_name, state_name, geo_id)"
 
 
@@ -67,6 +73,20 @@ class ServingContract:
     publishes_vintage_and_error: bool = False
     #: True when the source publishes place-level geography names.
     publishes_place_names: bool = False
+    #: How this source's serving relations spell the geography grain.
+    #:
+    #: Most of them derive the vocabulary word already, so the column is the
+    #: expression. Census PEP's reporting view projects
+    #: ``revision.geo_type AS geo_level``, so the relation holds the source's
+    #: own ``nation``/``state``/``county``/``place`` under that name, and the
+    #: one warehouse mapping turns it into the word the catalog publishes.
+    #: Without it ``geo_level=NATIONAL`` -- the word `valid_geo_grains` lists
+    #: and ``/observations`` accepts -- matched nothing here and answered an
+    #: empty page, while every served row reported a grain the rest of the
+    #: API does not use (API-092). The dispatch entries below declare the same
+    #: thing for the relations *they* read; the two must agree on which
+    #: sources need it.
+    geo_level_expression: str = "geo_level"
     #: The total order the latest route pages, and the total order the
     #: history route pages. Each is the relation's own unique-index key with
     #: the columns the query already pins removed, so no two rows of one
@@ -160,6 +180,7 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             history_relation="gold_pep.rpt_pep_observations",
             publishes_vintage_and_error=True,
             publishes_place_names=True,
+            geo_level_expression=f"{_GRAIN_OF_GEO_TYPE_COLUMN}",
             # PEP's latest publication is a series, not a value: every
             # estimated year of the current vintage, so one geography carries
             # several rows and geo_id alone leaves ties a page boundary can

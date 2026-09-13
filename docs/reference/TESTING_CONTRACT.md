@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-091 | None |
+| API | API-001–API-092 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **329 of 329** | **0 of 329** |
+| **Total** | **330 of 330** | **0 of 330** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 329-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 330-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -615,6 +615,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-089 | P0 | Service / `unit api` | The completion line names the route, not the caller's identifiers | A matched request's completion line replaces each path parameter's value with its name, by whole segment, so one line is written per route rather than per identifier; a route with no parameters logs exactly what it did, an unmatched path is logged as it arrived because it names no resource and is what makes a 404 actionable, and the query string stays absent | A private packet or configuration id -- the one the web client keeps out of the address bar -- written to the operational log on every request, while `/evidence-packets/{packet_id}` has as many distinct `path` values as the account has packets, so the p95 of a route cannot be computed from the line written to provide it |
 | API-090 | P0 | Contract / `unit api` | The application-storage engine carries the cancellation contract too | `apps/api/appdb.py` builds its engine with the same server-side `statement_timeout` the warehouse engine declares, from the same setting, with `0` disabling the option rather than passing a malformed one; every other budget it already carried is unchanged, and both engines' budgets are asserted against each other so one gained by only one of them is visible | A blocked statement on `app_api` -- where `require_account` reads -- holding its connection with nothing to cancel it, so the pool cannot recover until the blocker clears and every account's authentication goes with it, not only the caller's own saved work |
 | API-091 | P0 | Service / `unit api` | A stored configuration cannot encode a filter value the route refuses | `validate_document` checks each stored filter's value against the bound the observation route declares for it -- text length, or the inclusive integer range -- and refuses at write, naming the filter and the bound; a value inside the bound is stored exactly as given, the bounds are declared once and read by both the route and the validator, and a test asserts that declaration against the contract the application actually serves so the two cannot drift | A 5,000-character `geo_id` against the route's declared 200 stored clean, listed clean and reported `valid: true`, failing only when its owner tried to reopen it -- a saved configuration encoding a request the API refuses, which is what `AnalysisDocument` promises cannot happen |
+| API-092 | P0 | Contract / `unit api` | The source-scoped routes speak the warehouse's grain vocabulary | Each serving contract declares how its relations spell the grain, and the source-scoped latest route projects and filters through that declaration: Census PEP's relation, which stores the source's own word under the name `geo_level`, is read through the one warehouse mapping so `geo_level=NATIONAL` answers its national rows and every served row reports the vocabulary word; the caller's word is normalized on the way in so `NATION` and `US` keep answering; a source whose dispatch entry maps the grain and whose serving contract does not is a test failure | `geo_level=NATIONAL` -- the word `valid_geo_grains` publishes and `/observations` accepts -- matching nothing on `/pep/observations/latest` and answering an empty page indistinguishable from a geography with no published values, while every row reported `county` where the rest of the API reports `COUNTY` |
 
 ### Frontend Tests
 

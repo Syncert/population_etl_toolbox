@@ -26,7 +26,11 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import ServingContract, serving_contract
+from apps.api.registry import (
+    ServingContract,
+    normalize_geo_level,
+    serving_contract,
+)
 from apps.api.services.contracts import (
     ServingContractUnavailable as ServingContractUnavailable,  # re-export
 )
@@ -95,7 +99,7 @@ def _source_select_sql(contract: ServingContract) -> str:
         as_of_date AS release_date,
         updated_at,
         geo_id,
-        geo_level,
+        {contract.geo_level_expression} AS geo_level,
         {contract.geo_name_expression} AS geo_name,
         state_fips,
         county_fips,
@@ -206,8 +210,11 @@ def list_latest_observations_for_source(
     where_clauses = ["metric_code = :metric_code"]
     params: dict = {"metric_code": metric_code, "limit": limit, "offset": offset}
     if geo_level:
-        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
-        params["geo_level"] = geo_level
+        # The contract's own expression, and the caller's word normalized on
+        # the way in: a shared link or a saved configuration holding the
+        # catalog's earlier `NATION` keeps answering (ADR-0002, API-092).
+        where_clauses.append(f"{contract.geo_level_expression} = :geo_level")
+        params["geo_level"] = normalize_geo_level(geo_level)
     if state_fips:
         where_clauses.append("state_fips = :state_fips")
         params["state_fips"] = state_fips
