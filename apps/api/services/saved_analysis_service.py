@@ -198,20 +198,34 @@ _SELECT_ONE = text(
     """
 )
 
+# The page and its total in one statement, so a concurrent create cannot
+# land between them and be counted by one and not the other (API-103). The
+# warehouse engine answers this with `REPEATABLE READ` (API-100); this engine
+# carries the optimistic-concurrency `UPDATE`, which needs a stale version to
+# match no row and answer 409 rather than raise a serialization failure, so
+# the fix here is API-084's: one reading, not one snapshot.
+#
+# `counted` always yields exactly one row, so the LEFT JOIN reports the true
+# total even when the page is empty -- an `offset` past the end must not tell
+# a caller their stored work is gone.
 _SELECT_PAGE = text(
     """
-    SELECT configuration_id, name, version, document, created_at, updated_at
-    FROM app_api.saved_analysis_configuration
-    WHERE owner_user_id = :owner_user_id
-    ORDER BY name, configuration_id
-    LIMIT :limit OFFSET :offset
-    """
-)
-
-_COUNT = text(
-    """
-    SELECT COUNT(*) FROM app_api.saved_analysis_configuration
-    WHERE owner_user_id = :owner_user_id
+    WITH owned AS (
+        SELECT configuration_id, name, version, document, created_at, updated_at
+        FROM app_api.saved_analysis_configuration
+        WHERE owner_user_id = :owner_user_id
+    ),
+    counted AS (SELECT COUNT(*) AS total FROM owned),
+    page AS (
+        SELECT * FROM owned
+        ORDER BY name, configuration_id
+        LIMIT :limit OFFSET :offset
+    )
+    SELECT counted.total,
+           page.configuration_id, page.name, page.version, page.document,
+           page.created_at, page.updated_at
+    FROM counted LEFT JOIN page ON TRUE
+    ORDER BY page.name, page.configuration_id
     """
 )
 
@@ -335,7 +349,6 @@ def list_configurations(
     limit: int,
     offset: int,
 ) -> SavedAnalysisListResponse:
-    total = int(storage.execute(_COUNT, {"owner_user_id": owner_user_id}).scalar() or 0)
     rows = (
         storage.execute(
             _SELECT_PAGE,
@@ -344,6 +357,7 @@ def list_configurations(
         .mappings()
         .all()
     )
+    total = int(rows[0]["total"]) if rows else 0
     items = [
         SavedAnalysisSummary(
             configuration_id=int(row["configuration_id"]),
@@ -354,6 +368,8 @@ def list_configurations(
             updated_at=row["updated_at"],
         )
         for row in rows
+        # The count's own row when the page is empty, carrying no record.
+        if row["configuration_id"] is not None
     ]
     return SavedAnalysisListResponse(
         total=total, limit=limit, offset=offset, items=items

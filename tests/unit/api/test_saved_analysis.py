@@ -149,9 +149,6 @@ class _StorageSession:
             ]
             return _Result(rows=[{"exists": 1}] if clash else [])
 
-        if sql.startswith("SELECT COUNT(*)"):
-            return _Result(scalar=len(owned))
-
         if sql.startswith("INSERT INTO app_api.saved_analysis_configuration"):
             row = {
                 "configuration_id": self._next_id,
@@ -200,12 +197,17 @@ class _StorageSession:
                 rows=[{"configuration_id": params["configuration_id"]}] if match else []
             )
 
-        if "ORDER BY name" in sql:
+        if sql.startswith("WITH owned AS"):
+            # The listing takes its total and its page in one statement
+            # (API-103), so every page row carries the total and an empty page
+            # is the LEFT JOIN's count-only row.
             ordered = sorted(
                 owned, key=lambda row: (row["name"], row["configuration_id"])
             )
             window = ordered[params["offset"] : params["offset"] + params["limit"]]
-            return _Result(rows=[dict(row) for row in window])
+            if not window:
+                return _Result(rows=[{"total": len(owned), "configuration_id": None}])
+            return _Result(rows=[{**row, "total": len(owned)} for row in window])
 
         # single-row select
         match = [

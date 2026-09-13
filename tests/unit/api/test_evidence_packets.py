@@ -135,8 +135,6 @@ class _StorageSession:
                 and row["packet_id"] != params.get("packet_id")
             ]
             return _Result(rows=[{"exists": 1}] if clash else [])
-        if sql.startswith("SELECT COUNT(*)"):
-            return _Result(scalar=len(owned))
         if sql.startswith("INSERT INTO app_api.evidence_packet"):
             row = {
                 "packet_id": self._next_id,
@@ -169,10 +167,15 @@ class _StorageSession:
             for row in match:
                 self.rows.remove(row)
             return _Result(rows=[{"packet_id": params["packet_id"]}] if match else [])
-        if "ORDER BY name" in sql:
+        if sql.startswith("WITH owned AS"):
+            # The listing takes its total and its page in one statement
+            # (API-103), so every page row carries the total and an empty page
+            # is the LEFT JOIN's count-only row.
             ordered = sorted(owned, key=lambda row: (row["name"], row["packet_id"]))
             window = ordered[params["offset"] : params["offset"] + params["limit"]]
-            return _Result(rows=[dict(row) for row in window])
+            if not window:
+                return _Result(rows=[{"total": len(owned), "packet_id": None}])
+            return _Result(rows=[{**row, "total": len(owned)} for row in window])
         match = [row for row in owned if row["packet_id"] == params.get("packet_id")]
         return _Result(rows=[dict(row) for row in match])
 

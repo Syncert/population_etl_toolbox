@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
-| API | API-001–API-102 | None |
+| API | API-001–API-103 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-056 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **353 of 353** | **0 of 353** |
+| **Total** | **354 of 354** | **0 of 354** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 353-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 354-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -634,6 +634,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-100 | P0 | Contract / `integration api database` | A request reads one snapshot of the warehouse | The API's warehouse engine runs `REPEATABLE READ`, so every read in one request sees one snapshot whatever commits between them; proved behaviourally against a real PostgreSQL -- a second connection commits between two reads on an API session and the session does not see it -- and the next request does, because the snapshot is the session's transaction and the session is closed per request; the application-storage engine, which writes, is unchanged | A page and its total describing different sets of rows: API-084 fixed exactly this for one statement, naming a `REFRESH MATERIALIZED VIEW CONCURRENTLY` committing between a range and its counts, and every paged read in the API has the same two-statement shape against the same materialized latest views a refresh rewrites |
 | API-101 | P0 | Contract / `unit api` | A health check does not spend the analysis budget | The rate limiter's exempt paths are derived from the health routers themselves -- every path they serve, versioned and unprefixed -- plus the documentation, so the versioned health resource is exempt exactly as the probe beside it is and a health route added later is exempt by construction; nothing else changes class, and `/health/ready`, which does touch the database, keeps the exemption a probe needs | `/api/v1/health` returns a constant and billed the `analysis` bucket -- the budget the limiter's own rule reserves for "everything that reaches observation or analysis SQL" -- because the exempt list was five literal paths and the versioned one was never among them; `apps/web` calls it on every page load, so under a tight budget the health check is the request that answers 429 and the explorer presents that as an unhealthy API |
 | API-102 | P0 | Contract / `unit api` | The guide names every field that qualifies a value | Every field of every object the neutral observation envelope nests is named in the consumer guide, with which sources publish it; the objects are derived from the reviewed snapshot -- whatever `NeutralObservation`'s own properties reference -- so a qualifier added later is covered without an edit, and no other schema is swept because the source-explorer rows pass a provider's whole classification through by design | "Reading a row honestly" described the qualifiers in prose -- "margins of error, confidence bounds, or the CV trio" -- naming two of seven uncertainty fields and two of six coverage fields. A consumer cannot code against the CV trio, and `cv_symbol` is the flag USDA NASS publishes to say an estimate is unreliable: the same five fields WEB-053 found the client dropping, dropped again in the document a consumer builds against |
+| API-103 | P0 | Contract / `integration api database` | A stored-work listing counts the rows it returns | The saved-analysis and evidence-packet listings compute their `total` and their page in one statement, so a create committing during the read is counted by both or by neither and `len(items)` can never exceed `total`; proved behaviourally against a real PostgreSQL by landing a concurrent commit at the exact seam between the two, and non-vacuous from both sides -- the commit is asserted to have landed, and the next request reads it. An `offset` past the end still reports the caller's true total beside no items, and the application engine's isolation is deliberately unchanged: a racing update still answers 409 with the current version | API-100 gave the warehouse engine `REPEATABLE READ` and its row names the scope it left behind -- "the application-storage engine, which writes, is unchanged" -- while its failure clause says "every paged read in the API has the same two-statement shape". `app_api` ran at `READ COMMITTED`, so a person saving work in one tab and listing it in another could be answered `total: 3` beside four rows, or a first page missing the row they just saved with the count promising it exists. Flipping the engine is not the fix: this one carries the optimistic-concurrency `UPDATE`, whose loser would raise `could not serialize access due to concurrent update` -- a sanitized 503 -- in place of the 409 the caller can act on |
 
 ### Frontend Tests
 

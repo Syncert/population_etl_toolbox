@@ -290,20 +290,28 @@ _SELECT_ONE = text(
     """
 )
 
+# One statement for the page and its total, for the reasons written out over
+# `saved_analysis_service._SELECT_PAGE` (API-103): this engine writes, so it
+# cannot take the warehouse engine's `REPEATABLE READ`, and a total counted
+# in its own statement can miss a row the page carries.
 _SELECT_PAGE = text(
     """
-    SELECT packet_id, name, version, document, created_at, updated_at
-    FROM app_api.evidence_packet
-    WHERE owner_user_id = :owner_user_id
-    ORDER BY name, packet_id
-    LIMIT :limit OFFSET :offset
-    """
-)
-
-_COUNT = text(
-    """
-    SELECT COUNT(*) FROM app_api.evidence_packet
-    WHERE owner_user_id = :owner_user_id
+    WITH owned AS (
+        SELECT packet_id, name, version, document, created_at, updated_at
+        FROM app_api.evidence_packet
+        WHERE owner_user_id = :owner_user_id
+    ),
+    counted AS (SELECT COUNT(*) AS total FROM owned),
+    page AS (
+        SELECT * FROM owned
+        ORDER BY name, packet_id
+        LIMIT :limit OFFSET :offset
+    )
+    SELECT counted.total,
+           page.packet_id, page.name, page.version, page.document,
+           page.created_at, page.updated_at
+    FROM counted LEFT JOIN page ON TRUE
+    ORDER BY page.name, page.packet_id
     """
 )
 
@@ -431,7 +439,6 @@ def get_packet(
 def list_packets(
     storage: Session, owner_user_id: int, limit: int, offset: int
 ) -> EvidencePacketListResponse:
-    total = int(storage.execute(_COUNT, {"owner_user_id": owner_user_id}).scalar() or 0)
     rows = (
         storage.execute(
             _SELECT_PAGE,
@@ -440,8 +447,13 @@ def list_packets(
         .mappings()
         .all()
     )
+    total = int(rows[0]["total"]) if rows else 0
     return EvidencePacketListResponse(
-        total=total, limit=limit, offset=offset, items=[_summary(row) for row in rows]
+        total=total,
+        limit=limit,
+        offset=offset,
+        # The count's own row when the page is empty, carrying no packet.
+        items=[_summary(row) for row in rows if row["packet_id"] is not None],
     )
 
 
