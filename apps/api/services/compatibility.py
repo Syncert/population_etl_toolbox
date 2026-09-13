@@ -102,6 +102,34 @@ def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
     )
 
 
+def _uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
+    """What this comparison cannot carry, for one side, or ``None``.
+
+    ``ComparisonRow`` publishes no uncertainty, and that is the right shape:
+    the two sides' vocabularies need not match, and a difference of two
+    intervals is a statistic neither source published. Saying nothing about it
+    is the problem. Census ACS is the one analysis-ready source that publishes
+    a margin of error -- and the source most comparisons involve -- so a
+    `difference` and a `ratio` were served from two estimates whose margins
+    this same API publishes on ``/observations``, with no sign of them
+    (API-096).
+
+    The fields come from the dispatch entry's own ``uncertainty_expressions``,
+    so a source that begins publishing one is named without an edit here.
+    """
+    source_code = str(metric.get("source_code") or "")
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    if dispatch is None or not dispatch.uncertainty_expressions:
+        return None
+    fields = ", ".join(name for name, _ in dispatch.uncertainty_expressions)
+    return (
+        f"{label} is served by source '{source_code}', which publishes "
+        f"{fields}; an aligned comparison carries neither, so read the "
+        "published uncertainty on /observations before treating a difference "
+        "or a ratio as exact"
+    )
+
+
 def evaluate_comparison(
     metric_a: Mapping[str, Any], metric_b: Mapping[str, Any]
 ) -> CompatibilityDecision:
@@ -212,6 +240,15 @@ def evaluate_comparison(
         )
         findings.append(RuleFinding(RULE_AGGREGATION, STATUS_UNKNOWN, reason))
         caveats.append(reason)
+
+    # Not a rule: a published margin does not make two metrics incomparable,
+    # it makes the difference less precise than the numbers look. One caveat
+    # per side that publishes one, deduplicated when both sides are the same
+    # source saying the same thing twice.
+    for metric, label in ((metric_a, "metric_code_a"), (metric_b, "metric_code_b")):
+        caveat = _uncertainty_caveat(metric, label)
+        if caveat is not None and caveat not in caveats:
+            caveats.append(caveat)
 
     comparable = all(finding.status != STATUS_FAIL for finding in findings)
     return CompatibilityDecision(

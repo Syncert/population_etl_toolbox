@@ -297,6 +297,15 @@ aligned analysis surface. **`unknown` is not incompatible**: where a source
 publishes nothing to check (Census ACS publishes no units), the comparison is
 served and the unverified rule travels as a caveat.
 
+Caveats also name what the comparison **cannot carry**. A comparison row
+publishes `value_a`, `value_b`, `difference` and `ratio` and no uncertainty,
+because the two sides' uncertainty vocabularies need not match and the
+difference of two intervals is a statistic neither source published. Where a
+side's source publishes one — Census ACS publishes `margin_of_error` and
+`margin_of_error_pct` — the verdict says so and points at `/observations`,
+where the published figures are. A `difference` is not more precise than the
+estimates behind it.
+
 `GET /api/v1/comparison` enforces exactly that verdict. Each side is reduced
 to one newest value per geography inside its own relation before the join, so
 a multi-period source cannot create Cartesian rows. Every row carries

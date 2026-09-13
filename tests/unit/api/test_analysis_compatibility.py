@@ -275,3 +275,60 @@ def test_preflight_answers_a_stable_404_naming_the_unknown_parameter() -> None:
 
     assert missing_b.status_code == 404
     assert missing_b.json() == {"detail": "metric_code_b not found"}
+
+
+def test_a_source_that_publishes_uncertainty_is_named_in_the_caveats() -> None:
+    """Covers: API-096 — a comparison says when it dropped a published bound.
+
+    `ComparisonRow` publishes no uncertainty, which is a reasonable shape: the
+    difference of two intervals is a statistic neither source published, and
+    propagating them is a methodological decision this API does not make. It
+    is not reasonable to say nothing. Census ACS is the one analysis-ready
+    source that publishes a margin of error, and it is the source most
+    comparisons involve, so `/comparison` served a `difference` and a `ratio`
+    from two estimates whose margins the same API publishes on
+    `/observations` -- in a response that already carries a `caveats` array
+    built for exactly this.
+
+    Source-agnostic: the fields come from the dispatch entry's own
+    `uncertainty_expressions`, so a source that begins publishing one is named
+    without an edit here.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    acs = OBSERVATION_DISPATCH["CENSUS_ACS"]
+    published = [name for name, _ in acs.uncertainty_expressions]
+    assert published, "the fixture assumes Census ACS publishes an uncertainty"
+
+    decision = evaluate_comparison(
+        _metric(
+            metric_code="CENSUS_ACS:acs5:B01003_001E",
+            source_code="CENSUS_ACS",
+            units="people",
+            valid_time_grains=["ANNUAL"],
+            valid_geo_grains=["COUNTY"],
+        ),
+        _metric(
+            metric_code="CENSUS_ACS:acs5:B19013_001E",
+            source_code="CENSUS_ACS",
+            units="people",
+            valid_time_grains=["ANNUAL"],
+            valid_geo_grains=["COUNTY"],
+        ),
+    )
+
+    assert decision.comparable is True
+    assert decision.derivations, "a published margin does not make a pair incomparable"
+    named = [caveat for caveat in decision.caveats if "CENSUS_ACS" in caveat]
+    assert named, decision.caveats
+    for field in published:
+        assert any(field in caveat for caveat in named), (field, named)
+    assert any("/observations" in caveat for caveat in named), named
+
+
+def test_a_pair_publishing_no_uncertainty_earns_no_such_caveat() -> None:
+    """Covers: API-096 — read from the registry, so silence stays silence."""
+    decision = evaluate_comparison(_metric(), _metric(metric_code="FRED:CPI"))
+    assert not [caveat for caveat in decision.caveats if "margin_of_error" in caveat], (
+        decision.caveats
+    )

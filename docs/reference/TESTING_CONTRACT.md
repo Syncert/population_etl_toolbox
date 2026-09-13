@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
-| API | API-001–API-095 | None |
+| API | API-001–API-096 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-053 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **343 of 343** | **0 of 343** |
+| **Total** | **344 of 344** | **0 of 344** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 343-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 344-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -627,6 +627,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-093 | P0 | Contract / `unit api` | An unknown query parameter is refused, not ignored | Every route the application serves refuses a query parameter it does not declare with a 422 naming both the unknown names and the accepted ones, before any database session is opened; the accepted set is read from the route's own solved dependency tree, so a parameter added to a signature is accepted the moment it exists; the sweep is driven by the served OpenAPI document, so a router added later is covered without an edit, private routes included | A misspelling answered as a whole answer: `geo_levels=COUNTY` reached no validation at all and `/observations` returned every grain at 200 with a complete-looking `total`, and this API gives one idea three spellings across its routes (`adjustment_status` and `adjustment`, `year_from`/`year_to` and `year_start`/`year_end`), so sending one route's name to another is an ordinary mistake |
 | API-094 | P0 | Contract / `integration api database` | Every route that takes a grain takes the same grain words | Each route the served document shows declaring a `geo_level` parameter answers an alias (`NATION`, `US`, and either case) exactly as it answers the vocabulary word it maps to, and `/distribution/bins` reports the grain it binned rather than the caller's text; the sweep is driven by that document, so a route that declares `geo_level` and is not exercised fails rather than skipping the rule | API-092 promised the words it replaced keep answering, and four of the nine routes declaring `geo_level` never called the function that keeps them: `/comparison` re-bound the caller's own text over the value each side had normalized, making it alias-blind and case-sensitive at once; `/observations/latest` and `/catalog/geographies` compared `UPPER(geo_level)` against relations storing `NATIONAL`, so an alias matched nothing; and `/distribution/bins` labelled a set of `NATIONAL` bins `us`, which is what a saved analysis and an evidence packet then record |
 | API-095 | P0 | Contract / `unit api` | The releases listing pages a total order, and the guide says so | `/observations/releases` orders by the release ordering each dispatch declares and then by the release identity -- the `GROUP BY` key, so the order is total by construction rather than by a property of the current registry -- swept over every registered source; and every served observation read taking `limit` and `offset` names its ordering in the consumer guide, derived from the served document and the serving registry so a route that grows paging without a row there fails | Paging that could repeat or skip a release: the listing ordered by `MAX(release_order_expression)` alone, total only because every entry's ordering expression happens to be its identity with a cast, and a source whose release identity is a name ordered by a date breaks it the moment two releases share one date; meanwhile the guide's ordering table omitted `/observations` -- the resource it tells clients to prefer -- and three more paged reads |
+| API-096 | P0 | Contract / `unit api` | A comparison says when it dropped a published uncertainty | When either metric's source declares published uncertainty, the compatibility verdict both routes share carries a caveat naming the source, the fields it publishes, and `/observations` as where to read them; the fields come from the reviewed dispatch entry's own `uncertainty_expressions`, so a source that begins publishing one is named without an edit, and it is a caveat rather than a rule -- the pair stays comparable and the derivations stay available | A `difference` and a `ratio` served as exact from two Census ACS estimates whose margins of error the same API publishes on `/observations`: `ComparisonRow` carries no uncertainty, which is the right shape, but the response said nothing about it while already carrying a `caveats` array built for exactly the unverified |
 
 ### Frontend Tests
 
