@@ -769,3 +769,103 @@ def test_user_content_is_never_publicly_cacheable(accounts, monkeypatch) -> None
     for path in app.openapi()["paths"]:
         if "evidence-packets" in path:
             assert not PUBLIC_CACHE_TARGETS.covers(path), path
+
+
+@pytest.mark.parametrize(
+    ("block", "fragment"),
+    [
+        pytest.param(
+            _block(
+                envelope=_envelope(geo_id="state:06"),
+                document=_query(filters={"geo_id": "state:55"}),
+            ),
+            "records geography 'state:06'",
+            id="envelope-names-another-geography",
+        ),
+        pytest.param(
+            _block(
+                envelope=_envelope(geo_level="COUNTY"),
+                document=_query(filters={"geo_level": "STATE"}),
+            ),
+            "records geography grain 'COUNTY'",
+            id="envelope-names-another-grain",
+        ),
+    ],
+)
+def test_a_block_cannot_name_one_geography_and_query_another(
+    accounts, monkeypatch, block: dict, fragment: str
+) -> None:
+    """Covers: API-099 — the contradiction table reaches the geography.
+
+    The module's own rule is that a block whose envelope names a measure its
+    query does not ask for "would display one measure's name over another
+    measure's numbers". `geo_id` and `geo_level` are the same kind of field --
+    request parameters the block's own `filters` carries, not observations
+    about what a source published -- and they were not cross-checked, so a
+    packet could store one geography's name over another geography's numbers.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "bad", "document": _packet(block)},
+    )
+    assert response.status_code == 422, response.text
+    assert fragment in response.json()["detail"]
+    assert storage.rows == []
+
+
+def test_a_grain_alias_and_its_vocabulary_word_are_one_geography(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-099 — the comparison is the one `normalize_geo_level` defines.
+
+    API-092 promised the words the vocabulary replaced keep answering, so an
+    envelope composed when the catalog published `NATION` and a query asking
+    for `NATIONAL` name the same grain. Refusing that pair would make a
+    correct packet unstorable.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "aliased",
+            "document": _packet(
+                _block(
+                    envelope=_envelope(geo_level="NATION"),
+                    document=_query(filters={"geo_level": "NATIONAL"}),
+                )
+            ),
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_a_geography_recorded_on_one_side_only_is_incompleteness(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-099 — refuse contradictions, report incompleteness.
+
+    A block still being composed records what it has. Only two different
+    answers to the same question are a contradiction, which is how the scope
+    and release checks already read.
+    """
+    storage = _StorageSession(accounts)
+    client = _client(storage, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "partial",
+            "document": _packet(
+                _block(
+                    envelope=_envelope(geo_id="state:06", geo_level=""),
+                    document=_query(filters={}),
+                )
+            ),
+        },
+    )
+    assert response.status_code == 201, response.text

@@ -22,6 +22,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from apps.api.registry import normalize_geo_level
 from apps.api.schemas import AnalysisDocument
 from apps.api.schemas.evidence_packet import (
     MAX_ANALYTICAL_BLOCKS,
@@ -120,6 +121,37 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
         return (
             f"block '{block.block_id}' records release '{envelope.release}' but its "
             f"query asks for '{document.release or ''}'"
+        )
+    # The geography is a request parameter, not an observation about what the
+    # source published: the same names the block's own `filters` carries. Left
+    # uncrossed, a packet could store one geography's name over another
+    # geography's numbers -- the failure this module's opening rule names, one
+    # identity over (API-099).
+    #
+    # Only when both sides name one. A block still being composed records what
+    # it has, and a block narrating one row of a many-geography answer is not
+    # contradicting itself; two different answers to the same question are,
+    # which is how the scope and release checks above already read.
+    filters = document.filters or {}
+    queried_geo_id = str(filters.get("geo_id") or "")
+    if envelope.geo_id and queried_geo_id and envelope.geo_id != queried_geo_id:
+        return (
+            f"block '{block.block_id}' records geography '{envelope.geo_id}' but "
+            f"its query asks for '{queried_geo_id}'"
+        )
+    queried_grain = str(filters.get("geo_level") or "")
+    if (
+        envelope.geo_level
+        and queried_grain
+        # Through the one vocabulary mapping: API-092 promised the words it
+        # replaced keep answering, so an envelope composed when the catalog
+        # published `NATION` and a query asking for `NATIONAL` name one grain.
+        and normalize_geo_level(envelope.geo_level)
+        != normalize_geo_level(queried_grain)
+    ):
+        return (
+            f"block '{block.block_id}' records geography grain "
+            f"'{envelope.geo_level}' but its query asks for '{queried_grain}'"
         )
     return None
 

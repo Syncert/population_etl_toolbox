@@ -39,11 +39,14 @@ MAX_ANALYTICAL_BLOCKS = 50
 class ReproducibilityEnvelope(BaseModel):
     """What the composer recorded about a block, as it recorded it.
 
-    Only the fields that duplicate the block's query (``metric_codes``,
-    ``scope``, ``release``) are cross-checked against it. The rest are
-    observations about what the source published when the block was
-    composed; the API second-guessing them would substitute its present view
-    for what the composer actually saw.
+    Only the fields that duplicate the block's query are cross-checked against
+    it: ``metric_codes``, ``scope``, ``release``, and the geography
+    (``geo_id``, ``geo_level``) when the query filters to one. Those are
+    request parameters the ``document`` carries under the same names. The rest
+    -- ``period``, ``units``, ``source_codes``, ``transformation``,
+    ``caveats`` -- are observations about what the source published when the
+    block was composed; the API second-guessing them would substitute its
+    present view for what the composer actually saw.
     """
 
     model_config = ConfigDict(extra="forbid")
