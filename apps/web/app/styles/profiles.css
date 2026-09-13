@@ -126,3 +126,23 @@
 .line-chart .x-label.end {
   text-anchor: end;
 }
+
+/* Workbench: the multi-series legend and series list.
+   `.chart-legend` is shared by `LineChart`, `BarChart` and the workbench's
+   own series list, so a swatch means the same thing in all three. */
+.chart-legend {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.chart-legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}

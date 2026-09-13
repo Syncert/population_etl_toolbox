@@ -10,13 +10,18 @@ import { describe, expect, test } from "vitest";
 import {
   GEO_GRAIN_ALIASES,
   GEO_LEVELS,
+  MAX_WORKBENCH_URL_SERIES,
   comparisonHref,
   explorerHref,
   normalizeGeoLevel,
   parseComparisonState,
   parseExplorerState,
+  parseWorkbenchState,
   serializeComparisonState,
   serializeExplorerState,
+  serializeWorkbenchState,
+  workbenchHref,
+  workbenchLinkCeiling,
 } from "../../../apps/web/lib/urlState";
 
 describe("explorer URL state", () => {
@@ -235,5 +240,125 @@ describe("the grain vocabulary's aliases", () => {
       expect(normalizeGeoLevel(word)).toBe(word);
       expect(parseExplorerState(`?geo_level=${word}`)).toEqual({ geoLevel: word });
     }
+  });
+});
+
+// Covers: WEB-084 — a workbench link carries the whole composition and
+// nothing a reader's browser should not hold: every series' source, measure,
+// scope, pinned release, grain, geography and dimension pins, plus the
+// presentation, the shared grain and the correlation toggle. Parse drops an
+// invalid series rather than sending it; serialize omits defaults; and the
+// link states its own ceiling rather than truncating past it.
+
+describe("the workbench link carries the composition", () => {
+  const composition = {
+    series: [
+      {
+        sourceKey: "fred",
+        metricCode: "FRED:UNRATE",
+        geoLevel: "NATIONAL",
+        geoId: "us:1",
+      },
+      {
+        sourceKey: "cdc",
+        metricCode: "CDC:cdi:X:crude",
+        scope: "as_released",
+        release: "2024-01-05",
+        geoLevel: "COUNTY",
+        geoId: "county:06001",
+        filters: { stratum_id: "OVR" },
+      },
+    ],
+    presentation: "line",
+    alignmentGeoLevel: "COUNTY",
+    stateFips: "06",
+    year: 2023,
+    correlation: true,
+  };
+
+  test("round-trips every field of every series", () => {
+    const reopened = parseWorkbenchState(serializeWorkbenchState(composition));
+    expect(reopened).toEqual(composition);
+  });
+
+  test("omits the defaults it was given", () => {
+    const query = serializeWorkbenchState(
+      { series: composition.series, presentation: "line", alignmentGeoLevel: "COUNTY" },
+      { presentation: "line", alignmentGeoLevel: "COUNTY" },
+    );
+    expect(query).not.toContain("view=");
+    expect(query).not.toContain("grain=");
+    expect(query).toContain("s=");
+  });
+
+  test("a series' latest scope and an off correlation are not carried", () => {
+    const query = serializeWorkbenchState({
+      series: [
+        {
+          sourceKey: "fred",
+          metricCode: "FRED:UNRATE",
+          scope: "latest",
+          geoLevel: "NATIONAL",
+          geoId: "us:1",
+        },
+      ],
+      correlation: false,
+    });
+    expect(query).not.toContain("scope");
+    expect(query).not.toContain("corr");
+  });
+
+  test("an unreadable series is dropped and the rest of the link survives", () => {
+    const state = parseWorkbenchState(
+      "s=src:fred;m:FRED%3AUNRATE;lvl:NATIONAL;geo:us%3A1&s=m:only-a-measure&s=src:cdc&view=bar",
+    );
+    expect(state.series).toHaveLength(1);
+    expect(state.series[0].metricCode).toBe("FRED:UNRATE");
+    expect(state.presentation).toBe("bar");
+  });
+
+  test("a grain, scope, presentation or year that is not one is dropped", () => {
+    const state = parseWorkbenchState(
+      "s=src:fred;m:FRED%3AUNRATE;lvl:PLANET;scope:whenever&view=pie&grain=PLANET&year=23&state=x",
+    );
+    expect(state.series[0].geoLevel).toBeUndefined();
+    expect(state.series[0].scope).toBeUndefined();
+    expect(state.presentation).toBeUndefined();
+    expect(state.alignmentGeoLevel).toBeUndefined();
+    expect(state.year).toBeUndefined();
+    expect(state.stateFips).toBeUndefined();
+  });
+
+  test("a grain the vocabulary replaced still opens the composition", () => {
+    const state = parseWorkbenchState(
+      "s=src:fred;m:FRED%3AUNRATE;lvl:NATION&grain=US",
+    );
+    expect(state.series[0].geoLevel).toBe("NATIONAL");
+    expect(state.alignmentGeoLevel).toBe("NATIONAL");
+    // And a state built from that alias serializes as the vocabulary word.
+    expect(decodeURIComponent(serializeWorkbenchState(state))).toContain(
+      "lvl:NATIONAL",
+    );
+  });
+
+  test("a reserved field name cannot be smuggled in as a dimension pin", () => {
+    const state = parseWorkbenchState(
+      "s=src:fred;m:FRED%3AUNRATE;geo:us%3A1;metric_code:OTHER",
+    );
+    expect(state.series[0].filters).toBeUndefined();
+  });
+
+  test("the link ceiling is stated, and a longer composition is not truncated silently", () => {
+    const ceiling = workbenchLinkCeiling(MAX_WORKBENCH_URL_SERIES);
+    expect(ceiling.fits).toBe(true);
+
+    const over = workbenchLinkCeiling(MAX_WORKBENCH_URL_SERIES + 1);
+    expect(over.fits).toBe(false);
+    expect(over.reason).toMatch(/Save it instead/);
+  });
+
+  test("the href is the page's own path", () => {
+    expect(workbenchHref({})).toBe("/workbench");
+    expect(workbenchHref({ presentation: "bar" })).toBe("/workbench?view=bar");
   });
 });

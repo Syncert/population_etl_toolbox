@@ -741,3 +741,89 @@ Not run, with the reason: the integration tier, as for WB-3 — no PostgreSQL is
 reachable here, so `corr`, `RANK()`'s tie arithmetic, and `width_bucket`-style
 planner behaviour over the generated statements are unproven against a real
 database. `./tests/run.ps1 integration` is the command.
+
+### WB-1 — Shell, picker, longitudinal charts
+
+Status: **complete**, 2026-09-13.
+
+Implementation:
+
+- `apps/web/lib/workbench.ts` (new) — the whole rule set as pure functions:
+  `seriesKey`/`sameSeries`, `unpinnedDimensions`, `admitSeries`,
+  `assignValueAxes`, `presentationOffer`, `buildPlottedSeries`,
+  `describeSeries`, `describeChart`, and the presentation vocabulary.
+- `apps/web/lib/urlState.ts` — `parseWorkbenchState`,
+  `serializeWorkbenchState`, `workbenchHref`, `workbenchLinkCeiling`.
+- `apps/web/components/LineChart.tsx`, `BarChart.tsx` (new), inline SVG with
+  `role="img"`, a complete accessible label, and `data-*` hooks for tests.
+- `apps/web/components/WorkbenchPage.tsx`, `apps/web/app/workbench/page.js`
+  (new); `SiteHeader.js` gains the **Workbench** entry between Compare and
+  Profiles.
+- `apps/web/app/styles/profiles.css` — `.chart-legend`, shared by both charts
+  and the series list so a swatch means one thing in all three.
+- `apps/web/scripts/bundle-budgets.json` — one entry, for the new route.
+- Tests: `tests/frontend/unit/workbench.test.js` (23),
+  `workbench-charts.test.jsx` (11), nine cases appended to
+  `url-state.test.js`, and `tests/frontend/browser/workbench.spec.js` (4).
+- `docs/reference/TESTING_CONTRACT.md` — WEB-082…WEB-086 and the register
+  totals (436 → 441); `tests/support/catalog_evidence.py` WEB count 81 → 86.
+
+Two defects the tests caught, both worth recording:
+
+1. **A hand-edited link could smuggle a request parameter in as a dimension
+   pin.** `isCarriableDimension` screens against the *explorer's* reserved
+   names, which are that page's short spellings (`metric`, `geo`, `state`),
+   not the API's. So `s=...;metric_code:OTHER` passed the screen and would
+   have been sent as a dimension filter — refused by the resource as
+   undeclared, or overriding the measure the rest of the link named.
+   `SERIES_RESERVED_KEYS` now covers the API's own parameter names.
+2. **A literal `|` in a TESTING_CONTRACT cell silently split the row.**
+   WEB-085's pass metric wrote an absolute value with pipes; the register
+   built 440 rows against a declared 441 and the gate caught it. Written out
+   in words instead.
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **A stratified series is refused at the picker, not reported unplotted.**
+   The plan says the control "names the unpinned dimension and refuses to add
+   the series", and this records why that differs from the explorer's
+   WEB-014 behaviour: the explorer is reading one measure and must show what
+   it got, while a composition can decline an ambiguous member outright.
+2. **The link ceiling is asked before a link is made**, rather than a URL
+   produced and hoped for. A link silently truncated by a chat client reopens
+   as a different composition, which is worse than no link.
+3. **Each named measure's catalog row is read individually.** The picker's
+   own read covers only the selected source, so a restored composition would
+   have had no unit for its other series — and a series with no unit lands on
+   the "unit not published" axis, which would be this application inventing a
+   fact about the publication.
+4. **The reader's presentation choice survives a transient unavailability**
+   (the WEB-017 pattern): `effectivePresentation` falls back only while the
+   chosen one cannot answer, and `presentation` itself is untouched.
+5. **`--update` was not used on the bundle budget.** It rewrites all fourteen
+   existing budgets upward against the current build, which is the silent
+   loosening the gate exists to prevent. One entry was added by hand, at the
+   figure the tool's own formula gives. Measured: `/workbench/page` 411.5 kB
+   against a 474 kB budget, and every other route unchanged.
+6. **The cross-sectional and heatmap presentations ship listed-with-a-reason,
+   as the plan says WB-2's interim state does.** They are not hidden; the
+   reason names the phase.
+
+Validation run:
+
+```text
+npm --prefix apps/web run test:unit     # 30 files, 449 passed
+npm --prefix apps/web run lint          # passed
+npm --prefix apps/web run typecheck     # passed
+npm --prefix apps/web run build         # passed; /workbench 8.91 kB, 126 kB First Load JS
+npm --prefix apps/web run check:bundle  # every route within its declared budget
+npm --prefix apps/web run check:csp     # passed
+npx playwright test                     # 99 passed (the whole browser tier)
+python -m pytest tests/unit -q          # 1687 passed
+ruff check .                            # passed
+```
+
+The browser tier ran here against the pre-installed Chromium
+(`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`,
+which `playwright.config.mjs` already reads); the four workbench specs and
+the ninety-five that preceded them all pass.

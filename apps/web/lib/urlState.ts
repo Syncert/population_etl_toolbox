@@ -435,3 +435,344 @@ export function profileHref(
   const query = serializeProfileState(state, defaults);
   return query ? `/profiles?${query}` : "/profiles";
 }
+
+// --- Workbench ---
+//
+// A workbench link carries the composition: each series' source, measure,
+// scope, pinned release, grain, geography and dimension pins, plus the shared
+// presentation and the cross-sectional grain. It carries no value, no
+// configuration id and no token — the privacy boundary the first-wave handoff
+// states, which holds here for the same reason it holds on the explorer: a
+// link that carried values would show a reader what the warehouse said when
+// the link was made while presenting it as current.
+//
+// Each series is one `s` parameter, so the shape is flat, order is the
+// composition's own, and a single malformed series is dropped without taking
+// the rest of the link with it. Within one `s`, fields are `key:value`
+// separated by `;` — chosen over JSON because a link a reader can read is a
+// link a reader can edit, and over positional fields because a composition
+// with no pinned release should not carry an empty slot for one.
+
+export const WORKBENCH_PRESENTATION_WORDS = [
+  "line",
+  "bar",
+  "scatter",
+  "ranking",
+  "correlation",
+  "heatmap",
+] as const;
+
+export type WorkbenchPresentationWord =
+  (typeof WORKBENCH_PRESENTATION_WORDS)[number];
+
+export interface WorkbenchSeriesUrlState {
+  sourceKey: string;
+  metricCode: string;
+  scope?: ObservationScope;
+  release?: string;
+  geoLevel?: GeoLevel;
+  geoId?: string;
+  filters?: Record<string, string>;
+}
+
+export interface WorkbenchUrlState {
+  series?: WorkbenchSeriesUrlState[];
+  presentation?: WorkbenchPresentationWord;
+  /** The shared grain a cross-sectional presentation reads at. */
+  alignmentGeoLevel?: GeoLevel;
+  stateFips?: string;
+  /** The same-year pin, off unless a reader asked for it. */
+  year?: number;
+  correlation?: boolean;
+}
+
+export type WorkbenchUrlDefaults = Pick<
+  WorkbenchUrlState,
+  "presentation" | "alignmentGeoLevel"
+>;
+
+/**
+ * The ceiling a link carries. Beyond it the share control explains why the
+ * link cannot be made and points at saving, rather than producing a URL that
+ * some browser, proxy or chat client will truncate into a different
+ * composition. Kept equal to `MAX_WORKBENCH_SERIES`; stated here rather than
+ * imported because `urlState` must not depend on the workbench module that
+ * depends on it.
+ */
+export const MAX_WORKBENCH_URL_SERIES = 8;
+
+const METRIC_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_:.\-/]{0,199}$/;
+const GEO_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_:.\-]{0,99}$/;
+const RELEASE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_:.\- ]{0,99}$/;
+/**
+ * Field names inside one `s` that are the series' own, plus every name the
+ * observation request already spends on something else.
+ *
+ * The second half is the part that matters. `isCarriableDimension` screens
+ * against the *explorer's* reserved parameter names, which are that page's
+ * short spellings (`metric`, `geo`, `state`) and not the API's — so
+ * `metric_code`, `limit` or `offset` written into a series by hand passed
+ * that screen and would have been sent as a dimension filter, either refused
+ * by the resource as undeclared or, worse, overriding the measure the rest
+ * of the link names. A dimension pin is one of the source's own declared
+ * filters; nothing else may ride in as one.
+ */
+const SERIES_RESERVED_KEYS = new Set([
+  "src",
+  "m",
+  "scope",
+  "rel",
+  "lvl",
+  "geo",
+  "metric_code",
+  "geo_id",
+  "geo_level",
+  "state_fips",
+  "county_fips",
+  "year_from",
+  "year_to",
+  "release",
+  "limit",
+  "offset",
+  "newest_per_geography",
+  "newest_release_per_period",
+]);
+
+function isWorkbenchPresentation(
+  value: string | null,
+): value is WorkbenchPresentationWord {
+  return (
+    value !== null &&
+    (WORKBENCH_PRESENTATION_WORDS as readonly string[]).includes(value)
+  );
+}
+
+function parseWorkbenchSeries(
+  raw: string,
+): WorkbenchSeriesUrlState | null {
+  const fields = new Map<string, string>();
+  for (const part of raw.split(";")) {
+    const separator = part.indexOf(":");
+    if (separator <= 0) {
+      continue;
+    }
+    const name = part.slice(0, separator);
+    const value = part.slice(separator + 1);
+    if (name && value && !fields.has(name)) {
+      fields.set(name, value);
+    }
+  }
+
+  const sourceKey = fields.get("src") || "";
+  const metricCode = fields.get("m") || "";
+  // Both are required: a series naming no measure is not a series, and a
+  // series naming no source cannot be re-resolved to the access shape that
+  // reads it. Dropped rather than half-restored.
+  if (!SOURCE_KEY_PATTERN.test(sourceKey)) {
+    return null;
+  }
+  if (!METRIC_CODE_PATTERN.test(metricCode)) {
+    return null;
+  }
+
+  const series: WorkbenchSeriesUrlState = { sourceKey, metricCode };
+
+  const scope = fields.get("scope") || null;
+  if (isScope(scope)) {
+    series.scope = scope;
+  }
+  const release = fields.get("rel");
+  if (release && RELEASE_PATTERN.test(release)) {
+    series.release = release;
+  }
+  const geoLevel = normalizeGeoLevel(fields.get("lvl"));
+  if (isGeoLevel(geoLevel)) {
+    series.geoLevel = geoLevel;
+  }
+  const geoId = fields.get("geo");
+  if (geoId && GEO_ID_PATTERN.test(geoId)) {
+    series.geoId = geoId;
+  }
+
+  const filters: Record<string, string> = {};
+  for (const [name, value] of fields) {
+    if (SERIES_RESERVED_KEYS.has(name)) {
+      continue;
+    }
+    if (isCarriableDimension(name, value)) {
+      filters[name] = value;
+    }
+  }
+  if (Object.keys(filters).length > 0) {
+    series.filters = filters;
+  }
+
+  return series;
+}
+
+export function parseWorkbenchState(
+  search: string | null | undefined,
+): WorkbenchUrlState {
+  const params = new URLSearchParams(search || "");
+  const state: WorkbenchUrlState = {};
+
+  const series = params
+    .getAll("s")
+    .slice(0, MAX_WORKBENCH_URL_SERIES)
+    .map(parseWorkbenchSeries)
+    .filter((entry): entry is WorkbenchSeriesUrlState => entry !== null);
+  if (series.length > 0) {
+    state.series = series;
+  }
+
+  const presentation = params.get("view");
+  if (isWorkbenchPresentation(presentation)) {
+    state.presentation = presentation;
+  }
+
+  const alignment = normalizeGeoLevel(params.get("grain"));
+  if (isGeoLevel(alignment)) {
+    state.alignmentGeoLevel = alignment;
+  }
+
+  const stateFips = params.get("state");
+  if (stateFips && STATE_FIPS_PATTERN.test(stateFips)) {
+    state.stateFips = stateFips;
+  }
+
+  const year = params.get("year");
+  if (year && /^\d{4}$/.test(year)) {
+    state.year = Number(year);
+  }
+
+  // Present and "1" is on; present and anything else is off rather than
+  // dropped, so a link someone edited by hand cannot turn the panel on by
+  // accident.
+  const correlation = params.get("corr");
+  if (correlation !== null) {
+    state.correlation = correlation === "1";
+  }
+
+  return state;
+}
+
+function serializeWorkbenchSeries(
+  series: WorkbenchSeriesUrlState,
+): string | null {
+  if (!SOURCE_KEY_PATTERN.test(series.sourceKey || "")) {
+    return null;
+  }
+  if (!METRIC_CODE_PATTERN.test(series.metricCode || "")) {
+    return null;
+  }
+  const parts = [`src:${series.sourceKey}`, `m:${series.metricCode}`];
+  // `latest` is the resource's own default and is omitted, like every other
+  // default this module leaves out of a link.
+  if (series.scope && series.scope !== "latest") {
+    parts.push(`scope:${series.scope}`);
+  }
+  if (series.release && RELEASE_PATTERN.test(series.release)) {
+    parts.push(`rel:${series.release}`);
+  }
+  const geoLevel = normalizeGeoLevel(series.geoLevel);
+  if (isGeoLevel(geoLevel)) {
+    parts.push(`lvl:${geoLevel}`);
+  }
+  if (series.geoId && GEO_ID_PATTERN.test(series.geoId)) {
+    parts.push(`geo:${series.geoId}`);
+  }
+  for (const name of Object.keys(series.filters || {}).sort()) {
+    const value = (series.filters || {})[name];
+    if (!SERIES_RESERVED_KEYS.has(name) && isCarriableDimension(name, value)) {
+      parts.push(`${name}:${value}`);
+    }
+  }
+  return parts.join(";");
+}
+
+export function serializeWorkbenchState(
+  state: WorkbenchUrlState = {},
+  defaults: WorkbenchUrlDefaults = {},
+): string {
+  const params = new URLSearchParams();
+
+  for (const series of (state.series || []).slice(
+    0,
+    MAX_WORKBENCH_URL_SERIES,
+  )) {
+    const encoded = serializeWorkbenchSeries(series);
+    if (encoded) {
+      params.append("s", encoded);
+    }
+  }
+
+  if (
+    state.presentation &&
+    (WORKBENCH_PRESENTATION_WORDS as readonly string[]).includes(
+      state.presentation,
+    ) &&
+    state.presentation !== defaults.presentation
+  ) {
+    params.set("view", state.presentation);
+  }
+
+  const alignment = normalizeGeoLevel(state.alignmentGeoLevel);
+  if (
+    alignment &&
+    isGeoLevel(alignment) &&
+    alignment !== defaults.alignmentGeoLevel
+  ) {
+    params.set("grain", alignment);
+  }
+
+  if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
+    params.set("state", state.stateFips);
+  }
+
+  if (
+    typeof state.year === "number" &&
+    Number.isInteger(state.year) &&
+    state.year >= 1000 &&
+    state.year <= 9999
+  ) {
+    params.set("year", String(state.year));
+  }
+
+  // Off is the default and is omitted; only the on state is carried.
+  if (state.correlation === true) {
+    params.set("corr", "1");
+  }
+
+  return params.toString();
+}
+
+export function workbenchHref(
+  state: WorkbenchUrlState = {},
+  defaults: WorkbenchUrlDefaults = {},
+): string {
+  const query = serializeWorkbenchState(state, defaults);
+  return query ? `/workbench?${query}` : "/workbench";
+}
+
+/**
+ * Whether a composition fits in a link, and what to say when it does not.
+ *
+ * The share control asks this rather than producing a URL and hoping: a link
+ * silently truncated by a chat client reopens as a different composition,
+ * which is worse than no link.
+ */
+export function workbenchLinkCeiling(seriesCount: number): {
+  fits: boolean;
+  reason: string;
+} {
+  if (seriesCount <= MAX_WORKBENCH_URL_SERIES) {
+    return { fits: true, reason: "" };
+  }
+  return {
+    fits: false,
+    reason:
+      `A link carries at most ${MAX_WORKBENCH_URL_SERIES} series and this ` +
+      `composition has ${seriesCount}. Save it instead — a saved workbench ` +
+      "carries every series and reopens against the live publication.",
+  };
+}
