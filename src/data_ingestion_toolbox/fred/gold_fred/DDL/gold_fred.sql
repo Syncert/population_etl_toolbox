@@ -48,7 +48,25 @@ SELECT
     s.seasonal_adjustment,
     NULL::TEXT   AS transform_applied,
     'FRED'       AS source_provider,
-    CURRENT_DATE AS as_of_date,
+    -- The publication this row was read from, not the day the warehouse
+    -- last re-served it (DB-039). `CURRENT_DATE` here was materialised into
+    -- the reporting table by every chunked refresh, so a release of a BLS or
+    -- FRED series was the calendar day a chunk of it was last written: the
+    -- driver re-serves only changed years, so re-serving 2019 on Monday and
+    -- 2020 on Tuesday made `/observations/releases` list two published
+    -- releases the provider never published, and a full re-serve collapsed
+    -- every release into one.
+    --
+    -- `ingested_at` is the honest identity available here. Neither provider
+    -- publishes a release in the response -- BLS publishes none at all, and
+    -- FRED's `realtime_start` is dropped by this view (its own plan) -- so
+    -- what a release can mean is "the warehouse's read of the series", and
+    -- the silver upsert makes that exact: ETL-037 advances `ingested_at`
+    -- only when the row's own content changed, so it is stable across a
+    -- re-serve and moves when the value moves. It is also already what
+    -- `updated_at` publishes, so the two are one fact rather than two
+    -- unrelated clocks.
+    s.ingested_at::DATE AS as_of_date,
     s.ingested_at AS updated_at
 FROM silver_fred.fact_economic_indicators s
 JOIN gold_fred.dim_fred_series fs ON fs.series_id = s.series_id

@@ -235,7 +235,35 @@ source-scoped routes serve it; that is what they are for.
   `participated_population` and `population_denominator` for what the count
   rests on.
 - `release`, `as_of`, `source_record_id`, and `capture_id` trace a row back to
-  its publication.
+  its publication. What `release` *identifies* differs by source, because the
+  providers differ, and the table below says so per source rather than
+  leaving you to infer it.
+
+### What a release identifies, per source
+
+A release identity is only as strong as what the provider publishes. Three
+kinds appear here, and conflating them is the mistake this table exists to
+prevent:
+
+| Source | `release` is | What it means |
+| --- | --- | --- |
+| Census ACS | `vintage_year` | The provider's estimate vintage. Two vintages are two ACS publications of the same period, which is why an ACS history is read per vintage |
+| CDC | `release_watermark` | The provider's own release identity, carried through from the capture |
+| FBI UCR | the release key | The provider's dataset release, with its own refresh date |
+| USDA NASS | `release_watermark` | The provider's validated release |
+| Census PEP | the release date | The Bureau's published release date for that vintage |
+| BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
+| FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED does publish a revision identity (`realtime_start`), and the serving layer does not yet carry it; until it does, the identity is the read |
+
+For BLS and FRED, then: a new release appears when a value is ingested that
+differs from the one held, and re-serving the warehouse does not create one.
+That distinction is load-bearing — the serving layer re-serves changed years
+in chunks, and it used to stamp each row with the day its chunk was written,
+so `/observations/releases` listed a "release" for every day a chunk happened
+to be re-served and a full re-serve collapsed them all into one. It now
+reports the ingestion behind each row, so `scope=as_released` lists one
+release per distinct ingestion and `newest_release_per_period=true` settles
+on the newest *value*, not the newest write.
 
 ### How a source identifies its metrics
 

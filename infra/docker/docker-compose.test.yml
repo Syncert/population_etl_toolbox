@@ -52,6 +52,7 @@ services:
       - ../../sql/migrations/020_resolved_geography_serving.sql:/docker-entrypoint-initdb.d/040e_resolved_geography_serving.sql:ro
       - ../../sql/migrations/022_fbi_publisher_geo_grain.sql:/docker-entrypoint-initdb.d/040f_fbi_publisher_geo_grain.sql:ro
       - ../../sql/migrations/024_served_place_name.sql:/docker-entrypoint-initdb.d/040g_served_place_name.sql:ro
+      - ../../sql/migrations/026_released_date_is_not_the_refresh_clock.sql:/docker-entrypoint-initdb.d/040h_released_date_is_not_the_refresh_clock.sql:ro
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/041_semantic_policy.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/042_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro

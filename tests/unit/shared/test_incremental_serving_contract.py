@@ -194,3 +194,63 @@ def test_fact_views_normalise_the_national_geography_level() -> None:
 
     fred = _read(SOURCE_FILES["fred"]["gold"])
     assert "'NATIONAL'," in fred
+
+
+#: A statement clock. Any of these in a published release or as-of expression
+#: makes the value the moment the refresh ran rather than a fact about the row.
+_STATEMENT_CLOCKS = (
+    "CURRENT_DATE",
+    "CURRENT_TIMESTAMP",
+    "LOCALTIMESTAMP",
+    "NOW()",
+    "STATEMENT_TIMESTAMP",
+)
+
+
+def _released_expressions() -> list[tuple[Path, str]]:
+    """Every `... AS as_of_date` expression in the source gold DDL.
+
+    Read from the files rather than listed, so a fourth source that publishes
+    the column is covered the day it is written.
+    """
+    found = []
+    for path in sorted(REPO_ROOT.glob("src/data_ingestion_toolbox/*/gold_*/DDL/*.sql")):
+        for line in _read(path).splitlines():
+            stripped = line.strip()
+            if stripped.startswith("--"):
+                continue
+            if "AS as_of_date" in stripped:
+                found.append((path, stripped))
+    return found
+
+
+def test_a_served_release_is_never_the_refresh_clock() -> None:
+    """Covers: DB-039 — `as_of_date` is a fact about the row, not the refresh.
+
+    `API_CONSUMER_GUIDE.md` says `release` and `as_of` "trace a row back to
+    its publication". BLS, FRED and ACS all published `CURRENT_DATE AS
+    as_of_date`, and the chunked serving refresh materialised that literal
+    into the reporting table -- so a "release" was the calendar day a chunk
+    was last written. The chunk driver re-serves only changed years, so
+    re-serving 2019 on Monday and 2020 on Tuesday made
+    `/observations/releases` list two published releases nobody published,
+    and a full re-serve collapsed every release into one.
+
+    BLS and FRED publish no release identity in their responses, so the
+    honest identity is the warehouse's read, and `ingested_at` is exact about
+    that: ETL-037's upsert advances it only when the row's content changed.
+    Census PEP does carry a provider release date and uses it.
+    """
+    expressions = _released_expressions()
+    assert expressions, "no gold DDL publishes as_of_date; the rule read nothing"
+
+    offenders = [
+        f"{path.name}: {expression}"
+        for path, expression in expressions
+        if any(clock in expression.upper() for clock in _STATEMENT_CLOCKS)
+    ]
+    assert not offenders, (
+        "these serving views publish the refresh's clock as a release date, "
+        "so a re-serve invents a release the provider never published: "
+        + "; ".join(offenders)
+    )

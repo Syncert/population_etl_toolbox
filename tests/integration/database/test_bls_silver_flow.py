@@ -120,3 +120,106 @@ def test_bls_raw_rows_transform_to_exact_silver_keys(
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+def test_an_unchanged_bls_row_keeps_the_ingestion_a_release_is_read_from(
+    monkeypatch: pytest.MonkeyPatch,
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-039 — the watermark a BLS release identity rests on holds.
+
+    The served `as_of_date` is the silver row's `ingested_at` (DB-039), which
+    is only an honest release identity because ETL-037's upsert advances that
+    column when the row's content changed and leaves it alone when it did not.
+    ETL-037 asserts the predicate as a string in the transform's source; this
+    asserts the behaviour against a real database, and FRED's flow already
+    has the equivalent node.
+    """
+    series_id = "LAUST980000000000003"
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20980201, "2098-02-01")
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="98",
+                vintage=2098,
+                name="Watermark State",
+            )
+            cursor.execute(
+                """
+                INSERT INTO raw_bls.bls_series (
+                    program, series_id, title, seasonal, measure, area_code
+                ) VALUES ('la', %s, 'Watermark series', 'U', '03',
+                          'ST9800000000000')
+                """,
+                (series_id,),
+            )
+            capture_id = seed_capture(cursor, "BLS")
+            cursor.execute(
+                """INSERT INTO silver_bls.observation_revision (
+                    capture_id, observation_index, program, series_id,
+                    year_source, period_source, period_name_source, value_source,
+                    year, period, period_name, value, value_status, is_latest
+                ) VALUES (%s, 0, 'la', %s, '2098', 'M02', 'February', '5.5',
+                          2098, 'M02', 'February', 5.5, 'valid', TRUE)""",
+                (capture_id, series_id),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    monkeypatch.setattr(
+        transform, "_get_hook", lambda: PostgresHookStub(postgres_connection_factory)
+    )
+    try:
+        assert transform.transform_bls_to_silver("la") == 1
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    "SELECT ingested_at FROM silver_bls.fact_labor_statistics "
+                    "WHERE series_id = %s",
+                    (series_id,),
+                )
+                first = cursor.fetchone()[0]
+        finally:
+            reader.close()
+
+        # The same revision, transformed again: rows processed, nothing
+        # materially changed, so the watermark must not move.
+        assert transform.transform_bls_to_silver("la") == 1
+        reader = postgres_connection_factory()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    "SELECT ingested_at FROM silver_bls.fact_labor_statistics "
+                    "WHERE series_id = %s",
+                    (series_id,),
+                )
+                assert cursor.fetchone()[0] == first
+        finally:
+            reader.close()
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM silver_bls.fact_labor_statistics WHERE series_id = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM raw_bls.bls_series WHERE series_id = %s", (series_id,)
+                )
+                cursor.execute(
+                    "DELETE FROM silver_bls.observation_revision WHERE series_id = %s",
+                    (series_id,),
+                )
+                delete_geography(cursor, "state:98")
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_time WHERE time_sk = 20980201"
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()

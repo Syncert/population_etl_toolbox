@@ -71,7 +71,13 @@ SELECT
     s.margin_of_error_pct,
     NULL::TEXT AS estimate_annotation,
     NULL::TEXT AS moe_annotation,
-    CURRENT_DATE AS as_of_date,
+    -- ACS's release identity is `vintage_year` (the registry's release
+    -- expression), and `as_of` is served from this column -- so the same rule
+    -- applies to it as to BLS and FRED: it is the row's own ingestion
+    -- evidence, never the refresh's clock (DB-039). `CURRENT_DATE` here moved
+    -- an ACS row's `as_of` every time a chunk was re-served, on a field the
+    -- consumer guide says traces a row back to its publication.
+    s.ingested_at::DATE AS as_of_date,
     s.ingested_at AS updated_at
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av

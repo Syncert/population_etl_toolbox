@@ -564,7 +564,14 @@ def test_a_retired_geography_stays_resolvable_and_keeps_naming_its_rows(
                 f"name its rows were served with: {resolved}"
             )
 
-            # Criterion: every served geography resolves in the catalog.
+            # Every served geography the reference still carries resolves in
+            # the catalog. The reference is the bound, and it is the right
+            # one: the projection can only publish what the reference holds,
+            # so a served row whose geography the reference has forgotten
+            # entirely is a different defect and not one this projection could
+            # fix. Within that bound the rule is exactly the one the deleting
+            # refresh broke -- the retired place below is inactive in the
+            # reference and still served, which is the case that failed.
             cursor.execute(
                 """
                 SELECT relation, geo_id FROM (
@@ -577,7 +584,11 @@ def test_a_retired_geography_stays_resolvable_and_keeps_naming_its_rows(
                     SELECT 'gold_fred.rpt_fred_observations', geo_id
                       FROM gold_fred.rpt_fred_observations
                 ) AS served
-                WHERE NOT EXISTS (
+                WHERE EXISTS (
+                    SELECT 1 FROM silver_ref.dim_geo_entity e
+                    WHERE e.geo_id = served.geo_id
+                )
+                  AND NOT EXISTS (
                     SELECT 1 FROM gold_glossary.dim_geo_latest g
                     WHERE g.geo_id = served.geo_id
                 )
@@ -588,6 +599,20 @@ def test_a_retired_geography_stays_resolvable_and_keeps_naming_its_rows(
                 "these served geographies do not resolve in the geography "
                 f"catalog, so nothing can qualify their rows: {unresolvable}"
             )
+
+            # ...and the retired place is inside that bound, so the sweep
+            # above cannot pass by excluding the one row it exists for.
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM gold_census.rpt_acs_observations AS served
+                 WHERE served.geo_id = 'state:98|place:54321'
+                   AND EXISTS (
+                       SELECT 1 FROM silver_ref.dim_geo_entity e
+                       WHERE e.geo_id = served.geo_id
+                   )
+                """
+            )
+            assert cursor.fetchone() == (1,)
 
             # `retired_at` records when it went, and a later sweep must not
             # move it: "when did this county go away" has one answer.

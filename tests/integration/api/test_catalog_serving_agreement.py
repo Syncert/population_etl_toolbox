@@ -1897,3 +1897,85 @@ def test_every_served_bls_code_is_a_catalog_code(
             assert published_grains[0] == ["COUNTY"], published_grains
     finally:
         reader.close()
+
+
+def test_re_serving_a_chunk_publishes_no_new_release(
+    postgres_connection_factory: Callable[[], connection],
+    served_bls_series_identity: str,
+) -> None:
+    """Covers: DB-039 — a release is the row's ingestion, not the refresh's day.
+
+    The BLS and FRED fact views published `CURRENT_DATE AS as_of_date` and the
+    chunked refresh materialised that literal, so a "release" was the calendar
+    day a chunk was last written. The driver re-serves only changed years:
+    re-serve 2019 on Monday and 2020 on Tuesday and
+    `/observations/releases?metric_code=BLS:...` lists two published releases
+    with row counts, `newest_release_per_period=true` settles on "the most
+    recently re-served chunk", and a full re-serve collapses every release
+    into one. BLS published nothing on any of those days.
+
+    The silver row's `ingested_at` is set back before the refresh runs, which
+    is what makes this failing-first: with the clock literal the served date
+    was today's regardless, so a test that ingested and served in one session
+    could not tell the two apart.
+    """
+    metric_code = f"BLS:{served_bls_series_identity}"
+    ingested_on = "2097-06-15"
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE silver_bls.fact_labor_statistics
+                   SET ingested_at = %s::TIMESTAMPTZ
+                 WHERE series_id = %s
+                """,
+                (f"{ingested_on} 12:00:00+00", served_bls_series_identity),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "CALL gold_bls.refresh_rpt_bls_observations(%s, %s)",
+                (BLS_PERIOD_START, BLS_PERIOD_END),
+            )
+            cursor.execute(
+                """
+                SELECT DISTINCT as_of_date::TEXT, updated_at::DATE::TEXT
+                  FROM gold_bls.rpt_bls_observations WHERE metric_code = %s
+                """,
+                (metric_code,),
+            )
+            first = cursor.fetchall()
+            assert first == [(ingested_on, ingested_on)], (
+                f"the served release date is not the row's own ingestion: {first}"
+            )
+
+            # The chunk is re-served with nothing changed in silver, which is
+            # what the year-chunk driver does on every run of a year it has
+            # already served.
+            cursor.execute(
+                "CALL gold_bls.refresh_rpt_bls_observations(%s, %s)",
+                (BLS_PERIOD_START, BLS_PERIOD_END),
+            )
+            cursor.execute(
+                """
+                SELECT DISTINCT as_of_date::TEXT
+                  FROM gold_bls.rpt_bls_observations WHERE metric_code = %s
+                """,
+                (metric_code,),
+            )
+            assert cursor.fetchall() == [(ingested_on,)]
+
+            # What `/observations/releases` pages: one release per distinct
+            # ingestion, and re-serving does not add one.
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT as_of_date)
+                  FROM gold_bls.rpt_bls_observations WHERE metric_code = %s
+                """,
+                (metric_code,),
+            )
+            assert cursor.fetchone() == (1,)
+        writer.commit()
+    finally:
+        writer.close()

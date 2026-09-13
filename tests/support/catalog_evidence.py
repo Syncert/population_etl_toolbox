@@ -17,7 +17,7 @@ AUDITED_COUNTS = {
     "DQ": 11,
     "DAG": 18,
     "ETL": 50,
-    "DB": 38,
+    "DB": 39,
     "API": 121,
     "WEB": 75,
     "DEPLOY": 7,
