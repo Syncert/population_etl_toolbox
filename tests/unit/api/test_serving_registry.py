@@ -286,4 +286,3 @@ def test_every_geo_level_filter_matches_the_grain_the_source_projects() -> None:
     assert normalize_geo_level(" County ") == "COUNTY"
     assert normalize_geo_level("SOMETHING_ELSE") == "SOMETHING_ELSE"
     assert all(normalize_geo_level(word) == word for word in GEO_GRAINS)
-

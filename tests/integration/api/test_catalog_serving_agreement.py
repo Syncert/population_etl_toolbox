@@ -27,9 +27,10 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
 from apps.api.registry import OBSERVATION_DISPATCH
+from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
 from tests.support.capture_seed import delete_geography, seed_geography
-from tests.support.postgres import PostgresTestConfig
+from tests.support.postgres import PostgresHookStub, PostgresTestConfig
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -43,6 +44,11 @@ ACS_TABLE = "B99997"
 ACS_DATASET = "acs5"
 ACS_VINTAGE = 2093
 ACS_PERIOD = "2093-01-01"
+
+FRED_VINTAGE = 2094
+FRED_PERIOD = "2094-01-01"
+FRED_PERIOD_END = "2094-01-31"
+FRED_TIME_SK = 20940101
 
 
 def _seed_time(database_cursor, time_sk: int, value: str) -> None:
@@ -76,16 +82,17 @@ _REGISTRATION_RELATIONS = (
 
 def _registration_state(
     factory: Callable[[], connection],
+    source_code: str = "CENSUS_ACS",
 ) -> dict[str, bool]:
-    """Which registration rows for CENSUS_ACS already exist before the harvest."""
+    """Which registration rows for ``source_code`` exist before the harvest."""
     reader = factory()
     try:
         with reader.cursor() as database_cursor:
             state = {}
             for relation in _REGISTRATION_RELATIONS:
                 database_cursor.execute(
-                    f"SELECT EXISTS (SELECT 1 FROM {relation} "
-                    "WHERE source_code = 'CENSUS_ACS')"
+                    f"SELECT EXISTS (SELECT 1 FROM {relation} WHERE source_code = %s)",
+                    (source_code,),
                 )
                 state[relation] = bool(database_cursor.fetchone()[0])
             return state
@@ -93,7 +100,11 @@ def _registration_state(
         reader.close()
 
 
-def _remove_registration(database_cursor, existed_before: dict[str, bool]) -> None:
+def _remove_registration(
+    database_cursor,
+    existed_before: dict[str, bool],
+    source_code: str = "CENSUS_ACS",
+) -> None:
     """Remove the registration rows the harvest created, and only those."""
     for relation in _REGISTRATION_RELATIONS:
         if existed_before[relation]:
@@ -103,12 +114,13 @@ def _remove_registration(database_cursor, existed_before: dict[str, bool]) -> No
             # system; it is only this fixture's to remove when nothing does.
             database_cursor.execute(
                 "SELECT EXISTS (SELECT 1 FROM gold_glossary.dim_metric_catalog "
-                "WHERE source_code = 'CENSUS_ACS')"
+                "WHERE source_code = %s)",
+                (source_code,),
             )
             if database_cursor.fetchone()[0]:
                 continue
         database_cursor.execute(
-            f"DELETE FROM {relation} WHERE source_code = 'CENSUS_ACS'"
+            f"DELETE FROM {relation} WHERE source_code = %s", (source_code,)
         )
 
 
@@ -293,6 +305,115 @@ def published_acs_metric(
             cleanup.close()
 
 
+@pytest.fixture
+def published_fred_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one FRED metric the way production does, end to end.
+
+    The ACS fixture above guarantees this guard is exercised on a source whose
+    grains have always been derived. FRED is the second, and until 2026-09-12
+    it was the counter-case: ``gold_fred.metric_publisher`` declared
+    ``ARRAY['NATIONAL']`` for every series, so the sweep would have reported a
+    national grain for a series serving nothing without ever reading a row.
+    """
+    series_id = f"TEST_AGREEMENT_FRED_{uuid4().hex[:8].upper()}"
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as database_cursor:
+            _seed_time(database_cursor, FRED_TIME_SK, FRED_PERIOD)
+            seed_geography(
+                database_cursor,
+                geo_type="nation",
+                vintage=FRED_VINTAGE,
+                name="Catalog agreement nation",
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO silver_fred.fact_economic_indicators (
+                    time_sk, duration_start, duration_end, observation_date,
+                    series_id, domain, value, is_missing, series_title,
+                    unit_of_measure, frequency, seasonal_adjustment,
+                    source_system, load_batch_id, ingested_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, 'fixture', 7.5, FALSE,
+                    'Catalog agreement series', 'Index', 'Monthly',
+                    'Not Adjusted', 'FRED', gen_random_uuid(), NOW()
+                )
+                """,
+                (FRED_TIME_SK, FRED_PERIOD, FRED_PERIOD_END, FRED_PERIOD, series_id),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    fred_gold_transform.refresh_fred_elements(
+        PostgresHookStub(postgres_connection_factory)
+    )
+
+    # Serve before harvesting. The grain is read from the served relation, so
+    # the reverse order publishes the empty array -- which the ingest DAG
+    # already gets right and a fixture is free to get wrong.
+    refresher = postgres_connection_factory()
+    try:
+        with refresher.cursor() as database_cursor:
+            database_cursor.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                (FRED_PERIOD, FRED_PERIOD_END),
+            )
+        refresher.commit()
+    finally:
+        refresher.close()
+
+    registered_before = _registration_state(postgres_connection_factory, "FRED")
+    harvest_publisher(postgres_connection_factory, Publisher("gold_fred"))
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = 'FRED' AND source_object_key = %s
+                """,
+                (series_id,),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, "the harvest published no FRED catalog row"
+
+    try:
+        yield published[0]
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as database_cursor:
+                for statement in (
+                    "DELETE FROM gold_fred.mv_fred_latest WHERE series_id = %s",
+                    "DELETE FROM gold_fred.rpt_fred_observations WHERE series_id = %s",
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_code = 'FRED' AND source_object_key = %s",
+                    # gold_fred.fact_fred_observation is a view over silver, so
+                    # the silver delete below is what removes the fact rows.
+                    "DELETE FROM gold_fred.dim_fred_series WHERE series_id = %s",
+                    "DELETE FROM silver_fred.fact_economic_indicators WHERE series_id = %s",
+                ):
+                    database_cursor.execute(statement, (series_id,))
+                database_cursor.execute(
+                    "DELETE FROM control.serving_refresh_chunk_state "
+                    "WHERE source_code = 'FRED'"
+                )
+                database_cursor.execute(
+                    "DELETE FROM control.serving_refresh_state WHERE source_code = 'FRED'"
+                )
+                _remove_registration(database_cursor, registered_before, "FRED")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
 def _current_catalog_codes(client: TestClient, source_code: str) -> list[str]:
     response = client.get(
         "/api/v1/catalog/metrics",
@@ -428,7 +549,9 @@ def test_every_registered_source_answers_each_current_catalog_code(
     )
 
 
-def _current_catalog_grains(client: TestClient, source_code: str) -> dict[str, list[str]]:
+def _current_catalog_grains(
+    client: TestClient, source_code: str
+) -> dict[str, list[str]]:
     response = client.get(
         "/api/v1/catalog/metrics",
         params={"source_code": source_code, "active_only": "true", "limit": 1000},
@@ -436,12 +559,14 @@ def _current_catalog_grains(client: TestClient, source_code: str) -> dict[str, l
     assert response.status_code == 200, response.text
     return {
         item["metric_code"]: list(item.get("valid_geo_grains") or [])
-        for item in sorted(response.json()["items"], key=lambda item: item["metric_code"])
+        for item in sorted(
+            response.json()["items"], key=lambda item: item["metric_code"]
+        )
     }
 
 
 def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
-    api_client: TestClient, published_acs_metric: str
+    api_client: TestClient, published_acs_metric: str, published_fred_metric: str
 ) -> None:
     """Covers: DB-028 — a grain read from the catalog can be sent straight back.
 
@@ -482,7 +607,9 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
                     "/api/v1/observations",
                     params={"metric_code": metric_code, "geo_level": grain, "limit": 5},
                 )
-                assert response.status_code == 200, f"{metric_code}@{grain}: {response.text}"
+                assert response.status_code == 200, (
+                    f"{metric_code}@{grain}: {response.text}"
+                )
                 payload = response.json()
                 if int(payload["total"]) < 1:
                     unanswered.append(
@@ -503,3 +630,9 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
     assert f"{published_acs_metric}@STATE" in exercised
     assert f"{published_acs_metric}@NATIONAL" not in exercised
     assert f"{published_acs_metric}@COUNTY" not in exercised
+    # And FRED, whose grain was declared rather than derived until 2026-09-12.
+    # Its fixture serves one national row, so NATIONAL is the whole set: the
+    # assertion is that the grain came from that row, not from the view.
+    assert f"{published_fred_metric}@NATIONAL" in exercised
+    assert f"{published_fred_metric}@STATE" not in exercised
+    assert f"{published_fred_metric}@COUNTY" not in exercised

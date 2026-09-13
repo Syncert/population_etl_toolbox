@@ -678,3 +678,116 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
             assert cursor.fetchall() == [("2098-01-01", 31), ("2099-01-01", 32)]
     finally:
         reader.close()
+
+
+def test_fred_publishes_only_the_grains_its_served_rows_carry(
+    postgres_connection_factory: Callable[[], connection],
+    fred_silver_token: str,
+) -> None:
+    """Covers: ARC-006 — the FRED catalog grain is a fact about served rows.
+
+    ``gold_fred.metric_publisher`` used to declare ``ARRAY['NATIONAL']`` for
+    every series. It was true of every series served, and it would have stayed
+    true in the catalog for the first regional series configured, which is one
+    entry away. Two series are seeded here and only one is served: the served
+    one publishes the grain its rows carry, and the unserved one publishes no
+    grain rather than the grain the view used to invent for it.
+
+    The order below is the contract, not an accident of the fixture. A derived
+    grain is read at harvest time, so the harvest has to run after the serving
+    refresh or it publishes the empty array for everything. The ingest DAG
+    already sequences ``publisher_ready`` downstream of the serving refresh.
+    """
+    served_series = f"TEST_FRED_SILVER_{fred_silver_token}_SERVED"
+    unserved_series = f"TEST_FRED_SILVER_{fred_silver_token}_UNSERVED"
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20990101, "2099-01-01")
+            _seed_time(cursor, 20990601, "2099-06-01")
+            seed_geography(
+                cursor,
+                geo_type="nation",
+                vintage=2099,
+                name="United States",
+            )
+            for series_id, time_sk, start, end in (
+                (served_series, 20990101, "2099-01-01", "2099-01-31"),
+                (unserved_series, 20990601, "2099-06-01", "2099-06-30"),
+            ):
+                cursor.execute(
+                    """
+                    INSERT INTO silver_fred.fact_economic_indicators (
+                        time_sk, duration_start, duration_end, observation_date,
+                        series_id, domain, value, is_missing, series_title,
+                        unit_of_measure, frequency, seasonal_adjustment,
+                        source_system, load_batch_id, ingested_at
+                    ) VALUES (
+                        %s, %s, %s, %s,
+                        %s, 'fixture', 42.5, FALSE, 'Grain fixture',
+                        'Index', 'Monthly', 'Not Adjusted', 'FRED', %s, NOW()
+                    )
+                    """,
+                    (time_sk, start, end, start, series_id, str(uuid4())),
+                )
+        writer.commit()
+    finally:
+        writer.close()
+
+    hook = PostgresHookStub(postgres_connection_factory)
+    assert gold_transform.refresh_fred_elements(hook) >= 2
+
+    # January only: the June series reaches gold as a dimension and a fact, and
+    # is never served, which is the case the declaration could not express.
+    refresher = postgres_connection_factory()
+    try:
+        with refresher.cursor() as cursor:
+            cursor.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                ("2099-01-01", "2099-01-31"),
+            )
+        refresher.commit()
+    finally:
+        refresher.close()
+
+    assert harvest_publisher(postgres_connection_factory, Publisher("gold_fred")) >= 1
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT source_object_key, valid_geo_grains
+                FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = 'FRED' AND source_object_key IN (%s, %s)
+                ORDER BY source_object_key
+                """,
+                (served_series, unserved_series),
+            )
+            published = dict(cursor.fetchall())
+
+            # The grain published for the served series is the word its own
+            # served rows carry, read back from the relation the API reads.
+            cursor.execute(
+                """
+                SELECT DISTINCT UPPER(geo_level)
+                FROM gold_fred.mv_fred_latest
+                WHERE metric_code = %s
+                """,
+                (f"FRED:{served_series}",),
+            )
+            served_grains = sorted(row[0] for row in cursor.fetchall())
+    finally:
+        reader.close()
+
+    assert published.get(served_series) == served_grains == ["NATIONAL"], (
+        f"the served series published {published.get(served_series)!r} "
+        f"while its rows carry {served_grains!r}"
+    )
+    assert published.get(unserved_series) == [], (
+        "a series nothing serves published "
+        f"{published.get(unserved_series)!r}; an unserved series must publish "
+        "no grain, so the agreement guards report the empty code rather than "
+        "a grain the publisher invented"
+    )

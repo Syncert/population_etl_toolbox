@@ -139,7 +139,12 @@ def _packet(metric_code: str, *, with_empty: bool = False) -> dict:
         "caveats": ["national series"],
     }
     blocks = [
-        {"block_id": "summary", "type": "text", "title": "Summary", "content": "The need."},
+        {
+            "block_id": "summary",
+            "type": "text",
+            "title": "Summary",
+            "content": "The need.",
+        },
         {
             "block_id": "evidence",
             "type": "analysis",
@@ -147,11 +152,23 @@ def _packet(metric_code: str, *, with_empty: bool = False) -> dict:
             "envelope": envelope,
             "document": query,
         },
-        {"block_id": "limits", "type": "caveat", "title": "Limits", "content": "Associations."},
+        {
+            "block_id": "limits",
+            "type": "caveat",
+            "title": "Limits",
+            "content": "Associations.",
+        },
     ]
     if with_empty:
-        blocks.append({"block_id": "condition", "type": "analysis", "title": "Condition"})
-    return {"schema_version": 1, "title": "Needs assessment", "purpose": "Why", "blocks": blocks}
+        blocks.append(
+            {"block_id": "condition", "type": "analysis", "title": "Condition"}
+        )
+    return {
+        "schema_version": 1,
+        "title": "Needs assessment",
+        "purpose": "Why",
+        "blocks": blocks,
+    }
 
 
 def test_packet_lifecycle_against_the_real_schema(
@@ -181,7 +198,12 @@ def test_packet_lifecycle_against_the_real_schema(
     assert detail.status_code == 200
     stored = detail.json()["document"]
     # Block order and every recorded field survive the JSONB round trip.
-    assert [block["block_id"] for block in stored["blocks"]] == ["summary", "evidence", "limits", "condition"]
+    assert [block["block_id"] for block in stored["blocks"]] == [
+        "summary",
+        "evidence",
+        "limits",
+        "condition",
+    ]
     assert stored["blocks"][1]["envelope"]["caveats"] == ["national series"]
     assert stored["blocks"][1]["document"]["metric_code"] == metric_code
 
@@ -192,14 +214,25 @@ def test_packet_lifecycle_against_the_real_schema(
     assert "validation" not in summary
 
     # The second account shares the database and sees none of it.
-    assert client.get("/api/v1/evidence-packets", headers=_auth(other_token)).json()["total"] == 0
-    stolen = client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth(other_token))
+    assert (
+        client.get("/api/v1/evidence-packets", headers=_auth(other_token)).json()[
+            "total"
+        ]
+        == 0
+    )
+    stolen = client.get(
+        f"/api/v1/evidence-packets/{packet_id}", headers=_auth(other_token)
+    )
     assert stolen.status_code == 404 and stolen.json() == {"detail": "packet not found"}
 
     updated = client.put(
         f"/api/v1/evidence-packets/{packet_id}",
         headers=_auth(token),
-        json={"name": "my-packet", "document": _packet(metric_code), "expected_version": 1},
+        json={
+            "name": "my-packet",
+            "document": _packet(metric_code),
+            "expected_version": 1,
+        },
     )
     assert updated.status_code == 200 and updated.json()["version"] == 2
     assert updated.json()["validation"]["valid"] is True
@@ -207,7 +240,11 @@ def test_packet_lifecycle_against_the_real_schema(
     stale = client.put(
         f"/api/v1/evidence-packets/{packet_id}",
         headers=_auth(token),
-        json={"name": "my-packet", "document": _packet(metric_code), "expected_version": 1},
+        json={
+            "name": "my-packet",
+            "document": _packet(metric_code),
+            "expected_version": 1,
+        },
     )
     assert stale.status_code == 409 and "current version 2" in stale.json()["detail"]
 
@@ -228,15 +265,24 @@ def test_packet_lifecycle_against_the_real_schema(
     unknown["blocks"][1]["document"]["metric_code"] = "NO:SUCH:METRIC"
     unknown["blocks"][1]["envelope"]["metric_codes"] = ["NO:SUCH:METRIC"]
     refused = client.post(
-        "/api/v1/evidence-packets", headers=_auth(token), json={"name": "unknown", "document": unknown}
+        "/api/v1/evidence-packets",
+        headers=_auth(token),
+        json={"name": "unknown", "document": unknown},
     )
     assert refused.status_code == 422
     assert "block 'evidence'" in refused.json()["detail"]
     assert "not a published metric" in refused.json()["detail"]
 
-    removed = client.delete(f"/api/v1/evidence-packets/{packet_id}", headers=_auth(token))
+    removed = client.delete(
+        f"/api/v1/evidence-packets/{packet_id}", headers=_auth(token)
+    )
     assert removed.status_code == 204
-    assert client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth(token)).status_code == 404
+    assert (
+        client.get(
+            f"/api/v1/evidence-packets/{packet_id}", headers=_auth(token)
+        ).status_code
+        == 404
+    )
 
 
 def test_account_deletion_cascades_and_names_are_unique_per_owner(
@@ -246,16 +292,22 @@ def test_account_deletion_cascades_and_names_are_unique_per_owner(
     """Covers: DB-027 — the database enforces cascade and per-owner uniqueness."""
     client, token, other_token, metric_code = packet_api
     mine = client.post(
-        "/api/v1/evidence-packets", headers=_auth(token), json={"name": "shared-name", "document": _packet(metric_code)}
+        "/api/v1/evidence-packets",
+        headers=_auth(token),
+        json={"name": "shared-name", "document": _packet(metric_code)},
     )
     theirs = client.post(
         "/api/v1/evidence-packets",
         headers=_auth(other_token),
         json={"name": "shared-name", "document": _packet(metric_code)},
     )
-    assert mine.status_code == 201 and theirs.status_code == 201, "uniqueness is per owner"
+    assert mine.status_code == 201 and theirs.status_code == 201, (
+        "uniqueness is per owner"
+    )
     duplicate = client.post(
-        "/api/v1/evidence-packets", headers=_auth(token), json={"name": "shared-name", "document": _packet(metric_code)}
+        "/api/v1/evidence-packets",
+        headers=_auth(token),
+        json={"name": "shared-name", "document": _packet(metric_code)},
     )
     assert duplicate.status_code == 409
 
@@ -263,7 +315,8 @@ def test_account_deletion_cascades_and_names_are_unique_per_owner(
     try:
         with remover.cursor() as cursor:
             cursor.execute(
-                "DELETE FROM app_api.user_account WHERE token_sha256 = %s", (hash_token(other_token),)
+                "DELETE FROM app_api.user_account WHERE token_sha256 = %s",
+                (hash_token(other_token),),
             )
             cursor.execute(
                 "SELECT COUNT(*) FROM app_api.evidence_packet WHERE packet_id = %s",
