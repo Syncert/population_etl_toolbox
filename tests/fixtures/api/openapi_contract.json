@@ -2086,6 +2086,7 @@
     "DistributionBinsResponse": {
       "properties": {
         "bin_count": "integer",
+        "caveats": "array<string>",
         "derived": "boolean",
         "geo_level": "string | null",
         "items": "array<DistributionBin>",

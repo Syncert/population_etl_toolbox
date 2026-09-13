@@ -539,6 +539,15 @@ async function installRoutes(
       // map (WEB-043, WEB-054).
       period: "2023-01-01",
       periods_differ: false,
+      // What the served answer says its bins could not carry (WEB-055). The
+      // ACS fixture's source publishes a margin of error, so the API names
+      // it; a fixture without the field models an analysis that never says.
+      caveats: [
+        "metric_code is served by source 'CENSUS_ACS', which publishes "
+        + "margin_of_error, margin_of_error_pct; an aligned comparison carries "
+        + "neither, so read the published uncertainty on /observations before "
+        + "treating a difference or a ratio as exact",
+      ],
       items: [{ bin_index: 1, count: 1 }],
     },
   }));
@@ -1309,4 +1318,41 @@ test("a legend built from mixed periods says so", async ({ page }) => {
   // The pill's caution treatment, which is what "not proven good" looks like
   // in this UI: a stale or partial value can never present as current.
   await expect(status).toHaveClass(/warn/);
+});
+
+test("the map says what its bins could not carry", async ({ page }) => {
+  // Covers: WEB-055 — the bins draw boundaries to the value, and each ACS
+  // value carries a margin of error that can straddle them. The API names
+  // what it dropped; this is the surface that shows it beside the map those
+  // bins paint.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("distribution-caveats")).toContainText(
+    "margin_of_error",
+  );
+});
+
+test("a distribution with nothing to caveat shows no note", async ({ page }) => {
+  // Covers: WEB-055 — published strings rendered as published, so an answer
+  // carrying none grows no empty paragraph.
+  await installRoutes(page);
+  await page.route("**/api/v1/distribution/bins?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        bin_count: 1,
+        min_value: 1,
+        max_value: 1,
+        period: "2023-01-01",
+        periods_differ: false,
+        caveats: [],
+        items: [{ bin_index: 1, count: 1 }],
+      },
+    }),
+  );
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await expect(page.getByTestId("distribution-caveats")).toHaveCount(0);
 });

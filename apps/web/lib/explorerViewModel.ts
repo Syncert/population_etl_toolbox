@@ -513,6 +513,22 @@ export function colorForValue(value: number, minValue: number, maxValue: number)
  * Returns `""` when the answer publishes neither fact, so an older API is
  * described as it is rather than guessed at.
  */
+/**
+ * What the API said its bins could not carry, for the note beside the map.
+ *
+ * Published strings, rendered as published: the API names the source and the
+ * fields it publishes, and composing a different sentence here would be this
+ * client restating a qualifier it did not derive (WEB-055).
+ */
+export function distributionCaveats(
+  payload: DistributionResponse | null | undefined,
+): string[] {
+  const caveats = payload?.caveats;
+  return Array.isArray(caveats)
+    ? caveats.filter((entry): entry is string => typeof entry === "string" && entry !== "")
+    : [];
+}
+
 export function distributionPeriodNote(
   payload: DistributionResponse | null | undefined,
 ): string {

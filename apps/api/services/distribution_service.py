@@ -27,6 +27,7 @@ from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
     ranked_latest_cte,
 )
+from apps.api.services.compatibility import uncertainty_caveat
 from apps.api.services.contracts import require_relation
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
@@ -170,6 +171,14 @@ def list_distribution_bins(
             geo_level=normalize_geo_level(geo_level) if geo_level else None,
             period=period,
             periods_differ=periods_differ,
+            # The same note the comparison publishes, from the same helper:
+            # two analyses of one source's figures must not describe it
+            # differently (API-098).
+            caveats=[
+                caveat
+                for caveat in (uncertainty_caveat(metric, "metric_code"),)
+                if caveat is not None
+            ],
             total=total,
             bin_count=bin_count,
             min_value=min_value,

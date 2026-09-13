@@ -102,8 +102,8 @@ def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
     )
 
 
-def _uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
-    """What this comparison cannot carry, for one side, or ``None``.
+def uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
+    """What an aligned analysis cannot carry, for one metric, or ``None``.
 
     ``ComparisonRow`` publishes no uncertainty, and that is the right shape:
     the two sides' vocabularies need not match, and a difference of two
@@ -116,6 +116,10 @@ def _uncertainty_caveat(metric: Mapping[str, Any], label: str) -> Optional[str]:
 
     The fields come from the dispatch entry's own ``uncertainty_expressions``,
     so a source that begins publishing one is named without an edit here.
+
+    Shared with ``/distribution/bins``, which reads the same rows through the
+    same reduction: one analysis saying what it dropped and the other, of the
+    same published figures, saying nothing was the inconsistency (API-098).
     """
     source_code = str(metric.get("source_code") or "")
     dispatch = OBSERVATION_DISPATCH.get(source_code)
@@ -246,7 +250,7 @@ def evaluate_comparison(
     # per side that publishes one, deduplicated when both sides are the same
     # source saying the same thing twice.
     for metric, label in ((metric_a, "metric_code_a"), (metric_b, "metric_code_b")):
-        caveat = _uncertainty_caveat(metric, label)
+        caveat = uncertainty_caveat(metric, label)
         if caveat is not None and caveat not in caveats:
             caveats.append(caveat)
 

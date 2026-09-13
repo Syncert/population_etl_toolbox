@@ -129,4 +129,10 @@ class DistributionBinsResponse(BaseModel):
     #: mixing them is a legitimate map of each geography's newest value; a
     #: histogram mixing them silently is not.
     periods_differ: bool = False
+    #: What this analysis could not carry, in the caller's terms. Today that
+    #: is the source's published uncertainty: an equal-width binning of
+    #: estimates each carrying a margin of error draws boundaries the margins
+    #: can straddle, and the comparison route has named the same thing since
+    #: API-096 (API-098).
+    caveats: list[str] = []
     items: list[DistributionBin]

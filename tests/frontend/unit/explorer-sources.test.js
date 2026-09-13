@@ -14,6 +14,7 @@ import {
 } from "../../../apps/web/lib/explorerSources";
 import {
   datasetFacetOptions,
+  distributionCaveats,
   distributionPeriodNote,
   preferredDatasetFacet,
 } from "../../../apps/web/lib/explorerViewModel";
@@ -388,5 +389,27 @@ describe("distributionPeriodNote", () => {
   test("an answer publishing neither fact is described as it is", () => {
     expect(distributionPeriodNote({})).toBe("");
     expect(distributionPeriodNote(null)).toBe("");
+  });
+});
+
+describe("distributionCaveats", () => {
+  // Covers: WEB-055 — published strings rendered as published. The API names
+  // the source and the fields it publishes; composing a different sentence
+  // here would be this client restating a qualifier it did not derive.
+
+  test("returns the published caveats unchanged", () => {
+    expect(distributionCaveats({ caveats: ["a margin is published"] })).toEqual([
+      "a margin is published",
+    ]);
+  });
+
+  test("an answer carrying none carries none", () => {
+    expect(distributionCaveats({ caveats: [] })).toEqual([]);
+    expect(distributionCaveats({})).toEqual([]);
+    expect(distributionCaveats(null)).toEqual([]);
+  });
+
+  test("anything that is not a published string is not rendered", () => {
+    expect(distributionCaveats({ caveats: ["kept", "", 7, null] })).toEqual(["kept"]);
   });
 });

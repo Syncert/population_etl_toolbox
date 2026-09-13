@@ -133,6 +133,8 @@ export interface DistributionResponse {
   period?: string | null;
   /** True when the bins were built from more than one period (WEB-054). */
   periods_differ?: boolean;
+  /** What the analysis could not carry, in the caller's terms (WEB-055). */
+  caveats?: string[];
   [key: string]: unknown;
 }
 

@@ -581,3 +581,61 @@ def test_a_distribution_with_nothing_published_reports_no_period() -> None:
     assert payload["total"] == 0
     assert payload["period"] is None
     assert payload["periods_differ"] is False
+
+
+def test_a_distribution_says_what_uncertainty_it_could_not_carry() -> None:
+    """Covers: API-098 — the same note the comparison publishes, here too.
+
+    API-096 gave the comparison a caveat naming the uncertainty an aligned
+    analysis cannot carry. The distribution reads the same rows through the
+    same reduction, bins Census ACS county estimates into a histogram, and had
+    no `caveats` array at all -- so one analysis said what it dropped and the
+    other, reading the same published figures, did not.
+
+    Source-agnostic: the note comes from the same helper and the same
+    registry, so the two cannot drift into describing one source differently.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+    from apps.api.services.compatibility import uncertainty_caveat
+
+    acs = OBSERVATION_DISPATCH["CENSUS_ACS"]
+    assert acs.uncertainty_expressions, "the fixture assumes ACS publishes one"
+
+    metric = {
+        "metric_code": "CENSUS_ACS:acs5:B01003_001E",
+        "source_code": "CENSUS_ACS",
+        "units": "people",
+        "valid_time_grains": ["ANNUAL"],
+        "valid_geo_grains": ["COUNTY"],
+        "aggregation_characteristic": None,
+        "physical_lineage": {},
+    }
+    session = _DistributionSession(metric_row=dict(metric))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": metric["metric_code"], "bin_count": 4},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    expected = uncertainty_caveat(metric, "metric_code")
+    assert expected is not None
+    assert response.json()["caveats"] == [expected]
+
+
+def test_a_distribution_of_a_source_publishing_none_carries_no_caveat() -> None:
+    """Covers: API-098 — read from the registry, so silence stays silence."""
+    session = _DistributionSession(metric_row=dict(_FRED_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/distribution/bins",
+            params={"metric_code": "FRED:UNRATE", "bin_count": 4},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.json()["caveats"] == []

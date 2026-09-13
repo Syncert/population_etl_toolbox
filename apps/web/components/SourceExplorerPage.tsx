@@ -46,6 +46,7 @@ import {
   buildSelectionFilter,
   datasetFacetOptions,
   distributionBins,
+  distributionCaveats,
   distributionPeriodNote,
   formatObservationValue,
   marginOfErrorText,
@@ -2076,6 +2077,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               latest{selectedRelease ? "" : ", so a geography carries one row per release"}.
               API-derived distribution bins are not requested for an as-released read;
               the legend&apos;s bins are local to the loaded rows.
+            </p>
+          ) : null}
+          {distributionCaveats(distribution).length > 0 ? (
+            <p className="coverage-note partial" data-testid="distribution-caveats">
+              {distributionCaveats(distribution).join(" ")}
             </p>
           ) : null}
           {!releasesDeclared && activeSource ? (
