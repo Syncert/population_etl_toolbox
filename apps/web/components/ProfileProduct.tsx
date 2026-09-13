@@ -30,7 +30,7 @@ import { metricQualityState } from "../lib/catalog";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
-  buildHistoryObservationRequest,
+  buildNewestValueRequest,
   normalizeObservationRows,
   observationPeriodLabel,
 } from "../lib/observationAccess";
@@ -243,18 +243,38 @@ export default function ProfileProduct() {
             return;
           }
           try {
-            const { resource, params } = buildHistoryObservationRequest(source, {
-              metricCode: measure.metricCode,
-              geoId,
-              limit: "50",
-            });
+            // A card wants the place's newest published value, not a page of
+            // its history. Every observation order is ascending, so the last
+            // row of a bounded page is the newest one only when the whole
+            // publication fitted inside the page -- and Census PEP's latest
+            // publication is every estimated year of the current vintage.
+            // Where the resource declares `newest_per_geography` it answers
+            // the question directly, in one row (WEB-036).
+            const { resource, params, reducedByResource } = buildNewestValueRequest(
+              source,
+              { metricCode: measure.metricCode, geoId },
+            );
             const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
             const rows = normalizeObservationRows(
               source,
               Array.isArray(payload.items) ? payload.items : [],
             );
+            const total = typeof payload.total === "number" ? payload.total : null;
+            // Bounded page: the newest row this client can identify is the
+            // last one, and whether that is the publication's newest is
+            // exactly what the bound decides.
+            const bounded =
+              !reducedByResource && total !== null && total > rows.length;
             next[measure.slot.id] = rows.length
-              ? { row: rows[rows.length - 1]!, state: "ok", message: `${rows.length} published` }
+              ? {
+                  row: rows[rows.length - 1]!,
+                  state: bounded ? "warn" : "ok",
+                  message: bounded
+                    ? `read ${rows.length} of ${total} published rows; the page bound cut the answer short, so this may not be the newest`
+                    : reducedByResource
+                      ? "newest published value"
+                      : `${rows.length} published`,
+                }
               : {
                   row: null,
                   state: "warn",

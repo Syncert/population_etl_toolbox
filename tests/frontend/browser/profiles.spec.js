@@ -7,10 +7,24 @@ import { expect, test } from "../../../apps/web/node_modules/@playwright/test/in
 // instead of disappearing, a measure the place did not publish is never a
 // zero, and the link reproduces the product and place.
 
+// The parameters the served `/observations` operation declares (see
+// tests/fixtures/api/openapi_contract.json). `newest_per_geography` is one of
+// them, and the profile depends on it: a card asks the resource for the
+// place's newest published value rather than reducing a page here.
 const neutralRoutes = [
   {
     path: "/api/v1/observations",
-    parameters: ["geo_id", "geo_level", "limit", "metric_code", "release", "scope", "state_fips"],
+    parameters: [
+      "geo_id",
+      "geo_level",
+      "limit",
+      "metric_code",
+      "newest_per_geography",
+      "offset",
+      "release",
+      "scope",
+      "state_fips",
+    ],
   },
   { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
@@ -246,6 +260,17 @@ test("the community profile reads a place through published identities", async (
   // Every request carried the place through the source's declared filter.
   expect(observationRequests.every((request) => request.geo_id === GEO_ID)).toBe(true);
   expect(observationRequests.every((request) => request.scope === "latest")).toBe(true);
+
+  // Covers: WEB-036 — a card wants the place's newest published value, and
+  // asks the resource for exactly that. It used to read a 50-row page of the
+  // publication and take the last row, which is the newest one only when the
+  // whole publication fitted in the page; Census PEP's latest publication is
+  // every estimated year of the current vintage, so it did not.
+  expect(observationRequests.length).toBeGreaterThan(0);
+  expect(
+    observationRequests.every((request) => request.newest_per_geography === "true"),
+  ).toBe(true);
+  expect(observationRequests.every((request) => request.limit === "1")).toBe(true);
 
   // Each measure keeps a direct path into the explorer.
   await expect(page.getByTestId("measure-explore-total-population")).toHaveAttribute(

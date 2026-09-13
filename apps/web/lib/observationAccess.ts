@@ -304,6 +304,88 @@ export function buildHistoryObservationRequest(
   };
 }
 
+/**
+ * The bound a newest-value read falls back to when the resource cannot
+ * reduce for us. Large enough to hold any one geography's currently
+ * published series, and reported rather than assumed: the caller is told
+ * whether the resource did the reducing.
+ */
+export const NEWEST_VALUE_FALLBACK_LIMIT = "1000";
+
+export interface NewestValueRequest extends ObservationRequest {
+  /**
+   * True when the resource itself reduced the answer to the geography's
+   * newest published period, so the single row it returns is that value.
+   * False when this is a bounded page the caller must reduce, and may not
+   * have received whole.
+   */
+  reducedByResource: boolean;
+}
+
+/**
+ * One geography's newest published value for one measure.
+ *
+ * A card that shows a place's population wants a number, not a series. Every
+ * observation order this API serves is ascending, so taking the last row of
+ * a bounded page is the newest value only when the whole publication fitted
+ * inside the page. Census PEP's latest publication is every estimated year
+ * of the current vintage -- about 54 rows per county for `POPESTIMATE` --
+ * so a 50-row page ended around 2020 and the card showed a four-year-old
+ * estimate as the place's population.
+ *
+ * `newest_per_geography=true` is the resource's own answer to this question
+ * (API-066): it ranks inside the source's own relation, which is the only
+ * place that knows how its periods order, and it is the same ranking the
+ * explorer's map and the distribution bins apply. Where a capability entry
+ * declares it, this asks for exactly one row. Where it does not, the read
+ * stays a bounded page and says so, because inventing the reduction here
+ * would be this client asserting an order the API did not publish.
+ */
+export function buildNewestValueRequest(
+  source: ExplorerSource,
+  query: { metricCode: string; geoId: string },
+): NewestValueRequest {
+  const reducedByResource = Boolean(source.supportsNewestPerGeography);
+  return {
+    resource: NEUTRAL_OBSERVATIONS_PATH,
+    params: {
+      metric_code: query.metricCode,
+      scope: SCOPE_LATEST,
+      limit: reducedByResource ? "1" : NEWEST_VALUE_FALLBACK_LIMIT,
+      ...(reducedByResource ? { newest_per_geography: "true" } : {}),
+      ...declaredOnly(source, { geo_id: query.geoId }, source.neutralFilters),
+    },
+    reducedByResource,
+  };
+}
+
+
+/**
+ * The history panel's status line, honest about the page bound.
+ *
+ * A bounded read that is presented as a whole answer is the defect this
+ * exists to prevent: a geography whose publication is longer than the pages
+ * the client will fetch charts a prefix, and "N historical observations"
+ * reads as the history rather than as the part of it that arrived. The map
+ * panel has said this since it was written; the trend did not (WEB-036).
+ */
+export function describeHistoryLoad(
+  loaded: number,
+  total: number | null,
+  complete: boolean,
+  acrossReleases: boolean,
+): string {
+  const context = acrossReleases ? " across published releases" : "";
+  if (!complete && total !== null) {
+    return (
+      `loaded ${loaded} of ${total} historical observations${context}; ` +
+      "the page bound cut the answer short, so the trend is incomplete"
+    );
+  }
+  return `${loaded} historical observation${loaded === 1 ? "" : "s"}${context}`;
+}
+
+
 function firstText(...values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value === "string" && value !== "") {

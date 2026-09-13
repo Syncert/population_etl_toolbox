@@ -77,6 +77,7 @@ import {
   SCOPE_AS_RELEASED,
   SCOPE_LATEST,
   buildHistoryObservationRequest,
+  describeHistoryLoad,
   buildLatestObservationRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
@@ -159,6 +160,12 @@ const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // published releases than this is reported as such rather than truncated
 // into a silently partial option list.
 const RELEASE_PAGE_SIZE = 200;
+// One geography's history. Paged like every other collection read, so a
+// publication longer than a single page is loaded rather than truncated --
+// and when the bound is reached the panel says so instead of labelling a
+// prefix as the history (WEB-036).
+const HISTORY_PAGE_SIZE = 1000;
+const HISTORY_PAGE_LIMIT = 5;
 
 /**
  * The observations status line: how many rows the publication answered, how
@@ -929,16 +936,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         const { resource, params } = buildHistoryObservationRequest(source, {
           metricCode: selectedMetric,
           geoId: selectedGeoId,
-          limit: "1000",
+          limit: String(HISTORY_PAGE_SIZE),
           scope: observationScope,
           release: selectedRelease,
           dimensions: dimensionSelections,
         });
-        const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
-        let items = normalizeObservationRows(
-          source,
-          Array.isArray(payload.items) ? payload.items : [],
-        );
+        const pages = await fetchCollectionPages<Observation>(resource, {
+          params,
+          pageSize: HISTORY_PAGE_SIZE,
+          maxPages: HISTORY_PAGE_LIMIT,
+        });
+        let items = normalizeObservationRows(source, pages.items);
+        let total = pages.total;
+        let complete = pages.complete;
         let acrossReleases = false;
         // A source's latest relation can keep one row per geography -- ACS
         // holds only the newest vintage -- so under the latest scope a
@@ -949,32 +959,33 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           const released = buildHistoryObservationRequest(source, {
             metricCode: selectedMetric,
             geoId: selectedGeoId,
-            limit: "1000",
+            limit: String(HISTORY_PAGE_SIZE),
             scope: SCOPE_AS_RELEASED,
             dimensions: dimensionSelections,
           });
-          const releasedPayload = await apiFetch<CollectionResponse<Observation>>(
-            released.resource,
-            { params: released.params },
-          );
+          const releasedPages = await fetchCollectionPages<Observation>(released.resource, {
+            params: released.params,
+            pageSize: HISTORY_PAGE_SIZE,
+            maxPages: HISTORY_PAGE_LIMIT,
+          });
           const releasedItems = collapseToNewestRelease(
-            normalizeObservationRows(
-              source,
-              Array.isArray(releasedPayload.items) ? releasedPayload.items : [],
-            ),
+            normalizeObservationRows(source, releasedPages.items),
           );
           if (releasedItems.length > items.length) {
             items = releasedItems;
+            // The reported total counts released rows, which collapse to
+            // fewer periods; carrying it forward would read as a shortfall
+            // that is not one. Completeness is what travels.
+            total = null;
+            complete = releasedPages.complete;
             acrossReleases = true;
           }
         }
         if (request.isCurrent()) {
           setTimeseries(items);
           setTimeseriesStatus({
-            state: "ok",
-            message: `${items.length} historical observation${items.length === 1 ? "" : "s"}${
-              acrossReleases ? " across published releases" : ""
-            }`,
+            state: complete ? "ok" : "bad",
+            message: describeHistoryLoad(items.length, total, complete, acrossReleases),
           });
         }
       } catch (error) {
@@ -2054,7 +2065,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 </dl>
                 <div className="timeseries-heading">
                   <strong>History</strong>
-                  <span className={`inline-status ${timeseriesStatus.state}`}>{timeseriesStatus.message}</span>
+                  <span
+                    className={`inline-status ${timeseriesStatus.state}`}
+                    data-testid="history-status"
+                  >
+                    {timeseriesStatus.message}
+                  </span>
                 </div>
                 {!trendSupported ? (
                   <p className="subtle" data-testid="trend-unsupported-note">

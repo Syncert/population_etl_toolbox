@@ -18,8 +18,10 @@ import {
   SCOPE_LATEST,
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
+  buildNewestValueRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
+  describeHistoryLoad,
   countObservationPeriods,
   describeStratification,
   newestPerGeography,
@@ -822,5 +824,127 @@ describe("newest per geography", () => {
       geoLevel: "COUNTY",
     });
     expect(request.params.newest_per_geography).toBeUndefined();
+  });
+});
+
+// Covers: WEB-036 — a bounded read is never presented as a whole answer. A
+// profile card wants one number: the geography's newest published value.
+// Taking the last row of a bounded ascending page is that number only when
+// the whole publication fitted in the page, which for Census PEP -- whose
+// latest publication is every estimated year of the current vintage -- it
+// does not.
+describe("the newest published value for one geography", () => {
+  const pep = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level", "year_from", "year_to"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: [
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "offset",
+            "scope",
+          ],
+        },
+      ],
+    },
+  ])[0];
+
+  const withoutReduction = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: ["geo_id", "limit", "metric_code", "scope"],
+        },
+      ],
+    },
+  ])[0];
+
+  test("it asks the resource to reduce, and takes one row", () => {
+    const request = buildNewestValueRequest(pep, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    expect(request.resource).toBe("/observations");
+    expect(request.params.newest_per_geography).toBe("true");
+    expect(request.params.geo_id).toBe("state:01|county:001");
+    expect(request.params.scope).toBe(SCOPE_LATEST);
+    expect(String(request.params.limit)).toBe("1");
+    expect(request.reducedByResource).toBe(true);
+  });
+
+  test("a source that cannot reduce says so, and reads a bounded page", () => {
+    const request = buildNewestValueRequest(withoutReduction, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+    expect(request.reducedByResource).toBe(false);
+    // Still one geography's own publication, and still bounded.
+    expect(request.params.geo_id).toBe("state:01|county:001");
+    expect(Number(request.params.limit)).toBeGreaterThan(1);
+  });
+
+  test("no parameter the capability did not declare is ever sent", () => {
+    const request = buildNewestValueRequest(withoutReduction, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    for (const name of Object.keys(request.params)) {
+      expect(
+        withoutReduction.neutralFilters.includes(name),
+        `${name} is not declared`,
+      ).toBe(true);
+    }
+  });
+});
+
+// Covers: WEB-036 — the trend panel says when the page bound cut the series
+// short, in the same words the map panel already uses. A prefix labelled
+// "N historical observations" reads as the history.
+describe("the history panel's status line", () => {
+  test("a complete history is reported as what it is", () => {
+    expect(describeHistoryLoad(48, 48, true, false)).toBe("48 historical observations");
+    expect(describeHistoryLoad(1, 1, true, false)).toBe("1 historical observation");
+  });
+
+  test("a bounded read names the shortfall and calls the trend incomplete", () => {
+    expect(describeHistoryLoad(5000, 18864, false, false)).toBe(
+      "loaded 5000 of 18864 historical observations; the page bound cut the " +
+        "answer short, so the trend is incomplete",
+    );
+  });
+
+  test("a resource that published no total is not reported as short", () => {
+    // Without a total there is no shortfall to state, and inventing one
+    // would be this client asserting a count the API did not publish.
+    expect(describeHistoryLoad(120, null, false, false)).toBe(
+      "120 historical observations",
+    );
+  });
+
+  test("the release context travels with either shape", () => {
+    expect(describeHistoryLoad(9, 9, true, true)).toBe(
+      "9 historical observations across published releases",
+    );
+    expect(describeHistoryLoad(5000, 9000, false, true)).toContain(
+      "across published releases; the page bound cut the answer short",
+    );
   });
 });
