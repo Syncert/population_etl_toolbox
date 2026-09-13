@@ -305,3 +305,53 @@ def test_no_tracked_file_carries_an_unresolved_conflict_marker() -> None:
     assert not offenders, (
         f"these tracked files carry unresolved merge conflict markers: {offenders}"
     )
+
+
+def test_the_running_tests_guide_names_the_settings_the_fixtures_read() -> None:
+    """Covers: ENV-013 — a renamed setting cannot leave the guide quietly wrong.
+
+    The database and Redis tiers are configured entirely by environment
+    variables, so the guide naming them is the whole interface a reader gets.
+    A variable renamed in `tests/support` and not in the guide leaves a page
+    of instructions that silently skips every test it claims to run.
+    """
+    guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
+        encoding="utf-8"
+    )
+    support = (REPOSITORY_ROOT / "tests/support/postgres.py").read_text(
+        encoding="utf-8"
+    )
+
+    settings = {
+        f"TEST_POSTGRES_{name.upper()}"
+        for name in ("host", "port", "user", "password", "database")
+    }
+    assert 'f"TEST_POSTGRES_{name.upper()}"' in support, (
+        "the settings are no longer derived from these five names; "
+        "update this test and the guide together"
+    )
+    missing = sorted(name for name in settings if name not in guide)
+    assert missing == [], f"RUNNING_TESTS.md does not name: {missing}"
+    assert "TEST_REDIS_URL" in guide
+
+
+def test_the_guide_documents_a_path_that_needs_no_container_runtime() -> None:
+    """Covers: ENV-013 — the tier's requirements, not one way of meeting them.
+
+    The fixtures read settings and apply the warehouse DDL themselves; they
+    reach for no image, Compose file, or published port. Documenting only the
+    Compose path told every reader without a container runtime that the tier
+    could not be run, which is how a dozen plans on this branch came to record
+    it as unrunnable here.
+    """
+    guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Without a container runtime" in guide
+    # The marker expressions a local run must use to mean what CI means.
+    workflow = (
+        REPOSITORY_ROOT / ".github/workflows/postgres-integration.yml"
+    ).read_text(encoding="utf-8")
+    expression = "integration and database and not slow"
+    assert expression in workflow, "the postgres tier's marker expression moved"
+    assert expression in guide, "the guide must run the tier the way CI does"

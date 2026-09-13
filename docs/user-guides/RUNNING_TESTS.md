@@ -199,6 +199,52 @@ Safety guards reject a non-loopback Redis URL, Redis credentials, the default
 Redis database, incomplete PostgreSQL settings, or a database name that does
 not end in `_test`.
 
+### Without a container runtime
+
+Compose is one way to supply those services, not a requirement of the tier.
+The fixtures read the five `TEST_POSTGRES_*` settings and a loopback
+`TEST_REDIS_URL`, apply the warehouse DDL themselves, and reach for nothing
+else — no image tag, no Compose file, no published port. Any PostgreSQL 16
+with PostGIS and any loopback Redis will do, which is what to use on a machine
+where Docker is not available.
+
+```bash
+# PostgreSQL 16 with PostGIS 3, and a database whose name ends in `_test`.
+sudo apt-get install -y postgresql-16 postgresql-16-postgis-3 redis-server
+sudo -u postgres createdb population_etl_test
+sudo -u postgres psql -d population_etl_test -c 'CREATE EXTENSION IF NOT EXISTS postgis'
+redis-server --port 56379 --daemonize yes --save '' --appendonly no
+
+export TEST_POSTGRES_HOST=127.0.0.1
+export TEST_POSTGRES_PORT=5432
+export TEST_POSTGRES_USER=postgres
+export TEST_POSTGRES_PASSWORD=postgres
+export TEST_POSTGRES_DATABASE=population_etl_test
+export TEST_REDIS_URL="redis://127.0.0.1:56379/15"
+```
+
+Run each tier with the marker expression its CI job uses, so a local result
+means what a CI result means:
+
+```bash
+# postgres-integration
+python -m pytest tests/integration/database -m "integration and database and not slow"
+python -m pytest tests/integration/api      -m "integration and database and not slow"
+
+# redis-integration
+python -m pytest tests/integration/redis tests/integration/api -m "integration and (redis or database) and not slow"
+```
+
+`not slow` is what excludes the tests that fetch live source data; without it
+the database tier reaches `download.bls.gov` and fails wherever that is
+unreachable.
+
+Two things this does not cover. The tiers that exercise built images —
+`compose-smoke`, `web-smoke`, and the Martin integration tier — need the
+images Compose builds, and stay Compose's. And the Compose stack pins the
+exact PostGIS and Redis versions CI runs, which a distribution package does
+not; a result from a different patch version is evidence, not proof.
+
 ## External Source Contract Tests
 
 External tests make bounded live requests against the real providers. Every
