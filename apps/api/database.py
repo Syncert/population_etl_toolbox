@@ -65,12 +65,22 @@ def _build_engine(settings: Settings):
         database_url,
         # One snapshot per request. API-084 fixed this once, for one
         # statement: a range and its counts taken in two executions let a
-        # `REFRESH MATERIALIZED VIEW CONCURRENTLY` commit between them and
-        # describe two different sets of rows. Every paged read has that
-        # shape -- a `COUNT(*)` and then a `SELECT … LIMIT … OFFSET …` -- and
-        # under PostgreSQL's default `READ COMMITTED` each statement takes its
-        # own snapshot, so a `total` can be counted over one set of rows and
-        # the page taken from another.
+        # serving refresh commit between them and describe two different sets
+        # of rows. Every paged read has that shape -- a `COUNT(*)` and then a
+        # `SELECT … LIMIT … OFFSET …` -- and under PostgreSQL's default
+        # `READ COMMITTED` each statement takes its own snapshot, so a `total`
+        # can be counted over one set of rows and the page taken from another.
+        #
+        # What commits between them is a chunked rebuild, not a view swap.
+        # This warehouse has no materialized view: `mv_*_latest` and
+        # `rpt_*_observations` are ordinary tables, and
+        # `refresh_serving_layer_in_year_chunks` rebuilds them one calendar
+        # year at a time, committing "each report/latest pair independently"
+        # so an interrupted run can resume. A reader without a snapshot can
+        # therefore see the relation with some years rebuilt and others not --
+        # a wider window than an atomic swap would leave, which is why the
+        # isolation level is not an optimisation to reconsider when no
+        # `REFRESH MATERIALIZED VIEW` turns up in the source (DB-041).
         #
         # `REPEATABLE READ` takes one snapshot for the whole transaction, and
         # this role is read-only, so it has no write conflict to lose to and

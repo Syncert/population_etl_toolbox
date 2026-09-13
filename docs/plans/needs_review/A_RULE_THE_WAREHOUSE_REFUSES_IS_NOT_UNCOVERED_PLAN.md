@@ -1,7 +1,7 @@
 ---
 id: a-rule-the-warehouse-refuses-is-not-uncovered
 branch: claude/iterate-plans-improvements-ir885c
-depends_on: [a-rule-says-what-runs-it]
+depends_on: [every-declared-rule-can-be-run]
 parallel_safe: true
 complexity: medium
 verify:

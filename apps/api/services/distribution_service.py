@@ -71,9 +71,10 @@ def list_distribution_bins(
     # One statement, one snapshot, one evaluation of the reduction.
     #
     # The range and the counts used to be two executions of this CTE. Each
-    # took its own snapshot, so a `REFRESH MATERIALIZED VIEW CONCURRENTLY`
-    # committing between them -- which is what the relation is for -- left
-    # `min_value` describing rows the counts no longer measured. A value
+    # took its own snapshot, so a serving refresh committing between them --
+    # which is what the relation is rebuilt by, one calendar year at a time
+    # and one commit per year (DB-041) -- left `min_value` describing rows the
+    # counts no longer measured. A value
     # published below it buckets to 0, a bin `items` never asks for, so the
     # geography disappeared from the bins while `total` still counted it;
     # one published above it was clamped into a last bin whose upper bound

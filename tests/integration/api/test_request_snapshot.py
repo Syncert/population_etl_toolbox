@@ -3,10 +3,14 @@
 Covers: API-100 — a request reads one snapshot.
 
 API-084 fixed this once, for one statement: a range and its counts taken in
-two executions let a `REFRESH MATERIALIZED VIEW CONCURRENTLY` commit between
-them and describe two different sets of rows. Every paged read has the same
-shape -- a `COUNT(*)` and then a `SELECT … LIMIT … OFFSET …` -- and under
-PostgreSQL's `READ COMMITTED` each statement takes its own snapshot.
+two executions let a serving refresh commit between them and describe two
+different sets of rows. Every paged read has the same shape -- a `COUNT(*)`
+and then a `SELECT … LIMIT … OFFSET …` -- and under PostgreSQL's
+`READ COMMITTED` each statement takes its own snapshot.
+
+The commit that does it is a chunked rebuild of an ordinary table, not a view
+swap: see DB-041, which holds the serving relations to that shape so this
+reason stays checkable.
 
 Proved here against a real PostgreSQL rather than by asserting a
 configuration string: a second connection commits between two reads on an API
