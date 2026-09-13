@@ -979,3 +979,61 @@ def test_the_exempt_paths_are_the_ones_the_health_routers_serve() -> None:
     assert served <= EXEMPT_PATHS, sorted(served - EXEMPT_PATHS)
     # The documentation stays exempt too; it reaches no warehouse either.
     assert {"/openapi.json", "/docs", "/redoc"} <= EXEMPT_PATHS
+
+
+# ---------------------------------------------------------------------------
+# API-114 — the promises the middleware order keeps
+# ---------------------------------------------------------------------------
+
+
+def test_the_middleware_order_keeps_the_promises_it_claims() -> None:
+    """Covers: API-114 — the order the guide's claims rest on is asserted.
+
+    `create_app` explains itself: "so a cache hit costs no budget and the
+    limits meter exactly the requests that reach the database. Innermost of
+    all: a body over the bound is refused before any router parses it … and
+    still spends budget." The consumer guide repeats the first half to
+    clients as "Cache hits cost no budget."
+
+    Nothing asserted any of it. `user_middleware` was read once, for the
+    `trusted_proxies` kwarg (API-075), and never for the order -- so moving
+    the cache inside the limiter would make every cached read spend the
+    analytical budget with no test failing, and the symptom would reach a
+    client as a 429 on a read the guide says is free.
+
+    Read off the shipped application, outermost first, each comparison
+    standing for the promise it keeps.
+    """
+    from apps.api.middleware import (
+        RequestBodyLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
+
+    application = create_app(Settings())
+    # Starlette inserts each added middleware at the front, so this list runs
+    # outermost to innermost.
+    order = [entry.cls for entry in application.user_middleware]
+    position = {cls: index for index, cls in enumerate(order)}
+    for required in (
+        RequestTelemetryMiddleware,
+        SecurityHeadersMiddleware,
+        RedisResponseCacheMiddleware,
+        RateLimitMiddleware,
+        RequestBodyLimitMiddleware,
+    ):
+        assert required in position, f"{required.__name__} is not installed"
+
+    # Every response carries a request id and a completion line, cached or
+    # not, which only holds if nothing sits outside telemetry.
+    assert position[RequestTelemetryMiddleware] == 0, order
+
+    # Cached bodies carry the security headers too.
+    assert position[SecurityHeadersMiddleware] < position[RedisResponseCacheMiddleware]
+
+    # "Cache hits cost no budget": a hit is answered before the limiter is
+    # reached, so it can spend nothing.
+    assert position[RedisResponseCacheMiddleware] < position[RateLimitMiddleware]
+
+    # "…and still spends budget": the bound is checked inside the limiter, so
+    # an over-bound body is metered before it is refused.
+    assert position[RateLimitMiddleware] < position[RequestBodyLimitMiddleware]
