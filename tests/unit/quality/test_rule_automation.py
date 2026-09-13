@@ -31,7 +31,13 @@ from data_ingestion_toolbox.quality.assessment import (
     SCOPED_EXECUTORS,
     select_executors,
 )
-from data_ingestion_toolbox.quality.inventory import ALL_RULES, AUTOMATION_STATES
+from data_ingestion_toolbox.quality.inventory import (
+    ALL_RULES,
+    AUTOMATION_STATES,
+    EnforcedGrain,
+    QualityInventoryError,
+    QualityRule,
+)
 from data_ingestion_toolbox.quality.reconciliation import (
     SHARED_RECONCILIATION_EXECUTORS,
 )
@@ -51,17 +57,19 @@ REGISTERED = (
     | frozenset(SCOPED_EXECUTORS)
 )
 
-#: The rules DQ-001 declared and nobody has implemented. This list is the
-#: gap, written down: a rule leaves it by gaining an executor, and nothing may
-#: join it without this file changing in the same commit. Thirty-two of the
-#: forty-four are BLOCK severity, which is the fact the plan behind DQ-012
-#: existed to make visible rather than to hide behind a passing suite.
+#: The rules DQ-001 declared and nothing implements or stands in for. This
+#: list is the gap, written down: a rule leaves it by gaining an executor or
+#: by being shown to be `enforced`, and nothing may join it without this file
+#: changing in the same commit. Twenty-five of the thirty-seven are BLOCK
+#: severity, which is the fact the plan behind DQ-012 existed to make visible
+#: rather than to hide behind a passing suite. Seven rules left this set in
+#: DQ-013, not by being implemented but by being measured against the
+#: warehouse and found already refused there.
 UNIMPLEMENTED_RULES = frozenset(
     {
         "DQ-SHARED-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
-        "DQ-REF-001",
         "DQ-REF-002",
         "DQ-REF-004",
         "DQ-REF-005",
@@ -69,19 +77,16 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-GLOSSARY-002",
         "DQ-GLOSSARY-003",
         "DQ-GLOSSARY-004",
-        "DQ-ACS-001",
         "DQ-ACS-003",
         "DQ-ACS-004",
         "DQ-ACS-005",
         "DQ-ACS-006",
         "DQ-ACS-007",
-        "DQ-BLS-001",
         "DQ-BLS-003",
         "DQ-BLS-004",
         "DQ-BLS-005",
         "DQ-BLS-006",
         "DQ-BLS-007",
-        "DQ-FRED-001",
         "DQ-FRED-003",
         "DQ-FRED-004",
         "DQ-FRED-005",
@@ -90,15 +95,12 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-PEP-005",
         "DQ-PEP-006",
         "DQ-PEP-007",
-        "DQ-CDC-001",
         "DQ-CDC-005",
         "DQ-CDC-006",
         "DQ-CDC-007",
-        "DQ-FBI-001",
         "DQ-FBI-005",
         "DQ-FBI-006",
         "DQ-FBI-007",
-        "DQ-NASS-001",
         "DQ-NASS-004",
         "DQ-NASS-005",
         "DQ-NASS-006",
@@ -197,7 +199,14 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 32, unbuilt
+    assert len(unbuilt) == 25, unbuilt
+    # The other seven BLOCK rules that no executor runs are `enforced`: the
+    # warehouse refuses the violation, which DQ-013 checks against the
+    # declared grains rather than taking the note's word for it.
+    enforced = sorted(
+        rule.rule_id for rule in blocking if rule.automation == "enforced"
+    )
+    assert len(enforced) == 7, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -205,13 +214,113 @@ def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
 
     `DQ-CDC-003` is the one this was written for: the guide's own re-verify
     example named it and `select_executors` raised.
+
+    What has to be runnable is a rule the guide tells an operator to run --
+    an id inside one of its request or query examples -- not every id its
+    prose mentions. The prose explains which rules are *not* run and why, and
+    naming one there is the explanation working: DQ-013 added a paragraph
+    about `DQ-PEP-001`, whose whole point is that no executor covers it.
     """
+    guide = OPERATIONS_GUIDE.read_text(encoding="utf-8")
     named = sorted(
-        set(
-            re.findall(r"DQ-[A-Z]+-\d{3}", OPERATIONS_GUIDE.read_text(encoding="utf-8"))
-        )
+        {
+            rule_id
+            for block in re.findall(r"```.*?```", guide, re.S)
+            for rule_id in re.findall(r"DQ-[A-Z]+-\d{3}", block)
+        }
     )
-    assert named, "the operations guide names no rule; the rule read nothing"
+    assert named, "the guide shows no rule in an example; the rule read nothing"
     for rule_id in named:
         selected = select_executors("weekly", rule_id=rule_id)
         assert set(selected) == {rule_id}, rule_id
+
+    # Every id the prose mentions is still a declared rule: a typo there sends
+    # an operator looking for something that does not exist.
+    declared = _by_id()
+    mentioned = sorted(set(re.findall(r"DQ-[A-Z]+-\d{3}", guide)))
+    unknown = [rule_id for rule_id in mentioned if rule_id not in declared]
+    assert not unknown, (
+        f"the guide names rules the inventory does not declare: {unknown}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# DQ-013 — what the warehouse refuses is not "nothing runs it"
+# ---------------------------------------------------------------------------
+
+
+def test_an_enforced_rule_names_where_the_warehouse_refuses_the_violation() -> None:
+    """Covers: DQ-013 — `enforced` is a claim with an address, not an adjective.
+
+    The grains are what makes the claim checkable: the database check beside
+    this one (`tests/integration/database`) reads each declared relation's
+    unique keys and holds them to these columns. A rule that said `enforced`
+    and named nothing would be `unimplemented` with a nicer word.
+    """
+    enforced = [rule for rule in ALL_RULES if rule.automation == "enforced"]
+    assert enforced, "no rule claims enforcement; the rule read nothing"
+    for rule in enforced:
+        assert rule.enforced_grains, rule.rule_id
+        for grain in rule.enforced_grains:
+            assert grain.relation in rule.objects, f"{rule.rule_id}: {grain.relation}"
+            assert grain.columns, f"{rule.rule_id}: {grain.relation}"
+
+
+def test_an_enforced_rule_is_one_no_executor_runs() -> None:
+    """Covers: DQ-013 — the states stay exclusive.
+
+    A rule with an executor is `automated`: that is the state whose evidence a
+    certification can cite. `enforced` says the opposite -- there is no
+    evidence row, because the violation never happened -- so a rule claiming
+    both would leave a reader unable to tell which is true of it.
+    """
+    enforced = {rule.rule_id for rule in ALL_RULES if rule.automation == "enforced"}
+    both = sorted(enforced & REGISTERED)
+    assert not both, (
+        f"these rules claim enforcement and have an executor: {both}; an "
+        f"executor makes a rule automated"
+    )
+
+
+def test_only_an_enforced_rule_declares_a_grain() -> None:
+    """Covers: DQ-013 — a declaration cannot outlive the claim it was for.
+
+    Asserted through the inventory's own validation, so the rule holds for a
+    rule added later rather than only for the ones declared today.
+    """
+    for rule in ALL_RULES:
+        if rule.automation != "enforced":
+            assert rule.enforced_grains == (), rule.rule_id
+
+    with pytest.raises(QualityInventoryError, match="only an enforced rule"):
+        QualityRule(
+            rule_id="DQ-REF-999",
+            severity="BLOCK",
+            dimension="uniqueness",
+            summary="A rule that declares a grain it does not claim.",
+            objects=("silver_ref.dim_time",),
+            automation="manual",
+            automation_note="An operator eyeballs it.",
+            enforced_grains=(EnforcedGrain("silver_ref.dim_time", ("date_key",)),),
+        )
+    with pytest.raises(QualityInventoryError, match="must name the relations"):
+        QualityRule(
+            rule_id="DQ-REF-999",
+            severity="BLOCK",
+            dimension="uniqueness",
+            summary="An enforced rule that names nowhere.",
+            objects=("silver_ref.dim_time",),
+            automation="enforced",
+            automation_note="The database refuses it, somewhere.",
+        )
+    with pytest.raises(QualityInventoryError, match="does not cover"):
+        QualityRule(
+            rule_id="DQ-REF-999",
+            severity="BLOCK",
+            dimension="uniqueness",
+            summary="An enforced rule naming a relation it does not cover.",
+            objects=("silver_ref.dim_time",),
+            automation="enforced",
+            automation_note="The database refuses it.",
+            enforced_grains=(EnforcedGrain("silver_ref.dim_geo_type", ("geo_type",)),),
+        )

@@ -119,17 +119,63 @@ class WarehouseObject:
 #: What actually happens when a rule is due.
 #:
 #: `automated` -- an executor runs it and writes evidence.
+#: `enforced` -- no executor, because the warehouse itself refuses the
+#: violation: the rule declares `enforced_grains`, and every one of them is a
+#: unique constraint or unique index in shipped DDL. Stronger than a
+#: measurement, which reports a violation after the fact; weaker in one
+#: respect, which the note has to say -- a constraint produces no evidence
+#: row, so a certification cannot cite it.
 #: `manual` -- no executor; a named operator procedure covers it, and the note
 #: names that procedure.
 #: `unimplemented` -- declared, and nothing runs it or stands in for it. The
 #: note says what implementing it would have to read.
 #:
-#: The third word exists because the first two would have forced a false
-#: claim. DQ-001 assigned 64 rule identities and severities ahead of their
+#: The last two words exist because the first would have forced a false claim.
+#: DQ-001 assigned 64 rule identities and severities ahead of their
 #: implementations, 20 executors exist, and calling the other 44 "manual"
-#: would assert a review nobody performs (DQ-012). The inventory's job is to
-#: say what is true, including when the answer is "nothing".
-AUTOMATION_STATES: tuple[str, ...] = ("automated", "manual", "unimplemented")
+#: would assert a review nobody performs (DQ-012). `enforced` is the other
+#: half of that accounting: seven of those 44 were reported as "nothing runs
+#: it" while the database refused the violation at write time, which overstates
+#: the risk exactly as "manual" would have understated it. The inventory's job
+#: is to say what is true, including when the answer is "nothing".
+AUTOMATION_STATES: tuple[str, ...] = (
+    "automated",
+    "enforced",
+    "manual",
+    "unimplemented",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class EnforcedGrain:
+    """One relation whose grain the warehouse itself refuses to violate.
+
+    ``columns`` is the grain as a reader would say it, not an index
+    definition: a serving relation's unique index wraps a nullable key column
+    in ``COALESCE(column, '')`` so that rows without one are still deduped,
+    and that is a NULL-handling detail of the same grain. The check that reads
+    these (``tests/integration/database``) resolves each key element to the
+    column it references and refuses an element that is anything but a bare
+    column or a ``COALESCE`` over one, so a functional index on something else
+    cannot stand in for the declared grain.
+    """
+
+    relation: str
+    columns: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not OBJECT_NAME_PATTERN.match(self.relation):
+            raise QualityInventoryError(
+                f"Enforced grain relation '{self.relation}' must be schema-qualified."
+            )
+        if not self.columns:
+            raise QualityInventoryError(
+                f"{self.relation}: an enforced grain must name its columns."
+            )
+        if len(set(self.columns)) != len(self.columns):
+            raise QualityInventoryError(
+                f"{self.relation}: a column appears twice in the declared grain."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +194,10 @@ class QualityRule:
     #: Required unless automated: what covers the rule instead, or what
     #: implementing it would take.
     automation_note: str = ""
+    #: Where the warehouse refuses the violation, for an `enforced` rule.
+    #: Required for that state and forbidden for every other, so a
+    #: declaration cannot outlive the claim it was written for.
+    enforced_grains: tuple[EnforcedGrain, ...] = ()
 
     def __post_init__(self) -> None:
         if not RULE_ID_PATTERN.match(self.rule_id):
@@ -164,6 +214,27 @@ class QualityRule:
             raise QualityInventoryError(
                 f"{self.rule_id}: a rule that is not automated must say what "
                 f"covers it instead."
+            )
+        if self.automation == "enforced" and not self.enforced_grains:
+            raise QualityInventoryError(
+                f"{self.rule_id}: an enforced rule must name the relations and "
+                f"grains the warehouse refuses to violate."
+            )
+        if self.automation != "enforced" and self.enforced_grains:
+            raise QualityInventoryError(
+                f"{self.rule_id}: only an enforced rule declares enforced "
+                f"grains; this one is '{self.automation}'."
+            )
+        declared = set(self.objects)
+        outside = sorted(
+            grain.relation
+            for grain in self.enforced_grains
+            if grain.relation not in declared
+        )
+        if outside:
+            raise QualityInventoryError(
+                f"{self.rule_id}: enforced grains name relations the rule does "
+                f"not cover: {outside}."
             )
         if self.severity not in SEVERITIES:
             raise QualityInventoryError(
@@ -1686,6 +1757,7 @@ def _rule(
     objects: Iterable[str],
     automation: str = "automated",
     automation_note: str = "",
+    enforced_grains: Iterable[EnforcedGrain] = (),
 ) -> QualityRule:
     return QualityRule(
         rule_id=rule_id,
@@ -1695,6 +1767,7 @@ def _rule(
         objects=tuple(objects),
         automation=automation,
         automation_note=automation_note,
+        enforced_grains=tuple(enforced_grains),
     )
 
 
@@ -1807,12 +1880,62 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "uniqueness",
         "Geography reference tables are unique at their declared grains.",
         _names(_REFERENCE_OBJECTS),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; the declared grains are carried by "
-            "UNIQUE constraints in the reference DDL, so a violation is refused "
-            "at write time rather than reported. An executor would still be "
-            "needed to prove the constraints are the declared grains."
+            "Enforced, not measured: each reference table's natural key is a "
+            "UNIQUE constraint, so a violation is refused at write time and "
+            "never becomes an evidence row a certification could cite. "
+            "`dim_geo` and `dim_geo_current` carry no constraint because they "
+            "are projections of the versioned tables above them. The grains are "
+            "declared below and checked against the warehouse, which is the "
+            "proof this note used to say was still needed."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_ref.dim_geo_type",
+                ("geo_type",),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_geo_entity",
+                ("geo_id",),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_geo_entity_version",
+                ("geo_sk", "geography_vintage", "attribute_checksum"),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_geo_geometry_version",
+                (
+                    "geo_sk",
+                    "boundary_vintage",
+                    "geometry_source",
+                    "resolution",
+                    "geometry_checksum",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_ref.bridge_geo_relationship_version",
+                (
+                    "parent_geo_sk",
+                    "related_geo_sk",
+                    "relationship_type",
+                    "geography_vintage",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_ref.geography_resolution",
+                (
+                    "provider_source",
+                    "provider_dataset",
+                    "source_geo_type",
+                    "source_code",
+                    "source_vintage",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_time",
+                ("date_key",),
+            ),
         ),
     ),
     _rule(
@@ -1955,11 +2078,42 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; the declared grains are carried by "
-            "unique indexes on the ACS silver and serving relations, so a "
-            "duplicate is refused at write time and never reported."
+            "Enforced, not measured: unique indexes on the ACS silver fact and "
+            "both serving relations refuse a duplicate at write time, so it "
+            "never becomes an evidence row. The serving grains are wider than "
+            "the silver one -- they add the geography and the metric code the "
+            "catalog publishes -- and both are declared below and checked "
+            "against the warehouse. `fact_acs_observation` carries no index "
+            "because it is a view over the silver fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census.fact_demographics",
+                ("dataset", "table_id", "variable_code", "geo_id", "estimate_year"),
+            ),
+            EnforcedGrain(
+                "gold_census.rpt_acs_observations",
+                (
+                    "geo_id",
+                    "observation_date",
+                    "dataset_code",
+                    "vintage_year",
+                    "variable_code",
+                    "metric_code",
+                ),
+            ),
+            EnforcedGrain(
+                "gold_census.mv_acs_latest",
+                (
+                    "geo_id",
+                    "dataset_code",
+                    "vintage_year",
+                    "variable_code",
+                    "metric_code",
+                ),
+            ),
         ),
     ),
     _rule(
@@ -2067,11 +2221,28 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.rpt_bls_observations",
             "gold_bls.mv_bls_latest",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; (series_id, period) uniqueness is "
-            "carried by unique indexes on the BLS silver and serving relations, "
-            "so a duplicate is refused at write time and never reported."
+            "Enforced, not measured: (series_id, period_date) is a UNIQUE "
+            "constraint on the silver fact, and the two serving relations carry "
+            "unique indexes at their own wider grains, adding the geography and "
+            "the published metric code. A duplicate is refused at write time, "
+            "so it never becomes an evidence row. `fact_bls_observation` "
+            "carries no index because it is a view over the silver fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_bls.fact_labor_statistics",
+                ("series_id", "period_date"),
+            ),
+            EnforcedGrain(
+                "gold_bls.rpt_bls_observations",
+                ("geo_id", "observation_date", "series_id", "metric_code"),
+            ),
+            EnforcedGrain(
+                "gold_bls.mv_bls_latest",
+                ("geo_id", "series_id", "metric_code"),
+            ),
         ),
     ),
     _rule(
@@ -2188,12 +2359,35 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fred.rpt_fred_observations",
             "gold_fred.mv_fred_latest",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; (series_id, observation_date) "
-            "uniqueness is carried by a UNIQUE constraint on "
-            "`silver_fred.fact_economic_indicators` and a unique index on the "
-            "serving relation."
+            "Enforced, not measured: (series_id, observation_date) is a UNIQUE "
+            "constraint on `silver_fred.fact_economic_indicators`, and both "
+            "serving relations carry unique indexes that add the published "
+            "metric code and the two real-time bounds a revision is dated by. A "
+            "duplicate is refused at write time, so it never becomes an "
+            "evidence row. `fact_fred_observation` carries no index because it "
+            "is a view over the silver fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fred.fact_economic_indicators",
+                ("series_id", "observation_date"),
+            ),
+            EnforcedGrain(
+                "gold_fred.rpt_fred_observations",
+                (
+                    "observation_date",
+                    "series_id",
+                    "metric_code",
+                    "realtime_start",
+                    "realtime_end",
+                ),
+            ),
+            EnforcedGrain(
+                "gold_fred.mv_fred_latest",
+                ("series_id", "metric_code", "realtime_start", "realtime_end"),
+            ),
         ),
     ),
     _rule(
@@ -2294,8 +2488,15 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented as a measurement; the capture grain and the natural "
-            "key are carried by unique constraints on the PEP relations."
+            "Unimplemented, and only half of this rule could be enforced. The "
+            "capture grain is the fact table's primary key. The natural key is "
+            "not a constraint and must not become one: a second capture of the "
+            "same vintage is legitimate, and "
+            "`gold_pep.population_estimate_revision` resolves it by capture "
+            "recency rather than refusing it -- so `pep_fact_natural_key_idx` "
+            "is a lookup index, not a key, despite its name. Natural-key "
+            "uniqueness is therefore a property of that view, which produces it "
+            "by construction, and nothing measures either half."
         ),
     ),
     _rule(
@@ -2390,11 +2591,19 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cdc.health_observation",
             "gold_cdc.latest_release_observation",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; (asset, release watermark, source "
-            "record) uniqueness is carried by a unique constraint on the CDC "
-            "fact relation."
+            "Enforced, not measured: (asset_id, release_watermark, "
+            "source_record_id) is a UNIQUE constraint on the CDC fact relation, "
+            "so a duplicate is refused at write time and never becomes an "
+            "evidence row. The two gold relations carry no constraint because "
+            "they are views over that fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("asset_id", "release_watermark", "source_record_id"),
+            ),
         ),
     ),
     _rule(
@@ -2485,10 +2694,23 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fbi.crime_observation",
             "gold_fbi.latest_release_observation",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; both grains are carried by unique "
-            "constraints on the FBI fact and participation relations."
+            "Enforced, not measured: both grains are UNIQUE constraints -- on "
+            "the crime-observation fact and on the reporting-participation fact "
+            "-- so a duplicate is refused at write time and never becomes an "
+            "evidence row. The two gold relations carry no constraint because "
+            "they are views over those facts."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_fbi.fact_crime_observation",
+                ("product_id", "release_key", "source_record_id"),
+            ),
+            EnforcedGrain(
+                "silver_fbi.fact_reporting_participation",
+                ("product_id", "release_key", "subject_type", "subject_code", "period"),
+            ),
         ),
     ),
     _rule(
@@ -2603,10 +2825,20 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.crop_observation",
             "gold_nass.latest_release_observation",
         ),
-        automation="unimplemented",
+        automation="enforced",
         automation_note=(
-            "Unimplemented as a measurement; the complete Quick Stats grain is "
-            "carried by a unique constraint on the NASS fact relation."
+            "Enforced, not measured: (product_id, release_watermark, "
+            "source_record_id) -- the complete Quick Stats grain, which the "
+            "source record id digests -- is a UNIQUE constraint on the NASS "
+            "fact relation, so a duplicate is refused at write time and never "
+            "becomes an evidence row. The two gold relations carry no "
+            "constraint because they are views over that fact."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("product_id", "release_watermark", "source_record_id"),
+            ),
         ),
     ),
     _rule(

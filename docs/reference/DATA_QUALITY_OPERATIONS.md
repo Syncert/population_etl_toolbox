@@ -184,14 +184,27 @@ returns a promotability verdict with rule totals by severity and result.
 ### What a certification actually runs, and what it does not
 
 "The deterministic suite" is every registered executor, and the registered
-executors are **20 of the 64 rules the inventory declares**. The other 44
-carry `automation="unimplemented"` in
-`data_ingestion_toolbox.quality.inventory`, each with a note saying what
-running it would take — 32 of them are BLOCK severity. A certification cannot
-report on a rule nobody wrote, and it does not pretend to: an unimplemented
-rule appears in no result row, so `control.data_quality_result` for a run is
-the list of what was actually measured. Read it, rather than the rule count,
-when you need to know what a `promotable` verdict covers:
+executors are **20 of the 64 rules the inventory declares**. Each of the other
+44 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
+covers it instead, under one of two states:
+
+- **7 are `enforced`.** The warehouse itself refuses the violation — each one
+  is a uniqueness rule whose grain is a unique constraint or unique index, and
+  the rule declares which relation and which columns. A duplicate is rejected
+  at write time, which is stronger than measuring it afterwards, with one
+  consequence to be clear about: a constraint produces no evidence row, so a
+  certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
+  holds each declared grain against the bootstrapped warehouse, so a migration
+  that drops or widens one fails there.
+- **37 are `unimplemented`** — nothing runs them and nothing stands in for
+  them, and 25 of those are BLOCK severity. The note says what running each
+  one would have to read.
+
+A certification cannot report on a rule nobody wrote, and it does not pretend
+to: neither an unimplemented nor an enforced rule appears in a result row, so
+`control.data_quality_result` for a run is the list of what was actually
+measured. Read it, rather than the rule count, when you need to know what a
+`promotable` verdict covers:
 
 ```sql
 SELECT rule_id, severity, result, observed_count, expected_count
@@ -202,8 +215,18 @@ SELECT rule_id, severity, result, observed_count, expected_count
 
 `tests/unit/quality/test_rule_automation.py` holds that accounting honest in
 both directions: a rule declared automated with no executor fails, an
-executor under an id the inventory does not declare fails, and the set of
-unimplemented rules is pinned so it can shrink and cannot grow unnoticed.
+executor under an id the inventory does not declare fails, a rule claiming
+`enforced` alongside an executor fails, and the set of unimplemented rules is
+pinned so it can shrink and cannot grow unnoticed.
+
+**One BLOCK uniqueness rule is only half enforceable, and says so.**
+`DQ-PEP-001` declares PEP facts unique at the capture grain *and* at the
+natural key. The capture grain is the fact table's primary key; the natural
+key is not a constraint and must not become one, because a second capture of
+the same vintage is legitimate and
+`gold_pep.population_estimate_revision` resolves it by capture recency rather
+than refusing it. `silver_pep.pep_fact_natural_key_idx` is a lookup index
+despite its name, and making it unique would reject a re-capture.
 
 **One rule is scope-requiring.** `DQ-CDC-003` reconciles *one* CDC release
 across capture, silver, and gold, so it runs only when the caller names the
