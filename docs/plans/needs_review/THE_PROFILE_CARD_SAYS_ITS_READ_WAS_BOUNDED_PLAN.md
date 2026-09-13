@@ -56,10 +56,41 @@ says what the screen does not.
 
 - Changing the request. Whether the bound is reached is the API's answer.
 
+## What changed
+
+- The card's condition is `answer.state !== "ok"` rather than `!row`, with
+  the reason recorded: the message exists for the case where a row *did*
+  arrive from a truncated page, and that was the one case it was not shown
+  for.
+
+## Reaching the case at all
+
+The bounded path needs a source whose `/observations` route declares no
+`newest_per_geography`: where it is declared, `buildNewestValueRequest` asks
+for one row and the answer is `ok` by construction. Every source in the
+profiles fixture shares the real served parameter list, so the warn path was
+not merely untested — it was unreachable from that fixture.
+
+The browser fixture now has a `truncate` mode that declares the neutral
+route through `servedParametersWithout("/api/v1/observations",
+["newest_per_geography"])`, the helper WEB-043 left for exactly this: a
+deployment serving an older contract, which ADR-0002 makes a real state
+because an additive parameter lands in `v1` and a client meets deployments
+on both sides of one. In that mode the card pages with `limit=1000` and
+reduces locally, which is when "this may not be the newest" is true.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `npm --prefix apps/web run test:browser` — the new node passes and
+  **fails on the old rendering**: restoring `answer && !row` leaves it
+  unable to find `measure-answer-total-population`.
+  `ProfileProduct.tsx` was restored byte-for-byte afterwards.
+- The node reads the downloaded CSV's bytes as well as the card, so the two
+  are asserted to carry the same wording rather than assumed to.
+- `npx tsc --noEmit` (apps/web), `npm --prefix apps/web run lint`, and
+  `npm --prefix apps/web run test:unit` (358 passed) — clean.
+- `python -m tests.support.catalog_evidence` renders WEB-070 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

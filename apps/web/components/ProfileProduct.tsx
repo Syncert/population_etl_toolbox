@@ -560,7 +560,14 @@ function MeasureCard({
           testId={`measure-freshness-${measure.slot.id}`}
         />
       </small>
-      {answer && !row ? (
+      {/* The answer's own state, whenever it is not `ok` -- beside the value
+          and not only in place of it. The message that says "read 1,000 of
+          19,000 published rows; the page bound cut the answer short, so
+          this may not be the newest" exists for the case where a row *did*
+          arrive, and that was the one case the card did not render: the
+          number showed with no qualifier while the exported CSV carried
+          the sentence (WEB-070). */}
+      {answer && answer.state !== "ok" ? (
         <small data-testid={`measure-answer-${measure.slot.id}`}>{answer.message}</small>
       ) : null}
       {measure.slot.note ? <small>{measure.slot.note}</small> : null}

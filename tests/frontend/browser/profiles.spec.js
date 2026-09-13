@@ -1,5 +1,8 @@
 import { expect, test } from "../support/servedRequests.js";
-import { servedParameters } from "../support/servedContract.js";
+import {
+  servedParameters,
+  servedParametersWithout,
+} from "../support/servedContract.js";
 
 // Covers: WEB-021 — the community conditions profile in the browser. The
 // product is configuration over published catalog identities: each filled
@@ -14,6 +17,24 @@ import { servedParameters } from "../support/servedContract.js";
 // reducing a page here.
 const neutralRoutes = [
   { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
+  {
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
+  },
+];
+
+// The same routes as a deployment serving an older contract declares them:
+// no `newest_per_geography`. ADR-0002 lands an additive parameter in v1, so
+// a client meets deployments on both sides of one, and this is the shape
+// where a card must page and reduce -- the case the bounded message exists
+// for (WEB-070).
+const routesWithoutReduction = [
+  {
+    path: "/api/v1/observations",
+    parameters: servedParametersWithout("/api/v1/observations", [
+      "newest_per_geography",
+    ]),
+  },
   {
     path: "/api/v1/observations/releases",
     parameters: servedParameters("/api/v1/observations/releases"),
@@ -139,9 +160,22 @@ const observationsByMetric = {
   "BLS:LAU:UNEMP_RATE": [],
 };
 
-async function installRoutes(page, { observationRequests = [] } = {}) {
+async function installRoutes(
+  page,
+  { observationRequests = [], truncate = false } = {},
+) {
   await page.route("**/api/v1/catalog/capabilities", (route) =>
-    route.fulfill({ json: capabilities }),
+    route.fulfill({
+      json: truncate
+        ? {
+            ...capabilities,
+            items: capabilities.items.map((item) => ({
+              ...item,
+              observation_routes: routesWithoutReduction,
+            })),
+          }
+        : capabilities,
+    }),
   );
   await page.route("**/api/v1/catalog/metrics/*", (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -178,7 +212,11 @@ async function installRoutes(page, { observationRequests = [] } = {}) {
         metric_code: params.get("metric_code"),
         source_code: "CENSUS_ACS",
         scope: "latest",
-        total: items.length,
+        // A page the bound cut short: the publication holds far more rows
+        // than this answer carries, which is what makes the newest row
+        // this client can identify possibly not the newest published
+        // (WEB-070).
+        total: truncate && items.length ? 19000 : items.length,
         limit: 50,
         offset: 0,
         items,
@@ -186,6 +224,41 @@ async function installRoutes(page, { observationRequests = [] } = {}) {
     });
   });
 }
+
+test("a card whose read was bounded says so beside the number", async ({ page }) => {
+  // Covers: WEB-070 — the answer's message says "read N of M published
+  // rows; the page bound cut the answer short, so this may not be the
+  // newest". The card rendered it only `when there is no row`, which is the
+  // one case it is not for: with a row from a truncated page the number
+  // showed with no qualifier at all, while `profileExport` wrote the same
+  // sentence into the file's `availability` column. The screen said less
+  // than the file it produced.
+  await installRoutes(page, { truncate: true });
+  await page.goto("/profiles");
+
+  // A measure is only asked for once a place is chosen.
+  await page.getByTestId("profile-place").selectOption(GEO_ID);
+
+  const value = page.getByTestId("measure-value-total-population");
+  await expect(value).toContainText("561,504");
+  // The qualifier is beside the value, not in place of it.
+  const answer = page.getByTestId("measure-answer-total-population");
+  await expect(answer).toContainText("the page bound cut the answer short");
+  await expect(answer).toContainText("read 1 of 19000 published rows");
+
+  // And the file says exactly what the card says.
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("profile-export").click(),
+  ]);
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  const csv = Buffer.concat(chunks).toString("utf8");
+  expect(csv).toContain("the page bound cut the answer short");
+});
 
 test("the community profile reads a place through published identities", async ({ page }) => {
   const observationRequests = [];
