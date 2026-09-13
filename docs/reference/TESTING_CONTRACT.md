@@ -282,7 +282,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
-| Database integration | DB-001–DB-033 | None |
+| Database integration | DB-001–DB-034 | None |
 | API | API-001–API-093 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **337 of 337** | **0 of 337** |
+| **Total** | **338 of 338** | **0 of 338** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 337-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 338-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -523,6 +523,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-031 | P0 | Contract / `integration api database` | A catalog code answers on every route that accepts one | Every serving contract's `/{segment}/observations/timeseries` is asked for each current catalog code of its source and answers, for a geography read from that source's own latest answer rather than assumed; a source with no catalog content contributes nothing and the guard says so rather than passing vacuously, and Census PEP -- whose relations compose an identity the catalog does not publish -- must be among the sources exercised | The half of the route family no grain sweep reaches: `/{segment}/observations/timeseries` accepts no `geo_level`, so DB-030 cannot ask it, and it was equally unanswerable for every Census PEP metric |
 | DB-032 | P0 | Contract / `integration api database` | A source identified by its lineage columns answers its catalog code | One CDC metric is published end to end through the real silver relations, the real `gold_cdc` views and the real harvest, so the third metric-identity strategy -- `identity_columns`, which binds one lineage key per declared column and refuses the metric when the lineage publishes none -- actually answers a code the catalog composed: every grain the catalog publishes for it answers on `/observations`, every served row carries that grain in the vocabulary, and the stratified envelope's `stratum_id` travels with the value; the same fixture makes DB-025 and DB-028 reach the strategy instead of skipping it, and removes exactly what it created | A sweep that reads green because it swept nothing: no fixture published a metric for any of the three sources using `identity_columns`, so DB-025 and DB-028 -- the guard whose own docstring names CDC first, for a grain-vocabulary defect CDC actually had -- could not have seen a defect in the strategy at all |
 | DB-033 | P0 | Contract / `integration api database` | A stratum the warehouse accepts is a stratum the API can serve | `silver_cdc.dim_stratum.strata` and `silver_cdc.observation_revision.strata` are constrained to JSON arrays, the shape the CDC parser produces and `CdcObservation.strata` declares, so an object, string, number or `null` is refused at the write rather than at the read; `/api/v1/cdc/observations` is then asked for the row a fixture publishes and every stratum it returns is an array of arrays | A row the warehouse accepts and the API cannot serve: `jsonb` takes any shape, nothing between the insert and the response model checked, and a stratum stored as an object answered `500 The API failed to complete this request` on every page that included it -- naming no row, and still there for the next request |
+| DB-034 | P0 | Contract / `integration api database` | A metric code a route publishes is a metric code it answers | Every serving contract's latest and timeseries routes are asked for the `metric_code` the latest route itself published for a row, taken from that answer rather than assumed, and must answer at least one; the sweep is driven by the reviewed registry and the served catalog, so a contract added later is covered without an edit, and Census PEP -- the one source whose relation composes an identity the catalog does not publish -- must be among the sources exercised | A route refusing an identity it published in its own response: `/pep/observations/latest` projects `CENSUS_PEP:<dataset>:<measure>` from its relation, matched only the catalog's `CENSUS_PEP:<measure>` through the lineage key, and answered a client asking for more of the metric it was reading with an empty 200 |
 
 ### API and Redis Tests
 

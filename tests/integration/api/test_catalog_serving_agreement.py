@@ -1298,3 +1298,74 @@ def test_the_stratum_the_warehouse_accepts_is_the_stratum_the_api_serves(
         # neither, and that is exactly what used to reach the response model.
         assert isinstance(item["strata"], list), item["strata"]
         assert all(isinstance(entry, list) for entry in item["strata"]), item["strata"]
+
+
+# ---------------------------------------------------------------------------
+# DB-034 — a route answers the metric code it publishes
+# ---------------------------------------------------------------------------
+
+
+def test_every_route_answers_the_metric_code_it_published(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: DB-034 — a route's own answer is a request it accepts.
+
+    The source-scoped routes project `metric_code` from the source's own
+    serving relation, and Census PEP's relation composes its identity from a
+    dataset and a measure. So a page answered for the catalog's
+    `CENSUS_PEP:<measure>` comes back carrying `CENSUS_PEP:<dataset>:<measure>`
+    -- and asking for more of that metric, by the only identity the page gave,
+    used to be an empty 200. A route refusing an identity it published in its
+    own response is the route disagreeing with itself.
+
+    Source-agnostic: the contracts come from the reviewed registry and the
+    codes from the served catalog, so a contract added later is covered
+    without an edit here. A source with no catalog content contributes
+    nothing, and the PEP assertion below is what stops that from passing
+    vacuously -- PEP is the source whose two identities differ at all.
+    """
+    from apps.api.registry import SERVING_CONTRACTS
+
+    disagreements: list[str] = []
+    exercised: list[str] = []
+
+    for segment, contract in sorted(SERVING_CONTRACTS.items()):
+        for catalog_code in _current_catalog_codes(api_client, contract.source_code)[
+            :SWEEP_SAMPLE
+        ]:
+            first = api_client.get(
+                f"/api/v1/{segment}/observations/latest",
+                params={"metric_code": catalog_code, "limit": 1},
+            )
+            assert first.status_code == 200, first.text
+            published = first.json()["items"]
+            if not published:
+                continue
+            served_code = published[0]["metric_code"]
+            geo_id = published[0]["geo_id"]
+            exercised.append(f"{segment}:{catalog_code}->{served_code}")
+            for route, params in (
+                (
+                    f"/api/v1/{segment}/observations/latest",
+                    {"metric_code": served_code, "limit": 1},
+                ),
+                (
+                    f"/api/v1/{segment}/observations/timeseries",
+                    {"metric_code": served_code, "geo_id": geo_id, "limit": 1},
+                ),
+            ):
+                answer = api_client.get(route, params=params)
+                assert answer.status_code == 200, answer.text
+                if int(answer.json()["total"]) < 1:
+                    disagreements.append(
+                        f"{route} published metric_code '{served_code}' for "
+                        f"catalog code '{catalog_code}', and answers no rows "
+                        "when asked for it"
+                    )
+
+    assert not disagreements, "\n".join(disagreements)
+    # Census PEP is the source whose published identity and catalog identity
+    # differ at all. If it was not exercised the sweep proved nothing.
+    assert any(
+        entry.startswith(f"pep:{published_pep_metric}->") for entry in exercised
+    ), exercised

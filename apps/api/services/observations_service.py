@@ -203,16 +203,22 @@ def _metric_identity(
     A relation that stores the catalog's own code needs nothing beyond the
     request. One that composes its own identity is matched against the
     lineage key its publisher declares -- read from the glossary, never cut
-    out of the request -- and an unknown code binds an identity nothing
-    stores, so the route answers an empty page exactly as it did before
-    (API-093).
+    out of the request.
+
+    A code the catalog does not publish binds ``NULL``, so the key half of
+    the condition matches nothing and the route answers an empty page exactly
+    as it did before. It is ``NULL`` rather than the request's own text
+    because the request's text is already matched by the other half, against
+    the relation's own composed identity: binding it here as well would let a
+    code fail both halves and still read as though the key had been tried
+    (DB-034).
     """
     if not contract.binds_lineage_key:
         return {}
     metric = resolve_metric(db, metric_code)
     lineage = (metric or {}).get("physical_lineage") or {}
     key = lineage.get("key") if isinstance(lineage, dict) else None
-    return {"metric_key": key if key else metric_code}
+    return {"metric_key": key or None}
 
 
 def list_latest_observations_for_source(

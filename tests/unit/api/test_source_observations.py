@@ -381,7 +381,10 @@ def test_source_filters_reach_exact_source_queries(
     history_table: str,
 ) -> None:
     """Covers: API-010 — all filters reach exact source-aware queries."""
-    session = _SourceSchemaSession(source_schema, [])
+    # The glossary publishes a lineage key for the requested code, so a
+    # contract whose relation composes its own identity binds the key it is
+    # matched against rather than the NULL an unpublished code binds (DB-034).
+    session = _SourceSchemaSession(source_schema, [], lineage_key="METRIC")
 
     def _override_db():
         yield session

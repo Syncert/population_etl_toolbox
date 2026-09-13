@@ -87,6 +87,14 @@ class ServingContract:
     #: published lineage key, not against a segment cut out of the request:
     #: deriving one identity from another by string surgery on caller text is
     #: the defect ARC-005 exists to prevent.
+    #:
+    #: A relation that composes its own identity is matched on *both*: the
+    #: catalog's code through the lineage key, and the relation's own code as
+    #: the whole value the caller sent. These routes project ``metric_code``
+    #: from the relation, so a Census PEP page answers rows carrying
+    #: ``CENSUS_PEP:<dataset>:<measure>`` -- and matching only the key made the
+    #: route refuse the identity it had just published, so a client asking for
+    #: more of the metric it was reading got an empty 200 (DB-034).
     metric_match_condition: str = "metric_code = :metric_code"
     #: True when the condition above binds ``:metric_key`` -- the lineage key
     #: the publisher declares in ``physical_lineage`` -- instead of the
@@ -200,7 +208,10 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             publishes_vintage_and_error=True,
             publishes_place_names=True,
             geo_level_expression=f"{_GRAIN_OF_GEO_TYPE_COLUMN}",
-            metric_match_condition="SPLIT_PART(metric_code, ':', 3) = :metric_key",
+            metric_match_condition=(
+                "(metric_code = :metric_code "
+                "OR SPLIT_PART(metric_code, ':', 3) = :metric_key)"
+            ),
             binds_lineage_key=True,
             # PEP's latest publication is a series, not a value: every
             # estimated year of the current vintage, so one geography carries
