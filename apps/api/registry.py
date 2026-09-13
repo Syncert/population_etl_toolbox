@@ -995,6 +995,24 @@ CONFIGURATION_ROUTES: dict[str, str] = {
 #: with nothing saying the pin was dropped (API-112). The sets are asserted
 #: against the served contract, so a parameter added to one of the three
 #: routes without a line here fails.
+#: The filter names each kind's route takes as query parameters, or ``None``
+#: where it takes every filter its source declares.
+#:
+#: `/observations` declares one query parameter per filter in the union of
+#: every source's declared set, so its accepted filters *are* the source's.
+#: The analysis routes take two: `geo_level` and `state_fips`. What a
+#: document may carry is therefore the intersection, never the union -- a
+#: stored Census PEP distribution filtered by `state_fips` validated clean
+#: and replayed as a 422, because PEP declares no such filter, and an ACS
+#: distribution filtered by `year_from` validated clean and replayed as the
+#: strict-parameter refusal, because the route has no such parameter
+#: (API-117).
+CONFIGURATION_FILTER_PARAMETERS: dict[str, frozenset[str] | None] = {
+    "observations": None,
+    "distribution": frozenset({"geo_level", "state_fips"}),
+    "comparison": frozenset({"geo_level", "state_fips"}),
+}
+
 CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
     "observations": frozenset(
         {

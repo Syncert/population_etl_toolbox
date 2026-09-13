@@ -1147,13 +1147,151 @@ def test_every_filter_a_source_declares_has_a_bound() -> None:
     and nothing says so. The two sets agree today by coincidence; this is the
     coincidence asserted.
     """
-    declared = {"geo_level", "state_fips"}
+    # Read from the declarations alone. This used to seed
+    # `{"geo_level", "state_fips"}` -- the hand-written set the analysis
+    # kinds unioned in -- so it asserted that widening rather than the
+    # sources' own declarations (API-117). Both names are declared by
+    # sources anyway, so nothing is lost by asking.
+    declared: set[str] = set()
     for dispatch in OBSERVATION_DISPATCH.values():
         declared |= set(dispatch.supported_filters())
     assert declared == set(OBSERVATION_FILTER_BOUNDS), (
         "every filter a source declares must have a bound, and every bound "
         "must belong to a filter some source declares"
     )
+
+
+@pytest.mark.parametrize(
+    ("kind", "metric", "filters", "fragment"),
+    [
+        # The route takes `state_fips`; Census PEP declares no such filter,
+        # because `gold_pep.population_estimate_latest` carries no fips
+        # columns. Stored clean, replayed as a 422.
+        (
+            "distribution",
+            "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+            {"state_fips": "06"},
+            "filters not supported for source 'CENSUS_PEP': state_fips",
+        ),
+        (
+            "comparison",
+            "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+            {"state_fips": "06"},
+            "filters not supported for source 'CENSUS_PEP': state_fips",
+        ),
+        # The mirror: Census ACS declares `year_from` and `geo_id`, and the
+        # analysis routes have no such parameter, so the replay is the
+        # strict-parameter refusal (API-093) rather than a source refusal.
+        (
+            "distribution",
+            "CENSUS_ACS:acs5:B01003_001",
+            {"year_from": 2020},
+            "filters not accepted by /api/v1/distribution/bins: year_from",
+        ),
+        (
+            "comparison",
+            "CENSUS_ACS:acs5:B01003_001",
+            {"geo_id": "state:06|county:025"},
+            "filters not accepted by /api/v1/comparison: geo_id",
+        ),
+    ],
+)
+def test_an_analysis_filter_is_one_its_own_route_accepts(
+    accounts,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    metric: str,
+    filters: dict,
+    fragment: str,
+) -> None:
+    """Covers: API-117 — the accepted set is an intersection, not a union.
+
+    The guide promises "a saved configuration cannot encode a request the
+    API would refuse". API-091 made that true of filter names and API-105 of
+    filter values, for the observations kind. The analysis kinds *unioned*
+    `{geo_level, state_fips}` into the accepted set, while the live routes
+    union nothing: they pass exactly those two parameters through
+    `_filter_conditions`, which rejects any name the source does not
+    declare. So both directions stored clean and replayed as a 422.
+    """
+    warehouse = _WarehouseSession(
+        {
+            metric: {
+                **_FRED_METRIC,
+                "metric_code": metric,
+                "source_code": metric.split(":", 1)[0],
+            }
+        }
+    )
+    client = _client(
+        _StorageSession(accounts), warehouse=warehouse, monkeypatch=monkeypatch
+    )
+    document = {
+        "kind": kind,
+        "filters": filters,
+        "visualization": {},
+    }
+    if kind == "comparison":
+        document["metric_code_a"] = metric
+        document["metric_code_b"] = metric
+    else:
+        document["metric_code"] = metric
+
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "analysis-filter", "document": document},
+    )
+
+    assert response.status_code == 422, response.json()
+    assert fragment in response.json()["detail"]
+
+
+def test_the_analysis_filters_a_document_may_carry_are_the_routes_own() -> None:
+    """Covers: API-117 — the declared set is read against the served contract.
+
+    The registry names the filters each kind's route takes. That claim is
+    checked here from the served document in both directions, so a parameter
+    added to `/distribution/bins` or `/comparison` -- or removed from one --
+    fails rather than leaving a document able to carry a filter nothing
+    would accept.
+
+    `observations` is `None`: the neutral route declares one query parameter
+    per filter in the union of every source's declared set, so its accepted
+    filters *are* the source's, and narrowing them here would refuse
+    documents the route serves.
+    """
+    from apps.api.registry import (
+        CONFIGURATION_FILTER_PARAMETERS,
+        CONFIGURATION_ROUTES,
+    )
+
+    document = app.openapi()
+    every_declared_filter: set[str] = set()
+    for dispatch in OBSERVATION_DISPATCH.values():
+        every_declared_filter |= set(dispatch.supported_filters())
+
+    for kind, route in CONFIGURATION_ROUTES.items():
+        declared = {
+            parameter["name"]
+            for parameter in document["paths"][route]["get"]["parameters"]
+            if parameter.get("in") == "query"
+        }
+        # The filters the route takes: its query parameters that name a
+        # filter some source declares.
+        filters_it_takes = declared & every_declared_filter
+        expected = CONFIGURATION_FILTER_PARAMETERS[kind]
+        if expected is None:
+            assert filters_it_takes == every_declared_filter, (
+                f"{route} no longer takes every declared filter, so a "
+                "document validated against the source's set could carry one "
+                "it would refuse"
+            )
+        else:
+            assert filters_it_takes == set(expected), (
+                f"{route} takes {sorted(filters_it_takes)}; the registry says "
+                f"{sorted(expected)}"
+            )
 
 
 def test_the_declared_bounds_are_the_ones_the_route_serves() -> None:

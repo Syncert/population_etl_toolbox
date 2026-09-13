@@ -60,10 +60,51 @@ any name outside `dispatch.filter_conditions`, and Census PEP declares no
 
 - Changing which filters the analysis routes accept.
 
+## What changed
+
+- `CONFIGURATION_FILTER_PARAMETERS` in the reviewed registry names the
+  filters each kind's route takes, beside `CONFIGURATION_ROUTES` and
+  `CONFIGURATION_DOCUMENT_FIELDS` (API-112). `observations` is `None` —
+  "narrow nothing" — because `/observations` declares one query parameter
+  per filter in the union of every source's declared set.
+- `_require_declared_filters` takes the kind rather than an `allowed_extra`
+  set, and makes two checks instead of one union: a filter the route has no
+  parameter for is refused naming the route and what it accepts, and a
+  filter the route takes that the source does not declare is refused in the
+  live route's own words. The hand-written `_ANALYSIS_UNIVERSAL_FILTERS`
+  has no readers left and is gone.
+- The guard reads the served document in both directions: for each kind, the
+  route's query parameters intersected with every declared filter name must
+  equal the registry's set (or the whole set, for `observations`).
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `pytest tests/unit/api/test_saved_analysis.py` — **72 passed** (67
+  before: +5).
+- **The tests fail on the union.** Restoring
+  `set(dispatch.supported_filters()) | set(accepted_by_route or ())` leaves
+  `4 failed, 68 passed` — all four parametrised cases.
+  `saved_analysis_service.py` was restored byte-for-byte afterwards.
+- Read off the validator before and after, with the metric resolution
+  stubbed:
+
+```
+refused  PEP distribution + state_fips: filters not supported for source
+         'CENSUS_PEP': state_fips; supported filters: geo_level
+refused  ACS distribution + year_from: filters not accepted by
+         /api/v1/distribution/bins: year_from; it accepts: geo_level, state_fips
+refused  ACS comparison + geo_id: filters not accepted by /api/v1/comparison
+ACCEPTED ACS distribution + state_fips
+ACCEPTED PEP observations + geo_id
+```
+
+- `test_every_filter_a_source_declares_has_a_bound` no longer seeds
+  `{geo_level, state_fips}`: it reads the sources' declarations alone, which
+  is what it always claimed to do. Both names are declared by sources, so
+  nothing is lost by asking.
+- `ruff check .` / `ruff format --check .` — clean.
+- `python -m tests.support.catalog_evidence` renders API-117 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

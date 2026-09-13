@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.registry import (
     CONFIGURATION_DOCUMENT_FIELDS,
+    CONFIGURATION_FILTER_PARAMETERS,
     CONFIGURATION_ROUTES,
     OBSERVATION_DISPATCH,
 )
@@ -42,10 +43,6 @@ from apps.api.schemas import (
 )
 from apps.api.services.compatibility import evaluate_comparison
 from apps.api.services.neutral_observations_service import resolve_metric
-
-#: Filters every source accepts on the analysis routes, beyond its declared
-#: per-source filter set.
-_ANALYSIS_UNIVERSAL_FILTERS = frozenset({"geo_level", "state_fips"})
 
 #: Document fields that belong to no single kind: the kind itself, the
 #: per-source `filters` the capability contract governs, and the opaque
@@ -91,20 +88,44 @@ def _require_metric(warehouse: Session, metric_code: Optional[str], field: str):
     return metric
 
 
-def _require_declared_filters(metric, filters: dict[str, Any], allowed_extra) -> None:
+def _require_declared_filters(metric, filters: dict[str, Any], *, kind: str) -> None:
+    """Refuse a filter the kind's own route would not accept.
+
+    Two things have to hold, and the accepted set used to be their *union*
+    rather than their intersection (API-117).
+
+    A filter the route has a parameter for is still refused when the source
+    declares none: `/distribution/bins` takes `state_fips`, Census PEP
+    declares no such filter, and a document carrying both stored clean and
+    replayed as a 422. A filter the source declares is still refused when
+    the route has no parameter for it: an ACS distribution filtered by
+    `year_from` or `geo_id` stored clean and replayed as the
+    strict-parameter refusal (API-093).
+    """
     source_code = str(metric.get("source_code") or "")
     dispatch = OBSERVATION_DISPATCH.get(source_code)
     if dispatch is None:
         raise ConfigurationInvalid(
             f"source '{source_code}' is not served by the observation routes"
         )
-    declared = set(dispatch.supported_filters()) | set(allowed_extra)
+    route = CONFIGURATION_ROUTES[kind]
+    accepted_by_route = CONFIGURATION_FILTER_PARAMETERS[kind]
+    if accepted_by_route is not None:
+        beyond_route = sorted(set(filters) - set(accepted_by_route))
+        if beyond_route:
+            raise ConfigurationInvalid(
+                f"filters not accepted by {route}: {', '.join(beyond_route)}; "
+                f"it accepts: {', '.join(sorted(accepted_by_route))}"
+            )
+    declared = set(dispatch.supported_filters())
+    if accepted_by_route is not None:
+        declared &= set(accepted_by_route)
     unsupported = sorted(set(filters) - declared)
     if unsupported:
         raise ConfigurationInvalid(
             f"filters not supported for source '{source_code}': "
             f"{', '.join(unsupported)}; supported filters: "
-            f"{', '.join(sorted(declared))}"
+            f"{', '.join(sorted(declared)) or 'none'}"
         )
     # The names were checked and the values were not, so a value the live
     # route refuses -- a 5,000-character `geo_id` against its declared 200 --
@@ -180,7 +201,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
 
     if document.kind == "observations":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
-        _require_declared_filters(metric, filters, allowed_extra=())
+        _require_declared_filters(metric, filters, kind="observations")
         if document.release is not None and document.scope != "as_released":
             raise ConfigurationInvalid(
                 "release can only be combined with scope=as_released"
@@ -209,9 +230,8 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
 
     if document.kind == "distribution":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
-        dispatch = _require_declared_filters(
-            metric, filters, allowed_extra=_ANALYSIS_UNIVERSAL_FILTERS
-        )
+        _require_declared_filters(metric, filters, kind="distribution")
+        dispatch = OBSERVATION_DISPATCH[str(metric.get("source_code") or "")]
         if not dispatch.analysis_ready:
             raise ConfigurationInvalid(
                 dispatch.analysis_restriction
@@ -222,9 +242,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
     metric_a = _require_metric(warehouse, document.metric_code_a, "metric_code_a")
     metric_b = _require_metric(warehouse, document.metric_code_b, "metric_code_b")
     for metric in (metric_a, metric_b):
-        _require_declared_filters(
-            metric, filters, allowed_extra=_ANALYSIS_UNIVERSAL_FILTERS
-        )
+        _require_declared_filters(metric, filters, kind="comparison")
     decision = evaluate_comparison(metric_a, metric_b)
     if not decision.comparable:
         raise ConfigurationInvalid(decision.failure_summary())
