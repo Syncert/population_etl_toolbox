@@ -277,6 +277,28 @@ Source-scoped routes remain for source-specific exploration:
 `/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
 `/api/v1/cdc/observations`, `/api/v1/usda-nass/{observations,series,measures,source-notes}`.
 
+### Which release you get, and what you get if you do not ask
+
+**These defaults are not the same across routes.** Each resource says in its
+own envelope which release selection answered, under its own field name:
+
+| Read | How you ask | If you do not ask | The envelope says |
+| --- | --- | --- | --- |
+| `/observations` | `scope=latest` or `scope=as_released`, and `release=<identity>` to pin one | the source's newest publication | `scope`: `latest` or `as_released` |
+| `/cdc/observations` | `release=<watermark>` to pin one; there is no history parameter | the newest release | `release_selection`: `latest_release` or `single_release` |
+| `/usda-nass/observations` | `latest=true` for the newest validated release; `release_watermark=<watermark>` to pin one | **every published release** | `release_scope`: `as_released` or `latest` |
+
+So the same bare request answers one release on `/cdc/observations` and the
+whole revision history on `/usda-nass/observations`. NASS survey estimates
+are revised until final, so an unqualified read there returns each figure
+once per release that published it — chart it without `latest=true` and you
+are plotting revisions as if they were observations. Read the envelope's
+field rather than assuming: it is there to be checked.
+
+`/cdc/observations` answers the newest release or one you name, and never the
+history. For CDC revisions use `/observations?scope=as_released`, which
+reaches every source through the same vocabulary.
+
 ### Paging a history, and what orders it
 
 Every observation route — the neutral resource, the legacy pair, and the
