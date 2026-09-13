@@ -21,6 +21,8 @@ API development plan forbids.
 
 from __future__ import annotations
 
+import re
+
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -413,6 +415,64 @@ def grain_refusal(
     if normalize_geo_level(value) in vocabulary:
         return None
     return f"{field} must be one of: {', '.join(vocabulary)}"
+
+
+#: Request values whose space is closed, and how each one is checked.
+#:
+#: `geo_level` names a grain: the vocabulary is `GEO_GRAINS`, published per
+#: metric as `valid_geo_grains`. `state_fips` and `county_fips` have a closed
+#: *shape* rather than a closed set -- the reference layer's own CHECK
+#: constraints are `^[0-9]{2}$` and `^[0-9]{3}$` -- so a well-formed code that
+#: names no geography answers an empty page, which is a fact about the
+#: warehouse, while `ZZ` is refused, which is a fact about the request.
+#:
+#: Read by the request layer (`dependencies.reject_values_outside_a_closed_set`)
+#: and by saved-analysis storage, because the two must agree: API-117 made
+#: storage refuse a filter *name* the route would refuse, for the stated reason
+#: that "storage is not a back door for a request the API would refuse", and a
+#: value was never checked -- so a document carrying `geo_level: "NOPE"` stored
+#: clean and replayed as the API-122 refusal its reader never saw (API-123).
+#:
+#: `geo_id` is deliberately absent: its shape is source-dependent (`us:1`,
+#: `state:NN`, `state:NN|county:NNN`, `state:NN|place:NNNNN`, and
+#: `agency:<ORI>` for FBI UCR, whose tail is a provider string), so a shape
+#: rule here would be a second declaration of something the reference layer
+#: owns.
+_FIPS_SHAPES: dict[str, tuple[str, str]] = {
+    "state_fips": (r"\A[0-9]{2}\Z", "two digits"),
+    "county_fips": (r"\A[0-9]{3}\Z", "three digits"),
+}
+
+#: The parameters `closed_value_refusal` has a rule for.
+CLOSED_VALUE_PARAMETERS: frozenset[str] = frozenset({"geo_level"}) | frozenset(
+    _FIPS_SHAPES
+)
+
+
+def closed_value_refusal(name: str, value: object) -> str | None:
+    """Why ``value`` is not one this parameter accepts, or ``None``.
+
+    An empty value is absent: every service reads `if state_fips:` as "no
+    filter", and a saved analysis document records `state_fips: ""` for a
+    source that declares no state filter (API-117, WEB-075), so refusing it
+    would break replaying a stored document.
+    """
+    if name not in CLOSED_VALUE_PARAMETERS:
+        return None
+    word = "" if value is None else str(value).strip()
+    if not word:
+        return None
+    shape = _FIPS_SHAPES.get(name)
+    if shape is not None:
+        pattern, expected = shape
+        if re.match(pattern, word):
+            return None
+        return (
+            f"{name} must be {expected}; a well-formed code that names no "
+            f"geography answers an empty page, and this is not a well-formed "
+            f"code"
+        )
+    return grain_refusal(name, word)
 
 
 #: Sources whose served relation carries the grain as a source-shaped

@@ -533,9 +533,14 @@ Authenticated, user-owned storage — see ADR-0003.
   these parameters are single-valued, so a document naming two cannot replay
   as what it says. A filter declared with an inclusive range — `year_from`,
   `year_to` — takes a whole number or its text, and refuses a fractional one
-  or a boolean, exactly as the live route does. Every other filter takes any
-  single scalar within its declared length, so `state_fips: 6` and
-  `state_fips: "06"` are both accepted, as `?state_fips=6` is.
+  or a boolean, exactly as the live route does. A filter whose values are a
+  closed set or a closed shape is held to it here as well, for the same
+  reason: `geo_level` must be a grain, and `state_fips` and `county_fips`
+  must be two and three digits, so `state_fips: 6` is refused here exactly
+  as `?state_fips=6` is refused there. Storage is not a back door for a
+  request the API would refuse — a document that stored clean and replayed
+  as a `422` is a broken link its owner never saw coming. Every other filter
+  takes any single scalar within its declared length.
 - An `observations` document records the reduction it was viewed with:
   `newest_per_geography` or `newest_release_per_period`, under the scope each
   belongs to. A view saved without one replays as the whole publication,
@@ -545,7 +550,10 @@ Authenticated, user-owned storage — see ADR-0003.
 - On read, `validation` reports whether the document still matches live
   capabilities. A stale configuration is returned **unmodified** with
   `validation.valid = false` and a reason — the API never rewrites your
-  content.
+  content. This is also how a document stored before a rule tightened reads:
+  a configuration carrying `geo_level: "NOPE"`, which storage accepted
+  before it was checked, still opens, still returns exactly what was stored,
+  and says why it will not replay.
 - Updates send `expected_version`; a mismatch is `409` naming the current
   version. Deletion is immediate and permanent.
 - These responses are `private, no-store` and are never publicly cached.

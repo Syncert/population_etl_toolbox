@@ -30,6 +30,7 @@ from apps.api.dependencies import get_db_session_dep
 from apps.api.main import PUBLIC_CACHE_TARGETS, app
 from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.schemas import OBSERVATION_FILTER_BOUNDS, AnalysisDocument
+from apps.api.registry import closed_value_refusal
 from apps.api.services import saved_analysis_service
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -1128,16 +1129,28 @@ def test_a_filter_value_inside_the_bound_is_stored_as_it_is() -> None:
         ({"geo_id": ["01", "02"]}, "must be a single value"),
         ({"geo_id": {"nested": "object"}}, "must be a single value"),
         ({"county_fips": []}, "must be a single value"),
+        # Inside the bound and outside the closed set: two characters is what
+        # `state_fips` allows and `ZZ` is not a state code, one digit is not
+        # the shape the reference layer stores, and `NOPE` is not a grain
+        # (API-123). The live routes refuse all three (API-122), so a
+        # document carrying one would store clean and replay as a refusal.
+        ({"state_fips": "ZZ"}, "must be two digits"),
+        ({"state_fips": 6}, "must be two digits"),
+        ({"county_fips": "ZZZ"}, "must be three digits"),
+        ({"geo_level": "NOPE"}, "must be one of"),
+        ({"geo_level": "COUNTRY"}, "must be one of"),
     ],
 )
 def test_a_filter_value_must_be_one_value_the_route_could_receive(
     filters: dict, expected: str
 ) -> None:
-    """Covers: API-105 — the shape is stated before the length is measured.
+    """Covers: API-105, API-123 — the shape is stated before the length is measured.
 
     API-091 checked how long a value is and not what it is, and
     `AnalysisDocument.filters` is `dict[str, Any]`, so an array, an object, a
-    null or a fractional number stored clean and reported valid.
+    null or a fractional number stored clean and reported valid. API-123 adds
+    the cases that are the right shape and the right length and still outside
+    the closed set the route accepts.
     """
     document = AnalysisDocument(
         kind="observations",
@@ -1159,7 +1172,11 @@ def test_a_filter_value_must_be_one_value_the_route_could_receive(
         # validation for each of these, so refusing them at write would be
         # stricter than the API and a document would be refused for a
         # request that works.
-        {"state_fips": 6},
+        #
+        # `{"state_fips": 6}` used to be here and moved to the refused set
+        # above: the live route refuses a one-digit state code now (API-122),
+        # because the reference layer stores `06` and `6` can never match it,
+        # so storing it is no longer "a request that works".
         {"year_from": "2020.0"},
         {"year_from": 2020.0},
         {"year_from": "2020"},
@@ -1358,3 +1375,39 @@ def test_the_declared_bounds_are_the_ones_the_route_serves() -> None:
             assert shape["minimum"] == bound.minimum, name
         if bound.maximum is not None:
             assert shape["maximum"] == bound.maximum, name
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("geo_level", "NOPE"),
+        ("state_fips", "ZZ"),
+        ("county_fips", "ZZZ"),
+    ],
+)
+def test_storage_and_the_route_refuse_the_same_value(name: str, value: str) -> None:
+    """Covers: API-123 — storage is not a back door for a refused request.
+
+    API-117 made storage refuse a filter *name* the route would refuse, and
+    said why: "storage is not a back door for a request the API would
+    refuse", and "a filter ... stored clean and replayed as a 422". The value
+    was never checked, so API-122's closed-set refusal reopened exactly that
+    gap the moment it landed. Both layers read
+    `registry.closed_value_refusal`, and this asserts the agreement rather
+    than the implementation: the live route refuses it, and so does the
+    document validator, with the same reason text.
+    """
+    route_refusal = closed_value_refusal(name, value)
+    assert route_refusal is not None, f"{name}={value} is not refused at all"
+
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_FRED_METRIC["metric_code"],
+        filters={name: value},
+    )
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession({_FRED_METRIC["metric_code"]: _FRED_METRIC}), document
+        )
+    assert route_refusal in refused.value.detail
+    assert name in refused.value.detail

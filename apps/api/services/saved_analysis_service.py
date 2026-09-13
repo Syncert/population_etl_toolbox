@@ -32,6 +32,7 @@ from apps.api.registry import (
     CONFIGURATION_FILTER_PARAMETERS,
     CONFIGURATION_ROUTES,
     OBSERVATION_DISPATCH,
+    closed_value_refusal,
 )
 from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
 from apps.api.schemas import (
@@ -145,6 +146,17 @@ def _require_declared_filters(metric, filters: dict[str, Any], *, kind: str) -> 
         rejection = bound.rejection(filters[name])
         if rejection:
             raise ConfigurationInvalid(f"filter '{name}' {rejection}")
+    # And a value inside the bound can still be outside the closed set the
+    # route accepts: `geo_level: "NOPE"` is 200 characters short of the bound
+    # and is not a grain. API-122 made the live routes refuse it, so such a
+    # document -- stored clean and reported valid before that -- now replays
+    # as a 422 its reader never saw when they saved it, which is the defect
+    # API-117 named. The rule is `registry.closed_value_refusal`, the one the
+    # request layer applies (API-123).
+    for name in sorted(filters):
+        refusal = closed_value_refusal(name, filters[name])
+        if refusal is not None:
+            raise ConfigurationInvalid(f"filter '{name}': {refusal}")
     return dispatch
 
 
