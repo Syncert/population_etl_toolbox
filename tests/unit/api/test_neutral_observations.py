@@ -1102,3 +1102,100 @@ def test_newest_release_per_period_is_declared_on_the_neutral_route() -> None:
         if parameter.get("in") == "query"
     }
     assert "newest_release_per_period" in names
+
+
+# ---------------------------------------------------------------------------
+# API-083 — a reduction that ties picks the same row every time
+# ---------------------------------------------------------------------------
+
+
+def _ranking_order(sql: str, marker: str) -> str:
+    """The ``ORDER BY`` of the window function that assigns ``marker``."""
+    window = sql.split(marker, 1)[0].rsplit("ROW_NUMBER() OVER", 1)[1]
+    ordering = window.split("ORDER BY", 1)[1].rsplit(")", 1)[0]
+    return " ".join(ordering.split())
+
+
+def test_newest_per_geography_breaks_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — ROW_NUMBER picks one row of a tie group, and SQL
+    does not say which.
+
+    Census PEP's latest publication is a series, so a geography carries
+    several rows and more than one can share the newest period. Ranking on
+    the period alone leaves that group undecided: the same request answers a
+    different published row when the plan or the relation's physical order
+    changes, with no publication in between.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatch = OBSERVATION_DISPATCH["CENSUS_PEP"]
+    expected = ", ".join(
+        (f"{dispatch.period_start_expression} DESC",) + dispatch.latest_order
+    )
+    for sql in _dispatched(session):
+        assert _ranking_order(sql, "newest_period_rank") == expected, sql
+
+
+def test_settled_history_breaks_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — the mirror image, over the released relation.
+
+    Two rows of one period inside one release tie on the release order, and
+    the settled history promised the row the source's own declared order
+    names.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatch = OBSERVATION_DISPATCH["CENSUS_PEP"]
+    expected = ", ".join(
+        (f"{dispatch.release_order_expression} DESC",) + dispatch.released_order
+    )
+    for sql in _dispatched(session):
+        assert _ranking_order(sql, "newest_release_rank") == expected, sql
+
+
+def test_every_dispatch_entry_declares_the_order_its_reductions_need() -> None:
+    """Covers: API-083 — the gap is visible, not silent.
+
+    A reduction can only be deterministic where the entry declares a total
+    order. Nothing here invents one for a source that does not; CI names the
+    source instead, at the point a source is added.
+    """
+    missing_latest = sorted(
+        code for code, entry in OBSERVATION_DISPATCH.items() if not entry.latest_order
+    )
+    missing_released = sorted(
+        code for code, entry in OBSERVATION_DISPATCH.items() if not entry.released_order
+    )
+    assert missing_latest == [], (
+        "these sources reduce their latest relation on an order that can tie: "
+        f"{missing_latest}"
+    )
+    assert missing_released == [], (
+        "these sources reduce their released relation on an order that can "
+        f"tie: {missing_released}"
+    )

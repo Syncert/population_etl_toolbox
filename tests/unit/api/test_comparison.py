@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
-from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS
+from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS, OBSERVATION_DISPATCH
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -333,3 +333,43 @@ def test_both_metric_codes_are_required() -> None:
             assert response.status_code == 422, params
     finally:
         app.dependency_overrides.clear()
+
+
+def test_both_sides_break_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — the aligned analysis ranks the order it declares.
+
+    `_newest_per_geography_source` says the distribution and comparison
+    services "already rank the same way, so a page taken this way and a set
+    of bins describe the same rows". Two reductions that each pick an
+    arbitrary row of a tie group rank by the same expression and then
+    diverge; the claim is only true when both close the group the same way.
+    """
+    rows = {
+        "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
+        "BLS:LNS14000000": _metric("BLS:LNS14000000", "BLS"),
+    }
+    session = _ComparisonSession(rows, rows=[dict(_JOINED_ROW)], total=1)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "BLS:LNS14000000",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    sql = _dispatched(session)[-1]
+    for source_code in ("FRED", "BLS"):
+        dispatch = OBSERVATION_DISPATCH[source_code]
+        expected = ", ".join(
+            (f"{dispatch.period_start_expression} DESC",) + dispatch.latest_order
+        )
+        # The same ordering the neutral resource applies for this source, so
+        # a map page and a comparison row describe the same publication.
+        assert " ".join(expected.split()) in " ".join(sql.split()), (
+            f"{source_code} ranks on an order that can tie: {sql}"
+        )

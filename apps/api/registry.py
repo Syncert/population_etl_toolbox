@@ -665,6 +665,30 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
 }
 
 
+def ranking_tie_break(order: tuple[str, ...]) -> str:
+    """A declared total order, as the tail of a reduction's ``ORDER BY``.
+
+    ``ROW_NUMBER()`` assigns 1 to *some* row of each tie group and SQL does
+    not say which, so a reduction that ranks only on the period (or only on
+    the release) answers a published row that can change between two
+    identical requests -- a different plan, a re-clustered relation -- with
+    no publication in between. Appending the order the entry already
+    declares closes the group: it is the relation's own unique-index key, so
+    no two rows can tie on the whole list.
+
+    The order is appended verbatim rather than pruned against what the
+    ranking expression already decided. A column that is constant inside a
+    tie group contributes nothing to the result, and deriving the tail from
+    the declaration keeps the registry the one place a source's order is
+    written down -- pruning would need this module to parse the expressions
+    it hands to SQL.
+
+    Empty for an entry that declares no order, which leaves the ranking
+    exactly as it was rather than inventing one (API-083).
+    """
+    return "".join(f", {column}" for column in order)
+
+
 def observation_dispatch(source_code: str) -> ObservationDispatch:
     """Return the reviewed dispatch entry for ``source_code``.
 

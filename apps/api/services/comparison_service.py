@@ -28,7 +28,11 @@ from typing import Any, Mapping, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import ObservationDispatch, observation_dispatch
+from apps.api.registry import (
+    ObservationDispatch,
+    observation_dispatch,
+    ranking_tie_break,
+)
 from apps.api.schemas import (
     CompatibilityFinding,
     ComparisonPreflightResponse,
@@ -76,6 +80,11 @@ def ranked_latest_cte(
     Ranking happens inside the source's relation before any join or binning,
     which is what makes a multi-period latest surface (Census PEP publishes
     one row per estimated year) safe to align on geography.
+
+    The ranking closes on the dispatch entry's declared total order, which is
+    the same order the neutral resource's own reduction uses: two reductions
+    that rank by the same expression and then break ties differently would
+    align, bin, and page different published rows for one geography (API-083).
     """
     attribution = (
         ", ".join(_ATTRIBUTION_COLUMNS)
@@ -95,7 +104,8 @@ def ranked_latest_cte(
                 {dispatch.analysis_value_expression} AS value,
                 ROW_NUMBER() OVER (
                     PARTITION BY {dispatch.geo_id_expression}
-                    ORDER BY {dispatch.period_start_expression} DESC
+                    ORDER BY {dispatch.period_start_expression} DESC\
+{ranking_tie_break(dispatch.latest_order)}
                 ) AS recency_rank
             FROM {dispatch.latest_relation}
             WHERE {where_sql}

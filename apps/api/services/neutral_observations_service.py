@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.registry import (
     normalize_geo_level,
+    ranking_tie_break,
     OBSERVATION_DISPATCH,
     ObservationDispatch,
 )
@@ -294,7 +295,8 @@ def _newest_per_geography_source(
                 SELECT source.*,
                     ROW_NUMBER() OVER (
                         PARTITION BY {dispatch.geo_id_expression}
-                        ORDER BY {dispatch.period_start_expression} DESC
+                        ORDER BY {dispatch.period_start_expression} DESC\
+{ranking_tie_break(dispatch.latest_order)}
                     ) AS newest_period_rank
                 FROM {relation} AS source
                 WHERE {where_sql}
@@ -328,7 +330,8 @@ def _newest_release_per_period_source(
                     ROW_NUMBER() OVER (
                         PARTITION BY {dispatch.geo_id_expression}, \
 {dispatch.period_start_expression}
-                        ORDER BY {dispatch.release_order_expression} DESC
+                        ORDER BY {dispatch.release_order_expression} DESC\
+{ranking_tie_break(dispatch.released_order)}
                     ) AS newest_release_rank
                 FROM {relation} AS source
                 WHERE {where_sql}
