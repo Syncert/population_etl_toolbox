@@ -67,7 +67,25 @@ def _source_select_sql(contract: ServingContract) -> str:
     than omitted, so every source returns the same column set and a consumer
     reading ``margin_of_error`` gets "this source publishes none" instead of a
     missing key.
+
+    ``metric_code`` is the catalog's, not the relation's. For BLS, Census ACS
+    and FRED those are the same string. Census PEP's serving relation
+    composes its identity from the dataset -- which is why the match
+    condition has to accept both spellings -- and selecting that column
+    labelled every row with a code no other resource in this API recognises:
+    404 on `/catalog/metrics/{metric_code}`, 404 on `/observations`, and
+    refused by the stored-document validation as "not a published metric".
+    The composed form's one extra component is already published beside it as
+    ``dataset_code`` (API-108).
     """
+    # `COALESCE` rather than a bare bind: where no catalog row resolves at
+    # all, the relation's own identity is the only one there is, and a null
+    # identity would be worse than a composed one.
+    metric_code_expr = (
+        "COALESCE(:catalog_metric_code, metric_code) AS metric_code"
+        if contract.binds_lineage_key
+        else "metric_code"
+    )
     seasonal_expr = (
         "seasonal_adjustment_status"
         if contract.publishes_seasonal_adjustment
@@ -108,7 +126,7 @@ def _source_select_sql(contract: ServingContract) -> str:
         county_name,
         geo_latitude,
         geo_longitude,
-        metric_code,
+        {metric_code_expr},
         metric_display_name,
         value::TEXT AS value,
         value_type,
@@ -224,7 +242,19 @@ def _metric_identity(
     metric = resolve_metric(db, metric_code)
     lineage = (metric or {}).get("physical_lineage") or {}
     key = lineage.get("key") if isinstance(lineage, dict) else None
-    return {"metric_key": key or None}
+    return {
+        "metric_key": key or None,
+        # The catalog's own code, for the row to be labelled with (API-108).
+        # `None` where the request named no catalog metric, and deliberately
+        # not resolved from the request's own third segment: the relation's
+        # composed spelling is a *narrower* address than the catalog code --
+        # one dataset's rows of a measure the catalog publishes across
+        # several -- so resolving it to the catalog row would widen the
+        # lineage half of the match from that dataset to all of them. The
+        # end-to-end tier proved it: a request that answered six rows
+        # answered twelve.
+        "catalog_metric_code": (metric or {}).get("metric_code") or None,
+    }
 
 
 def list_latest_observations_for_source(

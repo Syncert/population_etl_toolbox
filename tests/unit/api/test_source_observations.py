@@ -435,7 +435,10 @@ def test_source_filters_reach_exact_source_queries(
     from apps.api.registry import serving_contract
 
     identity = (
-        {"metric_key": "METRIC"}
+        # The lineage key the relation is matched against, and the
+        # catalog's own code the row is labelled with (API-108). The fake
+        # glossary answers the requested code, so both are "METRIC" here.
+        {"metric_key": "METRIC", "catalog_metric_code": "METRIC"}
         if serving_contract(source_path).binds_lineage_key
         else {}
     )

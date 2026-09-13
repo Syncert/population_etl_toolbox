@@ -1556,3 +1556,97 @@ def test_the_geography_catalog_is_its_own_refresh(
         "publishers just served, the guide's caveat should be removed "
         "deliberately rather than left standing"
     )
+
+
+def test_a_source_scoped_row_names_the_catalogs_code(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: API-108 — the row's identity is one the API recognises.
+
+    The source-scoped column list selected the serving relation's own
+    `metric_code`. For BLS, Census ACS and FRED that column is the catalog's
+    code; Census PEP's relation composes its identity from the dataset, so
+    `/pep/observations/latest` answered rows whose `metric_code` 404s on
+    `/catalog/metrics/{metric_code}`, 404s on `/observations`, and is refused
+    by the stored-document validation as "not a published metric".
+
+    The guide already settles it: a provider's own key travels beside the
+    catalog's code rather than as it -- "the BLS series id is still on every
+    row, under `dimensions.series_id`" -- and every PEP row already carries
+    the composed code's one extra component as `dataset_code`.
+    """
+    for route in (
+        "/api/v1/pep/observations/latest",
+        "/api/v1/pep/observations/timeseries",
+    ):
+        params = {"metric_code": published_pep_metric, "limit": 5}
+        if route.endswith("timeseries"):
+            params["geo_id"] = "nation:us"
+        answer = api_client.get(route, params=params)
+        assert answer.status_code == 200, answer.text
+        items = answer.json()["items"]
+        assert items, f"{route} answered no rows; the node would prove nothing"
+        for item in items:
+            assert item["metric_code"] == published_pep_metric, (
+                f"{route} labelled a row with the relation's composed code, "
+                "which no other resource in this API recognises"
+            )
+            # The component the composed form interpolated is still published,
+            # under its own name.
+            assert item["dataset_code"], item
+
+    # An identity every other resource answers for.
+    detail = api_client.get(f"/api/v1/catalog/metrics/{published_pep_metric}")
+    assert detail.status_code == 200, detail.text
+    neutral = api_client.get(
+        "/api/v1/observations", params={"metric_code": published_pep_metric, "limit": 1}
+    )
+    assert neutral.status_code == 200, neutral.text
+    assert neutral.json()["items"][0]["metric_code"] == published_pep_metric
+
+
+def test_the_relations_composed_spelling_still_addresses_one_dataset(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: API-108 — the relabel does not widen what a request answers.
+
+    The relation's composed spelling is a *narrower* address than the catalog
+    code: one dataset's rows of a measure the catalog publishes across
+    several. The first version of this fix resolved that spelling back to the
+    catalog row so the answer could be labelled with it, which bound the
+    lineage key as well and widened the match from one dataset to all of
+    them -- the end-to-end tier caught it, on a request that answered six
+    rows and began answering twelve.
+
+    So the catalog's code labels the rows only where the request named it,
+    and a request naming the composed spelling answers exactly what it
+    always did.
+    """
+    served = api_client.get(
+        "/api/v1/pep/observations/latest",
+        params={"metric_code": published_pep_metric, "limit": 100},
+    )
+    assert served.status_code == 200, served.text
+    by_catalog_code = served.json()
+
+    composed = (
+        f"CENSUS_PEP:{by_catalog_code['items'][0]['dataset_code']}:"
+        f"{published_pep_metric.split(':', 1)[1]}"
+    )
+    assert composed != published_pep_metric, composed
+
+    answer = api_client.get(
+        "/api/v1/pep/observations/latest",
+        params={"metric_code": composed, "limit": 100},
+    )
+    assert answer.status_code == 200, answer.text
+    by_composed = answer.json()
+    assert by_composed["items"], "the composed spelling stopped answering"
+    # One dataset, and no more rows than the catalog code's own answer.
+    assert {item["dataset_code"] for item in by_composed["items"]} == {
+        by_catalog_code["items"][0]["dataset_code"]
+    }
+    assert by_composed["total"] <= by_catalog_code["total"], (
+        "resolving the composed spelling widened the lineage match from one "
+        "dataset to every dataset publishing the measure"
+    )
