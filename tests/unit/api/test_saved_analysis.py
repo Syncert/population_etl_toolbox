@@ -727,3 +727,101 @@ def test_service_requires_metric_for_each_kind() -> None:
             AnalysisDocument.model_validate({"kind": "observations"}),
         )
     assert "metric_code is required" in raised.value.detail
+
+
+# ---------------------------------------------------------------------------
+# API-082 — a saved view records the reduction it was viewed with
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"newest_per_geography": True, "scope": "latest"}, True),
+        (
+            {"newest_release_per_period": True, "scope": "as_released"},
+            True,
+        ),
+        # Every contradiction the live route refuses, refused here too.
+        ({"newest_per_geography": True, "scope": "as_released"}, False),
+        ({"newest_release_per_period": True, "scope": "latest"}, False),
+        (
+            {
+                "newest_release_per_period": True,
+                "scope": "as_released",
+                "release": "2024",
+            },
+            False,
+        ),
+        (
+            {
+                "newest_per_geography": True,
+                "newest_release_per_period": True,
+                "scope": "latest",
+            },
+            False,
+        ),
+    ],
+    ids=(
+        "per-geography-with-latest",
+        "per-period-with-as-released",
+        "per-geography-with-as-released",
+        "per-period-with-latest",
+        "per-period-with-a-pinned-release",
+        "both-at-once",
+    ),
+)
+def test_a_stored_reduction_matches_what_the_live_route_accepts(
+    accounts, monkeypatch: pytest.MonkeyPatch, overrides: dict, expected: bool
+) -> None:
+    """Covers: API-082 — storable is exactly what the route would serve.
+
+    A saved explorer map view is a request for one value per geography.
+    Without somewhere to record that, the document replayed as the whole
+    latest publication -- for Census PEP, 3,144 counties times six estimated
+    years -- and a map drawn from it coloured whichever row arrived last.
+    """
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "reduction", "document": _document(**overrides)},
+    )
+
+    if expected:
+        assert response.status_code == 201, response.json()
+        stored = response.json()["document"]
+        for name, value in overrides.items():
+            assert stored[name] == value
+    else:
+        assert response.status_code == 422, response.json()
+
+
+def test_a_document_stored_before_the_fields_existed_replays_unchanged(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-082 — both default to false, so nothing stored moves."""
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "unchanged", "document": _document()},
+    )
+
+    assert response.status_code == 201
+    stored = response.json()["document"]
+    assert stored["newest_per_geography"] is False
+    assert stored["newest_release_per_period"] is False
+
+
+def test_the_document_still_forbids_an_undeclared_key(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-082 — two declared fields, not an open door."""
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "extra", "document": _document(newest_per_county=True)},
+    )
+    assert response.status_code == 422

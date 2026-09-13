@@ -325,6 +325,12 @@ Authenticated, user-owned storage — see ADR-0003.
 - Documents are validated on write against the same capability and
   compatibility contracts above, so a saved configuration cannot encode a
   request the API would refuse.
+- An `observations` document records the reduction it was viewed with:
+  `newest_per_geography` or `newest_release_per_period`, under the scope each
+  belongs to. A view saved without one replays as the whole publication,
+  which for a source whose latest publication is a series is a different set
+  of rows — so store the one you asked for. Both default to `false`, and the
+  same contradictions the live route refuses are refused here.
 - On read, `validation` reports whether the document still matches live
   capabilities. A stale configuration is returned **unmodified** with
   `validation.valid = false` and a reason — the API never rewrites your

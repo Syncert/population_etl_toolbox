@@ -110,6 +110,26 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
             raise ConfigurationInvalid(
                 "release can only be combined with scope=as_released"
             )
+        # The same contradictions the live route refuses (API-066, API-081).
+        # Storage is not a back door for a request the API would refuse, and
+        # a stored contradiction would replay as a 422 the reader never saw
+        # when they saved it.
+        if document.newest_per_geography and document.scope != "latest":
+            raise ConfigurationInvalid(
+                "newest_per_geography can only be combined with scope=latest"
+            )
+        if document.newest_release_per_period and document.scope != "as_released":
+            raise ConfigurationInvalid(
+                "newest_release_per_period can only be combined with scope=as_released"
+            )
+        if document.newest_release_per_period and document.release is not None:
+            raise ConfigurationInvalid(
+                "release and newest_release_per_period contradict each other"
+            )
+        if document.newest_per_geography and document.newest_release_per_period:
+            raise ConfigurationInvalid(
+                "newest_per_geography and newest_release_per_period cannot be combined"
+            )
         return
 
     if document.kind == "distribution":

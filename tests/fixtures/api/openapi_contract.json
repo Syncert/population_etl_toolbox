@@ -1877,6 +1877,8 @@
         "metric_code": "string | null",
         "metric_code_a": "string | null",
         "metric_code_b": "string | null",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
         "release": "string | null",
         "scope": "string",
         "visualization": "object"

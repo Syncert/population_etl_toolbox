@@ -36,6 +36,13 @@ class AnalysisDocument(BaseModel):
     metric_code_b: Optional[str] = Field(default=None, max_length=200)
     scope: Literal["latest", "as_released"] = "latest"
     release: Optional[str] = Field(default=None, max_length=100)
+    #: The reductions the observations resource serves, recorded so a saved
+    #: view replays as the view (API-082). A map asks for one value per
+    #: geography; a settled history asks for the newest release of each
+    #: period. Both default to false, so a document stored before they
+    #: existed replays exactly as it did.
+    newest_per_geography: bool = False
+    newest_release_per_period: bool = False
     filters: dict[str, Any] = {}
     bin_count: Optional[int] = Field(default=None, ge=1, le=20)
     visualization: dict[str, Any] = {}
