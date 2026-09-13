@@ -9,7 +9,13 @@
 // `scope`, `release`) stays valid; unknown or invalid values are dropped rather than
 // propagated into requests.
 
-export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY"] as const;
+// The published grain vocabulary, all five words of it. `geo_level` on a
+// served row is always one of these, and a metric's `valid_geo_grains` uses
+// the same words, so a grain read from the catalog can be sent straight back
+// as the filter (API_CONSUMER_GUIDE.md). PLACE is Census PEP's and AGENCY is
+// FBI UCR's; dropping them here made a shared link to either kind of view
+// open on a grain the measure does not publish (WEB-038).
+export const GEO_LEVELS = ["NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY"] as const;
 export const MAP_MODES = ["choropleth", "extrusion"] as const;
 export const VALUE_SCALES = ["linear", "log"] as const;
 export const OBSERVATION_SCOPES = ["latest", "as_released"] as const;

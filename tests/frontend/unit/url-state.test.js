@@ -32,6 +32,17 @@ describe("explorer URL state", () => {
     });
   });
 
+  // Covers: WEB-038 — every word the API's grain vocabulary publishes
+  // survives a link. A shared view of a place- or agency-grain measure is
+  // otherwise not reproducible: the grain is dropped as invalid and the
+  // explorer opens on one the measure does not publish.
+  test("carries every published geography grain through a link", () => {
+    for (const grain of ["NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY"]) {
+      expect(parseExplorerState(`?geo_level=${grain}`)).toEqual({ geoLevel: grain });
+      expect(serializeExplorerState({ geoLevel: grain })).toContain(`geo_level=${grain}`);
+    }
+  });
+
   test("drops invalid values instead of propagating them", () => {
     expect(
       parseExplorerState("?geo_level=PLANET&map_mode=hologram&value_scale=cubic&state=5x5&source=Not%2FValid"),

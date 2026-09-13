@@ -179,6 +179,7 @@ export function preferredGeoLevelForMetric(
 ): string {
   const supported = metricSupportedGeoLevels(metric);
   if (supported.length === 0) {
+    // Unknown grains, not none: the caller's fallback still applies.
     return fallbackGeoLevel;
   }
 
@@ -192,7 +193,13 @@ export function preferredGeoLevelForMetric(
     return "NATIONAL";
   }
 
-  return fallbackGeoLevel;
+  // The measure publishes at a grain outside the spatial three -- Census
+  // PEP's PLACE, FBI UCR's AGENCY. Falling back to the caller's default here
+  // preferred a grain the measure never claimed, so the explorer asked for
+  // it, received nothing, and reported "0 COUNTY records published" as
+  // though the measure published none (WEB-038). Its own first declared
+  // grain is the only honest preference.
+  return supported[0]!;
 }
 
 export interface ObservationPointFeature {

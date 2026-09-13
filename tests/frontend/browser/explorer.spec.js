@@ -82,6 +82,20 @@ const cdcMetric = {
   valid_time_grains: ["ANNUAL"],
 };
 
+// FBI UCR publishes agency-level facts and no route segment of its own, so
+// it is reachable only through the neutral resource and its measures declare
+// the AGENCY grain. It is the case the explorer's three-word grain
+// vocabulary could not express (WEB-038).
+const fbiMetric = {
+  metric_code: "FBI_UCR:summarized:VIOLENT_CRIME",
+  metric_display_name: "Violent crime offences",
+  source_code: "FBI_UCR",
+  units: "offences",
+  valid_geo_grains: ["AGENCY"],
+  valid_time_grains: ["MONTHLY"],
+  freshness_state: "current",
+};
+
 // Shaped like the served CapabilityListResponse. The explorer derives both
 // its source tabs and how it reaches each source from these declarations:
 // a source-scoped latest/timeseries pair, or the neutral /observations
@@ -185,6 +199,16 @@ const capabilities = {
         "year_from",
         "year_to",
       ],
+      observation_routes: neutralRoutes,
+    },
+    {
+      source_code: "FBI_UCR",
+      display_name: "FBI Uniform Crime Reporting",
+      // No route segment: its observation surface is the neutral resource.
+      route_segment: null,
+      served_by_neutral_routes: true,
+      datasets: ["summarized"],
+      observation_filters: ["geo_id", "geo_level", "subject_code", "subject_type"],
       observation_routes: neutralRoutes,
     },
   ],
@@ -322,6 +346,24 @@ async function installRoutes(
         headers: { "x-cache": "MISS" },
       });
 
+    if (metric.startsWith("FBI_UCR:")) {
+      // Agency rows: a grain the tile boundary publishes no geometry for, so
+      // the map declines and the table answers.
+      const agencyRow = {
+        metric_code: metric,
+        source_code: "FBI_UCR",
+        source: "FBI_UCR",
+        geo_id: "agency:WI0130000",
+        geo_level: "AGENCY",
+        value: "412",
+        value_status: "valid",
+        unit: "offences",
+        period_start: "2023-01-01",
+        period_end: "2023-12-31",
+      };
+      return answer([agencyRow], "FBI_UCR");
+    }
+
     if (metric.startsWith("CENSUS_PEP:")) {
       const pepRow = {
         ...county,
@@ -388,6 +430,7 @@ async function installRoutes(
       CENSUS_PEP: [pepMetric],
       CDC: [cdcMetric],
       BLS: [blsNationalMetric, blsMeasureMetric],
+      FBI_UCR: [fbiMetric],
     };
     const items = bySource[sourceCode] || metrics;
     return route.fulfill({
@@ -540,7 +583,7 @@ test("source tabs derive from capability discovery and switch the explored sourc
   // Every source whose declarations carry an access shape becomes a tab —
   // the source-scoped pair or the neutral /observations resource — and the
   // tab records which shape reaches it.
-  await expect(dashboard).toHaveAttribute("data-source-count", "5");
+  await expect(dashboard).toHaveAttribute("data-source-count", "6");
   await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
   // Census declares its own route pair as well, and is still reached through
   // the neutral resource: the pair reads the legacy union views, which key
@@ -595,7 +638,7 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  await expect(dashboard).toHaveAttribute("data-source-count", "5");
+  await expect(dashboard).toHaveAttribute("data-source-count", "6");
 
   await page.getByTestId("source-tab-cdc").click();
   await expect(dashboard).toHaveAttribute("data-access-shape", "neutral");
@@ -991,4 +1034,39 @@ test("the view level offers only the grains the measure declares, and says why",
   // No request is ever sent for a grain the measure does not declare.
   const requestedLevels = observationRequests.map((entry) => entry.geo_level).filter(Boolean);
   expect(requestedLevels).not.toContain("NATIONAL");
+});
+
+test("a measure published at an agency grain is offered that grain, and asked for it", async ({
+  page,
+}) => {
+  // Covers: WEB-038 — the explorer knew three of the five published grain
+  // words. FBI UCR publishes agency-level facts, so every one of its
+  // measures fell past each branch, took the COUNTY fallback it does not
+  // publish, offered no levels at all, and reported "0 COUNTY records
+  // published for this selection" — the measure reading as unpublished
+  // because the client could not name its grain.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests });
+  await page.goto("/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "FBI_UCR:summarized:VIOLENT_CRIME");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+
+  // The declared grain is the one offered, and the only one.
+  const level = page.getByTestId("geo-level-select");
+  await expect(level.locator("option")).toHaveCount(1);
+  await expect(level.locator('option[value="AGENCY"]')).toHaveCount(1);
+
+  // And the one asked for. Nothing was ever requested at COUNTY.
+  const requested = observationRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("FBI_UCR:"))
+    .map((entry) => entry.geo_level)
+    .filter(Boolean);
+  expect(requested.length).toBeGreaterThan(0);
+  expect(new Set(requested)).toEqual(new Set(["AGENCY"]));
+
+  // The map still declines, with the published reason it already gives: this
+  // plan did not make agencies mappable.
+  await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
 });

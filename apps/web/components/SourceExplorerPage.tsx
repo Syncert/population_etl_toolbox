@@ -143,12 +143,21 @@ const CATALOG_PAGE_SIZE = 1000;
 const OBSERVATION_PAGE_SIZE = 5000;
 const OBSERVATION_PAGE_LIMIT = 8;
 const DEFAULT_GEO_LEVEL = "COUNTY";
-/** Geography grains in presentation order, broadest first. */
-const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY"];
+/**
+ * Geography grains in presentation order, broadest first — the published
+ * vocabulary in full. PLACE is Census PEP's and AGENCY is FBI UCR's; with
+ * only the spatial three here, a measure declaring either offered no levels
+ * at all and was queried at a grain it does not publish (WEB-038). The map
+ * still declines any grain the tile boundary has no geometry for, with the
+ * reason it already gives.
+ */
+const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY", "PLACE", "AGENCY"];
 const GEO_LEVEL_LABEL: Record<string, string> = {
   NATIONAL: "National",
   STATE: "State",
   COUNTY: "County",
+  PLACE: "Place",
+  AGENCY: "Agency",
 };
 const DEFAULT_MAP_MODE = "choropleth";
 const DEFAULT_VALUE_SCALE: ValueScale = "linear";
@@ -748,6 +757,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     if (!selectedMetric || !activeSource) {
       return;
     }
+    // Never ask for a grain the measure does not declare (WEB-038). The
+    // selection settles one render later -- the correction effect below
+    // moves it to a declared grain -- and firing here first spent a request
+    // on a grain that answers nothing and flashed "0 records published" for
+    // a measure that publishes plenty.
+    const declaredGrains = metricSupportedGeoLevels(selectedMetricMeta);
+    if (
+      declaredGrains.length > 0 &&
+      !declaredGrains.includes(normalizeGeoLevel(selectedGeoLevel))
+    ) {
+      return;
+    }
 
     const request = observationTracker.begin();
     setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
@@ -787,7 +808,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       observationTracker.invalidate();
     };
-  }, [observationTracker, selectedMetric, latestQuery, selectedGeoLevel, activeSource]);
+  }, [
+    observationTracker,
+    selectedMetric,
+    selectedMetricMeta,
+    latestQuery,
+    selectedGeoLevel,
+    activeSource,
+  ]);
 
   useEffect(() => {
     if (!selectedMetric || !activeSource) {

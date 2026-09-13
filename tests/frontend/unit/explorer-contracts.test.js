@@ -42,6 +42,29 @@ describe("explorer metric, selection, and legend contracts", () => {
     expect(preferredGeoLevelForMetric({ valid_geo_grains: ["NATIONAL"] })).toBe("NATIONAL");
   });
 
+  // Covers: WEB-038 — the published grain vocabulary is five words, not
+  // three. A measure declaring only PLACE or only AGENCY used to fall past
+  // every branch and take the COUNTY fallback -- a grain it does not
+  // publish -- so the explorer asked for nothing and reported "0 COUNTY
+  // records" as though the measure published none.
+  test("never prefers a grain the measure does not declare", () => {
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: ["AGENCY"] })).toBe("AGENCY");
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: ["PLACE"] })).toBe("PLACE");
+    // The spatial three still win where the measure declares one of them.
+    expect(
+      preferredGeoLevelForMetric({ valid_geo_grains: ["PLACE", "COUNTY"] }),
+    ).toBe("COUNTY");
+    expect(
+      preferredGeoLevelForMetric({ valid_geo_grains: ["AGENCY", "STATE"] }),
+    ).toBe("STATE");
+  });
+
+  test("a measure declaring no grains keeps the caller's fallback", () => {
+    // Unknown grains are not the same fact as no grains.
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: [] }, "COUNTY")).toBe("COUNTY");
+    expect(preferredGeoLevelForMetric(null, "STATE")).toBe("STATE");
+  });
+
   test("indexes hover/selection keys and produces an exact pinned outline filter", () => {
     const rows = [
       { geo_id: "state:55|county:025", value: "10" },
