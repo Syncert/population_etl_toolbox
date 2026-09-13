@@ -13,8 +13,7 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present gap:
-  a tier this branch has been adding guards to is not run by CI.**
+- **Status:** Needs review. Implemented 2026-09-13 as catalog row ENV-015.
 - **Last updated:** 2026-09-13
 - **Owner surface:** `.github/workflows/`, `tests/support/ci_evidence_manifest.json`,
   `tests/unit/shared/test_ci_evidence_manifest.py`,
@@ -106,8 +105,60 @@ one of those plans recorded a green local run believing CI would repeat it.
 
 ## Validation
 
-To be recorded by the agent that claims this.
+- **The choice: a new required workflow, `api-integration.yml`, job
+  `api-database`.** Not `postgres-integration` (it installs
+  `.[airflow-dev]`, and Airflow 2.9 pins SQLAlchemy 1.4 against the API's
+  2.x — the environment split `TESTING_CONTRACT.md` records); not `e2e` or
+  `coverage`, because a failure there would read as an end-to-end or a
+  coverage failure rather than as this tier's. It carries `.[api,dev]`, a
+  PostGIS 16 service and a Redis 7 service — the tier's own expression
+  selects one Redis-marked file, and the service is what makes a local result
+  mean what a CI result means — and runs exactly
+  `pytest tests/integration/api -m "integration and database and not slow"`,
+  37 of 42 collected nodes locally. Push (every plan branch prefix) and
+  pull request, `workflow_dispatch`, and registered in
+  `tests/support/ci_evidence_manifest.json`, which takes the required list
+  from 15 jobs to 16.
+- Three guards, each derived from the workflows rather than restating them:
+  - `test_ci_evidence_manifest.py::test_every_integration_directory_is_run_by_a_required_job`
+    reads the `run:` steps of every job the manifest marks required, collects
+    the `tests/` directories they invoke, and fails naming any directory
+    under `tests/integration` no required job runs. The next unrun directory
+    fails on its own.
+  - `...::test_the_evidence_map_names_the_job_that_runs_each_file_it_cites`
+    checks each `CI_EVIDENCE_MAP.md` row's cited `tests/integration` files
+    against the jobs the row names — a directory a job runs covers everything
+    under it, because pytest recurses.
+  - `test_repository_hygiene.py::test_the_guide_documents_a_path_that_needs_no_container_runtime`
+    (ENV-013) now iterates the manifest's required entries, extracts each
+    pytest invocation's paths and marker expression from the workflow, and
+    requires `RUNNING_TESTS.md` to document them under a block named for that
+    workflow. It previously compared one expression against
+    `postgres-integration.yml`, which is how the Redis block came to document
+    a scope its job never had.
+- `CI_EVIDENCE_MAP.md` gains an authoritative row for the new job, the four
+  rows that claimed `tests/integration/api` files rode other jobs now name
+  `api-integration`, the scheduled bounded-E2E row says which of its files
+  also ride the new job per change, and the branch-protection paragraph says
+  sixteen jobs and why the sixteenth exists.
+- `RUNNING_TESTS.md` documents one block per required service-backed job —
+  `postgres-integration`, `api-integration`, `redis-integration`, and
+  `coverage` (which runs the database tier again for the ratchet) — with the
+  exact directory and expression each runs, and says why the API path was
+  documented under a job that cannot run it.
+- The four previously unrun files pass locally against a bootstrapped PostGIS
+  (they are part of the 159-node integration run this branch records), so
+  criterion's "a red result there is a second finding" did not arise.
+- Break-tests: removing the `api-integration` entry from the required
+  manifest leaves `2 failed, 18 passed` — the unrun-directory guard and the
+  evidence-map guard; changing the guide's documented expression for the new
+  job fails ENV-013's guard with "documents a different marker expression
+  than 'integration and database and not slow'".
+- Tiers: `pytest tests/unit` 1560 passed; `ruff format --check .` and
+  `ruff check .` clean. The new workflow's first real run is this push.
 
 ## Remaining work
 
-- Everything.
+- Confirm the `api-integration` check appears and passes on this branch's
+  push, and ask the repository owner to add it to branch protection — a
+  required check is only required once protection names it.

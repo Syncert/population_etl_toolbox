@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,139 @@ def test_every_plan_branch_prefix_runs_ci_on_push() -> None:
         "these workflows do not run on branches the plans work on: "
         f"{json.dumps(missing, indent=2, sort_keys=True)}"
     )
+
+
+#: Any ``tests/...`` path a workflow's shell command names. A step may run a
+#: directory, a file, or several of each.
+_TEST_PATH_PATTERN = re.compile(r"tests/[A-Za-z0-9_][A-Za-z0-9_./-]*")
+
+
+def _identities(*sections: str) -> list[tuple[str, str]]:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    return [
+        (item["workflow"], item["job"])
+        for section in sections
+        for item in manifest[section]
+    ]
+
+
+def _directories_required_jobs_run(
+    *sections: str,
+) -> dict[str, set[str]]:
+    """Every ``tests/`` directory the named manifest sections' jobs execute.
+
+    Read from the ``run:`` steps of those jobs, so the answer is what CI
+    actually invokes rather than a list beside it.
+    """
+    executed: dict[str, set[str]] = {}
+    for workflow, job in _identities(*(sections or ("required",))):
+        steps = _workflow(workflow)["jobs"][job].get("steps") or []
+        for step in steps:
+            command = str(step.get("run") or "")
+            for match in _TEST_PATH_PATTERN.finditer(command):
+                target = ROOT / match.group(0)
+                directory = target if target.is_dir() else target.parent
+                if not directory.is_dir():
+                    continue
+                relative = directory.relative_to(ROOT).as_posix()
+                executed.setdefault(relative, set()).add(f"{workflow}:{job}")
+    return executed
+
+
+def test_every_integration_directory_is_run_by_a_required_job() -> None:
+    """Covers: ENV-015 — a tier nothing runs proves nothing.
+
+    `TESTING_CONTRACT.md` and `tests/run.ps1` define the integration tier as
+    `tests/integration`, and each workflow ran one subdirectory of it.
+    `tests/integration/api` was run by no workflow at all -- scheduled or
+    otherwise, for four of its files -- while eleven plans verified against it
+    and `CI_EVIDENCE_MAP.md` claimed those files rode three other jobs. Every
+    one of those plans recorded a green local run believing CI would repeat
+    it.
+
+    Derived from the workflows so the next unrun directory fails here on its
+    own, rather than after someone notices.
+    """
+    executed = _directories_required_jobs_run()
+    assert executed, "no required job names a tests/ path"
+
+    integration = ROOT / "tests/integration"
+    directories = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in integration.iterdir()
+        if path.is_dir() and path.name != "__pycache__" and any(path.glob("test_*.py"))
+    )
+    assert directories, "the integration tier has no test directories"
+
+    unrun = [name for name in directories if name not in executed]
+    assert not unrun, (
+        "these integration directories are run by no required job: "
+        f"{unrun}. Required jobs run: {json.dumps({k: sorted(v) for k, v in sorted(executed.items())}, indent=2)}"
+    )
+
+
+EVIDENCE_MAP = ROOT / "docs/reference/CI_EVIDENCE_MAP.md"
+
+
+def _evidence_map_rows() -> list[list[str]]:
+    """The map's data rows, as cell lists."""
+    rows: list[list[str]] = []
+    for line in EVIDENCE_MAP.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|") or line.startswith("| ---"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if cells and cells[0] == "Contract":
+            continue
+        rows.append(cells)
+    return rows
+
+
+def test_the_evidence_map_names_the_job_that_runs_each_file_it_cites() -> None:
+    """Covers: ENV-015 — a row's job is a job that runs the row's evidence.
+
+    Three rows said their `tests/integration/api` files "ride `api-unit`,
+    `postgres-integration`, and `frontend` above". They rode nothing: no
+    workflow ran that directory at all. A map that assigns evidence to a job
+    is only evidence if the job runs it, so the row's named jobs are checked
+    against the directories those jobs actually invoke.
+    """
+    executed = _directories_required_jobs_run("required", "release")
+    rows = _evidence_map_rows()
+    assert rows, "the evidence map has no rows"
+
+    misattributed: list[str] = []
+    checked = 0
+    for cells in rows:
+        contract, owner = cells[0], cells[1]
+        cited = {
+            match.group(0)
+            for match in re.finditer(r"tests/integration/[A-Za-z0-9_./-]+", cells[-1])
+        }
+        for path in sorted(cited):
+            target = ROOT / path
+            directory = target if target.is_dir() else target.parent
+            if not directory.is_dir():
+                continue
+            relative = directory.relative_to(ROOT).as_posix()
+            # A job that runs a directory runs everything under it: pytest
+            # recurses, so `tests/integration/database` covers its `legacy`
+            # subdirectory too.
+            runners = {
+                identity.split(":", 1)[0].removesuffix(".yml")
+                for name, identities in executed.items()
+                if relative == name or relative.startswith(f"{name}/")
+                for identity in identities
+            }
+            checked += 1
+            if not runners:
+                misattributed.append(f"{contract}: nothing runs {path}")
+            elif not any(f"`{runner}`" in owner for runner in runners):
+                misattributed.append(
+                    f"{contract}: cites {path}, which only "
+                    f"{sorted(runners)} runs, and names {owner!r}"
+                )
+    assert checked, "no row cites an integration test path"
+    assert not misattributed, "\n".join(misattributed)
 
 
 def _workflows_running(command_fragment: str) -> list[tuple[str, dict, dict]]:

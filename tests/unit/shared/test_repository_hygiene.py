@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 
 from tests.support.postgres import WAREHOUSE_DATABASE_IMAGE
 from tests.support.redis import API_CACHE_REDIS_IMAGE
@@ -354,10 +356,48 @@ def test_the_guide_documents_a_path_that_needs_no_container_runtime() -> None:
         encoding="utf-8"
     )
     assert "Without a container runtime" in guide
-    # The marker expressions a local run must use to mean what CI means.
-    workflow = (
-        REPOSITORY_ROOT / ".github/workflows/postgres-integration.yml"
-    ).read_text(encoding="utf-8")
-    expression = "integration and database and not slow"
-    assert expression in workflow, "the postgres tier's marker expression moved"
-    assert expression in guide, "the guide must run the tier the way CI does"
+
+    # Every required job that runs a service-backed tier, with the directory
+    # and marker expression it runs — read from the workflows the CI evidence
+    # manifest marks required, not from one named file. The guide promises
+    # "the marker expression its CI job uses"; asserting one expression
+    # against one workflow is how the Redis block came to document a scope its
+    # job never had, and how `tests/integration/api` came to be documented
+    # under a job whose environment cannot run it (ENV-015).
+    manifest = json.loads(
+        (REPOSITORY_ROOT / "tests/support/ci_evidence_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    undocumented: list[str] = []
+    checked = 0
+    for entry in manifest["required"]:
+        workflow_path = REPOSITORY_ROOT / ".github/workflows" / entry["workflow"]
+        document = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        job = document["jobs"][entry["job"]]
+        for step in job.get("steps") or []:
+            command = " ".join(str(step.get("run") or "").split())
+            for invocation in re.finditer(
+                r"pytest\s+(?P<paths>(?:tests/[^\s]+\s+)+)-m\s+\"(?P<expression>[^\"]+)\"",
+                command,
+            ):
+                paths = invocation.group("paths").split()
+                expression = invocation.group("expression")
+                if not any(path.startswith("tests/integration") for path in paths):
+                    continue
+                checked += 1
+                stem = entry["workflow"].removesuffix(".yml")
+                if f"# {stem}" not in guide:
+                    undocumented.append(f"{stem}: the guide has no block for it")
+                    continue
+                block = guide.split(f"# {stem}", 1)[1].split("\n\n", 1)[0]
+                for path in paths:
+                    if path not in block:
+                        undocumented.append(f"{stem}: does not document {path}")
+                if expression not in block:
+                    undocumented.append(
+                        f"{stem}: documents a different marker expression than "
+                        f"{expression!r}"
+                    )
+    assert checked, "no required job runs a service-backed tier"
+    assert not undocumented, "; ".join(sorted(set(undocumented)))

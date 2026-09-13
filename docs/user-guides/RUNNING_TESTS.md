@@ -223,17 +223,32 @@ export TEST_POSTGRES_DATABASE=population_etl_test
 export TEST_REDIS_URL="redis://127.0.0.1:56379/15"
 ```
 
-Run each tier with the marker expression its CI job uses, so a local result
-means what a CI result means:
+Run each tier with the directory and marker expression its CI job uses, so a
+local result means what a CI result means. These are the pytest invocations
+the required workflows run, one block per job, and
+`tests/unit/shared/test_repository_hygiene.py` reads them back out of the
+workflows so a job whose scope moves fails here rather than drifting:
 
 ```bash
 # postgres-integration
 python -m pytest tests/integration/database -m "integration and database and not slow"
-python -m pytest tests/integration/api      -m "integration and database and not slow"
+
+# api-integration
+python -m pytest tests/integration/api -m "integration and database and not slow"
 
 # redis-integration
-python -m pytest tests/integration/redis tests/integration/api -m "integration and (redis or database) and not slow"
+python -m pytest tests/unit/api/test_cache_middleware.py -m "unit and api"
+python -m pytest tests/integration/redis -m "integration and api and redis"
+
+# coverage (the same database tier again, for the ratchet)
+python -m pytest tests/integration/database -m "integration and database and not slow"
 ```
+
+`tests/integration/api` had no workflow at all until `api-integration`, and
+the guide documented it under `postgres-integration`, a job whose environment
+cannot run it: that job installs Airflow, which pins SQLAlchemy 1.4 against
+the API's 2.x (ENV-015). The Redis block documented a scope its job never had,
+too.
 
 `not slow` is what excludes the tests that fetch live source data; without it
 the database tier reaches `download.bls.gov` and fails wherever that is
