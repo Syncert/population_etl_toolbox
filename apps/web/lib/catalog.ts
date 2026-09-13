@@ -27,6 +27,49 @@ export function sourceFilterOptions(
   ];
 }
 
+/** What the landing page's "Connected sources" band may say, and when. */
+export interface ConnectedSourcesBand {
+  /** Names to render, in the API's own words. Empty unless it answered. */
+  names: string[];
+  /** What to say when there are no names. `""` when there are. */
+  message: string;
+}
+
+/**
+ * The connected-source band, which never names a source the API did not.
+ *
+ * The landing page carried a three-entry map of source codes to display
+ * names and rendered it whenever `sources` was empty -- which is every
+ * first paint, before discovery answers, and again if discovery fails. So
+ * the first thing a visitor read under "Connected sources" was a list from
+ * the page rather than from the warehouse, unlabelled, and it happened to
+ * be right only for as long as the hard-coded three were what the glossary
+ * had harvested. The catalog's own rule is in this module's header: never
+ * carry a closed client-side source enumeration (WEB-080).
+ *
+ * A source's name is the one it publishes; the code is the fallback, the
+ * way `sourceFilterOptions` beside this already does it.
+ */
+export function connectedSourcesBand(
+  status: "loading" | "ready" | "error",
+  sourceItems: SourceSummary[] | null | undefined,
+): ConnectedSourcesBand {
+  if (status === "error") {
+    return { names: [], message: "The published source list is unavailable." };
+  }
+  const items = Array.isArray(sourceItems) ? sourceItems : [];
+  if (status === "loading" && items.length === 0) {
+    return { names: [], message: "Reading the published source list…" };
+  }
+  if (items.length === 0) {
+    return { names: [], message: "No source has published a catalog entry yet." };
+  }
+  return {
+    names: items.map((item) => item.source_name || item.source_code),
+    message: "",
+  };
+}
+
 /** One page of catalog results; the resource caps `limit` at 1000. */
 export const CATALOG_PAGE_SIZE = 50;
 

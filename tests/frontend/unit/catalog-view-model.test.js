@@ -3,7 +3,13 @@ import { describe, expect, test } from "vitest";
 // Covers: WEB-011 — the catalog source filter derives from API discovery
 // instead of a closed client-side source enumeration.
 
-import { sourceFilterOptions } from "../../../apps/web/lib/catalog";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+import {
+  connectedSourcesBand,
+  sourceFilterOptions,
+} from "../../../apps/web/lib/catalog";
 
 describe("catalog source filter", () => {
   test("builds options from the published source list", () => {
@@ -208,5 +214,73 @@ describe("published provenance and quality context", () => {
       label: "freshness not published",
     });
     expect(metricQualityState(null).state).toBe("idle");
+  });
+});
+
+describe("the connected-source band never names a source the API did not", () => {
+  // Covers: WEB-080 — the landing page's source list is the published one.
+  test("nothing is named while the source list is being read", () => {
+    const band = connectedSourcesBand("loading", []);
+    expect(band.names).toEqual([]);
+    expect(band.message).toBe("Reading the published source list…");
+  });
+
+  test("a discovery failure names no source either", () => {
+    // The page already announces the failure (WEB-037); the band must not
+    // answer the question anyway.
+    const band = connectedSourcesBand("error", []);
+    expect(band.names).toEqual([]);
+    expect(band.message).toBe("The published source list is unavailable.");
+  });
+
+  test("a published source is named in the words it published", () => {
+    const band = connectedSourcesBand("ready", [
+      { source_code: "CENSUS_ACS", source_name: "US Census ACS" },
+      { source_code: "USDA_NASS", source_name: "USDA NASS Quick Stats" },
+      { source_code: "NEW_SOURCE" },
+    ]);
+    expect(band.names).toEqual([
+      "US Census ACS",
+      "USDA NASS Quick Stats",
+      // No name published, so the code -- never a label from this page.
+      "NEW_SOURCE",
+    ]);
+    expect(band.message).toBe("");
+  });
+
+  test("an empty published list says so rather than inventing one", () => {
+    const band = connectedSourcesBand("ready", []);
+    expect(band.names).toEqual([]);
+    expect(band.message).toBe("No source has published a catalog entry yet.");
+  });
+
+  test("no source display name is hard-coded in the landing page", () => {
+    // The defect was a three-entry map of codes to names rendered whenever
+    // the API had not answered. Read the page's own source so a new one
+    // cannot appear, and read it by walking up to the repository root the
+    // way the browser-tier guard does -- a `file:` URL relative to this
+    // module is not resolvable under the vitest transform.
+    let directory = process.cwd();
+    let source = "";
+    for (;;) {
+      try {
+        source = readFileSync(join(directory, "apps", "web", "app", "page.js"), "utf8");
+        break;
+      } catch {
+        const parent = dirname(directory);
+        if (parent === directory) {
+          throw new Error("apps/web/app/page.js not found from " + process.cwd());
+        }
+        directory = parent;
+      }
+    }
+    expect(source).toContain("connectedSourcesBand");
+    for (const name of [
+      "Bureau of Labor Statistics",
+      "Federal Reserve Economic Data",
+      "US Census ACS",
+    ]) {
+      expect(source).not.toContain(name);
+    }
   });
 });

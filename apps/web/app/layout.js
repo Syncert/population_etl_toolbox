@@ -15,7 +15,12 @@ export const metadata = {
     default: "Economic Data Studio",
     template: "%s | Economic Data Studio",
   },
-  description: "Traceable public economic and population analytics from Census, BLS, and FRED.",
+  // Not an enumeration of sources: this named three while the API served
+  // seven, and a document description cannot be derived from a request
+  // (WEB-080).
+  description:
+    "Traceable public economic, health, agricultural and population analytics, "
+    + "every value tied back to the agency that published it.",
 };
 
 export default function RootLayout({ children }) {

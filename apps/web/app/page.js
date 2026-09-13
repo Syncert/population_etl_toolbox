@@ -5,13 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
 import { getSources, searchMetrics } from "../lib/api/client";
 import { displayMetricName } from "../lib/format";
+import { connectedSourcesBand } from "../lib/catalog";
 import { explorerHref } from "../lib/urlState";
-
-const sourceNames = {
-  CENSUS_ACS: "Census ACS",
-  BLS: "Bureau of Labor Statistics",
-  FRED: "Federal Reserve Economic Data",
-};
 
 export default function HomePage() {
   const [sources, setSources] = useState([]);
@@ -39,13 +34,17 @@ export default function HomePage() {
     () => metrics.items.find((item) => item.metric_code === "CENSUS_ACS:acs5:B01003_001") || metrics.items[0],
     [metrics],
   );
+  const sourceBand = useMemo(() => connectedSourcesBand(status, sources), [status, sources]);
 
   return (
     <main className="page-shell home-page">
       <section className="home-intro">
         <div className="section-kicker">Public economic intelligence</div>
         <h1>Economic Data Studio</h1>
-        <p>Explore trusted Census, BLS, and FRED data with every metric, map, and chart tied back to its source.</p>
+        {/* Not an enumeration: the published list is the band below,
+            and this sentence named three sources while the API served
+            seven (WEB-080). */}
+        <p>Explore published federal statistics with every metric, map, and chart tied back to its source.</p>
         <div className="command-row">
           <Link className="button primary" href="/explore">Open the explorer <ArrowRight size={16} /></Link>
           <Link className="button secondary" href="/catalog">Browse the catalog</Link>
@@ -96,10 +95,14 @@ export default function HomePage() {
 
       <section className="source-band">
         <div><div className="section-kicker">Connected sources</div><h2>Public data with its identity intact</h2></div>
-        <div className="source-list">
-          {(sources.length ? sources : Object.keys(sourceNames).map((source_code) => ({ source_code }))).map((source) => (
-            <span key={source.source_code}>{source.source_name || sourceNames[source.source_code] || source.source_code}</span>
-          ))}
+        <div className="source-list" data-testid="home-source-list">
+          {/* Named only where the API named them: a list from this page
+              would read as a fact about the warehouse (WEB-080). */}
+          {sourceBand.names.length > 0 ? (
+            sourceBand.names.map((name) => <span key={name}>{name}</span>)
+          ) : (
+            <span className="subtle">{sourceBand.message}</span>
+          )}
         </div>
       </section>
     </main>
