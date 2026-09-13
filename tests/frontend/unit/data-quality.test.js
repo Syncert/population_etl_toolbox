@@ -145,3 +145,55 @@ describe("evidence the API publishes elsewhere is pointed at, not fabricated", (
     expect(UNPUBLISHED_EVIDENCE.length).toBeGreaterThan(0);
   });
 });
+
+// Covers: WEB-041 — the sample can contain the problem the screen reports.
+// The table showed the alphabetically first forty of up to 2,487 metrics, so
+// a source reported as "12 stale of 2,487" showed forty rows that almost
+// certainly held none of the twelve.
+describe("the per-measure sample is ordered by the state a reader came for", () => {
+  const metric = (code, state) => ({
+    metric_code: code,
+    metric_display_name: code,
+    freshness_state: state,
+  });
+
+  test("stale first, then unpublished, then retired, then current", () => {
+    const rows = metricQualityRows([
+      metric("A:current", "current"),
+      metric("B:retired", "retired"),
+      metric("C:unpublished", ""),
+      metric("D:stale", "stale"),
+    ]);
+    expect(rows.map((row) => row.metricCode)).toEqual([
+      "D:stale",
+      "C:unpublished",
+      "B:retired",
+      "A:current",
+    ]);
+  });
+
+  test("within one state the order is the metric code, so two loads agree", () => {
+    const rows = metricQualityRows([
+      metric("Z:stale", "stale"),
+      metric("A:stale", "stale"),
+      metric("M:stale", "stale"),
+    ]);
+    expect(rows.map((row) => row.metricCode)).toEqual(["A:stale", "M:stale", "Z:stale"]);
+  });
+
+  test("a state the vocabulary adds later sorts last, and nothing is dropped", () => {
+    const rows = metricQualityRows([
+      metric("A:future", "quarantined"),
+      metric("B:stale", "stale"),
+      metric("C:current", "current"),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.metricCode)).toEqual([
+      "B:stale",
+      "C:current",
+      "A:future",
+    ]);
+    // The published word travels verbatim; nothing is merged into a known one.
+    expect(rows[2].freshness).toBe("quarantined");
+  });
+});

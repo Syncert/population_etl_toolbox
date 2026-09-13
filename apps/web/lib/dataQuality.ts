@@ -159,10 +159,38 @@ export interface MetricQualityRow {
  * publish stays empty; the caller renders "not published" rather than a
  * placeholder that would state something the source did not.
  */
+/**
+ * The published states in the order a reader needs them, and the sentence
+ * the screen shows so the order is not mistaken for the catalog's own.
+ *
+ * `/catalog/metrics` orders by `metric_code`, and the table samples the first
+ * forty rows. A source reported as "12 stale of 2,487 published metrics"
+ * therefore showed forty codes beginning `B01001…` and almost certainly none
+ * of the twelve: the screen stated a problem and then showed a sample that
+ * could not contain it (WEB-041).
+ *
+ * This is an ordering over a published field, not a score. `freshness_state`
+ * is the warehouse's own vocabulary, the states stay distinct, and a word
+ * this list does not know keeps its place at the end with its own value
+ * intact rather than being folded into a known one.
+ */
+const FRESHNESS_ATTENTION_ORDER = ["stale", "", "retired", "current"];
+
+export const QUALITY_SAMPLE_ORDER =
+  "Ordered by published freshness: stale first, then measures the publisher " +
+  "published no state for, then retired, then current.";
+
+function attentionRank(freshness: string): number {
+  const index = FRESHNESS_ATTENTION_ORDER.indexOf(freshness.toLowerCase());
+  // A state published after this list was written sorts last rather than
+  // being guessed at, and keeps its published word.
+  return index === -1 ? FRESHNESS_ATTENTION_ORDER.length : index;
+}
+
 export function metricQualityRows(
   metrics: MetricSummary[] | null | undefined,
 ): MetricQualityRow[] {
-  return (Array.isArray(metrics) ? metrics : []).map((metric) => ({
+  const rows = (Array.isArray(metrics) ? metrics : []).map((metric) => ({
     metricCode: metric.metric_code,
     displayName: text(metric.metric_display_name),
     freshness: text(metric.freshness_state),
@@ -171,6 +199,14 @@ export function metricQualityRows(
     watermark: text(metric.source_watermark),
     contractVersion: text(metric.publisher_contract_version),
   }));
+  return rows.sort((left, right) => {
+    const byState = attentionRank(left.freshness) - attentionRank(right.freshness);
+    // The metric code breaks every tie, so the sample is reproducible and two
+    // loads of the same source agree.
+    return byState !== 0
+      ? byState
+      : String(left.metricCode).localeCompare(String(right.metricCode));
+  });
 }
 
 export interface EvidenceLocation {

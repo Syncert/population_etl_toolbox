@@ -20,6 +20,7 @@ import { createRequestTracker } from "../lib/api/requestState";
 import type { CollectionResponse, MetricSummary } from "../lib/api/types";
 import {
   EVIDENCE_LOCATIONS,
+  QUALITY_SAMPLE_ORDER,
   UNPUBLISHED_EVIDENCE,
   coverageSegments,
   freshnessRows,
@@ -253,8 +254,8 @@ export default function DataQualityExplorer() {
               <div className="section-kicker">Per measure</div>
               <h2>{selectedSource} metrics</h2>
               <p className="subtle">
-                Showing {shown.length} of {metricRows.length}. A field the publisher did not
-                publish reads as not published, never as a placeholder.
+                Showing {shown.length} of {metricRows.length}. {QUALITY_SAMPLE_ORDER} A field
+                the publisher did not publish reads as not published, never as a placeholder.
               </p>
             </div>
           </div>
