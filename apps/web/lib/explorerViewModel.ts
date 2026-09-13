@@ -3,6 +3,7 @@
 // expressions. No React, no fetch, no browser state.
 
 import type { DistributionResponse, MetricSummary } from "./api/types";
+import { isDrawableTileGrain } from "./tileGrains";
 import type { ValueScale } from "./urlState";
 
 export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
@@ -234,32 +235,28 @@ export function observationToFeature(
   };
 }
 
-export function isCountyObservation(item: ObservationRow | null | undefined): boolean {
-  if (!item) {
+/**
+ * The layer filter that draws exactly one grain.
+ *
+ * The layer carries every geography with a shape -- some 32k places among
+ * them, which have no `county_fips` either -- so a level is matched on the
+ * published `geo_level` rather than inferred from which fips columns a
+ * feature happens to carry.
+ *
+ * A grain the boundary cannot draw is not matched to some other grain's
+ * polygons by fall-through: it gets a filter that matches nothing. Which
+ * grains those are is `DRAWABLE_TILE_GRAINS`, the same declaration
+ * `spatialGrains` reads, so the check that offers the map and the filter
+ * that draws it cannot disagree. The map is not presented at an undrawable
+ * grain at all; if one ever were, an empty map is the honest answer where
+ * another grain's polygons would be a lie.
+ */
+export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
+  const level = String(geoLevel || "").toUpperCase();
+  if (!isDrawableTileGrain(level)) {
     return false;
   }
-
-  if (typeof item.geo_level === "string" && item.geo_level.toUpperCase() === "COUNTY") {
-    return true;
-  }
-
-  if (item.county_fips) {
-    return true;
-  }
-
-  return typeof item.geo_id === "string" && item.geo_id.toLowerCase().includes("|county:");
-}
-
-export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
-  // The layer carries every geography with a shape -- some 32k places among
-  // them, which have no county_fips either -- so a level is matched on the
-  // published geo_level rather than inferred from which fips columns a
-  // feature happens to carry. The national view keeps states and counties
-  // as its backdrop.
-  if (geoLevel === "NATIONAL") {
-    return ["in", ["get", "geo_level"], ["literal", ["STATE", "COUNTY"]]];
-  }
-  return ["==", ["get", "geo_level"], geoLevel === "STATE" ? "STATE" : "COUNTY"];
+  return ["==", ["get", "geo_level"], level];
 }
 
 /**
@@ -272,11 +269,15 @@ export function tileFilterForSelection(
   stateFips: string | null | undefined,
 ): TileFilter {
   const levelFilter = tileFilterForGeoLevel(geoLevel);
+  if (levelFilter === false) {
+    // Narrowing nothing to one state is still nothing.
+    return false;
+  }
   if (!stateFips) {
     return levelFilter;
   }
   const stateFilter = ["==", ["to-string", ["get", "state_fips"]], stateFips];
-  return levelFilter === true ? stateFilter : ["all", levelFilter, stateFilter];
+  return ["all", levelFilter, stateFilter];
 }
 
 export type LngLatBoundsArray = [[number, number], [number, number]];

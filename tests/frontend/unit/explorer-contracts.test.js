@@ -199,11 +199,22 @@ describe("a selected state is the whole map", () => {
     // Places have no county_fips either; "not a county" is not "a state".
     expect(tileFilterForGeoLevel("STATE")).toEqual(["==", ["get", "geo_level"], "STATE"]);
     expect(tileFilterForGeoLevel("COUNTY")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
-    expect(tileFilterForGeoLevel("NATIONAL")).toEqual([
-      "in",
-      ["get", "geo_level"],
-      ["literal", ["STATE", "COUNTY"]],
-    ]);
+  });
+
+  test("a grain the boundary cannot draw filters to nothing, not to counties", () => {
+    // This pinned a states-and-counties backdrop for NATIONAL until WEB-062.
+    // The expectation is changed deliberately: the branch was unreachable --
+    // spatialGrains never answers NATIONAL, so describeViewModes reports the
+    // map unsupported there and useMapLibre removes it -- and it described a
+    // presentation the application does not have. PLACE and AGENCY were
+    // worse: they fell through to the county filter, so an undrawable grain
+    // asked for was answered with another grain's polygons.
+    for (const grain of ["NATIONAL", "PLACE", "AGENCY", ""]) {
+      expect(tileFilterForGeoLevel(grain)).toBe(false);
+    }
+    // A lowercase drawable grain still draws: the filter reads the grain, it
+    // does not check how the caller spelled it.
+    expect(tileFilterForGeoLevel("state")).toEqual(["==", ["get", "geo_level"], "STATE"]);
   });
 
   test("the selection filter keeps the geo level and narrows to the state", () => {
@@ -213,6 +224,9 @@ describe("a selected state is the whole map", () => {
       ["==", ["get", "geo_level"], "COUNTY"],
       ["==", ["to-string", ["get", "state_fips"]], "06"],
     ]);
+    // Narrowing nothing to one state is still nothing -- never the state
+    // filter alone, which would draw every grain inside that state.
+    expect(tileFilterForSelection("PLACE", "06")).toBe(false);
   });
 
   test("the fit extent is the state's polygons, not the country's", () => {

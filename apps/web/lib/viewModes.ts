@@ -12,6 +12,7 @@
 // list of which measures are mappable.
 
 import { metricProvenance, metricQualityState } from "./catalog";
+import { DRAWABLE_TILE_GRAINS } from "./tileGrains";
 import type { ExplorerSource } from "./explorerSources";
 import type { MetricSummary } from "./api/types";
 
@@ -59,23 +60,24 @@ function unsupported(reason: string): ViewModeState {
 /**
  * The geography grains the discovered vector layer can be drawn at.
  *
- * The boundary publishes one polygon layer whose features carry the
- * geography attribution fields; a feature with `county_fips` is a county and
- * one without it is a state, which is the filter the map already applies.
- * Nothing the boundary publishes identifies a national geometry, so a
- * national series has no spatial presentation here — it is not a map that
- * failed to colour.
+ * The grains the boundary can draw at all are declared once, in
+ * `DRAWABLE_TILE_GRAINS`, alongside the field that attributes each. This
+ * reads that declaration against the layer's published *schema*: a grain
+ * whose attribution field the layer does not publish cannot be drawn, and
+ * one whose field it does publish can be. It is a capability check, and
+ * deliberately says nothing about which grains the boundary carries rows
+ * for — an empty map at a drawable grain is a different fact from a grain
+ * with no spatial presentation, and only the second belongs here.
+ *
+ * A grain outside the declaration — `NATIONAL` above all — is therefore
+ * never returned, whatever the layer publishes, so a national series has no
+ * spatial presentation here rather than a map that failed to colour.
  */
 export function spatialGrains(tileFields: string[] | null | undefined): string[] {
   const names = new Set((tileFields || []).map((field) => String(field).toLowerCase()));
-  const grains: string[] = [];
-  if (names.has("state_fips")) {
-    grains.push("STATE");
-  }
-  if (names.has("county_fips")) {
-    grains.push("COUNTY");
-  }
-  return grains;
+  return DRAWABLE_TILE_GRAINS.filter((entry) => names.has(entry.attributionField)).map(
+    (entry) => entry.grain,
+  );
 }
 
 /** Whether the source declares a route that answers one geography's history. */

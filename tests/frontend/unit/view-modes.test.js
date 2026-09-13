@@ -19,6 +19,9 @@ import {
   unsupportedViewModes,
 } from "../../../apps/web/lib/viewModes";
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
+import { tileFilterForGeoLevel } from "../../../apps/web/lib/explorerViewModel";
+import { DRAWABLE_TILE_GRAINS } from "../../../apps/web/lib/tileGrains";
+import { GEO_LEVELS } from "../../../apps/web/lib/urlState";
 
 // The fields the published counties layer carries (infra/martin/martin.yml).
 const TILE_FIELDS = [
@@ -93,6 +96,37 @@ describe("spatial grains published by the tile boundary", () => {
     // A national series is not a map that failed to colour — the boundary
     // has no polygon for it at all.
     expect(spatialGrains(TILE_FIELDS)).not.toContain("NATIONAL");
+  });
+
+  test("the grain offered and the grain drawn come from one declaration", () => {
+    // Covers: WEB-062 — deciding whether to offer the map and deciding what
+    // the map draws are the same question, and they used to be answered in
+    // two places that disagreed. Reading both off DRAWABLE_TILE_GRAINS is
+    // what makes them unable to: a grain this reports drawable must have a
+    // filter that draws it, and every other selectable grain must filter to
+    // nothing rather than fall through to some grain the user did not ask for.
+    const offered = spatialGrains(TILE_FIELDS);
+    expect(offered).toEqual(DRAWABLE_TILE_GRAINS.map((entry) => entry.grain));
+
+    for (const grain of GEO_LEVELS) {
+      const filter = tileFilterForGeoLevel(grain);
+      if (offered.includes(grain)) {
+        expect(filter).toEqual(["==", ["get", "geo_level"], grain]);
+      } else {
+        expect(filter, `${grain} is not offered, so nothing may be drawn for it`).toBe(
+          false,
+        );
+      }
+    }
+
+    // And the declaration is evidence-bearing, not a name list: each grain
+    // names the layer field that attributes it, which is why withdrawing
+    // that field withdraws the grain.
+    for (const entry of DRAWABLE_TILE_GRAINS) {
+      expect(TILE_FIELDS).toContain(entry.attributionField);
+      const withoutIt = TILE_FIELDS.filter((field) => field !== entry.attributionField);
+      expect(spatialGrains(withoutIt)).not.toContain(entry.grain);
+    }
   });
 });
 

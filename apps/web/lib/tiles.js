@@ -4,7 +4,7 @@
 
 import { VectorTile } from "@mapbox/vector-tile";
 import Protobuf from "pbf";
-import { isCountyObservation } from "./explorerViewModel";
+import { isDrawableTileGrain } from "./tileGrains";
 
 /**
  * Catalog keys that name a section of the catalog rather than a source.
@@ -329,7 +329,54 @@ export async function discoverTileMetadata() {
   throw new Error("No healthy vector tile endpoint found from discovered /tiles/{id} candidates");
 }
 
+/** Whether a grain is drawable, with the empty grain meaning "every one". */
+function grainCanBeDrawn(geoLevel) {
+  const wanted = String(geoLevel || "").toUpperCase();
+  return !wanted || isDrawableTileGrain(wanted);
+}
+
+/**
+ * The features of a decoded layer at one grain.
+ *
+ * The grain is matched against each feature's published `geo_level` -- the
+ * same rule the layer filter applies (`tileFilterForGeoLevel`), against the
+ * same declaration of which grains the boundary can draw
+ * (`DRAWABLE_TILE_GRAINS`), so the collection handed to the map is the
+ * collection the map draws. This used to infer the grain from `county_fips`
+ * instead, which made "not a county" mean "a state" and handed the state
+ * grain every place polygon for the layer filter to hide again.
+ *
+ * An empty grain is every feature the layer carries, which is what checking
+ * a decoded tile needs. That is the absence of a grain rather than a grain
+ * of its own, so it is spelled as one instead of borrowing a selectable
+ * grain the boundary cannot draw.
+ */
+export function featuresAtGrain(layer, geoLevel) {
+  if (!grainCanBeDrawn(geoLevel)) {
+    return [];
+  }
+  const wanted = String(geoLevel || "").toUpperCase();
+  const features = [];
+  for (let index = 0; index < layer.length; index += 1) {
+    const feature = layer.feature(index).toGeoJSON(0, 0, 0);
+    const published = String(feature.properties?.geo_level || "").toUpperCase();
+    if (!wanted || published === wanted) {
+      features.push(feature);
+    }
+  }
+  return features;
+}
+
+/**
+ * One sample tile decoded to the GeoJSON the choropleth source is given,
+ * carrying the grain `featuresAtGrain` selects and nothing else.
+ */
 export async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLevel) {
+  if (!grainCanBeDrawn(geoLevel)) {
+    // No map is drawn at this grain, so there is no tile worth a request.
+    return { type: "FeatureCollection", features: [] };
+  }
+
   const sampleUrl = buildSampleUrlFromTemplate(tileTemplate);
   const response = await fetch(sampleUrl, { cache: "no-store" });
 
@@ -345,21 +392,8 @@ export async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLeve
     throw new Error("tile sample contained no vector layers");
   }
 
-  const features = [];
-  for (let index = 0; index < layer.length; index += 1) {
-    const feature = layer.feature(index).toGeoJSON(0, 0, 0);
-    const isCounty = isCountyObservation(feature.properties);
-    if (
-      geoLevel === "NATIONAL" ||
-      (geoLevel === "COUNTY" && isCounty) ||
-      (geoLevel === "STATE" && !isCounty)
-    ) {
-      features.push(feature);
-    }
-  }
-
   return {
     type: "FeatureCollection",
-    features,
+    features: featuresAtGrain(layer, geoLevel),
   };
 }
