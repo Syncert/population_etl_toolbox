@@ -282,7 +282,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-011 | None |
 | Airflow DAGs | DAG-001–DAG-018 | None |
-| ETL and shared units | ETL-001–ETL-049 | None |
+| ETL and shared units | ETL-001–ETL-050 | None |
 | Database integration | DB-001–DB-038 | None |
 | API | API-001–API-121 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
@@ -292,7 +292,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-075 | None |
 | Deployment | DEPLOY-001–DEPLOY-007 | None |
-| **Total** | **404 of 404** | **0 of 404** |
+| **Total** | **405 of 405** | **0 of 405** |
 
 Awaiting implementation IDs: None.
 
@@ -300,7 +300,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 404-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 405-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -492,6 +492,7 @@ All tests in this section use local fixtures and mocked boundaries.
 | ETL-047 | P0 | Contract + database / `unit integration database` | Served geography vocabulary | Every reporting refresh writes the normalised `NATIONAL`/`STATE`/`COUNTY` vocabulary, never `silver_ref.dim_geo`'s own `us`/`state`/`county` spelling; the fact views hold the single definition of that mapping, and a refresh run with a `us:1` dimension row present still serves `NATIONAL` | A served relation carries `us`, so `geo_level=NATIONAL` answers zero rows through the dispatch's `UPPER(geo_level) = UPPER(:geo_level)` filter while the unfiltered read answers the row |
 | ETL-048 | P0 | Contract + database / `unit integration database` | BLS LAUS measure identity | The seven LAUS measures are the BLS catalog identity for program `LA`, so one metric spans every published state and county; every other program keeps its series identity; the serving refresh branches on the measure dimension and keeps `series_id` on every row; the publisher emits one row per measure with grains aggregated from the fact rows and excludes the measure-identified program's series | LAUS returns to one metric per place (no BLS metric spans geographies, so the map, bins, and comparison have nothing to draw), a program is published twice, grains are declared as a constant, or lineage back to the BLS series is lost |
 | ETL-049 | P0 | Contract + database / `unit integration database` | Forced full serving re-serve | Every union-served source declares an all-years plan carrying no watermark predicate and no bound parameters, spanning its reporting relation as well as silver; a forced run uses that plan and rewrites years the changed-year plan skips; it is never the default and no scheduled run selects it; a source declaring no such plan refuses rather than silently falling back; a forced run resumes an interrupted one under the same durable run marker and skips only the years that run already finished; repeating a completed forced re-serve changes no row counts; and a forced run never advances the source watermark past the genuine silver watermark | A meaning change left half-applied because the changed-year plan skipped the years still carrying the old meaning, a multi-hour re-serve restarting from the first year after a retry, an expensive re-serve running on a schedule, or a re-serve advancing the watermark so a later ingest silently skips rows |
+| ETL-050 | P0 | Contract + database / `unit fbi_ucr`, `integration database` | A county resolved from a provider label says so | A county established by matching the FBI's county label to the boundary reference is published as `resolution_method = 'county_label_match'`, `confidence_class = 'derived'` -- never the `reviewed` the place path earns from its crosswalk -- and DQ-FBI-004 fails any resolved relationship claiming a confidence its method did not earn, including a method the reviewed mapping does not know. A label that matched nothing carries `county_label_unmatched` rather than asserting the county is absent, and the agency carries `agency_county_unresolved` rather than `agency_only`. The operations guide says how to review one and why the comparison is not relaxed | An area filter publishing `reviewed` over a name match, so a consumer filtering on that token cannot tell a reviewed mapping from a name join; a zero-match join asserting a county is absent when the label simply does not normalise; or a provider-labelled county that failed to resolve reading as an agency the provider never associated with a county |
 
 ### PostgreSQL Integration Tests
 

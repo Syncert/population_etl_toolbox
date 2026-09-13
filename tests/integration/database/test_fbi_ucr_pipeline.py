@@ -184,21 +184,25 @@ def test_agency_geography_status_matches_its_reviewed_evidence(
                 """
             )
             assert cursor.fetchall() == [
+                # A county established from the provider's label: exact and
+                # uniqueness-checked, backed by no review, and published as
+                # `derived` so it is distinguishable from the place below,
+                # which a reviewed crosswalk establishes (ETL-050).
                 (
                     "county",
                     "DANE",
                     "state:55|county:025",
-                    "reviewed_county_name_crosswalk",
+                    "county_label_match",
                     "resolved",
-                    "reviewed",
+                    "derived",
                 ),
                 (
                     "county",
                     "ROCK",
                     "state:55|county:105",
-                    "reviewed_county_name_crosswalk",
+                    "county_label_match",
                     "resolved",
-                    "reviewed",
+                    "derived",
                 ),
                 (
                     "place",
@@ -352,6 +356,85 @@ def test_ambiguous_county_evidence_is_withheld_from_gold(
                 cursor.execute("DELETE FROM silver_fbi.fact_crime_observation")
                 cursor.execute("DELETE FROM silver_fbi.agency_geography_relationship")
                 delete_geography(cursor, "state:55|county:997")
+            remover.commit()
+        finally:
+            remover.close()
+
+
+def test_an_unresolved_county_label_is_not_read_as_an_unlabelled_agency(
+    fbi_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-050 — a label that resolves nothing says so, not nothing.
+
+    `agency_only` is a fact about the provider: it published no county
+    association at all, which is what `NOT SPECIFIED` means in the Agency
+    resource. An agency whose county label *was* published and failed to
+    resolve read as `agency_only` too, so the one state an operator can act on
+    -- a label this normalisation does not reach, a county the reference does
+    not hold -- was indistinguishable from the one they cannot.
+
+    Brown County is removed from the reference here because WI0050700 is the
+    one fixture agency labelled with it alone, so exactly one agency's
+    resolution changes and the rest of the release stays as the other nodes
+    assert it.
+    """
+    writer = fbi_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            delete_geography(cursor, "state:55|county:009")
+        writer.commit()
+    finally:
+        writer.close()
+
+    try:
+        captured = _persist_fixture_release(fbi_warehouse)
+        _run_pipeline(fbi_warehouse, captured)
+
+        reader = fbi_warehouse()
+        try:
+            with reader.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT resolution_status, geo_id, confidence_class, reason_code
+                    FROM silver_fbi.agency_geography_relationship
+                    WHERE ori = 'WI0050700' AND relationship_type = 'county'
+                    """
+                )
+                assert cursor.fetchall() == [
+                    ("unresolved", None, "unresolved", "county_label_unmatched")
+                ]
+                cursor.execute(
+                    """
+                    SELECT DISTINCT subject_code, geography_status
+                    FROM gold_fbi.crime_observation
+                    WHERE subject_code IN ('WI0050700', 'WIWSP0000')
+                    ORDER BY subject_code
+                    """
+                )
+                assert cursor.fetchall() == [
+                    # The provider named a county for this one and it did not
+                    # resolve; the label is still there as evidence.
+                    ("WI0050700", "agency_county_unresolved"),
+                    # The provider named none. Two different facts, two
+                    # different statuses.
+                    ("WIWSP0000", "agency_only"),
+                ]
+        finally:
+            reader.close()
+    finally:
+        remover = fbi_warehouse()
+        try:
+            with remover.cursor() as cursor:
+                cursor.execute("DELETE FROM silver_fbi.fact_crime_observation")
+                cursor.execute("DELETE FROM silver_fbi.agency_geography_relationship")
+                seed_geography(
+                    cursor,
+                    geo_type="county",
+                    state_fips="55",
+                    county_fips="009",
+                    vintage=2023,
+                    name="Brown County",
+                )
             remover.commit()
         finally:
             remover.close()

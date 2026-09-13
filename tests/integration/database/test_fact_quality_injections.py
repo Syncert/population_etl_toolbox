@@ -51,6 +51,18 @@ def _outcome(cursor, executor):
     return outcome
 
 
+def _outcome_for(cursor, executor, relation: str):
+    """One rule's outcome for one relation, from an executor that reads several.
+
+    `DQ-FBI-004` reads two: the area filter's grain and, since ETL-050, the
+    confidence every resolved relationship claims. Selecting by relation keeps
+    each node asserting the reading it is about.
+    """
+    outcomes = {outcome.object_name: outcome for outcome in executor(cursor, {})}
+    assert relation in outcomes, sorted(outcomes)
+    return outcomes[relation]
+
+
 def _drop_check(cursor, table: str, constraint: str) -> None:
     """Remove one CHECK for the life of this rolled-back transaction."""
     cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}")
@@ -350,6 +362,85 @@ def test_an_absent_agency_month_carrying_a_number_fails(fbi_facts) -> None:
         database_connection.close()
 
 
+def test_a_relationship_claiming_more_than_its_evidence_fails(fbi_facts) -> None:
+    """Covers: ETL-050 — DQ-FBI-004 can see a confidence a method did not earn.
+
+    The rule declares that attribution flows through exact state codes,
+    reviewed crosswalks, or a county label match published as `derived`. Its
+    only reading was a fanout count, so for as long as the county path wrote
+    `reviewed_county_name_crosswalk` / `reviewed` from a name join, the rule
+    passed over the thing it declares. Both shapes are injected here: a
+    resolved relationship claiming a confidence its method does not earn, and
+    one whose method the reviewed mapping does not know at all -- which is how
+    the county path's own spelling went unnoticed.
+    """
+    connection_factory, _captured = fbi_facts
+    database_connection = connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            assert (
+                _outcome_for(
+                    cursor,
+                    fbi_aggregation_boundary,
+                    "silver_fbi.agency_geography_relationship",
+                ).result
+                == "pass"
+            )
+
+            # The CHECK refuses the claim, so the rule is the second line of
+            # defence: it reads what is stored rather than trusting the write
+            # path, and the constraint is restored by the rollback below.
+            _drop_check(
+                cursor,
+                "silver_fbi.agency_geography_relationship",
+                "agency_geography_relationship_confidence_class_check",
+            )
+            cursor.execute(
+                """
+                UPDATE silver_fbi.agency_geography_relationship
+                   SET confidence_class = 'reviewed'
+                 WHERE resolution_method = 'county_label_match'
+                   AND resolution_status = 'resolved'
+                """
+            )
+            # Read before the rule runs its own statements on this cursor.
+            falsely_claimed = cursor.rowcount
+            assert falsely_claimed > 0
+            claimed = _outcome_for(
+                cursor,
+                fbi_aggregation_boundary,
+                "silver_fbi.agency_geography_relationship",
+            )
+            assert claimed.result == "fail"
+            assert claimed.observed_count == falsely_claimed
+            assert any("county_label_match" in entry for entry in claimed.evidence)
+
+            _drop_check(
+                cursor,
+                "silver_fbi.agency_geography_relationship",
+                "agency_geography_relationship_resolution_method_check",
+            )
+            cursor.execute(
+                """
+                UPDATE silver_fbi.agency_geography_relationship
+                   SET resolution_method = 'reviewed_county_name_crosswalk'
+                 WHERE resolution_method = 'county_label_match'
+                """
+            )
+            unknown = _outcome_for(
+                cursor,
+                fbi_aggregation_boundary,
+                "silver_fbi.agency_geography_relationship",
+            )
+            assert unknown.result == "fail"
+            assert any(
+                "reviewed_county_name_crosswalk" in entry for entry in unknown.evidence
+            )
+    finally:
+        database_connection.rollback()
+        database_connection.close()
+
+
 def test_an_overlapping_agency_relationship_fans_out_and_fails(fbi_facts) -> None:
     """Covers: DQ-004 — a duplicated area filter row is reported, not served.
 
@@ -362,7 +453,14 @@ def test_an_overlapping_agency_relationship_fans_out_and_fails(fbi_facts) -> Non
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
-            assert _outcome(cursor, fbi_aggregation_boundary).result == "pass"
+            assert (
+                _outcome_for(
+                    cursor,
+                    fbi_aggregation_boundary,
+                    "gold_fbi.agency_observation_area_filter",
+                ).result
+                == "pass"
+            )
 
             cursor.execute(
                 """
@@ -386,7 +484,11 @@ def test_an_overlapping_agency_relationship_fans_out_and_fails(fbi_facts) -> Non
             )
             assert cursor.rowcount == 1
 
-            outcome = _outcome(cursor, fbi_aggregation_boundary)
+            outcome = _outcome_for(
+                cursor,
+                fbi_aggregation_boundary,
+                "gold_fbi.agency_observation_area_filter",
+            )
             assert outcome.result == "fail"
             assert outcome.observed_count > outcome.expected_count
             assert outcome.evidence[0].startswith("rows=")

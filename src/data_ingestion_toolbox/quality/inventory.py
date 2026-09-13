@@ -1356,7 +1356,10 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "FBI_UCR",
         grain="ori, relationship_type, source_label, geography_vintage, effective_start",
         lineage="silver_fbi.dim_agency, silver_ref.geography_resolution",
-        scope_method="name evidence plus reviewed crosswalks only",
+        scope_method=(
+            "exact state codes, reviewed crosswalks, and county label matches "
+            "published as derived"
+        ),
         cadence="per FBI ingestion run",
         empty_behavior="unresolved agencies carry no relationship rows",
     ),
@@ -2252,8 +2255,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "conformance",
         "The agency aggregation boundary holds: agency-grain observations "
-        "are never summed into county or city totals; attribution flows only "
-        "through exact state codes or reviewed crosswalks.",
+        "are never summed into county or city totals, and every resolved "
+        "relationship claims the confidence its evidence earns -- `exact` "
+        "from the registered state-code contract, `reviewed` from a reviewed "
+        "crosswalk, `derived` from a county label match, and nothing claims "
+        "more than that.",
         (
             "gold_fbi.agency_observation_area_filter",
             "gold_fbi.agency_geography",

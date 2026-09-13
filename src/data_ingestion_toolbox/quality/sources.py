@@ -17,6 +17,7 @@ here), so a registry change automatically changes what these rules expect.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from data_ingestion_toolbox.census_pep.silver_pep.replay import (
@@ -426,17 +427,72 @@ def fbi_reported_vs_absent(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     ]
 
 
+#: What each resolution method is allowed to claim about itself (ETL-050).
+#: `exact` is the registered state-code contract, `reviewed` a crosswalk
+#: carrying a reviewer, an evidence URL and a review note, and `derived` a
+#: name match that is exact and uniqueness-checked and backed by no review.
+#: The county path claimed `reviewed` from a name join for as long as this
+#: rule's only reading was a fanout count, and a rule that declares
+#: "attribution flows only through exact state codes, reviewed crosswalks, or
+#: a label match published as derived" has to be able to see that.
+_FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
+    {
+        "exact_state_code": "exact",
+        "reviewed_place_crosswalk": "reviewed",
+        "county_label_match": "derived",
+    }
+)
+
+
+def _fbi_confidence_claims(cursor: Any) -> RuleOutcome:
+    """Every resolved relationship claims the confidence its method earns.
+
+    The allowed pairs are bound as a VALUES list built from
+    ``_FBI_RESOLUTION_CONFIDENCE``, so adding a resolution method to the
+    mapping extends the rule and adding one without extending the mapping
+    fails it. A resolved relationship whose method the mapping does not know
+    is an offender too: an unreviewed spelling is exactly how the county path
+    came to claim `reviewed`.
+    """
+    pairs = sorted(_FBI_RESOLUTION_CONFIDENCE.items())
+    values = ", ".join("(%s, %s)" for _ in pairs)
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        SELECT relationship.ori, relationship.relationship_type,
+               relationship.resolution_method, relationship.confidence_class
+          FROM silver_fbi.agency_geography_relationship AS relationship
+          LEFT JOIN (VALUES {values}) AS claim (method, confidence)
+                 ON claim.method = relationship.resolution_method
+         WHERE relationship.resolution_status = 'resolved'
+           AND (claim.confidence IS NULL
+                OR claim.confidence <> relationship.confidence_class)
+        """,
+        order_by="1, 2",
+        params=tuple(value for pair in pairs for value in pair),
+    )
+    return RuleOutcome(
+        "silver_fbi.agency_geography_relationship",
+        "pass" if offenders_total == 0 else "fail",
+        observed_count=offenders_total,
+        expected_count=0,
+        evidence=offenders,
+    )
+
+
 def fbi_aggregation_boundary(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
     """DQ-FBI-004 — the area filter stays at agency grain, never a total."""
     del scope
+    claims = _fbi_confidence_claims(cursor)
     total = _count(
         cursor, "SELECT COUNT(*) FROM gold_fbi.agency_observation_area_filter"
     )
     if total == 0:
         return [
-            RuleOutcome("gold_fbi.agency_observation_area_filter", "not_applicable")
+            claims,
+            RuleOutcome("gold_fbi.agency_observation_area_filter", "not_applicable"),
         ]
     distinct = _count(
         cursor,
@@ -454,6 +510,7 @@ def fbi_aggregation_boundary(
         """,
     )
     return [
+        claims,
         RuleOutcome(
             "gold_fbi.agency_observation_area_filter",
             "pass" if distinct == total else "fail",
@@ -464,7 +521,7 @@ def fbi_aggregation_boundary(
                 if distinct == total
                 else [f"rows={total}", f"distinct_agency_grain={distinct}"]
             ),
-        )
+        ),
     ]
 
 
