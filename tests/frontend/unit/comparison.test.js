@@ -320,6 +320,8 @@ describe("the export carries its own interpretation envelope", () => {
       "ratio (API-derived)",
       "caveats",
     ]);
+    // The name a complete read keeps. An export handed no load at all is
+    // read as complete, which is what every caller before WEB-067 did.
     expect(exported.filename).toBe(
       "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
     );
@@ -335,6 +337,59 @@ describe("the export carries its own interpretation envelope", () => {
     // The response's caveats and the unverified rules both travel.
     expect(first.at(-1)).toContain("units could not be verified");
     expect(first.at(-1)).toContain("unverified units");
+  });
+
+  test("a file of a page-bounded read says so in its name and its caveats", () => {
+    // Covers: WEB-067 — the workspace pages `/comparison`, states the
+    // shortfall in its pill ("loaded 8,000 of 12,400 aligned geographies;
+    // the page bound cut the answer short"), and handed the export neither
+    // the count nor the flag. The file outlives the pill, which is the
+    // argument WEB-059 makes for the explorer's own file.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 8000,
+      total: 12400,
+      complete: false,
+    });
+    expect(exported.filename).toBe(
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE" +
+        "-partial-8000-of-12400.csv",
+    );
+    // A bounded read is the first thing a reader needs, so it leads the
+    // caveats rather than trailing what the API published.
+    const caveats = exported.rows[0].at(-1);
+    expect(caveats.startsWith("incomplete: 8000 of 12400 aligned geographies")).toBe(
+      true,
+    );
+    expect(caveats).toContain("the page bound cut the answer short");
+    // And nothing the API said is displaced by it.
+    expect(caveats).toContain("units could not be verified");
+  });
+
+  test("a prefix of an unreported total still says it is a prefix", () => {
+    // `fetchComparisonPages` counts a read with no published total as
+    // incomplete, because without one the client cannot know whether more
+    // exist -- and inventing a total would assert a count the API withheld.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 8000,
+      total: null,
+      complete: false,
+    });
+    expect(exported.filename).toContain("-partial-8000.csv");
+    expect(exported.filename).not.toContain("-of-");
+    expect(exported.rows[0].at(-1)).toContain("no total published");
+  });
+
+  test("a complete read keeps the name it always had", () => {
+    // The load is not a caveat when there is nothing short about it.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 2,
+      total: 2,
+      complete: true,
+    });
+    expect(exported.filename).toBe(
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
+    );
+    expect(exported.rows[0].at(-1)).not.toContain("incomplete");
   });
 
   test("an absent response exports nothing rather than an invented file", () => {

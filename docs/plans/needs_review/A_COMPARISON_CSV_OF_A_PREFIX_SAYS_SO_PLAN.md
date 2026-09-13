@@ -13,8 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect; WEB-059 for the other export.**
+- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
+  assessment agent; claimed and completed 2026-09-13. It was a present
+  defect; WEB-059 is the same fix for the other export. Register row
+  **WEB-067** (WEB-066, suggested at authoring time, had been taken).
 - **Last updated:** 2026-09-13
 - **Owner surface:** `apps/web/components/ComparisonWorkspace.tsx`,
   `apps/web/lib/comparison.ts`
@@ -51,10 +53,32 @@ enabled on a truncated answer.
 
 - Fetching more pages. The bound is the API's.
 
+## What changed
+
+- `ComparisonLoad` (`{loaded, total, complete}`) is the shape the workspace
+  already computes, and `comparisonExport` takes it as a third argument
+  defaulting to `null` — so an export handed no load is read as complete,
+  which is what every caller before this did.
+- The file is named the way WEB-059 names the explorer's, and the shortfall
+  *leads* the caveats column: a bounded read is the first thing a reader of
+  the file needs, ahead of what the API published about the pair.
+- `ComparisonWorkspace` keeps the load in state beside the payload rather
+  than only rendering it, and resets it on a failed load.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `npm --prefix apps/web run test:unit` — **351 passed** (348 before: +3).
+  The pinned filename assertion is kept and annotated as the complete-read
+  name.
+- `npm --prefix apps/web run test:browser` — the new node passes and
+  **fails without the wiring**: dropping `comparisonLoad` from the
+  `comparisonExport` call leaves it failing on the downloaded file's own
+  name. `ComparisonWorkspace.tsx` was restored byte-for-byte afterwards.
+  It is the first browser node in this repository to read a download's
+  suggested filename, which is the only place the file's name is observable.
+- `npx tsc --noEmit` (apps/web) and `npm --prefix apps/web run lint` — clean.
+- `python -m tests.support.catalog_evidence` renders WEB-067 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

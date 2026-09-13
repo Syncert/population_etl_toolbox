@@ -44,7 +44,11 @@ import {
   preflightRequestParams,
   selectionIsComplete,
 } from "../lib/comparison";
-import type { ComparisonSelection, ComparisonSide } from "../lib/comparison";
+import type {
+  ComparisonLoad,
+  ComparisonSelection,
+  ComparisonSide,
+} from "../lib/comparison";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -117,6 +121,13 @@ export default function ComparisonWorkspace() {
     message: "select two measures",
   });
   const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
+  // How much of the aligned answer is loaded. The pill states it; the export
+  // needs it too, because the file outlives the pill (WEB-067).
+  const [comparisonLoad, setComparisonLoad] = useState<ComparisonLoad>({
+    loaded: 0,
+    total: null,
+    complete: true,
+  });
   const [comparisonStatus, setComparisonStatus] = useState<RequestStatus>({
     state: "idle",
     message: "waiting for a compatibility verdict",
@@ -358,6 +369,13 @@ export default function ComparisonWorkspace() {
           return;
         }
         setComparison(pages.payload);
+        // Kept, not only rendered: the file the export writes outlives the
+        // pill that states the shortfall (WEB-067).
+        setComparisonLoad({
+          loaded: pages.items.length,
+          total: pages.total,
+          complete: pages.complete,
+        });
         setComparisonStatus({
           state: pages.complete ? "ok" : "bad",
           message: pages.complete
@@ -368,6 +386,7 @@ export default function ComparisonWorkspace() {
       } catch (error) {
         if (request.isCurrent()) {
           setComparison(null);
+          setComparisonLoad({ loaded: 0, total: null, complete: true });
           setComparisonStatus({ state: "bad", message: apiErrorMessage(error) });
         }
       }
@@ -466,7 +485,11 @@ export default function ComparisonWorkspace() {
   }
 
   function exportCsv() {
-    const { headings, rows: exportRows, filename } = comparisonExport(comparison, preflight);
+    const { headings, rows: exportRows, filename } = comparisonExport(
+      comparison,
+      preflight,
+      comparisonLoad,
+    );
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...exportRows]
       .map((row) => row.map(escape).join(","))

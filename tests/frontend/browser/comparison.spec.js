@@ -578,6 +578,32 @@ test("a comparison too large for the page bound says so, and is not reported hea
   expect(offsets[1]).toBe(1);
 });
 
+test("the file of a page-bounded comparison says so in its own name", async ({
+  page,
+}) => {
+  // Covers: WEB-067 — the pill said "the page bound cut the answer short";
+  // the file said nothing, and the file is what a reader keeps. WEB-059 made
+  // the explorer's export name its own shortfall for the same reason.
+  await installRoutes(page, { truncate: true });
+  await page.goto(
+    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+  );
+  await expect(page.getByTestId("comparison-status")).toContainText(
+    "the page bound cut the answer short",
+  );
+
+  // The export is never refused: a reader may want the rows they have.
+  const exportButton = page.getByTestId("comparison-export");
+  await expect(exportButton).toBeEnabled();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    exportButton.click(),
+  ]);
+  const name = download.suggestedFilename();
+  expect(name).toContain("-partial-");
+  expect(name).toContain("-of-9999.csv");
+});
+
 test("an aligned view says when a pair is not contemporaneous", async ({ page }) => {
   // Covers: WEB-049 — the route combines each side's own newest value rather
   // than aligning them to a shared period, and carries both periods so that

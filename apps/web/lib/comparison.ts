@@ -331,6 +331,20 @@ export interface ComparisonExport {
 }
 
 /**
+ * How much of the aligned answer a file holds.
+ *
+ * The workspace pages `/comparison` and computes this to say "loaded 8,000
+ * of 12,400 aligned geographies; the page bound cut the answer short" in its
+ * status pill. The file outlives the pill, so it travels with the export
+ * (WEB-067) -- the argument WEB-059 makes for the explorer's own file.
+ */
+export interface ComparisonLoad {
+  loaded: number;
+  total?: number | null;
+  complete: boolean;
+}
+
+/**
  * The export carries its own interpretation envelope: both measures and
  * their sources and units, each row's own published values and periods, the
  * derived fields marked as derived in the heading itself, and every caveat
@@ -340,12 +354,26 @@ export interface ComparisonExport {
 export function comparisonExport(
   response: ComparisonResponse | null | undefined,
   preflight: ComparisonPreflight | null | undefined,
+  load: ComparisonLoad | null = null,
 ): ComparisonExport {
   const items = Array.isArray(response?.items) ? response.items : [];
   const derivations = Array.isArray(response?.derivations) ? response.derivations : [];
   const codeA = response?.metric_code_a || "";
   const codeB = response?.metric_code_b || "";
+  // A bounded read is the first thing a reader of this file needs to know,
+  // so it leads the caveats rather than trailing the API's own.
+  const shortfall =
+    load && !load.complete
+      ? [
+          typeof load.total === "number" && Number.isFinite(load.total)
+            ? `incomplete: ${load.loaded} of ${load.total} aligned geographies; ` +
+              "the page bound cut the answer short"
+            : `incomplete: ${load.loaded} aligned geographies loaded and no ` +
+              "total published, so whether more exist is unknown",
+        ]
+      : [];
   const caveats = [
+    ...shortfall,
     ...(Array.isArray(response?.caveats) ? response.caveats : []),
     ...describePreflight(preflight).unverified.map(
       (rule) => `unverified ${rule.rule}: ${rule.reason}`,
@@ -393,10 +421,20 @@ export function comparisonExport(
   ]);
 
   const slug = (code: string) => code.replaceAll(":", "-") || "measure";
+  const stem = `comparison-${slug(codeA)}-vs-${slug(codeB)}`;
+  // Named the way the explorer's partial file is (WEB-059): a complete read
+  // keeps the name it always had.
+  const of =
+    load && typeof load.total === "number" && Number.isFinite(load.total)
+      ? `-of-${load.total}`
+      : "";
   return {
     headings,
     rows,
-    filename: `comparison-${slug(codeA)}-vs-${slug(codeB)}.csv`,
+    filename:
+      load && !load.complete
+        ? `${stem}-partial-${load.loaded}${of}.csv`
+        : `${stem}.csv`,
   };
 }
 
