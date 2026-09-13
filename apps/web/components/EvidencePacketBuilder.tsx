@@ -43,6 +43,7 @@ import {
 import type { SaveOutcome } from "../lib/savedAnalysis";
 import {
   documentToPacket,
+  documentFromSavedChart,
   envelopeFromSavedChart,
   grantNeedsTemplate,
   isAnalyticalBlock,
@@ -190,25 +191,11 @@ export default function EvidencePacketBuilder() {
       packet.blocks.find((block) => isAnalyticalBlock(block) && !block.envelope)?.id ||
       "";
     const envelope = envelopeFromSavedChart(chart);
-    const document = chart.metricCodeB
-      ? {
-          kind: "comparison" as const,
-          metric_code_a: String(chart.metricCode || ""),
-          metric_code_b: String(chart.metricCodeB || ""),
-          scope: envelope.scope,
-          release: envelope.release || null,
-          filters: { geo_level: String(chart.geoLevel || "") },
-        }
-      : {
-          kind: "observations" as const,
-          metric_code: String(chart.metricCode || ""),
-          scope: envelope.scope,
-          release: envelope.release || null,
-          filters: {
-            geo_level: String(chart.geoLevel || ""),
-            geo_id: String(chart.geoId || ""),
-          },
-        };
+    // Built by the same functions the explorer saves through, so the rules
+    // about what a document may contain -- which reduction it recorded, which
+    // pairings the API refuses -- live in one place rather than being
+    // re-learned here (WEB-048).
+    const document = documentFromSavedChart(chart);
 
     if (blockId) {
       updateBlock(blockId, {

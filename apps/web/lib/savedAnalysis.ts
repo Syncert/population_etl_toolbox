@@ -307,11 +307,19 @@ export function planLocalMigration(
     candidates.push({
       localId,
       name,
+      // What the view asked, where the chart recorded it. A chart saved
+      // before it recorded any of this carries none of these fields, and
+      // migrates exactly as it did: `latest`, no release, no reduction
+      // (WEB-048).
       document: explorerDocument({
         metricCode: String(chart.metricCode),
+        scope: chart.scope === "as_released" ? "as_released" : "latest",
+        release: chart.release ? String(chart.release) : undefined,
         geoLevel: chart.geoLevel ? String(chart.geoLevel) : undefined,
         stateFips: chart.stateFips ? String(chart.stateFips) : undefined,
         geoId: chart.geoId ? String(chart.geoId) : undefined,
+        newestPerGeography: chart.newestPerGeography === true,
+        newestReleasePerPeriod: chart.newestReleasePerPeriod === true,
       }),
     });
   }

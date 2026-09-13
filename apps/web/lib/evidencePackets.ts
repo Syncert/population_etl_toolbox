@@ -13,7 +13,7 @@
 // each block asked for.
 
 import type { AnalysisDocument } from "./api/types";
-import { reopenHref } from "./savedAnalysis";
+import { comparisonDocument, explorerDocument, reopenHref } from "./savedAnalysis";
 
 export const BLOCK_TYPES = [
   "text",
@@ -275,6 +275,55 @@ export function envelopeFromSavedChart(
     caveats,
   };
 }
+
+/**
+ * The query one attached view replays.
+ *
+ * Built by the same functions the explorer saves through, rather than as a
+ * literal here. A second construction is a second place every rule about
+ * what a document may contain has to be re-learned, and the literal this
+ * replaced had learned none of them: it recorded no reduction, so a map
+ * block replayed the source's whole latest publication while the envelope
+ * beside it recorded `newest_per_geography=true` in its `api_query` -- the
+ * block did not reproduce the request its own envelope names, in the one
+ * resource whose purpose is that a reader can re-derive the evidence without
+ * this application. It also copied a release across unconditionally, which
+ * under a latest scope is a document the API refuses (WEB-048).
+ *
+ * A two-measure view is a comparison, whose route serves no scope: its
+ * document records none, and the envelope's default `latest` is what the
+ * API's envelope/query cross-check compares against.
+ */
+export function documentFromSavedChart(
+  chart: Record<string, unknown> | null | undefined,
+): AnalysisDocument {
+  const envelope = envelopeFromSavedChart(chart);
+  const text = (value: unknown) => (typeof value === "string" && value ? value : "");
+  const stateFips = text(chart?.stateFips);
+
+  if (text(chart?.metricCodeB)) {
+    return comparisonDocument({
+      metricCodeA: text(chart?.metricCode),
+      metricCodeB: text(chart?.metricCodeB),
+      geoLevel: envelope.geoLevel || undefined,
+      stateFips: stateFips || undefined,
+    });
+  }
+
+  return explorerDocument({
+    metricCode: text(chart?.metricCode),
+    scope: envelope.scope,
+    release: envelope.release || undefined,
+    geoLevel: envelope.geoLevel || undefined,
+    stateFips: stateFips || undefined,
+    geoId: envelope.geoId || undefined,
+    // A view that did not record a reduction asked for none, which is what a
+    // chart saved before this change says about itself.
+    newestPerGeography: chart?.newestPerGeography === true,
+    newestReleasePerPeriod: chart?.newestReleasePerPeriod === true,
+  });
+}
+
 
 export interface PacketExport {
   headings: string[];

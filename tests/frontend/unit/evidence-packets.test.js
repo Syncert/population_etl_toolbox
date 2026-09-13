@@ -10,6 +10,7 @@ import {
   ANALYTICAL_BLOCK_TYPES,
   blockLiveStatus,
   blockReopenHref,
+  documentFromSavedChart,
   envelopeFromSavedChart,
   grantNeedsTemplate,
   isAnalyticalBlock,
@@ -186,5 +187,79 @@ describe("blocks reopen and export with their evidence intact", () => {
     expect(textRow[4]).toBe("The need is...");
     expect(textRow.at(-1)).toBe("");
     expect(packetExport(null).rows).toEqual([]);
+  });
+});
+
+describe("a block replays the request its envelope records", () => {
+  // Covers: WEB-048 — the packet builder used to hand-build an
+  // `AnalysisDocument` for each attached view, which is a second construction
+  // of a document `explorerDocument` already knows how to build, and a weaker
+  // one: it recorded no reduction, so a map block replayed the source's whole
+  // latest publication while the envelope beside it recorded
+  // `newest_per_geography=true` in `api_query`.
+
+  test("a map view's document carries the reduction its envelope shows", () => {
+    const document = documentFromSavedChart({
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      source: "CENSUS_PEP",
+      geoLevel: "COUNTY",
+      stateFips: "55",
+      newestPerGeography: true,
+      apiQuery: "/api/v1/observations?metric_code=…&newest_per_geography=true",
+    });
+    expect(document.kind).toBe("observations");
+    expect(document.newest_per_geography).toBe(true);
+    expect(document.scope).toBe("latest");
+    expect(document.filters).toEqual({ geo_level: "COUNTY", state_fips: "55" });
+  });
+
+  test("a release without an as-released scope is dropped, not stored", () => {
+    // `validate_document` refuses `release` under `scope=latest`, so the hand
+    // built literal produced a block the API would not accept.
+    const document = documentFromSavedChart({
+      metricCode: "M",
+      release: "2023",
+    });
+    expect(document.scope).toBe("latest");
+    expect(document.release).toBeNull();
+
+    const released = documentFromSavedChart({
+      metricCode: "M",
+      scope: "as_released",
+      release: "2023",
+    });
+    expect(released.scope).toBe("as_released");
+    expect(released.release).toBe("2023");
+  });
+
+  test("a two-measure view is a comparison document", () => {
+    const document = documentFromSavedChart({
+      metricCode: "A",
+      metricCodeB: "B",
+      geoLevel: "COUNTY",
+      stateFips: "55",
+    });
+    expect(document.kind).toBe("comparison");
+    expect(document.metric_code_a).toBe("A");
+    expect(document.metric_code_b).toBe("B");
+    // The comparison route serves no scope, so its document records none and
+    // the envelope's default `latest` cannot contradict it.
+    expect(document.scope).toBeUndefined();
+  });
+
+  test("a chart saved before this change attaches exactly as it does today", () => {
+    const document = documentFromSavedChart({
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      geoLevel: "COUNTY",
+      geoId: "state:55|county:025",
+    });
+    expect(document.newest_per_geography).toBe(false);
+    expect(document.newest_release_per_period).toBe(false);
+    expect(document.scope).toBe("latest");
+    expect(document.release).toBeNull();
+    expect(document.filters).toEqual({
+      geo_level: "COUNTY",
+      geo_id: "state:55|county:025",
+    });
   });
 });

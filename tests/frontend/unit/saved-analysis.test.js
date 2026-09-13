@@ -410,3 +410,56 @@ describe("a saved view records the reduction it was viewed with", () => {
     expect(document.newest_release_per_period).toBe(false);
   });
 });
+
+describe("a browser view migrates as the view it was", () => {
+  // Covers: WEB-048 — a chart that recorded what its request asked migrates
+  // with it. WEB-047 left this recording no reduction because the chart did
+  // not carry one; it does now.
+  test("a migrated map keeps the reduction it asked for", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c1",
+        title: "Population by county",
+        chartType: "choropleth",
+        metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+        geoLevel: "COUNTY",
+        stateFips: "55",
+        scope: "latest",
+        newestPerGeography: true,
+      },
+    ]);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].document.newest_per_geography).toBe(true);
+    expect(candidates[0].document.scope).toBe("latest");
+  });
+
+  test("a chart saved before this change migrates exactly as it did", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c2",
+        title: "ACS population",
+        chartType: "choropleth",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoLevel: "COUNTY",
+      },
+    ]);
+    expect(candidates[0].document.newest_per_geography).toBe(false);
+    expect(candidates[0].document.scope).toBe("latest");
+    expect(candidates[0].document.release).toBeNull();
+  });
+
+  test("a pinned release migrates under the scope that accepts it", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c3",
+        title: "ACS as released",
+        chartType: "choropleth",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        scope: "as_released",
+        release: "2023",
+      },
+    ]);
+    expect(candidates[0].document.scope).toBe("as_released");
+    expect(candidates[0].document.release).toBe("2023");
+  });
+});

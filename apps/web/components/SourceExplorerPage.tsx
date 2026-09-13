@@ -1609,6 +1609,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       stateFips: selectedStateFips || null,
       geoId: selectedGeoId || null,
       transformation: "raw",
+      // What the request asked, beside the request itself. `apiQuery` records
+      // the URL, but a consumer rebuilding the query from this chart -- the
+      // packet builder, the account migration -- had only the filters, so a
+      // map reopened as the source's whole latest publication (WEB-048).
+      scope: observationScope,
+      release: selectedRelease || null,
+      newestPerGeography: viewedNewestPerGeography,
       apiQuery,
       savedAt: new Date().toISOString(),
     };

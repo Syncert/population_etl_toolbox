@@ -83,6 +83,24 @@ const savedViews = [
     period: "2023",
     savedAt: "2026-09-03T00:00:00Z",
   },
+  {
+    // A map view: the explorer asked the resource for one row per geography,
+    // and the chart records that beside the URL it recorded it in.
+    id: "chart:2",
+    title: "Population by county",
+    chartType: "choropleth",
+    metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+    source: "CENSUS_PEP",
+    geoLevel: "COUNTY",
+    stateFips: "55",
+    scope: "latest",
+    release: null,
+    newestPerGeography: true,
+    apiQuery:
+      "/api/v1/observations?metric_code=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&newest_per_geography=true",
+    period: "2024",
+    savedAt: "2026-09-03T00:00:00Z",
+  },
 ];
 
 async function installPacketRoutes(page, { writes = [], conflictOnUpdate = false, refuseCreate = null } = {}) {
@@ -319,4 +337,36 @@ test("the reader shows an account packet with the API's verdict, and writes noth
   // Back to the browser draft: the reader states which source it is showing.
   await page.getByTestId("article-packet-select").selectOption("");
   await expect(page.getByTestId("composed-article")).toHaveAttribute("data-state", "empty");
+});
+
+test("a block replays the request its envelope records", async ({ page }) => {
+  // Covers: WEB-048 — the composer hand-built each block's query instead of
+  // using the one definition the explorer saves through, so it recorded no
+  // reduction. A map block's envelope said `newest_per_geography=true` in its
+  // `api_query` and its query asked for the source's whole latest
+  // publication -- for Census PEP every estimated year of the vintage -- in
+  // the one resource whose purpose is that a reader can re-derive the
+  // evidence without this application.
+  const writes = [];
+  await installPacketRoutes(page, { writes });
+  await signIn(page);
+  await page.goto("/builder");
+
+  await page.getByTestId("packet-target").selectOption("population-evidence");
+  await page.getByTestId("packet-attach-chart:2").click();
+  await page.getByTestId("packet-save").click();
+  await expect(page.getByTestId("packet-save-toast")).toContainText("your account");
+
+  expect(writes).toHaveLength(1);
+  const filled = writes[0].body.document.blocks.find(
+    (block) => block.block_id === "population-evidence",
+  );
+  // What the envelope records, the query asks for.
+  expect(filled.envelope.api_query).toContain("newest_per_geography=true");
+  expect(filled.document.newest_per_geography).toBe(true);
+  // And the pairing is one the API serves: each reduction under its own
+  // scope, with no release beside it.
+  expect(filled.document.scope).toBe("latest");
+  expect(filled.document.release).toBeNull();
+  expect(filled.document.newest_release_per_period).toBe(false);
 });
