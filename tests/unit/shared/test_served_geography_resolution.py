@@ -62,10 +62,22 @@ def _bootstrap_sql() -> list[Path]:
     ]
 
 
+def _without_comments(sql: str) -> str:
+    """The statement text, with ``--`` line comments removed.
+
+    A predicate named in a comment is documentation, not a filter, and a
+    semicolon inside one would end a statement this reader is still in the
+    middle of (DB-036).
+    """
+    return "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+
+
 def _tables_recording_resolution() -> set[str]:
     tables: set[str] = set()
     for path in _bootstrap_sql():
-        for match in _TABLE_PATTERN.finditer(path.read_text(encoding="utf-8")):
+        for match in _TABLE_PATTERN.finditer(
+            _without_comments(path.read_text(encoding="utf-8"))
+        ):
             if "geography_status" in match.group("body"):
                 tables.add(match.group("name").lower())
     return tables
@@ -75,7 +87,8 @@ def _effective_views() -> dict[str, tuple[str, Path]]:
     """Each view's last definition in bootstrap order, which is what runs."""
     definitions: dict[str, tuple[str, Path]] = {}
     for path in _bootstrap_sql():
-        for match in _VIEW_PATTERN.finditer(path.read_text(encoding="utf-8")):
+        source = _without_comments(path.read_text(encoding="utf-8"))
+        for match in _VIEW_PATTERN.finditer(source):
             definitions[match.group("name").lower()] = (match.group("body"), path)
     return definitions
 

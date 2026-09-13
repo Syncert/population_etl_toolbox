@@ -1700,3 +1700,200 @@ def test_a_rows_dimensions_are_what_capabilities_declares(
                 f"{sorted(set(item['dimensions']))} while the capability map "
                 f"declares {sorted(expected)}"
             )
+
+
+#: A LAUS measure code `gold_bls.dim_bls_measure` does not seed. The seven it
+#: seeds are 03-09; ingest accepts any two digits, and the serving refresh
+#: falls through to the series identity for anything it does not hold.
+UNSEEDED_LA_MEASURE = "10"
+BLS_PERIOD_START = "2097-01-01"
+BLS_PERIOD_END = "2097-12-31"
+
+
+@pytest.fixture
+def served_bls_series_identity(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Serve one BLS row whose measure code no measure identity holds.
+
+    The real refresh procedures compose the identity
+    (`COALESCE('BLS:' || measure.metric_key, 'BLS:' || series.series_id)`) and
+    the real harvest reads `gold_bls.metric_publisher` into the catalog.
+    Neither side is told what the other spelled, which is the point.
+    """
+    token = uuid4().hex[:6].upper()
+    series_id = f"LAUCN9599{token}{UNSEEDED_LA_MEASURE}"
+    geo_id = "state:95|county:997"
+    registered_before = _registration_state(postgres_connection_factory, "BLS")
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20970101, BLS_PERIOD_START)
+            geo_sk = seed_geography(
+                cursor,
+                geo_type="county",
+                state_fips="95",
+                county_fips="997",
+                vintage=2097,
+                name="Catalog agreement county",
+            )
+            # The shipped LA program: a survey row and measure identities the
+            # serving refresh matches on. Seeded here because the DDL creates
+            # the tables and the gold transform fills them.
+            cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_survey (
+                    program_code, survey_name, survey_universe, observation_basis,
+                    primary_concept, id_construction_type, reference_url
+                ) VALUES ('LA', 'Local Area Unemployment Statistics',
+                          'Residence-based civilian labor force', 'PEOPLE',
+                          'Local labor market conditions', 'Program+Area+Measure',
+                          'https://www.bls.gov/lau/')
+                ON CONFLICT (program_code) DO NOTHING
+                """
+            )
+            cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_measure (
+                    program_code, measure_code, metric_key,
+                    metric_display_name, unit_of_measure, value_type
+                ) VALUES ('LA', '03', 'LAU:UNEMP_RATE', 'Unemployment rate',
+                          'Percent', 'RATE')
+                ON CONFLICT (program_code, measure_code) DO NOTHING
+                """
+            )
+            cursor.execute(
+                "SELECT bls_survey_sk FROM gold_bls.dim_bls_survey "
+                "WHERE program_code = 'LA'"
+            )
+            survey_sk = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_series (
+                    bls_survey_sk, program_code, series_id, series_title,
+                    measure_name, measure_category, unit_of_measure, value_type,
+                    seasonal_adjustment_status, geographic_level
+                ) VALUES (%s, 'LA', %s, 'Catalog agreement measure',
+                          'Catalog agreement measure', 'OTHER', 'Percent',
+                          'RATE', 'U', 'county')
+                """,
+                (survey_sk, series_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO silver_bls.fact_labor_statistics (
+                    series_id, program, measure_code, geo_sk, geo_id, geo_level,
+                    state_fips, county_fips, time_sk, period_date,
+                    duration_start, duration_end, year, period, period_name,
+                    value, seasonal_adjustment, load_batch_id, ingested_at
+                ) VALUES (%s, 'la', %s, %s, %s, 'county', '95', '997',
+                          20970101, '2097-01-31', %s, '2097-01-31', 2097,
+                          'M01', 'January', 4.2, 'U', gen_random_uuid(), NOW())
+                """,
+                (series_id, UNSEEDED_LA_MEASURE, geo_sk, geo_id, BLS_PERIOD_START),
+            )
+            cursor.execute(
+                "CALL gold_bls.refresh_rpt_bls_observations(%s, %s)",
+                (BLS_PERIOD_START, BLS_PERIOD_END),
+            )
+            cursor.execute(
+                "CALL gold_bls.refresh_mv_bls_latest(%s, %s)",
+                (BLS_PERIOD_START, BLS_PERIOD_END),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    harvest_publisher(postgres_connection_factory, Publisher("gold_bls"))
+    try:
+        yield series_id
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for relation in (
+                    "gold_bls.mv_bls_latest",
+                    "gold_bls.rpt_bls_observations",
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {relation} WHERE series_id = %s", (series_id,)
+                    )
+                cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_code = 'BLS' AND source_object_key = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_bls.fact_labor_statistics WHERE series_id = %s",
+                    (series_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM gold_bls.dim_bls_series WHERE series_id = %s",
+                    (series_id,),
+                )
+                delete_geography(cursor, geo_id)
+                cursor.execute(
+                    "DELETE FROM silver_ref.dim_time WHERE time_sk = 20970101"
+                )
+                _remove_registration(cursor, registered_before, "BLS")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_every_served_bls_code_is_a_catalog_code(
+    postgres_connection_factory: Callable[[], connection],
+    served_bls_series_identity: str,
+) -> None:
+    """Covers: DB-036 — serving to catalog, the direction DB-025 did not check.
+
+    The serving refresh assigns identity per `(program_code, measure_code)`:
+    a row whose pair `dim_bls_measure` does not hold keeps its series
+    identity. The publisher's series arm excluded whole *programs*, so an LA
+    measure code nobody seeded served `BLS:LAU...` rows the publisher never
+    published: `/observations?metric_code=...` answered "unknown metric"
+    while `/bls/observations/timeseries` paged the rows.
+    """
+    expected = f"BLS:{served_bls_series_identity}"
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT served.metric_code
+                  FROM gold_bls.rpt_bls_observations AS served
+                  LEFT JOIN gold_glossary.dim_metric_catalog AS catalog
+                    ON catalog.metric_code = served.metric_code
+                 WHERE served.metric_code IS NOT NULL
+                   AND catalog.metric_code IS NULL
+                 ORDER BY 1
+                """
+            )
+            unpublished = [row[0] for row in cursor.fetchall()]
+            assert unpublished == [], (
+                f"these served BLS codes resolve in no catalog row: {unpublished}"
+            )
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM gold_bls.rpt_bls_observations "
+                "WHERE metric_code = %s",
+                (expected,),
+            )
+            assert cursor.fetchone()[0] > 0, (
+                "the fixture served no row under the series identity, so the "
+                "sweep above proves nothing"
+            )
+
+            # And the catalog row's grains are the grains the *served*
+            # relation carries, not silver's.
+            cursor.execute(
+                "SELECT valid_geo_grains FROM gold_glossary.dim_metric_catalog "
+                "WHERE metric_code = %s",
+                (expected,),
+            )
+            published_grains = cursor.fetchone()
+            assert published_grains is not None
+            assert published_grains[0] == ["COUNTY"], published_grains
+    finally:
+        reader.close()
