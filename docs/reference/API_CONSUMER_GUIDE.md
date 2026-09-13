@@ -253,7 +253,13 @@ prevent:
 | USDA NASS | `release_watermark` | The provider's validated release |
 | Census PEP | the release date | The Bureau's published release date for that vintage |
 | BLS | `as_of` — the date the warehouse read the series | **Not a BLS publication.** The BLS response carries no release identity at all, so the honest identity is the read: the date this row's value was ingested |
-| FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED does publish a revision identity (`realtime_start`), and the serving layer does not yet carry it; until it does, the identity is the read |
+| FRED | `as_of` — the date the warehouse read the series | **Not a FRED publication.** FRED publishes a revision window (`realtime_start`/`realtime_end`), and served rows now carry it — but the silver layer keeps one revision per observation, so the window on a row tells you which vintage that value belongs to, not the series' full revision history |
+
+`realtime_start` and `realtime_end` on a FRED row are FRED's own vintage
+window for that value: the period during which FRED considered it current. A
+row ingested before the warehouse began capturing the window carries no dates
+and reads as `0001-01-01` in the relation's keys — that is a fact about the
+row, not a default, and those rows are not backfilled.
 
 For BLS and FRED, then: a new release appears when a value is ingested that
 differs from the one held, and re-serving the warehouse does not create one.

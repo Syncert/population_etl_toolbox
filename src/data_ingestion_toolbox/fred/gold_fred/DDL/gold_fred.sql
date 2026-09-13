@@ -41,8 +41,16 @@ SELECT
     s.duration_end,
     fs.fred_series_sk,
     s.value,
-    NULL::DATE   AS realtime_start,
-    NULL::DATE   AS realtime_end,
+    -- FRED's own vintage window, carried rather than dropped (DB-040).
+    -- Migration 004 added these to the silver revision and the reporting
+    -- table's natural key, its latest-selection index and `uq_mv_fred_latest`
+    -- are all built around them -- and this view published NULL, so every
+    -- served row collapsed onto the `'0001-01-01'` sentinel those keys
+    -- COALESCE to. The window a row was published under was reachable only in
+    -- silver. A row ingested before migration 004 carries no window and stays
+    -- at the sentinel, which is a fact about that row rather than a default.
+    s.realtime_start,
+    s.realtime_end,
     s.frequency,
     s.unit_of_measure AS units,
     s.seasonal_adjustment,

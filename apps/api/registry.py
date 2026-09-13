@@ -464,10 +464,25 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", _DATE_YEAR_FROM),
                 ("year_to", _DATE_YEAR_TO),
             ),
-            latest_order=("geo_id", "observation_date", "variable_code"),
+            # `uq_mv_acs_latest` is (geo_id, dataset_code, vintage_year,
+            # variable_code, metric_code) and
+            # `uq_rpt_acs_observations_nk` adds observation_date.
+            # `metric_code` is pinned by every query here and is composed as
+            # `CENSUS_ACS:<dataset_code>:<variable_code>`, so pinning it pins
+            # those two -- but the order names them anyway, so that it is
+            # provably total against the index rather than total by way of a
+            # composition rule a reader has to know (DB-040).
+            latest_order=(
+                "geo_id",
+                "observation_date",
+                "dataset_code",
+                "vintage_year",
+                "variable_code",
+            ),
             released_order=(
                 "observation_date",
                 "geo_id",
+                "dataset_code",
                 "vintage_year",
                 "variable_code",
             ),
@@ -672,8 +687,32 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", _DATE_YEAR_FROM),
                 ("year_to", _DATE_YEAR_TO),
             ),
-            latest_order=("geo_id", "observation_date", "series_id"),
-            released_order=("observation_date", "geo_id", "as_of_date", "series_id"),
+            # `uq_mv_fred_latest` is (series_id, metric_code, realtime_start,
+            # realtime_end): the index admits one row per realtime window, and
+            # the window used to be NULL for every row, so the order could not
+            # tie. It can now (DB-040).
+            latest_order=(
+                "geo_id",
+                "observation_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
+            # `uq_rpt_fred_observations_nk` is (observation_date, series_id,
+            # metric_code, realtime_start, realtime_end). `metric_code` is
+            # pinned by every released query, and the realtime window is the
+            # rest of the key -- FRED's own vintage identity, which the fact
+            # view published as NULL until DB-040. Without it two revisions of
+            # one observation tie on this order, which is the paging defect
+            # API-083 and API-106 closed for the other sources.
+            released_order=(
+                "observation_date",
+                "geo_id",
+                "as_of_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
             analysis_ready=True,
             publishes_geo_attribution=True,
         ),
