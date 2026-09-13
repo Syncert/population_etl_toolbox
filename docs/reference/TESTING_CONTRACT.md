@@ -276,7 +276,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 
 | Catalog area | Implemented | Awaiting implementation |
 |---|---|---|
-| Environment, collection, and package | ENV-001–ENV-013 | None |
+| Environment, collection, and package | ENV-001–ENV-014 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
 | Warehouse data quality | DQ-001–DQ-007 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-052 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **340 of 340** | **0 of 340** |
+| **Total** | **341 of 341** | **0 of 341** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 340-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 341-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -348,6 +348,7 @@ Every test must have a `Covers:` label, and every referenced catalog ID must exi
 | ENV-011 | P0 | Collection | Checkout-local imports | `apps` and `data_ingestion_toolbox` import from the checkout pytest runs in, not from an editable install's recorded path, so a Git worktree grades its own source | A test imports application code from outside its own checkout |
 | ENV-012 | P0 | Configuration | Plan branches run CI on push | Every workflow that filters pushes by branch accepts every branch prefix the plan inventory declares, checked by reading the plans rather than by restating the list, and only workflows that actually filter pushes are checked -- a schedule- or dispatch-only workflow is not made to grow a push trigger; the `pull_request` gates, path filters, job names, and required set are untouched | A plan on a `fix/**`, `test/**`, `docs/**` or `claude/**` branch running no CI on push, so every catalog row's declared CI owner does not run on the branch where that row was written and the first signal arrives only once a pull request exists |
 | ENV-013 | P1 | Configuration | Integration tiers are documented by their requirements | `RUNNING_TESTS.md` documents the database and Redis tiers by what they actually need -- a PostgreSQL 16 with PostGIS, a database whose name ends in `_test`, the five `TEST_POSTGRES_*` settings, and a loopback Redis on database 15 -- beside the Compose path, with each tier's own CI marker expression; the settings it names are asserted against the ones `tests/support/postgres.py` derives, and the marker expression against the workflow that runs it | A reader without a container runtime concluding the tier cannot be run, or a renamed setting leaving a page of instructions that silently skips every test it claims to run |
+| ENV-014 | P0 | Configuration | The product end-to-end tier grades the change that breaks it | The tier is run by a workflow a push and a pull request both trigger, and that per-change run is graded against the executable product inventory (`E2E_REQUIRE_ALL_PRODUCTS`), so a skipped or deselected product fails rather than shortening the run; derived from the workflows rather than naming one, so renaming or replacing the file keeps the rule | `e2e-performance` declared only `schedule` and `workflow_dispatch`, and a scheduled run grades the default branch, so no branch and no pull request ever received end-to-end feedback: a change could break `tests/e2e` and merge with fourteen green checks, which is how the geography-grain vocabulary left that tier red from the day it merged until a hand-run found it |
 
 ### Plan Dispatcher Tests
 

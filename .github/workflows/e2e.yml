@@ -1,0 +1,112 @@
+name: e2e
+
+# The product end-to-end nodes, on every push and pull request.
+#
+# `e2e-performance` runs weekly and on demand, and a scheduled run grades the
+# default branch, so no branch and no pull request had ever received
+# end-to-end feedback: a change could break `tests/e2e` and merge with
+# fourteen green checks, which is how the geography-grain vocabulary left
+# that tier red from the day it merged (ENV-014). The nodes themselves are
+# cheap -- nine of them, under two minutes against a fresh warehouse. What is
+# expensive in that workflow is the resilience, performance, and Locust
+# evidence around them, which stays weekly.
+on:
+  pull_request:
+  push:
+    # Every branch prefix the plan inventory declares, so a plan's work
+    # gets CI feedback on push and not only once a pull request exists
+    # (ENV-012). Guarded by tests/unit/shared/test_ci_evidence_manifest.py.
+    branches:
+      - main
+      - "claude/**"
+      - "copilot/**"
+      - "docs/**"
+      - "feat/**"
+      - "fix/**"
+      - "test/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Data-product end-to-end (PostGIS 16 + Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+        env:
+          POSTGRES_USER: population_test
+          POSTGRES_PASSWORD: population_test
+          POSTGRES_DB: population_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U population_test -d population_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RUN_INTEGRATION_TESTS: "1"
+      RUN_E2E_TESTS: "1"
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-e2e-py311-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install API, ETL, and test dependencies
+        run: |
+          python -m pip install -e ".[api,dev]"
+          python -m pip check
+
+      # Graded against the executable coverage inventory, exactly as the
+      # weekly run grades it: E2E_REQUIRE_ALL_PRODUCTS fails the session
+      # unless every registered data product ran and passed, so a node that
+      # is skipped or deselected is a failure rather than a quietly shorter
+      # run (E2E-008, E2E-012).
+      - name: Run every registered data-product end-to-end node
+        env:
+          E2E_REQUIRE_ALL_PRODUCTS: "1"
+        run: >-
+          pytest tests/e2e -m e2e
+          --tb=short -q --junitxml=junit-e2e-products.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: junit-e2e
+          path: junit-e2e-products.xml

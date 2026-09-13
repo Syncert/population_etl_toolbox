@@ -11,7 +11,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
-    "ENV": 13,
+    "ENV": 14,
     "ARC": 7,
     "PLAN": 7,
     "DQ": 7,
@@ -54,7 +54,7 @@ EXECUTION_PROFILES = {
     "EXT": ("make test-external", "external-contract"),
     "E2E": (
         "make test-e2e / test-martin-integration",
-        "e2e-performance, martin-integration",
+        "e2e, e2e-performance, martin-integration",
     ),
     "PERF": ("make test-performance", "coverage, e2e-performance"),
     "RES": ("make test-resilience", "e2e-performance"),
