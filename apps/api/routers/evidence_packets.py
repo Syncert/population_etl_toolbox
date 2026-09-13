@@ -108,7 +108,10 @@ def get_evidence_packet(
     _private(response)
     try:
         return get_packet(
-            storage, warehouse, owner_user_id=account.user_account_id, packet_id=packet_id
+            storage,
+            warehouse,
+            owner_user_id=account.user_account_id,
+            packet_id=packet_id,
         )
     except PacketNotFound as exc:
         raise _not_found() from exc
@@ -163,7 +166,9 @@ def delete_evidence_packet(
 ) -> Response:
     """Delete the caller's packet outright; effective immediately."""
     try:
-        delete_packet(storage, owner_user_id=account.user_account_id, packet_id=packet_id)
+        delete_packet(
+            storage, owner_user_id=account.user_account_id, packet_id=packet_id
+        )
     except PacketNotFound as exc:
         raise _not_found() from exc
     except SQLAlchemyError as exc:
