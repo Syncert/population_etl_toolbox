@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import PUBLIC_CACHE_TARGETS, app
+from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.schemas import OBSERVATION_FILTER_BOUNDS, AnalysisDocument
 from apps.api.services import saved_analysis_service
 
@@ -877,6 +878,96 @@ def test_a_filter_value_inside_the_bound_is_stored_as_it_is() -> None:
         _WarehouseSession({_CDC_METRIC["metric_code"]: _CDC_METRIC}), document
     )
     assert document.filters == filters
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected"),
+    [
+        # Coerced with `int()` and stored as valid, while the route answers
+        # `?year_from=2020.7` with a 422: the bound was measured against
+        # 2020, a year the caller never wrote.
+        ({"year_from": 2020.7}, "must be a whole number"),
+        ({"year_to": "2020.7"}, "must be a whole number"),
+        # `int(True) == 1`, so the reason used to be "must be at least 1700".
+        ({"year_from": True}, "must be a whole number"),
+        ({"year_from": "not a year"}, "must be a whole number"),
+        ({"year_from": ""}, "must be a whole number"),
+        ({"year_from": None}, "must be a value"),
+        # A null was refused for `state_fips` (bound 2) and stored for
+        # `geo_id` (bound 200), decided by the width of the bound.
+        ({"geo_id": None}, "must be a value"),
+        ({"state_fips": None}, "must be a value"),
+        # `filters` maps a name to *the* value and these parameters take one.
+        ({"geo_id": ["01", "02"]}, "must be a single value"),
+        ({"geo_id": {"nested": "object"}}, "must be a single value"),
+        ({"county_fips": []}, "must be a single value"),
+    ],
+)
+def test_a_filter_value_must_be_one_value_the_route_could_receive(
+    filters: dict, expected: str
+) -> None:
+    """Covers: API-105 — the shape is stated before the length is measured.
+
+    API-091 checked how long a value is and not what it is, and
+    `AnalysisDocument.filters` is `dict[str, Any]`, so an array, an object, a
+    null or a fractional number stored clean and reported valid.
+    """
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_FRED_METRIC["metric_code"],
+        filters=dict(filters),
+    )
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession({_FRED_METRIC["metric_code"]: _FRED_METRIC}), document
+        )
+    assert expected in refused.value.detail
+    assert next(iter(filters)) in refused.value.detail
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        # Read off the live route against a real warehouse: it passes
+        # validation for each of these, so refusing them at write would be
+        # stricter than the API and a document would be refused for a
+        # request that works.
+        {"state_fips": 6},
+        {"year_from": "2020.0"},
+        {"year_from": 2020.0},
+        {"year_from": "2020"},
+        {"year_to": 2020},
+        {"geo_id": ""},
+    ],
+)
+def test_a_value_the_route_accepts_is_still_stored(filters: dict) -> None:
+    """Covers: API-105 — the shape check refuses nothing the route allows."""
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_FRED_METRIC["metric_code"],
+        filters=dict(filters),
+    )
+    saved_analysis_service.validate_document(
+        _WarehouseSession({_FRED_METRIC["metric_code"]: _FRED_METRIC}), document
+    )
+    assert document.filters == filters
+
+
+def test_every_filter_a_source_declares_has_a_bound() -> None:
+    """Covers: API-105 — a filter with no bound is an unvalidated value.
+
+    `_require_declared_filters` skips a name it has no bound for, so a filter
+    added to a dispatch without an entry here reopens API-091 for that filter
+    and nothing says so. The two sets agree today by coincidence; this is the
+    coincidence asserted.
+    """
+    declared = {"geo_level", "state_fips"}
+    for dispatch in OBSERVATION_DISPATCH.values():
+        declared |= set(dispatch.supported_filters())
+    assert declared == set(OBSERVATION_FILTER_BOUNDS), (
+        "every filter a source declares must have a bound, and every bound "
+        "must belong to a filter some source declares"
+    )
 
 
 def test_the_declared_bounds_are_the_ones_the_route_serves() -> None:

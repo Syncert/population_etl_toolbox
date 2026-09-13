@@ -378,6 +378,14 @@ Authenticated, user-owned storage — see ADR-0003.
 - Documents are validated on write against the same capability and
   compatibility contracts above, so a saved configuration cannot encode a
   request the API would refuse.
+- `filters` maps a filter name to **one value**, the value the route would
+  receive as a query parameter. An array, an object, or a null is refused:
+  these parameters are single-valued, so a document naming two cannot replay
+  as what it says. A filter declared with an inclusive range — `year_from`,
+  `year_to` — takes a whole number or its text, and refuses a fractional one
+  or a boolean, exactly as the live route does. Every other filter takes any
+  single scalar within its declared length, so `state_fips: 6` and
+  `state_fips: "06"` are both accepted, as `?state_fips=6` is.
 - An `observations` document records the reduction it was viewed with:
   `newest_per_geography` or `newest_release_per_period`, under the scope each
   belongs to. A view saved without one replays as the whole publication,
