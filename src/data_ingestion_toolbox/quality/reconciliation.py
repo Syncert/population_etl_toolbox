@@ -605,11 +605,20 @@ def cdc_release_reconciliation(
 def build_cdc_gate_executors(
     asset_id: str, release_watermark: str
 ) -> dict[str, RuleExecutor]:
-    """The executor set for gating one CDC release's publication."""
-    del asset_id, release_watermark  # bound through the scope at execution
+    """The executor set for gating one CDC release's publication.
+
+    The scoped set is read from ``assessment.SCOPED_EXECUTORS`` rather than
+    spelled here, so the gate, `select_executors` and `certify_release` cannot
+    disagree about which rules a named release can be measured by (DQ-012).
+    The import is local because the assessment module imports this one.
+    """
+    from .assessment import scoped_executors_for
+
     return {
         **SHARED_RECONCILIATION_EXECUTORS,
-        "DQ-CDC-003": cdc_release_reconciliation,
+        **scoped_executors_for(
+            {"asset_id": asset_id, "release_watermark": release_watermark}
+        ),
     }
 
 

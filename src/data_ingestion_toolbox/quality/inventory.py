@@ -116,6 +116,22 @@ class WarehouseObject:
             )
 
 
+#: What actually happens when a rule is due.
+#:
+#: `automated` -- an executor runs it and writes evidence.
+#: `manual` -- no executor; a named operator procedure covers it, and the note
+#: names that procedure.
+#: `unimplemented` -- declared, and nothing runs it or stands in for it. The
+#: note says what implementing it would have to read.
+#:
+#: The third word exists because the first two would have forced a false
+#: claim. DQ-001 assigned 64 rule identities and severities ahead of their
+#: implementations, 20 executors exist, and calling the other 44 "manual"
+#: would assert a review nobody performs (DQ-012). The inventory's job is to
+#: say what is true, including when the answer is "nothing".
+AUTOMATION_STATES: tuple[str, ...] = ("automated", "manual", "unimplemented")
+
+
 @dataclass(frozen=True, slots=True)
 class QualityRule:
     """One declared rule: a stable id, one severity, one dimension."""
@@ -125,11 +141,29 @@ class QualityRule:
     dimension: str
     summary: str
     objects: tuple[str, ...]
+    #: Defaults to `automated`, and the guard in `tests/unit/quality` fails any
+    #: rule that claims it without a registered executor -- so the default
+    #: cannot quietly overstate coverage for a rule added later.
+    automation: str = "automated"
+    #: Required unless automated: what covers the rule instead, or what
+    #: implementing it would take.
+    automation_note: str = ""
 
     def __post_init__(self) -> None:
         if not RULE_ID_PATTERN.match(self.rule_id):
             raise QualityInventoryError(
                 f"Rule id '{self.rule_id}' must match DQ-<GROUP>-<NNN>."
+            )
+        if self.automation not in AUTOMATION_STATES:
+            raise QualityInventoryError(
+                f"{self.rule_id}: unknown automation state "
+                f"'{self.automation}'; expected one of "
+                f"{', '.join(AUTOMATION_STATES)}."
+            )
+        if self.automation != "automated" and not self.automation_note:
+            raise QualityInventoryError(
+                f"{self.rule_id}: a rule that is not automated must say what "
+                f"covers it instead."
             )
         if self.severity not in SEVERITIES:
             raise QualityInventoryError(
@@ -1650,6 +1684,8 @@ def _rule(
     dimension: str,
     summary: str,
     objects: Iterable[str],
+    automation: str = "automated",
+    automation_note: str = "",
 ) -> QualityRule:
     return QualityRule(
         rule_id=rule_id,
@@ -1657,6 +1693,8 @@ def _rule(
         dimension=dimension,
         summary=summary,
         objects=tuple(objects),
+        automation=automation,
+        automation_note=automation_note,
     )
 
 
@@ -1722,6 +1760,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The manifest's schema components are all recorded as applied before "
         "any publication is certified.",
         ("control.schema_migration_state",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor compares the applied schema components "
+            "against the bootstrap manifest, so a warehouse missing one can "
+            "still be certified."
+        ),
     ),
     _rule(
         "DQ-SHARED-005",
@@ -1734,6 +1778,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "control.serving_refresh_state",
             "control.serving_refresh_chunk_state",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor checks publisher-ready event uniqueness "
+            "or that serving refresh state never precedes its event; the "
+            "relations carry no constraint that would refuse either."
+        ),
     ),
     _rule(
         "DQ-SHARED-006",
@@ -1743,6 +1793,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "warning's review status, every terminal run records its finish, and "
         "each run's results are unique per rule, object, and partition.",
         ("control.data_quality_run", "control.data_quality_result"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the evidence relations' append-only discipline is a "
+            "convention of the writer, and no executor reads them back to "
+            "confirm results were not mutated or runs left unfinished."
+        ),
     ),
     # -- shared geography reference ----------------------------------------
     _rule(
@@ -1751,6 +1807,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "uniqueness",
         "Geography reference tables are unique at their declared grains.",
         _names(_REFERENCE_OBJECTS),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; the declared grains are carried by "
+            "UNIQUE constraints in the reference DDL, so a violation is refused "
+            "at write time rather than reported. An executor would still be "
+            "needed to prove the constraints are the declared grains."
+        ),
     ),
     _rule(
         "DQ-REF-002",
@@ -1764,6 +1827,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_ref.dim_geo_geometry_version",
             "silver_ref.bridge_geo_relationship_version",
             "silver_ref.dim_geo_type",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: foreign keys refuse an unresolvable version or "
+            "relationship at write time, and nothing reports on a geography "
+            "type the reference no longer knows."
         ),
     ),
     _rule(
@@ -1781,6 +1850,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Relationship overlap weights and hierarchy shapes stay within "
         "reviewed bounds after a geography reload.",
         ("silver_ref.bridge_geo_relationship_version",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: relationship overlap weights and hierarchy shapes "
+            "are recorded and never measured against a reviewed bound, so a "
+            "geography reload that changes them is invisible."
+        ),
     ),
     _rule(
         "DQ-REF-005",
@@ -1789,6 +1864,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The current-geography projections expose exactly one current version "
         "per entity.",
         ("silver_ref.dim_geo", "silver_ref.dim_geo_current"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the current-geography projections select one "
+            "version by construction (DISTINCT ON), and no executor confirms "
+            "the projections agree with that intent after a reload."
+        ),
     ),
     _rule(
         "DQ-REF-006",
@@ -1796,6 +1877,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "completeness",
         "The time dimension covers the full configured observation range.",
         ("silver_ref.dim_time",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor compares `silver_ref.dim_time`'s "
+            "coverage against the configured observation range, so a gap shows "
+            "only as observations that resolve no time key."
+        ),
     ),
     # -- glossary and cross-source serving ---------------------------------
     _rule(
@@ -1822,6 +1909,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Metric catalog identity is unique per metric_code and per source "
         "object key; no harvest may fork a metric identity.",
         ("gold_glossary.dim_metric_catalog", "gold_glossary.dim_source_system"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: `dim_metric_catalog`'s unique constraints refuse a "
+            "forked identity at write time; no executor reads the catalog back "
+            "to report one that pre-dates them."
+        ),
     ),
     _rule(
         "DQ-GLOSSARY-003",
@@ -1830,6 +1923,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Legacy gold.* compatibility views stay column- and row-consistent "
         "with the glossary contract objects they project.",
         _names(_LEGACY_SERVING_OBJECTS),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: nothing compares the legacy `gold.*` compatibility "
+            "views against the glossary contracts they project, so a column or "
+            "row divergence is found only by a consumer."
+        ),
     ),
     _rule(
         "DQ-GLOSSARY-004",
@@ -1837,6 +1936,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "freshness",
         "Publisher harvest watermarks advance with each publication event.",
         ("gold_glossary.publisher_harvest_state", "control.publisher_ready_event"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: DQ-GLOSSARY-001 measures publisher liveness, and no "
+            "executor checks that each harvest watermark advanced with its "
+            "publication event."
+        ),
     ),
     # -- per-source uniqueness at declared grain ---------------------------
     _rule(
@@ -1849,6 +1954,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.fact_acs_observation",
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; the declared grains are carried by "
+            "unique indexes on the ACS silver and serving relations, so a "
+            "duplicate is refused at write time and never reported."
         ),
     ),
     _rule(
@@ -1871,6 +1982,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Census sentinel and null interpretation is preserved with exact "
         "source text; estimate/MOE pairing is checked without fabrication.",
         ("silver_census.fact_demographics", "gold_census.fact_acs_observation"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the parser preserves Census sentinel text and the "
+            "estimate/MOE pairing, and no executor reads the stored rows back "
+            "to confirm neither was fabricated."
+        ),
     ),
     _rule(
         "DQ-ACS-004",
@@ -1882,6 +1999,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.dim_acs_variable",
             "silver_ref.geography_resolution",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the serving refresh joins variable metadata and "
+            "geography, so an unresolved row is dropped rather than reported; "
+            "nothing counts what was dropped."
+        ),
     ),
     _rule(
         "DQ-ACS-005",
@@ -1891,6 +2014,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "dataset, and geography level; overlapping vintages are never "
         "compared as independent samples.",
         ("gold_census.fact_acs_observation",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no plausibility executor exists for ACS, so a year- "
+            "over-year change stratified by variable, dataset and geography "
+            "level is never evaluated and overlapping vintages are never "
+            "checked for being compared as independent."
+        ),
     ),
     _rule(
         "DQ-ACS-006",
@@ -1899,6 +2029,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "ACS vintage freshness is evaluated against annual release "
         "availability per dataset.",
         ("gold_census.mv_acs_latest",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: ACS vintage freshness is not evaluated against the "
+            "annual release calendar per dataset; the catalog's "
+            "`freshness_state` is set by the harvest, not by this rule."
+        ),
     ),
     _rule(
         "DQ-ACS-007",
@@ -1913,6 +2049,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.metric_publisher",
             "gold_census.dim_acs_table",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: DB-025 and DB-036 cross the catalog and the served "
+            "relation for metric identity, and no executor confirms the ACS "
+            "contract views preserve the published fact's values."
+        ),
     ),
     _rule(
         "DQ-BLS-001",
@@ -1924,6 +2066,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.fact_bls_observation",
             "gold_bls.rpt_bls_observations",
             "gold_bls.mv_bls_latest",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; (series_id, period) uniqueness is "
+            "carried by unique indexes on the BLS silver and serving relations, "
+            "so a duplicate is refused at write time and never reported."
         ),
     ),
     _rule(
@@ -1950,6 +2098,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "raw_bls.bls_series",
             "silver_bls.fact_labor_statistics",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the series-id grammar, program ownership, period "
+            "codes and annual-average handling are enforced by the parser and "
+            "the registry, and no executor reads the stored rows back against "
+            "synchronized metadata."
+        ),
     ),
     _rule(
         "DQ-BLS-004",
@@ -1964,6 +2119,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.dim_bls_survey",
             "gold_bls.dim_bls_measure",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the serving refresh joins series, survey and "
+            "geography, so an unresolved row is dropped rather than reported, "
+            "and measure identity resolution is proved by DB-036's test rather "
+            "than by a rule."
+        ),
     ),
     _rule(
         "DQ-BLS-005",
@@ -1972,6 +2134,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Expected frequency and published observation range are evaluated "
         "per series, never as one universal monthly requirement.",
         ("silver_bls.fact_labor_statistics",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: expected frequency and published range per series "
+            "are not evaluated, so a series that stopped publishing is "
+            "indistinguishable from one between releases."
+        ),
     ),
     _rule(
         "DQ-BLS-006",
@@ -1980,6 +2148,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Revision and benchmark changes are tracked without overwriting "
         "prior captured revisions.",
         ("silver_bls.observation_revision", "gold_bls.fact_bls_observation"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: revisions are retained by the capture-first design "
+            "(`silver_bls.observation_revision`), and no executor tracks a "
+            "benchmark change or reports when one lands."
+        ),
     ),
     _rule(
         "DQ-BLS-007",
@@ -1995,6 +2169,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.measure_export",
             "gold_bls.metric_publisher",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: DB-036 crosses served codes with the catalog, and "
+            "no executor confirms the BLS contract views preserve the published "
+            "fact's values or that the measure export publishes the grains the "
+            "fact rows carry."
+        ),
     ),
     _rule(
         "DQ-FRED-001",
@@ -2006,6 +2187,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fred.fact_fred_observation",
             "gold_fred.rpt_fred_observations",
             "gold_fred.mv_fred_latest",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; (series_id, observation_date) "
+            "uniqueness is carried by a UNIQUE constraint on "
+            "`silver_fred.fact_economic_indicators` and a unique index on the "
+            "serving relation."
         ),
     ),
     _rule(
@@ -2031,6 +2219,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fred.observation_revision",
             "silver_fred.fact_economic_indicators",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the missing marker stays distinct from zero through "
+            "`is_missing`, and no executor confirms every configured series has "
+            "metadata and exactly one domain owner."
+        ),
     ),
     _rule(
         "DQ-FRED-004",
@@ -2039,6 +2233,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Observation dates validate against each series' frequency and "
         "source observation range.",
         ("silver_fred.fact_economic_indicators", "gold_fred.dim_fred_series"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: observation dates are not validated against each "
+            "series' frequency and source range, so a date outside the "
+            "provider's range is served as published."
+        ),
     ),
     _rule(
         "DQ-FRED-005",
@@ -2047,6 +2247,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Freshness windows apply per frequency; daily through annual series "
         "never share one threshold.",
         ("gold_fred.mv_fred_latest",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: per-frequency freshness windows are declared and "
+            "not evaluated; DQ-FRED-002 measures the ledger, not the window."
+        ),
     ),
     _rule(
         "DQ-FRED-006",
@@ -2067,6 +2272,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fred.v_metric_timeseries_by_geo",
             "gold_fred.metric_publisher",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor confirms the FRED contract views "
+            "preserve the published fact's identity, values and metric codes."
+        ),
     ),
     # -- Census PEP --------------------------------------------------------
     _rule(
@@ -2081,6 +2291,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_pep.population_estimate_latest",
             "gold_pep.rpt_pep_observations",
             "gold_pep.mv_pep_latest",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; the capture grain and the natural "
+            "key are carried by unique constraints on the PEP relations."
         ),
     ),
     _rule(
@@ -2130,6 +2345,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_pep.population_estimate_latest",
             "gold_pep.population_change",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: prior vintages are retained by the revision model "
+            "and current-revision selection is by capture recency in the "
+            "projection; no executor reads the relations back to confirm "
+            "either."
+        ),
     ),
     _rule(
         "DQ-PEP-006",
@@ -2138,6 +2360,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Vintage-over-vintage revisions to the same (metric, geography, year) "
         "warn and never automatically invalidate.",
         ("gold_pep.population_estimate_revision",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no plausibility executor exists for PEP, so a "
+            "vintage-over-vintage revision to the same (metric, geography, "
+            "year) is never warned about."
+        ),
     ),
     _rule(
         "DQ-PEP-007",
@@ -2145,6 +2373,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "conformance",
         "PEP publisher exports preserve metric identity and the annual time grain.",
         ("gold_pep.measure_export", "gold_pep.metric_publisher"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor confirms the PEP publisher exports "
+            "preserve metric identity and the annual time grain."
+        ),
     ),
     # -- CDC ---------------------------------------------------------------
     _rule(
@@ -2156,6 +2389,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_cdc.fact_health_observation",
             "gold_cdc.health_observation",
             "gold_cdc.latest_release_observation",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; (asset, release watermark, source "
+            "record) uniqueness is carried by a unique constraint on the CDC "
+            "fact relation."
         ),
     ),
     _rule(
@@ -2199,6 +2438,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_cdc.dim_measure",
             "silver_cdc.dim_stratum",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the serving views exclude unresolved geography "
+            "(DB-035) and nothing confirms every observation resolves its "
+            "release, measure and stratum, or that confidence intervals stay "
+            "ordered."
+        ),
     ),
     _rule(
         "DQ-CDC-006",
@@ -2207,6 +2453,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Freshness is evaluated per asset cadence: CDI irregular, PLACES "
         "annual, both checked weekly.",
         ("silver_cdc.dim_dataset_release",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: per-asset freshness cadence is declared and not "
+            "evaluated; DQ-CDC-002 measures the slice ledger, not the cadence."
+        ),
     ),
     _rule(
         "DQ-CDC-007",
@@ -2214,6 +2465,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "conformance",
         "CDC publisher exports preserve measure identity and the annual time grain.",
         ("gold_cdc.measure_export", "gold_cdc.metric_publisher"),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: no executor confirms the CDC publisher exports "
+            "preserve measure identity and the annual time grain; migration 014 "
+            "fixed the shape and nothing measures it."
+        ),
     ),
     # -- FBI UCR -----------------------------------------------------------
     _rule(
@@ -2227,6 +2484,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fbi.fact_reporting_participation",
             "gold_fbi.crime_observation",
             "gold_fbi.latest_release_observation",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; both grains are carried by unique "
+            "constraints on the FBI fact and participation relations."
         ),
     ),
     _rule(
@@ -2282,6 +2544,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fbi.participation_revision",
             "silver_fbi.slice_quarantine",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the release replay reconciles slice counts and "
+            "refuses an incomplete set, and no executor reads a published "
+            "release back to confirm the reconciliation held or that ambiguous "
+            "geography stayed out of gold."
+        ),
     ),
     _rule(
         "DQ-FBI-006",
@@ -2294,6 +2563,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fbi.dim_ucr_dataset_release",
             "silver_fbi.dim_agency",
             "silver_fbi.dim_agency_version",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: release identity comes from the provider's refresh "
+            "date by construction, and no executor confirms a backward refresh "
+            "quarantined or that prior releases were retained."
         ),
     ),
     _rule(
@@ -2308,6 +2583,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_fbi.measure_export",
             "gold_fbi.metric_publisher",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: measure identity separation is a property of the "
+            "registry's measure definitions, and no executor reads the "
+            "published measures back to confirm counted-entity bases never "
+            "share one."
+        ),
     ),
     # -- USDA NASS ---------------------------------------------------------
     _rule(
@@ -2320,6 +2602,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_nass.fact_crop_observation",
             "gold_nass.crop_observation",
             "gold_nass.latest_release_observation",
+        ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented as a measurement; the complete Quick Stats grain is "
+            "carried by a unique constraint on the NASS fact relation."
         ),
     ),
     _rule(
@@ -2353,6 +2640,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_nass.dim_domain",
             "silver_nass.observation_revision",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: the serving views exclude unsupported geography "
+            "(DB-035), and no executor confirms every observation resolves its "
+            "release, commodity, statistic and domain dimensions."
+        ),
     ),
     _rule(
         "DQ-NASS-005",
@@ -2365,6 +2658,12 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nass.measure_export",
             "gold_nass.metric_publisher",
         ),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: `additive_behavior` propagation into series and "
+            "publisher characteristics is a property of the publisher DDL, and "
+            "no executor reads the published characteristics back."
+        ),
     ),
     _rule(
         "DQ-NASS-006",
@@ -2374,6 +2673,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "census product periodic-final; recent-window and full sweeps "
         "reconcile to the same retained releases.",
         ("silver_nass.dim_dataset_release",),
+        automation="unimplemented",
+        automation_note=(
+            "Unimplemented: survey revised-until-final expectations and the "
+            "recent-window/full-sweep agreement are declared and not evaluated."
+        ),
     ),
 )
 

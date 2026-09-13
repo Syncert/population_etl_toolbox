@@ -176,10 +176,41 @@ and a user-approved plan update — WARN rules must not silently become BLOCK.
 
 ## Release certification
 
-`data_ingestion_toolbox.quality.assessment.certify_release` runs the full
+`data_ingestion_toolbox.quality.assessment.certify_release` runs the
 deterministic suite as one `release` assessment tied to a single 40-character
 commit SHA (explicit, or `DATA_QUALITY_COMMIT_SHA`/`GIT_COMMIT_SHA`), and
 returns a promotability verdict with rule totals by severity and result.
+
+### What a certification actually runs, and what it does not
+
+"The deterministic suite" is every registered executor, and the registered
+executors are **20 of the 64 rules the inventory declares**. The other 44
+carry `automation="unimplemented"` in
+`data_ingestion_toolbox.quality.inventory`, each with a note saying what
+running it would take — 32 of them are BLOCK severity. A certification cannot
+report on a rule nobody wrote, and it does not pretend to: an unimplemented
+rule appears in no result row, so `control.data_quality_result` for a run is
+the list of what was actually measured. Read it, rather than the rule count,
+when you need to know what a `promotable` verdict covers:
+
+```sql
+SELECT rule_id, severity, result, observed_count, expected_count
+  FROM control.data_quality_result
+ WHERE quality_run_id = :quality_run_id
+ ORDER BY severity, rule_id;
+```
+
+`tests/unit/quality/test_rule_automation.py` holds that accounting honest in
+both directions: a rule declared automated with no executor fails, an
+executor under an id the inventory does not declare fails, and the set of
+unimplemented rules is pinned so it can shrink and cannot grow unnoticed.
+
+**One rule is scope-requiring.** `DQ-CDC-003` reconciles *one* CDC release
+across capture, silver, and gold, so it runs only when the caller names the
+release — `certify_release(..., scope={"asset_id": ..., "release_watermark":
+...})`, the CDC publication gate, or a targeted re-verification. A
+certification that names no release leaves it out rather than reporting it
+green over a release it never read.
 
 - **Promotable** means the run finished and no BLOCK or QUARANTINE rule
   failed. Warnings never block promotion, but they are counted so a reviewer

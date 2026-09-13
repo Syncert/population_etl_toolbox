@@ -355,6 +355,53 @@ def test_extreme_but_valid_values_warn_without_mutation(
     postgres_connection.rollback()
 
 
+def test_a_certification_that_names_a_release_reconciles_it(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-012 — the CDC gate rule reaches the release certification.
+
+    `DQ-CDC-003` is the only rule that reconciles a CDC release across
+    capture, silver and gold, and it was registered only by
+    `build_cdc_gate_executors`. `certify_release` built its suite from the
+    shared and source registries, so "the full deterministic suite" ran
+    without it -- and `select_executors(rule_id="DQ-CDC-003")`, the guide's
+    own re-verify example, raised.
+
+    It is scope-requiring: there is no "reconcile every release" reading of
+    it. So a certification that names a release runs it, and one that does
+    not leaves it out rather than reporting it green over a release it never
+    read.
+    """
+    with postgres_connection.cursor() as cursor:
+        _blank_warehouse(cursor)
+
+    unscoped = certify_release(postgres_connection, code_commit_sha=COMMIT_SHA)
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT DISTINCT rule_id FROM control.data_quality_result "
+            "WHERE quality_run_id = %s",
+            (unscoped.quality_run_id,),
+        )
+        unscoped_rules = {row[0] for row in cursor.fetchall()}
+    assert "DQ-CDC-003" not in unscoped_rules
+
+    scoped = certify_release(
+        postgres_connection,
+        code_commit_sha=COMMIT_SHA,
+        scope={"asset_id": "cdi", "release_watermark": "1780605223"},
+    )
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT DISTINCT rule_id FROM control.data_quality_result "
+            "WHERE quality_run_id = %s",
+            (scoped.quality_run_id,),
+        )
+        scoped_rules = {row[0] for row in cursor.fetchall()}
+    assert "DQ-CDC-003" in scoped_rules
+    assert unscoped_rules < scoped_rules
+    postgres_connection.rollback()
+
+
 def test_release_certification_reports_promotability(
     postgres_connection: connection,
 ) -> None:
