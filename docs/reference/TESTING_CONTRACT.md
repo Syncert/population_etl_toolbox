@@ -279,7 +279,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Environment, collection, and package | ENV-001–ENV-014 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-007 | None |
-| Warehouse data quality | DQ-001–DQ-007 | None |
+| Warehouse data quality | DQ-001–DQ-008 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-034 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-060 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **361 of 361** | **0 of 361** |
+| **Total** | **362 of 362** | **0 of 362** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 361-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 362-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -390,6 +390,7 @@ through DQ-007 as they are implemented.
 | DQ-005 | P2 | Contract / `unit`, `dag`, `integration` `database` | Scheduled warehouse quality assessment | The `warehouse_data_quality` DAG parses with its declared schedule; cadence selection is deterministic (daily control sweep, weekly full reconciliation, monthly plausibility); targeting narrows to one source or rule; a sweep persists operator-queryable summaries in `control.data_quality_source_status` and `control.data_quality_latest_result` without mutating observations | The DAG mutates source data, a cadence runs the wrong executor set, or a failing rule is not observable from persisted summaries |
 | DQ-006 | P2 | Contract / `unit`, `integration` `database` | Plausibility baselines and review lifecycle | Robust per-series baselines require minimum history and flag only genuine outliers; an extreme-but-valid value warns, opens a review, and never mutates the provider value; review transitions are the sole permitted evidence mutation | An anomaly rule mutates or rejects provider values, a short series alarms, or review state rewrites measurement history |
 | DQ-007 | P1 | Contract / `unit`, `integration` `database` | Release certification evidence | `certify_release` runs the full deterministic suite as one release assessment tied to one 40-character commit SHA, reports rule totals by severity/status, and is promotable only when the run finished with no BLOCK/QUARANTINE failure | A release certifies with blocking failures, promotability ignores severity, or certification is not tied to one immutable commit |
+| DQ-008 | P1 | Contract / `integration` `database` | A quality result carries an exact count beside its bounded evidence | Every offender rule in `quality/sources.py` and the lineage and run-accounting rules in `quality/reconciliation.py` measure `observed_count` exactly and keep `evidence` bounded at `EVIDENCE_LIMIT`, from one statement and one declaration of the predicate: `COUNT(*) OVER ()` is evaluated over the whole offender set before the `LIMIT`, and the ordering that decides which offenders are sampled is applied to the wrapping statement rather than left to a planner preserving a subquery's sort. A rule combining two offender sets sums their counts; a rule with no offenders still reports 0 and passes; an empty relation still answers `not_applicable`. Proved against a real PostgreSQL with 43 offenders: `observed_count` is 43 and the evidence is 20 ids | `DATA_QUALITY_OPERATIONS.md` says this relation holds "exact counts, bounded evidence ids" -- two different things -- and its own operator query selects `observed_count` to judge how bad a failure is. Every one of those rules measured both from one bounded read: the query fetched `EVIDENCE_LIMIT + 1`, one more than the cap and written deliberately so truncation could be detected, the helper sliced the extra row away, and the outcome recorded the evidence's length. Nothing was mis-graded -- `result` is `fail` either way -- but twenty bad rows and twenty thousand both persisted `observed_count: 20` (21 in the reconciliation rules, which did not even slice), always understating, and a trend across runs went flat the moment it saturated |
 
 ### Data-layer Architecture Boundary Tests
 

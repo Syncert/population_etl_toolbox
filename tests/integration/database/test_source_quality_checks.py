@@ -15,6 +15,7 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.quality.reconciliation import EVIDENCE_LIMIT
 from data_ingestion_toolbox.quality.sources import (
     SOURCE_EXECUTORS,
     acs_slice_reconciliation,
@@ -192,6 +193,43 @@ def test_cdc_backward_watermark_ingest_fails(
         [outcome] = cdc_watermark_monotonicity(cursor, {})
         assert outcome.result == "fail"
         assert outcome.evidence == ["cdi|100"]
+    postgres_connection.rollback()
+
+
+def test_an_offender_count_is_exact_beside_bounded_evidence(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-008 — the count is exact, the evidence is bounded.
+
+    `DATA_QUALITY_OPERATIONS.md` says `control.data_quality_result` holds
+    "exact counts, bounded evidence ids" -- two different things -- and its
+    operator query selects `observed_count` to judge how bad a failure is.
+    The offender queries fetched `EVIDENCE_LIMIT + 1`, one more than the cap
+    and written deliberately so truncation could be detected, and the helper
+    sliced the extra row away: the count was the evidence's length, so twenty
+    bad rows and twenty thousand both recorded 20.
+    """
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO control.acs_ingestion_slices
+                (dataset, year, geo_level, state_fips, status, rows_loaded,
+                 started_at)
+            SELECT 'acs5', 2021, 'county', LPAD(generated::TEXT, 2, '0'),
+                   'failed', 0, NOW()
+              FROM generate_series(1, 43) AS generated
+            """
+        )
+        [outcome] = acs_slice_reconciliation(cursor, {})
+        assert outcome.result == "fail"
+        assert outcome.observed_count == 43, (
+            "the offender count saturated at the evidence cap: an operator "
+            "reading it cannot tell a handful of bad rows from a systemic "
+            "failure"
+        )
+        assert len(outcome.evidence) == EVIDENCE_LIMIT
+        # The sample is the rule's own order, not whatever the scan returned.
+        assert outcome.evidence == sorted(outcome.evidence)
     postgres_connection.rollback()
 
 

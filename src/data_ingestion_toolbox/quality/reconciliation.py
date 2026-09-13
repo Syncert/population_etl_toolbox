@@ -15,10 +15,17 @@ follow the same pattern under DQ-004.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .runner import QualityRunRecord, RuleExecutor, RuleOutcome, execute_rules
+from .runner import (
+    QualityRunError,
+    QualityRunRecord,
+    RuleExecutor,
+    RuleOutcome,
+    execute_rules,
+)
 
 #: How many offending identifiers a single outcome may carry as evidence.
 EVIDENCE_LIMIT = 20
@@ -116,6 +123,80 @@ def comparison_outcome(
     )
 
 
+#: Clauses an offender query must not carry: the ordering is an argument
+#: and the bound belongs to `_offenders`.
+_FORBIDDEN_CLAUSE = re.compile(r"\b(?:ORDER\s+BY|LIMIT)\b", re.IGNORECASE)
+
+
+def _shifted(order_by: str) -> str:
+    """``order_by`` with positional references moved past the count column.
+
+    The wrapper below selects the count first, so every column an offender
+    query names shifts one place right. Callers keep writing the positions
+    of their own select list; the shift is this helper's business, not
+    fifteen rules'.
+    """
+    terms = []
+    for term in order_by.split(","):
+        parts = term.split()
+        if parts and parts[0].isdigit():
+            parts[0] = str(int(parts[0]) + 1)
+        terms.append(" ".join(parts))
+    return ", ".join(terms)
+
+
+def _offenders(
+    cursor: Any,
+    sql: str,
+    *,
+    order_by: str,
+    params: tuple[Any, ...] = (),
+) -> tuple[list[str], int]:
+    """Bounded evidence ids and the *exact* number of offenders.
+
+    `DATA_QUALITY_OPERATIONS.md` says `control.data_quality_result` holds
+    "exact counts, bounded evidence ids" -- two different things -- and its
+    operator query selects `observed_count` to judge how bad a failure is.
+    These rules measured both from one bounded read: the query fetched
+    `EVIDENCE_LIMIT + 1`, one more than the cap so truncation could be
+    detected, the helper sliced the extra row away, and the outcome recorded
+    the evidence's length. Twenty bad rows and twenty thousand both persisted
+    `observed_count: 20`, always understating, on the one number an operator
+    is pointed at (DQ-008).
+
+    One statement, so the count and the sample describe one reading of the
+    warehouse -- the reasoning of API-084 and API-100. `COUNT(*) OVER ()` is
+    evaluated over the whole offender set before `LIMIT`, and the ordering
+    that decides *which* offenders are kept is applied here rather than
+    inside the subquery, so the sample is deterministic by the statement's
+    own contract instead of by a planner preserving a subquery's sort.
+
+    ``sql`` therefore carries neither ``ORDER BY`` nor ``LIMIT``.
+    """
+    # Matched as SQL words, not substrings: a status literal named
+    # `over_limit` is not a LIMIT clause, and the first version of this guard
+    # refused the USDA NASS rule for containing one.
+    if _FORBIDDEN_CLAUSE.search(sql):
+        raise QualityRunError(
+            "an offender query must carry neither ORDER BY nor LIMIT: the "
+            "ordering is passed as `order_by` and the bound is this helper's"
+        )
+    cursor.execute(
+        f"SELECT COUNT(*) OVER () AS offender_total, offender.*\n"
+        f"FROM (\n{sql}\n) AS offender\n"
+        f"ORDER BY {_shifted(order_by)}\n"
+        f"LIMIT {EVIDENCE_LIMIT}",
+        params,
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return [], 0
+    return (
+        ["|".join(str(part) for part in row[1:]) for row in rows],
+        int(rows[0][0]),
+    )
+
+
 def _source_filter(scope: Mapping[str, Any], column: str) -> tuple[str, list[Any]]:
     source_code = scope.get("source_code")
     if source_code:
@@ -167,7 +248,8 @@ def verify_capture_checksums(
 def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-SHARED-002 — captured requests and captures agree in both directions."""
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    orphan_requests, orphan_request_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -175,40 +257,37 @@ def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
             ON capture.request_id = request.request_id
          WHERE request.status = 'captured'
            AND capture.capture_id IS NULL{clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    orphan_requests = [str(row[0]) for row in cursor.fetchall()]
 
     clause, params = _source_filter(scope, "capture.source_code")
-    cursor.execute(
+    orphan_captures, orphan_capture_total = _offenders(
+        cursor,
         f"""
         SELECT capture.capture_id
           FROM raw_capture.response_capture AS capture
           JOIN control.ingestion_request AS request
             ON request.request_id = capture.request_id
          WHERE request.status <> 'captured'{clause}
-         ORDER BY capture.capture_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    orphan_captures = [str(row[0]) for row in cursor.fetchall()]
 
     return [
         RuleOutcome(
             "control.ingestion_request",
             "fail" if orphan_requests else "pass",
-            observed_count=len(orphan_requests),
+            observed_count=orphan_request_total,
             expected_count=0,
             evidence=orphan_requests[:EVIDENCE_LIMIT],
         ),
         RuleOutcome(
             "raw_capture.response_capture",
             "fail" if orphan_captures else "pass",
-            observed_count=len(orphan_captures),
+            observed_count=orphan_capture_total,
             expected_count=0,
             evidence=orphan_captures[:EVIDENCE_LIMIT],
         ),
@@ -218,7 +297,8 @@ def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
 def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-SHARED-003 — every terminal request is accounted for, never lost."""
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    unfinished, unfinished_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -226,15 +306,14 @@ def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcom
             ON run.run_id = request.run_id
          WHERE run.finished_at IS NOT NULL
            AND request.status IN ('planned', 'running'){clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    unfinished = [str(row[0]) for row in cursor.fetchall()]
 
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    unaccounted, unaccounted_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -243,25 +322,23 @@ def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcom
            AND quarantine.source_code = request.source_code
          WHERE request.status = 'quarantined'
            AND quarantine.quarantine_id IS NULL{clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    unaccounted = [str(row[0]) for row in cursor.fetchall()]
 
     return [
         RuleOutcome(
             "control.ingestion_run",
             "fail" if unfinished else "pass",
-            observed_count=len(unfinished),
+            observed_count=unfinished_total,
             expected_count=0,
             evidence=unfinished[:EVIDENCE_LIMIT],
         ),
         RuleOutcome(
             "control.capture_quarantine",
             "fail" if unaccounted else "pass",
-            observed_count=len(unaccounted),
+            observed_count=unaccounted_total,
             expected_count=0,
             evidence=unaccounted[:EVIDENCE_LIMIT],
         ),
