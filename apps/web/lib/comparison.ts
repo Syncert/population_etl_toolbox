@@ -20,7 +20,9 @@ import type {
   ComparisonRule,
   MetricSummary,
 } from "./api/types";
+import { metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
+import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -680,4 +682,100 @@ export function comparisonMapRows(
       value_status: usable ? null : "not published on both sides",
     } as ObservationRow;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Which grains a pair can be compared at (WEB-074)
+// ---------------------------------------------------------------------------
+
+/** The grains a comparison offers, and what it could not offer. */
+export interface ComparisonGrainOffer {
+  /** The grains both sides publish, in the published vocabulary's order. */
+  levels: string[];
+  /** True when the offered set is narrower than the whole vocabulary. */
+  narrowed: boolean;
+  /** Why the list is narrow, in the publisher's terms. "" when it is not. */
+  note: string;
+  /** A grain that was asked for and neither side publishes. "" otherwise. */
+  unavailable: string;
+}
+
+function publishedGrains(metric: MetricSummary | null | undefined): string[] {
+  const declared = metricSupportedGeoLevels(metric);
+  // A measure that declares no grains is a measure whose grains are unknown,
+  // which is not the same as one published at none — the explorer's own rule
+  // (WEB-038), so the whole vocabulary stays offered for it.
+  return declared.length > 0 ? declared : [...GEO_GRAIN_ORDER];
+}
+
+function grainWords(levels: readonly string[]): string {
+  return levels.map((level) => GEO_GRAIN_LABELS[level]?.one || level).join(", ");
+}
+
+/**
+ * The grains a pair of measures can be compared at.
+ *
+ * The workspace hard-coded `NATIONAL`, `STATE`, `COUNTY` and ignored what
+ * either side publishes, while `parseComparisonState` accepts all five words
+ * and the workspace assigned the parsed value straight into the selection. So
+ * a `?geo_level=PLACE` link — reachable data: the analysis routes serve
+ * Census PEP, which publishes places — put a value in the select that no
+ * option carried, and the control showed one grain while the request sent
+ * another (WEB-074).
+ *
+ * The offer is the *intersection*: a comparison is answered at one grain, so
+ * a grain only one side publishes is a grain the pair cannot be read at.
+ */
+export function comparisonGrainOffer({
+  metricA,
+  metricB,
+  requested,
+}: {
+  metricA: MetricSummary | null | undefined;
+  metricB: MetricSummary | null | undefined;
+  requested?: string | null;
+}): ComparisonGrainOffer {
+  const declaredA = publishedGrains(metricA);
+  const declaredB = publishedGrains(metricB);
+  const levels = GEO_GRAIN_ORDER.filter(
+    (level) => declaredA.includes(level) && declaredB.includes(level),
+  );
+  const narrowed = levels.length < GEO_GRAIN_ORDER.length;
+  const named = Boolean(metricA || metricB);
+
+  let note = "";
+  if (named && narrowed) {
+    note =
+      levels.length === 0
+        ? "These two measures publish no geography grain in common, so there " +
+          "is no level to compare them at. A comparison is answered at one " +
+          "grain; this is the publishers' declaration, not a limit of this " +
+          "screen."
+        : `These measures are both published at ${grainWords(levels)}, so the ` +
+          "other view levels are not offered for the pair. A comparison is " +
+          "answered at one grain, so a grain only one side publishes cannot " +
+          "be read here.";
+  }
+
+  const wanted = normalizeGeoLevel(requested);
+  const unavailable =
+    wanted && !levels.includes(wanted)
+      ? `This link asked to compare at ${
+          GEO_GRAIN_LABELS[wanted]?.one || wanted
+        }, which the pair does not both publish` +
+        (levels.length > 0 ? `; showing ${grainWords(levels.slice(0, 1))}.` : ".")
+      : "";
+
+  return { levels: [...levels], narrowed, note, unavailable };
+}
+
+/** The grain to show when the asked-for one is not offered. */
+export function preferredComparisonGrain(
+  levels: readonly string[],
+  fallback = "COUNTY",
+): string {
+  if (levels.length === 0) {
+    return "";
+  }
+  return levels.includes(fallback) ? fallback : (levels[0] ?? "");
 }

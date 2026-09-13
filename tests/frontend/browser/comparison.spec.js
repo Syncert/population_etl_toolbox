@@ -46,7 +46,7 @@ const sourceRoutes = (segment) => [
 ];
 
 const capabilities = {
-  total: 3,
+  total: 4,
   items: [
     {
       source_code: "CENSUS_ACS",
@@ -73,26 +73,71 @@ const capabilities = {
       observation_filters: ["geo_id", "stratum_id"],
       observation_routes: neutralRoutes,
     },
+    {
+      // Published at the agency grain, and declined by the analysis routes.
+      // Both facts matter: which grains a pair offers is what its measures
+      // publish, and is decided separately from whether the pair is
+      // comparable (WEB-074).
+      source_code: "FBI_UCR",
+      display_name: "FBI Uniform Crime Reporting",
+      route_segment: null,
+      served_by_neutral_routes: true,
+      observation_filters: ["geo_id", "subject_type"],
+      observation_routes: neutralRoutes,
+    },
   ],
 };
 
 const METRIC_A = "CENSUS_ACS:acs5:B01003_001";
 const METRIC_B = "CENSUS_PEP:pep_cty_alldata:POPESTIMATE";
+const METRIC_B2 = "CENSUS_PEP:pep_cty_alldata:BIRTHS";
 const METRIC_CDC = "CDC:cdc_places_county:OBESITY";
+const METRIC_FBI = "FBI_UCR:summarized:VIOLENT_CRIME";
 
+// `/catalog/metrics` publishes `valid_geo_grains`, and the grain control is
+// built from it: a fixture without them models a weaker contract than the one
+// that ships, and the client then goes untested for the narrowing (WEB-043,
+// WEB-074). Census PEP publishes places where Census ACS does not, which is
+// why `PLACE` is reachable data on the analysis routes and why a pair of one
+// each cannot be read there.
 const metricsBySource = {
   CENSUS_ACS: [
-    { metric_code: METRIC_A, metric_display_name: "Total population", source_code: "CENSUS_ACS" },
+    {
+      metric_code: METRIC_A,
+      metric_display_name: "Total population",
+      source_code: "CENSUS_ACS",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY"],
+    },
   ],
   CENSUS_PEP: [
     {
       metric_code: METRIC_B,
       metric_display_name: "Resident population estimate",
       source_code: "CENSUS_PEP",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
+    },
+    {
+      metric_code: METRIC_B2,
+      metric_display_name: "Births",
+      source_code: "CENSUS_PEP",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
     },
   ],
   CDC: [
-    { metric_code: METRIC_CDC, metric_display_name: "Obesity prevalence", source_code: "CDC" },
+    {
+      metric_code: METRIC_CDC,
+      metric_display_name: "Obesity prevalence",
+      source_code: "CDC",
+      valid_geo_grains: ["COUNTY"],
+    },
+  ],
+  FBI_UCR: [
+    {
+      metric_code: METRIC_FBI,
+      metric_display_name: "Violent crime, actual count",
+      source_code: "FBI_UCR",
+      valid_geo_grains: ["AGENCY"],
+    },
   ],
 };
 
@@ -217,8 +262,9 @@ async function installRoutes(
   await page.route("**/api/v1/comparison/preflight?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     preflightRequests.push(Object.fromEntries(params));
+    const declined = new Set([METRIC_CDC, METRIC_FBI]);
     const verdict =
-      params.get("metric_code_a") === METRIC_CDC || params.get("metric_code_b") === METRIC_CDC
+      declined.has(params.get("metric_code_a")) || declined.has(params.get("metric_code_b"))
         ? blockedVerdict
         : comparableVerdict;
     return route.fulfill({ json: verdict });
@@ -434,6 +480,81 @@ test("the comparison link reproduces the pair and carries no verdict", async ({ 
   // Reopening re-asks the verdict rather than trusting the link.
   expect(preflightRequests.length).toBeGreaterThan(0);
   await reopened.close();
+});
+
+test("the view levels are the ones both measures publish", async ({ page }) => {
+  // Covers: WEB-074 — the control offered a hard-coded NATIONAL/STATE/COUNTY
+  // and ignored `valid_geo_grains` on either side. Census PEP publishes
+  // places and Census ACS does not, so the pair cannot be read at PLACE —
+  // and a `?geo_level=PLACE` link put exactly that value into the selection,
+  // leaving the control showing one grain while the request sent another.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests });
+  await page.goto("/compare?geo_level=PLACE");
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText(["National", "State", "County"]);
+  // Reported, not silently held: the link asked for a grain the pair does not
+  // both publish, and the screen says so and shows what it can.
+  await expect(page.getByTestId("comparison-grain-unavailable")).toContainText("Place");
+  await expect(level).toHaveValue("COUNTY");
+  await expect(page.getByTestId("comparison-grain-note")).toContainText(
+    "not offered for the pair",
+  );
+  const grains = comparisonRequests.map((entry) => entry.geo_level).filter(Boolean);
+  expect(grains.length).toBeGreaterThan(0);
+  expect(grains).not.toContain("PLACE");
+});
+
+test("a pair that publishes places is compared at places, and a link says so", async ({
+  page,
+}) => {
+  // Covers: WEB-074 — two Census PEP measures publish places, so PLACE is a
+  // level the pair can be read at and a copied link reopens there.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests });
+  await page.goto(
+    `/compare?a=${encodeURIComponent(METRIC_B)}` +
+      `&source_a=pep&b=${encodeURIComponent(METRIC_B2)}` +
+      "&source_b=pep&geo_level=PLACE",
+  );
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText([
+    "National",
+    "State",
+    "County",
+    "Place",
+  ]);
+  await expect(level).toHaveValue("PLACE");
+  await expect(page.getByTestId("comparison-grain-unavailable")).toHaveCount(0);
+  await expect(page).toHaveURL(/geo_level=PLACE/);
+  await expect
+    .poll(() =>
+      comparisonRequests.filter((entry) => entry.geo_level === "PLACE").length,
+    )
+    .toBeGreaterThan(0);
+});
+
+test("an agency-grain pair is offered its own grain, declined or not", async ({ page }) => {
+  // Covers: WEB-074 — which grains a pair offers is what its measures
+  // publish; whether the pair is comparable is the API's separate verdict.
+  // FBI UCR publishes agency-grain facts and the analysis routes decline it,
+  // and both statements have to survive together.
+  await installRoutes(page);
+  await page.goto(
+    `/compare?a=${encodeURIComponent(METRIC_FBI)}` +
+      `&source_a=FBI_UCR&b=${encodeURIComponent(METRIC_FBI)}` +
+      "&source_b=FBI_UCR&geo_level=AGENCY",
+  );
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText(["Agency"]);
+  await expect(level).toHaveValue("AGENCY");
+  await expect(page.getByTestId("comparison-workspace")).toHaveAttribute(
+    "data-comparable",
+    "false",
+  );
 });
 
 test("the aligned presentations appear only where the comparison can answer them", async ({

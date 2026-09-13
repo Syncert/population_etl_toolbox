@@ -157,8 +157,15 @@ one of those plans recorded a green local run believing CI would repeat it.
 - Tiers: `pytest tests/unit` 1560 passed; `ruff format --check .` and
   `ruff check .` clean. The new workflow's first real run is this push.
 
+- **Confirmed green on its first run.** `api-integration` run #1 on
+  `4cf94d8` concluded `success`
+  ([34769260097](https://github.com/Syncert/population_etl_toolbox/actions/runs/34769260097)),
+  so the four files nothing had ever graded in CI pass there. `e2e` and
+  `postgres-integration` are green on the same commit.
+
 ## Remaining work
 
-- Confirm the `api-integration` check appears and passes on this branch's
-  push, and ask the repository owner to add it to branch protection — a
-  required check is only required once protection names it.
+- Ask the repository owner to add the `API integration (PostGIS 16 + Redis 7
+  + Python 3.11)` check to branch protection: a required check is only
+  required once protection names it, and that setting is outside this
+  repository.

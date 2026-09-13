@@ -30,6 +30,7 @@ import {
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonGrainOffer,
   comparisonMapRows,
   describeComparisonCoverage,
   mapPeriodMismatchNote,
@@ -42,9 +43,11 @@ import {
   incompatibleAlternatives,
   mayRequestComparison,
   periodsDiffer,
+  preferredComparisonGrain,
   preflightRequestParams,
   selectionIsComplete,
 } from "../lib/comparison";
+import { GEO_GRAIN_LABELS } from "../lib/geographyPicker";
 import type {
   ComparisonLoad,
   ComparisonSelection,
@@ -494,6 +497,43 @@ export default function ComparisonWorkspace() {
     [metrics],
   );
 
+  // The grains the *pair* can be compared at, from each side's published
+  // `valid_geo_grains`. The control offered a hard-coded NATIONAL/STATE/COUNTY
+  // and ignored both, while the link parser accepts all five published words:
+  // a `?geo_level=PLACE` link put a value in the select that no option
+  // carried, so the control showed one grain and the request sent another
+  // (WEB-074).
+  const selectedMetricRow = useCallback(
+    (side: SideKey) =>
+      metrics[side].find(
+        (metric) => metric.metric_code === selection[side].metricCode,
+      ) || null,
+    [metrics, selection],
+  );
+  const grainOffer = useMemo(
+    () =>
+      comparisonGrainOffer({
+        metricA: selectedMetricRow("a"),
+        metricB: selectedMetricRow("b"),
+        requested: selection.geoLevel,
+      }),
+    [selectedMetricRow, selection.geoLevel],
+  );
+  // A grain neither side publishes is reported and replaced, not held: the
+  // selection would otherwise build a request for a grain the pair cannot be
+  // read at. The report survives the replacement, which is the point of it.
+  const [grainNotice, setGrainNotice] = useState("");
+  useEffect(() => {
+    if (!grainOffer.unavailable) {
+      return;
+    }
+    const replacement = preferredComparisonGrain(grainOffer.levels);
+    setGrainNotice(grainOffer.unavailable);
+    if (replacement && replacement !== selection.geoLevel) {
+      setSelection((current) => ({ ...current, geoLevel: replacement }));
+    }
+  }, [grainOffer, selection.geoLevel]);
+
   // The exact request the comparison effect issued, so the result is
   // reproducible outside the application.
   const apiQuery = comparable
@@ -728,14 +768,32 @@ export default function ComparisonWorkspace() {
                 className="select"
                 data-testid="comparison-geo-level"
                 value={selection.geoLevel}
-                onChange={(event) =>
-                  setSelection((current) => ({ ...current, geoLevel: event.target.value }))
-                }
+                onChange={(event) => {
+                  // The reader has chosen; the link's report no longer holds.
+                  setGrainNotice("");
+                  setSelection((current) => ({
+                    ...current,
+                    geoLevel: event.target.value,
+                  }));
+                }}
+                disabled={grainOffer.levels.length === 0}
               >
-                <option value="NATIONAL">National</option>
-                <option value="STATE">State</option>
-                <option value="COUNTY">County</option>
+                {grainOffer.levels.map((level) => (
+                  <option value={level} key={level}>
+                    {GEO_GRAIN_LABELS[level]?.one || level}
+                  </option>
+                ))}
               </select>
+              {grainOffer.note ? (
+                <p className="subtle" data-testid="comparison-grain-note">
+                  {grainOffer.note}
+                </p>
+              ) : null}
+              {grainNotice ? (
+                <p className="subtle" data-testid="comparison-grain-unavailable">
+                  {grainNotice}
+                </p>
+              ) : null}
             </div>
 
             <div className="control-group">

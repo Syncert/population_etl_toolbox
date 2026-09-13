@@ -15,6 +15,7 @@ import {
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonGrainOffer,
   comparisonMapRows,
   comparisonRequestParams,
   comparisonRowName,
@@ -29,6 +30,7 @@ import {
   describeComparisonCoverage,
   mapPeriodMismatchNote,
   periodsDiffer,
+  preferredComparisonGrain,
   preflightRequestParams,
   selectionIsComplete,
 } from "../../../apps/web/lib/comparison";
@@ -560,5 +562,76 @@ describe("the screen says what its geographies are an intersection of", () => {
     );
     expect(describeComparisonCoverage(null)).toBe("");
     expect(describeComparisonCoverage({ ...paired, total: undefined })).toBe("");
+  });
+});
+
+describe("the grains a pair can be compared at", () => {
+  // Covers: WEB-074 — the workspace hard-coded NATIONAL/STATE/COUNTY and
+  // ignored both sides' published `valid_geo_grains`, while
+  // `parseComparisonState` accepts all five published words and the workspace
+  // assigned the parsed value straight into the selection. A `?geo_level=PLACE`
+  // link — the analysis routes serve Census PEP, which publishes places — put
+  // a value in the select that no option carried, so the control showed one
+  // grain while the request sent another.
+  const acs = { metric_code: "A", valid_geo_grains: ["NATIONAL", "STATE", "COUNTY"] };
+  const pep = {
+    metric_code: "B",
+    valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
+  };
+  const fbi = { metric_code: "F", valid_geo_grains: ["AGENCY"] };
+
+  test("offers the intersection, and says why it is narrow", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: pep });
+    // A comparison is answered at one grain, so a grain only one side
+    // publishes is not a grain the pair can be read at.
+    expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY"]);
+    expect(offer.narrowed).toBe(true);
+    expect(offer.note).toContain("not offered for the pair");
+    expect(offer.unavailable).toBe("");
+  });
+
+  test("round-trips a grain both sides publish", () => {
+    const offer = comparisonGrainOffer({
+      metricA: pep,
+      metricB: { ...pep, metric_code: "B2" },
+      requested: "PLACE",
+    });
+    expect(offer.levels).toContain("PLACE");
+    expect(offer.unavailable).toBe("");
+    expect(preferredComparisonGrain(offer.levels)).toBe("COUNTY");
+  });
+
+  test("reports a grain neither side publishes rather than holding it", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: pep, requested: "PLACE" });
+    expect(offer.levels).not.toContain("PLACE");
+    expect(offer.unavailable).toContain("Place");
+    expect(offer.unavailable).toContain("does not both publish");
+  });
+
+  test("an agency-grain pair is offered its own grain", () => {
+    const offer = comparisonGrainOffer({
+      metricA: fbi,
+      metricB: { ...fbi, metric_code: "F2" },
+      requested: "AGENCY",
+    });
+    expect(offer.levels).toEqual(["AGENCY"]);
+    expect(offer.unavailable).toBe("");
+    expect(preferredComparisonGrain(offer.levels)).toBe("AGENCY");
+  });
+
+  test("two measures with nothing in common say so", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: fbi, requested: "COUNTY" });
+    expect(offer.levels).toEqual([]);
+    expect(offer.note).toContain("no geography grain in common");
+    expect(offer.unavailable).toContain("does not both publish");
+    expect(preferredComparisonGrain(offer.levels)).toBe("");
+  });
+
+  test("a measure that declares no grains has unknown grains, not none", () => {
+    // The explorer's own rule (WEB-038): an empty declaration is silence, and
+    // narrowing to nothing on silence would hide a pair that can be read.
+    const offer = comparisonGrainOffer({ metricA: { metric_code: "X" }, metricB: pep });
+    expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY", "PLACE"]);
+    expect(comparisonGrainOffer({ metricA: null, metricB: null }).note).toBe("");
   });
 });
