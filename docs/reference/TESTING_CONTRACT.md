@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-084 | None |
+| API | API-001–API-085 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-047 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **317 of 317** | **0 of 317** |
+| **Total** | **318 of 318** | **0 of 318** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 317-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 318-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -607,6 +607,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-082 | P0 | Service / `unit api` | A saved view records the reduction it was viewed with | `AnalysisDocument` carries `newest_per_geography` and `newest_release_per_period`, both defaulting to false so every stored document replays exactly as it did; validation refuses the same contradictions the live route refuses -- each reduction outside its own scope, the two together, and a settled history with a pinned release -- and `extra=\"forbid\"` still rejects an undeclared key | A saved explorer map replaying as the whole latest publication -- for Census PEP, 3,144 counties times six estimated years -- and colouring whichever row arrived last, the failure API-066 exists to prevent reaching the screen through save-and-reopen |
 | API-083 | P0 | Service / `unit api` | A reduction that ties picks the same row every time | Every `ROW_NUMBER()` reduction -- `newest_per_geography`, `newest_release_per_period`, and the `ranked_latest_cte` the comparison and distribution routes share -- ranks on the expression it reduces by *and then* the dispatch entry's own declared total order for the relation it reads, read from the registry rather than restated, so one geography's tie group resolves to the same published row on every request and the three reductions resolve it the same way; a source added without a declared order is named by CI instead of silently ranking arbitrarily | The same map request answering a different published value for a county with no publication in between -- and a saved view, a set of bins, and a comparison row each describing a different one of a geography's tied rows while all three report success |
 | API-084 | P0 | Service / `unit api` | A distribution's range and its bins describe one reading | `/distribution/bins` measures `total`, `min_value`, `max_value` and every bin count in one statement over one evaluation of its reduction, so no refresh can land between the range and the counts: `sum(count)` equals `total`, the reported bounds enclose every value counted, and `width_bucket` is never handed a range whose bounds are equal (which PostgreSQL rejects); the degenerate answers are unchanged -- nothing published stays `total: 0` with null bounds and no items, one distinct value stays the single bin closing on itself -- and every bin asked for is still reported | A histogram whose bars do not add up to the total beside them: a value published below a stale `min_value` buckets to 0 and is dropped from `items` entirely, one above a stale `max_value` is clamped into a last bin whose upper bound the response reports as a maximum it is not |
+| API-085 | P0 | Service / `unit api` | The cache epoch rotates when the published state changes | The epoch is a digest over every source's recorded publication state -- publication time, content fingerprint, and source watermark -- so it changes when any of them changes and stays put when none do; a source republishing behind another's declared time still rotates it, the row order it is read in does not, an empty harvest state answers `never-published`, and the token stays a short opaque hex string nothing can read a date out of | A republication that changes what a publisher *says* without moving its declared publication time -- the case migration 016 gave the harvest guard a content fingerprint for -- serving the retired identities from cache for a whole TTL, reported as fresh |
 
 ### Frontend Tests
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,7 +34,12 @@ from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 
 from apps.api.dependencies import get_db_session_dep
-from apps.api.freshness import UNKNOWN_EPOCH, PublicationEpochProvider
+from apps.api.freshness import (
+    NEVER_PUBLISHED,
+    UNKNOWN_EPOCH,
+    PublicationEpochProvider,
+    publication_epoch,
+)
 from apps.api.main import PUBLIC_CACHE_TARGETS, app, contract_fingerprint, create_app
 from apps.api.middleware import MAX_CACHE_BODY_BYTES, RedisResponseCacheMiddleware
 from apps.api.ratelimit import RATE_LIMITED_DETAIL, RateLimitMiddleware
@@ -547,3 +553,81 @@ def test_model_status_probe_is_fully_retired() -> None:
 
     response = TestClient(app).get("/api/v1/models/status")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# API-085 — the epoch rotates when the published state changes
+# ---------------------------------------------------------------------------
+
+
+def _state(**overrides):
+    row = {
+        "source_code": "CENSUS_ACS",
+        "last_publication_time": "2026-09-13T10:00:00+00:00",
+        "last_content_fingerprint": "sha256:aaa",
+        "last_source_watermark": "2026-09-13",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_the_epoch_changes_when_any_recorded_state_changes() -> None:
+    """Covers: API-085 — a republication rotates the key, as documented.
+
+    The epoch was `MAX(last_publication_time)`, which is the publisher's own
+    declared time carried through from the ready event. Migration 016 wrote
+    down why that is not enough one layer below: a change to what a publisher
+    *says* -- a metric's identity, units, grains, lineage, the set of keys it
+    emits -- moves no publication time, which is why the harvest gained a
+    content fingerprint. The epoch read only the first input, so exactly the
+    case that migration exists for rotated nothing.
+    """
+    base = publication_epoch([_state()])
+    assert base == publication_epoch([_state()]), "an unchanged state keeps its key"
+
+    for field, changed in (
+        ("last_publication_time", "2026-09-13T11:00:00+00:00"),
+        ("last_content_fingerprint", "sha256:bbb"),
+        ("last_source_watermark", "2026-09-14"),
+        ("source_code", "CENSUS_PEP"),
+    ):
+        assert publication_epoch([_state(**{field: changed})]) != base, (
+            f"a change to {field} must rotate the cache key"
+        )
+
+
+def test_a_source_behind_another_still_rotates_the_epoch() -> None:
+    """Covers: API-085 — seven publishers are not one clock.
+
+    `MAX` assumed they were: a source republishing with a declared time
+    behind another source's -- a backfilled release, a correction harvested
+    late, a publisher whose lifecycle timestamps lag -- left the maximum
+    where it was, and every cached body for that source stayed stale for the
+    whole TTL.
+    """
+    newest = _state(
+        source_code="BLS", last_publication_time="2026-09-13T12:00:00+00:00"
+    )
+    behind = _state(last_publication_time="2026-09-01T00:00:00+00:00")
+    corrected = _state(
+        last_publication_time="2026-08-15T00:00:00+00:00",
+        last_content_fingerprint="sha256:corrected",
+    )
+    assert publication_epoch([newest, behind]) != publication_epoch([newest, corrected])
+
+
+def test_the_epoch_is_a_stable_opaque_token() -> None:
+    """Covers: API-085 — a cache-key component, not a date to read."""
+    epoch = publication_epoch([_state(), _state(source_code="BLS")])
+    assert epoch == publication_epoch([_state(source_code="BLS"), _state()]), (
+        "the order rows arrive in is not part of the published state"
+    )
+    assert re.fullmatch(r"[0-9a-f]{16}", epoch), epoch
+    # Nothing may read a publication date out of a cache key.
+    assert "2026" not in epoch
+
+
+def test_an_empty_harvest_state_still_answers() -> None:
+    """Covers: API-085 — nothing published is a state, and a cacheable one."""
+    assert publication_epoch([]) == NEVER_PUBLISHED
+    assert publication_epoch([]) != publication_epoch([_state()])
