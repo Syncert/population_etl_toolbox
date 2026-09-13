@@ -270,6 +270,15 @@ A period can hold more than one row wherever a source republishes it, so
 `scope=as_released&release=…` on `/observations` if you want one publication's
 series rather than all of them.
 
+That is also why a reduction to one row per geography needs more than the
+period. Where `/observations/latest` answers from the durable history — the
+latest view refreshes independently, so an empty page there means "not
+refreshed yet", not "no such data" — the row you get for each geography is
+the newest period's newest published release: `as_of_date`, then
+`dataset_code` ascending (so `acs1` precedes `acs5`), then `vintage_year`.
+The same question on `/observations` is `newest_per_geography=true`, which
+ranks inside the source's own relation by the order that source declares.
+
 ## Analysis
 
 **Preflight before you compare.** `GET /api/v1/comparison/preflight?metric_code_a=…&metric_code_b=…`

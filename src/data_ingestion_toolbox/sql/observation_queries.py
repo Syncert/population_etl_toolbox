@@ -166,6 +166,37 @@ def build_latest_mv_queries(
 # ---------------------------------------------------------------------------
 
 
+#: Which of a geography's rows the durable fallback answers as its latest.
+#:
+#: ``observation_date`` alone is not an order over this view -- see
+#: ``_TIMESERIES_ORDER`` below, about the same relation -- so ranking on it
+#: left an ACS metric's newest period, published under two datasets and more
+#: than one vintage, to be resolved by whatever the plan produced. Two
+#: identical requests could answer two different published values, each real
+#: and neither reported (API-086).
+#:
+#: This is that declared order read for recency instead of for paging: the
+#: same four columns, because they are what the underlying unique indexes key
+#: a period's rows by once a metric and a geography are pinned. Newest period,
+#: newest published release, ``acs1`` before ``acs5`` (which is what ascending
+#: ``dataset_code`` spells, and the preference the ACS refresh declares), then
+#: newest vintage. ``NULLS LAST`` because ``DESC`` sorts nulls first in
+#: PostgreSQL, and a row recording no release identity must not outrank one
+#: that does.
+#:
+#: It cannot be any one source's own rule. BLS, FRED, and Census ACS each
+#: declare a different selection order in their refresh procedures, one static
+#: ``ORDER BY`` over a cross-source union cannot be all three, and restating
+#: them here would put a fourth copy of three rules in a fourth place. Where
+#: those rules agree, this agrees with them; where they differ it ranks on
+#: ``as_of_date``, the published release date, rather than on ``updated_at``,
+#: the warehouse's own row-update time.
+_LATEST_SELECTION_ORDER = (
+    "observation_date DESC, as_of_date DESC NULLS LAST, "
+    "dataset_code ASC, vintage_year DESC NULLS LAST"
+)
+
+
 def build_latest_rpt_fallback_queries(
     metric_code: str,
     geo_level: Optional[str],
@@ -176,7 +207,12 @@ def build_latest_rpt_fallback_queries(
     params: dict = {"limit": limit, "offset": offset}
     where = _build_where_latest(metric_code, geo_level, state_fips, params)
     view = "gold.v_metric_timeseries_by_geo"
-    cte = f"WITH ranked AS (SELECT {_OBSERVATION_SELECT}, ROW_NUMBER() OVER (PARTITION BY geo_id ORDER BY observation_date DESC) AS rn FROM {view} WHERE {where})"
+    cte = (
+        f"WITH ranked AS (SELECT {_OBSERVATION_SELECT}, "
+        f"ROW_NUMBER() OVER (PARTITION BY geo_id "
+        f"ORDER BY {_LATEST_SELECTION_ORDER}) AS rn "
+        f"FROM {view} WHERE {where})"
+    )
     list_q = text(
         f"{cte} SELECT {_RANKED_PROJECTION} FROM ranked WHERE rn = 1 "
         f"ORDER BY geo_id LIMIT :limit OFFSET :offset"
