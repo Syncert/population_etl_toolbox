@@ -84,6 +84,16 @@ def test_deployment_probes_stay_outside_the_version_policy() -> None:
 
     assert client.get("/health").json()["status"] == "ok"
 
+    # And the declaration is the router's, both ways. Asserting only that
+    # every listed path is served lets a probe added to the router go
+    # unlisted, and `UNVERSIONED_PATHS` is what tells the rest of the
+    # application which paths carry no data contract.
+    from apps.api.routers import health
+
+    assert UNVERSIONED_PATHS == {
+        str(route.path) for route in health.probe_router.routes
+    }
+
 
 @pytest.mark.unit
 @pytest.mark.api
