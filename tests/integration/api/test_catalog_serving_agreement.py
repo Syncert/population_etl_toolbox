@@ -854,9 +854,7 @@ def published_pep_metric(
                     (PEP_DATASET,),
                 )
                 delete_geography(database_cursor, "nation:us")
-                _remove_registration(
-                    database_cursor, registered_before, "CENSUS_PEP"
-                )
+                _remove_registration(database_cursor, registered_before, "CENSUS_PEP")
             cleanup.commit()
         finally:
             cleanup.close()
@@ -879,8 +877,7 @@ def test_every_published_grain_answers_on_every_route_that_accepts_one(
     from apps.api.registry import GEO_GRAINS, SERVING_CONTRACTS
 
     segments = {
-        contract.source_code: segment
-        for segment, contract in SERVING_CONTRACTS.items()
+        contract.source_code: segment for segment, contract in SERVING_CONTRACTS.items()
     }
     unanswered: list[str] = []
     off_vocabulary: list[str] = []
@@ -926,3 +923,67 @@ def test_every_published_grain_answers_on_every_route_that_accepts_one(
     # relation stores `nation` under a column named `geo_level`. If this pair
     # is absent the sweep proved nothing about the case it exists for.
     assert f"pep:{published_pep_metric}@NATIONAL" in exercised, exercised
+
+
+def test_every_catalog_code_answers_on_every_route_that_accepts_one(
+    api_client: TestClient, published_pep_metric: str
+) -> None:
+    """Covers: DB-031 — the other half of the same route family.
+
+    DB-025 asks this question of `/api/v1/observations`; DB-030 asks the grain
+    question of each source's own latest route. `/{segment}/observations/timeseries`
+    accepts no `geo_level`, so no grain sweep reaches it -- and it accepts the
+    same `metric_code`, and was equally unanswerable for every Census PEP
+    metric until the serving contracts learned how their relations compose an
+    identity.
+
+    The geography it asks for is one the source actually published, taken from
+    the latest route's own answer: asking for a geography nothing covers would
+    pass while proving nothing.
+    """
+    from apps.api.registry import SERVING_CONTRACTS
+
+    unresolvable: list[str] = []
+    exercised: list[str] = []
+
+    for segment, contract in sorted(SERVING_CONTRACTS.items()):
+        for metric_code in _current_catalog_codes(api_client, contract.source_code)[
+            :SWEEP_SAMPLE
+        ]:
+            latest = api_client.get(
+                f"/api/v1/{segment}/observations/latest",
+                params={"metric_code": metric_code, "limit": 1},
+            )
+            assert latest.status_code == 200, latest.text
+            published = latest.json()["items"]
+            if not published:
+                unresolvable.append(
+                    f"{contract.source_code} publishes current catalog code "
+                    f"'{metric_code}', which /api/v1/{segment}/observations/latest "
+                    "answers with no rows"
+                )
+                continue
+            geo_id = published[0]["geo_id"]
+            exercised.append(f"{segment}:{metric_code}@{geo_id}")
+            history = api_client.get(
+                f"/api/v1/{segment}/observations/timeseries",
+                params={"metric_code": metric_code, "geo_id": geo_id, "limit": 5},
+            )
+            assert history.status_code == 200, history.text
+            if int(history.json()["total"]) < 1:
+                unresolvable.append(
+                    f"{contract.source_code} publishes '{metric_code}' for "
+                    f"'{geo_id}', which "
+                    f"/api/v1/{segment}/observations/timeseries answers with no rows"
+                )
+
+    assert not unresolvable, "\n".join(unresolvable)
+    assert exercised, (
+        "no serving contract's source published a current catalog code, so "
+        "this guard proved nothing; the warehouse under test carries no "
+        "catalog content for them"
+    )
+    # Census PEP is the source whose relations compose an identity the catalog
+    # does not publish. If it was not exercised the sweep proved nothing about
+    # the case it exists for.
+    assert any(entry.startswith("pep:") for entry in exercised), exercised

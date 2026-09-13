@@ -282,7 +282,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-007 | None |
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
-| Database integration | DB-001–DB-030 | None |
+| Database integration | DB-001–DB-031 | None |
 | API | API-001–API-092 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-051 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **332 of 332** | **0 of 332** |
+| **Total** | **333 of 333** | **0 of 333** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 332-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 333-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -519,6 +519,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-028 | P0 | Contract / `integration api database` | A published grain is answerable, in one vocabulary | For every registered source and each sampled current catalog code, every grain in `valid_geo_grains` sent as `geo_level` to `/api/v1/observations` answers at least one row, every returned row's `geo_level` equals that grain, and the grain is one of `NATIONAL`, `STATE`, `COUNTY`, `PLACE`, `AGENCY`; the ACS fixture publishes exactly the grain it seeded, proving grains are derived from served rows rather than declared | A catalog advertising a grain nothing serves (ACS declared 2,487 such pairs; every national USDA NASS statistic), a served row carrying a word outside the vocabulary (`nation`, `fbi_agency:…`), or a publisher that declares grains from configuration |
 | DB-029 | P0 | Static / `unit` | The migration sequence document matches the sequence | Every migration the bootstrap manifest applies is described by filename in `sql/migrations/README.md`, and every filename the README describes exists, so the document a reader learns the *why* from cannot fall behind the files a bootstrap runs | A migration added to the manifest with no README entry -- `015`, `016`, and `017` ran in every bootstrap undescribed for three releases, because DB-001 checks that named assets exist and that numbers are unique, and a missing paragraph violates neither -- or a description left behind by a renamed or removed migration |
 | DB-030 | P0 | Contract / `integration api database` | Every published grain answers on every route that accepts one | The published-grain sweep asks each source's own `/{segment}/observations/latest` as well as `/observations`: every grain the catalog publishes for a current code answers at least one row, and every row carries that grain in the vocabulary; one Census PEP metric is published end to end through the real views and the real harvest so the source whose relations store `nation` and compose a three-segment metric code is actually exercised, and the fixture removes exactly what it created, registration side effects included | An entire documented route family answering no rows for a source -- PEP's serving relation composes `CENSUS_PEP:<dataset>:<measure>` while the catalog publishes `CENSUS_PEP:<measure>`, so the two never met -- with the sweep written for exactly this class asking only the neutral route and no fixture publishing a PEP metric for it to ask about |
+| DB-031 | P0 | Contract / `integration api database` | A catalog code answers on every route that accepts one | Every serving contract's `/{segment}/observations/timeseries` is asked for each current catalog code of its source and answers, for a geography read from that source's own latest answer rather than assumed; a source with no catalog content contributes nothing and the guard says so rather than passing vacuously, and Census PEP -- whose relations compose an identity the catalog does not publish -- must be among the sources exercised | The half of the route family no grain sweep reaches: `/{segment}/observations/timeseries` accepts no `geo_level`, so DB-030 cannot ask it, and it was equally unanswerable for every Census PEP metric |
 
 ### API and Redis Tests
 
