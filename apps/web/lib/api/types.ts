@@ -235,6 +235,13 @@ export interface AnalysisDocument {
   metric_code_b?: string | null;
   scope?: "latest" | "as_released";
   release?: string | null;
+  /**
+   * The reduction the view was read with (API-082). Each belongs to one
+   * scope, and the API refuses the other pairing, so a document carries at
+   * most one.
+   */
+  newest_per_geography?: boolean;
+  newest_release_per_period?: boolean;
   filters?: Record<string, unknown>;
   bin_count?: number | null;
   visualization?: Record<string, unknown>;

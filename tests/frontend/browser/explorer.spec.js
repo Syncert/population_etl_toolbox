@@ -1142,3 +1142,55 @@ test("a geography's history is the settled one the resource answers", async ({ p
     expect(request.release).toBeUndefined();
   }
 });
+
+test("a saved map view records the reduction the map asked for", async ({ page }) => {
+  // Covers: WEB-047 — the document a saved view stores is the request the
+  // view issued. It recorded no reduction, so a map of a source whose latest
+  // publication is a series reopened as the whole publication: every
+  // estimated year of the vintage, joined to one polygon, coloured by
+  // whichever row arrived last. The claim is read back from the issued
+  // request rather than asserted, so a source that does not declare
+  // `newest_per_geography` cannot be saved as though it had been reduced.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests });
+
+  const created = [];
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 11,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+
+  await page.goto("/explore?metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await page.getByTestId("save-view").click();
+  await expect(page.getByTestId("save-toast")).toHaveAttribute("data-destination", "account");
+
+  expect(created).toHaveLength(1);
+  const document = created[0].document;
+  // The map's own cross-geography request, which is what the document claims
+  // to reproduce.
+  const mapRequests = observationRequests.filter((entry) => entry.geo_level && !entry.geo_id);
+  expect(mapRequests.length).toBeGreaterThan(0);
+  const askedForTheReduction = mapRequests.every(
+    (entry) => entry.newest_per_geography === "true",
+  );
+  expect(document.newest_per_geography).toBe(askedForTheReduction);
+  expect(document.newest_per_geography).toBe(true);
+  // Each reduction belongs to one scope; the document stores a pairing the
+  // live route would serve, never one it refuses.
+  expect(document.scope).toBe("latest");
+  expect(document.newest_release_per_period).toBe(false);
+  expect(document.release).toBeNull();
+});

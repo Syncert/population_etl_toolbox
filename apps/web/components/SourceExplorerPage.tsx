@@ -1474,12 +1474,21 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   // The exact request the observation effect issues, built by the same
   // capability-bounded builder, so the displayed path reproduces the set.
-  const apiQuery = selectedMetric && activeSource
-    ? (() => {
-        const { resource, params } = buildLatestObservationRequest(activeSource, latestQuery);
-        return buildApiPath(resource, params);
-      })()
+  const latestRequest = useMemo(
+    () => (selectedMetric && activeSource
+      ? buildLatestObservationRequest(activeSource, latestQuery)
+      : null),
+    [selectedMetric, activeSource, latestQuery],
+  );
+  const apiQuery = latestRequest
+    ? buildApiPath(latestRequest.resource, latestRequest.params)
     : "Select a metric to generate an API query.";
+  // What the map actually asked the resource for, read back from the request
+  // it issues rather than from the intent above it. The builder drops
+  // `newest_per_geography` where the source's capability entry does not
+  // declare it, so a view saved from such a source must not claim a
+  // reduction it never asked for (WEB-047).
+  const viewedNewestPerGeography = latestRequest?.params.newest_per_geography === "true";
 
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
@@ -1567,6 +1576,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             stateFips: selectedStateFips,
             geoId: selectedGeoId,
             dimensions: dimensionSelections,
+            // A map saved without the reduction reopens as the whole latest
+            // publication -- for a source publishing a series per geography
+            // that is every period of it, and the map would colour whichever
+            // row arrived last rather than the newest one.
+            newestPerGeography: viewedNewestPerGeography,
           }),
         });
         setSaveStatus(describeSaveSuccess("account", title));

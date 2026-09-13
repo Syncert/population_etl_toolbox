@@ -38,6 +38,10 @@ export function explorerDocument(input: {
   stateFips?: string;
   geoId?: string;
   dimensions?: Record<string, string>;
+  /** The view asked the resource for one row per geography (API-066). */
+  newestPerGeography?: boolean;
+  /** The view read a settled history: newest release per period (API-081). */
+  newestReleasePerPeriod?: boolean;
 }): AnalysisDocument {
   const filters: Record<string, unknown> = {};
   if (input.geoLevel) {
@@ -54,13 +58,35 @@ export function explorerDocument(input: {
       filters[name] = value;
     }
   }
+  // A view that asked the resource to reduce must say so, or it reopens as
+  // a different set of rows: a map saved without `newest_per_geography`
+  // replays as the whole latest publication, which for a source publishing
+  // a series per geography colours whichever row arrived last (WEB-047).
+  //
+  // Each reduction belongs to one scope, and the API refuses the other
+  // pairing and the two together. A contradiction is dropped here rather
+  // than stored, because a document the live route would reject is one the
+  // reader could not reopen.
+  const scope = input.scope || "latest";
+  const newestPerGeography = Boolean(input.newestPerGeography) && scope === "latest";
+  const newestReleasePerPeriod =
+    Boolean(input.newestReleasePerPeriod) &&
+    scope === "as_released" &&
+    !newestPerGeography;
   return {
     kind: "observations",
     metric_code: input.metricCode,
-    scope: input.scope || "latest",
+    scope,
     // A release identity is meaningful only under `as_released`; carrying
-    // one otherwise would store a request the API refuses.
-    release: input.scope === "as_released" && input.release ? input.release : null,
+    // one otherwise would store a request the API refuses. A settled history
+    // refuses it too: one pins a release, the other asks for the newest of
+    // every period.
+    release:
+      scope === "as_released" && input.release && !newestReleasePerPeriod
+        ? input.release
+        : null,
+    newest_per_geography: newestPerGeography,
+    newest_release_per_period: newestReleasePerPeriod,
     filters,
     visualization: {},
   };
