@@ -683,9 +683,38 @@ export function comparisonMapRows(
       // carries no number, and rendered into its legend after "Value not
       // published:" (WEB-078) -- so the words are the phrase that completes
       // that sentence rather than a sentence of their own.
-      value_status: usable ? null : "not on both sides",
+      value_status: usable ? null : uncolouredReason(row, field),
     } as ObservationRow;
   });
+}
+
+/**
+ * Why one geography in the answer carries no derived number.
+ *
+ * A single phrase covered every case and named the wrong one for the case
+ * that actually happens. `/comparison` joins the two sides on geography, so
+ * every row in the answer *is* on both sides -- "not on both sides" is the
+ * reason a geography is missing from the answer, which is what
+ * `geographies_a` / `geographies_b` report, not the reason a row inside it
+ * has no ratio. The route computes no ratio where the denominator is zero,
+ * and a zero is an ordinary published value for a count in a small county,
+ * so that is the reason a reader actually meets (WEB-079).
+ *
+ * The sides' own missing values are kept as a case even though the four
+ * sources the aligned routes accept all serve published numbers only
+ * (API-127): a source that publishes a value state becoming analysis-ready
+ * would make it reachable, and the phrase would otherwise be wrong again.
+ */
+function uncolouredReason(row: ComparisonRow, field: string): string {
+  const published = (side: unknown): boolean =>
+    side !== null && side !== undefined && Number.isFinite(Number(side));
+  if (!published(row.value_a) || !published(row.value_b)) {
+    return "one side published no number";
+  }
+  if (field === "ratio" && Number(row.value_b) === 0) {
+    return "the denominator is zero";
+  }
+  return "not derived for this geography";
 }
 
 // ---------------------------------------------------------------------------

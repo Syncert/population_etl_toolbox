@@ -450,7 +450,9 @@ describe("aligned presentations read the same rows without inventing values", ()
     // A geography the API could not derive stays null, so the shared
     // choropleth model leaves it uncoloured rather than colouring a zero.
     expect(rows[1].value).toBeNull();
-    expect(rows[1].value_status).toBe("not on both sides");
+    // And the reason is the one that applies to this row: its `value_a` is
+    // null, so one side published no number (WEB-079).
+    expect(rows[1].value_status).toBe("one side published no number");
 
     // A field the response never named as derived is not mappable: colouring
     // by a published input would present one side as the comparison.
@@ -633,5 +635,47 @@ describe("the grains a pair can be compared at", () => {
     const offer = comparisonGrainOffer({ metricA: { metric_code: "X" }, metricB: pep });
     expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY", "PLACE"]);
     expect(comparisonGrainOffer({ metricA: null, metricB: null }).note).toBe("");
+  });
+});
+
+describe("why a geography in the answer carries no derived number", () => {
+  // Covers: WEB-079 — the reason is the one that applies to the row.
+  //
+  // `/comparison` joins its two sides on geography, so every row in the
+  // answer is on both sides: "not on both sides" describes a geography the
+  // answer does not contain, which `geographies_a` / `geographies_b` report.
+  // The reason a row inside the answer has no ratio is the route's own: it
+  // computes none where the denominator is zero.
+  const withZeroDenominator = {
+    ...comparison,
+    items: [
+      {
+        geo_id: "state:55|county:025",
+        geo_level: "COUNTY",
+        period_a: "2023",
+        period_b: "2023",
+        value_a: 12,
+        value_b: 0,
+        difference: 12,
+        ratio: null,
+      },
+    ],
+  };
+
+  test("a zero denominator is named as one, not as a missing side", () => {
+    const rows = comparisonMapRows(withZeroDenominator, "ratio");
+    expect(rows[0].value).toBeNull();
+    expect(rows[0].value_status).toBe("the denominator is zero");
+  });
+
+  test("the same geography's difference is published, so it is coloured", () => {
+    const rows = comparisonMapRows(withZeroDenominator, "difference");
+    expect(rows[0].value).toBe("12");
+    expect(rows[0].value_status).toBeNull();
+  });
+
+  test("a side that published no number says so", () => {
+    const rows = comparisonMapRows(comparison, "ratio");
+    expect(rows[1].value_status).toBe("one side published no number");
   });
 });
