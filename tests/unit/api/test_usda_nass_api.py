@@ -376,3 +376,45 @@ def test_source_notes_report_every_registered_symbol_state() -> None:
     assert "(Z) = below_rounding_unit" in detail
     assert "(D) = withheld" in detail
     assert notes.total == len(notes.items)
+
+
+#: The column that makes each NASS list statement's order total, and why it
+#: is unique in the relation the statement reads.
+NASS_TIE_BREAKERS = {
+    "/api/v1/usda-nass/observations": (
+        "observation_sk",
+        "the BIGSERIAL primary key of silver_nass.fact_crop_observation, "
+        "carried through gold_nass.crop_observation and the latest-release view",
+    ),
+    "/api/v1/usda-nass/series": (
+        "series_id",
+        "an MD5 over the exact tuple gold_nass.crop_series groups by",
+    ),
+}
+
+
+@pytest.mark.parametrize("path", sorted(NASS_TIE_BREAKERS))
+def test_nass_list_routes_page_a_total_order(path: str) -> None:
+    """Covers: API-080 — a tie a page boundary can fall inside is a repeat.
+
+    The Quick Stats grain is multidimensional, which is what these routes
+    exist to preserve: a commodity published across several domain categories
+    answers several rows carrying one ``short_desc``. Ordering by a list that
+    cannot separate them left the page boundary to PostgreSQL, which promises
+    nothing about it. CDC's queries already end in ``observation_sk`` with a
+    comment saying exactly this.
+    """
+    session = _RecordingSession(rows=[], total=0)
+    response = _client(session).get(path, params={"limit": 5, "offset": 10})
+
+    assert response.status_code == 200
+    listing = [
+        statement
+        for statement in session.statements
+        if "ORDER BY" in statement and "COUNT(*)" not in statement
+    ]
+    assert listing, "no list statement was issued"
+    column, _why = NASS_TIE_BREAKERS[path]
+    rendered = " ".join(listing[0].split())
+    order = rendered.split("ORDER BY", 1)[1].split("LIMIT", 1)[0].strip()
+    assert order.endswith(column), order

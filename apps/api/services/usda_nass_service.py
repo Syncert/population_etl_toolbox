@@ -210,7 +210,15 @@ def list_observations(
         session.execute(
             text(
                 f"SELECT {_OBSERVATION_COLUMNS} FROM {filters.relation} {where} "
-                "ORDER BY product_id, release_watermark, short_desc, geo_id, year "
+                "ORDER BY product_id, release_watermark, short_desc, geo_id, "
+                # observation_sk breaks any remaining tie, as CDC's order
+                # already does (API-080). The Quick Stats grain is
+                # multidimensional -- a commodity published across several
+                # domain categories answers several rows carrying one
+                # short_desc -- so without it a page boundary falls inside a
+                # tie PostgreSQL promises nothing about, and two pages can
+                # repeat a row and skip another.
+                "year, observation_sk "
                 "LIMIT :limit OFFSET :offset"
             ),
             {**parameters, "limit": filters.limit, "offset": filters.offset},
@@ -256,7 +264,10 @@ def list_series(
                 FROM gold_nass.crop_series
                 """
                 + where
-                + " ORDER BY product_id, short_desc, geo_id "
+                # series_id is an MD5 over the exact tuple this view groups
+                # by, so it is unique per row by construction and makes the
+                # order total (API-080).
+                + " ORDER BY product_id, short_desc, geo_id, series_id "
                 "LIMIT :limit OFFSET :offset"
             ),
             {**parameters, "limit": filters.limit, "offset": filters.offset},

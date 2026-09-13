@@ -283,7 +283,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Airflow DAGs | DAG-001–DAG-017 | None |
 | ETL and shared units | ETL-001–ETL-049 | None |
 | Database integration | DB-001–DB-029 | None |
-| API | API-001–API-079 | None |
+| API | API-001–API-080 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
 | End-to-end | E2E-001–E2E-014 | None |
@@ -291,7 +291,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-040 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **305 of 305** | **0 of 305** |
+| **Total** | **306 of 306** | **0 of 306** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 305-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 306-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -602,6 +602,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | API-077 | P0 | Contract / `unit api` | Catalog search matches literal text | `q` on `/catalog/metrics` and `/catalog/geographies` escapes `%`, `_`, and the escape character itself before binding, and every branch declares `ESCAPE '\'`, so the search stays a case-insensitive substring match over the text the caller typed; a `q` holding none of those characters binds exactly as before, and the value is still bound rather than interpolated | `q=CENSUS_ACS` answering with `CENSUSXACS` rows, or a bare `q=%` returning the whole catalog under a filter the caller believed narrowed it |
 | API-078 | P0 | Service / `unit api` | An unregistered source is explained, not a 500 | A glossary metric whose source has no reviewed dispatch entry -- the state `catalog_service.get_metric_capability` documents, because warehouse work lands before API registry work -- answers `422` from `/distribution/bins` with the source named and `/catalog/capabilities` pointed at, byte-identical to the detail `/observations` gives, because both go through one helper; no query runs, and the route's 404, its stratified-source restriction, and its bins are unchanged | The one analysis route that reached into the registry directly answering a known metric with `500 Internal Server Error` while every other surface explains it |
 | API-079 | P0 | Service / `unit api` | A distribution reports every bin it was asked for | `items` carries exactly `bin_count` entries, `bin_index` 1..`bin_count` with contiguous bounds from `min_value` to `max_value` and the last bin closing on the observed maximum; a bin no geography falls into carries `count: 0` rather than being absent, non-empty counts are unchanged and still sum to `total`, and the degenerate answers stay as they were -- no numeric values gives `total: 0` with null bounds and no items, one distinct value gives one bin | A histogram drawn straight from `items` showing adjacent bars where empty ranges belong, because `GROUP BY bin_index` returned no row and the caller read absence as no such bin |
+| API-080 | P0 | Contract / `unit api` | The USDA NASS explorer pages a total order | `/usda-nass/observations` ends its order in `observation_sk` and `/usda-nass/series` in `series_id` -- the `BIGSERIAL` key `gold_nass.crop_observation` carries and the MD5 `gold_nass.crop_series` computes over the tuple it groups by -- so no two rows of one response tie on the full list; the leading order is unchanged, so a page a caller already sees keeps its shape and only ties resolve | Two pages of a multidimensional Quick Stats query repeating one row and skipping another, because a commodity published across several domain categories answers several rows carrying one `short_desc` and the order could not separate them |
 
 ### Frontend Tests
 
