@@ -165,3 +165,89 @@ def test_dispatch_lineage_prefixes_compose_the_glossary_identity() -> None:
         and dispatch.lineage_key_prefix != f"{dispatch.source_code}:"
     ]
     assert not rewrites, "\n".join(rewrites)
+
+
+# --------------------------------------------------------------------------
+# A published grain is a fact about served rows, never a literal in the view.
+# --------------------------------------------------------------------------
+
+_GRAIN_ASSIGNMENT = re.compile(r"\bAS\s+valid_geo_grains\b", re.IGNORECASE)
+_STRING_LITERAL = re.compile(r"'[^']*'")
+
+
+def _publisher_bodies() -> dict[str, tuple[Path, str]]:
+    """Each publishing schema's ``metric_publisher`` body, comments removed."""
+    bodies: dict[str, tuple[Path, str]] = {}
+    for path in _sql_files():
+        source = _without_comments(path.read_text(encoding="utf-8"))
+        for match in _PUBLISHER_PATTERN.finditer(source):
+            start = match.start()
+            end = source.find(";", start)
+            bodies[match.group("schema").lower()] = (
+                path,
+                source[start : end if end != -1 else len(source)],
+            )
+    return bodies
+
+
+def _grain_expression(body: str) -> str | None:
+    """The select-item expression assigned to ``valid_geo_grains``.
+
+    Walks back from the assignment to the comma that opens the select item,
+    counting parentheses so a comma inside ``COALESCE(...)`` is not mistaken
+    for the item boundary.
+    """
+    assignment = _GRAIN_ASSIGNMENT.search(body)
+    if assignment is None:
+        return None
+    depth = 0
+    index = assignment.start() - 1
+    while index >= 0:
+        character = body[index]
+        if character == ")":
+            depth += 1
+        elif character == "(":
+            depth -= 1
+        elif character == "," and depth == 0:
+            break
+        index -= 1
+    return body[index + 1 : assignment.start()].strip()
+
+
+def test_every_publisher_reads_its_grains_from_rows() -> None:
+    """Covers: ARC-006 — no publisher declares a geography grain.
+
+    A declared grain is a claim about the future; a derived grain is a fact
+    about the rows. Census ACS declared grains from its dataset code and
+    advertised 2,487 metric/grain pairs nothing served; FRED declared
+    ``ARRAY['NATIONAL']`` for every series, which was true only for as long as
+    no regional series was configured; BLS mapped a configured series
+    attribute through a ``CASE`` whose ``ELSE`` made an unrecognised level
+    national.
+
+    The rule is mechanical, so a seventh source cannot reintroduce it: the
+    expression a publisher assigns to ``valid_geo_grains`` carries no string
+    literal. A grain spelled in the view is a grain nothing has to serve.
+    """
+    bodies = _publisher_bodies()
+    assert bodies, "no metric_publisher view was found to check"
+
+    declared: list[str] = []
+    checked: list[str] = []
+    for schema, (path, body) in sorted(bodies.items()):
+        expression = _grain_expression(body)
+        assert expression, (
+            f"{schema}.metric_publisher publishes no valid_geo_grains column; "
+            "the harvest contract requires one"
+        )
+        checked.append(schema)
+        literals = _STRING_LITERAL.findall(expression)
+        if literals:
+            declared.append(
+                f"{path.relative_to(REPOSITORY_ROOT).as_posix()}: "
+                f"{schema}.metric_publisher declares {', '.join(literals)} "
+                f"in `{' '.join(expression.split())}`"
+            )
+
+    assert not declared, "\n".join(declared)
+    assert len(checked) >= 6, f"only {checked} were checked; a publisher went missing"

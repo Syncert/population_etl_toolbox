@@ -7,6 +7,15 @@
 -- distribution bins, and comparison routes had nothing to draw. LAUS therefore
 -- publishes per measure, with the grains read from the fact rows rather than
 -- declared as a constant.
+--
+-- The series arm reads them from the rows too, as of 2026-09-12. It used to
+-- map `dim_bls_series.geographic_level` -- a configured attribute of the
+-- series, not a fact about what is served -- through a CASE whose ELSE was
+-- ARRAY['NATIONAL'], so a series with an unrecognised or absent level was
+-- published as national, and a series serving nothing at all was published as
+-- serving the nation. `fact_bls_observation.geo_level` is already normalised
+-- to the catalog vocabulary by the gold refresh, so the rows can say it
+-- themselves.
 
 CREATE OR REPLACE VIEW gold_bls.measure_export AS
 SELECT
@@ -33,11 +42,13 @@ SELECT
     COALESCE(NULLIF(series.series_title, ''), series.series_id)::TEXT AS metric_display_name,
     series.unit_of_measure::TEXT AS units,
     series.value_type::TEXT AS measure_kind,
-    CASE UPPER(COALESCE(series.geographic_level, ''))
-        WHEN 'COUNTY' THEN ARRAY['COUNTY']::TEXT[]
-        WHEN 'STATE' THEN ARRAY['STATE']::TEXT[]
-        ELSE ARRAY['NATIONAL']::TEXT[]
-    END AS valid_geo_grains,
+    -- ARRAY_REMOVE because the join is outer: a series the refresh has served
+    -- no row for aggregates to {NULL}, and it must publish no grain rather
+    -- than a grain spelled NULL.
+    ARRAY_REMOVE(
+        ARRAY_AGG(DISTINCT UPPER(fact.geo_level) ORDER BY UPPER(fact.geo_level)),
+        NULL
+    )::TEXT[] AS valid_geo_grains,
     ARRAY['MONTHLY']::TEXT[] AS valid_time_grains,
     NULL::TEXT AS aggregation_characteristic,
     JSONB_BUILD_OBJECT('schema', 'gold_bls', 'relation', 'fact_bls_observation', 'key', series.series_id) AS physical_lineage,

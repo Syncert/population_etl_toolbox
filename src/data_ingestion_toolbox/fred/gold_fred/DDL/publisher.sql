@@ -1,3 +1,22 @@
+-- Grains are derived from the served relation, never declared.
+--
+-- This view used to declare ARRAY['NATIONAL'] for every series. It was true:
+-- every FRED series served today is national. It was true the way the ACS
+-- declaration was true on the day it was written, and on 2026-09-12 that one
+-- was found advertising 2,487 metric/grain pairs nothing served. A declared
+-- grain is a claim about the future; a derived grain is a fact about the rows.
+-- FRED is the source most likely to gain a regional series -- one
+-- configuration entry away -- and the first such series would have been
+-- published as NATIONAL by this line.
+--
+-- Deriving also removes a category of defect rather than catching it: a series
+-- with no served rows publishes no grain, so the catalog-serving agreement
+-- guards (DB-025, DB-028) report a current code with nothing behind it instead
+-- of this view inventing a grain for it.
+--
+-- Order matters now: the glossary harvest must run after the serving refresh,
+-- or it publishes the empty array. The ingest DAG already emits
+-- `publisher_ready` downstream of `gold_fred_refresh`.
 CREATE OR REPLACE VIEW gold_fred.metric_publisher AS
 SELECT
     'FRED'::TEXT AS source_code,
@@ -7,7 +26,7 @@ SELECT
     COALESCE(NULLIF(series.series_title, ''), series.series_id)::TEXT AS metric_display_name,
     series.units::TEXT AS units,
     NULL::TEXT AS measure_kind,
-    ARRAY['NATIONAL']::TEXT[] AS valid_geo_grains,
+    COALESCE(served.valid_geo_grains, ARRAY[]::TEXT[]) AS valid_geo_grains,
     CASE
         WHEN LOWER(COALESCE(series.frequency, '')) LIKE '%daily%' THEN ARRAY['DAILY']::TEXT[]
         WHEN LOWER(COALESCE(series.frequency, '')) LIKE '%weekly%' THEN ARRAY['WEEKLY']::TEXT[]
@@ -25,4 +44,21 @@ SELECT
     series.reference_url::TEXT AS reference_url
 FROM gold_fred.dim_fred_series AS series
 LEFT JOIN gold_fred.fact_fred_observation AS fact ON fact.fred_series_sk = series.fred_series_sk
-GROUP BY series.fred_series_sk;
+LEFT JOIN (
+    -- One row per served metric with the grains its latest rows carry, in the
+    -- vocabulary the API filters on. `gold_glossary.geo_grain` is defined in
+    -- the glossary phase, after this file runs at bootstrap, so the served
+    -- relation's own upper-cased word is used; the refresh writes 'NATIONAL'
+    -- literally, so it already is that vocabulary.
+    --
+    -- `mv_fred_latest` rather than the fact table, because it is the relation
+    -- the dispatch entry names for a `latest` read: a grain published here is
+    -- one the API can answer.
+    SELECT latest.metric_code,
+           ARRAY_AGG(DISTINCT UPPER(latest.geo_level)
+                     ORDER BY UPPER(latest.geo_level))::TEXT[] AS valid_geo_grains
+    FROM gold_fred.mv_fred_latest AS latest
+    GROUP BY latest.metric_code
+) AS served
+  ON served.metric_code = 'FRED:' || series.series_id
+GROUP BY series.fred_series_sk, served.valid_geo_grains;
