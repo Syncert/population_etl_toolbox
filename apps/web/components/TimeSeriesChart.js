@@ -27,10 +27,30 @@ export default function TimeSeriesChart({ items }) {
   const valueSpan = maxValue - minValue || 1;
   const chartWidth = width - paddingX * 2;
   const chartHeight = height - paddingTop - paddingBottom;
+
+  // The horizontal axis is time, not position in the list.
+  //
+  // Placing points by index closes the very gap this component was careful
+  // not to fill with a zero: a series missing 1980 drew 1979 and 1981
+  // adjacent and evenly spaced, and the line between them sloped as though
+  // the measure had moved over one ordinary interval. The API leaves such a
+  // gap open on purpose -- the consumer guide spends a paragraph on the July
+  // 1980 county estimate the Bureau never published -- so the chart must
+  // leave it open too (WEB-042).
+  //
+  // A date this cannot read, or a series that spans one instant, falls back
+  // to the even spacing used before: still drawn, never dropped.
+  const times = series.map((item) => Date.parse(String(item.observation_date)));
+  const datedSpan = times.every((time) => Number.isFinite(time))
+    ? Math.max(...times) - Math.min(...times)
+    : 0;
+  const firstTime = datedSpan > 0 ? Math.min(...times) : 0;
+
   const points = series.map((item, index) => {
-    const x = series.length === 1
-      ? width / 2
-      : paddingX + (index / (series.length - 1)) * chartWidth;
+    const position = datedSpan > 0
+      ? (times[index] - firstTime) / datedSpan
+      : index / (series.length - 1 || 1);
+    const x = series.length === 1 ? width / 2 : paddingX + position * chartWidth;
     const y = paddingTop + ((maxValue - item.numericValue) / valueSpan) * chartHeight;
     return { ...item, x, y };
   });
