@@ -14,8 +14,11 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present defect:
-  the `frontend` job is flaky on this branch because of it.**
+- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
+  assessment agent; claimed and completed 2026-09-13. It was a present
+  defect: the `frontend` job was flaky on this branch because of it.
+  Register row **WEB-068** (WEB-062, suggested at authoring time, had been
+  taken).
 - **Last updated:** 2026-09-13
 - **Owner surface:** `apps/web/playwright.config.mjs`,
   `.github/workflows/frontend.yml`
@@ -84,10 +87,35 @@ timeout is ten seconds.
   responses by design; the live-stack tier is `frontend-smoke`.
 - Changing the smoke tier's server.
 
+## What changed
+
+- `playwright.config.mjs`'s `webServer.command` is `next start -p 3100`
+  under `process.env.CI` and `next dev -p 3100` otherwise, with the flake
+  and its reasoning recorded beside it. `package.json` already had the
+  `start` script on the same port.
+- `tests/frontend/unit/browser-tier-server.test.js` (new) reads the config
+  and fails if the CI half names `next dev`, if the served port and the
+  suite's `baseURL` disagree, or if the workflow browses before it builds.
+  Read from the file because the symptom of a revert is an occasional red
+  job months later rather than a failing test now.
+- `TESTING_CONTRACT.md`'s WEB-007 and WEB-008 rows and
+  `CI_EVIDENCE_MAP.md`'s browser row say what the tier grades. The job's
+  displayed name already reads "Frontend lint, typecheck, unit, build, and
+  browser", which is now accurate rather than aspirational — the build is
+  the artifact the browser step serves.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `npm --prefix apps/web run test:unit` — **354 passed** (351 before: +3).
+- `npm run build` then **`CI=1 npx playwright test`** — **84 passed in
+  54.6s**, against the production build. The same suite takes 2.1 minutes
+  against `next dev`, so serving the build is both the right artifact and
+  less than half the wall-clock: the difference is the per-route compile
+  this plan is about.
+- `pytest tests/unit` — 1520 passed, the register guards included.
+- The flaky spec is untouched, as criterion 2 requires. No retry and no
+  timeout change.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.
