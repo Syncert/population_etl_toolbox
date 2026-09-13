@@ -9,6 +9,12 @@
 // request regardless, which is why the browser suite alone cannot catch it
 // and this check reads the build artefacts instead.
 //
+// It also grades the style policy (WEB-035). `style-src-elem` admits only
+// `'self'` in production, and development's `'unsafe-inline'` exception for
+// Next's dev-overlay font is compiled away -- so reading the built middleware
+// is how that is proved rather than asserted. The browser suite runs against
+// `next dev`, where the exception is live, so it cannot see this.
+//
 // Usage: node scripts/check-csp-nonce.mjs   (after `npm run build`)
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -82,6 +88,26 @@ function main() {
     }
   }
 
+  // 3. The style policy that ships forbids inline style elements. The build
+  //    folds `process.env.NODE_ENV` away, so the built middleware carries the
+  //    production policy as a literal and the development exception is simply
+  //    absent from it.
+  const middlewarePath = join(distDir, "server", "middleware.js");
+  if (!existsSync(middlewarePath)) {
+    failures.push("no built middleware at .next/server/middleware.js to read the policy from");
+  } else {
+    const built = readFileSync(middlewarePath, "utf8");
+    const elem = built.match(/style-src-elem ([^;]*)/);
+    if (!elem) {
+      failures.push("the built middleware declares no style-src-elem; inline style elements would fall back to style-src, which admits 'unsafe-inline'");
+    } else if (elem[1].includes("unsafe-inline")) {
+      failures.push(`the shipped style-src-elem admits inline style elements: ${elem[1].trim()}`);
+    }
+    if (!/style-src-attr 'unsafe-inline'/.test(built)) {
+      failures.push("the built middleware declares no style-src-attr 'unsafe-inline'; MapLibre's own canvas and control styles, and the data-driven style props, are attributes and would be blocked");
+    }
+  }
+
   if (failures.length > 0) {
     for (const failure of failures) {
       console.error(`CSP nonce check failed: ${failure}`);
@@ -89,9 +115,9 @@ function main() {
     process.exit(1);
   }
   console.log(
-    `CSP nonce check passed: 0 prerendered routes, middleware registered at '/' with ${
+    `CSP check passed: 0 prerendered routes, middleware registered at '/' with ${
       (entry.matchers || []).length
-    } matcher(s).`,
+    } matcher(s), and a shipped style-src-elem that admits no inline style element.`,
   );
 }
 

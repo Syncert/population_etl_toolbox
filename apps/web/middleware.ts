@@ -41,14 +41,42 @@ function freshNonce(): string {
  * and decodes tiles into blob-backed images, which is why worker-src and
  * img-src admit `blob:`. `'unsafe-eval'` is development-only: Next's dev
  * runtime evaluates source maps and hot updates; the production bundle never
- * needs it. Styles keep `'unsafe-inline'`: Next emits inline style elements
- * for its own layout, and a style nonce is a separate change.
+ * needs it.
+ *
+ * Styles are split rather than blanket-trusted (WEB-035). CSP3 separates the
+ * two things `style-src` used to conflate:
+ *
+ * - `style-src-elem` governs `<style>` elements and stylesheet links. This
+ *   application has one global stylesheet, which the production build
+ *   extracts to a file, so production admits `'self'` and nothing else and an
+ *   injected `<style>` block -- the shape that exfiltrates through selectors
+ *   and background requests -- does not apply.
+ * - `style-src-attr` governs `style=""` attributes, and those cannot be
+ *   removed. MapLibre positions its canvas, controls, and popups by writing
+ *   style attributes on elements it creates, and three of this application's
+ *   own styles are values rather than rules: the choropleth legend swatch's
+ *   colour, a coverage bar segment's width, and the map tooltip's pointer
+ *   position. A nonce cannot cover an attribute, and `'unsafe-hashes'` needs
+ *   one hash per exact declaration, which a data-driven value cannot have.
+ *   So this one stays open, deliberately and narrowly.
+ *
+ * `style-src` is kept as it was for browsers that do not implement the CSP3
+ * split: they read it and behave exactly as they did before, so nothing
+ * regresses for them while the element door closes for everyone else.
+ *
+ * Development keeps `'unsafe-inline'` on elements because Next's dev server
+ * injects its stylesheets and hot updates as `<style>` elements at runtime.
+ * That is the same shape as the `'unsafe-eval'` exception above: what ships
+ * is the production policy, and `check-csp-nonce.mjs` grades it.
  */
 export function contentSecurityPolicy(nonce: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
+    // The CSP2 fallback, unchanged, for browsers without the CSP3 split.
     "style-src 'self' 'unsafe-inline'",
+    `style-src-elem 'self'${isDevelopment ? " 'unsafe-inline'" : ""}`,
+    "style-src-attr 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "worker-src 'self' blob:",
