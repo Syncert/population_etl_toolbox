@@ -76,13 +76,34 @@ CREATE TABLE IF NOT EXISTS gold_glossary.dim_geo_latest (
     longitude    DOUBLE PRECISION,
     geo_geom     geometry(MultiPolygon, 4326),
     boundary_vintage INTEGER,
+    -- A geography the reference stops listing is retired, not forgotten
+    -- (DB-038). The served relations keep its observations, so deleting the
+    -- catalog row left rows nothing could qualify: a client resolving
+    -- geographies through the catalog could not reach them, and one that did
+    -- not got rows the catalog would not name. This mirrors
+    -- `dim_metric_catalog.freshness_state`: the state is published, and the
+    -- consumer decides.
+    geography_state TEXT NOT NULL DEFAULT 'current',
+    retired_at   TIMESTAMPTZ,
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE gold_glossary.dim_geo_latest
     ADD COLUMN IF NOT EXISTS place_fips TEXT,
     ADD COLUMN IF NOT EXISTS place_name TEXT,
-    ADD COLUMN IF NOT EXISTS boundary_vintage INTEGER;
+    ADD COLUMN IF NOT EXISTS boundary_vintage INTEGER,
+    ADD COLUMN IF NOT EXISTS geography_state TEXT NOT NULL DEFAULT 'current',
+    ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
+
+-- Drop-then-add so re-applying this file is idempotent.
+ALTER TABLE gold_glossary.dim_geo_latest
+    DROP CONSTRAINT IF EXISTS ck_dim_geo_latest_geography_state;
+ALTER TABLE gold_glossary.dim_geo_latest
+    ADD CONSTRAINT ck_dim_geo_latest_geography_state
+    CHECK (geography_state IN ('current', 'retired'));
+
+CREATE INDEX IF NOT EXISTS ix_gold_glossary_dim_geo_latest_state
+    ON gold_glossary.dim_geo_latest (geography_state);
 
 CREATE INDEX IF NOT EXISTS ix_gold_glossary_dim_geo_latest_geom
     ON gold_glossary.dim_geo_latest USING GIST (geo_geom);
@@ -107,6 +128,8 @@ BEGIN
         longitude,
         geo_geom,
         boundary_vintage,
+        geography_state,
+        retired_at,
         refreshed_at
     )
     SELECT DISTINCT ON (g.geo_id)
@@ -128,12 +151,20 @@ BEGIN
         g.longitude,
         g.geom,
         g.boundary_vintage,
+        'current',
+        NULL,
         NOW()
     FROM silver_ref.dim_geo g
     WHERE g.is_active = TRUE
     ORDER BY g.geo_id, g.source_year DESC NULLS LAST, g.ingested_at DESC
     ON CONFLICT (geo_id) DO UPDATE
     SET geo_level = EXCLUDED.geo_level,
+        -- A reference that lists a retired geography again un-retires it. This
+        -- has to be part of the compared tuple below as well: a geography
+        -- retired and then restored with byte-identical attributes would
+        -- otherwise skip the update and stay `retired` forever.
+        geography_state = 'current',
+        retired_at = NULL,
         state_fips = EXCLUDED.state_fips,
         county_fips = EXCLUDED.county_fips,
         place_fips = EXCLUDED.place_fips,
@@ -156,7 +187,8 @@ BEGIN
         gold_glossary.dim_geo_latest.latitude,
         gold_glossary.dim_geo_latest.longitude,
         gold_glossary.dim_geo_latest.geo_geom,
-        gold_glossary.dim_geo_latest.boundary_vintage
+        gold_glossary.dim_geo_latest.boundary_vintage,
+        gold_glossary.dim_geo_latest.geography_state
     ) IS DISTINCT FROM (
         EXCLUDED.geo_level,
         EXCLUDED.state_fips,
@@ -168,16 +200,26 @@ BEGIN
         EXCLUDED.latitude,
         EXCLUDED.longitude,
         EXCLUDED.geo_geom,
-        EXCLUDED.boundary_vintage
+        EXCLUDED.boundary_vintage,
+        'current'
     );
 
-    DELETE FROM gold_glossary.dim_geo_latest d
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM silver_ref.dim_geo g
-        WHERE g.is_active = TRUE
-          AND g.geo_id = d.geo_id
-    );
+    -- Retire rather than delete (DB-038). `retired_at` records when the
+    -- reference stopped listing it and is not overwritten on a later refresh,
+    -- so "when did this county go away" survives every sweep after the first.
+    -- The attributes stay as last published: they are what the observations
+    -- this geography still has were served with.
+    UPDATE gold_glossary.dim_geo_latest d
+       SET geography_state = 'retired',
+           retired_at = COALESCE(d.retired_at, NOW()),
+           refreshed_at = NOW()
+     WHERE d.geography_state <> 'retired'
+       AND NOT EXISTS (
+           SELECT 1
+           FROM silver_ref.dim_geo g
+           WHERE g.is_active = TRUE
+             AND g.geo_id = d.geo_id
+       );
 END;
 $$;
 
@@ -228,5 +270,12 @@ SELECT
     longitude AS geo_longitude,
     boundary_vintage,
     refreshed_at,
-    COALESCE(place_name, county_name, state_name, geo_id) AS geo_name
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
+    -- Published for the same reason `dim_metric` publishes `freshness_state`:
+    -- a retired geography stays resolvable, and the consumer decides whether
+    -- to show it (DB-038). Its observations are still served, so a catalog
+    -- that hid it would leave rows nothing could name.
+    geography_state,
+    retired_at,
+    geography_state = 'current' AS is_active
 FROM gold_glossary.dim_geo_latest;

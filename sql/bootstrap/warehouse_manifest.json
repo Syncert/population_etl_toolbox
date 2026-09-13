@@ -17,6 +17,11 @@
       "path": "sql/migrations/021_geo_grain_vocabulary_early.sql"
     },
     {
+      "id": "migration-023",
+      "phase": "glossary-migration",
+      "path": "sql/migrations/023_geo_name_vocabulary_early.sql"
+    },
+    {
       "id": "migration-013",
       "phase": "quality-foundation",
       "path": "sql/migrations/013_data_quality_evidence.sql"
@@ -185,6 +190,11 @@
       "id": "migration-022",
       "phase": "glossary",
       "path": "sql/migrations/022_fbi_publisher_geo_grain.sql"
+    },
+    {
+      "id": "migration-024",
+      "phase": "glossary",
+      "path": "sql/migrations/024_served_place_name.sql"
     },
     {
       "id": "migration-003",

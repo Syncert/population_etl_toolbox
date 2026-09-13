@@ -868,3 +868,16 @@ export function stateScopeNote({
     "only."
   );
 }
+
+/**
+ * Every geography picker asks the catalog for active geographies only.
+ *
+ * A geography a new boundary vintage stops listing is published as
+ * `geography_state: "retired"` rather than dropped (DB-038), because the
+ * served relations still hold its observations and a catalog that hid it
+ * would leave rows nothing could name. That is the right answer for a client
+ * resolving a served row; it is the wrong default for a picker, whose whole
+ * question is "which geography do I want to look at now". Naming the choice
+ * once here keeps the six pickers from drifting apart on it.
+ */
+export const ACTIVE_GEOGRAPHIES_ONLY = { active_only: "true" } as const;

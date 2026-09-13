@@ -402,3 +402,251 @@ def test_batched_geography_replay_is_idempotent_and_guards_missing_entities(
             ],
             capture_id=capture,
         )
+
+
+@pytest.fixture
+def served_place_row_scope(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[None]:
+    """Remove what this test publishes, however it ends.
+
+    The geography catalog row matters as much as the reporting row: it now
+    survives retirement by design, so leaving one behind would let a rerun
+    start from a row the reference no longer explains -- and this tier is
+    asserted to be repeatable (`test_tier_repeatability.py`).
+    """
+    try:
+        yield
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM gold_census.rpt_acs_observations "
+                    "WHERE geo_id = ANY(%s)",
+                    (TEST_IDS,),
+                )
+                cursor.execute(
+                    "DELETE FROM gold_glossary.dim_geo_latest WHERE geo_id = ANY(%s)",
+                    (TEST_IDS,),
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_retired_geography_stays_resolvable_and_keeps_naming_its_rows(
+    postgres_connection_factory: Callable[[], connection],
+    reference_dimension_scope: None,
+    served_place_row_scope: None,
+) -> None:
+    """Covers: DB-038 — a retired geography is published as retired, not deleted.
+
+    `refresh_dim_geo_latest` used to DELETE the catalog row for a geography the
+    reference stopped listing, while `rpt_*_observations` kept that
+    geography's rows. The two halves of one answer disagreed: a client that
+    resolves geographies through `/catalog/geographies` could not reach those
+    rows, and one that did not got rows the catalog would not name. Nothing
+    asserted the containment either way.
+
+    A place is the geography used here on purpose. It is also the case where
+    the catalog and the observation views named the same geography
+    differently -- place first in the catalog, county first in the views --
+    so one test covers both halves of the divergence.
+    """
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_listed = seed_capture(cursor, "CENSUS_GEO", b"place-listed")
+    writer.commit()
+    writer.close()
+
+    repository = GeographyRepository(postgres_connection_factory)
+    records = [
+        GeographyRecord(
+            "state", "state:98", "98", "98", None, None, "Stateville", 2096
+        ),
+        GeographyRecord(
+            "place",
+            "state:98|place:54321",
+            "9854321",
+            "98",
+            None,
+            "54321",
+            "Crossing Place",
+            2096,
+        ),
+    ]
+    assert repository.load_attributes(records, capture_id=capture_listed) == 2
+    repository.reconcile_relationships(
+        vintage=2096,
+        capture_id=capture_listed,
+        active_geo_ids={record.geo_id for record in records},
+    )
+
+    connection_ = postgres_connection_factory()
+    try:
+        with connection_.cursor() as cursor:
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            connection_.commit()
+
+            # One served row for the place, exactly as a reserve would leave it.
+            cursor.execute(
+                """
+                INSERT INTO gold_census.rpt_acs_observations (
+                    observation_date, as_of_date, updated_at, geo_id, geo_level,
+                    state_fips, place_name, value, dataset_code, vintage_year,
+                    table_id, variable_code, estimate_value, metric_code
+                ) VALUES (
+                    '2096-01-01', '2096-01-01', NOW(), 'state:98|place:54321',
+                    'PLACE', '98', 'Crossing Place', 100, 'acs5', 2096,
+                    'B01003', 'B01003_001', 100, 'CENSUS_ACS:acs5:B01003_001'
+                )
+                """
+            )
+            connection_.commit()
+
+            cursor.execute(
+                "SELECT geography_state, retired_at IS NULL, is_active, geo_name "
+                "FROM gold_glossary.dim_geography WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone() == ("current", True, True, "Crossing Place")
+
+            # The observation routes name it the way the catalog does.
+            cursor.execute(
+                "SELECT geo_name FROM gold_census.fact_observation "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone() == ("Crossing Place",)
+    finally:
+        connection_.close()
+
+    # A new vintage lists the state and not the place.
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_dropped = seed_capture(cursor, "CENSUS_GEO", b"place-dropped")
+    writer.commit()
+    writer.close()
+    repository.load_attributes(
+        [
+            GeographyRecord(
+                "state", "state:98", "98", "98", None, None, "Stateville", 2097
+            )
+        ],
+        capture_id=capture_dropped,
+    )
+    assert (
+        repository.retire_missing(
+            active_geo_ids={"state:98"}, vintage=2097, capture_id=capture_dropped
+        )
+        >= 1
+    )
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                "SELECT is_active FROM silver_ref.dim_geo_current "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone() == (False,), "the reference must have retired it"
+
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            reader.commit()
+
+            cursor.execute(
+                "SELECT geography_state, retired_at IS NOT NULL, is_active, geo_name "
+                "FROM gold_glossary.dim_geography "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            resolved = cursor.fetchone()
+            assert resolved == ("retired", True, False, "Crossing Place"), (
+                "a retired geography must stay resolvable, and under the same "
+                f"name its rows were served with: {resolved}"
+            )
+
+            # Criterion: every served geography resolves in the catalog.
+            cursor.execute(
+                """
+                SELECT relation, geo_id FROM (
+                    SELECT 'gold_census.rpt_acs_observations' AS relation, geo_id
+                      FROM gold_census.rpt_acs_observations
+                    UNION
+                    SELECT 'gold_bls.rpt_bls_observations', geo_id
+                      FROM gold_bls.rpt_bls_observations
+                    UNION
+                    SELECT 'gold_fred.rpt_fred_observations', geo_id
+                      FROM gold_fred.rpt_fred_observations
+                ) AS served
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM gold_glossary.dim_geo_latest g
+                    WHERE g.geo_id = served.geo_id
+                )
+                """
+            )
+            unresolvable = cursor.fetchall()
+            assert not unresolvable, (
+                "these served geographies do not resolve in the geography "
+                f"catalog, so nothing can qualify their rows: {unresolvable}"
+            )
+
+            # `retired_at` records when it went, and a later sweep must not
+            # move it: "when did this county go away" has one answer.
+            cursor.execute(
+                "SELECT retired_at FROM gold_glossary.dim_geo_latest "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            first_retired_at = cursor.fetchone()[0]
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            reader.commit()
+            cursor.execute(
+                "SELECT retired_at FROM gold_glossary.dim_geo_latest "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone()[0] == first_retired_at
+    finally:
+        reader.close()
+
+    # A reference that lists it again un-retires it, with its attributes
+    # unchanged -- which is the case the conflict clause has to notice.
+    writer = postgres_connection_factory()
+    with writer.cursor() as cursor:
+        capture_relisted = seed_capture(cursor, "CENSUS_GEO", b"place-relisted")
+    writer.commit()
+    writer.close()
+    # A newer vintage than the one that retired it, or `dim_geo_current`
+    # keeps choosing the retirement version and the reference never says the
+    # place is back.
+    relisted = [
+        GeographyRecord(
+            "state", "state:98", "98", "98", None, None, "Stateville", 2098
+        ),
+        GeographyRecord(
+            "place",
+            "state:98|place:54321",
+            "9854321",
+            "98",
+            None,
+            "54321",
+            "Crossing Place",
+            2098,
+        ),
+    ]
+    repository.load_attributes(relisted, capture_id=capture_relisted)
+    repository.reconcile_relationships(
+        vintage=2098,
+        capture_id=capture_relisted,
+        active_geo_ids={record.geo_id for record in relisted},
+    )
+
+    reader = postgres_connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute("CALL gold_glossary.refresh_dim_geo_latest()")
+            reader.commit()
+            cursor.execute(
+                "SELECT geography_state, retired_at FROM gold_glossary.dim_geo_latest "
+                "WHERE geo_id = 'state:98|place:54321'"
+            )
+            assert cursor.fetchone() == ("current", None)
+    finally:
+        reader.close()

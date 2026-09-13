@@ -79,6 +79,7 @@ import {
   RELEASE_DIMENSION,
   SCOPE_AS_RELEASED,
   SCOPE_LATEST,
+  ACTIVE_GEOGRAPHIES_ONLY,
   buildHistoryObservationRequest,
   describeHistoryLoad,
   buildLatestObservationRequest,
@@ -1091,8 +1092,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     async function loadGeographies() {
       try {
         const [stateItems, countyItems] = await Promise.all([
-          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "STATE" }),
-          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "COUNTY" }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", {
+            ...ACTIVE_GEOGRAPHIES_ONLY,
+            geo_level: "STATE",
+          }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", {
+            ...ACTIVE_GEOGRAPHIES_ONLY,
+            geo_level: "COUNTY",
+          }),
         ]);
 
         if (request.isCurrent()) {
@@ -1157,8 +1164,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         const items = await fetchAllCatalogItems<GeographySummary>(
           "/catalog/geographies",
           selectedStateFips
-            ? { geo_level: grain, state_fips: selectedStateFips }
-            : { geo_level: grain },
+            ? {
+                ...ACTIVE_GEOGRAPHIES_ONLY,
+                geo_level: grain,
+                state_fips: selectedStateFips,
+              }
+            : { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: grain },
         );
         if (!request.isCurrent()) {
           return;

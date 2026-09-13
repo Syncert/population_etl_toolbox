@@ -129,7 +129,7 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
         "CDC", True, "alcohol", 10, 0
     )
     geo_list, geo_count, _ = catalog_queries.build_geographies_queries(
-        "county", "06", "Alameda", 10, 0
+        "county", "06", None, "Alameda", 10, 0
     )
     detail, _ = catalog_queries.build_metric_detail_query("CDC:cdi:ALC1_1:crude")
     rendered = [
@@ -452,7 +452,9 @@ def test_freshness_of_an_empty_glossary_is_an_empty_list() -> None:
 def test_catalog_lists_declare_deterministic_ordering() -> None:
     """Covers: API-041 — paging is stable because ordering is stable."""
     metrics_list, _, _ = catalog_queries.build_metrics_queries(None, None, None, 10, 0)
-    geo_list, _, _ = catalog_queries.build_geographies_queries(None, None, None, 10, 0)
+    geo_list, _, _ = catalog_queries.build_geographies_queries(
+        None, None, None, None, 10, 0
+    )
 
     assert "ORDER BY metric_code" in str(metrics_list)
     assert "ORDER BY geo_id" in str(geo_list)

@@ -15,6 +15,7 @@ services:
       - ../../sql/migrations/001_raw_capture_control_foundation.sql:/docker-entrypoint-initdb.d/000_raw_capture_control.sql:ro
       - ../../sql/migrations/002_gold_glossary_decoupling.sql:/docker-entrypoint-initdb.d/001_gold_glossary_decoupling.sql:ro
       - ../../sql/migrations/021_geo_grain_vocabulary_early.sql:/docker-entrypoint-initdb.d/001a_geo_grain_vocabulary.sql:ro
+      - ../../sql/migrations/023_geo_name_vocabulary_early.sql:/docker-entrypoint-initdb.d/001b_geo_name_vocabulary.sql:ro
       - ../../sql/migrations/013_data_quality_evidence.sql:/docker-entrypoint-initdb.d/001a_data_quality_evidence.sql:ro
       - ../../src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql:/docker-entrypoint-initdb.d/002_silver_ref.sql:ro
       - ../../src/data_ingestion_toolbox/census_acs/DDL/raw_census.sql:/docker-entrypoint-initdb.d/010_raw_census.sql:ro
@@ -49,6 +50,7 @@ services:
       - ../../sql/migrations/018_geo_grain_vocabulary.sql:/docker-entrypoint-initdb.d/040d_geo_grain_vocabulary.sql:ro
       - ../../sql/migrations/020_resolved_geography_serving.sql:/docker-entrypoint-initdb.d/040e_resolved_geography_serving.sql:ro
       - ../../sql/migrations/022_fbi_publisher_geo_grain.sql:/docker-entrypoint-initdb.d/040f_fbi_publisher_geo_grain.sql:ro
+      - ../../sql/migrations/024_served_place_name.sql:/docker-entrypoint-initdb.d/040g_served_place_name.sql:ro
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/041_semantic_policy.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/042_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro

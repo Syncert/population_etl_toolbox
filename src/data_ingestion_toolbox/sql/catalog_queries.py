@@ -80,7 +80,8 @@ _METRIC_COLUMNS = (
 )
 _GEOGRAPHY_COLUMNS = (
     "geo_id, geo_level, geo_name, state_fips, county_fips, place_fips, "
-    "state_name, county_name, place_name, geo_latitude, geo_longitude"
+    "state_name, county_name, place_name, geo_latitude, geo_longitude, "
+    "geography_state, retired_at, is_active"
 )
 
 # ---------------------------------------------------------------------------
@@ -159,10 +160,13 @@ def build_metric_detail_query(metric_code: str) -> tuple[TextClause, dict]:
 def _build_geo_where(
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     params: dict,
 ) -> str:
     clauses: list[str] = []
+    if active_only:
+        clauses.append("is_active = TRUE")
     if geo_level:
         clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
@@ -184,12 +188,20 @@ def _build_geo_where(
 def build_geographies_queries(
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
+    """The geography catalog page, retired geographies included by default.
+
+    A geography the reference stops listing is retired rather than deleted
+    (DB-038), and its observations are still served, so hiding it by default
+    would leave rows a client resolving through the catalog could not name.
+    ``active_only`` is the caller's choice, exactly as it is for metrics.
+    """
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_geo_where(geo_level, state_fips, q, params)
+    where = _build_geo_where(geo_level, state_fips, active_only, q, params)
     list_q = text(
         f"SELECT {_GEOGRAPHY_COLUMNS} FROM {GEOGRAPHY_RELATION} WHERE {where} "
         "ORDER BY geo_id LIMIT :limit OFFSET :offset"

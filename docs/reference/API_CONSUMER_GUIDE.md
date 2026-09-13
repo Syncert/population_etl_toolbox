@@ -38,7 +38,7 @@ list.
 | `GET /api/v1/catalog/sources` | Every published source system |
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
-| `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule — see below |
+| `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, and `observation_filters` — the neutral filters that source supports |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
@@ -69,6 +69,24 @@ carries the geometry the vector tile layer publishes, so a geography it does
 not hold yet has values and no shape. Build a picker from this resource, but
 treat "not listed" as a statement about the projection, not about the
 warehouse.
+
+**A retired geography stays listed.** When a new boundary vintage stops
+listing a geography -- a county consolidated, a place dissolved -- the
+projection does not drop it. It publishes `geography_state: "retired"`,
+`is_active: false`, and `retired_at`, and keeps the attributes the geography
+was last published with. That is deliberate, and it is the contract
+`freshness_state` already gives a metric: the served relations still hold
+that geography's observations, so a catalog that hid it would leave rows a
+client resolving geographies here could neither reach nor name. Decide in
+your own client whether to show a retired geography; pass `active_only=true`
+to have the API narrow the page for you, exactly as on `/catalog/metrics`.
+
+`geo_name` is the geography's most specific published name -- its place name,
+else its county name, else its state name, else its `geo_id` -- and it is the
+same name here and on every observation route. It was not always: a place
+answered under its own name here and under its state's name on
+`/observations`, which is one geography with two names to anyone joining the
+two responses.
 
 ## Observations
 

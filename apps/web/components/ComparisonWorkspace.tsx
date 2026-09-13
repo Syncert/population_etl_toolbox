@@ -24,6 +24,7 @@ import type {
 } from "../lib/api/types";
 import { buildExplorerSources, findExplorerSource } from "../lib/explorerSources";
 import { requestedMetricState } from "../lib/requestedMetric";
+import { ACTIVE_GEOGRAPHIES_ONLY } from "../lib/observationAccess";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
   DEFAULT_COMPARISON_SELECTION,
@@ -269,7 +270,7 @@ export default function ComparisonWorkspace() {
     (async () => {
       try {
         const items = await fetchAllPages<GeographySummary>("/catalog/geographies", {
-          params: { geo_level: "STATE" },
+          params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" },
           pageSize: CATALOG_PAGE_SIZE,
         });
         if (request.isCurrent()) {

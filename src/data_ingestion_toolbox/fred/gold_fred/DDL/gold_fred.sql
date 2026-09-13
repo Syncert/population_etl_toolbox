@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS gold_fred.rpt_fred_observations (
     county_fips                TEXT,
     state_name                 TEXT,
     county_name                TEXT,
+    -- Carried so the observation contract views can call
+    -- gold_glossary.geo_name with the same arguments the geography
+    -- catalog does (DB-038). Without it a place answered under its
+    -- state's name here and its own name on /catalog/geographies.
+    place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
     -- FRED-specific columns (no NULLs for these)
@@ -203,6 +208,7 @@ BEGIN
         county_fips,
         state_name,
         county_name,
+        place_name,
         geo_latitude,
         geo_longitude,
         metric_code,
@@ -235,6 +241,7 @@ BEGIN
         gl.county_fips,
         gl.state_name,
         gl.county_name,
+        gl.place_name,
         gl.latitude,
         gl.longitude,
         'FRED:' || fs.series_id,

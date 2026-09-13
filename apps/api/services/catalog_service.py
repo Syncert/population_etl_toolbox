@@ -85,6 +85,7 @@ def list_geographies(
     db: Session,
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     limit: int,
     offset: int,
@@ -97,6 +98,7 @@ def list_geographies(
     list_query, count_query, params = build_geographies_queries(
         geo_level=normalize_geo_level(geo_level) if geo_level else None,
         state_fips=state_fips,
+        active_only=active_only,
         q=q,
         limit=limit,
         offset=offset,

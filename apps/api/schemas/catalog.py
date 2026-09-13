@@ -60,6 +60,16 @@ class GeographyLatest(BaseModel):
     place_name: Optional[str] = None
     geo_latitude: Optional[float] = None
     geo_longitude: Optional[float] = None
+    #: ``current`` or ``retired``. A geography the boundary reference stops
+    #: listing is retired rather than dropped from the catalog (DB-038),
+    #: because the served relations keep its observations: a catalog that
+    #: hid it would leave rows a client resolving geographies here could
+    #: not reach or name. The parallel is ``MetricCatalog.freshness_state``.
+    geography_state: Optional[str] = None
+    #: When the reference first stopped listing it, not overwritten by later
+    #: refreshes. NULL while the geography is current.
+    retired_at: Optional[datetime] = None
+    is_active: Optional[bool] = None
 
 
 class GeographyListResponse(BaseModel):

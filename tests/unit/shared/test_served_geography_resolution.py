@@ -251,3 +251,74 @@ def test_the_grain_vocabulary_is_called_and_never_copied() -> None:
         "these routines carry their own copy of the grain vocabulary: "
         + "; ".join(offenders)
     )
+
+
+_NAME_COALESCE = re.compile(
+    r"COALESCE\(\s*(?:[A-Za-z_]*\.)?(?:place_name|county_name)\b[^)]*\bgeo_id\s*\)",
+    re.IGNORECASE,
+)
+_NAME_VOCABULARY_CALL = "gold_glossary.geo_name("
+
+
+def test_the_name_vocabulary_is_called_and_never_copied() -> None:
+    """Covers: DB-038 — a geography has one published name, not one per view.
+
+    `gold_glossary.dim_geography` named a geography
+    COALESCE(place_name, county_name, state_name, geo_id); all six observation
+    contract views named it COALESCE(county_name, state_name, geo_id). Both
+    expressions were locally sensible, and the result was that a place
+    answered under its own name on `/catalog/geographies` and under its
+    state's name on every observation route -- the same geography, two names,
+    with nothing to notice because neither expression was wrong on its own.
+
+    The rule is the grain rule's sibling, and read the same way: from the
+    routines the bootstrap leaves behind, so a seventh copy fails here. Any
+    COALESCE that ends in `geo_id` and begins at a name column is this
+    vocabulary; it may only appear inside the function itself.
+    """
+    offenders: list[str] = []
+    checked = 0
+    for name, (body, path) in sorted(_effective_routines().items()):
+        checked += 1
+        copies = sorted({match.group(0) for match in _NAME_COALESCE.finditer(body)})
+        if copies and _NAME_VOCABULARY_CALL not in body:
+            offenders.append(f"{name} ({path.name}) spells it itself: {copies}")
+    assert checked, "no routine was read from the bootstrap SQL"
+    assert not offenders, (
+        "these routines carry their own copy of a geography's published name: "
+        + "; ".join(offenders)
+    )
+
+
+def test_one_definition_of_the_published_name_exists() -> None:
+    """Covers: DB-038 — the name vocabulary is defined exactly once.
+
+    A guard that only forbids copies passes trivially if the function is
+    deleted and every caller deleted with it, so the definition is asserted
+    to exist, to be installed before anything that calls it, and to be
+    installed once.
+    """
+    definitions = [
+        path
+        for path in _bootstrap_sql()
+        if "FUNCTION gold_glossary.geo_name(" in path.read_text(encoding="utf-8")
+    ]
+    assert len(definitions) == 1, (
+        f"gold_glossary.geo_name is defined in {len(definitions)} bootstrap "
+        f"steps: {[path.name for path in definitions]}"
+    )
+
+    order = _bootstrap_sql()
+    installs_at = order.index(definitions[0])
+    callers = [
+        index
+        for index, path in enumerate(order)
+        if _NAME_VOCABULARY_CALL in path.read_text(encoding="utf-8")
+        and path != definitions[0]
+    ]
+    assert callers, "nothing calls gold_glossary.geo_name"
+    assert installs_at < min(callers), (
+        "gold_glossary.geo_name is installed after a step that calls it; a "
+        "view's body resolves when the view is created, so a fresh bootstrap "
+        f"would fail: installed at {installs_at}, first called at {min(callers)}"
+    )

@@ -46,7 +46,14 @@ SELECT
     longitude AS geo_longitude,
     boundary_vintage,
     refreshed_at,
-    COALESCE(place_name, county_name, state_name, geo_id) AS geo_name
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
+    -- Published for the same reason `dim_metric` publishes `freshness_state`:
+    -- a retired geography stays resolvable, and the consumer decides whether
+    -- to show it (DB-038). Its observations are still served, so a catalog
+    -- that hid it would leave rows nothing could name.
+    geography_state,
+    retired_at,
+    geography_state = 'current' AS is_active
 FROM gold_glossary.dim_geo_latest;
 
 -- BLS observation contracts.
@@ -64,7 +71,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -100,7 +107,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -140,7 +147,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -176,7 +183,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -216,7 +223,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,
@@ -252,7 +259,7 @@ SELECT
     updated_at,
     geo_id,
     geo_level,
-    COALESCE(county_name, state_name, geo_id) AS geo_name,
+    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
     state_fips,
     county_fips,
     state_name,

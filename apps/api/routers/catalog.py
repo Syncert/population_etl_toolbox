@@ -60,6 +60,7 @@ def get_metrics(
 def get_geographies(
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
+    active_only: Optional[bool] = None,
     q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=100000),
@@ -70,6 +71,7 @@ def get_geographies(
             db,
             geo_level=geo_level,
             state_fips=state_fips,
+            active_only=active_only,
             q=q,
             limit=limit,
             offset=offset,

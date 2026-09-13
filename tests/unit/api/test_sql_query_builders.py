@@ -50,7 +50,7 @@ def test_geography_query_builder_binds_every_filter() -> None:
     """Covers: API-010, API-017 — geography filters remain bound parameters."""
     view = "gold_glossary.dim_geography"
     list_query, count_query, params = catalog_queries.build_geographies_queries(
-        "county", "06", "Alameda", 20, 40
+        "county", "06", None, "Alameda", 20, 40
     )
     rendered_list = str(list_query)
 
@@ -72,7 +72,7 @@ def test_geography_query_builder_binds_every_filter() -> None:
 def test_geography_query_builder_uses_true_for_no_filters() -> None:
     """Covers: API-010 — omitted geography filters produce an unfiltered page."""
     list_query, count_query, params = catalog_queries.build_geographies_queries(
-        None, None, None, 10, 0
+        None, None, None, None, 10, 0
     )
 
     assert "WHERE TRUE" in str(list_query)
@@ -245,7 +245,7 @@ def test_catalog_search_matches_literal_text(typed: str, bound: str) -> None:
         ),
         (
             catalog_queries.build_geographies_queries,
-            {"geo_level": None, "state_fips": None},
+            {"geo_level": None, "state_fips": None, "active_only": None},
         ),
     ):
         list_query, count_query, params = builder(q=typed, limit=10, offset=0, **kwargs)

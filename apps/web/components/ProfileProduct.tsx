@@ -30,6 +30,7 @@ import { metricQualityState } from "../lib/catalog";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
+  ACTIVE_GEOGRAPHIES_ONLY,
   OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
   buildNewestValueRequest,
   normalizeObservationRows,
@@ -134,11 +135,11 @@ export default function ProfileProduct() {
       try {
         const [stateItems, countyItems] = await Promise.all([
           fetchAllPages<GeographySummary>("/catalog/geographies", {
-            params: { geo_level: "STATE" },
+            params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" },
             pageSize: CATALOG_PAGE_SIZE,
           }),
           fetchAllPages<GeographySummary>("/catalog/geographies", {
-            params: { geo_level: "COUNTY" },
+            params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "COUNTY" },
             pageSize: CATALOG_PAGE_SIZE,
           }),
         ]);

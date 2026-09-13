@@ -265,6 +265,12 @@
     "GET /api/v1/catalog/geographies": {
       "parameters": [
         {
+          "in": "query",
+          "name": "active_only",
+          "required": false,
+          "type": "boolean | null"
+        },
+        {
           "constraints": {
             "maxLength": 50
           },
@@ -2329,8 +2335,11 @@
         "geo_level": "string | null",
         "geo_longitude": "number | null",
         "geo_name": "string | null",
+        "geography_state": "string | null",
+        "is_active": "boolean | null",
         "place_fips": "string | null",
         "place_name": "string | null",
+        "retired_at": "string(date-time) | null",
         "state_fips": "string | null",
         "state_name": "string | null"
       },
