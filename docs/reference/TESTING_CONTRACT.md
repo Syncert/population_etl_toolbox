@@ -289,9 +289,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-055 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-056 | None |
 | Deployment | DEPLOY-001–DEPLOY-005 | None |
-| **Total** | **352 of 352** | **0 of 352** |
+| **Total** | **353 of 353** | **0 of 353** |
 
 Awaiting implementation IDs: None.
 
@@ -299,7 +299,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 352-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 353-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -693,6 +693,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-053 | P0 | Browser + Unit / `frontend` | A published uncertainty travels with the value it qualifies | The explorer's table shows a row's published uncertainty beside its value, naming each field rather than composing a notation three sources do not share, and the CSV export carries every field the neutral envelope's `ObservationUncertainty` publishes, verbatim; the column appears only when a loaded row published one, read from the answer rather than from a list of sources; an unpublished field stays absent rather than becoming a zero or a dash, the browser fixture models CDC's served confidence bounds, and the exported field list is asserted against the reviewed contract so a field added to the envelope fails rather than being dropped | The qualifier WEB-051 did not reach: normalization lifted `margin_of_error` and its percentage out of `uncertainty` and left five fields inside it that nothing read, so a CDC prevalence estimate was shown and exported as a point estimate with its published interval dropped, and a USDA NASS estimate without the `cv_symbol` NASS publishes precisely to say the estimate is unreliable |
 | WEB-054 | P0 | Browser + Unit / `frontend` | The legend says which period its scale describes | The distribution status carries the period the API published for its bins, and says the bins mix periods when they do, in the caution treatment rather than the ok one; an answer publishing neither fact is described as it is rather than guessed at; the browser fixture models the served period fields | A choropleth painted from a colour scale built over a mix of years with nothing saying so -- and a mismatch the client cannot work out for itself, because the bins are computed over every geography the metric publishes while it holds one page of rows |
 | WEB-055 | P0 | Browser + Unit / `frontend` | The map says what its bins could not carry | The explorer renders the distribution's published caveats beside the map those bins paint, in the caution treatment its other analytical notes use, as published rather than restated; an answer carrying none grows no empty note, and anything that is not a published string is not rendered | A choropleth whose bin boundaries were drawn to the value with no sign that each value carries a margin of error, on the one screen where the bins and the values are shown together |
+| WEB-056 | P0 | Unit / `frontend` | A bounded read is never handed back as the whole list | `fetchAllPages` raises when the page bound cut a collection short, naming the resource, what it received and what the API reported, so every caller's existing failure path reports it instead of rendering a prefix; the bound itself is unchanged (it still stops at `maxPages` requests), a read with no published total is refused rather than guessed complete, and `fetchCollectionPages` still returns the prefix and the flag for a caller that wants them | The signal its own sibling computes, discarded: `fetchCollectionPages` exists to tell a caller "the answer is a prefix rather than handed a truncated list as if it were whole", and the wrapper every caller in the application uses dropped `complete` -- a measure list or county picker a person searches and does not find themselves in, told nothing, and a data-quality screen stating the prefix's length as the number published |
 
 ### Deployment Tests
 

@@ -10,6 +10,7 @@ import {
   apiFetch,
   buildApiPath,
   fetchAllPages,
+  fetchAllPages,
   fetchCollectionPages,
   fetchComparisonPages,
   getDistributionBins,
@@ -165,12 +166,17 @@ describe("versioned API client", () => {
       jsonResponse({ items: [{ id: 2 }], total: null }),
       jsonResponse({ items: [], total: null }),
     ]);
-    const items = await fetchAllPages("/catalog/metrics", {
-      pageSize: 1,
-      maxPages: 2,
-      fetchImpl: endless.fetchImpl,
-    });
-    expect(items).toHaveLength(2);
+    // The bound still stops the read at two requests. What it no longer does
+    // is hand those two back as the whole list: with no published total the
+    // client cannot know whether more exist, so it says so rather than
+    // guessing (WEB-056).
+    await expect(
+      fetchAllPages("/catalog/metrics", {
+        pageSize: 1,
+        maxPages: 2,
+        fetchImpl: endless.fetchImpl,
+      }),
+    ).rejects.toThrow(/that is a prefix, not the whole list/);
     expect(endless.calls).toHaveLength(2);
   });
 
@@ -360,5 +366,52 @@ describe("authenticated collection paging", () => {
     ]);
     await fetchCollectionPages("/catalog/metrics", { pageSize: 1, fetchImpl });
     expect(calls[0].init.headers.Authorization).toBeUndefined();
+  });
+});
+
+// Covers: WEB-056 — a bounded read is never handed back as the whole list.
+//
+// `fetchCollectionPages` computes `complete` so that "a caller that hits the
+// bound is told the answer is a prefix rather than handed a truncated list as
+// if it were whole". The convenience wrapper beside it dropped that, and the
+// wrapper is what every caller in the application uses.
+describe("fetchAllPages", () => {
+  test("returns every record when the read completed", async () => {
+    const whole = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 3 }),
+      jsonResponse({ items: [{ id: 3 }], total: 3 }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/metrics", { pageSize: 2, fetchImpl: whole.fetchImpl }),
+    ).resolves.toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  });
+
+  test("refuses to hand back a prefix, naming what it got and what there is", async () => {
+    const cut = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 5 }),
+      jsonResponse({ items: [{ id: 3 }, { id: 4 }], total: 5 }),
+      jsonResponse({ items: [{ id: 5 }], total: 5 }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/geographies", {
+        pageSize: 2,
+        maxPages: 2,
+        fetchImpl: cut.fetchImpl,
+      }),
+    ).rejects.toThrow(/\/catalog\/geographies answered 4 of 5 records/);
+    // Bounded as before: it stops at the bound rather than reading on.
+    expect(cut.calls).toHaveLength(2);
+  });
+
+  test("a collection that publishes no total still completes", async () => {
+    // `complete` is true when a page came back empty, whatever the total says,
+    // so an API that reports none is not treated as an endless one.
+    const unreported = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }] }),
+      jsonResponse({ items: [] }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/metrics", { fetchImpl: unreported.fetchImpl }),
+    ).resolves.toEqual([{ id: 1 }]);
   });
 });

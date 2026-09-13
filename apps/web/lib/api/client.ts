@@ -243,11 +243,47 @@ export async function fetchCollectionPages<T>(
   return { items, total, complete: true };
 }
 
+/** A read the page bound cut short, so the list it returned is a prefix. */
+export class IncompleteCollectionError extends Error {
+  readonly resource: string;
+  readonly received: number;
+  readonly total: number | null;
+
+  constructor(resource: string, received: number, total: number | null) {
+    super(
+      `${resource} answered ${received}${total === null ? "" : ` of ${total}`}` +
+        " records within the page bound; that is a prefix, not the whole list",
+    );
+    this.name = "IncompleteCollectionError";
+    this.resource = resource;
+    this.received = received;
+    this.total = total;
+  }
+}
+
+/**
+ * Every record of a collection, or a refusal.
+ *
+ * `fetchCollectionPages` computes `complete` because "a caller that hits the
+ * bound is told the answer is a prefix rather than handed a truncated list as
+ * if it were whole" -- and this wrapper used to drop it, which is every
+ * caller in the application. A prefix rendered as a measure list or a county
+ * picker is a list a person searches and does not find themselves in, told
+ * nothing; the data-quality screen went further and stated its length as the
+ * number published (WEB-056).
+ *
+ * Callers already have a failure path for a failed read, so raising is what
+ * makes the bound visible. `fetchCollectionPages` is still there for a caller
+ * that wants the prefix and the flag.
+ */
 export async function fetchAllPages<T>(
   resource: string,
   options: PageOptions = {},
 ): Promise<T[]> {
-  const { items } = await fetchCollectionPages<T>(resource, options);
+  const { items, total, complete } = await fetchCollectionPages<T>(resource, options);
+  if (!complete) {
+    throw new IncompleteCollectionError(resource, items.length, total);
+  }
   return items;
 }
 
