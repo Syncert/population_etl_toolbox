@@ -152,8 +152,29 @@ def _require_fields_the_route_can_send(document: AnalysisDocument) -> None:
         )
 
 
-def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
-    """Raise ``ConfigurationInvalid`` unless the live contracts accept it."""
+def _owning_sources(*metrics) -> frozenset[str]:
+    """The sources the resolved measures belong to, upper-cased.
+
+    Returned by ``validate_document`` because it has already resolved every
+    measure the document asks for, and the packet service needs exactly this
+    to cross an envelope's stated sources against the query that read them
+    (API-113). Resolving them a second time would double the lookups a
+    twelve-block packet spends.
+    """
+    codes = set()
+    for metric in metrics:
+        code = str((metric or {}).get("source_code") or "").upper()
+        if code:
+            codes.add(code)
+    return frozenset(codes)
+
+
+def validate_document(warehouse: Session, document: AnalysisDocument) -> frozenset[str]:
+    """Raise ``ConfigurationInvalid`` unless the live contracts accept it.
+
+    Answers the sources the document's measures belong to, resolved on the
+    way through.
+    """
     filters = dict(document.filters or {})
     _require_fields_the_route_can_send(document)
 
@@ -184,7 +205,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
             raise ConfigurationInvalid(
                 "newest_per_geography and newest_release_per_period cannot be combined"
             )
-        return
+        return _owning_sources(metric)
 
     if document.kind == "distribution":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
@@ -196,7 +217,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
                 dispatch.analysis_restriction
                 or f"source '{dispatch.source_code}' has no aligned analysis surface"
             )
-        return
+        return _owning_sources(metric)
 
     metric_a = _require_metric(warehouse, document.metric_code_a, "metric_code_a")
     metric_b = _require_metric(warehouse, document.metric_code_b, "metric_code_b")
@@ -207,6 +228,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> None:
     decision = evaluate_comparison(metric_a, metric_b)
     if not decision.comparable:
         raise ConfigurationInvalid(decision.failure_summary())
+    return _owning_sources(metric_a, metric_b)
 
 
 def _validation_state(

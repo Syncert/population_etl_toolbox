@@ -91,6 +91,38 @@ def _document_metric_codes(document: AnalysisDocument) -> set[str]:
     }
 
 
+def _stray_sources(
+    block: PacketBlock, read_by_the_query: frozenset[str]
+) -> Optional[str]:
+    """A source the envelope names that the block's query never read.
+
+    The same crossing `_contradiction` makes for the envelope's measures, one
+    field over. The sources are not composer opinion -- they are decided by
+    which measures the query asks for -- and `EvidenceEnvelope` renders them
+    to a reader as "Sources" while `packetExport` writes them into the file
+    the packet is handed over as. A packet whose every number came from FRED
+    and whose envelope says BLS is one identity over another's numbers, which
+    is this module's opening rule (API-113).
+
+    Case is not a contradiction: the catalog publishes upper-case codes and a
+    composer's record of the same source is the same fact.
+
+    An envelope naming nothing is incompleteness, not a contradiction:
+    `_REQUIRED_ENVELOPE_FIELDS` carries `source_codes`, so the read reports
+    the field as missing and the block stays stored.
+    """
+    if block.envelope is None:
+        return None
+    named = {code.upper() for code in block.envelope.source_codes if code}
+    stray = sorted(named - read_by_the_query)
+    if not stray:
+        return None
+    return (
+        f"block '{block.block_id}' names source(s) {', '.join(stray)} in its "
+        "envelope that its query does not read"
+    )
+
+
 def _contradiction(block: PacketBlock) -> Optional[str]:
     """The reason a block can never be stored, or ``None``."""
     if not block.analytical:
@@ -183,18 +215,25 @@ def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
     # three or four measures over a dozen blocks -- so each distinct document
     # is checked once and its verdict reused.
     verdicts: dict[str, Optional[str]] = {}
+    sources: dict[str, frozenset[str]] = {}
     for block in packet.blocks:
         if block.document is None:
             continue
         key = block.document.model_dump_json()
         if key not in verdicts:
             try:
-                validate_document(warehouse, block.document)
+                # The sources the query reads come back from the validation
+                # that already resolved its measures, so crossing the
+                # envelope against them costs no further lookup.
+                sources[key] = validate_document(warehouse, block.document)
                 verdicts[key] = None
             except ConfigurationInvalid as exc:
                 verdicts[key] = exc.detail
         if verdicts[key]:
             raise PacketInvalid(f"block '{block.block_id}': {verdicts[key]}")
+        stray = _stray_sources(block, sources[key])
+        if stray:
+            raise PacketInvalid(stray)
 
 
 def _block_state(

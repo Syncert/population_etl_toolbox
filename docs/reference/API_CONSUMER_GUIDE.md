@@ -472,9 +472,12 @@ own query rather than referencing a configuration that could later change.
   `GET|PUT|DELETE /api/v1/evidence-packets/{packet_id}`.
 - **Contradictions are refused; incompleteness is reported.** A write is
   `422`, naming the `block_id`, when an analytical block's envelope names a
-  measure its query does not ask for, records a scope or release its query
+  measure its query does not ask for, names a **source** its query does not
+  read — the sources a query reads are the owning sources of its measures,
+  not a field the composer decides — records a scope or release its query
   does not, when a prose block carries a query or an envelope, when a block
   id repeats, or when a block's query is one the live routes would refuse.
+  A source spelled in another case is the same source, not a contradiction.
   An analytical block that is still empty or partially filled is **stored**,
   and reported: `validation.blocks[]` names each block, whether it is valid,
   the reason, and the envelope fields still `missing`. A block whose measure

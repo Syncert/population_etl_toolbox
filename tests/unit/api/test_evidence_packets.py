@@ -548,6 +548,16 @@ def test_incomplete_analytical_block_is_stored_and_reported(
             "filters not supported for source 'FRED'",
             id="query-with-an-undeclared-filter",
         ),
+        pytest.param(
+            _block(envelope=_envelope(source_codes=["FRED", "BLS"])),
+            "names source(s) BLS in its envelope that its query does not read",
+            id="envelope-names-a-source-the-query-does-not-read",
+        ),
+        pytest.param(
+            _block(envelope=_envelope(source_codes=["BLS"])),
+            "names source(s) BLS in its envelope that its query does not read",
+            id="envelope-names-only-a-source-the-query-does-not-read",
+        ),
     ],
 )
 def test_contradictions_are_refused_at_write_naming_the_block(
@@ -640,6 +650,80 @@ def test_repeated_measures_are_resolved_once_per_request(accounts, monkeypatch) 
     assert created.status_code == 201
     # One write-time check and one read-time check of the single distinct query.
     assert warehouse.lookups.count("FRED:UNRATE") == 2
+
+
+def test_a_packets_stated_sources_are_the_sources_its_query_read(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-113 — the envelope's sources are crossed, like its measures.
+
+    `_contradiction` crosses the envelope against the query measure by
+    measure, scope, release, geography and grain, on the stated ground that
+    leaving a field uncrossed lets a packet "store one geography's name over
+    another geography's numbers". `source_codes` was the one field of that
+    kind left uncrossed, and it is not composer opinion: the sources a query
+    reads are the owning sources of the measures it asks for.
+
+    It reaches a reader: `EvidenceEnvelope` renders them as "Sources" and
+    `packetExport` writes a `source_codes` column into the file the packet is
+    handed over as.
+    """
+    warehouse = _WarehouseSession()
+    client = _client(_StorageSession(accounts), warehouse, monkeypatch=monkeypatch)
+
+    # The source the query actually reads, spelled as the composer recorded
+    # it. Case is not a contradiction: the catalog publishes upper-case codes
+    # and a composer's record of the same source is the same fact.
+    accepted = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "same-source",
+            "document": _packet(_block(envelope=_envelope(source_codes=["fred"]))),
+        },
+    )
+    assert accepted.status_code == 201, accepted.json()
+
+    # And the crossing costs no extra lookup: the sources come back from the
+    # validation that already resolved the query's measures. One write-time
+    # and one read-time resolution of the single distinct query, as
+    # test_repeated_measures_are_resolved_once_per_request pins for twelve.
+    assert warehouse.lookups.count("FRED:UNRATE") == 2
+
+
+def test_a_packet_naming_no_source_is_incomplete_not_refused(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-113 — nothing recorded is a missing field, not a lie.
+
+    `_REQUIRED_ENVELOPE_FIELDS` already carries `source_codes`, so a block
+    that records none is stored and reported on read. Refusing it would stop
+    a composer saving work in progress, which is the distinction this module
+    draws between a contradiction and incompleteness.
+    """
+    client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={
+            "name": "in-progress",
+            "document": _packet(_block(envelope=_envelope(source_codes=[]))),
+        },
+    )
+    assert created.status_code == 201, created.json()
+
+    detail = client.get(
+        f"/api/v1/evidence-packets/{created.json()['packet_id']}", headers=_auth()
+    )
+    blocks = {
+        block["block_id"]: block for block in detail.json()["validation"]["blocks"]
+    }
+    assert blocks["unemployment"]["valid"] is False
+    assert "source_codes" in blocks["unemployment"]["missing"]
+    stored = detail.json()["document"]["blocks"][-1]
+    assert stored["envelope"]["source_codes"] == [], (
+        "the composer's envelope is returned verbatim"
+    )
 
 
 def test_analytical_block_cap_is_enforced() -> None:
