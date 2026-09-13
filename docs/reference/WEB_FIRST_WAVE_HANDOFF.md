@@ -118,7 +118,16 @@ catalog entry in `docs/reference/TESTING_CONTRACT.md` (WEB-001–WEB-025).
 - **No inline script runs without this response's nonce.** `middleware.ts`
   owns the Content-Security-Policy; a later plan that needs an inline
   script reads the `x-nonce` request header and stamps it, never widens
-  `script-src`. Styles still admit `'unsafe-inline'`.
+  `script-src`.
+- **No inline `<style>` element runs in production either.** `style-src-elem`
+  admits `'self'` alone there; the development exception for Next's dev
+  overlay is compiled away, and `npm run check:csp` reads the built middleware
+  to prove it. `style-src-attr 'unsafe-inline'` stays open because MapLibre,
+  Next's route announcer, and three data-driven styles of this application's
+  own (legend swatch colour, coverage segment width, map tooltip position)
+  write `style` attributes that no nonce or hash can cover. A plan that adds
+  an inline style adds it as an attribute on a recorded owner, or adds a rule
+  to the stylesheet -- never a `<style>` element.
 - **The API owns semantics.** Membership, access shapes, declared filters,
   compatibility verdicts, distribution bins, freshness, and validation are
   read from the API and never recomputed. A rule this client has never heard
