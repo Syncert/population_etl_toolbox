@@ -51,3 +51,61 @@ def test_architecture_paths_trigger_each_owning_workflow() -> None:
                 target_prefix.startswith(pattern.split("**", 1)[0]) for pattern in paths
             )
             assert covered, f"{owner} does not own {path}"
+
+
+def _plan_branch_prefixes() -> set[str]:
+    """Every branch prefix the plan inventory declares, from the plans."""
+    prefixes: set[str] = set()
+    for plan in (ROOT / "docs/plans").rglob("*.md"):
+        for line in plan.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("branch:"):
+                continue
+            branch = line.split(":", 1)[1].strip()
+            if "/" in branch:
+                prefixes.add(f"{branch.split('/', 1)[0]}/**")
+            break
+    return prefixes
+
+
+def _push_filtered_workflows() -> list[tuple[str, list[str]]]:
+    """Each workflow that filters pushes by branch, with its branch list."""
+    filtered: list[tuple[str, list[str]]] = []
+    for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+        push = (_workflow(path.name).get("on") or {}).get("push")
+        if not isinstance(push, dict):
+            continue
+        branches = push.get("branches")
+        if isinstance(branches, list):
+            filtered.append((path.name, [str(branch) for branch in branches]))
+    return filtered
+
+
+def test_every_plan_branch_prefix_runs_ci_on_push() -> None:
+    """Covers: ENV-012 — the branches the work happens on are branches CI watches.
+
+    The workflows filtered pushes to `[main, copilot/**, feat/**]` while the
+    plans declared five prefixes, only one of which was in that list. A plan
+    on a `fix/**`, `test/**`, `docs/**` or `claude/**` branch therefore ran no
+    CI on push. Nothing was unguarded -- the `pull_request` trigger still runs
+    the full set before anything merges -- but the feedback those branches
+    exist for was absent, and every catalog row's declared CI owner did not in
+    fact run on the branch where the row was written.
+
+    Derived from the plans rather than restated here, so a plan introducing a
+    new prefix fails this instead of quietly losing its push feedback.
+    """
+    prefixes = _plan_branch_prefixes()
+    assert prefixes, "the plan inventory declares no branches"
+
+    workflows = _push_filtered_workflows()
+    assert workflows, "no workflow filters pushes by branch"
+
+    missing = {
+        name: sorted(prefixes - set(branches))
+        for name, branches in workflows
+        if prefixes - set(branches)
+    }
+    assert missing == {}, (
+        "these workflows do not run on branches the plans work on: "
+        f"{json.dumps(missing, indent=2, sort_keys=True)}"
+    )
