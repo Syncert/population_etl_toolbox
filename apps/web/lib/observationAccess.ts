@@ -624,6 +624,80 @@ export function publishesCoverage(rows: ObservationRow[] | null | undefined): bo
   return (rows || []).some((row) => observationCoverageValue(row, "participation_status") !== "");
 }
 
+/**
+ * The published uncertainty fields, in the order the envelope declares them.
+ *
+ * The seven `ObservationUncertainty` publishes, across the three sources that
+ * publish any: Census ACS's margin of error and its percentage, CDC's
+ * confidence bounds, and USDA NASS's coefficient of variation with the status
+ * and symbol that qualify it. Not a client-authored shortlist -- an export
+ * carrying a subset would be this client deciding which part of a source's
+ * own statement of precision a reader may have (WEB-053).
+ */
+export const OBSERVATION_UNCERTAINTY_FIELDS = [
+  "margin_of_error",
+  "margin_of_error_pct",
+  "confidence_lower",
+  "confidence_upper",
+  "cv_value",
+  "cv_status",
+  "cv_symbol",
+] as const;
+
+/**
+ * One published uncertainty field on a row, or `""` when the source published
+ * none.
+ *
+ * The nested envelope first, then the row itself: the source-scoped shapes
+ * carry `margin_of_error` at the top level and no `uncertainty` object at
+ * all, and normalization lifts those same two names for the chart.
+ */
+export function observationUncertaintyValue(
+  row: ObservationRow | null | undefined,
+  field: string,
+): string {
+  const uncertainty = (row?.uncertainty || {}) as Record<string, unknown>;
+  const value = uncertainty[field] !== undefined ? uncertainty[field] : row?.[field];
+  return value === undefined || value === null ? "" : String(value);
+}
+
+/**
+ * True when any loaded row published any uncertainty field.
+ *
+ * Read from the answer rather than from a list of sources, exactly as
+ * `publishesCoverage` is: a source that begins publishing an interval is
+ * shown it without an edit here, and one that publishes none grows no empty
+ * column.
+ */
+export function publishesUncertainty(rows: ObservationRow[] | null | undefined): boolean {
+  return (rows || []).some((row) =>
+    OBSERVATION_UNCERTAINTY_FIELDS.some(
+      (field) => observationUncertaintyValue(row, field) !== "",
+    ),
+  );
+}
+
+/**
+ * A row's published uncertainty, as `field value` pairs for the fields it
+ * published.
+ *
+ * Named rather than composed: a margin, a confidence interval and a
+ * coefficient of variation are not interchangeable, and rendering them into
+ * one notation -- `12.1 – 13.9`, `± 1.5` -- would be this client deciding
+ * what three sources' numbers mean.
+ */
+export function observationUncertaintyLabel(
+  row: ObservationRow | null | undefined,
+): string {
+  return OBSERVATION_UNCERTAINTY_FIELDS.map((field) => [
+    field,
+    observationUncertaintyValue(row, field),
+  ])
+    .filter(([, value]) => value !== "")
+    .map(([field, value]) => `${String(field).replaceAll("_", " ")} ${value}`)
+    .join(" · ");
+}
+
 /** A declared dimension's published value on one row, or `""` when absent. */
 export function observationDimensionValue(
   row: ObservationRow | null | undefined,

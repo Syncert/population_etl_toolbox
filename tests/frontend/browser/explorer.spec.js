@@ -212,6 +212,13 @@ const cdcRow = (stratumId, value, extra = {}) => ({
   unit: "percent",
   period_start: "2021-01-01",
   period_end: "2022-12-31",
+  // The confidence bounds CDC's dispatch entry declares. A fixture without
+  // them models a weaker contract than the one that ships, and the client
+  // then goes untested for the fields it is missing (WEB-043, WEB-053).
+  uncertainty:
+    value === null
+      ? { confidence_lower: null, confidence_upper: null }
+      : { confidence_lower: "30.9", confidence_upper: "33.9" },
   dimensions: { stratum_id: stratumId, adjustment_status: "age-adjusted" },
   ...extra,
 });
@@ -1234,4 +1241,28 @@ test("a source that publishes no participation grows no column for it", async ({
 
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
   await expect(page.getByRole("columnheader", { name: "Participation" })).toHaveCount(0);
+});
+
+test("a published uncertainty is shown beside the value it qualifies", async ({ page }) => {
+  // Covers: WEB-053 — the neutral envelope's other qualifier object. The
+  // client lifted `margin_of_error` out of `uncertainty` and left the rest
+  // inside it, so CDC's published confidence bounds reached neither the table
+  // nor the export and a prevalence estimate read as a point estimate.
+  await installRoutes(page);
+  await page.goto("/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY");
+
+  const uncertainty = page.getByTestId("uncertainty-state:55|county:025").first();
+  await expect(uncertainty).toContainText("confidence lower 30.9");
+  await expect(uncertainty).toContainText("confidence upper 33.9");
+});
+
+test("a source that publishes no uncertainty grows no column for it", async ({ page }) => {
+  // Covers: WEB-053 — read from the loaded rows, not from a list of sources.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await expect(page.getByRole("columnheader", { name: "Uncertainty" })).toHaveCount(0);
 });

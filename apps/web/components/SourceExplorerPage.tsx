@@ -88,9 +88,13 @@ import {
   observationDimensionOptions,
   observationDimensionValue,
   OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_FIELDS,
   observationCoverageValue,
   observationPeriodLabel,
+  observationUncertaintyLabel,
+  observationUncertaintyValue,
   publishesCoverage,
+  publishesUncertainty,
   scopedDimensionFilters,
   servesAsReleased,
   stratificationDimensions,
@@ -400,6 +404,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // not grows no empty column. Read from the loaded rows, not from a list of
   // sources (WEB-051).
   const showsCoverage = useMemo(() => publishesCoverage(observations), [observations]);
+  // Read from the answer, like the participation column beside it: a source
+  // that publishes an interval or a coefficient of variation is shown it
+  // without an edit here, and one that publishes none grows no empty column
+  // (WEB-053).
+  const showsUncertainty = useMemo(
+    () => publishesUncertainty(observations),
+    [observations],
+  );
   const historyStratification = useMemo(
     () => describeStratification(timeseries, seriesDimensions),
     [timeseries, seriesDimensions],
@@ -1637,8 +1649,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // Every published coverage field travels, the way `margin_of_error`
     // already does whether or not the source publishes one: a file that
     // carried a subset would be this client deciding which part of a source's
-    // participation basis a reader may have (WEB-051).
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", ...OBSERVATION_COVERAGE_FIELDS, "scope", "release", "as_of", ...dimensionFilters];
+    // participation basis a reader may have (WEB-051). The same rule, and the
+    // same reason, for every field `ObservationUncertainty` publishes: the
+    // export carried `margin_of_error` alone, so CDC's confidence bounds and
+    // USDA NASS's coefficient of variation -- the figure NASS publishes a
+    // symbol for precisely to say an estimate is unreliable -- were dropped
+    // from every file (WEB-053).
+    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", ...OBSERVATION_UNCERTAINTY_FIELDS, ...OBSERVATION_COVERAGE_FIELDS, "scope", "release", "as_of", ...dimensionFilters];
     const rows = observations.map((item) => [
       item.geo_id,
       observationName(item),
@@ -1649,7 +1666,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       observationUnit(item),
       item.source || item.source_code,
       item.dataset || item.dataset_code,
-      item.margin_of_error,
+      ...OBSERVATION_UNCERTAINTY_FIELDS.map((field) =>
+        observationUncertaintyValue(item, field),
+      ),
       ...OBSERVATION_COVERAGE_FIELDS.map((field) => observationCoverageValue(item, field)),
       observationScope,
       item.release,
@@ -2277,6 +2296,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <th>Value</th>
                   <th>Status</th>
                   <th>Units</th>
+                  {showsUncertainty ? <th>Uncertainty</th> : null}
                   {showsCoverage ? <th>Participation</th> : null}
                   {asReleased ? <th>Release</th> : null}
                   {dimensionFilters.map((name) => (
@@ -2298,6 +2318,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{item.value ?? "-"}</td>
                     <td>{String(item.value_status || (item.value === null ? "not published" : "-"))}</td>
                     <td>{observationUnit(item)}</td>
+                    {showsUncertainty ? (
+                      <td data-testid={`uncertainty-${item.geo_id}`}>
+                        {observationUncertaintyLabel(item) || "-"}
+                      </td>
+                    ) : null}
                     {showsCoverage ? (
                       <td data-testid={`coverage-${item.geo_id}`}>
                         {observationCoverageValue(item, "participation_status") || "-"}

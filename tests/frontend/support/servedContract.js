@@ -177,3 +177,18 @@ export function requestComplaint(rawUrl) {
   );
 }
 
+
+/**
+ * The property names one reviewed response schema declares.
+ *
+ * Throws for a schema the snapshot does not carry: a test naming a shape the
+ * API does not publish is describing a contract nobody serves, and an empty
+ * list would let it pass.
+ */
+export function servedSchemaFields(name) {
+  const schema = (snapshot.schemas || {})[name];
+  if (schema === undefined) {
+    throw new Error(`the reviewed contract declares no schema ${name}`);
+  }
+  return Object.keys(schema.properties || {}).sort();
+}

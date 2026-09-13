@@ -12,7 +12,11 @@ import { describe, expect, test } from "vitest";
 // reported as one series per release rather than collapsed.
 
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
-import { servedParameters, servedParametersWithout } from "../support/servedContract.js";
+import {
+  servedParameters,
+  servedParametersWithout,
+  servedSchemaFields,
+} from "../support/servedContract.js";
 import {
   RELEASE_DIMENSION,
   SCOPE_AS_RELEASED,
@@ -28,8 +32,13 @@ import {
   describeStratification,
   newestPerGeography,
   normalizeObservationRows,
+  OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_FIELDS,
   observationCoverageValue,
+  observationUncertaintyLabel,
+  observationUncertaintyValue,
   publishesCoverage,
+  publishesUncertainty,
   observationDimensionOptions,
   observationDimensionValue,
   observationPeriodLabel,
@@ -1127,5 +1136,99 @@ describe("a published coverage qualifier travels with its value", () => {
     expect(observationCoverageValue(row, "participation_status")).toBe("did not report");
     // `0` is a published number here, not a missing one.
     expect(observationCoverageValue(row, "coverage_percent")).toBe("0");
+  });
+});
+
+describe("a published uncertainty travels with its value", () => {
+  // Covers: WEB-053 — the envelope's other qualifier object. Normalization
+  // lifts `margin_of_error` and its percentage out of `uncertainty` for the
+  // chart and leaves the other five inside it, and nothing read them: CDC's
+  // published confidence bounds and USDA NASS's coefficient of variation --
+  // the figure NASS publishes a symbol for precisely to say an estimate is
+  // unreliable -- reached neither the table nor the export.
+
+  const neutralSource = {
+    key: "cdc",
+    accessShape: "neutral",
+    neutralFilters: ["geo_id", "geo_level"],
+    requestFilters: ["geo_id", "geo_level"],
+    dimensionFilters: [],
+    neutralDimensionFilters: [],
+  };
+
+  const intervalRow = {
+    metric_code: "CDC:cdc_places_county:OBESITY",
+    source_code: "CDC",
+    geo_id: "state:55|county:025",
+    geo_level: "COUNTY",
+    value: "32.4",
+    value_status: "valid",
+    uncertainty: { confidence_lower: "30.9", confidence_upper: "33.9" },
+  };
+
+  const coefficientRow = {
+    metric_code: "USDA_NASS:CORN:YIELD",
+    source_code: "USDA_NASS",
+    geo_id: "state:55",
+    geo_level: "STATE",
+    value: "181.2",
+    value_status: "valid",
+    uncertainty: { cv_value: "14.7", cv_status: "unreliable", cv_symbol: "(D)" },
+  };
+
+  test("the exported field list is the one the contract declares", () => {
+    // Read from the reviewed snapshot, so a field added to the envelope fails
+    // this rather than being silently dropped from every export.
+    expect([...OBSERVATION_UNCERTAINTY_FIELDS].sort()).toEqual(
+      servedSchemaFields("ObservationUncertainty"),
+    );
+    expect([...OBSERVATION_COVERAGE_FIELDS].sort()).toEqual(
+      servedSchemaFields("ObservationCoverage"),
+    );
+  });
+
+  test("every published uncertainty field survives normalization", () => {
+    for (const source of [intervalRow, coefficientRow]) {
+      const [row] = normalizeObservationRows(neutralSource, [source]);
+      for (const [field, value] of Object.entries(source.uncertainty)) {
+        expect(observationUncertaintyValue(row, field)).toBe(value);
+      }
+    }
+  });
+
+  test("a source-scoped row's top-level margin is read as published", () => {
+    // The per-source shapes carry `margin_of_error` at the top level and no
+    // `uncertainty` object; the accessor reads both rather than only the one
+    // the neutral envelope nests.
+    expect(
+      observationUncertaintyValue({ margin_of_error: "1.5" }, "margin_of_error"),
+    ).toBe("1.5");
+  });
+
+  test("a source that publishes no uncertainty publishes none", () => {
+    // Absent stays absent: an unpublished bound is not an empty one, and a
+    // dash in the exported data would make the two indistinguishable.
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...intervalRow, uncertainty: undefined },
+    ]);
+    expect(observationUncertaintyValue(row, "confidence_lower")).toBe("");
+    expect(publishesUncertainty([row])).toBe(false);
+    expect(observationUncertaintyLabel(row)).toBe("");
+  });
+
+  test("the answer says whether any row published an uncertainty", () => {
+    const [row] = normalizeObservationRows(neutralSource, [intervalRow]);
+    expect(publishesUncertainty([row])).toBe(true);
+    expect(publishesUncertainty([])).toBe(false);
+  });
+
+  test("the label names each published field rather than composing a notation", () => {
+    // A margin, an interval and a coefficient of variation are not
+    // interchangeable; rendering them into one notation would be this client
+    // deciding what three sources' numbers mean.
+    const [row] = normalizeObservationRows(neutralSource, [coefficientRow]);
+    expect(observationUncertaintyLabel(row)).toBe(
+      "cv value 14.7 · cv status unreliable · cv symbol (D)",
+    );
   });
 });
