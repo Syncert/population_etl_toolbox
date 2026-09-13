@@ -55,6 +55,17 @@ and `no shared geography grains` is a `fail`, which `/comparison` enforces —
 two measures both published nationally, refused as incomparable, with a
 reason that reads as though they cover different geographies.
 
+**How reachable, precisely.** Not on a current warehouse: DB-028 derives
+`valid_geo_grains` through `gold_glossary.geo_grain`, and the serving-agreement
+sweep refuses a published grain outside `GEO_GRAINS`, which does not contain
+the aliases. So this is the alias promise failing in the one place nothing
+else enforced it — reachable through a catalog harvested before the vocabulary
+was unified, or a metric row supplied by hand — rather than a wrong answer
+being served today. What makes it worth fixing anyway is that it was the
+API's only local copy of grain normalisation: the promise is kept in one
+function everywhere else, and a rule that re-derives it is how the next
+divergence starts.
+
 The second thing is smaller and in the same function. The `unknown` branch
 said only:
 
