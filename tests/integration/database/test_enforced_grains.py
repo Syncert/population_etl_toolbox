@@ -291,3 +291,49 @@ def test_the_evidence_relations_refuse_what_dq_shared_006_says_they_do(
             )
     finally:
         database_connection.close()
+
+
+def test_the_bounds_dq_ref_004_names_are_the_bounds_the_warehouse_holds(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DQ-016 — a per-row range the note claims is one the warehouse refuses.
+
+    DQ-REF-004's note said overlap weights were "recorded and never measured
+    against a reviewed bound". Each weight's range is refused at write time;
+    what is unmeasured is the hierarchy shape the rule also claims. The
+    range is a CHECK rather than a key, so it cannot be an
+    `EnforcedGrain` -- it is read here by the constraint the note names, so
+    the note cannot outlive it.
+    """
+    rule = next(rule for rule in ALL_RULES if rule.rule_id == "DQ-REF-004")
+    assert rule.automation == "unimplemented"
+    assert "overlap_weight_check" in rule.automation_note
+
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT c.conname, pg_get_constraintdef(c.oid)
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = 'silver_ref'
+                  AND t.relname = 'bridge_geo_relationship_version'
+                  AND c.contype = 'c'
+                """
+            )
+            definitions = {
+                name: " ".join(text.split()) for name, text in cursor.fetchall()
+            }
+    finally:
+        database_connection.close()
+
+    weight = definitions.get("bridge_geo_relationship_version_overlap_weight_check", "")
+    assert weight, (
+        "DQ-REF-004's note names this constraint as what refuses an "
+        f"impossible weight, and it is gone: {sorted(definitions)}"
+    )
+    assert ">= (0)::numeric" in weight and "<= (1)::numeric" in weight, weight
+    area = definitions.get("bridge_geo_relationship_version_overlap_area_m2_check", "")
+    assert ">= (0)::numeric" in area, area

@@ -1878,9 +1878,25 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: no executor checks publisher-ready event uniqueness "
-            "or that serving refresh state never precedes its event; the "
-            "relations carry no constraint that would refuse either."
+            "The uniqueness half the warehouse refuses and the ordering half "
+            "nothing measures. `(source_code, publisher_contract_version, "
+            "source_watermark)` is a UNIQUE constraint on "
+            "`control.publisher_ready_event` -- the grain declared below, so it "
+            "is checked against the warehouse rather than asserted here. "
+            "Nothing refuses or measures the ordering: "
+            "`control.serving_refresh_state` is keyed by source alone and holds "
+            "no reference to the event it should not precede, so the two are "
+            "comparable only by reading both, which no executor does."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "control.publisher_ready_event",
+                (
+                    "source_code",
+                    "publisher_contract_version",
+                    "source_watermark",
+                ),
+            ),
         ),
     ),
     _rule(
@@ -2015,9 +2031,16 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ("silver_ref.bridge_geo_relationship_version",),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: relationship overlap weights and hierarchy shapes "
-            "are recorded and never measured against a reviewed bound, so a "
-            "geography reload that changes them is invisible."
+            "Each weight's range the warehouse refuses and the shape nothing "
+            "measures. `overlap_weight` is constrained to [0, 1] and "
+            "`overlap_area_m2` to non-negative by "
+            "`bridge_geo_relationship_version_overlap_weight_check` and its "
+            "area counterpart, so a single impossible weight is rejected at "
+            "write time. What is unmeasured is the hierarchy shape the rule "
+            "also claims: whether one parent's children's weights sum to what a "
+            "reviewed bound expects, and whether a reload changed them. A per- "
+            "row range is not a shape, and no executor reads the relationships "
+            "back as a set."
         ),
     ),
     _rule(
