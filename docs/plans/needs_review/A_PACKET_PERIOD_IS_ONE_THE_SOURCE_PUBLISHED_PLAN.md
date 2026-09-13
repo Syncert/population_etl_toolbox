@@ -61,10 +61,42 @@ a guess filling it in". Line 271 is the guess.
 
 - Deriving a period from the rows a block displayed.
 
+## What changed
+
+- The fallback is gone. `period: text(chart.period)`, with the reason
+  recorded where the guess used to be.
+- `sharedObservationPeriod` (new, in `observationAccess`) answers the one
+  period a set of rows describes, or `""` where they differ. It reads
+  `observationPeriodLabel`, so a bounded period compares as its range and
+  two different ranges do not share a period.
+- The explorer writes it over the rows it loaded; the profile writes it over
+  its answered measures' rows. The comparison writes none, by design: it
+  carries one period per side, which is what WEB-049 exists to keep visible.
+
+## On criterion 3
+
+There is no shared chart-building helper to build a fixture "through": each
+of the three producers writes its literal inline, and extracting three
+component-local object literals into lib functions is a refactor this plan
+did not ask for. What the defect was about — the period — is now produced by
+one helper, and that helper is tested directly. The fixtures that hand-wrote
+`period: "2023"` are left as they are because they now model exactly what
+the explorer writes, and the browser fixture gains a third saved view — a
+comparison, which legitimately captures no period — so the `savedAt` branch's
+case is exercised end to end for the first time.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+- `npm --prefix apps/web run test:unit` — **358 passed** (354 before: +4).
+- `npm --prefix apps/web run test:browser` — 84 passed before this plan's
+  node; the new node passes and **both new nodes fail on the old fallback**:
+  restoring `|| text(chart.savedAt)` fails the unit node and the browser
+  node (`data-complete` reads `true` and the envelope carries the
+  timestamp). `apps/web/lib/evidencePackets.ts` was restored byte-for-byte
+  after each check.
+- `npx tsc --noEmit` (apps/web) and `npm --prefix apps/web run lint` — clean.
+- `python -m tests.support.catalog_evidence` renders WEB-069 `FULL`.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

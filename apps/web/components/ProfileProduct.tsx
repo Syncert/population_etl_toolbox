@@ -33,6 +33,7 @@ import {
   OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
   buildNewestValueRequest,
   normalizeObservationRows,
+  sharedObservationPeriod,
   observationPeriodLabel,
   observationUncertaintyLabel,
 } from "../lib/observationAccess";
@@ -352,6 +353,13 @@ export default function ProfileProduct() {
       geoId: geoId || null,
       metrics: availableMeasures.map((measure) => measure.metricCode),
       transformation: "none",
+      // The one period every answered measure describes, or empty where
+      // they differ -- a profile mixes sources, so often they do (WEB-069).
+      period: sharedObservationPeriod(
+        availableMeasures
+          .map((measure) => answers[measure.slot.id]?.row)
+          .filter((row): row is ObservationRow => Boolean(row)),
+      ),
       savedAt: new Date().toISOString(),
     });
     setSaveStatus("Saved for Builder");

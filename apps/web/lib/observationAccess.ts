@@ -547,6 +547,27 @@ function observationOrderingDate(row: ObservationRow): string | null {
 }
 
 /** How many distinct periods a set of rows spans. */
+/**
+ * The one period every row describes, or `""` where they differ.
+ *
+ * What a view can honestly say its figures are *for*. A publication that
+ * spans several periods -- Census PEP's latest vintage carries every
+ * estimated year -- has no single period, and naming one of them would make
+ * the others read as that period's values (WEB-069).
+ */
+export function sharedObservationPeriod(
+  rows: ObservationRow[] | null | undefined,
+): string {
+  const periods = new Set<string>();
+  for (const row of rows || []) {
+    const period = observationPeriodLabel(row);
+    if (period) {
+      periods.add(period);
+    }
+  }
+  return periods.size === 1 ? [...periods][0]! : "";
+}
+
 export function countObservationPeriods(rows: ObservationRow[] | null | undefined): number {
   const periods = new Set<string>();
   for (const row of rows || []) {

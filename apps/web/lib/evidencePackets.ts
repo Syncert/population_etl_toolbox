@@ -268,7 +268,14 @@ export function envelopeFromSavedChart(
     geoLevel: text(chart.geoLevel),
     scope: chart.scope === "as_released" ? "as_released" : "latest",
     release: text(chart.release),
-    period: text(chart.period) || text(chart.savedAt),
+    // No fallback. `savedAt` is when someone pressed save, and putting it
+    // here made every attached block's envelope state a period no source
+    // published -- `2026-09-13T12:41:03.117Z` as the period of a 2023
+    // estimate -- while `packetIssues` saw a filled field and reported the
+    // packet complete. This module's own rule: "a field the view never
+    // captured stays empty so `packetIssues` can report it rather than a
+    // guess filling it in" (WEB-069).
+    period: text(chart.period),
     units: text(chart.units),
     transformation: text(chart.transformation) || "none",
     apiQuery: text(chart.apiQuery),

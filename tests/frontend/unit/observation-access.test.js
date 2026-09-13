@@ -44,6 +44,7 @@ import {
   observationDimensionLabel,
   observationDimensionValue,
   observationPeriodLabel,
+  sharedObservationPeriod,
   scopedDimensionFilters,
   servesAsReleased,
   stratificationDimensions,
@@ -1296,5 +1297,35 @@ describe("the declared dimensions ride in one cell", () => {
     expect(observationDimensionLabel(row, [])).toBe("");
     expect(observationDimensionLabel({}, ["footnote_code"])).toBe("");
     expect(observationDimensionLabel(null, ["footnote_code"])).toBe("");
+  });
+});
+
+describe("the one period a view can honestly name", () => {
+  test("rows that share a period name it; rows that differ name none", () => {
+    // Covers: WEB-069 — what a saved view records as its period, and what
+    // the packet builder then puts in a block's envelope. Census PEP's
+    // latest publication carries every estimated year of the vintage, so
+    // naming one of them would make the other years read as that period's
+    // values.
+    const row = (period) => ({ geo_id: "state:55", period });
+    expect(sharedObservationPeriod([row("2023"), row("2023")])).toBe("2023");
+    expect(sharedObservationPeriod([row("2023"), row("2022")])).toBe("");
+    // Nothing loaded is nothing to name, not a guess.
+    expect(sharedObservationPeriod([])).toBe("");
+    expect(sharedObservationPeriod(null)).toBe("");
+    // A row publishing no period does not veto one that does.
+    expect(sharedObservationPeriod([row("2023"), row("")])).toBe("2023");
+  });
+
+  test("the period is the one the row labels, start and end included", () => {
+    // `observationPeriodLabel`'s own rule: a bounded period reads as its
+    // range, so two rows covering different ranges do not share a period.
+    const ranged = (start, end) => ({ period_start: start, period_end: end });
+    expect(sharedObservationPeriod([ranged("2021", "2023"), ranged("2021", "2023")])).toBe(
+      "2021 – 2023",
+    );
+    expect(sharedObservationPeriod([ranged("2021", "2023"), ranged("2020", "2022")])).toBe(
+      "",
+    );
   });
 });

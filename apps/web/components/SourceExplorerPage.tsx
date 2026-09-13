@@ -97,6 +97,7 @@ import {
   observationCoverageValue,
   observationPeriodLabel,
   observationUncertaintyLabel,
+  sharedObservationPeriod,
   observationUncertaintyValue,
   publishesCoverage,
   publishesUncertainty,
@@ -1789,6 +1790,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       scope: observationScope,
       release: selectedRelease || null,
       newestPerGeography: viewedNewestPerGeography,
+      // The one period every loaded row describes, or empty where they
+      // differ: a packet block composed from this view states a period the
+      // source published, and states none when the publication spans
+      // several (WEB-069).
+      period: sharedObservationPeriod(observations),
       apiQuery,
       savedAt: new Date().toISOString(),
     };

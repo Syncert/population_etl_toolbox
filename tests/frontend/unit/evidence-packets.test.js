@@ -168,6 +168,48 @@ describe("blocks reopen and export with their evidence intact", () => {
     expect(envelopeFromSavedChart(null).metricCodes).toEqual([]);
   });
 
+  test("a view that captured no period records none, and the packet says so", () => {
+    // Covers: WEB-069 — the period fell back to `savedAt`, the moment
+    // someone pressed save. No producer wrote `period` at all, so every
+    // analytical block attached in the builder claimed a period like
+    // `2026-09-13T12:41:03.117Z` -- a timestamp as the period of an annual
+    // estimate -- and `packetIssues` saw a filled field and reported the
+    // packet complete. A comparison is the case that legitimately has none:
+    // it carries two periods, one per side, which WEB-049 exists to keep
+    // visible.
+    const built = envelopeFromSavedChart({
+      metricCode: "A",
+      source: "CENSUS_ACS",
+      savedAt: "2026-09-13T12:41:03.117Z",
+    });
+    expect(built.period).toBe("");
+    expect(JSON.stringify(built)).not.toContain("2026-09-13T12:41:03");
+
+    const packet = {
+      version: 1,
+      title: "T",
+      purpose: "P",
+      blocks: [
+        { id: "b", type: "analysis", title: "B", envelope: built },
+        { id: "m", type: "methodology", title: "M", content: "how" },
+      ],
+      updatedAt: "2026-09-13T00:00:00Z",
+    };
+    const [issue] = packetIssues(packet);
+    expect(issue.blockId).toBe("b");
+    expect(issue.missing).toContain("period");
+  });
+
+  test("a period the view did capture travels as it was captured", () => {
+    const built = envelopeFromSavedChart({
+      metricCode: "A",
+      source: "CENSUS_ACS",
+      period: "2023",
+      savedAt: "2026-09-13T12:41:03.117Z",
+    });
+    expect(built.period).toBe("2023");
+  });
+
   test("the export carries each block's full envelope and live status", () => {
     const exported = packetExport(completePacket);
     expect(exported.headings).toContain("api_query");
