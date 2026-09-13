@@ -47,7 +47,11 @@ _FRED_METRIC = {
     "valid_geo_grains": ["NATIONAL"],
     "aggregation_characteristic": None,
     "physical_lineage": {},
+    # The projected row carries the harvested freshness state, and a block
+    # naming a retired measure cannot be replayed (API-119).
+    "freshness_state": "current",
 }
+_RETIRED_FRED_METRIC = {**_FRED_METRIC, "freshness_state": "retired"}
 
 
 class _Result:
@@ -576,6 +580,32 @@ def test_contradictions_are_refused_at_write_naming_the_block(
     assert storage.rows == []
 
 
+def test_a_retired_measure_is_refused_at_write_naming_the_block(
+    accounts, monkeypatch
+) -> None:
+    """Covers: API-119 — a block the API would not answer never reaches storage.
+
+    The write path read only whether the glossary row existed, so composing a
+    packet around a measure the warehouse had already retired stored 201 with
+    `validation.valid = true`. A packet is a citation: a block that cannot be
+    replayed is worse stored than refused.
+    """
+    storage = _StorageSession(accounts)
+    warehouse = _WarehouseSession({"FRED:UNRATE": _RETIRED_FRED_METRIC})
+    client = _client(storage, warehouse, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/evidence-packets",
+        headers=_auth(),
+        json={"name": "retired", "document": _packet(_block("unemployment"))},
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "block 'unemployment'" in detail, "the reader is told which block"
+    assert "retired" in detail
+    assert storage.rows == []
+
+
 def test_duplicate_block_ids_are_refused(accounts, monkeypatch) -> None:
     """Covers: API-070 — block identity is part of the composition."""
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
@@ -603,7 +633,13 @@ def test_unknown_block_type_and_stray_fields_never_reach_storage() -> None:
 def test_retired_measure_is_reported_on_its_block_not_repaired(
     accounts, monkeypatch
 ) -> None:
-    """Covers: API-070 — stale names the block and keeps the document."""
+    """Covers: API-070, API-119 — stale names the block and keeps the document.
+
+    Retirement was simulated by deleting the glossary row, which is a
+    different fact: the contract's retirement leaves the row in place with
+    `freshness_state = 'retired'` and stops answering its observations. That
+    state was never read, so this passed for the wrong reason (API-119).
+    """
     client = _client(_StorageSession(accounts), monkeypatch=monkeypatch)
     created = client.post(
         "/api/v1/evidence-packets",
@@ -617,7 +653,7 @@ def test_retired_measure_is_reported_on_its_block_not_repaired(
     assert created.json()["validation"]["valid"] is True
 
     def _retired_warehouse():
-        yield _WarehouseSession({})
+        yield _WarehouseSession({"FRED:UNRATE": _RETIRED_FRED_METRIC})
 
     app.dependency_overrides[get_db_session_dep] = _retired_warehouse
     stale = client.get(f"/api/v1/evidence-packets/{packet_id}", headers=_auth())
@@ -627,7 +663,7 @@ def test_retired_measure_is_reported_on_its_block_not_repaired(
     for state in validation["blocks"]:
         if state["block_id"] in {"kept", "retired"}:
             assert state["valid"] is False
-            assert "not a published metric" in state["reason"]
+            assert "retired" in state["reason"]
             assert state["missing"] == [], "stale, not incomplete"
     blocks = stale.json()["document"]["blocks"]
     assert all(

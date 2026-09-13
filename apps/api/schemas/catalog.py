@@ -130,6 +130,11 @@ class MetricCapability(MetricCatalog):
     served_by_neutral_routes: bool = False
     observation_routes: list[ObservationRouteCapability] = []
     observation_filters: list[str] = []
+    #: The ``dimensions`` field names a row of this metric's source carries,
+    #: the same review the source resource publishes. A client that discovered
+    #: a metric had to enumerate ``/catalog/capabilities`` to learn the shape
+    #: of its own rows; the declaration belongs on both (API-119).
+    observation_dimensions: list[str] = []
 
 
 class SourceFreshness(BaseModel):

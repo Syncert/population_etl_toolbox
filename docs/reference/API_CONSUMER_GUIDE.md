@@ -51,8 +51,11 @@ anything shaped like them. There is no wildcard syntax to reach for.
 source does not declare is **rejected with a 422 naming the supported set**,
 never silently ignored. `observation_dimensions` is the same kind of
 contract for reading: the field names a neutral row's `dimensions` object
-carries for that source. Read capabilities once at startup rather than
-guessing.
+carries for that source. Both are published on `/catalog/capabilities` per
+source and on `GET /catalog/metrics/{metric_code}` for the metric you
+landed on, from one declaration, so discovering a metric never means
+enumerating sources to learn the shape of its own rows. Read capabilities
+once at startup rather than guessing.
 
 `/catalog/geographies` answers a **projection refreshed on its own
 schedule**, by the glossary reconciliation run rather than by the source
@@ -249,7 +252,15 @@ The series-level LAUS codes are **retired catalog rows**: an existing link to
 `BLS:LAUCN010010000000003` still resolves through
 `GET /catalog/metrics/{metric_code}` and reports `freshness_state: "retired"`,
 and `active_only=true` hides it from search. It no longer answers
-observations.
+observations, and the metric resource says so the way a client can act on:
+a retired metric answers `served_by_neutral_routes: false` with
+`observation_routes: []` and `observation_filters: []`, because no route
+would answer it. `observation_dimensions` stays — it describes the rows the
+warehouse published, which retirement does not withdraw. A saved
+configuration or an evidence-packet block naming a retired metric is refused
+on write and reported invalid on read, with a reason that says `retired`
+rather than "not a published metric": the catalog entry is published, its
+observations are not served.
 
 Every other BLS program (CES, CPI, JOLTS, and the CPS national series) is
 fixed-coded per series and keeps its series identity, so

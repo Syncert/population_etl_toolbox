@@ -46,7 +46,12 @@ _FRED_METRIC = {
     "valid_geo_grains": ["NATIONAL"],
     "aggregation_characteristic": None,
     "physical_lineage": {},
+    # `resolve_metric` projects the harvested freshness state, and a document
+    # naming a retired measure cannot be replayed (API-119). The fixtures carry
+    # it because the row does.
+    "freshness_state": "current",
 }
+_RETIRED_FRED_METRIC = {**_FRED_METRIC, "freshness_state": "retired"}
 _CDC_METRIC = {
     "metric_code": "CDC:cdi:X:crude",
     "source_code": "CDC",
@@ -557,7 +562,14 @@ def test_distribution_document_rejects_a_declined_source(
 def test_stale_configuration_is_reported_on_read_not_repaired(
     accounts, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: API-061 — a retired capability is stated, the document kept."""
+    """Covers: API-061, API-119 — retirement is stated, the document kept.
+
+    This simulated retirement by *deleting* the glossary row, so it passed for
+    the wrong reason: the contract's retirement leaves the row in place with
+    `freshness_state = 'retired'`, and that state was never read (API-119).
+    The deleted-row path is asserted where it belongs, on the write of an
+    unknown metric_code.
+    """
     storage = _StorageSession(accounts)
     client = _client(storage, monkeypatch=monkeypatch)
     created = client.post(
@@ -568,9 +580,10 @@ def test_stale_configuration_is_reported_on_read_not_repaired(
     configuration_id = created.json()["configuration_id"]
     assert created.json()["validation"] == {"valid": True, "reason": None}
 
-    # The warehouse retires the metric out from under the saved configuration.
+    # The warehouse retires the metric out from under the saved configuration:
+    # the row stays, its state changes.
     def _retired_warehouse():
-        yield _WarehouseSession({})
+        yield _WarehouseSession({"FRED:UNRATE": _RETIRED_FRED_METRIC})
 
     app.dependency_overrides[get_db_session_dep] = _retired_warehouse
     stale = client.get(
@@ -580,9 +593,37 @@ def test_stale_configuration_is_reported_on_read_not_repaired(
     assert stale.status_code == 200, "a stale configuration is still readable"
     payload = stale.json()
     assert payload["validation"]["valid"] is False
-    assert "not a published metric" in payload["validation"]["reason"]
+    assert "retired" in payload["validation"]["reason"]
     assert payload["document"]["metric_code"] == "FRED:UNRATE", (
         "the user's document is preserved verbatim, never repaired"
+    )
+
+
+def test_a_retired_measure_cannot_be_stored_as_a_configuration(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-119 — a document the API would not answer is not stored.
+
+    `_require_metric` raised only when the glossary row was absent, so a
+    configuration naming a measure the warehouse had already retired stored
+    with `validation.valid = true` and replayed as an empty page. The guide's
+    promise is that "a saved configuration cannot encode a request the API
+    would refuse".
+    """
+    warehouse = _WarehouseSession({"FRED:UNRATE": _RETIRED_FRED_METRIC})
+    client = _client(_StorageSession(accounts), warehouse, monkeypatch=monkeypatch)
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "retired-series", "document": _document()},
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "retired" in detail
+    assert "FRED:UNRATE" in detail
+    assert "not a published metric" not in detail, (
+        "the row is published; it is its observations that are not served"
     )
 
 

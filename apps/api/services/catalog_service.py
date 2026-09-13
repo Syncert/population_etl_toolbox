@@ -39,6 +39,7 @@ from apps.api.schemas import (
     SourceSystem,
 )
 from apps.api.services.contracts import require_relation
+from apps.api.services.metric_freshness import is_retired
 from apps.api.versioning import VERSIONED_ROOT
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_RELATION,
@@ -208,11 +209,29 @@ def get_metric_capability(
 
     capability = MetricCapability.model_validate(row)
     discovery = SOURCE_DISCOVERY.get(capability.source_code or "")
-    if discovery is not None:
-        operations = _versioned_get_operations(openapi_paths)
-        capability.served_by_neutral_routes = discovery.served_by_neutral_routes
-        capability.observation_routes = _routes_for(discovery, operations)
-        capability.observation_filters = _observation_filters_for(discovery.source_code)
+    if discovery is None:
+        return capability
+
+    # The dimensions a row of this source carries. Declared for the source and
+    # published on the source resource since API-109, but not here, so a
+    # client that discovered a metric had to enumerate sources to learn the
+    # shape of its own rows (API-119).
+    capability.observation_dimensions = _observation_dimensions_for(
+        discovery.source_code
+    )
+    if is_retired(capability.freshness_state):
+        # A retired measure keeps its catalog entry and its history; no route
+        # answers its observations. Copying the source's routes and
+        # `served_by_neutral_routes` here advertised six routes that answer it
+        # `total: 0`, which is exactly the silent empty page the discovery
+        # registry exists to prevent. The dimensions stay: they describe the
+        # rows the warehouse published, not a route that would serve them.
+        return capability
+
+    operations = _versioned_get_operations(openapi_paths)
+    capability.served_by_neutral_routes = discovery.served_by_neutral_routes
+    capability.observation_routes = _routes_for(discovery, operations)
+    capability.observation_filters = _observation_filters_for(discovery.source_code)
     return capability
 
 

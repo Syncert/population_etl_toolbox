@@ -126,6 +126,11 @@ that lose their sweep.
   The schedule table is corrected in the follow-up commit with the reason
   recorded beside it.
 
+- **`dag-parse` is green on the follow-up commit (`631a5b9`).** Run
+  [34764609403](https://github.com/Syncert/population_etl_toolbox/actions/runs/34764609403)
+  concluded `success`, so the corrected schedule table and the new DAG-018
+  node pass together — the only tier that can execute them.
+
 ## Remaining work
 
-- Confirm `dag-parse` green on the follow-up commit.
+- None.

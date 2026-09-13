@@ -42,6 +42,7 @@ from apps.api.schemas import (
     SavedAnalysisSummary,
 )
 from apps.api.services.compatibility import evaluate_comparison
+from apps.api.services.metric_freshness import retirement_refusal
 from apps.api.services.neutral_observations_service import resolve_metric
 
 #: Document fields that belong to no single kind: the kind itself, the
@@ -85,6 +86,12 @@ def _require_metric(warehouse: Session, metric_code: Optional[str], field: str):
     metric = resolve_metric(warehouse, metric_code)
     if metric is None:
         raise ConfigurationInvalid(f"{field} '{metric_code}' is not a published metric")
+    # Existence was the only thing read here, so a measure the warehouse had
+    # retired -- row present, state `retired`, observations no longer served --
+    # validated as current and replayed as an empty page (API-119).
+    retired = retirement_refusal(field, metric_code, metric.get("freshness_state"))
+    if retired is not None:
+        raise ConfigurationInvalid(retired)
     return metric
 
 

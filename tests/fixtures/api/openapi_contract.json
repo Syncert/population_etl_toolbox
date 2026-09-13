@@ -2257,6 +2257,7 @@
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "observation_dimensions": "array<string>",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
         "physical_lineage": "object | null",
