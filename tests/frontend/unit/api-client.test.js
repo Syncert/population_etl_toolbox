@@ -327,3 +327,38 @@ describe("comparison paging", () => {
     expect(pages.complete).toBe(true);
   });
 });
+
+// Covers: WEB-044 — an account's library is paged, and the token travels
+// with every page. Three screens read the library with one request at the
+// route's maximum and reported a partial answer in green; the entries past
+// it could not be opened, edited, or added to a packet.
+describe("authenticated collection paging", () => {
+  test("the bearer token travels on every page, never in the query", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }], total: 2 }),
+      jsonResponse({ items: [{ id: 2 }], total: 2 }),
+    ]);
+    const pages = await fetchCollectionPages("/evidence-packets", {
+      pageSize: 1,
+      token: "secret-token",
+      fetchImpl,
+    });
+
+    expect(pages.items).toHaveLength(2);
+    expect(pages.complete).toBe(true);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.init.headers.Authorization).toBe("Bearer secret-token");
+      // A token in a query string travels into history, referrers, and logs.
+      expect(call.path).not.toContain("secret-token");
+    }
+  });
+
+  test("an unauthenticated collection is unchanged", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }], total: 1 }),
+    ]);
+    await fetchCollectionPages("/catalog/metrics", { pageSize: 1, fetchImpl });
+    expect(calls[0].init.headers.Authorization).toBeUndefined();
+  });
+});

@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   describeConflict,
+  describeLibraryLoad,
   describeDocument,
   describeSaveFailure,
   describeSaveSuccess,
@@ -309,5 +310,28 @@ describe("save destination", () => {
     // user their work is safe somewhere they did not choose is worse than
     // telling them it was not saved.
     expect(describeSaveFailure(new Error("network")).destination).toBeNull();
+  });
+});
+
+// Covers: WEB-044 — an account library is a paged collection, and a partial
+// answer is never green. Three screens read theirs with one request at the
+// route's maximum of 200 and reported the result as ok, so a library past
+// two hundred entries was shown two hundred with no way to reach the rest.
+describe("the account library status line", () => {
+  test("a complete library reads as what it is, and counts one correctly", () => {
+    expect(describeLibraryLoad(7, 7, true, "packet", "packets")).toBe("7 packets");
+    expect(describeLibraryLoad(1, 1, true, "packet", "packets")).toBe("1 packet");
+    expect(describeLibraryLoad(0, 0, true, "packet", "packets")).toBe("0 packets");
+  });
+
+  test("a bound-limited read names the shortfall and calls the list incomplete", () => {
+    expect(describeLibraryLoad(2000, 2400, false, "packet", "packets")).toBe(
+      "loaded 2000 of 2400 packets; the page bound cut the answer short, so " +
+        "this list is incomplete",
+    );
+  });
+
+  test("a resource that published no total is not reported as short", () => {
+    expect(describeLibraryLoad(3, null, false, "packet", "packets")).toBe("3 packets");
   });
 });

@@ -22,7 +22,12 @@ import { Download, Printer } from "lucide-react";
 import StatusPill from "./StatusPill";
 import EvidenceEnvelope from "./EvidenceEnvelope";
 import { BUILDER_DRAFT_KEY } from "../lib/savedCharts";
-import { ApiError, getEvidencePacket, listEvidencePackets } from "../lib/api/client";
+import {
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_PAGE_SIZE,
+  describeLibraryLoad,
+} from "../lib/savedAnalysis";
+import { ApiError, fetchCollectionPages, getEvidencePacket } from "../lib/api/client";
 import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -63,13 +68,23 @@ export default function ComposedArticle() {
     }
     let cancelled = false;
     setAccountStatus({ state: "loading", message: "loading your packets" });
-    listEvidencePackets(token, { limit: "200" })
-      .then((payload) => {
+    fetchCollectionPages<EvidencePacketSummary>("/evidence-packets", {
+      token,
+      pageSize: LIBRARY_PAGE_SIZE,
+      maxPages: LIBRARY_PAGE_LIMIT,
+    })
+      .then((pages) => {
         if (cancelled) return;
-        setAccountPackets(payload.items);
+        setAccountPackets(pages.items);
         setAccountStatus({
-          state: "ok",
-          message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            pages.items.length,
+            pages.total,
+            pages.complete,
+            "packet in your account",
+            "packets in your account",
+          ),
         });
       })
       .catch((error) => {

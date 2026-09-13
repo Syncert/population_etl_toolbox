@@ -19,7 +19,7 @@ import {
   createSavedAnalysis,
   deleteSavedAnalysis,
   getSavedAnalysis,
-  listSavedAnalyses,
+  fetchCollectionPages,
   updateSavedAnalysis,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
@@ -27,8 +27,11 @@ import type { SavedAnalysisConfiguration, SavedAnalysisSummary } from "../lib/ap
 import { readSavedCharts } from "../lib/savedCharts";
 import { clearStoredToken, readStoredToken, storeToken } from "../lib/apiToken";
 import {
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_PAGE_SIZE,
   describeConflict,
   describeDocument,
+  describeLibraryLoad,
   planLocalMigration,
   reopenHref,
   sortConfigurations,
@@ -83,15 +86,28 @@ export default function SavedAnalyses() {
       const request = listTracker.begin();
       setListStatus({ state: "loading", message: "loading your analyses" });
       try {
-        const payload = await listSavedAnalyses(activeToken, { limit: "200" });
+        const pages = await fetchCollectionPages<SavedAnalysisSummary>(
+          "/analysis-configurations",
+          {
+            token: activeToken,
+            pageSize: LIBRARY_PAGE_SIZE,
+            maxPages: LIBRARY_PAGE_LIMIT,
+          },
+        );
         if (!request.isCurrent()) {
           return;
         }
-        const rows = sortConfigurations(payload.items);
+        const rows = sortConfigurations(pages.items);
         setItems(rows);
         setListStatus({
-          state: "ok",
-          message: `${rows.length} of ${payload.total ?? rows.length} saved analyses`,
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            rows.length,
+            pages.total,
+            pages.complete,
+            "saved analysis",
+            "saved analyses",
+          ),
         });
       } catch (error) {
         if (!request.isCurrent()) {

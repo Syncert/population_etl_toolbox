@@ -392,3 +392,40 @@ export function describeSaveSuccess(destination: SaveDestination, name: string):
     destination,
   };
 }
+
+// --- Account libraries ---------------------------------------------------
+//
+// An account's saved analyses and evidence packets are paged collections:
+// `/analysis-configurations` and `/evidence-packets` cap `limit` at 200 and
+// declare `offset`. Three screens read them with one request at that maximum
+// and reported the result in green, so a library past two hundred entries was
+// shown two hundred of them with no way to open, edit, or compose from the
+// rest (WEB-044).
+
+/** One page of an account library, and how many of them to read. */
+export const LIBRARY_PAGE_SIZE = 200;
+export const LIBRARY_PAGE_LIMIT = 10;
+
+/**
+ * The library status line, honest about the page bound.
+ *
+ * Follows WEB-036's wording: a bound-limited read names the shortfall and is
+ * reported as a failure, and a resource that published no total is never
+ * reported as short, because there is no shortfall to state.
+ */
+export function describeLibraryLoad(
+  loaded: number,
+  total: number | null,
+  complete: boolean,
+  one: string,
+  many: string,
+): string {
+  const noun = loaded === 1 ? one : many;
+  if (!complete && total !== null) {
+    return (
+      `loaded ${loaded} of ${total} ${many}; the page bound cut the answer ` +
+      "short, so this list is incomplete"
+    );
+  }
+  return `${loaded} ${noun}`;
+}

@@ -206,7 +206,7 @@ export interface CollectionPages<T> {
 // prefix rather than handed a truncated list as if it were whole.
 export async function fetchCollectionPages<T>(
   resource: string,
-  { params = {}, pageSize = 1000, maxPages = 50, signal, fetchImpl }: PageOptions = {},
+  { params = {}, pageSize = 1000, maxPages = 50, signal, fetchImpl, token }: PageOptions = {},
 ): Promise<CollectionPages<T>> {
   const items: T[] = [];
   let offset = 0;
@@ -218,6 +218,10 @@ export async function fetchCollectionPages<T>(
       params: { ...params, limit: String(pageSize), offset: String(offset) },
       signal,
       fetchImpl,
+      // Carried on every page, and only as an `Authorization` header: an
+      // account's own library is a paged collection like any other
+      // (WEB-044).
+      token,
     });
     const pageItems = Array.isArray(payload.items) ? payload.items : [];
     total =

@@ -27,12 +27,19 @@ import {
   ApiError,
   createEvidencePacket,
   getEvidencePacket,
-  listEvidencePackets,
+  fetchCollectionPages,
   updateEvidencePacket,
 } from "../lib/api/client";
 import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
 import { useStoredToken } from "../lib/apiToken";
-import { describeSaveFailure, describeSaveSuccess, saveDestination } from "../lib/savedAnalysis";
+import {
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_PAGE_SIZE,
+  describeLibraryLoad,
+  describeSaveFailure,
+  describeSaveSuccess,
+  saveDestination,
+} from "../lib/savedAnalysis";
 import type { SaveOutcome } from "../lib/savedAnalysis";
 import {
   documentToPacket,
@@ -94,11 +101,24 @@ export default function EvidencePacketBuilder() {
     }
     setAccountStatus({ state: "loading", message: "loading your packets" });
     try {
-      const payload = await listEvidencePackets(activeToken, { limit: "200" });
-      setAccountPackets(payload.items);
+      const pages = await fetchCollectionPages<EvidencePacketSummary>(
+        "/evidence-packets",
+        {
+          token: activeToken,
+          pageSize: LIBRARY_PAGE_SIZE,
+          maxPages: LIBRARY_PAGE_LIMIT,
+        },
+      );
+      setAccountPackets(pages.items);
       setAccountStatus({
-        state: "ok",
-        message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+        state: pages.complete ? "ok" : "bad",
+        message: describeLibraryLoad(
+          pages.items.length,
+          pages.total,
+          pages.complete,
+          "packet in your account",
+          "packets in your account",
+        ),
       });
     } catch (error) {
       setAccountPackets([]);

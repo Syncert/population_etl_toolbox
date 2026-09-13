@@ -181,7 +181,7 @@ test("signed in, the composer saves to the account and says so before and after"
   const save = page.getByTestId("packet-save");
   await expect(save).toHaveAttribute("data-destination", "account");
   await expect(save).toContainText("Save to account");
-  await expect(page.getByTestId("packet-account-status")).toContainText("1 of 1 packets");
+  await expect(page.getByTestId("packet-account-status")).toContainText("1 packet in your account");
 
   await page.getByTestId("packet-target").selectOption("population-evidence");
   await page.getByTestId("packet-attach-chart:1").click();
@@ -298,7 +298,7 @@ test("the reader shows an account packet with the API's verdict, and writes noth
   await signIn(page);
   await page.goto("/articles");
 
-  await expect(page.getByTestId("article-account-status")).toContainText("1 of 1 packets");
+  await expect(page.getByTestId("article-account-status")).toContainText("1 packet in your account");
   // Signed in with no selection, the browser draft is still what is shown.
   await expect(page.getByTestId("composed-article")).toHaveAttribute("data-state", "empty");
 
