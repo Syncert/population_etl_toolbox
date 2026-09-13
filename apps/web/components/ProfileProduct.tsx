@@ -473,7 +473,7 @@ export default function ProfileProduct() {
       </section>
       {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={catalogStatus.state}
           label="Measures"

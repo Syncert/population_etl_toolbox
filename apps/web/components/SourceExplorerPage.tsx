@@ -1672,7 +1672,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         </div>
       ) : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill state={apiHealth.state} label="API" message={apiHealth.message} testId="api-status" />
         <StatusPill state={tilesHealth.state} label="Tiles" message={tilesHealth.message} testId="tiles-status" />
         <StatusPill

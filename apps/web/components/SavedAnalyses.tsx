@@ -325,7 +325,7 @@ export default function SavedAnalyses() {
         and are never publicly cached. Nothing on this page is written to the address bar.
       </p>
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={listStatus.state}
           label="Account"

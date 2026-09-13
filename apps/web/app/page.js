@@ -59,7 +59,13 @@ export default function HomePage() {
         <div><strong>Live</strong><span>API-backed observations</span></div>
       </section>
 
-      {status === "error" ? <div className="notice error">Live catalog data is temporarily unavailable.</div> : null}
+      {/* Always present so the first render is the baseline; a failure that
+          arrives afterwards is announced rather than only shown (WEB-037). */}
+      <div className="status-row" role="status" data-testid="home-status">
+        {status === "error" ? (
+          <div className="notice error">Live catalog data is temporarily unavailable.</div>
+        ) : null}
+      </div>
 
       <section className="home-grid">
         <article className="feature-story">

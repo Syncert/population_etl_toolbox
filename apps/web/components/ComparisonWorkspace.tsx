@@ -577,7 +577,7 @@ export default function ComparisonWorkspace() {
         </div>
       ) : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={preflightStatus.state}
           label="Compatibility"

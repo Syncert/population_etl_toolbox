@@ -173,7 +173,7 @@ export default function ComposedArticle() {
 
   const picker =
     tokenResolved && token ? (
-      <section className="status-row no-print" data-testid="article-account">
+      <section className="status-row no-print" data-testid="article-account" role="status">
         <StatusPill
           state={accountStatus.state}
           label="Account"
@@ -267,7 +267,7 @@ export default function ComposedArticle() {
           </div>
         </header>
 
-        <section className="status-row no-print">
+        <section className="status-row no-print" role="status">
           <StatusPill
             state={complete ? "ok" : "warn"}
             label="Article"

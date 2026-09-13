@@ -320,3 +320,50 @@ test("an unavailable API leaves a distinct, recoverable state rather than a blan
   await expect(page.getByTestId("metric-select")).toBeEnabled();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
+
+// Covers: WEB-037 — the outcome of a request the reader triggered is
+// announced. Every data screen reports through a `.status-row`, and the
+// catalog through its own summary; none of them spoke, so a reader using a
+// screen reader saw nothing change when a comparison came back incompatible
+// or a catalog search returned nothing.
+test("every screen's request status is a polite live region", async ({ page }) => {
+  await installRoutes(page);
+  for (const route of CORE_ROUTES) {
+    await page.goto(route);
+    const rows = page.locator(".status-row");
+    const count = await rows.count();
+    for (let index = 0; index < count; index += 1) {
+      const row = rows.nth(index);
+      await expect(row).toHaveAttribute("role", "status");
+      // Polite, never assertive: a failed read is not an interruption that
+      // should cut off what the reader is already listening to.
+      const live = await row.getAttribute("aria-live");
+      expect(live === null || live === "polite").toBe(true);
+    }
+  }
+});
+
+test("the catalog's result state is announced as one region", async ({ page }) => {
+  await installRoutes(page);
+  await page.goto("/catalog");
+  const status = page.getByTestId("catalog-status");
+  await expect(status).toHaveAttribute("role", "status");
+  // Always present, so the first render is the baseline and only later
+  // changes speak.
+  await expect(status).toHaveCount(1);
+  await expect(status).toContainText("matching metrics");
+});
+
+test("a status pill is not itself a live region", async ({ page }) => {
+  // A catalog page renders one freshness pill per metric row; making the
+  // shared component live would turn a list render into dozens of
+  // announcements. The row is the region, the pills are its content.
+  await installRoutes(page);
+  await page.goto("/catalog");
+  const pills = page.locator(".pill");
+  const count = await pills.count();
+  for (let index = 0; index < count; index += 1) {
+    await expect(pills.nth(index)).not.toHaveAttribute("role", "status");
+    await expect(pills.nth(index)).not.toHaveAttribute("aria-live", /.*/);
+  }
+});

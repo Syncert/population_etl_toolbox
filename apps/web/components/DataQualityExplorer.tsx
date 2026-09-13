@@ -139,7 +139,7 @@ export default function DataQualityExplorer() {
         </p>
       </header>
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={freshnessStatus.state}
           label="Freshness"

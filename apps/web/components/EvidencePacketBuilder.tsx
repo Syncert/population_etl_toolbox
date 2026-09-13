@@ -325,7 +325,7 @@ export default function EvidencePacketBuilder() {
         </p>
       </header>
 
-      <section className="status-row no-print">
+      <section className="status-row no-print" role="status">
         <StatusPill
           state={complete ? "ok" : "warn"}
           label="Packet"
