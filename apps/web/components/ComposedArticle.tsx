@@ -168,14 +168,16 @@ export default function ComposedArticle() {
 
   const packet = read.packet;
   const issues = packet ? packetIssues(packet) : [];
-  const staleBlocks = mergeBlockStates(packet, apiValidation).filter(
-    (state) => state.state === "stale",
-  );
+  // Computed once: the notice below names the stale blocks, and the export
+  // carries every block's verdict so the file says what this page says
+  // (WEB-058).
+  const blockStates = mergeBlockStates(packet, apiValidation);
+  const staleBlocks = blockStates.filter((state) => state.state === "stale");
   const complete = packetIsComplete(packet);
   const issueByBlock = new Map(issues.map((issue) => [issue.blockId, issue]));
 
   function exportCsv() {
-    const { headings, rows, filename } = packetExport(packet);
+    const { headings, rows, filename } = packetExport(packet, blockStates);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });

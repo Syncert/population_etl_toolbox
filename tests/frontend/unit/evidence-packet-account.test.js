@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   documentToPacket,
   mergeBlockStates,
+  packetExport,
   packetToDocument,
 } from "../../../apps/web/lib/evidencePackets";
 
@@ -105,20 +106,23 @@ describe("the packet crosses the account boundary", () => {
   });
 });
 
+// The API's read-time verdict for the packet above: one block stale, one
+// incomplete. Shared by the merge nodes and the export nodes below.
+const validation = {
+  valid: false,
+  reason: "2 of 2 analytical blocks cannot be read as evidence",
+  blocks: [
+    { block_id: "evidence", valid: false, reason: "metric_code 'CENSUS_ACS:acs5:B01003_001' is not a published metric", missing: [] },
+    {
+      block_id: "condition",
+      valid: false,
+      reason: "this block presents no analysis yet, so it carries no reproducibility envelope",
+      missing: ["metric_codes", "source_codes", "geo_id", "period", "api_query"],
+    },
+  ],
+};
+
 describe("merging the API's per-block verdicts", () => {
-  const validation = {
-    valid: false,
-    reason: "2 of 2 analytical blocks cannot be read as evidence",
-    blocks: [
-      { block_id: "evidence", valid: false, reason: "metric_code 'CENSUS_ACS:acs5:B01003_001' is not a published metric", missing: [] },
-      {
-        block_id: "condition",
-        valid: false,
-        reason: "this block presents no analysis yet, so it carries no reproducibility envelope",
-        missing: ["metric_codes", "source_codes", "geo_id", "period", "api_query"],
-      },
-    ],
-  };
 
   test("stale and incomplete are different facts and stay distinct", () => {
     const states = mergeBlockStates(packet, validation);
@@ -136,8 +140,69 @@ describe("merging the API's per-block verdicts", () => {
   test("without an API verdict the client's own report stands", () => {
     const states = mergeBlockStates(packet, null);
     const byId = Object.fromEntries(states.map((state) => [state.blockId, state]));
-    expect(byId.evidence.state).toBe("ok");
+    // `unchecked`, not `ok`: the client found nothing wrong with this block
+    // and nobody asked the API, which is not the same fact as the API
+    // saying it is valid. This node used to assert `ok`, and that
+    // conflation reached the exported file (WEB-058).
+    expect(byId.evidence.state).toBe("unchecked");
     expect(byId.condition.state).toBe("incomplete");
     expect(states.map((state) => state.blockId)).toEqual(["evidence", "condition"]);
+  });
+});
+
+// Covers: WEB-058 — the file a reader is handed carries the API's verdict.
+//
+// ADR-0004's distinction is that a packet leaves the building. The article
+// renders the API's failed blocks under "The API reports these blocks can no
+// longer be replayed as composed"; the export had one state column,
+// `live_or_frozen`, which reports the block's scope and says nothing about
+// whether the API can still serve it.
+describe("the exported packet says which blocks can no longer be replayed", () => {
+  const column = (headings, rows, blockId, name) =>
+    rows.find((row) => row[headings.indexOf("block_id")] === blockId)?.[
+      headings.indexOf(name)
+    ];
+
+  test("a stale block's verdict and reason travel in the file", () => {
+    const states = mergeBlockStates(packet, validation);
+    const { headings, rows } = packetExport(packet, states);
+    expect(headings).toContain("replay_state");
+    expect(headings).toContain("replay_reason");
+    // The scope column is unchanged: live-or-frozen and replayable-or-stale
+    // are different facts about the block.
+    expect(column(headings, rows, "evidence", "live_or_frozen")).toContain("frozen to release");
+    expect(column(headings, rows, "evidence", "replay_state")).toBe("stale");
+    expect(column(headings, rows, "evidence", "replay_reason")).toContain(
+      "not a published metric",
+    );
+    expect(column(headings, rows, "condition", "replay_state")).toBe("incomplete");
+  });
+
+  test("no API verdict exports as not checked, never as replayable", () => {
+    // A packet read from the browser draft is never checked by the API, and
+    // the packet contract says an absent verdict means "not checked", never
+    // "valid".
+    const states = mergeBlockStates(packet, null);
+    const { headings, rows } = packetExport(packet, states);
+    expect(column(headings, rows, "evidence", "replay_state")).toBe("not checked");
+    expect(column(headings, rows, "evidence", "replay_reason")).toBe("");
+  });
+
+  test("an unchecked block is not the same state as a checked valid one", () => {
+    const unchecked = mergeBlockStates(packet, null);
+    expect(unchecked.find((state) => state.blockId === "evidence").state).toBe("unchecked");
+
+    const checked = mergeBlockStates(packet, {
+      valid: true,
+      blocks: [{ block_id: "evidence", valid: true, missing: [] }],
+    });
+    expect(checked.find((state) => state.blockId === "evidence").state).toBe("ok");
+  });
+
+  test("a prose block carries no replay verdict, as it carries no scope", () => {
+    const states = mergeBlockStates(packet, validation);
+    const { headings, rows } = packetExport(packet, states);
+    expect(column(headings, rows, "summary", "live_or_frozen")).toBe("");
+    expect(column(headings, rows, "summary", "replay_state")).toBe("");
   });
 });

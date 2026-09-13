@@ -150,9 +150,15 @@ export default function EvidencePacketBuilder() {
   );
   // Only the API can see staleness; a block it reports and the client does
   // not is a measure retired since the block was composed.
-  const staleBlocks = useMemo(
-    () => mergeBlockStates(packet, apiValidation).filter((state) => state.state === "stale"),
+  // The export carries every block's verdict, so the file a reader is handed
+  // says what this page says (WEB-058).
+  const blockStates = useMemo(
+    () => mergeBlockStates(packet, apiValidation),
     [packet, apiValidation],
+  );
+  const staleBlocks = useMemo(
+    () => blockStates.filter((state) => state.state === "stale"),
+    [blockStates],
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<PacketBlock>) => {
@@ -301,7 +307,7 @@ export default function EvidencePacketBuilder() {
   }
 
   function exportCsv() {
-    const { headings, rows, filename } = packetExport(packet);
+    const { headings, rows, filename } = packetExport(packet, blockStates);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });

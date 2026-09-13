@@ -336,7 +336,34 @@ export interface PacketExport {
  * envelope alongside it — so the exported file can be read, and its evidence
  * re-derived, without this application.
  */
-export function packetExport(packet: EvidencePacket | null | undefined): PacketExport {
+/** What the export writes for one block's `replay_state`. */
+const REPLAY_STATE_LABELS: Record<BlockReadState["state"], string> = {
+  ok: "replayable",
+  stale: "stale",
+  incomplete: "incomplete",
+  unchecked: "not checked",
+};
+
+/**
+ * The packet as the file a reader is handed (WEB-058).
+ *
+ * ADR-0004's distinction is that "a packet is a document you hand to someone
+ * else", and the article says on screen which blocks the API reports can no
+ * longer be replayed as composed. The export carried one state column,
+ * `live_or_frozen`, which describes the block's *scope*: a packet whose
+ * measure had been retired exported as "frozen to release 2022" and the
+ * reader who received the file was never told. So the API's verdict travels
+ * too, in its own columns -- live-or-frozen and replayable-or-stale are
+ * different facts about a block and neither stands in for the other.
+ *
+ * `states` is `mergeBlockStates(packet, validation)`. Omitted, every
+ * analytical block reports "not checked", which is what an absent verdict
+ * means and never "replayable".
+ */
+export function packetExport(
+  packet: EvidencePacket | null | undefined,
+  states: BlockReadState[] = [],
+): PacketExport {
   const headings = [
     "packet",
     "block_id",
@@ -355,9 +382,16 @@ export function packetExport(packet: EvidencePacket | null | undefined): PacketE
     "api_query",
     "caveats",
     "live_or_frozen",
+    "replay_state",
+    "replay_reason",
   ];
+  const stateById = new Map(states.map((state) => [state.blockId, state]));
   const rows = (packet?.blocks || []).map((block) => {
     const envelope = block.envelope;
+    // A prose block carries no analysis, so it carries no scope and no
+    // replay verdict either.
+    const analytical = isAnalyticalBlock(block);
+    const state = stateById.get(block.id);
     return [
       packet?.title || "",
       block.id,
@@ -375,7 +409,9 @@ export function packetExport(packet: EvidencePacket | null | undefined): PacketE
       envelope?.transformation || "",
       envelope?.apiQuery || "",
       envelope?.caveats.join(" | ") || "",
-      isAnalyticalBlock(block) ? blockLiveStatus(envelope).label : "",
+      analytical ? blockLiveStatus(envelope).label : "",
+      analytical ? REPLAY_STATE_LABELS[state?.state ?? "unchecked"] : "",
+      analytical ? state?.reason || "" : "",
     ];
   });
   const slug = (packet?.title || "packet").toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
@@ -644,8 +680,15 @@ export function documentToPacket(
 export interface BlockReadState {
   blockId: string;
   title: string;
-  /** "incomplete" | "stale" | "ok" */
-  state: "incomplete" | "stale" | "ok";
+  /**
+   * `ok` means the API checked this block and it is valid. `unchecked` means
+   * nobody checked: a packet read from the browser draft never reaches the
+   * API, and the packet contract's own rule is that an absent verdict means
+   * "not checked", never "valid". The two were one value, which was
+   * invisible while both on-screen consumers only asked for `stale` and
+   * stopped being invisible in the exported file (WEB-058).
+   */
+  state: "incomplete" | "stale" | "ok" | "unchecked";
   reason: string;
   missing: string[];
 }
@@ -688,6 +731,12 @@ export function mergeBlockStates(
         missing: verdict.missing || [],
       };
     }
-    return { blockId: block.id, title: block.title, state: "ok", reason: "", missing: [] };
+    return {
+      blockId: block.id,
+      title: block.title,
+      state: verdict ? "ok" : "unchecked",
+      reason: "",
+      missing: [],
+    };
   });
 }

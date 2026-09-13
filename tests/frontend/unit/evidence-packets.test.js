@@ -175,17 +175,24 @@ describe("blocks reopen and export with their evidence intact", () => {
     expect(exported.headings).toContain("live_or_frozen");
     expect(exported.filename).toBe("needs-assessment-evidence.csv");
 
+    // Read by heading rather than by position: the columns moved when the
+    // export gained the API's replay verdict (WEB-058), and a positional
+    // assertion would have read whichever column landed last.
+    const cell = (row, name) => row[exported.headings.indexOf(name)];
     const analysisRow = exported.rows.find((row) => row[1] === "evidence");
     expect(analysisRow).toContain("CENSUS_ACS:acs5:B01003_001");
     expect(analysisRow).toContain("CENSUS_ACS");
     expect(analysisRow).toContain("2023");
     expect(analysisRow).toContain("ACS estimates carry a margin of error");
-    expect(analysisRow.at(-1)).toBe("live");
+    expect(cell(analysisRow, "live_or_frozen")).toBe("live");
+    // Exported with no verdict passed, so the file says nobody checked.
+    expect(cell(analysisRow, "replay_state")).toBe("not checked");
 
     // A narrative block exports its prose and no invented envelope.
     const textRow = exported.rows.find((row) => row[1] === "intro");
     expect(textRow[4]).toBe("The need is...");
-    expect(textRow.at(-1)).toBe("");
+    expect(cell(textRow, "live_or_frozen")).toBe("");
+    expect(cell(textRow, "replay_state")).toBe("");
     expect(packetExport(null).rows).toEqual([]);
   });
 });
