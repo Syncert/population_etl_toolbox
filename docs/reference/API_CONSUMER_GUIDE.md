@@ -42,6 +42,11 @@ list.
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, and `observation_filters` — the neutral filters that source supports |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
+`q` on `/catalog/metrics` and `/catalog/geographies` is a case-insensitive
+**literal** substring search, not a pattern: `%` and `_` match themselves, so
+`q=CENSUS_ACS` and `q=B01003_001` find those exact strings rather than
+anything shaped like them. There is no wildcard syntax to reach for.
+
 `observation_filters` is the contract for per-source filtering: a filter a
 source does not declare is **rejected with a 422 naming the supported set**,
 never silently ignored. Read capabilities once at startup rather than

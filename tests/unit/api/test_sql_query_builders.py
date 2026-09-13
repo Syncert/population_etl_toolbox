@@ -210,3 +210,47 @@ def test_timeseries_query_omits_absent_date_filters() -> None:
         "metric_code": "POP_TOTAL",
         "geo_id": "state:06",
     }
+
+
+@pytest.mark.parametrize(
+    ("typed", "bound"),
+    [
+        ("CENSUS_ACS", r"%CENSUS\_ACS%"),
+        ("B01003_001", r"%B01003\_001%"),
+        ("50%", r"%50\%%"),
+        ("_", r"%\_%"),
+        (r"a\b", r"%a\\b%"),
+        ("population", "%population%"),
+    ],
+    ids=(
+        "underscore-in-source",
+        "underscore-in-code",
+        "percent",
+        "bare-underscore",
+        "backslash",
+        "unchanged",
+    ),
+)
+def test_catalog_search_matches_literal_text(typed: str, bound: str) -> None:
+    """Covers: API-077 — `q` is text to find, not a pattern to run.
+
+    Every metric code in this warehouse carries an underscore, so the most
+    ordinary search there is ran as a wildcard pattern; `q=%` returned the
+    whole catalog under a filter the caller believed narrowed it.
+    """
+    for builder, kwargs in (
+        (
+            catalog_queries.build_metrics_queries,
+            {"source_code": None, "active_only": None},
+        ),
+        (
+            catalog_queries.build_geographies_queries,
+            {"geo_level": None, "state_fips": None},
+        ),
+    ):
+        list_query, count_query, params = builder(q=typed, limit=10, offset=0, **kwargs)
+        assert params["q"] == bound, builder.__name__
+        for rendered in (str(list_query), str(count_query)):
+            assert r"ESCAPE '\'" in rendered, builder.__name__
+            # Still bound, never interpolated.
+            assert bound not in rendered, builder.__name__
