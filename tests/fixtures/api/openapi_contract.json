@@ -1061,6 +1061,15 @@
         },
         {
           "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "newest_release_per_period",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
             "default": 0,
             "maximum": 100000,
             "minimum": 0

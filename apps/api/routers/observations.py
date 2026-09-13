@@ -59,6 +59,17 @@ def get_neutral_observations(
             "/distribution/bins and /comparison/preflight already do."
         ),
     ),
+    newest_release_per_period: bool = Query(
+        False,
+        description=(
+            "Answer one row per geography and period: the one from the newest "
+            "published release. Valid only with scope=as_released, and not "
+            "with a pinned release. The ranking is the source's own declared "
+            "release order, which is the same order /observations/releases "
+            "lists by -- a client re-deriving it from the identity's spelling "
+            "can disagree with it."
+        ),
+    ),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
@@ -75,6 +86,11 @@ def get_neutral_observations(
     a source that publishes a series is several periods per geography.
     ``newest_per_geography=true`` reduces that to one row per geography
     without changing the default.
+
+    ``scope=as_released`` answers every published release.
+    ``newest_release_per_period=true`` reduces that to a settled history: one
+    row per geography and period, from the newest release that published it,
+    ranked by the source's own declared release order.
     """
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
@@ -102,6 +118,7 @@ def get_neutral_observations(
             limit=limit,
             offset=offset,
             newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
         )
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc

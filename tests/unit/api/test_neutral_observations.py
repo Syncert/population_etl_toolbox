@@ -960,3 +960,145 @@ def test_newest_per_geography_is_declared_on_the_neutral_route() -> None:
             assert "newest_per_geography" in routes[neutral_path], capability[
                 "source_code"
             ]
+
+
+# ---------------------------------------------------------------------------
+# API-081 — one row per period, ranked by the source's own release order
+# ---------------------------------------------------------------------------
+
+
+def test_newest_release_per_period_ranks_by_the_declared_release_order() -> None:
+    """Covers: API-081 — the API decides which release is newer, not a client.
+
+    A source whose latest relation keeps one row per geography -- Census ACS
+    holds only the newest vintage -- has a geography's history only across
+    its releases. Reducing that to one row per period needs the source's own
+    release order, which every dispatch entry declares and which a client
+    can only guess at.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatched = _dispatched(session)
+    assert dispatched, "the request reached the source relation"
+    for sql in dispatched:
+        assert "ROW_NUMBER() OVER" in sql
+        # One row per geography and period, newest release first, by the
+        # order the dispatch entry declares.
+        assert "PARTITION BY geo_id, estimate_date::TEXT" in sql
+        assert "ORDER BY pep_vintage DESC" in sql
+        assert "newest_release_rank = 1" in sql
+        # Ranked inside the source's own as-released relation.
+        assert "FROM gold_pep.population_estimate_revision" in sql
+    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+
+
+def test_newest_release_per_period_keeps_the_declared_filters() -> None:
+    """Covers: API-081 — the reduction composes, it does not replace."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "geo_level": "COUNTY",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    for sql in _dispatched(session):
+        ranked = sql.split("ROW_NUMBER() OVER", 1)[1]
+        assert "gold_glossary.geo_grain(geo_type) = UPPER(:geo_level)" in ranked
+
+
+def test_newest_release_per_period_is_refused_for_a_latest_read() -> None:
+    """Covers: API-081 — only an as-released read has releases to reduce."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "newest_release_per_period" in detail
+    assert "scope=as_released" in detail
+
+
+def test_newest_release_per_period_and_a_pinned_release_are_contradictory() -> None:
+    """Covers: API-081 — a contradiction is refused, never resolved silently."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "2024",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "newest_release_per_period" in detail
+    assert "release" in detail
+
+
+def test_the_two_reductions_cannot_be_asked_for_together() -> None:
+    """Covers: API-081 — each belongs to the scope the other refuses."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_per_geography": "true",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+
+
+def test_newest_release_per_period_is_declared_on_the_neutral_route() -> None:
+    """Covers: API-081 — a client discovers it from the capability entry."""
+    paths = app.openapi().get("paths") or {}
+    neutral = paths.get("/api/v1/observations", {}).get("get", {})
+    names = {
+        parameter["name"]
+        for parameter in neutral.get("parameters") or []
+        if parameter.get("in") == "query"
+    }
+    assert "newest_release_per_period" in names

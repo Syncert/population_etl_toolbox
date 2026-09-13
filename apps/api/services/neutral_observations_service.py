@@ -303,6 +303,40 @@ def _newest_per_geography_source(
         )"""
 
 
+def _newest_release_per_period_source(
+    dispatch: ObservationDispatch,
+    relation: str,
+    where_sql: str,
+) -> str:
+    """``relation`` reduced to the newest release of each geography's periods.
+
+    The mirror image of ``_newest_per_geography_source``, and the same
+    reason: the source is the only place that knows how its releases order.
+    A source whose latest relation keeps one row per geography -- Census ACS
+    holds only the newest vintage -- has a geography's history only across
+    its releases, and reducing that to one row per period means deciding
+    which release is newer. Every dispatch entry declares that already, as
+    ``release_order_expression``, and ``/observations/releases`` orders by
+    it; a client re-deriving it from the release identity's spelling can
+    disagree, because ``2023.10`` and ``2023.9`` sort one way as numbers and
+    the other as text (API-081).
+    """
+    return f"""(
+            SELECT ranked.*
+            FROM (
+                SELECT source.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {dispatch.geo_id_expression}, \
+{dispatch.period_start_expression}
+                        ORDER BY {dispatch.release_order_expression} DESC
+                    ) AS newest_release_rank
+                FROM {relation} AS source
+                WHERE {where_sql}
+            ) AS ranked
+            WHERE ranked.newest_release_rank = 1
+        )"""
+
+
 def list_neutral_observations(
     db: Session,
     metric_code: str,
@@ -312,6 +346,7 @@ def list_neutral_observations(
     limit: int,
     offset: int,
     newest_per_geography: bool = False,
+    newest_release_per_period: bool = False,
 ) -> Optional[NeutralObservationListResponse]:
     """One metric's observations from its owning source's serving contract.
 
@@ -328,6 +363,26 @@ def list_neutral_observations(
             "as-released read answers one series per published release, and "
             "reducing it to one row per geography would present whichever "
             "release sorted last as the value"
+        )
+    if newest_release_per_period and scope != SCOPE_AS_RELEASED:
+        raise NeutralQueryError(
+            "newest_release_per_period can only be combined with "
+            "scope=as_released; a latest read answers one publication, which "
+            "has no releases to reduce"
+        )
+    if newest_release_per_period and release is not None:
+        raise NeutralQueryError(
+            "release and newest_release_per_period contradict each other: one "
+            "pins a single published release, the other asks for the newest "
+            "release of every period"
+        )
+    if newest_release_per_period and newest_per_geography:
+        # Unreachable while each refuses the other's scope, and stated anyway:
+        # a future scope that admitted both would otherwise inherit whichever
+        # branch happened to be written first.
+        raise NeutralQueryError(
+            "newest_per_geography and newest_release_per_period cannot be "
+            "combined: each reduces a different axis of a different scope"
         )
 
     metric = resolve_metric(db, metric_code)
@@ -359,6 +414,12 @@ def list_neutral_observations(
         # statement reads the result rather than filtering it again.
         source_sql = (
             f"{_newest_per_geography_source(dispatch, relation, where_sql)}"
+            " AS observations"
+        )
+        outer_where = ""
+    elif newest_release_per_period:
+        source_sql = (
+            f"{_newest_release_per_period_source(dispatch, relation, where_sql)}"
             " AS observations"
         )
         outer_where = ""

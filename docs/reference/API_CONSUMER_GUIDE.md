@@ -70,6 +70,13 @@ own serving relations, so its semantics survive.
   `scope=as_released` is a 422, because an as-released read is one series
   per release and reducing it per geography would present whichever release
   sorted last as the value.
+- `newest_release_per_period=true` — a **settled history**: one row per
+  geography and period, from the newest release that published it. Valid
+  only with `scope=as_released`, and not with a pinned `release`; both
+  contradictions are a 422. The ranking is the source's own declared release
+  order — the same order `/observations/releases` lists by — so you do not
+  have to decide which release identity is newer, and cannot decide it
+  differently from the warehouse.
 - Per-source filters as declared by `/catalog/capabilities`: `geo_id`,
   `geo_level`, `state_fips`, `county_fips`, `stratum_id`,
   `adjustment_status`, `domain_desc`, `domaincat_desc`, `subject_type`,
@@ -94,6 +101,13 @@ bins therefore describe the same rows.
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
 `release=` accepts.
+
+**A source whose latest publication is one row per geography has its history
+across releases.** Census ACS serves only its newest vintage, so
+`scope=latest` over one `geo_id` answers a single point rather than a trend.
+That geography's history is every release that published it, which is what
+`scope=as_released&newest_release_per_period=true` answers: each period as
+its newest release left it.
 
 ### Census PEP spans six decades, and its measures do not
 
