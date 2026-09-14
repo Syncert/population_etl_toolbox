@@ -13,11 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Claimed and delivered 2026-09-12. The tier's
-  exit code is now its tests' verdict on the origin it declares, the
-  condition has a named test in every smoke file, and the runner composes
-  that origin itself (`./tests/run.ps1 web-smoke`).
-- **Last updated:** 2026-09-12
+- **Status:** Accepted 2026-09-14 (Ready for review. Claimed and delivered 2026-09-12. The tier's exit code is now its tests' verdict on the origin it declares, the condition has a named test in every smoke file, and the runner composes that origin itself (`./tests/run.ps1 web-smoke`).)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/lib/tiles.js`,
   `tests/frontend/smoke/live-stack.smoke.test.js`,
   `tests/frontend/smoke/map-wiring.smoke.test.js`,

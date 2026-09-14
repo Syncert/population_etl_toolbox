@@ -15,9 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Complete, awaiting review. Authored, claimed, and delivered
-  2026-09-13 as catalog row DB-030.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Complete, awaiting review. Authored, claimed, and delivered 2026-09-13 as catalog row DB-030.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `tests/integration/api/test_catalog_serving_agreement.py`,
   `apps/api/registry.py`, `apps/api/services/observations_service.py`
 

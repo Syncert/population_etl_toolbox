@@ -13,8 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Implemented 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Implemented 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `sql/gold_contract/002_gold_glossary_schema.sql`,
   the three reporting refreshes under `src/**/gold_*/DDL/`,
   `sql/gold_contract/001_gold_contract_views.sql`

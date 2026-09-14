@@ -13,8 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Delivered 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Delivered 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/schemas/catalog.py`,
   `apps/api/services/catalog_service.py`
 

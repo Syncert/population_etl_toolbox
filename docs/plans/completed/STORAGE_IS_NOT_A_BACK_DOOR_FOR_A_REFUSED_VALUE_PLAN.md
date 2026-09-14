@@ -13,10 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13. **Defect opened by `a-grain-that-is-not-one-is-refused` and
-  closed here.**
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13. **Defect opened by `a-grain-that-is-not-one-is-refused` and closed here.**)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/registry.py`,
   `apps/api/services/saved_analysis_service.py`,
   `apps/api/dependencies.py`, `docs/reference/API_CONSUMER_GUIDE.md`

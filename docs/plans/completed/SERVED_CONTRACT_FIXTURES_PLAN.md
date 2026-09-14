@@ -13,9 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Authored, claimed, and delivered 2026-09-13
-  after the same defect appeared twice while delivering WEB-036 and WEB-038.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Ready for review. Authored, claimed, and delivered 2026-09-13 after the same defect appeared twice while delivering WEB-036 and WEB-038.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `tests/frontend/support/`, the frontend fixtures
 - **Depends on:** nothing.
 - **Next pickup:** none.

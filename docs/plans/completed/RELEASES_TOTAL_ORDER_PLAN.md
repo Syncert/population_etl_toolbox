@@ -13,8 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Delivered 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Delivered 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/neutral_observations_service.py`,
   `docs/reference/API_CONSUMER_GUIDE.md`
 
