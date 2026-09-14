@@ -191,6 +191,32 @@ describe("a value the source did not publish is never a zero", () => {
       "Value not published: suppressed",
       "No observation",
     ]);
+    // The withheld geography is a label to match on, so the expression is a
+    // `match` and it is well-formed: four arguments at least.
+    expect(model.expression[0]).toBe("match");
+    expect(model.expression.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test("a page with nothing to scale and nothing withheld is still a valid expression", () => {
+    // Covers: WEB-078 — the withheld branch replaced a constant with a
+    // `match`, and a `match` with no label is not an expression MapLibre
+    // parses: it wants at least four arguments and refuses the layer below
+    // that, so the map drew nothing rather than drawing the fallback. A
+    // national `geo_id` against a county tile key resolves to no join value
+    // at all, which reaches this branch with no withheld key either.
+    const model = buildChoroplethModel(
+      [
+        { geo_id: "US", value: null },
+        { geo_id: "US", value: "" },
+      ],
+      "geoid",
+    );
+    expect(model.valueCount).toBe(0);
+    expect(model.legendItems.map((item) => item.label)).toEqual(["No observation"]);
+    expect(model.expression).toEqual(["literal", CHOROPLETH_FALLBACK_COLOR]);
+    if (model.expression[0] === "match") {
+      expect(model.expression.length).toBeGreaterThanOrEqual(4);
+    }
   });
 
   test("extrusion heights exclude the geographies with no published value", () => {

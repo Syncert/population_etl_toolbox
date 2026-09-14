@@ -1340,6 +1340,65 @@ def test_an_analysis_filter_is_one_its_own_route_accepts(
     assert fragment in response.json()["detail"]
 
 
+def test_a_stored_analysis_filter_written_before_the_check_is_reported_on_read(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-117 — a document already stored is stated, never rewritten.
+
+    The write is closed now, and rows written before it are not: a
+    distribution naming `state_fips` against a source that declares no such
+    filter is exactly what the union used to accept. The read reports it
+    invalid with the route's own reason, and returns the document verbatim —
+    the same answer API-112 gives a cross-kind field and API-119 a retired
+    measure. Repairing it would substitute a guess for the reader's intent.
+    """
+    metric = "CENSUS_PEP:pep_cty_alldata:POPESTIMATE"
+    warehouse = _WarehouseSession(
+        {
+            metric: {
+                **_FRED_METRIC,
+                "metric_code": metric,
+                "source_code": "CENSUS_PEP",
+            }
+        }
+    )
+    storage = _StorageSession(accounts)
+    client = _client(storage, warehouse=warehouse, monkeypatch=monkeypatch)
+    created = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={
+            "name": "written-before",
+            "document": {
+                "kind": "distribution",
+                "metric_code": metric,
+                "filters": {"geo_level": "COUNTY"},
+                "visualization": {},
+            },
+        },
+    )
+    assert created.status_code == 201, created.json()
+    assert created.json()["validation"]["valid"] is True
+    configuration_id = created.json()["configuration_id"]
+
+    # What such a row looks like in storage: a filter the union admitted.
+    storage.rows[0]["document"]["filters"] = {"state_fips": "06"}
+
+    read = client.get(
+        f"/api/v1/analysis-configurations/{configuration_id}", headers=_auth()
+    )
+    assert read.status_code == 200, "the reader's content is still readable"
+    payload = read.json()
+    assert payload["validation"]["valid"] is False
+    assert (
+        "filters not supported for source 'CENSUS_PEP'"
+        in (payload["validation"]["reason"])
+    )
+    assert payload["document"]["filters"] == {"state_fips": "06"}, (
+        "the document is returned verbatim, never repaired"
+    )
+
+
 def test_the_analysis_filters_a_document_may_carry_are_the_routes_own() -> None:
     """Covers: API-117 — the declared set is read against the served contract.
 

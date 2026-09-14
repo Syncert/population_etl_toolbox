@@ -918,13 +918,24 @@ export function buildChoroplethModel(
   if (values.length === 0) {
     // Nothing to scale, and still something to say: a page of rows that all
     // carry a reason instead of a number is a published answer, not silence.
+    //
+    // A `match` needs at least one label to match on. Where there is also
+    // nothing withheld -- every row resolved to no join value at all, which
+    // is what a national-grain `geo_id` does against a county tile key --
+    // the pairs are empty and a three-argument `match` is not an expression
+    // MapLibre will parse: it refuses the layer rather than drawing it in
+    // the fallback colour. A constant says the same thing and is valid.
+    const withheldPairs = withheldMatchPairs(withheld);
     return {
-      expression: [
-        "match",
-        ["to-string", ["get", joinKey]],
-        ...withheldMatchPairs(withheld),
-        CHOROPLETH_FALLBACK_COLOR,
-      ],
+      expression:
+        withheldPairs.length === 0
+          ? ["literal", CHOROPLETH_FALLBACK_COLOR]
+          : [
+              "match",
+              ["to-string", ["get", joinKey]],
+              ...withheldPairs,
+              CHOROPLETH_FALLBACK_COLOR,
+            ],
       legendItems: [
         ...withheldLegendItem(withheld),
         { color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel },

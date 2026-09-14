@@ -180,7 +180,7 @@ Named so they are picked up deliberately rather than rediscovered:
   a packet reaches the address bar from either screen; sharing a packet is
   publishing, and publishing is that later plan's to define.
 - The build-your-own analytics surface is **delivered** as the workbench
-  (`docs/plans/needs_review/ANALYTICS_WORKBENCH_PLAN.md`, WB-1 through WB-7).
+  (`docs/plans/completed/ANALYTICS_WORKBENCH_PLAN.md`, WB-1 through WB-7).
   It reuses `lib/comparison.ts`, `lib/observationAccess.ts`,
   `ScatterChart.tsx`, `ChoroplethLegend.tsx` and the saved-analysis
   destination rule; it added `/comparison/correlation` and

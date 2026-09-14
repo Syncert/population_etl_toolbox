@@ -447,3 +447,36 @@ def test_the_guide_documents_a_path_that_needs_no_container_runtime() -> None:
                     )
     assert checked, "no required job runs a service-backed tier"
     assert not undocumented, "; ".join(sorted(set(undocumented)))
+
+
+def test_every_browser_spec_inherits_the_served_request_guard() -> None:
+    """Covers: WEB-052 — the guard is inherited, not opted into.
+
+    The fixture that checks every `/api/v1` request against the reviewed
+    OpenAPI snapshot rides on the `test` object the specs import. A spec that
+    imports `test` from `@playwright/test` instead gets a plain fixture, sends
+    whatever it likes and nothing fails -- so the contract row's claim that a
+    later spec "inherits it without opting in" held only for as long as
+    everybody remembered. This is what makes it true: the import is the guard,
+    so the import is what is checked.
+    """
+    specs = sorted((REPOSITORY_ROOT / "tests/frontend/browser").glob("*.spec.js"))
+    assert specs, "no browser specs found"
+    failures: list[str] = []
+    for spec in specs:
+        source = spec.read_text(encoding="utf-8")
+        if re.search(r"""from\s+["']@playwright/test["']""", source):
+            failures.append(
+                f"{spec.name} imports from '@playwright/test'; import `test` from "
+                "'../support/servedRequests.js' so every request it sends is "
+                "checked against the served contract"
+            )
+        elif not re.search(
+            r"""from\s+["']\.\./support/servedRequests\.js["']""", source
+        ):
+            failures.append(
+                f"{spec.name} imports `test` from neither "
+                "'../support/servedRequests.js' nor '@playwright/test'; the "
+                "guard rides on that import"
+            )
+    assert not failures, "; ".join(failures)
