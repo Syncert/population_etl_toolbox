@@ -1105,3 +1105,51 @@ test("the export names itself a prefix when a read was cut short", async ({
   });
   expect(name).toMatch(/^workbench-bar-2-series\.csv$/);
 });
+
+// --- A derived answer never outlives the selection it describes ------------
+//
+// Covers: WEB-100 — when the composition changes, the correlation and the
+// aligned rows already on screen are dropped before the new ones are asked
+// for. A coefficient describing a pair the reader has replaced is the worst
+// kind of wrong: it is a plausible number, correctly formatted, about
+// something else.
+
+test("a correlation does not outlive the selection it was measured for", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+
+  // The second answer is held until released, so the window between the
+  // selection changing and the new answer landing is observable — which is
+  // exactly the window the stale answer used to be rendered in.
+  let release = () => {};
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  let asked = 0;
+  await page.route("**/api/v1/comparison/correlation?*", async (route) => {
+    asked += 1;
+    if (asked > 1) {
+      await held;
+      return route.fulfill({
+        json: { ...correlationAnswer, n: 7, state_fips: "06", pearson_r: 0.111 },
+      });
+    }
+    return route.fulfill({ json: correlationAnswer });
+  });
+
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+  await page.getByTestId("workbench-presentation-correlation").click();
+  await expect(page.getByTestId("workbench-correlation")).toContainText("0.987");
+
+  // Narrow to one state. The coefficient on screen was measured over every
+  // state, so it is now a number about a set the reader is not looking at.
+  await page.getByTestId("workbench-alignment-state").selectOption("06");
+  await expect(page.getByTestId("workbench-correlation-loading")).toBeVisible();
+  await expect(page.getByTestId("workbench-correlation")).toHaveCount(0);
+
+  release();
+  await expect(page.getByTestId("workbench-correlation")).toContainText("0.111");
+});

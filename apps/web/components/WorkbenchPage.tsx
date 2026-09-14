@@ -793,7 +793,15 @@ export default function WorkbenchPage() {
    * the page bound cut it short, which the coverage note then states.
    */
   useEffect(() => {
+    // The same rule as the correlation below: the rows on screen are dropped
+    // before a new read is decided on, so a scatter or a ranking cannot go on
+    // drawing geographies from a grain or a state scope the reader has left.
+    setComparison(null);
+    setComparisonRows([]);
+    setComparisonComplete(true);
+    setComparisonError("");
     if (!pair || !comparable || !alignmentGeoLevel || !isCrossSectional(presentation)) {
+      setComparisonLoading(false);
       return;
     }
     const request = comparisonTracker.begin();
@@ -1089,11 +1097,27 @@ export default function WorkbenchPage() {
   );
 
   useEffect(() => {
+    // Drop the answer already on screen *before* deciding whether to ask for
+    // a new one, so it can never outlive the selection it describes.
+    //
+    // The guard below returns early for an ineligible selection, which used
+    // to leave a previous answer in state. It was invisible while the
+    // presentation fell back — and then rendered again, unchanged, the moment
+    // the selection became eligible once more, or while a narrowed read was
+    // in flight. A coefficient measured over every state, shown against a
+    // selection narrowed to one, is the worst kind of wrong: a plausible
+    // number, correctly formatted, about something else. `createRequestTracker`
+    // stops a *stale response* being committed; nothing stopped a stale
+    // *answer* being kept, and these are different failures.
+    setCorrelation(null);
+    setMatrix(null);
+    setCorrelationError("");
     if (
       !correlationOffer.eligible ||
       !alignmentGeoLevel ||
       effectivePresentation !== "correlation"
     ) {
+      setCorrelationLoading(false);
       return;
     }
     const request = correlationTracker.begin();
