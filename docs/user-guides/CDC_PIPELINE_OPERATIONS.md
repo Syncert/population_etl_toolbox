@@ -58,6 +58,29 @@ GROUP BY asset_id, release_watermark, value_status, geography_status
 ORDER BY asset_id, release_watermark, value_status, geography_status;
 ```
 
+**Where an unresolved geography goes.** `gold_cdc.health_observation` serves
+only rows whose geography resolved to a grain the API publishes, so the counts
+above never include `unsupported` — a provider location this adapter does not
+model (a territory code, a region, a sub-state area). Those rows are not lost:
+they stay in `silver_cdc.fact_health_observation` with
+`geography_status = 'unsupported'`, and the resolution query above lists them
+with `reason_code = 'unsupported_provider_code'`. To see one:
+
+```sql
+SELECT asset_id, release_watermark, geo_type, geo_id, count(*)
+FROM silver_cdc.fact_health_observation
+WHERE geography_status = 'unsupported'
+GROUP BY asset_id, release_watermark, geo_type, geo_id
+ORDER BY count(*) DESC;
+```
+
+`unmapped` is different and **is** served: the grain is one the API publishes
+and the provider identity is real, but the shared geography reference does not
+hold it for that year. Fix the geography contract and replay; never insert a
+guessed row. `published_row_count` on the publish task counts what is served,
+so a release with unsupported rows publishes fewer rows than silver holds, and
+the difference is exactly what the resolution ledger explains.
+
 ## Quarantine and recovery
 
 Dataset identity replacement, consumed-column/type change, and a backward

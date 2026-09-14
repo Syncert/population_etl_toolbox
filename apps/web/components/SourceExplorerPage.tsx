@@ -28,12 +28,12 @@ import {
 } from "../lib/api/client";
 import type { QueryParams } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
+import { observationExport } from "../lib/observationExport";
 import type {
   CollectionResponse,
   DistributionResponse,
   GeographySummary,
   MetricRelease,
-  MetricReleaseListResponse,
   MetricSummary,
   Observation,
 } from "../lib/api/types";
@@ -47,6 +47,8 @@ import {
   buildSelectionFilter,
   datasetFacetOptions,
   distributionBins,
+  distributionCaveats,
+  distributionPeriodNote,
   formatObservationValue,
   marginOfErrorText,
   metricDataset,
@@ -54,6 +56,7 @@ import {
   metricSupportedGeoLevels,
   metricVariable,
   normalizeGeoLevel,
+  observationExportFilename,
   observationJoinValue,
   observationName,
   observationToFeature,
@@ -76,23 +79,38 @@ import {
   RELEASE_DIMENSION,
   SCOPE_AS_RELEASED,
   SCOPE_LATEST,
+  ACTIVE_GEOGRAPHIES_ONLY,
   buildHistoryObservationRequest,
+  describeHistoryLoad,
   buildLatestObservationRequest,
   buildReleaseListRequest,
+  buildSettledHistoryRequest,
   collapseToNewestRelease,
   countObservationPeriods,
   describeStratification,
+  dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
+  observationDimensionLabel,
   observationDimensionOptions,
   observationDimensionValue,
+  OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_FIELDS,
+  observationCoverageValue,
   observationPeriodLabel,
+  observationUncertaintyLabel,
+  sharedObservationPeriod,
+  observationUncertaintyValue,
+  publishesCoverage,
+  publishesUncertainty,
   scopedDimensionFilters,
   servesAsReleased,
+  stateScopeNote,
   stratificationDimensions,
 } from "../lib/observationAccess";
 import type { ObservationScope } from "../lib/observationAccess";
 import { metricProvenance, metricQualityState } from "../lib/catalog";
+import { requestedMetricState } from "../lib/requestedMetric";
 import {
   describeViewModes,
   servesHistory,
@@ -100,9 +118,16 @@ import {
   unsupportedViewModes,
 } from "../lib/viewModes";
 import { displayMetricName } from "../lib/format";
+import {
+  GEO_GRAIN_LABELS,
+  GEO_GRAIN_ORDER,
+  GRAINS_WITHIN_A_STATE,
+  geographyPickerState,
+} from "../lib/geographyPicker";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
+  describeLibraryLoad,
   describeSaveFailure,
   describeSaveSuccess,
   explorerDocument,
@@ -130,6 +155,7 @@ export {
   buildSelectionFilter,
   distributionBins,
   metricOptions,
+  observationExportFilename,
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../lib/explorerViewModel";
@@ -142,13 +168,19 @@ const CATALOG_PAGE_SIZE = 1000;
 const OBSERVATION_PAGE_SIZE = 5000;
 const OBSERVATION_PAGE_LIMIT = 8;
 const DEFAULT_GEO_LEVEL = "COUNTY";
-/** Geography grains in presentation order, broadest first. */
-const GEO_LEVEL_ORDER = ["NATIONAL", "STATE", "COUNTY"];
-const GEO_LEVEL_LABEL: Record<string, string> = {
-  NATIONAL: "National",
-  STATE: "State",
-  COUNTY: "County",
-};
+/**
+ * Geography grains in presentation order, broadest first — the published
+ * vocabulary in full. PLACE is Census PEP's and AGENCY is FBI UCR's; with
+ * only the spatial three here, a measure declaring either offered no levels
+ * at all and was queried at a grain it does not publish (WEB-038). The map
+ * still declines any grain the tile boundary has no geometry for, with the
+ * reason it already gives.
+ *
+ * Read from `GEO_LEVELS` through the picker module rather than spelled here:
+ * the declared order *is* broadest-first, and two copies of a vocabulary is
+ * how the picker came to offer states as places (WEB-064).
+ */
+const GEO_LEVEL_ORDER = GEO_GRAIN_ORDER;
 const DEFAULT_MAP_MODE = "choropleth";
 const DEFAULT_VALUE_SCALE: ValueScale = "linear";
 // Presentation panels that are not measure-dependent: they describe the
@@ -159,6 +191,17 @@ const DEFAULT_SCOPE: ObservationScope = SCOPE_LATEST;
 // published releases than this is reported as such rather than truncated
 // into a silently partial option list.
 const RELEASE_PAGE_SIZE = 200;
+// The release control is a picker: selecting a release is the only way this
+// screen sends `scope=as_released&release=…` or builds the link that
+// reproduces it, so a release it did not list is unreachable and
+// unshareable. Paged like every other collection read (WEB-045).
+const RELEASE_PAGE_LIMIT = 10;
+// One geography's history. Paged like every other collection read, so a
+// publication longer than a single page is loaded rather than truncated --
+// and when the bound is reached the panel says so instead of labelling a
+// prefix as the history (WEB-036).
+const HISTORY_PAGE_SIZE = 1000;
+const HISTORY_PAGE_LIMIT = 5;
 
 /**
  * The observations status line: how many rows the publication answered, how
@@ -170,9 +213,15 @@ function describeObservationLoad(
   total: number | null,
   complete: boolean,
   geoLevelLabel: string,
+  scopeNote = "",
 ): string {
+  // "this selection" and "these rows" both have to be true. Where a state
+  // narrows the map and the geography list and not the rows, the note says
+  // so, rather than letting a national answer read as one state's
+  // (WEB-075).
+  const qualifier = scopeNote ? ` — ${scopeNote}` : "";
   if (items.length === 0) {
-    return `0 ${geoLevelLabel} records published for this selection`;
+    return `0 ${geoLevelLabel} records published for this selection${qualifier}`;
   }
   const geographies = newestPerGeography(items).length;
   const periods = countObservationPeriods(items);
@@ -182,7 +231,7 @@ function describeObservationLoad(
   const shape = periods > 1
     ? ` (${geographies} geographies across ${periods} periods)`
     : "";
-  return `${loaded}${shape}`;
+  return `${loaded}${shape}${qualifier}`;
 }
 
 type TileMetadata = Awaited<ReturnType<typeof discoverTileMetadata>>;
@@ -211,6 +260,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const distributionTracker = useRef(createRequestTracker()).current;
   const timeseriesTracker = useRef(createRequestTracker()).current;
   const releasesTracker = useRef(createRequestTracker()).current;
+  const grainGeographyTracker = useRef(createRequestTracker()).current;
   // The metric a pinned release was chosen for. A release identity belongs
   // to one metric, so the pin is dropped when the metric changes — but not
   // when a shared link selects the metric and its pin together.
@@ -236,6 +286,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [activeSourceKey, setActiveSourceKey] = useState(sourceKey);
   const [metrics, setMetrics] = useState<MetricSummary[]>([]);
   const [metricsError, setMetricsError] = useState("");
+  // What a link asked for and this source does not publish (WEB-072).
+  const [requestedMetricNotice, setRequestedMetricNotice] = useState("");
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedGeoLevel, setSelectedGeoLevel] = useState(DEFAULT_GEO_LEVEL);
   const [mapMode, setMapMode] = useState(DEFAULT_MAP_MODE);
@@ -243,7 +295,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const [selectedMetric, setSelectedMetric] = useState("");
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [countyGeographies, setCountyGeographies] = useState<GeographySummary[]>([]);
+  // Geographies for a grain the eager pair does not cover -- PLACE, and
+  // whatever the vocabulary grows. Read for the selected grain rather than
+  // all at once: the projection carries some 32k places (WEB-064).
+  const [grainGeographies, setGrainGeographies] = useState<GeographySummary[]>([]);
+  const [grainGeographiesRead, setGrainGeographiesRead] = useState(false);
   const [geographiesError, setGeographiesError] = useState("");
+  // Whether the eager state/county read has answered. "None published"
+  // and "none has arrived" are different statements, and only the first
+  // is about the warehouse.
+  const [geographiesRead, setGeographiesRead] = useState(false);
   const [selectedStateFips, setSelectedStateFips] = useState("");
   // Selected values for the active source's own declared dimension filters
   // (CDC strata/adjustment, FBI UCR subject, USDA NASS domain). Keyed by the
@@ -265,6 +326,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     message: "selecting metric",
   });
   const [observations, setObservations] = useState<ObservationRow[]>([]);
+  // What the last observation read was, beyond its rows: the loader computed
+  // `complete` and the API's `total` for the status line and then dropped
+  // them, so an export of a prefix could not say it was one (WEB-059).
+  const [observationLoad, setObservationLoad] = useState<{
+    total: number | null;
+    complete: boolean;
+  }>({ total: null, complete: true });
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
   // The polygons currently drawn, kept so a state selection can fit their
   // extent; set once the layers exist so the fit never runs ahead of them.
@@ -312,9 +380,35 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   const supportsGeoLevelFilter = sourceSupportsParameter(activeSource, "geo_level");
   // As-released reads answer on the neutral resource, so the dimension
   // controls under that scope are the neutral ones the capability declares.
+  // Declared by `/catalog/capabilities`, so a dimension a page happens not to
+  // publish is still shown rather than vanishing with the page (WEB-061).
+  const publishedDimensions = useMemo(
+    () => [...(activeSource?.publishedDimensions || [])],
+    [activeSource],
+  );
   const dimensionFilters = useMemo(
     () => scopedDimensionFilters(activeSource, observationScope),
     [activeSource, observationScope],
+  );
+  // The file carries every declared dimension, plus any filterable name the
+  // declaration does not list, so neither list can drop a column the other
+  // would have written.
+  const exportDimensions = useMemo(() => {
+    const names = [...publishedDimensions];
+    for (const name of dimensionFilters) {
+      if (!names.includes(name)) {
+        names.push(name);
+      }
+    }
+    return names;
+  }, [publishedDimensions, dimensionFilters]);
+  // The table gives a column to what the reader is filtering on and carries
+  // the rest of the declared set in one cell, which is the presentation this
+  // repository already chose for the seven uncertainty fields rather than
+  // seven columns (WEB-061).
+  const tableDimensions = useMemo(
+    () => publishedDimensions.filter((name) => !dimensionFilters.includes(name)),
+    [publishedDimensions, dimensionFilters],
   );
   const releasesDeclared = servesAsReleased(activeSource);
   const asReleased = observationScope === SCOPE_AS_RELEASED && releasesDeclared;
@@ -371,6 +465,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => (stratification.stratified ? [] : newestPerGeography(observations)),
     [observations, stratification.stratified],
   );
+  // A source that publishes a participation basis is shown it; one that does
+  // not grows no empty column. Read from the loaded rows, not from a list of
+  // sources (WEB-051).
+  const showsCoverage = useMemo(() => publishesCoverage(observations), [observations]);
+  // Read from the answer, like the participation column beside it: a source
+  // that publishes an interval or a coefficient of variation is shown it
+  // without an edit here, and one that publishes none grows no empty column
+  // (WEB-053).
+  const showsUncertainty = useMemo(
+    () => publishesUncertainty(observations),
+    [observations],
+  );
   const historyStratification = useMemo(
     () => describeStratification(timeseries, seriesDimensions),
     [timeseries, seriesDimensions],
@@ -402,9 +508,32 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       if (selectedGeoLevel === "COUNTY") {
         return countyGeographies;
       }
-      return [];
+      // Any other grain the vocabulary declares. Empty here is what made the
+      // picker unable to hold a choice it had just offered (WEB-064).
+      return grainGeographies;
     },
-    [selectedGeoLevel, states, countyGeographies],
+    [selectedGeoLevel, states, countyGeographies, grainGeographies],
+  );
+  // Which geographies the picker offers, what its empty option says, and
+  // whether it can be used at all -- decided in one place, over the selected
+  // grain, so no grain is ever answered with another grain's list.
+  const geographyPicker = useMemo(
+    () => geographyPickerState(selectedGeoLevel, {
+      geographies: selectedGeoLevel === "COUNTY" ? counties : allGeographies,
+      stateSelected: Boolean(selectedStateFips),
+      read:
+        selectedGeoLevel === "STATE" || selectedGeoLevel === "COUNTY"
+          ? geographiesRead
+          : grainGeographiesRead,
+    }),
+    [
+      selectedGeoLevel,
+      counties,
+      allGeographies,
+      selectedStateFips,
+      geographiesRead,
+      grainGeographiesRead,
+    ],
   );
   const observationIndex = useMemo(
     () => buildObservationIndex(mappableObservations, tileMetadata?.joinKey || "geo_id"),
@@ -493,6 +622,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   // Keep the selected metric consistent with the selected dataset facet.
   useEffect(() => {
+    // Except when a link asked for a measure this source does not publish.
+    // Filling the empty selection here is the same substitution the notice
+    // exists to refuse, one effect later (WEB-072); the reader's own choice
+    // below clears the notice and this resumes.
+    if (requestedMetricNotice) {
+      return;
+    }
     if (!showDatasetSelector || !selectedDataset) {
       if (!selectedMetric && metrics.length > 0) {
         setSelectedMetric(pickPreferredMetric(metrics, selectedDataset));
@@ -514,7 +650,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     setSelectedMetric(
       pickPreferredMetric(metrics, selectedDataset, metricVariable(selectedMetric)),
     );
-  }, [datasetMetrics, metrics, selectedDataset, selectedMetric, showDatasetSelector]);
+  }, [
+    datasetMetrics,
+    metrics,
+    requestedMetricNotice,
+    selectedDataset,
+    selectedMetric,
+    showDatasetSelector,
+  ]);
 
   // One-time bootstrap: health, capability discovery, URL state, tiles.
   useEffect(() => {
@@ -604,19 +747,50 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         setMetrics(items);
         const requested = initialStateRef.current;
         initialStateRef.current = null;
-        if (
-          requested?.metric &&
-          items.some((item) => item.metric_code === requested.metric)
-        ) {
-          setSelectedDataset(metricDataset(requested.metric));
-          setSelectedMetric(requested.metric);
-        } else if (items.length > 0) {
+        // A link that names a measure this source does not publish is
+        // answered, not quietly rewritten: the explorer used to select
+        // `pickPreferredMetric` instead and said nothing, so "Explore" on
+        // `BLS:LAU:UNEMP_RATE` opened Census ACS total population (WEB-072).
+        const wanted = requestedMetricState({
+          requested: requested?.metric,
+          items,
+          sourceTitle: source.title,
+        });
+        setRequestedMetricNotice(wanted.notice);
+        if (wanted.metricCode) {
+          setSelectedDataset(metricDataset(wanted.metricCode));
+          setSelectedMetric(wanted.metricCode);
+        } else if (wanted.chooseDefault && items.length > 0) {
           const facet = preferredDatasetFacet(items);
           setSelectedDataset(facet);
           setSelectedMetric(pickPreferredMetric(items, facet));
         }
-        if (requested?.geoLevel === "STATE" || requested?.geoLevel === "COUNTY") {
+        // Every grain the published vocabulary names. WEB-038 widened the
+        // vocabulary, the control and the serializer to five words and left
+        // this branch at two, so a link carrying NATIONAL, PLACE or AGENCY
+        // was parsed, validated, and then discarded: the selection fell to
+        // COUNTY and a measure publishing both kept the wrong grain
+        // (WEB-073). The parser has already refused anything outside
+        // `GEO_LEVELS`, and the grain a measure does not publish is narrowed
+        // by `offeredGeoLevels` below, which is where that rule lives.
+        if (requested?.geoLevel) {
           setSelectedGeoLevel(requested.geoLevel);
+        }
+        // The dimension narrowing the copied view was reading under, applied
+        // only for the names this source declares -- the same rule every
+        // request builder applies, so a link cannot introduce a filter the
+        // resource would reject.
+        if (requested?.dimensions) {
+          const declared = new Set([
+            ...source.dimensionFilters,
+            ...source.neutralDimensionFilters,
+          ]);
+          const carried = Object.entries(requested.dimensions).filter(
+            ([name, value]) => declared.has(name) && value,
+          );
+          if (carried.length > 0) {
+            setDimensionSelections(Object.fromEntries(carried));
+          }
         }
         if (requested?.mapMode) {
           setMapMode(requested.mapMode);
@@ -624,7 +798,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (requested?.valueScale) {
           setValueScale(requested.valueScale);
         }
-        if (requested?.stateFips) setSelectedStateFips(requested.stateFips);
+        // A requested state is applied wherever the control can hold one,
+        // which is now every source: a state narrows the map and the
+        // geography picker regardless of what the observation routes accept
+        // (WEB-075). WEB-066 gated this on the source declaring `state_fips`
+        // for three reasons, two of which were the disabled control itself —
+        // a state the reader could not see or clear, and a map narrowed while
+        // the rows stayed national with nothing saying so. The third stands
+        // and is kept below: the saved document records the state only where
+        // the request carried it, so a save is never a 422 over a filter the
+        // source does not declare.
+        if (requested?.stateFips) {
+          setSelectedStateFips(requested.stateFips);
+        }
         if (requested?.geoId) setSelectedGeoId(requested.geoId);
         // The requested scope is applied only where the source declares it;
         // a link asking for an as-released read of a source that publishes
@@ -697,21 +883,24 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
     async function loadReleases() {
       try {
-        const payload = await apiFetch<MetricReleaseListResponse>(listRequest!.resource, {
+        const pages = await fetchCollectionPages<MetricRelease>(listRequest!.resource, {
           params: listRequest!.params,
+          pageSize: RELEASE_PAGE_SIZE,
+          maxPages: RELEASE_PAGE_LIMIT,
         });
-        const items = Array.isArray(payload.items) ? payload.items : [];
         if (!request.isCurrent()) {
           return;
         }
-        setReleases(items);
-        const total = typeof payload.total === "number" ? payload.total : items.length;
+        setReleases(pages.items);
         setReleasesStatus({
-          state: "ok",
-          message:
-            items.length < total
-              ? `${items.length} of ${total} published releases listed`
-              : `${items.length} published release${items.length === 1 ? "" : "s"}`,
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            pages.items.length,
+            pages.total,
+            pages.complete,
+            "published release",
+            "published releases",
+          ),
         });
       } catch (error) {
         if (request.isCurrent()) {
@@ -741,6 +930,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     if (!selectedMetric || !activeSource) {
       return;
     }
+    // Never ask for a grain the measure does not declare (WEB-038). The
+    // selection settles one render later -- the correction effect below
+    // moves it to a declared grain -- and firing here first spent a request
+    // on a grain that answers nothing and flashed "0 records published" for
+    // a measure that publishes plenty.
+    const declaredGrains = metricSupportedGeoLevels(selectedMetricMeta);
+    if (
+      declaredGrains.length > 0 &&
+      !declaredGrains.includes(normalizeGeoLevel(selectedGeoLevel))
+    ) {
+      return;
+    }
 
     const request = observationTracker.begin();
     setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
@@ -757,6 +958,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
         if (request.isCurrent()) {
           setObservations(items);
+          setObservationLoad({ total: pages.total, complete: pages.complete });
           setObservationStatus({
             state: pages.complete ? "ok" : "bad",
             message: describeObservationLoad(
@@ -764,12 +966,22 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               pages.total,
               pages.complete,
               selectedGeoLevel.toLowerCase(),
+              // Read back from the request the effect issued, not from the
+              // intent above it: `buildLatestObservationRequest` drops a
+              // filter the source does not declare, so `params` is the only
+              // place that knows whether the state reached the rows.
+              stateScopeNote({
+                stateSelected: Boolean(latestQuery.stateFips),
+                narrowsRows: Boolean(params.state_fips),
+                sourceTitle: source.title,
+              }),
             ),
           });
         }
       } catch (error) {
         if (request.isCurrent()) {
           setObservations([]);
+          setObservationLoad({ total: null, complete: true });
           setObservationStatus({ state: "bad", message: apiErrorMessage(error) });
         }
       }
@@ -780,7 +992,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     return () => {
       observationTracker.invalidate();
     };
-  }, [observationTracker, selectedMetric, latestQuery, selectedGeoLevel, activeSource]);
+  }, [
+    observationTracker,
+    selectedMetric,
+    selectedMetricMeta,
+    latestQuery,
+    selectedGeoLevel,
+    activeSource,
+  ]);
 
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
@@ -842,9 +1061,20 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
         if (request.isCurrent()) {
           setDistribution(payload);
+          // The legend's scale is built from these bins, and the map is
+          // painted from that scale. A scale over a mix of periods is a
+          // legitimate map of each geography's newest value and a misleading
+          // one to read as a snapshot, so the answer's own statement of which
+          // it is travels with the count (WEB-054).
+          const periodNote = distributionPeriodNote(payload);
           setDistributionStatus({
-            state: "ok",
-            message: `${payload.bin_count} API bins across ${payload.total} records`,
+            state: payload.periods_differ === true ? "warn" : "ok",
+            message: [
+              `${payload.bin_count} API bins across ${payload.total} records`,
+              periodNote,
+            ]
+              .filter(Boolean)
+              .join(" "),
           });
         }
       } catch (error) {
@@ -863,8 +1093,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     async function loadGeographies() {
       try {
         const [stateItems, countyItems] = await Promise.all([
-          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "STATE" }),
-          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", { geo_level: "COUNTY" }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", {
+            ...ACTIVE_GEOGRAPHIES_ONLY,
+            geo_level: "STATE",
+          }),
+          fetchAllCatalogItems<GeographySummary>("/catalog/geographies", {
+            ...ACTIVE_GEOGRAPHIES_ONLY,
+            geo_level: "COUNTY",
+          }),
         ]);
 
         if (request.isCurrent()) {
@@ -876,6 +1112,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             countyItems.sort((left, right) =>
               String(left.county_name).localeCompare(String(right.county_name))),
           );
+          setGeographiesRead(true);
         }
       } catch (error) {
         if (request.isCurrent()) {
@@ -897,6 +1134,64 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     activeSource,
     asReleased,
   ]);
+
+  // Geographies for a grain the eager state/county read does not cover.
+  //
+  // Read for the grain actually selected, and bounded the way counties are:
+  // a grain that sits inside a state waits for one, because the projection
+  // carries some 32k places and a picker is not the place to load them. A
+  // grain the projection publishes nothing for -- AGENCY, whose identities
+  // the geography dimension does not carry -- answers empty, and the picker
+  // says so instead of offering another grain's list (WEB-064).
+  useEffect(() => {
+    const grain = normalizeGeoLevel(selectedGeoLevel);
+    if (!grain || grain === "NATIONAL" || grain === "STATE" || grain === "COUNTY") {
+      setGrainGeographies([]);
+      setGrainGeographiesRead(false);
+      return;
+    }
+    if (GRAINS_WITHIN_A_STATE.includes(grain) && !selectedStateFips) {
+      setGrainGeographies([]);
+      setGrainGeographiesRead(false);
+      return;
+    }
+
+    const request = grainGeographyTracker.begin();
+    setGrainGeographies([]);
+    setGrainGeographiesRead(false);
+
+    async function loadGrainGeographies() {
+      try {
+        const items = await fetchAllCatalogItems<GeographySummary>(
+          "/catalog/geographies",
+          selectedStateFips
+            ? {
+                ...ACTIVE_GEOGRAPHIES_ONLY,
+                geo_level: grain,
+                state_fips: selectedStateFips,
+              }
+            : { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: grain },
+        );
+        if (!request.isCurrent()) {
+          return;
+        }
+        setGrainGeographies(items);
+        setGrainGeographiesRead(true);
+      } catch (error) {
+        if (request.isCurrent()) {
+          setGeographiesError(
+            apiErrorMessage(error) || "Unable to load geography selectors.",
+          );
+        }
+      }
+    }
+
+    loadGrainGeographies();
+
+    return () => {
+      grainGeographyTracker.invalidate();
+    };
+  }, [grainGeographyTracker, selectedGeoLevel, selectedStateFips]);
 
   useEffect(() => {
     // No declared history route means no trend to request. Asking anyway
@@ -929,16 +1224,19 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         const { resource, params } = buildHistoryObservationRequest(source, {
           metricCode: selectedMetric,
           geoId: selectedGeoId,
-          limit: "1000",
+          limit: String(HISTORY_PAGE_SIZE),
           scope: observationScope,
           release: selectedRelease,
           dimensions: dimensionSelections,
         });
-        const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
-        let items = normalizeObservationRows(
-          source,
-          Array.isArray(payload.items) ? payload.items : [],
-        );
+        const pages = await fetchCollectionPages<Observation>(resource, {
+          params,
+          pageSize: HISTORY_PAGE_SIZE,
+          maxPages: HISTORY_PAGE_LIMIT,
+        });
+        let items = normalizeObservationRows(source, pages.items);
+        let total = pages.total;
+        let complete = pages.complete;
         let acrossReleases = false;
         // A source's latest relation can keep one row per geography -- ACS
         // holds only the newest vintage -- so under the latest scope a
@@ -946,35 +1244,50 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         // that geography's history; read it and keep the newest release of
         // each period, which is what "latest" means period by period.
         if (items.length <= 1 && observationScope === SCOPE_LATEST && servesAsReleased(source)) {
-          const released = buildHistoryObservationRequest(source, {
+          // The settled history is the resource's answer where it declares
+          // one (API-081): each period as its newest release left it, ranked
+          // by the source's own declared release order. Where it does not,
+          // the releases are read and reduced here as before, so a
+          // deployment on an older API keeps its trend (WEB-046).
+          const settled = buildSettledHistoryRequest(source, {
             metricCode: selectedMetric,
             geoId: selectedGeoId,
-            limit: "1000",
-            scope: SCOPE_AS_RELEASED,
+            limit: String(HISTORY_PAGE_SIZE),
             dimensions: dimensionSelections,
           });
-          const releasedPayload = await apiFetch<CollectionResponse<Observation>>(
-            released.resource,
-            { params: released.params },
-          );
-          const releasedItems = collapseToNewestRelease(
-            normalizeObservationRows(
-              source,
-              Array.isArray(releasedPayload.items) ? releasedPayload.items : [],
-            ),
-          );
+          const released = settled
+            ? settled
+            : buildHistoryObservationRequest(source, {
+                metricCode: selectedMetric,
+                geoId: selectedGeoId,
+                limit: String(HISTORY_PAGE_SIZE),
+                scope: SCOPE_AS_RELEASED,
+                dimensions: dimensionSelections,
+              });
+          const releasedPages = await fetchCollectionPages<Observation>(released.resource, {
+            params: released.params,
+            pageSize: HISTORY_PAGE_SIZE,
+            maxPages: HISTORY_PAGE_LIMIT,
+          });
+          const releasedRows = normalizeObservationRows(source, releasedPages.items);
+          const releasedItems = settled
+            ? releasedRows
+            : collapseToNewestRelease(releasedRows);
           if (releasedItems.length > items.length) {
             items = releasedItems;
+            // The reported total counts released rows, which collapse to
+            // fewer periods; carrying it forward would read as a shortfall
+            // that is not one. Completeness is what travels.
+            total = null;
+            complete = releasedPages.complete;
             acrossReleases = true;
           }
         }
         if (request.isCurrent()) {
           setTimeseries(items);
           setTimeseriesStatus({
-            state: "ok",
-            message: `${items.length} historical observation${items.length === 1 ? "" : "s"}${
-              acrossReleases ? " across published releases" : ""
-            }`,
+            state: complete ? "ok" : "bad",
+            message: describeHistoryLoad(items.length, total, complete, acrossReleases),
           });
         }
       } catch (error) {
@@ -1412,12 +1725,38 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
 
   // The exact request the observation effect issues, built by the same
   // capability-bounded builder, so the displayed path reproduces the set.
-  const apiQuery = selectedMetric && activeSource
-    ? (() => {
-        const { resource, params } = buildLatestObservationRequest(activeSource, latestQuery);
-        return buildApiPath(resource, params);
-      })()
+  const latestRequest = useMemo(
+    () => (selectedMetric && activeSource
+      ? buildLatestObservationRequest(activeSource, latestQuery)
+      : null),
+    [selectedMetric, activeSource, latestQuery],
+  );
+  const apiQuery = latestRequest
+    ? buildApiPath(latestRequest.resource, latestRequest.params)
     : "Select a metric to generate an API query.";
+  // What the map actually asked the resource for, read back from the request
+  // it issues rather than from the intent above it. The builder drops
+  // `newest_per_geography` where the source's capability entry does not
+  // declare it, so a view saved from such a source must not claim a
+  // reduction it never asked for (WEB-047).
+  const viewedNewestPerGeography = latestRequest?.params.newest_per_geography === "true";
+  // The dimension narrowing the *request* carried, read back from it for the
+  // same reason the reduction above is. `dimensionParams` sends only the names
+  // the capability declares under this scope, so a selection left from another
+  // scope is not part of what the map shows, and a source-scoped read sends
+  // none at all. A saved view has to record what it asked for: `apiQuery`
+  // beside it records the same request, and a block whose query and recorded
+  // request disagree is one a reader cannot re-derive (WEB-081).
+  const viewedDimensions = useMemo(
+    () => dimensionsCarriedBy(latestRequest, dimensionFilters),
+    [latestRequest, dimensionFilters],
+  );
+  // The state the *request* carried, which is "" for a source that declares
+  // no `state_fips`: a document may only hold filters its own route accepts
+  // (API-117), and the reader can now select a state on such a source to
+  // narrow the map and the picker (WEB-075). Read back from the request for
+  // the same reason the reduction above is.
+  const viewedStateFips = String(latestRequest?.params.state_fips || "");
 
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
@@ -1436,6 +1775,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         geoId: selectedGeoId,
         scope: observationScope,
         release: selectedRelease,
+        // Under the source's own declared filter names, which is what the
+        // saved document records too, so the two records of one view agree.
+        dimensions: dimensionSelections,
       },
       {
         source: sourceKey,
@@ -1462,6 +1804,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     sourceKey,
     observationScope,
     selectedRelease,
+    // Keyed by value, like the observation effect above: the link has to
+    // change when the narrowing does, or it reproduces a different view.
+    dimensionKey,
+    dimensionSelections,
   ]);
 
   function handleSourceChange(key: string) {
@@ -1502,9 +1848,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             scope: observationScope === SCOPE_AS_RELEASED ? "as_released" : "latest",
             release: selectedRelease,
             geoLevel: selectedGeoLevel,
-            stateFips: selectedStateFips,
+            stateFips: viewedStateFips,
             geoId: selectedGeoId,
-            dimensions: dimensionSelections,
+            dimensions: viewedDimensions,
+            // A map saved without the reduction reopens as the whole latest
+            // publication -- for a source publishing a series per geography
+            // that is every period of it, and the map would colour whichever
+            // row arrived last rather than the newest one.
+            newestPerGeography: viewedNewestPerGeography,
           }),
         });
         setSaveStatus(describeSaveSuccess("account", title));
@@ -1532,7 +1883,25 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       geoLevel: selectedGeoLevel,
       stateFips: selectedStateFips || null,
       geoId: selectedGeoId || null,
+      // The narrowing the request carried, under the source's own declared
+      // filter names. Absent, a stratified view -- a CDC measure read for one
+      // stratum, a NASS one for one domain -- reopened as every stratum the
+      // source publishes, which is a different population, while `apiQuery`
+      // below still named the one it was read for (WEB-081).
+      dimensions: viewedDimensions,
       transformation: "raw",
+      // What the request asked, beside the request itself. `apiQuery` records
+      // the URL, but a consumer rebuilding the query from this chart -- the
+      // packet builder, the account migration -- had only the filters, so a
+      // map reopened as the source's whole latest publication (WEB-048).
+      scope: observationScope,
+      release: selectedRelease || null,
+      newestPerGeography: viewedNewestPerGeography,
+      // The one period every loaded row describes, or empty where they
+      // differ: a packet block composed from this view states a period the
+      // source published, and states none when the publication spans
+      // several (WEB-069).
+      period: sharedObservationPeriod(observations),
       apiQuery,
       savedAt: new Date().toISOString(),
     };
@@ -1542,33 +1911,34 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   }
 
   function exportCsv() {
-    // The export carries its own reproducibility envelope: which scope and
-    // release answered, and each row's own published release identity.
-    const headings = ["geo_id", "geo_name", "period", "metric_code", "value", "value_status", "unit", "source", "dataset", "margin_of_error", "scope", "release", "as_of", ...dimensionFilters];
-    const rows = observations.map((item) => [
-      item.geo_id,
-      observationName(item),
-      observationPeriodLabel(item),
-      item.metric_code,
-      item.value,
-      item.value_status,
-      observationUnit(item),
-      item.source || item.source_code,
-      item.dataset || item.dataset_code,
-      item.margin_of_error,
-      observationScope,
-      item.release,
-      item.as_of,
-      ...dimensionFilters.map((name) => observationDimensionValue(item, name)),
-    ]);
+    // The columns and rows are `observationExport`'s, so what the file
+    // carries is asserted at the unit tier rather than only reviewed: every
+    // published uncertainty field (WEB-053) and every published coverage
+    // field (WEB-051) travels whether or not this source publishes one.
+    const { headings, rows } = observationExport(observations, {
+      scope: observationScope,
+      // The declared set, not the filterable subset: a file carrying a
+      // subset would be this client deciding which part of a source's
+      // published description a reader may have (WEB-061).
+      dimensions: exportDimensions,
+    });
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const blob = new Blob([[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    const scopeSuffix = asReleased
-      ? `as-released${selectedRelease ? `-${selectedRelease.replaceAll(":", "-")}` : ""}`
-      : "latest";
-    link.download = `${selectedMetric.replaceAll(":", "-")}-${selectedGeoLevel.toLowerCase()}-${scopeSuffix}.csv`;
+    // A prefix names itself: the screen said the page bound cut the answer
+    // short, and the file has to say it too (WEB-059).
+    link.download = observationExportFilename({
+      metricCode: selectedMetric,
+      geoLevel: selectedGeoLevel,
+      // The same `asReleased` the export's `scope` column carries: a
+      // release-pinned name only where releases are actually declared.
+      scope: asReleased ? "as_released" : "latest",
+      release: selectedRelease,
+      loaded: observations.length,
+      total: observationLoad.total,
+      complete: observationLoad.complete,
+    });
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -1608,6 +1978,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       data-metric-count={metrics.length}
       data-county-count={countyGeographies.length}
       data-selected-geo-id={selectedGeoId}
+      data-selected-state={selectedStateFips}
       data-observation-count={observations.length}
       data-source-key={activeSource?.key || ""}
       data-source-count={explorerSources.length}
@@ -1661,7 +2032,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         </div>
       ) : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill state={apiHealth.state} label="API" message={apiHealth.message} testId="api-status" />
         <StatusPill state={tilesHealth.state} label="Tiles" message={tilesHealth.message} testId="tiles-status" />
         <StatusPill
@@ -1713,7 +2084,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               >
                 {offeredGeoLevels.map((level) => (
                   <option key={level} value={level}>
-                    {GEO_LEVEL_LABEL[level] || level}
+                    {GEO_GRAIN_LABELS[level]?.one || level}
                   </option>
                 ))}
               </select>
@@ -1755,7 +2126,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   className="select"
                   data-testid="dataset-select"
                   value={selectedDataset}
-                  onChange={(event) => setSelectedDataset(event.target.value)}
+                  onChange={(event) => {
+                    setRequestedMetricNotice("");
+                    setSelectedDataset(event.target.value);
+                  }}
                 >
                   {facetOptions.map((facet) => (
                     <option value={facet.value} key={facet.value}>
@@ -1773,7 +2147,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 className="select"
                 data-testid="metric-select"
                 value={selectedMetric}
-                onChange={(event) => setSelectedMetric(event.target.value)}
+                onChange={(event) => {
+                  // The reader has answered the notice; it is no longer true.
+                  setRequestedMetricNotice("");
+                  setSelectedMetric(event.target.value);
+                }}
                 disabled={options.length === 0}
               >
                 {options.map((option) => (
@@ -1874,7 +2252,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   setSelectedStateFips(event.target.value);
                   setSelectedGeoId("");
                 }}
-                disabled={selectedGeoLevel === "NATIONAL" || !supportsStateFilter}
+                // A state narrows the map and the geography picker on every
+                // source; it narrows the rows only where the source declares
+                // the filter. Gating the control on the filter left Census
+                // PEP's county and place pickers saying "select a state
+                // first" with no way to give them one (WEB-075).
+                disabled={selectedGeoLevel === "NATIONAL"}
               >
                 <option value="">All states</option>
                 {states.map((state) => (
@@ -1886,31 +2269,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </div>
 
             <div className="control-group">
-              <label htmlFor="county-select">{selectedGeoLevel === "COUNTY" ? "County" : "State geography"}</label>
+              <label htmlFor="county-select">{geographyPicker.label}</label>
               <select
                 id="county-select"
                 className="select"
                 data-testid="county-select"
-                value={allGeographies.some((item) => item.geo_id === selectedGeoId) ? selectedGeoId : ""}
-                onChange={(event) => setSelectedGeoId(event.target.value)}
-                disabled={
-                  selectedGeoLevel === "NATIONAL"
-                    ? true
-                    : selectedGeoLevel === "COUNTY"
-                      ? (!selectedStateFips || counties.length === 0)
-                      : states.length === 0
+                value={
+                  geographyPicker.options.some((option) => option.geoId === selectedGeoId)
+                    ? selectedGeoId
+                    : ""
                 }
+                onChange={(event) => setSelectedGeoId(event.target.value)}
+                disabled={geographyPicker.disabled}
               >
-                <option value="">
-                  {selectedGeoLevel === "NATIONAL"
-                    ? "Not applicable for national view"
-                    : selectedGeoLevel === "COUNTY"
-                    ? (selectedStateFips ? "All counties" : "Select a state first")
-                    : "All states"}
-                </option>
-                {(selectedGeoLevel === "COUNTY" ? counties : states).map((county) => (
-                  <option value={county.geo_id} key={county.geo_id}>
-                    {selectedGeoLevel === "COUNTY" ? county.county_name : county.state_name}
+                <option value="">{geographyPicker.placeholder}</option>
+                {geographyPicker.options.map((option) => (
+                  <option value={option.geoId} key={option.geoId}>
+                    {option.name}
                   </option>
                 ))}
               </select>
@@ -1952,6 +2327,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               the legend&apos;s bins are local to the loaded rows.
             </p>
           ) : null}
+          {distributionCaveats(distribution).length > 0 ? (
+            <p className="coverage-note partial" data-testid="distribution-caveats">
+              {distributionCaveats(distribution).join(" ")}
+            </p>
+          ) : null}
           {!releasesDeclared && activeSource ? (
             <p className="subtle" data-testid="releases-note">
               {activeSource.title} declares no as-released surface, so this source is
@@ -1967,15 +2347,21 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           {geoLevelsNarrowed ? (
             <p className="subtle" data-testid="geo-grain-note">
               {displayMetricName(selectedMetricMeta)} is published at{" "}
-              {offeredGeoLevels.map((level) => GEO_LEVEL_LABEL[level] || level).join(", ")} only,
+              {offeredGeoLevels.map((level) => GEO_GRAIN_LABELS[level]?.one || level).join(", ")} only,
               so the other view levels are not offered for it. A narrower list is the
               publisher&apos;s declaration, not a limit of this screen.
             </p>
           ) : null}
           {!supportsStateFilter && supportsGeoLevelFilter ? (
             <p className="subtle" data-testid="state-filter-note">
-              {activeSource?.title} declares no state filter; the state selector scopes
-              the geography list only, not the request.
+              {activeSource?.title} declares no state filter for its observations, so
+              the state selector narrows the map and the geography list and not the
+              rows. The observations line says so whenever a state is selected.
+            </p>
+          ) : null}
+          {requestedMetricNotice ? (
+            <p className="subtle" data-testid="requested-metric-note">
+              {requestedMetricNotice}
             </p>
           ) : null}
           {metricsError ? <p className="subtle">Metrics error: {metricsError}</p> : null}
@@ -2054,7 +2440,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 </dl>
                 <div className="timeseries-heading">
                   <strong>History</strong>
-                  <span className={`inline-status ${timeseriesStatus.state}`}>{timeseriesStatus.message}</span>
+                  <span
+                    className={`inline-status ${timeseriesStatus.state}`}
+                    data-testid="history-status"
+                  >
+                    {timeseriesStatus.message}
+                  </span>
                 </div>
                 {!trendSupported ? (
                   <p className="subtle" data-testid="trend-unsupported-note">
@@ -2071,7 +2462,12 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     row as published.
                   </p>
                 ) : (
-                  <TimeSeriesChart items={timeseries} />
+                  <TimeSeriesChart
+                    items={timeseries}
+                    publishesValueStatus={
+                      activeSource?.publishesValueStatus !== false
+                    }
+                  />
                 )}
               </>
             ) : (
@@ -2177,10 +2573,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                   <th>Value</th>
                   <th>Status</th>
                   <th>Units</th>
+                  {showsUncertainty ? <th>Uncertainty</th> : null}
+                  {showsCoverage ? <th>Participation</th> : null}
                   {asReleased ? <th>Release</th> : null}
                   {dimensionFilters.map((name) => (
                     <th key={name}>{name.replaceAll("_", " ")}</th>
                   ))}
+                  {/* Every other field the source declares its rows carry:
+                      one cell, as the seven uncertainty fields are one cell
+                      rather than seven columns (WEB-061). */}
+                  {tableDimensions.length > 0 ? <th>Dimensions</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -2197,18 +2599,43 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{item.value ?? "-"}</td>
                     <td>{String(item.value_status || (item.value === null ? "not published" : "-"))}</td>
                     <td>{observationUnit(item)}</td>
+                    {showsUncertainty ? (
+                      <td data-testid={`uncertainty-${item.geo_id}`}>
+                        {observationUncertaintyLabel(item) || "-"}
+                      </td>
+                    ) : null}
+                    {showsCoverage ? (
+                      <td data-testid={`coverage-${item.geo_id}`}>
+                        {observationCoverageValue(item, "participation_status") || "-"}
+                        {observationCoverageValue(item, "coverage_percent")
+                          ? ` (${observationCoverageValue(item, "coverage_percent")}% covered)`
+                          : ""}
+                      </td>
+                    ) : null}
                     {asReleased ? (
                       <td>{observationDimensionValue(item, RELEASE_DIMENSION) || "-"}</td>
                     ) : null}
                     {dimensionFilters.map((name) => (
                       <td key={name}>{observationDimensionValue(item, name) || "-"}</td>
                     ))}
+                    {tableDimensions.length > 0 ? (
+                      <td data-testid={`dimensions-${item.geo_id}`}>
+                        {observationDimensionLabel(item, tableDimensions) || "-"}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
                 {observations.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7 + (asReleased ? 1 : 0) + dimensionFilters.length}
+                      colSpan={
+                        7 +
+                        (showsUncertainty ? 1 : 0) +
+                        (showsCoverage ? 1 : 0) +
+                        (asReleased ? 1 : 0) +
+                        dimensionFilters.length +
+                        (tableDimensions.length > 0 ? 1 : 0)
+                      }
                       className="subtle"
                     >
                       No observations available for selected metric.

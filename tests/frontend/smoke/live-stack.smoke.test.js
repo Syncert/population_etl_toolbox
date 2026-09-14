@@ -93,7 +93,12 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
   });
 
   test("a real tile decodes to features carrying the join key", async () => {
-    const all = await loadPreviewTileFeatures(tiles.tileTemplate, tiles.sourceLayer, "NATIONAL");
+    // Every feature the tile carries, whatever its grain, which is what
+    // checking a decoded tile needs. This asked for "NATIONAL" until
+    // WEB-062: that grain kept everything only because the decoder treated
+    // it as "no grain filter", and the boundary draws no national polygon,
+    // so the absence of a grain is now spelled as one.
+    const all = await loadPreviewTileFeatures(tiles.tileTemplate, tiles.sourceLayer, "");
     expect(all.features.length).toBeGreaterThan(0);
     for (const feature of all.features) {
       expect(feature.properties[tiles.joinKey]).toBeTruthy();
@@ -103,6 +108,16 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     // the published properties, so it is only correct against real ones.
     const counties = await loadPreviewTileFeatures(tiles.tileTemplate, tiles.sourceLayer, "COUNTY");
     expect(counties.features.length).toBeGreaterThan(0);
+
+    // Each drawable grain is a subset of the tile, and the grains together
+    // cannot exceed it: a decoder that let one grain answer with another's
+    // polygons -- "not a county" standing in for "a state", which is what
+    // it used to do -- would show up here as states plus counties
+    // outnumbering the features that exist.
+    const states = await loadPreviewTileFeatures(tiles.tileTemplate, tiles.sourceLayer, "STATE");
+    expect(states.features.length + counties.features.length).toBeLessThanOrEqual(
+      all.features.length,
+    );
   }, 30_000);
 
   test("capability discovery yields at least one explorable source", () => {

@@ -1,4 +1,7 @@
-from data_ingestion_toolbox.utility.db_connection import PostgresConnectionFactory
+from data_ingestion_toolbox.utility.db_connection import (
+    PostgresConnectionFactory,
+    warehouse_database,
+)
 from sqlalchemy import create_engine, text
 
 
@@ -8,7 +11,7 @@ def main():
         details = PostgresConnectionFactory.auto(
             conn_id=None,  # no Airflow in local dev
             prefix="POSTGRES_",  # matches your from_env expectations
-            database="public_data",  # or None to use POSTGRES_DB
+            database=warehouse_database(),  # or None to use POSTGRES_DB
         )
 
         print("Connection details:")

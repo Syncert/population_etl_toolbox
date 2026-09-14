@@ -9,10 +9,14 @@ import {
   buildSelectionFilter,
   distributionBins,
   metricOptions,
+  observationExportFilename,
   pickPreferredMetric,
   preferredGeoLevelForMetric,
 } from "../../../apps/web/components/SourceExplorerPage";
 import {
+  CHOROPLETH_FALLBACK_COLOR,
+  CHOROPLETH_PALETTE,
+  CHOROPLETH_WITHHELD_COLOR,
   boundsOfFeatures,
   buildExtrusionHeightExpression,
   formatObservationValue,
@@ -42,6 +46,29 @@ describe("explorer metric, selection, and legend contracts", () => {
     expect(preferredGeoLevelForMetric({ valid_geo_grains: ["NATIONAL"] })).toBe("NATIONAL");
   });
 
+  // Covers: WEB-038 — the published grain vocabulary is five words, not
+  // three. A measure declaring only PLACE or only AGENCY used to fall past
+  // every branch and take the COUNTY fallback -- a grain it does not
+  // publish -- so the explorer asked for nothing and reported "0 COUNTY
+  // records" as though the measure published none.
+  test("never prefers a grain the measure does not declare", () => {
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: ["AGENCY"] })).toBe("AGENCY");
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: ["PLACE"] })).toBe("PLACE");
+    // The spatial three still win where the measure declares one of them.
+    expect(
+      preferredGeoLevelForMetric({ valid_geo_grains: ["PLACE", "COUNTY"] }),
+    ).toBe("COUNTY");
+    expect(
+      preferredGeoLevelForMetric({ valid_geo_grains: ["AGENCY", "STATE"] }),
+    ).toBe("STATE");
+  });
+
+  test("a measure declaring no grains keeps the caller's fallback", () => {
+    // Unknown grains are not the same fact as no grains.
+    expect(preferredGeoLevelForMetric({ valid_geo_grains: [] }, "COUNTY")).toBe("COUNTY");
+    expect(preferredGeoLevelForMetric(null, "STATE")).toBe("STATE");
+  });
+
   test("indexes hover/selection keys and produces an exact pinned outline filter", () => {
     const rows = [
       { geo_id: "state:55|county:025", value: "10" },
@@ -57,12 +84,18 @@ describe("explorer metric, selection, and legend contracts", () => {
   });
 
   test("uses API distribution bins for observation colors and reconciled legend counts", () => {
+    // The response as the API publishes it: each bin carries its own bounds
+    // (WEB-057). The fixture used to omit them, which is what let the model
+    // recompute every boundary and nothing notice.
     const distribution = {
       min_value: 0,
       max_value: 20,
       bin_count: 2,
       total: 2,
-      items: [{ bin_index: 1, count: 1 }, { bin_index: 2, count: 1 }],
+      items: [
+        { bin_index: 1, lower_bound: 0, upper_bound: 10, count: 1 },
+        { bin_index: 2, lower_bound: 10, upper_bound: 20, count: 1 },
+      ],
     };
     expect(distributionBins(distribution)).toHaveLength(2);
     const observations = [
@@ -97,12 +130,93 @@ describe("a value the source did not publish is never a zero", () => {
   test("the choropleth colours only the geography that published a number", () => {
     const model = buildChoroplethModel(suppressed, "geo_id");
     expect(model.valueCount).toBe(1);
-    // A suppressed geography must not appear in the colour expression at
-    // all; leaving it out is what makes the map render it as no-data.
-    expect(JSON.stringify(model.expression)).not.toContain("county:001");
-    expect(JSON.stringify(model.expression)).not.toContain("county:003");
-    // Its absence must not drag the scale to zero either.
+    // A geography that published no number carries no palette colour, which
+    // is what keeps a withheld value from reading as a quantity. It used to
+    // be left out of the expression entirely; WEB-078 paints it a colour
+    // that is explicitly not one of the data colours instead, because "not
+    // in the expression" made a withheld value and an absent row the same
+    // grey under one label saying "No observation".
+    const painted = JSON.parse(JSON.stringify(model.expression));
+    const colorFor = (key) => painted[painted.indexOf(key) + 1];
+    expect(CHOROPLETH_PALETTE).not.toContain(colorFor("state:55|county:001"));
+    expect(CHOROPLETH_PALETTE).not.toContain(colorFor("state:55|county:003"));
+    expect(colorFor("state:55|county:001")).toBe(CHOROPLETH_WITHHELD_COLOR);
+    expect(colorFor("state:55|county:003")).toBe(CHOROPLETH_WITHHELD_COLOR);
+    // And it must not drag the scale or the count either.
     expect(model.minValue).toBe(561504);
+    expect(model.maxValue).toBe(561504);
+  });
+
+  test("a withheld value is legended apart from a geography with no row", () => {
+    // Covers: WEB-078 — two different facts, two legend rows.
+    const model = buildChoroplethModel(suppressed, "geo_id");
+    const withheldRow = model.legendItems.find(
+      (item) => item.color === CHOROPLETH_WITHHELD_COLOR,
+    );
+    expect(withheldRow).toBeDefined();
+    // The source's own words, and how many geographies carried them.
+    expect(withheldRow.label).toBe("Value not published: suppressed, missing");
+    expect(withheldRow.count).toBe(2);
+    const fallbackRow = model.legendItems.find(
+      (item) => item.color === CHOROPLETH_FALLBACK_COLOR,
+    );
+    expect(fallbackRow.label).toBe("No observation");
+    expect(fallbackRow.count).toBeUndefined();
+  });
+
+  test("a row with neither a value nor a status is silence, not a claim", () => {
+    // Covers: WEB-078 — the legend row says what the publisher said, so a
+    // row that said nothing produces no row to say it with.
+    const model = buildChoroplethModel(
+      [
+        { geo_id: "state:55|county:025", value: "5" },
+        { geo_id: "state:55|county:001", value: null },
+      ],
+      "geo_id",
+    );
+    expect(
+      model.legendItems.some((item) => item.color === CHOROPLETH_WITHHELD_COLOR),
+    ).toBe(false);
+    expect(JSON.stringify(model.expression)).not.toContain("county:001");
+  });
+
+  test("a page whose every row withheld its value still says so", () => {
+    // Covers: WEB-078 — nothing to scale is not nothing to report.
+    const model = buildChoroplethModel(
+      [{ geo_id: "state:55|county:001", value: null, value_status: "suppressed" }],
+      "geo_id",
+    );
+    expect(model.valueCount).toBe(0);
+    expect(model.legendItems.map((item) => item.label)).toEqual([
+      "Value not published: suppressed",
+      "No observation",
+    ]);
+    // The withheld geography is a label to match on, so the expression is a
+    // `match` and it is well-formed: four arguments at least.
+    expect(model.expression[0]).toBe("match");
+    expect(model.expression.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test("a page with nothing to scale and nothing withheld is still a valid expression", () => {
+    // Covers: WEB-078 — the withheld branch replaced a constant with a
+    // `match`, and a `match` with no label is not an expression MapLibre
+    // parses: it wants at least four arguments and refuses the layer below
+    // that, so the map drew nothing rather than drawing the fallback. A
+    // national `geo_id` against a county tile key resolves to no join value
+    // at all, which reaches this branch with no withheld key either.
+    const model = buildChoroplethModel(
+      [
+        { geo_id: "US", value: null },
+        { geo_id: "US", value: "" },
+      ],
+      "geoid",
+    );
+    expect(model.valueCount).toBe(0);
+    expect(model.legendItems.map((item) => item.label)).toEqual(["No observation"]);
+    expect(model.expression).toEqual(["literal", CHOROPLETH_FALLBACK_COLOR]);
+    if (model.expression[0] === "match") {
+      expect(model.expression.length).toBeGreaterThanOrEqual(4);
+    }
   });
 
   test("extrusion heights exclude the geographies with no published value", () => {
@@ -169,11 +283,22 @@ describe("a selected state is the whole map", () => {
     // Places have no county_fips either; "not a county" is not "a state".
     expect(tileFilterForGeoLevel("STATE")).toEqual(["==", ["get", "geo_level"], "STATE"]);
     expect(tileFilterForGeoLevel("COUNTY")).toEqual(["==", ["get", "geo_level"], "COUNTY"]);
-    expect(tileFilterForGeoLevel("NATIONAL")).toEqual([
-      "in",
-      ["get", "geo_level"],
-      ["literal", ["STATE", "COUNTY"]],
-    ]);
+  });
+
+  test("a grain the boundary cannot draw filters to nothing, not to counties", () => {
+    // This pinned a states-and-counties backdrop for NATIONAL until WEB-062.
+    // The expectation is changed deliberately: the branch was unreachable --
+    // spatialGrains never answers NATIONAL, so describeViewModes reports the
+    // map unsupported there and useMapLibre removes it -- and it described a
+    // presentation the application does not have. PLACE and AGENCY were
+    // worse: they fell through to the county filter, so an undrawable grain
+    // asked for was answered with another grain's polygons.
+    for (const grain of ["NATIONAL", "PLACE", "AGENCY", ""]) {
+      expect(tileFilterForGeoLevel(grain)).toBe(false);
+    }
+    // A lowercase drawable grain still draws: the filter reads the grain, it
+    // does not check how the caller spelled it.
+    expect(tileFilterForGeoLevel("state")).toEqual(["==", ["get", "geo_level"], "STATE"]);
   });
 
   test("the selection filter keeps the geo level and narrows to the state", () => {
@@ -183,6 +308,9 @@ describe("a selected state is the whole map", () => {
       ["==", ["get", "geo_level"], "COUNTY"],
       ["==", ["to-string", ["get", "state_fips"]], "06"],
     ]);
+    // Narrowing nothing to one state is still nothing -- never the state
+    // filter alone, which would draw every grain inside that state.
+    expect(tileFilterForSelection("PLACE", "06")).toBe(false);
   });
 
   test("the fit extent is the state's polygons, not the country's", () => {
@@ -216,12 +344,22 @@ describe("a logarithmic value scale", () => {
     { geo_id: "e", value: "100000" },
     { geo_id: "z", value: "0" },
   ];
+  // Every bin the caller asked for, with its bounds, empty ones included --
+  // API-079's contract, which this fixture did not model (WEB-057). Five
+  // equal-width bins over [0, 100000]: the first four decades all fall in the
+  // first, which is the point this test makes about a linear scale.
   const distribution = {
     min_value: 0,
     max_value: 100000,
     bin_count: 5,
     total: 6,
-    items: [{ bin_index: 1, count: 5 }, { bin_index: 5, count: 1 }],
+    items: [
+      { bin_index: 1, lower_bound: 0, upper_bound: 20000, count: 5 },
+      { bin_index: 2, lower_bound: 20000, upper_bound: 40000, count: 0 },
+      { bin_index: 3, lower_bound: 40000, upper_bound: 60000, count: 0 },
+      { bin_index: 4, lower_bound: 60000, upper_bound: 80000, count: 0 },
+      { bin_index: 5, lower_bound: 80000, upper_bound: 100000, count: 1 },
+    ],
   };
   const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
 
@@ -267,5 +405,154 @@ describe("a logarithmic value scale", () => {
     expect(heightOf(buildExtrusionHeightExpression(decades, "geo_id"), "c")).toBe(
       Math.round(200 + ((1000 - 0) / 100000) * 12000),
     );
+  });
+});
+
+// Covers: WEB-057 — the legend's bins are the bins the API measured.
+//
+// `/distribution/bins` publishes each bin whole and says why an absent bin
+// and a bin holding zero geographies are different statements: "reporting it
+// as the first makes every consumer rebuild the gaps from min/max". The model
+// rebuilt them, and the degenerate answer the API documents -- one distinct
+// value, one bin closing on itself -- came out as five bins over one point
+// with the map coloured from a different one than the legend counted.
+describe("the bins are the API's, not recomputed from its bounds", () => {
+  const colourOf = (model, key) => model.expression[model.expression.indexOf(key) + 1];
+
+  test("the published bounds are the bounds the legend shows", () => {
+    const distribution = {
+      total: 10,
+      bin_count: 2,
+      min_value: 0.1,
+      max_value: 0.7,
+      // Deliberately not the equal-width split of [0.1, 0.7]: the API owns
+      // the binning rule, and a model that recomputes it cannot tell the
+      // difference between reading the answer and agreeing with it.
+      items: [
+        { bin_index: 1, lower_bound: 0.1, upper_bound: 0.25, count: 4 },
+        { bin_index: 2, lower_bound: 0.25, upper_bound: 0.7, count: 6 },
+      ],
+    };
+    expect(distributionBins(distribution)).toEqual([
+      { binIndex: 1, color: "#edcf63", lowerBound: 0.1, upperBound: 0.25, count: 4 },
+      { binIndex: 2, color: "#9dc57d", lowerBound: 0.25, upperBound: 0.7, count: 6 },
+    ]);
+  });
+
+  test("one distinct value is one bin, and the map colours it that bin", () => {
+    // The answer the API sends for a metric every geography published the
+    // same value for: `bin_count` is what the caller asked for, `items` is
+    // what the query measured.
+    const distribution = {
+      total: 3,
+      bin_count: 5,
+      min_value: 4.2,
+      max_value: 4.2,
+      items: [{ bin_index: 1, lower_bound: 4.2, upper_bound: 4.2, count: 3 }],
+    };
+    const bins = distributionBins(distribution);
+    expect(bins).toHaveLength(1);
+    expect(bins[0].count).toBe(3);
+
+    const observations = [
+      { geo_id: "a", value: "4.2" },
+      { geo_id: "b", value: "4.2" },
+      { geo_id: "c", value: "4.2" },
+    ];
+    const model = buildChoroplethModel(observations, "geo_id", distribution);
+    expect(model.usesDistribution).toBe(true);
+    // The legend already had this case; the bin model never produced it.
+    expect(model.legendItems[0].label).toBe("All numeric values");
+    expect(model.legendItems[0].count).toBe(3);
+    // The colour on the map is the colour beside the count in the legend.
+    for (const key of ["a", "b", "c"]) {
+      expect(colourOf(model, key)).toBe(model.legendItems[0].color);
+    }
+  });
+
+  test("a gap in the published bins is refused, never filled with zeros", () => {
+    // API-079 reports every bin, empty ones included. A response missing one
+    // is a contract regression, and an absent bin is not a bin holding no
+    // geographies -- so it is not rendered as one.
+    expect(
+      distributionBins({
+        total: 6,
+        bin_count: 3,
+        min_value: 0,
+        max_value: 30,
+        items: [
+          { bin_index: 1, lower_bound: 0, upper_bound: 10, count: 5 },
+          { bin_index: 3, lower_bound: 20, upper_bound: 30, count: 1 },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  test("a bin with no published bounds is refused", () => {
+    expect(
+      distributionBins({
+        total: 2,
+        bin_count: 1,
+        min_value: 0,
+        max_value: 10,
+        items: [{ bin_index: 1, count: 2 }],
+      }),
+    ).toEqual([]);
+  });
+
+  test("more bins than the palette can colour renders none", () => {
+    const items = Array.from({ length: 6 }, (_unused, index) => ({
+      bin_index: index + 1,
+      lower_bound: index,
+      upper_bound: index + 1,
+      count: 1,
+    }));
+    expect(
+      distributionBins({ total: 6, bin_count: 6, min_value: 0, max_value: 6, items }),
+    ).toEqual([]);
+  });
+});
+
+// Covers: WEB-059 — a CSV of a bounded read says it is a prefix.
+//
+// The explorer is honest about the bound on screen ("the page bound cut the
+// answer short, so the map is incomplete") and then wrote those rows to a
+// file whose name and columns record the scope, the release and each row's
+// release identity -- everything except that the answer was cut short. A
+// file outlives the screen that produced it.
+describe("the exported filename says what the file holds", () => {
+  const base = {
+    metricCode: "CENSUS_PEP:pep:POP",
+    geoLevel: "COUNTY",
+    scope: "latest",
+    release: "",
+    loaded: 3143,
+    total: 3143,
+    complete: true,
+  };
+
+  test("a complete read's filename is unchanged", () => {
+    expect(observationExportFilename(base)).toBe("CENSUS_PEP-pep-POP-county-latest.csv");
+    expect(
+      observationExportFilename({
+        ...base,
+        scope: "as_released",
+        release: "2024:07:01",
+      }),
+    ).toBe("CENSUS_PEP-pep-POP-county-as-released-2024-07-01.csv");
+  });
+
+  test("a prefix names what it holds and what the API reported", () => {
+    expect(
+      observationExportFilename({ ...base, loaded: 40000, total: 51234, complete: false }),
+    ).toBe("CENSUS_PEP-pep-POP-county-latest-partial-40000-of-51234.csv");
+  });
+
+  test("a prefix of an unreported total still says it is a prefix", () => {
+    // `fetchCollectionPages` calls a read with no reported total incomplete,
+    // because without one the client cannot know whether more exist.
+    expect(
+      observationExportFilename({ ...base, loaded: 40000, total: null, complete: false }),
+    ).toBe("CENSUS_PEP-pep-POP-county-latest-partial-40000.csv");
   });
 });

@@ -12,7 +12,7 @@ import {
   createSavedAnalysis,
   fetchAllPages,
   getCapabilities,
-  getComparison,
+  fetchComparisonPages,
   getComparisonPreflight,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
@@ -23,13 +23,18 @@ import type {
   MetricSummary,
 } from "../lib/api/types";
 import { buildExplorerSources, findExplorerSource } from "../lib/explorerSources";
+import { requestedMetricState } from "../lib/requestedMetric";
+import { ACTIVE_GEOGRAPHIES_ONLY } from "../lib/observationAccess";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
   DEFAULT_COMPARISON_SELECTION,
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonGrainOffer,
   comparisonMapRows,
+  describeComparisonCoverage,
+  mapPeriodMismatchNote,
   comparisonMetricOptions,
   comparisonRequestParams,
   comparisonScatterModel,
@@ -39,10 +44,16 @@ import {
   incompatibleAlternatives,
   mayRequestComparison,
   periodsDiffer,
+  preferredComparisonGrain,
   preflightRequestParams,
   selectionIsComplete,
 } from "../lib/comparison";
-import type { ComparisonSelection, ComparisonSide } from "../lib/comparison";
+import { GEO_GRAIN_LABELS } from "../lib/geographyPicker";
+import type {
+  ComparisonLoad,
+  ComparisonSelection,
+  ComparisonSide,
+} from "../lib/comparison";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -69,6 +80,9 @@ import type { GeoLevel } from "../lib/urlState";
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const CATALOG_PAGE_SIZE = 1000;
 const COMPARISON_PAGE_SIZE = 1000;
+// Eight pages reach 8,000 aligned geographies: a national county
+// comparison is 3,144, with room for a grain that grows.
+const COMPARISON_PAGE_LIMIT = 8;
 const SIDES = ["a", "b"] as const;
 
 type SideKey = (typeof SIDES)[number];
@@ -101,6 +115,11 @@ export default function ComparisonWorkspace() {
   );
   const [metrics, setMetrics] = useState<Record<SideKey, MetricSummary[]>>({ a: [], b: [] });
   const [metricsError, setMetricsError] = useState<Record<SideKey, string>>({ a: "", b: "" });
+  // What a link asked for on each side that the side's source does not
+  // publish (WEB-072).
+  const [requestedMetricNotice, setRequestedMetricNotice] = useState<
+    Record<SideKey, string>
+  >({ a: "", b: "" });
   const [states, setStates] = useState<GeographySummary[]>([]);
   const [tileMetadata, setTileMetadata] = useState<Awaited<
     ReturnType<typeof discoverTileMetadata>
@@ -112,6 +131,13 @@ export default function ComparisonWorkspace() {
     message: "select two measures",
   });
   const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
+  // How much of the aligned answer is loaded. The pill states it; the export
+  // needs it too, because the file outlives the pill (WEB-067).
+  const [comparisonLoad, setComparisonLoad] = useState<ComparisonLoad>({
+    loaded: 0,
+    total: null,
+    complete: true,
+  });
   const [comparisonStatus, setComparisonStatus] = useState<RequestStatus>({
     state: "idle",
     message: "waiting for a compatibility verdict",
@@ -194,6 +220,20 @@ export default function ComparisonWorkspace() {
 
           const requested = requestedRef.current;
           const wanted = side === "a" ? requested?.metricA : requested?.metricB;
+          // A link that names a measure this side's source does not publish
+          // is said out loud rather than answered with `items[0]`. Reopening
+          // a saved BLS-versus-FRED comparison on the first two discovered
+          // sources ran a real preflight, and a real comparison, on a pair
+          // the reader never saved (WEB-072).
+          const resolved = requestedMetricState({
+            requested: wanted,
+            items,
+            sourceTitle: findExplorerSource(sources, sourceCode)?.title,
+          });
+          setRequestedMetricNotice((current) => ({
+            ...current,
+            [side]: resolved.notice,
+          }));
           setSelection((current) => {
             if (current[side].sourceCode && current[side].metricCode) {
               // Keep an already valid choice; only fill an empty side.
@@ -204,10 +244,11 @@ export default function ComparisonWorkspace() {
                 return current;
               }
             }
-            const chosen =
-              wanted && items.some((item) => item.metric_code === wanted)
-                ? wanted
-                : items[0]?.metric_code || "";
+            const chosen = resolved.metricCode
+              ? resolved.metricCode
+              : resolved.chooseDefault
+                ? items[0]?.metric_code || ""
+                : "";
             return { ...current, [side]: { ...current[side], metricCode: chosen } };
           });
         } catch (error) {
@@ -229,7 +270,7 @@ export default function ComparisonWorkspace() {
     (async () => {
       try {
         const items = await fetchAllPages<GeographySummary>("/catalog/geographies", {
-          params: { geo_level: "STATE" },
+          params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" },
           pageSize: CATALOG_PAGE_SIZE,
         });
         if (request.isCurrent()) {
@@ -341,21 +382,36 @@ export default function ComparisonWorkspace() {
 
     (async () => {
       try {
-        const payload = await getComparison(
+        // Paged: the route caps `limit` at 1000 and a national county
+        // comparison aligns 3,144 geographies, so one request drew the
+        // scatter, the map, and the export from the first thousand rows by
+        // geo_id (WEB-039).
+        const pages = await fetchComparisonPages(
           comparisonRequestParams(selection, COMPARISON_PAGE_SIZE),
+          { pageSize: COMPARISON_PAGE_SIZE, maxPages: COMPARISON_PAGE_LIMIT },
         );
         if (!request.isCurrent()) {
           return;
         }
-        const items = Array.isArray(payload.items) ? payload.items : [];
-        setComparison(payload);
+        setComparison(pages.payload);
+        // Kept, not only rendered: the file the export writes outlives the
+        // pill that states the shortfall (WEB-067).
+        setComparisonLoad({
+          loaded: pages.items.length,
+          total: pages.total,
+          complete: pages.complete,
+        });
         setComparisonStatus({
-          state: "ok",
-          message: `${items.length} of ${payload.total ?? items.length} aligned geographies`,
+          state: pages.complete ? "ok" : "bad",
+          message: pages.complete
+            ? `${pages.items.length} aligned geographies`
+            : `loaded ${pages.items.length} of ${pages.total} aligned geographies; ` +
+              "the page bound cut the answer short, so this comparison is incomplete",
         });
       } catch (error) {
         if (request.isCurrent()) {
           setComparison(null);
+          setComparisonLoad({ loaded: 0, total: null, complete: true });
           setComparisonStatus({ state: "bad", message: apiErrorMessage(error) });
         }
       }
@@ -402,6 +458,17 @@ export default function ComparisonWorkspace() {
     () => comparisonMapRows(comparison, derivedField),
     [comparison, derivedField],
   );
+  // The map colours one API-derived number per polygon, and that number can
+  // be a subtraction between two publications years apart. Empty unless some
+  // coloured geography is actually in that state (WEB-049).
+  const mapPeriodNote = useMemo(
+    () => mapPeriodMismatchNote(comparison, derivedField),
+    [comparison, derivedField],
+  );
+  // The join is an inner one, so the geographies here are an intersection.
+  // Empty unless one of the two measures published more than was paired
+  // (WEB-050).
+  const coverageNote = useMemo(() => describeComparisonCoverage(comparison), [comparison]);
 
   // Which aligned presentations this comparison can answer, from the same
   // published evidence the explorer's modes read: the verdict, the rows the
@@ -431,6 +498,43 @@ export default function ComparisonWorkspace() {
     [metrics],
   );
 
+  // The grains the *pair* can be compared at, from each side's published
+  // `valid_geo_grains`. The control offered a hard-coded NATIONAL/STATE/COUNTY
+  // and ignored both, while the link parser accepts all five published words:
+  // a `?geo_level=PLACE` link put a value in the select that no option
+  // carried, so the control showed one grain and the request sent another
+  // (WEB-074).
+  const selectedMetricRow = useCallback(
+    (side: SideKey) =>
+      metrics[side].find(
+        (metric) => metric.metric_code === selection[side].metricCode,
+      ) || null,
+    [metrics, selection],
+  );
+  const grainOffer = useMemo(
+    () =>
+      comparisonGrainOffer({
+        metricA: selectedMetricRow("a"),
+        metricB: selectedMetricRow("b"),
+        requested: selection.geoLevel,
+      }),
+    [selectedMetricRow, selection.geoLevel],
+  );
+  // A grain neither side publishes is reported and replaced, not held: the
+  // selection would otherwise build a request for a grain the pair cannot be
+  // read at. The report survives the replacement, which is the point of it.
+  const [grainNotice, setGrainNotice] = useState("");
+  useEffect(() => {
+    if (!grainOffer.unavailable) {
+      return;
+    }
+    const replacement = preferredComparisonGrain(grainOffer.levels);
+    setGrainNotice(grainOffer.unavailable);
+    if (replacement && replacement !== selection.geoLevel) {
+      setSelection((current) => ({ ...current, geoLevel: replacement }));
+    }
+  }, [grainOffer, selection.geoLevel]);
+
   // The exact request the comparison effect issued, so the result is
   // reproducible outside the application.
   const apiQuery = comparable
@@ -443,7 +547,11 @@ export default function ComparisonWorkspace() {
   }
 
   function exportCsv() {
-    const { headings, rows: exportRows, filename } = comparisonExport(comparison, preflight);
+    const { headings, rows: exportRows, filename } = comparisonExport(
+      comparison,
+      preflight,
+      comparisonLoad,
+    );
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...exportRows]
       .map((row) => row.map(escape).join(","))
@@ -577,7 +685,7 @@ export default function ComparisonWorkspace() {
         </div>
       ) : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={preflightStatus.state}
           label="Compatibility"
@@ -591,6 +699,16 @@ export default function ComparisonWorkspace() {
           testId="comparison-status"
         />
       </section>
+
+      {coverageNote ? (
+        <section className="grid">
+          <article className="card span-2">
+            <p className="subtle" data-testid="comparison-coverage-note">
+              {coverageNote}
+            </p>
+          </article>
+        </section>
+      ) : null}
 
       <section className="grid">
         <article className="card span-2">
@@ -633,6 +751,11 @@ export default function ComparisonWorkspace() {
                     </option>
                   ))}
                 </select>
+                {requestedMetricNotice[side] ? (
+                  <p className="subtle" data-testid={`requested-metric-note-${side}`}>
+                    {requestedMetricNotice[side]}
+                  </p>
+                ) : null}
                 {metricsError[side] ? (
                   <p className="subtle">Measures error: {metricsError[side]}</p>
                 ) : null}
@@ -646,14 +769,32 @@ export default function ComparisonWorkspace() {
                 className="select"
                 data-testid="comparison-geo-level"
                 value={selection.geoLevel}
-                onChange={(event) =>
-                  setSelection((current) => ({ ...current, geoLevel: event.target.value }))
-                }
+                onChange={(event) => {
+                  // The reader has chosen; the link's report no longer holds.
+                  setGrainNotice("");
+                  setSelection((current) => ({
+                    ...current,
+                    geoLevel: event.target.value,
+                  }));
+                }}
+                disabled={grainOffer.levels.length === 0}
               >
-                <option value="NATIONAL">National</option>
-                <option value="STATE">State</option>
-                <option value="COUNTY">County</option>
+                {grainOffer.levels.map((level) => (
+                  <option value={level} key={level}>
+                    {GEO_GRAIN_LABELS[level]?.one || level}
+                  </option>
+                ))}
               </select>
+              {grainOffer.note ? (
+                <p className="subtle" data-testid="comparison-grain-note">
+                  {grainOffer.note}
+                </p>
+              ) : null}
+              {grainNotice ? (
+                <p className="subtle" data-testid="comparison-grain-unavailable">
+                  {grainNotice}
+                </p>
+              ) : null}
             </div>
 
             <div className="control-group">
@@ -794,6 +935,11 @@ export default function ComparisonWorkspace() {
               where one side published nothing stays uncoloured rather than being coloured
               as zero, and every value remains in the table below.
             </p>
+            {mapPeriodNote ? (
+              <p className="subtle">
+                <strong data-testid="map-period-note">{mapPeriodNote}</strong>
+              </p>
+            ) : null}
             <ChoroplethMap
               rows={mapRows}
               tileMetadata={tileMetadata}

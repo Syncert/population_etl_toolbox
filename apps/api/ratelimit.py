@@ -19,6 +19,14 @@ Behavioural contract:
   limiter protects the database behind it; a multi-process deployment would
   multiply the budget by the worker count, which is recorded rather than
   hidden.
+- The client is the TCP peer, unless the peer is a proxy the deployment
+  declared in ``API_TRUSTED_PROXY_IPS`` -- then it is the address that proxy
+  forwarded (API-075). Every topology this repository deploys puts a proxy in
+  front of the API, so without that declaration the per-client budget is one
+  budget for the whole deployment and one client's loop denies service to
+  every other. A forwarded address is read only from a declared hop: taken
+  unconditionally it would be worse than ignored, because a direct client
+  could mint a fresh budget per request by varying a header it controls.
 
 The middleware sits inside the response cache: a cache hit costs no database
 work and is deliberately not counted, so the budget meters exactly the
@@ -27,10 +35,11 @@ requests that reach the warehouse.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 Message = dict[str, Any]
@@ -42,12 +51,81 @@ RATE_LIMITED_DETAIL = "rate limit exceeded; retry after the indicated interval"
 #: Version-relative path fragments that classify a request as catalog-cost.
 _CATALOG_FRAGMENT = "/catalog/"
 
-#: Never limited: the deployment probes and documentation.
-_EXEMPT_PATHS = ("/health", "/health/ready", "/docs", "/openapi.json", "/redoc")
+#: Never limited: the documentation, which reaches no warehouse.
+_EXEMPT_DOCUMENTATION = ("/docs", "/openapi.json", "/redoc")
 
-#: Bound on tracked clients; beyond it the oldest state is dropped, which can
-#: only under-throttle briefly and keeps memory bounded under address churn.
+
+def _health_paths() -> frozenset[str]:
+    """Every path the health routers serve, versioned and unprefixed.
+
+    Read from the routers rather than written here. A literal list is a second
+    declaration of where health is served, and the versioned resource was
+    missing from it for as long as it has existed: `/api/v1/health` returns a
+    constant -- the same three lines as the probe beside it -- and billed the
+    `analysis` bucket, the budget that protects the expensive queries. The web
+    application calls it on every page load, so a tight budget made the health
+    check itself the request that answered 429, which the explorer presents as
+    an unhealthy API (API-101).
+    """
+    from apps.api.routers import health
+    from apps.api.versioning import API_PREFIXES
+
+    paths = {str(route.path) for route in health.probe_router.routes}
+    paths |= {
+        f"{root}{route.path}" for route in health.router.routes for root in API_PREFIXES
+    }
+    return frozenset(paths)
+
+
+#: Never limited: the deployment probes and documentation.
+EXEMPT_PATHS: frozenset[str] = _health_paths() | frozenset(_EXEMPT_DOCUMENTATION)
+
+#: Bound on tracked clients, keeping memory bounded under address churn.
+#: Beyond it the *least recently used* bucket is dropped, and which one that
+#: is matters: an absent bucket and a full bucket are the same thing -- both
+#: grant a whole budget -- so the entry worth sacrificing is the one closest
+#: to full, and that is the one used least recently. Capacity is the
+#: per-minute rate and refill is rate/60 per second, so any bucket untouched
+#: for sixty seconds is already full and costs nothing to drop.
+#:
+#: Dropping the first *inserted* entry instead, which is what a plain
+#: insertion-ordered mapping gives, sacrificed the client that had been
+#: sending traffic longest and recreated its bucket at full capacity -- so
+#: under churn the limiter stopped limiting the one client it exists to
+#: limit, and every new address reset it again (API-104).
 _MAX_TRACKED_BUCKETS = 10_000
+
+#: The forwarding header the declared proxies set. ``X-Real-IP`` is not read:
+#: it carries one address and cannot express a chain, so a two-hop deployment
+#: would resolve to the inner hop and silently collapse every client again.
+_FORWARDED_FOR = b"x-forwarded-for"
+
+#: The identity used when there is no peer address at all (an ASGI transport
+#: that reports none). A constant rather than an empty string, so such
+#: requests share one bucket instead of colliding with a parsed address.
+_UNKNOWN_CLIENT = "unknown"
+
+
+def _parse_trusted(entries: Sequence[str]) -> tuple[ipaddress._BaseNetwork, ...]:
+    """The declared proxy networks, or a startup error naming the bad entry.
+
+    A typo must not degrade to "trust nothing": that is the current defect
+    wearing a configuration file, and it would be invisible until a client
+    complained about someone else's traffic.
+    """
+    networks = []
+    for entry in entries:
+        text_entry = str(entry).strip()
+        if not text_entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(text_entry, strict=False))
+        except ValueError as exc:
+            raise ValueError(
+                f"API_TRUSTED_PROXY_IPS entry {text_entry!r} is not an IP address "
+                f"or CIDR block: {exc}"
+            ) from exc
+    return tuple(networks)
 
 
 class _TokenBucket:
@@ -65,11 +143,13 @@ class RateLimitMiddleware:
         catalog_per_minute: int = 0,
         analysis_per_minute: int = 0,
         clock: Callable[[], float] = time.monotonic,
+        trusted_proxies: Sequence[str] = (),
     ) -> None:
         self.app = app
         self.catalog_per_minute = max(0, catalog_per_minute)
         self.analysis_per_minute = max(0, analysis_per_minute)
         self._clock = clock
+        self._trusted = _parse_trusted(trusted_proxies)
         self._buckets: dict[tuple[str, str], _TokenBucket] = {}
 
     def _classify(self, path: str) -> tuple[str, int]:
@@ -77,25 +157,73 @@ class RateLimitMiddleware:
             return "catalog", self.catalog_per_minute
         return "analysis", self.analysis_per_minute
 
+    def _is_trusted(self, address: str) -> bool:
+        if not self._trusted:
+            return False
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        return any(parsed in network for network in self._trusted)
+
+    def _forwarded_chain(self, scope: dict[str, Any]) -> list[str]:
+        """``X-Forwarded-For`` left to right: client first, nearest hop last."""
+        for name, value in scope.get("headers") or ():
+            if name.lower() == _FORWARDED_FOR:
+                decoded = value.decode("latin-1", "replace")
+                return [entry.strip() for entry in decoded.split(",") if entry.strip()]
+        return []
+
     def _client_of(self, scope: dict[str, Any]) -> str:
+        """The address to bill this request to.
+
+        The peer, unless the peer is a declared proxy -- then the right-most
+        forwarded entry that is not itself declared, which is the address that
+        entered the trusted chain. Anything unresolvable falls back to the
+        peer rather than inventing an identity: an invented one is a free
+        bucket.
+        """
         client = scope.get("client")
-        return client[0] if client else "unknown"
+        peer = client[0] if client else ""
+        if not peer:
+            return _UNKNOWN_CLIENT
+        if not self._is_trusted(peer):
+            return peer
+        for candidate in reversed(self._forwarded_chain(scope)):
+            if self._is_trusted(candidate):
+                continue
+            try:
+                ipaddress.ip_address(candidate)
+            except ValueError:
+                # A hop wrote something that is not an address. Trusting it
+                # would key a bucket on attacker-chosen text.
+                return peer
+            return candidate
+        return peer
 
     def _take_token(self, bucket_key: tuple[str, str], per_minute: int) -> float:
         """Consume one token; returns 0.0 when granted, else seconds to wait."""
         now = self._clock()
         capacity = float(per_minute)
         refill_per_second = per_minute / 60.0
-        bucket = self._buckets.get(bucket_key)
+        bucket = self._buckets.pop(bucket_key, None)
         if bucket is None:
             if len(self._buckets) >= _MAX_TRACKED_BUCKETS:
+                # The head of an insertion-ordered mapping whose entries are
+                # re-inserted on use is the least recently used one, reached
+                # in one step. Finding it by comparing every entry's
+                # `updated_at` would make address churn -- the thing this
+                # bound exists to survive -- a scan of ten thousand entries
+                # per request.
                 self._buckets.pop(next(iter(self._buckets)))
             bucket = _TokenBucket(capacity, now)
-            self._buckets[bucket_key] = bucket
         else:
             elapsed = max(0.0, now - bucket.updated_at)
             bucket.tokens = min(capacity, bucket.tokens + elapsed * refill_per_second)
             bucket.updated_at = now
+        # Re-inserted whether it is new or not, so use -- not arrival --
+        # decides what the bound sacrifices.
+        self._buckets[bucket_key] = bucket
         if bucket.tokens >= 1.0:
             bucket.tokens -= 1.0
             return 0.0
@@ -108,7 +236,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         path = str(scope.get("path", ""))
-        if path in _EXEMPT_PATHS:
+        if path in EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
         cost_class, per_minute = self._classify(path)

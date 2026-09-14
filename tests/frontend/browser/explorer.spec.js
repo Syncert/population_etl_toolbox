@@ -1,4 +1,5 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
+import { servedParameters } from "../support/servedContract.js";
 
 // Covers: WEB-004, WEB-005, WEB-006, WEB-010, WEB-013, WEB-014, WEB-016,
 // WEB-017, WEB-018, WEB-029 —
@@ -47,7 +48,10 @@ const pepMetric = {
   metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
   metric_display_name: "Resident population estimate",
   source_code: "CENSUS_PEP",
-  valid_geo_grains: ["STATE", "COUNTY"],
+  // Census PEP publishes places as well as states and counties, which is why
+  // the served geography rows carry `place_fips`/`place_name` at all, and why
+  // the explorer's grain selector needed all five words (WEB-038).
+  valid_geo_grains: ["STATE", "COUNTY", "PLACE"],
   valid_time_grains: ["ANNUAL"],
 };
 
@@ -82,36 +86,34 @@ const cdcMetric = {
   valid_time_grains: ["ANNUAL"],
 };
 
+// FBI UCR publishes agency-level facts and no route segment of its own, so
+// it is reachable only through the neutral resource and its measures declare
+// the AGENCY grain. It is the case the explorer's three-word grain
+// vocabulary could not express (WEB-038).
+const fbiMetric = {
+  metric_code: "FBI_UCR:summarized:VIOLENT_CRIME",
+  metric_display_name: "Violent crime offences",
+  source_code: "FBI_UCR",
+  units: "offences",
+  valid_geo_grains: ["AGENCY"],
+  valid_time_grains: ["MONTHLY"],
+  freshness_state: "current",
+};
+
 // Shaped like the served CapabilityListResponse. The explorer derives both
 // its source tabs and how it reaches each source from these declarations:
 // a source-scoped latest/timeseries pair, or the neutral /observations
 // resource for a dispatch-shaped source.
 const neutralRoutes = [
+  // Read from the reviewed snapshot rather than copied: a list that claims
+  // to be the served one and is not models a weaker API than the one that
+  // ships, and the client then goes untested for the parameter it is
+  // missing (WEB-043).
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
   {
-    path: "/api/v1/observations",
-    // The served parameter list (tests/fixtures/api/openapi_contract.json):
-    // `scope` and `release` are what make the as-released surface reachable.
-    parameters: [
-      "adjustment_status",
-      "county_fips",
-      "domain_desc",
-      "domaincat_desc",
-      "geo_id",
-      "geo_level",
-      "limit",
-      "metric_code",
-      "offset",
-      "release",
-      "scope",
-      "state_fips",
-      "stratum_id",
-      "subject_code",
-      "subject_type",
-      "year_from",
-      "year_to",
-    ],
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const capabilityRoutes = (segment) => [
@@ -185,6 +187,27 @@ const capabilities = {
         "year_from",
         "year_to",
       ],
+      // The declared set `/catalog/capabilities` answers: a different and
+      // much longer list than the filterable one, which is the whole of
+      // WEB-061. `footnote_text` is how CDC qualifies an estimate.
+      observation_dimensions: [
+        "adjustment_status",
+        "estimate_method",
+        "footnote_code",
+        "footnote_text",
+        "population_basis",
+        "stratum_id",
+      ],
+      observation_routes: neutralRoutes,
+    },
+    {
+      source_code: "FBI_UCR",
+      display_name: "FBI Uniform Crime Reporting",
+      // No route segment: its observation surface is the neutral resource.
+      route_segment: null,
+      served_by_neutral_routes: true,
+      datasets: ["summarized"],
+      observation_filters: ["geo_id", "geo_level", "subject_code", "subject_type"],
       observation_routes: neutralRoutes,
     },
   ],
@@ -203,7 +226,25 @@ const cdcRow = (stratumId, value, extra = {}) => ({
   unit: "percent",
   period_start: "2021-01-01",
   period_end: "2022-12-31",
-  dimensions: { stratum_id: stratumId, adjustment_status: "age-adjusted" },
+  // The confidence bounds CDC's dispatch entry declares. A fixture without
+  // them models a weaker contract than the one that ships, and the client
+  // then goes untested for the fields it is missing (WEB-043, WEB-053).
+  uncertainty:
+    value === null
+      ? { confidence_lower: null, confidence_upper: null }
+      : { confidence_lower: "30.9", confidence_upper: "33.9" },
+  // The dimensions CDC's dispatch entry declares, not only the two the
+  // route happens to filter on. A fixture carrying the filterable subset
+  // models a weaker contract than the one that ships, and the client then
+  // goes untested for the fields it is missing (WEB-043, WEB-061).
+  dimensions: {
+    stratum_id: stratumId,
+    adjustment_status: "age-adjusted",
+    estimate_method: "model-based",
+    footnote_code: "1",
+    footnote_text: "Estimates are model-based",
+    population_basis: "adults",
+  },
   ...extra,
 });
 
@@ -258,12 +299,33 @@ const acsReleasedRow = (release, value) => ({
 
 async function installRoutes(
   page,
-  { failLatest = false, neutralRequests = [], releaseRequests = [] } = {},
+  {
+    failLatest = false,
+    neutralRequests = [],
+    releaseRequests = [],
+    truncateReleases = false,
+    settledHistory = false,
+  } = {},
 ) {
   let tileRequests = 0;
   await page.route("**/api/v1/observations/releases?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     releaseRequests.push(Object.fromEntries(params));
+    if (truncateReleases) {
+      // More published releases than the client's page bound can read: one
+      // per page against a total no number of pages will meet.
+      const offset = Number(params.get("offset") || 0);
+      return route.fulfill({
+        json: {
+          metric_code: params.get("metric_code"),
+          source_code: "CENSUS_ACS",
+          total: 99999,
+          limit: Number(params.get("limit") || 100),
+          offset,
+          items: [{ release: `r${offset}`, as_of: "2024-01-01", observation_count: 1 }],
+        },
+      });
+    }
     const items = params.get("metric_code")?.startsWith("CENSUS_ACS:") ? acsReleases : [];
     return route.fulfill({
       json: {
@@ -322,6 +384,37 @@ async function installRoutes(
         headers: { "x-cache": "MISS" },
       });
 
+    if (metric.startsWith("FBI_UCR:")) {
+      // Agency rows: a grain the tile boundary publishes no geometry for, so
+      // the map declines and the table answers.
+      const agencyRow = {
+        metric_code: metric,
+        source_code: "FBI_UCR",
+        source: "FBI_UCR",
+        geo_id: "agency:WI0130000",
+        geo_level: "AGENCY",
+        value: "412",
+        value_status: "valid",
+        unit: "offences",
+        period_start: "2023-01-01",
+        period_end: "2023-12-31",
+        // The participation basis the neutral envelope publishes for this
+        // source, and the reason it is served through that envelope at all
+        // (WEB-051). A fixture without it models a weaker contract than the
+        // one that ships, and the client then goes untested for the field it
+        // is missing (WEB-043).
+        coverage: {
+          population: "269840",
+          participated_population: "167000",
+          coverage_percent: "61.9",
+          coverage_basis: "reported months",
+          participation_status: "partial",
+          population_denominator: "agency service population",
+        },
+      };
+      return answer([agencyRow], "FBI_UCR");
+    }
+
     if (metric.startsWith("CENSUS_PEP:")) {
       const pepRow = {
         ...county,
@@ -358,6 +451,24 @@ async function installRoutes(
       if (failLatest) {
         return route.fulfill({ status: 503, json: { detail: "fallback unavailable" } });
       }
+      if (settledHistory && geoId && params.get("scope") === "as_released") {
+        // The resource's own reduction: one row per period, already ranked
+        // by the source's declared release order (API-081). The client must
+        // not reduce it again.
+        return answer(
+          [
+            { ...county, metric_code: metric, observation_date: "2022-01-01", period: "2022", value: "555000", release: "2024" },
+            { ...county, metric_code: metric, observation_date: "2023-01-01", period: "2023", value: "561504", release: "2024" },
+          ],
+          "CENSUS_ACS",
+        );
+      }
+      if (settledHistory && geoId) {
+        // A latest read over one geography: ACS serves only its newest
+        // vintage, so this is the single point that sends the client to the
+        // as-released surface.
+        return answer([{ ...county, metric_code: metric }], "CENSUS_ACS");
+      }
       if (geoId) {
         return answer(
           [
@@ -388,6 +499,7 @@ async function installRoutes(
       CENSUS_PEP: [pepMetric],
       CDC: [cdcMetric],
       BLS: [blsNationalMetric, blsMeasureMetric],
+      FBI_UCR: [fbiMetric],
     };
     const items = bySource[sourceCode] || metrics;
     return route.fulfill({
@@ -396,10 +508,19 @@ async function installRoutes(
     });
   });
   await page.route("**/api/v1/catalog/geographies?*", (route) => {
+    // Answers per grain, as the projection does. Every grain used to fall to
+    // the county row, which is what let the picker offer one grain's
+    // geographies for another (WEB-064). `gold_glossary.dim_geo_latest`
+    // carries us/state/county/place and no agency identity, so AGENCY is
+    // empty here for the same reason it is empty there.
     const level = new URL(route.request().url()).searchParams.get("geo_level");
-    const items = level === "STATE"
-      ? [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }]
-      : [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }];
+    const byGrain = {
+      STATE: [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin", latitude: 44.5, longitude: -89.5 }],
+      COUNTY: [{ geo_id: county.geo_id, geo_level: "COUNTY", state_fips: "55", county_fips: "025", state_name: "Wisconsin", county_name: "Dane County", latitude: 43.0667, longitude: -89.4 }],
+      PLACE: [{ geo_id: "state:55|place:48000", geo_level: "PLACE", state_fips: "55", state_name: "Wisconsin", place_fips: "48000", place_name: "Madison city", latitude: 43.07, longitude: -89.4 }],
+      AGENCY: [],
+    };
+    const items = byGrain[level] || [];
     return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
   });
   await page.route("**/api/v1/census/observations/latest?*", (route) => {
@@ -447,7 +568,23 @@ async function installRoutes(
       bin_count: 1,
       min_value: 561504,
       max_value: 561504,
-      items: [{ bin_index: 1, count: 1 }],
+      // The period the served answer publishes for its bins. A fixture
+      // without it models an API that does not say which period painted the
+      // map (WEB-043, WEB-054).
+      period: "2023-01-01",
+      periods_differ: false,
+      // What the served answer says its bins could not carry (WEB-055). The
+      // ACS fixture's source publishes a margin of error, so the API names
+      // it; a fixture without the field models an analysis that never says.
+      caveats: [
+        "source 'CENSUS_ACS' publishes margin_of_error, margin_of_error_pct; "
+        + "an aligned analysis carries none of it, so read the published "
+        + "uncertainty on /observations before treating a derived value as "
+        + "exact",
+      ],
+      // Each bin carries its own bounds, as the API publishes them
+      // (WEB-057).
+      items: [{ bin_index: 1, lower_bound: 561504, upper_bound: 561504, count: 1 }],
     },
   }));
   await page.route("**/tiles/catalog", (route) =>
@@ -540,7 +677,7 @@ test("source tabs derive from capability discovery and switch the explored sourc
   // Every source whose declarations carry an access shape becomes a tab —
   // the source-scoped pair or the neutral /observations resource — and the
   // tab records which shape reaches it.
-  await expect(dashboard).toHaveAttribute("data-source-count", "5");
+  await expect(dashboard).toHaveAttribute("data-source-count", "6");
   await expect(page.getByTestId("source-tab-census")).toHaveAttribute("aria-selected", "true");
   // Census declares its own route pair as well, and is still reached through
   // the neutral resource: the pair reads the legacy union views, which key
@@ -595,7 +732,7 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   await page.goto("/explore");
 
   const dashboard = page.getByTestId("dashboard");
-  await expect(dashboard).toHaveAttribute("data-source-count", "5");
+  await expect(dashboard).toHaveAttribute("data-source-count", "6");
 
   await page.getByTestId("source-tab-cdc").click();
   await expect(dashboard).toHaveAttribute("data-access-shape", "neutral");
@@ -632,6 +769,76 @@ test("a dispatch-shaped source is explored through the neutral resource", async 
   await expect(dashboard).toHaveAttribute("data-observation-count", "1");
   await expect(dashboard).toHaveAttribute("data-stratified", "false");
   expect(neutralRequests.at(-1).stratum_id).toBe("overall");
+});
+
+test("a saved stratified view records the stratum it was read for", async ({ page }) => {
+  // Covers: WEB-081 — the explorer's account save passed its dimension
+  // selection into the document; the browser save, which is the store the
+  // packet builder attaches from, recorded no dimensions at all. So a CDC
+  // measure read for one stratum attached to a packet as a query asking for
+  // every stratum the source publishes -- a different population -- while
+  // the envelope's `api_query` beside it still named the one the block was
+  // composed from. Both records now carry what the request carried, read
+  // back from the request itself.
+  const created = [];
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 11,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+  await page.goto("/explore?source=cdc");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", cdcMetric.metric_code);
+  await page.getByTestId("dimension-select-stratum_id").selectOption("overall");
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  await expect.poll(() => neutralRequests.at(-1)?.stratum_id).toBe("overall");
+
+  await page.getByTestId("save-view").click();
+  await expect.poll(() => created.length).toBe(1);
+  expect(created[0].document.filters.stratum_id).toBe("overall");
+
+  // Signed out, the same view is saved in the browser, and that is the store
+  // the packet builder composes a block's query from.
+  const browserSave = await page.context().newPage();
+  await installRoutes(browserSave);
+  await browserSave.goto("/explore?source=cdc");
+  await browserSave.getByTestId("dimension-select-stratum_id").selectOption("overall");
+  await expect(browserSave.getByTestId("dashboard")).toHaveAttribute(
+    "data-stratified",
+    "false",
+  );
+  const save = browserSave.getByTestId("save-view");
+  await expect(save).toHaveAttribute("data-destination", "browser");
+  await save.click();
+  await expect(browserSave.getByTestId("save-toast")).toHaveAttribute(
+    "data-destination",
+    "browser",
+  );
+  const stored = await browserSave.evaluate(() =>
+    JSON.parse(
+      window.localStorage.getItem("economic-data-studio:saved-charts:v1") || "[]",
+    ),
+  );
+  expect(stored).toHaveLength(1);
+  expect(stored[0].dimensions).toEqual({ stratum_id: "overall" });
+  // And the request it recorded names the same stratum, which is the pair
+  // the API cross-checks (API-129).
+  expect(stored[0].apiQuery).toContain("stratum_id=overall");
+  await browserSave.close();
 });
 
 test("as-released exploration pins a published release and reproduces it", async ({ page }) => {
@@ -991,4 +1198,593 @@ test("the view level offers only the grains the measure declares, and says why",
   // No request is ever sent for a grain the measure does not declare.
   const requestedLevels = observationRequests.map((entry) => entry.geo_level).filter(Boolean);
   expect(requestedLevels).not.toContain("NATIONAL");
+});
+
+test("a shared link asks for a state, and the view saves only what it sent", async ({
+  page,
+}) => {
+  // Covers: WEB-066, WEB-075 — WEB-066 dropped a link's state on a source
+  // that declares no `state_fips`, for three reasons. Two were the disabled
+  // control itself: a state the reader could not see or clear, and a map
+  // narrowed while the rows stayed national with nothing saying so. WEB-075
+  // fixed both — the control is usable because a state narrows the map and
+  // the geography picker on every source — so the link is honoured again.
+  // The third reason stands, and this asserts it: the *saved document*
+  // records the state only where the request carried it, so a save is never
+  // a 422 over a filter the source does not declare.
+  const created = [];
+  await installRoutes(page);
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 7,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+  await page.goto("/explore?source=pep&state=55");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-source-key", "pep");
+  await expect(dashboard).toHaveAttribute("data-selected-state", "55");
+  await expect(page.getByTestId("state-select")).toBeEnabled();
+  await expect(page).toHaveURL(/state=55/);
+  // And the rows are national, which the observations line says.
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "these rows are national",
+  );
+
+  await page.getByTestId("save-view").click();
+  await expect(page.getByTestId("save-toast")).toHaveAttribute(
+    "data-destination",
+    "account",
+  );
+  expect(created).toHaveLength(1);
+  // Census PEP's serving relation carries no fips columns, so the document
+  // carries no `state_fips` either: a stored filter its own route would
+  // refuse is a view that cannot be reopened (API-117).
+  expect(created[0].document.filters.state_fips).toBeUndefined();
+  expect(created[0].document.filters.geo_level).toBe("COUNTY");
+
+  // A source that does declare the filter stores it.
+  await page.goto("/explore?source=census&state=55");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute(
+    "data-selected-state",
+    "55",
+  );
+  await page.getByTestId("save-view").click();
+  await expect
+    .poll(() => created.length)
+    .toBe(2);
+  expect(created[1].document.filters.state_fips).toBe("55");
+});
+
+test("the geography picker offers the grain that was asked for", async ({ page }) => {
+  // Covers: WEB-064 — the grain selector publishes all five declared words
+  // (WEB-038); the picker answered two and fell through to a third. At PLACE
+  // — Census PEP's own grain, and the only grain the API publishes
+  // `place_fips`/`place_name` for — it offered *states*, labelled by their
+  // state names, as the places to choose from. Picking one sent a geo_id
+  // that cannot exist at that grain, and the control could not even hold the
+  // choice: its value was checked against a list that is empty for every
+  // grain but STATE and COUNTY.
+  await installRoutes(page);
+  await page.goto("/explore?source=pep");
+
+  const picker = page.getByTestId("county-select");
+  const level = page.getByTestId("geo-level-select");
+  await expect(level.locator('option[value="PLACE"]')).toHaveCount(1);
+
+  // Counties are chosen after a state, and places are chosen the same way:
+  // the projection carries some 32k of them and a picker is not the place to
+  // load them all.
+  await level.selectOption("COUNTY");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText(["Select a state first"]);
+
+  await level.selectOption("PLACE");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText(["Select a state first"]);
+  // The defect: none of these is a place.
+  await expect(picker.locator("option", { hasText: "Wisconsin" })).toHaveCount(0);
+  await expect(picker.locator("option", { hasText: "Dane County" })).toHaveCount(0);
+});
+
+test("a state narrows what it can narrow, and says what it did not", async ({
+  page,
+}) => {
+  // Covers: WEB-075 — the state control was disabled unless the source
+  // declared `state_fips` as an observation filter. Census PEP declares none:
+  // `gold_pep.population_estimate_latest`, the relation the neutral route
+  // reads, carries `geo_id` and `geo_type` and no fips columns. So on the one
+  // source that publishes places, the county and place pickers said "select a
+  // state first" and could never be given one — a PEP county's history was
+  // reachable only by clicking the map, and a place not at all. A state
+  // narrows the map and the picker on every source; only the rows depend on
+  // the filter, and now the observations line says which is which.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto("/explore?source=pep");
+
+  const state = page.getByTestId("state-select");
+  await expect(state).toBeEnabled();
+  await state.selectOption("55");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-state", "55");
+  // The rows are national, and the screen says so rather than describing
+  // them as this selection's.
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "declares no state filter",
+  );
+  await expect(page.getByTestId("observations-status")).toContainText(
+    "these rows are national",
+  );
+  const stateFilters = neutralRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("CENSUS_PEP:"))
+    .map((entry) => entry.state_fips)
+    .filter(Boolean);
+  expect(stateFilters).toEqual([]);
+
+  // And the picker has a state now, so a county's history is reachable
+  // without the map.
+  const picker = page.getByTestId("county-select");
+  await expect(picker).toBeEnabled();
+  await picker.selectOption("state:55|county:025");
+  await expect(dashboard).toHaveAttribute(
+    "data-selected-geo-id",
+    "state:55|county:025",
+  );
+  await expect
+    .poll(() =>
+      neutralRequests.filter(
+        (entry) => entry.geo_id === "state:55|county:025",
+      ).length,
+    )
+    .toBeGreaterThan(0);
+});
+
+test("a grain the projection publishes nothing for says so", async ({ page }) => {
+  // Covers: WEB-064 — `gold_glossary.dim_geo_latest` takes its grains from
+  // `dim_geo_current.geo_level` (us/state/county/place), so it carries no
+  // agency identity. Offering states there is not a smaller version of the
+  // right answer; it is a different grain's list under this grain's label.
+  await installRoutes(page);
+  await page.goto("/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME");
+
+  const picker = page.getByTestId("county-select");
+  await expect(page.getByTestId("geo-level-select")).toHaveValue("AGENCY");
+  await expect(picker).toBeDisabled();
+  await expect(picker.locator("option")).toHaveText([
+    "No agencies are published to choose from",
+  ]);
+  await expect(picker.locator("option", { hasText: "Wisconsin" })).toHaveCount(0);
+});
+
+test("a measure published at an agency grain is offered that grain, and asked for it", async ({
+  page,
+}) => {
+  // Covers: WEB-038 — the explorer knew three of the five published grain
+  // words. FBI UCR publishes agency-level facts, so every one of its
+  // measures fell past each branch, took the COUNTY fallback it does not
+  // publish, offered no levels at all, and reported "0 COUNTY records
+  // published for this selection" — the measure reading as unpublished
+  // because the client could not name its grain.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests });
+  await page.goto("/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "FBI_UCR:summarized:VIOLENT_CRIME");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+
+  // The declared grain is the one offered, and the only one.
+  const level = page.getByTestId("geo-level-select");
+  await expect(level.locator("option")).toHaveCount(1);
+  await expect(level.locator('option[value="AGENCY"]')).toHaveCount(1);
+
+  // And the one asked for. Nothing was ever requested at COUNTY.
+  const requested = observationRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("FBI_UCR:"))
+    .map((entry) => entry.geo_level)
+    .filter(Boolean);
+  expect(requested.length).toBeGreaterThan(0);
+  expect(new Set(requested)).toEqual(new Set(["AGENCY"]));
+
+  // The map still declines, with the published reason it already gives: this
+  // plan did not make agencies mappable.
+  await expect(page.getByRole("tab", { name: "map" })).toHaveCount(0);
+});
+
+test("a link naming a measure and its source opens on that measure", async ({ page }) => {
+  // Covers: WEB-072 — a link into the explorer names the source that
+  // publishes its measure, as the metric row publishes it (`source_code`).
+  // The catalog, quality, profile and home links carried the metric alone;
+  // `/explore` mounts Census ACS, the requested code was absent from that
+  // catalog, and the page silently selected `pickPreferredMetric` instead.
+  // `BLS` is the glossary source code and `bls` the route segment the tabs
+  // use: both are published identities, so both resolve.
+  await installRoutes(page);
+  await page.goto("/explore?source=BLS&metric=BLS%3ALAU%3AUNEMP_RATE");
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-selected-metric", "BLS:LAU:UNEMP_RATE");
+  await expect(page.getByTestId("requested-metric-note")).toHaveCount(0);
+});
+
+test("a link naming a measure this source does not publish says so", async ({ page }) => {
+  // Covers: WEB-072 — the substitution, said out loud. A link that reaches
+  // the explorer without a source still mounts Census ACS, and the measure it
+  // names is published by BLS. Selecting Census ACS total population instead
+  // would answer a question the reader did not ask, with no statement that
+  // anything had changed.
+  await installRoutes(page);
+  await page.goto("/explore?metric=BLS%3ALAU%3AUNEMP_RATE");
+
+  const note = page.getByTestId("requested-metric-note");
+  await expect(note).toContainText("BLS:LAU:UNEMP_RATE");
+  await expect(note).toContainText("Nothing was substituted");
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-selected-metric", "");
+});
+
+test("a metric with more releases than the page bound says so, and pages toward them", async ({
+  page,
+}) => {
+  // Covers: WEB-045 — the release control is a picker: selecting a release is
+  // the only way this screen sends `scope=as_released&release=…` or builds
+  // the link that reproduces it. Asking once for two hundred left every
+  // release past the two hundredth unreachable and unshareable, and reported
+  // that in green.
+  const releaseRequests = [];
+  await installRoutes(page, { releaseRequests, truncateReleases: true });
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  const status = page.getByTestId("releases-status");
+  await expect(status).toContainText("the page bound cut the answer short");
+  await expect(status).toContainText("of 99999 published releases");
+  // A partial listing is never green.
+  await expect(status).toHaveClass(/pill bad/);
+
+  // It paged rather than asking once, and each page asked for the next rows.
+  const offsets = releaseRequests.map((entry) => Number(entry.offset));
+  expect(offsets.length).toBeGreaterThan(1);
+  expect(offsets[0]).toBe(0);
+  expect(offsets[1]).toBe(1);
+});
+
+test("a geography's history is the settled one the resource answers", async ({ page }) => {
+  // Covers: WEB-046 — the client used to read every release and decide which
+  // was newer from the identity's spelling, a rule the warehouse publishes
+  // and every dispatch entry declares. It now asks for the reduction.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests, settledHistory: true });
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001&geo=state%3A55%7Ccounty%3A025");
+
+  await expect(page.getByTestId("history-status")).toContainText("historical observation");
+
+  const settled = observationRequests.filter(
+    (entry) => entry.newest_release_per_period === "true",
+  );
+  expect(settled.length).toBeGreaterThan(0);
+  for (const request of settled) {
+    expect(request.scope).toBe("as_released");
+    expect(request.geo_id).toBe("state:55|county:025");
+    // A pinned release contradicts the reduction; the resource refuses the
+    // pair and this client never sends it.
+    expect(request.release).toBeUndefined();
+  }
+});
+
+test("a copied link reopens at the grain it names", async ({ page }) => {
+  // Covers: WEB-073 — WEB-038 widened the grain vocabulary, the control and
+  // the serializer to all five published words, and left the apply step at
+  // two: `NATIONAL`, `PLACE` and `AGENCY` were parsed, validated, and then
+  // discarded, so the selection fell to COUNTY. Census PEP publishes places,
+  // which is why the projection carries `place_fips` at all, and a shared
+  // view of one reopened as a county map of the same measure.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto(
+    "/explore?source=CENSUS_PEP&metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE&geo_level=PLACE",
+  );
+
+  await expect(page.getByTestId("geo-level-select")).toHaveValue("PLACE");
+  // The request the explorer issues, not just the control it draws.
+  await expect
+    .poll(() =>
+      neutralRequests.filter(
+        (entry) =>
+          (entry.metric_code || "").startsWith("CENSUS_PEP:") &&
+          entry.geo_level === "PLACE",
+      ).length,
+    )
+    .toBeGreaterThan(0);
+  const grains = neutralRequests
+    .filter((entry) => (entry.metric_code || "").startsWith("CENSUS_PEP:"))
+    .map((entry) => entry.geo_level)
+    .filter(Boolean);
+  expect(new Set(grains)).toEqual(new Set(["PLACE"]));
+});
+
+test("a copied link reopens the dimension narrowing it names", async ({ page }) => {
+  // Covers: WEB-073 — `ExplorerState` had no dimension field and the
+  // serializer omitted `dimensionSelections`, so a CDC view narrowed to one
+  // stratum — the narrowing this screen demands before it will colour a map —
+  // reopened stratified with a blank map. The saved-view document carried the
+  // narrowing all along, so the two records of one view disagreed.
+  const neutralRequests = [];
+  await installRoutes(page, { neutralRequests });
+  await page.goto(
+    "/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY&stratum_id=overall",
+  );
+
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  // Narrowed, so the map can colour: the state the link was copied from.
+  await expect(dashboard).toHaveAttribute("data-stratified", "false");
+  await expect(page.getByTestId("dimension-select-stratum_id")).toHaveValue("overall");
+
+  const cdcRequests = neutralRequests.filter((entry) =>
+    (entry.metric_code || "").startsWith("CDC:"),
+  );
+  expect(cdcRequests.length).toBeGreaterThan(0);
+  expect(cdcRequests.every((entry) => entry.stratum_id === "overall")).toBe(true);
+
+  // And the link the screen keeps is the one that was opened, so copying it
+  // again reproduces the same view.
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("stratum_id"))
+    .toBe("overall");
+});
+
+test("a saved map view records the reduction the map asked for", async ({ page }) => {
+  // Covers: WEB-047 — the document a saved view stores is the request the
+  // view issued. It recorded no reduction, so a map of a source whose latest
+  // publication is a series reopened as the whole publication: every
+  // estimated year of the vintage, joined to one polygon, coloured by
+  // whichever row arrived last. The claim is read back from the issued
+  // request rather than asserted, so a source that does not declare
+  // `newest_per_geography` cannot be saved as though it had been reduced.
+  const observationRequests = [];
+  await installRoutes(page, { neutralRequests: observationRequests });
+
+  const created = [];
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    const body = JSON.parse(route.request().postData() || "{}");
+    created.push(body);
+    return route.fulfill({
+      json: {
+        configuration_id: 11,
+        name: body.name,
+        version: 1,
+        document: body.document,
+        validation: { valid: true, reasons: [] },
+      },
+    });
+  });
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("economic-data-studio:api-token", "operator-token");
+  });
+
+  // The link names the source that publishes the measure, as every link the
+  // app builds now does. Without it this navigation landed on the mounted
+  // Census ACS catalog, which does not list the PEP code, and the page
+  // substituted an ACS metric -- so this spec graded the saved document of a
+  // view the reader never asked for (WEB-072).
+  await page.goto(
+    "/explore?source=CENSUS_PEP&metric=CENSUS_PEP%3Apep_cty_alldata%3APOPESTIMATE",
+  );
+  const dashboard = page.getByTestId("dashboard");
+  await expect(dashboard).toHaveAttribute(
+    "data-selected-metric",
+    "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  );
+  await expect(dashboard).toHaveAttribute("data-observation-count", "1");
+  await page.getByTestId("save-view").click();
+  await expect(page.getByTestId("save-toast")).toHaveAttribute("data-destination", "account");
+
+  expect(created).toHaveLength(1);
+  const document = created[0].document;
+  // The map's own cross-geography request, which is what the document claims
+  // to reproduce.
+  const mapRequests = observationRequests.filter((entry) => entry.geo_level && !entry.geo_id);
+  expect(mapRequests.length).toBeGreaterThan(0);
+  const askedForTheReduction = mapRequests.every(
+    (entry) => entry.newest_per_geography === "true",
+  );
+  expect(document.newest_per_geography).toBe(askedForTheReduction);
+  expect(document.newest_per_geography).toBe(true);
+  // Each reduction belongs to one scope; the document stores a pairing the
+  // live route would serve, never one it refuses.
+  expect(document.scope).toBe("latest");
+  expect(document.newest_release_per_period).toBe(false);
+  expect(document.release).toBeNull();
+});
+
+test("a published participation basis is shown beside the value it qualifies", async ({
+  page,
+}) => {
+  // Covers: WEB-051 — FBI UCR is served through the neutral envelope because
+  // its agency-level facts cannot be read without their participation basis.
+  // The client mapped `uncertainty` onto the row and left `coverage` behind,
+  // so an agency covering 61.9% of its population showed an offence count
+  // that read as the whole jurisdiction.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  const coverage = page.getByTestId("coverage-agency:WI0130000");
+  await expect(coverage).toContainText("partial");
+  await expect(coverage).toContainText("61.9% covered");
+});
+
+test("a source that publishes no participation grows no column for it", async ({ page }) => {
+  // Covers: WEB-051 — read from the loaded rows, not from a list of sources.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  // As above: the zero means nothing until the table panel is on screen.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  await expect(page.getByRole("columnheader", { name: "Participation" })).toHaveCount(0);
+});
+
+test("a published uncertainty is shown beside the value it qualifies", async ({ page }) => {
+  // Covers: WEB-053 — the neutral envelope's other qualifier object. The
+  // client lifted `margin_of_error` out of `uncertainty` and left the rest
+  // inside it, so CDC's published confidence bounds reached neither the table
+  // nor the export and a prevalence estimate read as a point estimate.
+  await installRoutes(page);
+  await page.goto("/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY");
+
+  const uncertainty = page.getByTestId("uncertainty-state:55|county:025").first();
+  await expect(uncertainty).toContainText("confidence lower 30.9");
+  await expect(uncertainty).toContainText("confidence upper 33.9");
+});
+
+test("every dimension the source declares is shown, not just the filterable ones", async ({
+  page,
+}) => {
+  // Covers: WEB-061 — the table's dimension columns came from the source's
+  // *filterable* names, so four of seven sources showed no dimension at all
+  // and CDC showed two of fourteen. `footnote_text` is how CDC qualifies an
+  // estimate, and it reached neither the table nor the export.
+  await installRoutes(page);
+  await page.goto("/explore?source=CDC&metric=CDC%3Acdc_places_county%3AOBESITY");
+  // The table panel is `display: none` until its tab is selected, so a
+  // column assertion against the default view sees nothing at all.
+  await page.getByRole("tab", { name: "table" }).click();
+
+  // A control assertion first: a column that certainly exists. Without it a
+  // `toHaveCount(0)` below would pass by seeing nothing rather than by the
+  // column being absent.
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  // The filterable ones keep their own columns: they are what the reader is
+  // filtering on.
+  await expect(page.getByRole("columnheader", { name: "stratum id" })).toHaveCount(1);
+  // The rest of the declared set rides in one cell, as the seven uncertainty
+  // fields do rather than seven columns.
+  const dimensions = page.getByTestId("dimensions-state:55|county:025").first();
+  await expect(dimensions).toContainText("footnote text Estimates are model-based");
+  await expect(dimensions).toContainText("estimate method model-based");
+  await expect(dimensions).toContainText("population basis adults");
+});
+
+test("a source declaring no dimensions grows no cell for them", async ({ page }) => {
+  // Covers: WEB-061 — read from the declaration, so a source that declares
+  // none grows nothing, exactly as an absent uncertainty grows no column.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  await expect(page.getByRole("columnheader", { name: "Dimensions" })).toHaveCount(0);
+});
+
+test("a source that publishes no uncertainty grows no column for it", async ({ page }) => {
+  // Covers: WEB-053 — read from the loaded rows, not from a list of sources.
+  await installRoutes(page);
+  await page.goto(
+    "/explore?source=FBI_UCR&metric=FBI_UCR%3Asummarized%3AVIOLENT_CRIME",
+  );
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  // The table panel is `display: none` until its tab is selected: this
+  // assertion used to run against the default view and pass by seeing no
+  // columns at all, so it could not have failed (WEB-043's lesson, applied
+  // to an assertion rather than a fixture). The control assertion is what
+  // makes the zero mean something.
+  await page.getByRole("tab", { name: "table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(1);
+  await expect(page.getByRole("columnheader", { name: "Uncertainty" })).toHaveCount(0);
+});
+
+test("the legend says which period the API's bins describe", async ({ page }) => {
+  // Covers: WEB-054 — the bins build the colour scale the choropleth is
+  // painted with, and `/distribution/bins` reduces each geography to its own
+  // newest period, so the answer's own statement of which period that is
+  // travels with the count.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("distribution-status")).toContainText("for 2023-01-01");
+});
+
+test("a legend built from mixed periods says so", async ({ page }) => {
+  // Covers: WEB-054 — a scale over a mix of periods is a legitimate map of
+  // each geography's newest value and a misleading one to read as a
+  // snapshot. The client cannot work it out: the bins are computed over every
+  // geography the metric publishes while it holds one page of rows.
+  await installRoutes(page);
+  await page.route("**/api/v1/distribution/bins?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 2,
+        bin_count: 1,
+        min_value: 1,
+        max_value: 561504,
+        period: null,
+        periods_differ: true,
+        items: [{ bin_index: 1, lower_bound: 1, upper_bound: 561504, count: 2 }],
+      },
+    }),
+  );
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  const status = page.getByTestId("distribution-status");
+  await expect(status).toContainText("bins mix periods");
+  // The pill's caution treatment, which is what "not proven good" looks like
+  // in this UI: a stale or partial value can never present as current.
+  await expect(status).toHaveClass(/warn/);
+});
+
+test("the map says what its bins could not carry", async ({ page }) => {
+  // Covers: WEB-055 — the bins draw boundaries to the value, and each ACS
+  // value carries a margin of error that can straddle them. The API names
+  // what it dropped; this is the surface that shows it beside the map those
+  // bins paint.
+  await installRoutes(page);
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("distribution-caveats")).toContainText(
+    "margin_of_error",
+  );
+});
+
+test("a distribution with nothing to caveat shows no note", async ({ page }) => {
+  // Covers: WEB-055 — published strings rendered as published, so an answer
+  // carrying none grows no empty paragraph.
+  await installRoutes(page);
+  await page.route("**/api/v1/distribution/bins?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        bin_count: 1,
+        min_value: 1,
+        max_value: 1,
+        period: "2023-01-01",
+        periods_differ: false,
+        caveats: [],
+        items: [{ bin_index: 1, lower_bound: 1, upper_bound: 1, count: 1 }],
+      },
+    }),
+  );
+  await page.goto("/explore?metric=CENSUS_ACS%3Aacs5%3AB01003_001");
+
+  await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
+  await expect(page.getByTestId("distribution-caveats")).toHaveCount(0);
 });

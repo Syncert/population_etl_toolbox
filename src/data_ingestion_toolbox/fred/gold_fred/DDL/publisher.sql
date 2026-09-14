@@ -46,17 +46,19 @@ FROM gold_fred.dim_fred_series AS series
 LEFT JOIN gold_fred.fact_fred_observation AS fact ON fact.fred_series_sk = series.fred_series_sk
 LEFT JOIN (
     -- One row per served metric with the grains its latest rows carry, in the
-    -- vocabulary the API filters on. `gold_glossary.geo_grain` is defined in
-    -- the glossary phase, after this file runs at bootstrap, so the served
-    -- relation's own upper-cased word is used; the refresh writes 'NATIONAL'
-    -- literally, so it already is that vocabulary.
+    -- vocabulary the API filters on -- through `gold_glossary.geo_grain`, the
+    -- one mapping. Migration 021 moved that function ahead of the `gold` and
+    -- `publisher` phases so this call is legal at bootstrap; before it, this
+    -- file upper-cased the served word itself, which was right for FRED and
+    -- one more copy of the vocabulary (DB-037).
     --
     -- `mv_fred_latest` rather than the fact table, because it is the relation
     -- the dispatch entry names for a `latest` read: a grain published here is
     -- one the API can answer.
     SELECT latest.metric_code,
-           ARRAY_AGG(DISTINCT UPPER(latest.geo_level)
-                     ORDER BY UPPER(latest.geo_level))::TEXT[] AS valid_geo_grains
+           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)
+                     ORDER BY gold_glossary.geo_grain(latest.geo_level))::TEXT[]
+               AS valid_geo_grains
     FROM gold_fred.mv_fred_latest AS latest
     GROUP BY latest.metric_code
 ) AS served

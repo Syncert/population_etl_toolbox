@@ -12,6 +12,9 @@ so they are declared here and configured through ``Settings``:
   cancelled server-side rather than holding a connection indefinitely.
 - ``connect_timeout`` bounds how long an unreachable database can stall a
   request before the same sanitized 503.
+- ``isolation_level`` is ``REPEATABLE READ``: every read in one request sees
+  one snapshot, so a page and its total cannot describe different sets of
+  rows (API-100).
 - ``dispose_engine`` runs in the application's shutdown hook so connections
   are returned before the process exits (graceful shutdown).
 
@@ -60,6 +63,31 @@ def _build_engine(settings: Settings):
         )
     return create_engine(
         database_url,
+        # One snapshot per request. API-084 fixed this once, for one
+        # statement: a range and its counts taken in two executions let a
+        # serving refresh commit between them and describe two different sets
+        # of rows. Every paged read has that shape -- a `COUNT(*)` and then a
+        # `SELECT … LIMIT … OFFSET …` -- and under PostgreSQL's default
+        # `READ COMMITTED` each statement takes its own snapshot, so a `total`
+        # can be counted over one set of rows and the page taken from another.
+        #
+        # What commits between them is a chunked rebuild, not a view swap.
+        # This warehouse has no materialized view: `mv_*_latest` and
+        # `rpt_*_observations` are ordinary tables, and
+        # `refresh_serving_layer_in_year_chunks` rebuilds them one calendar
+        # year at a time, committing "each report/latest pair independently"
+        # so an interrupted run can resume. A reader without a snapshot can
+        # therefore see the relation with some years rebuilt and others not --
+        # a wider window than an atomic swap would leave, which is why the
+        # isolation level is not an optimisation to reconsider when no
+        # `REFRESH MATERIALIZED VIEW` turns up in the source (DB-041).
+        #
+        # `REPEATABLE READ` takes one snapshot for the whole transaction, and
+        # this role is read-only, so it has no write conflict to lose to and
+        # nothing to serialize beyond that. The snapshot is the session's
+        # transaction and the session is closed per request, so it ends there
+        # rather than serving a warehouse that stops advancing (API-100).
+        isolation_level="REPEATABLE READ",
         pool_pre_ping=True,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,

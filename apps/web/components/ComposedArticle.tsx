@@ -22,7 +22,12 @@ import { Download, Printer } from "lucide-react";
 import StatusPill from "./StatusPill";
 import EvidenceEnvelope from "./EvidenceEnvelope";
 import { BUILDER_DRAFT_KEY } from "../lib/savedCharts";
-import { ApiError, getEvidencePacket, listEvidencePackets } from "../lib/api/client";
+import {
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_PAGE_SIZE,
+  describeLibraryLoad,
+} from "../lib/savedAnalysis";
+import { ApiError, fetchCollectionPages, getEvidencePacket } from "../lib/api/client";
 import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -63,13 +68,23 @@ export default function ComposedArticle() {
     }
     let cancelled = false;
     setAccountStatus({ state: "loading", message: "loading your packets" });
-    listEvidencePackets(token, { limit: "200" })
-      .then((payload) => {
+    fetchCollectionPages<EvidencePacketSummary>("/evidence-packets", {
+      token,
+      pageSize: LIBRARY_PAGE_SIZE,
+      maxPages: LIBRARY_PAGE_LIMIT,
+    })
+      .then((pages) => {
         if (cancelled) return;
-        setAccountPackets(payload.items);
+        setAccountPackets(pages.items);
         setAccountStatus({
-          state: "ok",
-          message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+          state: pages.complete ? "ok" : "bad",
+          message: describeLibraryLoad(
+            pages.items.length,
+            pages.total,
+            pages.complete,
+            "packet in your account",
+            "packets in your account",
+          ),
         });
       })
       .catch((error) => {
@@ -153,14 +168,16 @@ export default function ComposedArticle() {
 
   const packet = read.packet;
   const issues = packet ? packetIssues(packet) : [];
-  const staleBlocks = mergeBlockStates(packet, apiValidation).filter(
-    (state) => state.state === "stale",
-  );
+  // Computed once: the notice below names the stale blocks, and the export
+  // carries every block's verdict so the file says what this page says
+  // (WEB-058).
+  const blockStates = mergeBlockStates(packet, apiValidation);
+  const staleBlocks = blockStates.filter((state) => state.state === "stale");
   const complete = packetIsComplete(packet);
   const issueByBlock = new Map(issues.map((issue) => [issue.blockId, issue]));
 
   function exportCsv() {
-    const { headings, rows, filename } = packetExport(packet);
+    const { headings, rows, filename } = packetExport(packet, blockStates);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -173,7 +190,7 @@ export default function ComposedArticle() {
 
   const picker =
     tokenResolved && token ? (
-      <section className="status-row no-print" data-testid="article-account">
+      <section className="status-row no-print" data-testid="article-account" role="status">
         <StatusPill
           state={accountStatus.state}
           label="Account"
@@ -267,7 +284,7 @@ export default function ComposedArticle() {
           </div>
         </header>
 
-        <section className="status-row no-print">
+        <section className="status-row no-print" role="status">
           <StatusPill
             state={complete ? "ok" : "warn"}
             label="Article"

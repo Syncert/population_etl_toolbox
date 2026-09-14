@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 
 from tests.support.postgres import WAREHOUSE_DATABASE_IMAGE
 from tests.support.redis import API_CACHE_REDIS_IMAGE
@@ -180,7 +182,15 @@ def test_python_tests_reference_known_catalog_ids() -> None:
     plan = (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md").read_text(
         encoding="utf-8"
     )
-    catalog_id_pattern = r"[A-Z][A-Z0-9]*-\d{3}"
+    # A catalog id starts a word and its number is exactly three digits.
+    # Two neighbouring namespaces embed something that looks like one:
+    # a warehouse rule id (`DQ-SHARED-002` would be read as the catalog id
+    # `SHARED-002`) and a decision record (`ADR-0002` would be read as
+    # `ADR-000`), so without the boundaries a test docstring could not name
+    # the rule or the decision it is about. Neither boundary changes which
+    # register rows are recognised: they are matched at the start of a table
+    # cell, where the id is followed by a space.
+    catalog_id_pattern = r"(?<![A-Z0-9-])[A-Z][A-Z0-9]*-\d{3}(?!\d)"
     known_ids = set(re.findall(rf"^\| ({catalog_id_pattern}) \|", plan, re.MULTILINE))
     failures: list[str] = []
 
@@ -305,3 +315,168 @@ def test_no_tracked_file_carries_an_unresolved_conflict_marker() -> None:
     assert not offenders, (
         f"these tracked files carry unresolved merge conflict markers: {offenders}"
     )
+
+
+def test_the_running_tests_guide_names_the_settings_the_fixtures_read() -> None:
+    """Covers: ENV-013 — a renamed setting cannot leave the guide quietly wrong.
+
+    The database and Redis tiers are configured entirely by environment
+    variables, so the guide naming them is the whole interface a reader gets.
+    A variable renamed in `tests/support` and not in the guide leaves a page
+    of instructions that silently skips every test it claims to run.
+    """
+    guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
+        encoding="utf-8"
+    )
+    support = (REPOSITORY_ROOT / "tests/support/postgres.py").read_text(
+        encoding="utf-8"
+    )
+
+    settings = {
+        f"TEST_POSTGRES_{name.upper()}"
+        for name in ("host", "port", "user", "password", "database")
+    }
+    assert 'f"TEST_POSTGRES_{name.upper()}"' in support, (
+        "the settings are no longer derived from these five names; "
+        "update this test and the guide together"
+    )
+    missing = sorted(name for name in settings if name not in guide)
+    assert missing == [], f"RUNNING_TESTS.md does not name: {missing}"
+    assert "TEST_REDIS_URL" in guide
+
+
+def test_every_declared_pytest_marker_is_used_and_documented() -> None:
+    """Covers: ENV-016 — a marker nothing carries is a word nothing means.
+
+    `--strict-markers` catches a marker a test uses and `pyproject.toml` does
+    not declare. Nothing caught the other direction: `frontend` was declared
+    for "JavaScript unit, component, or browser contract" tests, which run
+    under vitest and Playwright, so no pytest test could ever carry it — a
+    reader selecting `-m frontend` got an empty run that looked like a passing
+    tier. `deployment` was the mirror image: declared and used, and absent
+    from the contract's own marker table.
+    """
+    declared = re.findall(
+        r'^\s*"([a-z0-9_]+):',
+        (REPOSITORY_ROOT / "pyproject.toml")
+        .read_text(encoding="utf-8")
+        .split("markers = [", 1)[1]
+        .split("]", 1)[0],
+        re.MULTILINE,
+    )
+    assert declared, "pyproject declares no pytest markers"
+
+    used: set[str] = set()
+    for path in (REPOSITORY_ROOT / "tests").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for name in declared:
+            if f"mark.{name}" in text:
+                used.add(name)
+    unused = sorted(set(declared) - used)
+    assert not unused, f"these markers are declared and carried by no test: {unused}"
+
+    table = (
+        (REPOSITORY_ROOT / "docs/reference/TESTING_CONTRACT.md")
+        .read_text(encoding="utf-8")
+        .split("| Marker | Meaning | Infrastructure permitted |", 1)[1]
+        .split("\n\n", 1)[0]
+    )
+    documented = set(re.findall(r"^\| `([a-z0-9_]+)` \|", table, re.MULTILINE))
+    assert documented == set(declared), (
+        "the contract's marker table and pyproject disagree: only in the table "
+        f"{sorted(documented - set(declared))}, only declared "
+        f"{sorted(set(declared) - documented)}"
+    )
+
+
+def test_the_guide_documents_a_path_that_needs_no_container_runtime() -> None:
+    """Covers: ENV-013 — the tier's requirements, not one way of meeting them.
+
+    The fixtures read settings and apply the warehouse DDL themselves; they
+    reach for no image, Compose file, or published port. Documenting only the
+    Compose path told every reader without a container runtime that the tier
+    could not be run, which is how a dozen plans on this branch came to record
+    it as unrunnable here.
+    """
+    guide = (REPOSITORY_ROOT / "docs/user-guides/RUNNING_TESTS.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Without a container runtime" in guide
+
+    # Every required job that runs a service-backed tier, with the directory
+    # and marker expression it runs — read from the workflows the CI evidence
+    # manifest marks required, not from one named file. The guide promises
+    # "the marker expression its CI job uses"; asserting one expression
+    # against one workflow is how the Redis block came to document a scope its
+    # job never had, and how `tests/integration/api` came to be documented
+    # under a job whose environment cannot run it (ENV-015).
+    manifest = json.loads(
+        (REPOSITORY_ROOT / "tests/support/ci_evidence_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    undocumented: list[str] = []
+    checked = 0
+    for entry in manifest["required"]:
+        workflow_path = REPOSITORY_ROOT / ".github/workflows" / entry["workflow"]
+        document = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        job = document["jobs"][entry["job"]]
+        for step in job.get("steps") or []:
+            command = " ".join(str(step.get("run") or "").split())
+            for invocation in re.finditer(
+                r"pytest\s+(?P<paths>(?:tests/[^\s]+\s+)+)-m\s+\"(?P<expression>[^\"]+)\"",
+                command,
+            ):
+                paths = invocation.group("paths").split()
+                expression = invocation.group("expression")
+                if not any(path.startswith("tests/integration") for path in paths):
+                    continue
+                checked += 1
+                stem = entry["workflow"].removesuffix(".yml")
+                if f"# {stem}" not in guide:
+                    undocumented.append(f"{stem}: the guide has no block for it")
+                    continue
+                block = guide.split(f"# {stem}", 1)[1].split("\n\n", 1)[0]
+                for path in paths:
+                    if path not in block:
+                        undocumented.append(f"{stem}: does not document {path}")
+                if expression not in block:
+                    undocumented.append(
+                        f"{stem}: documents a different marker expression than "
+                        f"{expression!r}"
+                    )
+    assert checked, "no required job runs a service-backed tier"
+    assert not undocumented, "; ".join(sorted(set(undocumented)))
+
+
+def test_every_browser_spec_inherits_the_served_request_guard() -> None:
+    """Covers: WEB-052 — the guard is inherited, not opted into.
+
+    The fixture that checks every `/api/v1` request against the reviewed
+    OpenAPI snapshot rides on the `test` object the specs import. A spec that
+    imports `test` from `@playwright/test` instead gets a plain fixture, sends
+    whatever it likes and nothing fails -- so the contract row's claim that a
+    later spec "inherits it without opting in" held only for as long as
+    everybody remembered. This is what makes it true: the import is the guard,
+    so the import is what is checked.
+    """
+    specs = sorted((REPOSITORY_ROOT / "tests/frontend/browser").glob("*.spec.js"))
+    assert specs, "no browser specs found"
+    failures: list[str] = []
+    for spec in specs:
+        source = spec.read_text(encoding="utf-8")
+        if re.search(r"""from\s+["']@playwright/test["']""", source):
+            failures.append(
+                f"{spec.name} imports from '@playwright/test'; import `test` from "
+                "'../support/servedRequests.js' so every request it sends is "
+                "checked against the served contract"
+            )
+        elif not re.search(
+            r"""from\s+["']\.\./support/servedRequests\.js["']""", source
+        ):
+            failures.append(
+                f"{spec.name} imports `test` from neither "
+                "'../support/servedRequests.js' nor '@playwright/test'; the "
+                "guard rides on that import"
+            )
+    assert not failures, "; ".join(failures)

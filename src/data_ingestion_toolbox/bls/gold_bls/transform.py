@@ -11,7 +11,10 @@ import pathlib
 from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.bls.config import CONFIG
-from data_ingestion_toolbox.utility.gold_schema import ensure_gold_schema_from_files
+from data_ingestion_toolbox.utility.gold_schema import (
+    GOLD_SCHEMA_COMPONENTS,
+    ensure_gold_schema_from_files,
+)
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_bls.sql"
 _PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
-_SCHEMA_COMPONENT = "gold_ddl_bls"
+_SCHEMA_COMPONENT = GOLD_SCHEMA_COMPONENTS["BLS"]
 _REQUIRED_RELATIONS = (
     "control.serving_refresh_state",
     "control.serving_refresh_chunk_state",

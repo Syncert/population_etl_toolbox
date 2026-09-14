@@ -11,6 +11,7 @@ import {
   buildApiPath,
   fetchAllPages,
   fetchCollectionPages,
+  fetchComparisonPages,
   getDistributionBins,
   getSourceLatestObservations,
   searchMetrics,
@@ -95,6 +96,77 @@ describe("versioned API client", () => {
     expect(down.kind).toBe("unavailable");
   });
 
+  test("a validation refusal keeps the explanation it was handed", async () => {
+    // Covers: WEB-063 — `422` answers two bodies. The API's own refusals are
+    // a string; a request refused against the declared parameter and body
+    // schemas answers HTTPValidationError, an array of {loc, msg, type}.
+    // Only a string survived `decodeErrorDetail`, so the one status the
+    // guide calls "a request the API can explain" reached the reader as a
+    // bare number.
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(
+        {
+          detail: [
+            {
+              type: "less_than_equal",
+              loc: ["query", "limit"],
+              msg: "Input should be less than or equal to 1000",
+              input: "5000",
+              ctx: { le: 1000 },
+            },
+          ],
+        },
+        { status: 422 },
+      ),
+    ]);
+    const error = await apiFetch("/catalog/metrics", { fetchImpl }).catch(
+      (caught) => caught,
+    );
+    expect(error.status).toBe(422);
+    expect(error.detail).toBe(
+      "query.limit: Input should be less than or equal to 1000",
+    );
+    // The submitted value is not echoed back to the screen: it is the
+    // caller's own, of unbounded size, and says nothing the message does not.
+    expect(error.detail).not.toContain("5000");
+    expect(apiErrorMessage(error)).toBe(
+      "status 422: query.limit: Input should be less than or equal to 1000",
+    );
+  });
+
+  test("several refused fields are counted rather than listed without end", async () => {
+    const entries = Array.from({ length: 5 }, (unused, index) => ({
+      loc: ["body", "blocks", index, "type"],
+      msg: "Input should be a valid block type",
+      type: "enum",
+    }));
+    const { fetchImpl } = recordingFetch([
+      jsonResponse({ detail: entries }, { status: 422 }),
+    ]);
+    const error = await apiFetch("/evidence-packets", { fetchImpl }).catch(
+      (caught) => caught,
+    );
+    expect(error.detail).toBe(
+      "body.blocks.0.type: Input should be a valid block type; " +
+        "body.blocks.1.type: Input should be a valid block type; " +
+        "body.blocks.2.type: Input should be a valid block type (and 2 more)",
+    );
+  });
+
+  test("a refusal with nothing readable still shows its status", async () => {
+    // An empty array, and entries carrying no message, are not sentences.
+    // Reporting the status alone is what this did for every array before
+    // WEB-063; it stays the answer where there is nothing to add.
+    for (const detail of [[], [{ loc: ["query", "limit"] }], [null, 7, "x"]]) {
+      const { fetchImpl } = recordingFetch([jsonResponse({ detail }, { status: 422 })]);
+      const error = await apiFetch("/catalog/metrics", { fetchImpl }).catch(
+        (caught) => caught,
+      );
+      expect(error.detail).toBeNull();
+      expect(apiErrorMessage(error)).toBe("status 422");
+    }
+  });
+
   test("renders status-first user-facing error messages", () => {
     expect(
       apiErrorMessage(
@@ -106,6 +178,35 @@ describe("versioned API client", () => {
     ).toBe("status 404");
     expect(apiErrorMessage(new Error("network down"))).toBe("network down");
     expect(apiErrorMessage(undefined)).toBe("request failed");
+  });
+
+  // Covers: WEB-040 — the API publishes how long to wait and the client
+  // captured it, then dropped it. The detail it renders beside the status
+  // says "retry after the indicated interval" and indicated nothing.
+  test("a rate-limited message says how long to wait", () => {
+    expect(
+      apiErrorMessage(
+        new ApiError({
+          status: 429,
+          detail: "rate limit exceeded; retry after the indicated interval",
+          path: "/api/v1/observations",
+          retryAfter: 12,
+        }),
+      ),
+    ).toBe(
+      "status 429: rate limit exceeded; retry after the indicated interval " +
+        "(retry in 12s)",
+    );
+  });
+
+  test("an error the API published no interval for is unchanged", () => {
+    for (const retryAfter of [null, 0, undefined, Number.NaN]) {
+      expect(
+        apiErrorMessage(
+          new ApiError({ status: 503, detail: "unavailable", path: "/x", retryAfter }),
+        ),
+      ).toBe("status 503: unavailable");
+    }
   });
 
   test("pages deterministically until the reported total is reached", async () => {
@@ -135,12 +236,17 @@ describe("versioned API client", () => {
       jsonResponse({ items: [{ id: 2 }], total: null }),
       jsonResponse({ items: [], total: null }),
     ]);
-    const items = await fetchAllPages("/catalog/metrics", {
-      pageSize: 1,
-      maxPages: 2,
-      fetchImpl: endless.fetchImpl,
-    });
-    expect(items).toHaveLength(2);
+    // The bound still stops the read at two requests. What it no longer does
+    // is hand those two back as the whole list: with no published total the
+    // client cannot know whether more exist, so it says so rather than
+    // guessing (WEB-056).
+    await expect(
+      fetchAllPages("/catalog/metrics", {
+        pageSize: 1,
+        maxPages: 2,
+        fetchImpl: endless.fetchImpl,
+      }),
+    ).rejects.toThrow(/that is a prefix, not the whole list/);
     expect(endless.calls).toHaveLength(2);
   });
 
@@ -218,5 +324,164 @@ describe("request lifecycle state", () => {
     await expect(
       fetchCollectionPages("/observations", { fetchImpl: unreported.fetchImpl }),
     ).resolves.toEqual({ items: [{ id: 1 }], total: null, complete: true });
+  });
+});
+
+// Covers: WEB-039 — the comparison is paged. `/comparison` caps `limit` at
+// 1000 and a national county comparison aligns 3,144 geographies, so a
+// single request held the first thousand rows ordered by geo_id -- Alabama
+// through part of Illinois -- and the scatter, the map, and the export were
+// drawn from them.
+describe("comparison paging", () => {
+  const envelope = (items, total) => ({
+    metric_code_a: "A",
+    metric_code_b: "B",
+    units_a: "people",
+    derivations: ["difference", "ratio"],
+    caveats: ["units unverified"],
+    total,
+    items,
+  });
+
+  test("reads every aligned geography the API reports", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }, { geo_id: "2" }], 3)),
+      jsonResponse(envelope([{ geo_id: "3" }], 3)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 2, fetchImpl },
+    );
+
+    expect(pages.items.map((row) => row.geo_id)).toEqual(["1", "2", "3"]);
+    expect(pages.total).toBe(3);
+    expect(pages.complete).toBe(true);
+    expect(calls[0].path).toContain("offset=0");
+    expect(calls[1].path).toContain("offset=2");
+  });
+
+  test("the envelope comes from the first page and is preserved", async () => {
+    // Units, derivations, and caveats describe the pair, not the page.
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], 2)),
+      jsonResponse({ items: [{ geo_id: "2" }], total: 2 }),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, fetchImpl },
+    );
+    expect(pages.payload?.units_a).toBe("people");
+    expect(pages.payload?.caveats).toEqual(["units unverified"]);
+    expect(pages.payload?.items.map((row) => row.geo_id)).toEqual(["1", "2"]);
+  });
+
+  test("a bound-limited read is reported as incomplete", async () => {
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], 9999)),
+      jsonResponse(envelope([{ geo_id: "2" }], 9999)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, maxPages: 2, fetchImpl },
+    );
+    expect(pages.items).toHaveLength(2);
+    expect(pages.total).toBe(9999);
+    expect(pages.complete).toBe(false);
+  });
+
+  test("an empty page ends the read, and no total is not a shortfall", async () => {
+    const { fetchImpl } = recordingFetch([
+      jsonResponse(envelope([{ geo_id: "1" }], null)),
+      jsonResponse(envelope([], null)),
+    ]);
+    const pages = await fetchComparisonPages(
+      { metric_code_a: "A", metric_code_b: "B" },
+      { pageSize: 1, fetchImpl },
+    );
+    expect(pages.items).toHaveLength(1);
+    expect(pages.total).toBe(null);
+    expect(pages.complete).toBe(true);
+  });
+});
+
+// Covers: WEB-044 — an account's library is paged, and the token travels
+// with every page. Three screens read the library with one request at the
+// route's maximum and reported a partial answer in green; the entries past
+// it could not be opened, edited, or added to a packet.
+describe("authenticated collection paging", () => {
+  test("the bearer token travels on every page, never in the query", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }], total: 2 }),
+      jsonResponse({ items: [{ id: 2 }], total: 2 }),
+    ]);
+    const pages = await fetchCollectionPages("/evidence-packets", {
+      pageSize: 1,
+      token: "secret-token",
+      fetchImpl,
+    });
+
+    expect(pages.items).toHaveLength(2);
+    expect(pages.complete).toBe(true);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.init.headers.Authorization).toBe("Bearer secret-token");
+      // A token in a query string travels into history, referrers, and logs.
+      expect(call.path).not.toContain("secret-token");
+    }
+  });
+
+  test("an unauthenticated collection is unchanged", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }], total: 1 }),
+    ]);
+    await fetchCollectionPages("/catalog/metrics", { pageSize: 1, fetchImpl });
+    expect(calls[0].init.headers.Authorization).toBeUndefined();
+  });
+});
+
+// Covers: WEB-056 — a bounded read is never handed back as the whole list.
+//
+// `fetchCollectionPages` computes `complete` so that "a caller that hits the
+// bound is told the answer is a prefix rather than handed a truncated list as
+// if it were whole". The convenience wrapper beside it dropped that, and the
+// wrapper is what every caller in the application uses.
+describe("fetchAllPages", () => {
+  test("returns every record when the read completed", async () => {
+    const whole = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 3 }),
+      jsonResponse({ items: [{ id: 3 }], total: 3 }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/metrics", { pageSize: 2, fetchImpl: whole.fetchImpl }),
+    ).resolves.toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  });
+
+  test("refuses to hand back a prefix, naming what it got and what there is", async () => {
+    const cut = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }, { id: 2 }], total: 5 }),
+      jsonResponse({ items: [{ id: 3 }, { id: 4 }], total: 5 }),
+      jsonResponse({ items: [{ id: 5 }], total: 5 }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/geographies", {
+        pageSize: 2,
+        maxPages: 2,
+        fetchImpl: cut.fetchImpl,
+      }),
+    ).rejects.toThrow(/\/catalog\/geographies answered 4 of 5 records/);
+    // Bounded as before: it stops at the bound rather than reading on.
+    expect(cut.calls).toHaveLength(2);
+  });
+
+  test("a collection that publishes no total still completes", async () => {
+    // `complete` is true when a page came back empty, whatever the total says,
+    // so an API that reports none is not treated as an endless one.
+    const unreported = recordingFetch([
+      jsonResponse({ items: [{ id: 1 }] }),
+      jsonResponse({ items: [] }),
+    ]);
+    await expect(
+      fetchAllPages("/catalog/metrics", { fetchImpl: unreported.fetchImpl }),
+    ).resolves.toEqual([{ id: 1 }]);
   });
 });

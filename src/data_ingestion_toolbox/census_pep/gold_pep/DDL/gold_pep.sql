@@ -153,13 +153,13 @@ LEFT JOIN (
     -- relation row-for-row beside the silver fact multiplies the two per
     -- metric -- a cross product over millions of rows -- which is exactly
     -- what the first cut of this did.
+    -- Through `gold_glossary.geo_grain`, which is this CASE: it mapped NATION
+    -- to NATIONAL and upper-cased the rest, one more copy of the vocabulary
+    -- migration 018 exists to hold (DB-037). 021 defines the function ahead
+    -- of this phase so the call is legal at bootstrap.
     SELECT revision.metric_code,
-           ARRAY_AGG(DISTINCT CASE UPPER(revision.geo_type)
-                                 WHEN 'NATION' THEN 'NATIONAL'
-                                 ELSE UPPER(revision.geo_type) END
-                     ORDER BY CASE UPPER(revision.geo_type)
-                                 WHEN 'NATION' THEN 'NATIONAL'
-                                 ELSE UPPER(revision.geo_type) END)::TEXT[]
+           ARRAY_AGG(DISTINCT gold_glossary.geo_grain(revision.geo_type)
+                     ORDER BY gold_glossary.geo_grain(revision.geo_type))::TEXT[]
                AS valid_geo_grains
     FROM gold_pep.population_estimate_revision AS revision
     GROUP BY revision.metric_code
@@ -174,7 +174,12 @@ SELECT 'CENSUS_PEP'::TEXT AS source_code,
     export.metric_display_name::TEXT AS metric_display_name,
     export.unit::TEXT AS units,
     CASE WHEN export.is_component THEN 'component' ELSE 'level' END::TEXT AS measure_kind,
-    ARRAY(SELECT UPPER(value) FROM UNNEST(export.valid_geo_grains) AS value)::TEXT[] AS valid_geo_grains,
+    -- The export already publishes the vocabulary; going through the one
+    -- mapping again is idempotent and says which vocabulary this is.
+    ARRAY(
+        SELECT gold_glossary.geo_grain(value)
+        FROM UNNEST(export.valid_geo_grains) AS value
+    )::TEXT[] AS valid_geo_grains,
     ARRAY['ANNUAL']::TEXT[] AS valid_time_grains,
     NULL::TEXT AS aggregation_characteristic,
     JSONB_BUILD_OBJECT(

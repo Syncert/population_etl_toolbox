@@ -15,16 +15,28 @@ follow the same pattern under DQ-004.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .runner import QualityRunRecord, RuleExecutor, RuleOutcome, execute_rules
+from .runner import (
+    QualityRunError,
+    QualityRunRecord,
+    RuleExecutor,
+    RuleOutcome,
+    execute_rules,
+)
 
 #: How many offending identifiers a single outcome may carry as evidence.
 EVIDENCE_LIMIT = 20
 
 #: Default number of recent captures a bounded checksum pass verifies.
 DEFAULT_CAPTURE_LIMIT = 1000
+
+#: The cadence a release certification runs under. A release run rehashes
+#: every capture in scope rather than a window, because its verdict is
+#: what says a deployment may proceed (DQ-011).
+RELEASE_CADENCE = "release"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +128,118 @@ def comparison_outcome(
     )
 
 
+#: Clauses an offender query must not carry: the ordering is an argument
+#: and the bound belongs to `_offenders`.
+_FORBIDDEN_CLAUSE = re.compile(r"\b(?:ORDER\s+BY|LIMIT)\b", re.IGNORECASE)
+
+
+#: A term that qualifies its column with a relation alias -- ``dataset.domain``.
+_QUALIFIED_TERM = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\.")
+
+#: The one relation in scope on the wrapping statement.
+_WRAPPER_ALIAS = "offender"
+
+
+def _reject_inner_qualifiers(order_by: str) -> None:
+    """Refuse an ordering that names a relation the wrapper cannot see.
+
+    The ordering is applied outside the subquery, where the only relation in
+    scope is ``offender``. A term qualified with the *inner* alias --
+    ``ORDER BY dataset.domain`` over ``FROM (...) AS offender`` -- is not a
+    different sort order, it is a statement PostgreSQL refuses outright, and
+    the rule that carries it errors instead of reporting the offenders it
+    exists to find. Fourteen sites wrote positions and the fifteenth wrote
+    names, which is how DQ-008 shipped a rule that raised the first time a
+    FRED dataset had no series row (DQ-009).
+    """
+    for term in order_by.split(","):
+        for match in _QUALIFIED_TERM.finditer(term):
+            alias = match.group(1)
+            if alias.lower() == _WRAPPER_ALIAS:
+                continue
+            raise QualityRunError(
+                f"an offender ordering cannot name the relation '{alias}': the "
+                "ordering is applied outside the subquery, where only "
+                f"'{_WRAPPER_ALIAS}' is in scope. Write the positions of the "
+                "wrapped select list (`1, 2`), its bare output column names, "
+                f"or qualify them with '{_WRAPPER_ALIAS}'"
+            )
+
+
+def _shifted(order_by: str) -> str:
+    """``order_by`` with positional references moved past the count column.
+
+    The wrapper below selects the count first, so every column an offender
+    query names shifts one place right. Callers keep writing the positions
+    of their own select list; the shift is this helper's business, not
+    fifteen rules'.
+    """
+    terms = []
+    for term in order_by.split(","):
+        parts = term.split()
+        if parts and parts[0].isdigit():
+            parts[0] = str(int(parts[0]) + 1)
+        terms.append(" ".join(parts))
+    return ", ".join(terms)
+
+
+def _offenders(
+    cursor: Any,
+    sql: str,
+    *,
+    order_by: str,
+    params: tuple[Any, ...] = (),
+) -> tuple[list[str], int]:
+    """Bounded evidence ids and the *exact* number of offenders.
+
+    `DATA_QUALITY_OPERATIONS.md` says `control.data_quality_result` holds
+    "exact counts, bounded evidence ids" -- two different things -- and its
+    operator query selects `observed_count` to judge how bad a failure is.
+    These rules measured both from one bounded read: the query fetched
+    `EVIDENCE_LIMIT + 1`, one more than the cap so truncation could be
+    detected, the helper sliced the extra row away, and the outcome recorded
+    the evidence's length. Twenty bad rows and twenty thousand both persisted
+    `observed_count: 20`, always understating, on the one number an operator
+    is pointed at (DQ-008).
+
+    One statement, so the count and the sample describe one reading of the
+    warehouse -- the reasoning of API-084 and API-100. `COUNT(*) OVER ()` is
+    evaluated over the whole offender set before `LIMIT`, and the ordering
+    that decides *which* offenders are kept is applied here rather than
+    inside the subquery, so the sample is deterministic by the statement's
+    own contract instead of by a planner preserving a subquery's sort.
+
+    ``sql`` therefore carries neither ``ORDER BY`` nor ``LIMIT``, and
+    ``order_by`` names only what the wrapping statement can see: positions of
+    the wrapped select list, its bare output column names, or names qualified
+    with ``offender``. An ordering naming the subquery's own relation alias is
+    refused here rather than by PostgreSQL at run time (DQ-009).
+    """
+    # Matched as SQL words, not substrings: a status literal named
+    # `over_limit` is not a LIMIT clause, and the first version of this guard
+    # refused the USDA NASS rule for containing one.
+    if _FORBIDDEN_CLAUSE.search(sql):
+        raise QualityRunError(
+            "an offender query must carry neither ORDER BY nor LIMIT: the "
+            "ordering is passed as `order_by` and the bound is this helper's"
+        )
+    _reject_inner_qualifiers(order_by)
+    cursor.execute(
+        f"SELECT COUNT(*) OVER () AS offender_total, offender.*\n"
+        f"FROM (\n{sql}\n) AS offender\n"
+        f"ORDER BY {_shifted(order_by)}\n"
+        f"LIMIT {EVIDENCE_LIMIT}",
+        params,
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return [], 0
+    return (
+        ["|".join(str(part) for part in row[1:]) for row in rows],
+        int(rows[0][0]),
+    )
+
+
 def _source_filter(scope: Mapping[str, Any], column: str) -> tuple[str, list[Any]]:
     source_code = scope.get("source_code")
     if source_code:
@@ -126,9 +250,59 @@ def _source_filter(scope: Mapping[str, Any], column: str) -> tuple[str, list[Any
 def verify_capture_checksums(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-SHARED-001 — recompute checksums for a bounded recent capture window."""
-    limit = int(scope.get("capture_limit", DEFAULT_CAPTURE_LIMIT))
+    """DQ-SHARED-001 — recompute checksums, and say which captures were read.
+
+    A scheduled run rehashes a bounded window of the newest captures; a
+    ``release`` run rehashes **every** capture in scope, because that is the
+    run whose verdict says a deployment may proceed.
+
+    The window used to be silent. No caller passed ``capture_limit``, so
+    daily, weekly, monthly and release runs all rehashed the same newest
+    thousand anchored on ``retrieved_at DESC``, while the rule's declaration
+    said "every response_capture payload_checksum verifies against its
+    immutable payload blob" and ``expected_count`` reported the *sample*
+    size. A blob corrupted eighteen months ago was unreachable on every run,
+    and `certify_release` reported "1000 of 1000 verified" and
+    ``promotable=True`` over it.
+
+    Two things changed and nothing else. A release run has no window, so the
+    BLOCK verdict covers the archive it claims to. And every run states the
+    window it read in ``partition_detail`` and, when one remains, the number
+    of captures outside it in the evidence -- so an operator reading
+    ``observed/expected`` is reading the population the rule actually
+    measured (DQ-011).
+
+    The executor still only reads: the rule-runner contract is that an
+    executor "must not write", which is why the coverage is stated rather
+    than remembered in a watermark table.
+    """
+    cadence = str(scope.get("cadence") or "")
+    requested = scope.get("capture_limit")
+    #: A release certification rehashes everything in scope; a scheduled
+    #: sweep keeps its bounded window unless the caller names one.
+    limit: int | None
+    if requested is not None:
+        limit = int(requested)
+    elif cadence == RELEASE_CADENCE:
+        limit = None
+    else:
+        limit = DEFAULT_CAPTURE_LIMIT
+
     clause, params = _source_filter(scope, "capture.source_code")
+    cursor.execute(
+        f"""
+        SELECT COUNT(*)
+          FROM raw_capture.response_capture AS capture
+         WHERE TRUE{clause}
+        """,
+        tuple(params),
+    )
+    in_scope = int(cursor.fetchone()[0])
+
+    # The window is ordered by a key no two captures share, so "the newest
+    # 1,000" is the same 1,000 on two runs of the same archive: ties on
+    # `retrieved_at` alone read whichever rows the plan happened to return.
+    bound = "" if limit is None else "\n         LIMIT %s"
     cursor.execute(
         f"""
         SELECT capture.capture_id, capture.payload_checksum, blob.payload
@@ -136,10 +310,9 @@ def verify_capture_checksums(
           JOIN raw_capture.payload_blob AS blob
             ON blob.payload_checksum = capture.payload_checksum
          WHERE TRUE{clause}
-         ORDER BY capture.retrieved_at DESC
-         LIMIT %s
+         ORDER BY capture.retrieved_at DESC, capture.capture_id DESC{bound}
         """,
-        (*params, limit),
+        (*params, *(() if limit is None else (limit,))),
     )
     rows = cursor.fetchall()
     mismatched = [
@@ -147,27 +320,60 @@ def verify_capture_checksums(
         for capture_id, checksum, payload in rows
         if hashlib.sha256(bytes(payload)).hexdigest() != checksum
     ]
+    outside_window = max(in_scope - len(rows), 0)
+    window = (
+        "every capture in scope"
+        if limit is None
+        else f"newest {limit} captures by retrieved_at"
+    )
     if not rows:
         result = "not_applicable"
     elif mismatched:
         result = "fail"
     else:
         result = "pass"
+    evidence = [*mismatched[:EVIDENCE_LIMIT]]
+    if outside_window:
+        # Not a failure: a bounded sweep passing is a statement about its
+        # window, and the reader is told how much of the archive that was.
+        evidence.append(f"captures_outside_window={outside_window}")
     return [
         RuleOutcome(
             "raw_capture.response_capture",
             result,
             observed_count=len(rows) - len(mismatched),
             expected_count=len(rows),
-            evidence=mismatched[:EVIDENCE_LIMIT],
+            partition_detail={
+                "window": window,
+                "captures_in_scope": in_scope,
+                "captures_rehashed": len(rows),
+            },
+            evidence=evidence,
         )
     ]
+
+
+#: Request statuses that legitimately hold a capture.
+#:
+#: The capture is committed before the payload is parsed (ADR-0001), and the
+#: terminal status is written from what the parse found: ``captured`` when
+#: rows were loaded, ``empty`` when the provider answered nothing to load,
+#: ``quarantined`` when the payload could not be parsed or the release was
+#: not publishable. All three are the contract working, and all three leave
+#: captured bytes behind on purpose -- quarantined most of all, since the
+#: bytes are the evidence of what could not be parsed.
+#:
+#: A capture bound to ``planned``, ``running`` or ``failed`` is the defect
+#: this rule looks for: bytes with no accounting, or accounting that never
+#: reached a terminal state (DQ-010).
+_CAPTURE_BEARING_STATUSES = ("captured", "empty", "quarantined")
 
 
 def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-SHARED-002 — captured requests and captures agree in both directions."""
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    orphan_requests, orphan_request_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -175,40 +381,41 @@ def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
             ON capture.request_id = request.request_id
          WHERE request.status = 'captured'
            AND capture.capture_id IS NULL{clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    orphan_requests = [str(row[0]) for row in cursor.fetchall()]
 
     clause, params = _source_filter(scope, "capture.source_code")
-    cursor.execute(
+    # LEFT JOIN, because the inner join hid the worst case: a capture whose
+    # request row is missing altogether disappeared from the rule instead of
+    # being reported as bytes with no accounting at all.
+    orphan_captures, orphan_capture_total = _offenders(
+        cursor,
         f"""
         SELECT capture.capture_id
           FROM raw_capture.response_capture AS capture
-          JOIN control.ingestion_request AS request
+          LEFT JOIN control.ingestion_request AS request
             ON request.request_id = capture.request_id
-         WHERE request.status <> 'captured'{clause}
-         ORDER BY capture.capture_id
-         LIMIT {EVIDENCE_LIMIT + 1}
+         WHERE (request.request_id IS NULL
+                OR request.status <> ALL(%s)){clause}
         """,
-        params,
+        order_by="1",
+        params=(list(_CAPTURE_BEARING_STATUSES), *params),
     )
-    orphan_captures = [str(row[0]) for row in cursor.fetchall()]
 
     return [
         RuleOutcome(
             "control.ingestion_request",
             "fail" if orphan_requests else "pass",
-            observed_count=len(orphan_requests),
+            observed_count=orphan_request_total,
             expected_count=0,
             evidence=orphan_requests[:EVIDENCE_LIMIT],
         ),
         RuleOutcome(
             "raw_capture.response_capture",
             "fail" if orphan_captures else "pass",
-            observed_count=len(orphan_captures),
+            observed_count=orphan_capture_total,
             expected_count=0,
             evidence=orphan_captures[:EVIDENCE_LIMIT],
         ),
@@ -218,7 +425,8 @@ def verify_capture_lineage(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
 def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-SHARED-003 — every terminal request is accounted for, never lost."""
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    unfinished, unfinished_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -226,15 +434,14 @@ def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcom
             ON run.run_id = request.run_id
          WHERE run.finished_at IS NOT NULL
            AND request.status IN ('planned', 'running'){clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    unfinished = [str(row[0]) for row in cursor.fetchall()]
 
     clause, params = _source_filter(scope, "request.source_code")
-    cursor.execute(
+    unaccounted, unaccounted_total = _offenders(
+        cursor,
         f"""
         SELECT request.request_id
           FROM control.ingestion_request AS request
@@ -243,25 +450,23 @@ def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcom
            AND quarantine.source_code = request.source_code
          WHERE request.status = 'quarantined'
            AND quarantine.quarantine_id IS NULL{clause}
-         ORDER BY request.request_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        params,
+        order_by="1",
+        params=tuple(params),
     )
-    unaccounted = [str(row[0]) for row in cursor.fetchall()]
 
     return [
         RuleOutcome(
             "control.ingestion_run",
             "fail" if unfinished else "pass",
-            observed_count=len(unfinished),
+            observed_count=unfinished_total,
             expected_count=0,
             evidence=unfinished[:EVIDENCE_LIMIT],
         ),
         RuleOutcome(
             "control.capture_quarantine",
             "fail" if unaccounted else "pass",
-            observed_count=len(unaccounted),
+            observed_count=unaccounted_total,
             expected_count=0,
             evidence=unaccounted[:EVIDENCE_LIMIT],
         ),
@@ -366,10 +571,18 @@ def cdc_release_reconciliation(
     if status == "published":
         comparison = compare_identity_sets(
             cursor,
+            # The *publishable* silver population, which is the FBI rule's
+            # own phrase for it: an observation on a published release at a
+            # geography the served vocabulary names. A provider location this
+            # adapter does not model stays in silver with its reason code in
+            # the resolution ledger, and `gold_cdc.health_observation` stopped
+            # serving it, so comparing against every fact row would fail the
+            # release for doing exactly what it should (DB-035).
             expected_sql=(
                 "SELECT source_record_id "
                 "FROM silver_cdc.fact_health_observation "
-                "WHERE asset_id = %s AND release_watermark = %s"
+                "WHERE asset_id = %s AND release_watermark = %s "
+                "AND geography_status <> 'unsupported'"
             ),
             observed_sql=(
                 "SELECT source_record_id "
@@ -392,11 +605,20 @@ def cdc_release_reconciliation(
 def build_cdc_gate_executors(
     asset_id: str, release_watermark: str
 ) -> dict[str, RuleExecutor]:
-    """The executor set for gating one CDC release's publication."""
-    del asset_id, release_watermark  # bound through the scope at execution
+    """The executor set for gating one CDC release's publication.
+
+    The scoped set is read from ``assessment.SCOPED_EXECUTORS`` rather than
+    spelled here, so the gate, `select_executors` and `certify_release` cannot
+    disagree about which rules a named release can be measured by (DQ-012).
+    The import is local because the assessment module imports this one.
+    """
+    from .assessment import scoped_executors_for
+
     return {
         **SHARED_RECONCILIATION_EXECUTORS,
-        "DQ-CDC-003": cdc_release_reconciliation,
+        **scoped_executors_for(
+            {"asset_id": asset_id, "release_watermark": release_watermark}
+        ),
     }
 
 

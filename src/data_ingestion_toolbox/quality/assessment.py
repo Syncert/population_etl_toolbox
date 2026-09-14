@@ -20,7 +20,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .plausibility import fred_change_plausibility
-from .reconciliation import SHARED_RECONCILIATION_EXECUTORS
+from .reconciliation import (
+    RELEASE_CADENCE,
+    SHARED_RECONCILIATION_EXECUTORS,
+    cdc_release_reconciliation,
+)
 from .runner import QualityRunRecord, RuleExecutor, execute_rules
 from .sources import SOURCE_EXECUTORS
 
@@ -45,6 +49,42 @@ DAILY_LEDGER_RULES: frozenset[str] = frozenset(
         "DQ-GLOSSARY-001",
     }
 )
+
+#: Executors that can only run against one named partition, with the scope
+#: keys each requires.
+#:
+#: `DQ-CDC-003` reconciles one CDC release across capture, silver and gold, so
+#: it needs the release named: there is no "reconcile every release" reading
+#: of it, and a cadence sweep has no release to name. It was therefore left out
+#: of every registry `select_executors` searched, which made the operations
+#: guide's own worked example -- `{"rule_id": "DQ-CDC-003", "scope": {...}}` --
+#: answer `No executor is registered for 'DQ-CDC-003'`, and left the one rule
+#: that reconciles a CDC release out of what the guide calls the full
+#: deterministic suite (DQ-012).
+#:
+#: One statement, read by `select_executors`, `certify_release` and
+#: `build_cdc_gate_executors`, so a scoped rule cannot be reachable through one
+#: door and invisible at the others.
+SCOPED_EXECUTORS: Mapping[str, tuple[RuleExecutor, tuple[str, ...]]] = {
+    "DQ-CDC-003": (cdc_release_reconciliation, ("asset_id", "release_watermark")),
+}
+
+
+def scoped_executors_for(scope: Mapping[str, Any] | None) -> dict[str, RuleExecutor]:
+    """The scoped executors ``scope`` carries the keys to run.
+
+    A scoped rule is included when the caller named the partition it measures
+    and left out otherwise -- rather than raising, which would make every
+    release certification depend on a CDC release being named, or being
+    silently dropped, which is how it came to be absent in the first place.
+    """
+    available = scope or {}
+    return {
+        rule_id: executor
+        for rule_id, (executor, required) in SCOPED_EXECUTORS.items()
+        if all(available.get(key) for key in required)
+    }
+
 
 _COMMIT_SHA_PATTERN = re.compile(r"\A[0-9a-f]{40}\Z")
 
@@ -110,6 +150,11 @@ def select_executors(
             **SHARED_RECONCILIATION_EXECUTORS,
             **SOURCE_EXECUTORS,
             **PLAUSIBILITY_EXECUTORS,
+            # Reachable by name even though no cadence sweep can run it: the
+            # caller names the partition in the scope (DQ-012).
+            **{
+                rule_id: executor for rule_id, (executor, _) in SCOPED_EXECUTORS.items()
+            },
         }
         if rule_id not in universe:
             raise AssessmentError(f"No executor is registered for '{rule_id}'.")
@@ -210,14 +255,28 @@ def certify_release(
     the artifact shows exactly what a reviewer is accepting.
     """
     sha = resolve_commit_sha(code_commit_sha)
-    executors = {**SHARED_RECONCILIATION_EXECUTORS, **SOURCE_EXECUTORS}
+    executors = {
+        **SHARED_RECONCILIATION_EXECUTORS,
+        **SOURCE_EXECUTORS,
+        # A certification that names a release reconciles it (DQ-012). One
+        # that does not cannot, and says so by not reporting the rule at all
+        # rather than by reporting it green.
+        **scoped_executors_for(scope),
+    }
+    # The cadence travels in the scope, because a rule may measure a release
+    # run differently from a scheduled one: DQ-SHARED-001 rehashes every
+    # capture here and a bounded window on a schedule, and a release verdict
+    # that says "every capture verifies" has to have read every capture
+    # (DQ-011).
+    release_scope = dict(scope or {})
+    release_scope.setdefault("cadence", RELEASE_CADENCE)
     record = execute_rules(
         connection,
         source_code="SHARED",
         assessment_type="release",
         code_commit_sha=sha,
         executors=executors,
-        scope=scope,
+        scope=release_scope,
     )
     with connection.cursor() as cursor:
         cursor.execute(

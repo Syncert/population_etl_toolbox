@@ -27,15 +27,23 @@ import {
   ApiError,
   createEvidencePacket,
   getEvidencePacket,
-  listEvidencePackets,
+  fetchCollectionPages,
   updateEvidencePacket,
 } from "../lib/api/client";
 import type { EvidencePacketSummary, PacketValidation } from "../lib/api/types";
 import { useStoredToken } from "../lib/apiToken";
-import { describeSaveFailure, describeSaveSuccess, saveDestination } from "../lib/savedAnalysis";
+import {
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_PAGE_SIZE,
+  describeLibraryLoad,
+  describeSaveFailure,
+  describeSaveSuccess,
+  saveDestination,
+} from "../lib/savedAnalysis";
 import type { SaveOutcome } from "../lib/savedAnalysis";
 import {
   documentToPacket,
+  documentFromSavedChart,
   envelopeFromSavedChart,
   grantNeedsTemplate,
   isAnalyticalBlock,
@@ -94,11 +102,24 @@ export default function EvidencePacketBuilder() {
     }
     setAccountStatus({ state: "loading", message: "loading your packets" });
     try {
-      const payload = await listEvidencePackets(activeToken, { limit: "200" });
-      setAccountPackets(payload.items);
+      const pages = await fetchCollectionPages<EvidencePacketSummary>(
+        "/evidence-packets",
+        {
+          token: activeToken,
+          pageSize: LIBRARY_PAGE_SIZE,
+          maxPages: LIBRARY_PAGE_LIMIT,
+        },
+      );
+      setAccountPackets(pages.items);
       setAccountStatus({
-        state: "ok",
-        message: `${payload.items.length} of ${payload.total ?? payload.items.length} packets in your account`,
+        state: pages.complete ? "ok" : "bad",
+        message: describeLibraryLoad(
+          pages.items.length,
+          pages.total,
+          pages.complete,
+          "packet in your account",
+          "packets in your account",
+        ),
       });
     } catch (error) {
       setAccountPackets([]);
@@ -129,9 +150,15 @@ export default function EvidencePacketBuilder() {
   );
   // Only the API can see staleness; a block it reports and the client does
   // not is a measure retired since the block was composed.
-  const staleBlocks = useMemo(
-    () => mergeBlockStates(packet, apiValidation).filter((state) => state.state === "stale"),
+  // The export carries every block's verdict, so the file a reader is handed
+  // says what this page says (WEB-058).
+  const blockStates = useMemo(
+    () => mergeBlockStates(packet, apiValidation),
     [packet, apiValidation],
+  );
+  const staleBlocks = useMemo(
+    () => blockStates.filter((state) => state.state === "stale"),
+    [blockStates],
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<PacketBlock>) => {
@@ -170,25 +197,11 @@ export default function EvidencePacketBuilder() {
       packet.blocks.find((block) => isAnalyticalBlock(block) && !block.envelope)?.id ||
       "";
     const envelope = envelopeFromSavedChart(chart);
-    const document = chart.metricCodeB
-      ? {
-          kind: "comparison" as const,
-          metric_code_a: String(chart.metricCode || ""),
-          metric_code_b: String(chart.metricCodeB || ""),
-          scope: envelope.scope,
-          release: envelope.release || null,
-          filters: { geo_level: String(chart.geoLevel || "") },
-        }
-      : {
-          kind: "observations" as const,
-          metric_code: String(chart.metricCode || ""),
-          scope: envelope.scope,
-          release: envelope.release || null,
-          filters: {
-            geo_level: String(chart.geoLevel || ""),
-            geo_id: String(chart.geoId || ""),
-          },
-        };
+    // Built by the same functions the explorer saves through, so the rules
+    // about what a document may contain -- which reduction it recorded, which
+    // pairings the API refuses -- live in one place rather than being
+    // re-learned here (WEB-048).
+    const document = documentFromSavedChart(chart);
 
     if (blockId) {
       updateBlock(blockId, {
@@ -294,7 +307,7 @@ export default function EvidencePacketBuilder() {
   }
 
   function exportCsv() {
-    const { headings, rows, filename } = packetExport(packet);
+    const { headings, rows, filename } = packetExport(packet, blockStates);
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -325,7 +338,7 @@ export default function EvidencePacketBuilder() {
         </p>
       </header>
 
-      <section className="status-row no-print">
+      <section className="status-row no-print" role="status">
         <StatusPill
           state={complete ? "ok" : "warn"}
           label="Packet"

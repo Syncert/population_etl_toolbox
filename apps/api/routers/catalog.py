@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import NOT_FOUND
 from apps.api.services.catalog_service import (
     get_metric_capability,
     list_geographies,
@@ -59,6 +60,7 @@ def get_metrics(
 def get_geographies(
     geo_level: Optional[str] = Query(None, max_length=50),
     state_fips: Optional[str] = Query(None, max_length=2),
+    active_only: Optional[bool] = None,
     q: Optional[str] = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=100000),
@@ -69,6 +71,7 @@ def get_geographies(
             db,
             geo_level=geo_level,
             state_fips=state_fips,
+            active_only=active_only,
             q=q,
             limit=limit,
             offset=offset,
@@ -97,7 +100,11 @@ def get_freshness(db: Session = Depends(get_db_session_dep)) -> FreshnessListRes
         raise db_service_unavailable(exc) from exc
 
 
-@router.get("/metrics/{metric_code}", response_model=MetricCapability)
+@router.get(
+    "/metrics/{metric_code}",
+    response_model=MetricCapability,
+    responses=NOT_FOUND,
+)
 def get_metric(
     request: Request,
     metric_code: str = Path(..., min_length=1, max_length=200),

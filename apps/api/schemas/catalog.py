@@ -60,6 +60,16 @@ class GeographyLatest(BaseModel):
     place_name: Optional[str] = None
     geo_latitude: Optional[float] = None
     geo_longitude: Optional[float] = None
+    #: ``current`` or ``retired``. A geography the boundary reference stops
+    #: listing is retired rather than dropped from the catalog (DB-038),
+    #: because the served relations keep its observations: a catalog that
+    #: hid it would leave rows a client resolving geographies here could
+    #: not reach or name. The parallel is ``MetricCatalog.freshness_state``.
+    geography_state: Optional[str] = None
+    #: When the reference first stopped listing it, not overwritten by later
+    #: refreshes. NULL while the geography is current.
+    retired_at: Optional[datetime] = None
+    is_active: Optional[bool] = None
 
 
 class GeographyListResponse(BaseModel):
@@ -104,6 +114,28 @@ class SourceCapability(BaseModel):
     #: (``metric_code``, ``scope``, ``release``, ``limit``, ``offset``). A
     #: filter absent here is rejected with an explanation, never ignored.
     observation_filters: list[str] = []
+    #: Field names a neutral observation row's ``dimensions`` object carries
+    #: for this source, under the source's own published names. The set is a
+    #: review of what belongs beside a value, not the serving relation's
+    #: column list -- the source-scoped routes serve that -- and it is
+    #: published here for the same reason ``observation_filters`` is: so a
+    #: client codes against a declared contract instead of inferring one
+    #: from whatever a row happened to hold (API-109).
+    observation_dimensions: list[str] = []
+    #: Whether this source's served relations carry a value state, and
+    #: therefore whether a row of it can arrive with ``value: null``.
+    #:
+    #: The two shapes are different contracts and a client has to code for
+    #: one of them. Where this is true (CDC, FBI UCR, USDA NASS) a value the
+    #: source did not publish arrives as a row with ``value: null`` and a
+    #: ``value_status`` saying why. Where it is false (BLS, FRED, Census ACS,
+    #: Census PEP) the serving relation carries only published numbers, so
+    #: ``value`` is never null, ``value_status`` is always null, and a period
+    #: the source published without a usable number is **absent from the
+    #: series** rather than present and marked -- which is what a client
+    #: charting a monthly history has to know before it draws a line across
+    #: the gap (API-127).
+    publishes_value_status: bool = False
 
 
 class CapabilityListResponse(BaseModel):
@@ -122,6 +154,15 @@ class MetricCapability(MetricCatalog):
     served_by_neutral_routes: bool = False
     observation_routes: list[ObservationRouteCapability] = []
     observation_filters: list[str] = []
+    #: The ``dimensions`` field names a row of this metric's source carries,
+    #: the same review the source resource publishes. A client that discovered
+    #: a metric had to enumerate ``/catalog/capabilities`` to learn the shape
+    #: of its own rows; the declaration belongs on both (API-119).
+    observation_dimensions: list[str] = []
+    #: Whether a row of this metric's source can arrive with ``value: null``,
+    #: the same declaration the source resource publishes and on both for the
+    #: reason API-119 records.
+    publishes_value_status: bool = False
 
 
 class SourceFreshness(BaseModel):

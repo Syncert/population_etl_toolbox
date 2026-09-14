@@ -18,7 +18,9 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import SERVICE_UNAVAILABLE_DETAIL, get_db_session_dep
 from apps.api.main import app
+from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.registry import SOURCE_DISCOVERY
+from apps.api.services.catalog_service import list_source_capabilities
 from data_ingestion_toolbox.sql import catalog_queries
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
@@ -128,7 +130,7 @@ def test_catalog_queries_name_only_the_documented_glossary_contracts() -> None:
         "CDC", True, "alcohol", 10, 0
     )
     geo_list, geo_count, _ = catalog_queries.build_geographies_queries(
-        "county", "06", "Alameda", 10, 0
+        "county", "06", None, "Alameda", 10, 0
     )
     detail, _ = catalog_queries.build_metric_detail_query("CDC:cdi:ALC1_1:crude")
     rendered = [
@@ -242,6 +244,61 @@ def test_metric_detail_for_a_neutral_source_reports_the_neutral_routes() -> None
         "/api/v1/bls/observations/latest",
         "/api/v1/bls/observations/timeseries",
     } <= paths
+
+
+def test_a_retired_metric_advertises_no_route_that_will_not_answer_it() -> None:
+    """Covers: API-119 — retirement is a served fact, not a silent empty page.
+
+    The guide: a retired series "still resolves through
+    `GET /catalog/metrics/{metric_code}` and reports `freshness_state:
+    "retired"` ... It no longer answers observations." The resource copied
+    `served_by_neutral_routes` and every route from the *source's* discovery
+    entry without reading the metric's own state, so a discovering client was
+    handed three routes for this metric, each of which answers it `total: 0`.
+    The dimensions stay: they describe the rows the warehouse published, which
+    retirement does not withdraw.
+    """
+    row = dict(_METRIC_ROW)
+    row["freshness_state"] = "retired"
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{row['metric_code']}")
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, "its catalog entry still resolves"
+    payload = response.json()
+    assert payload["freshness_state"] == "retired"
+    assert payload["served_by_neutral_routes"] is False
+    assert payload["observation_routes"] == []
+    assert payload["observation_filters"] == [], (
+        "a filter is a parameter of a route that would answer; none does"
+    )
+    assert "stratum_id" in payload["observation_dimensions"], (
+        "the shape of the rows the warehouse published is still declared"
+    )
+
+
+def test_every_metric_declares_the_dimensions_its_rows_carry() -> None:
+    """Covers: API-119 — the row shape is declared where the metric is found.
+
+    API-109 declared each source's `dimensions` field names and published them
+    on `/catalog/capabilities`. The metric resource, which is where a client
+    that searched the catalog actually lands, omitted them, so learning the
+    shape of one metric's own rows meant enumerating every source. The two
+    resources now publish one review, not two.
+    """
+    row = dict(_METRIC_ROW)
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{row['metric_code']}")
+        sources = list_source_capabilities(app.openapi()["paths"])
+    finally:
+        _clear_overrides()
+
+    declared = {item.source_code: item.observation_dimensions for item in sources.items}
+    assert response.json()["observation_dimensions"] == declared[row["source_code"]]
+    assert declared[row["source_code"]], "CDC publishes dimensions to declare"
 
 
 def test_unknown_metric_code_returns_a_stable_404() -> None:
@@ -396,7 +453,9 @@ def test_freshness_of_an_empty_glossary_is_an_empty_list() -> None:
 def test_catalog_lists_declare_deterministic_ordering() -> None:
     """Covers: API-041 — paging is stable because ordering is stable."""
     metrics_list, _, _ = catalog_queries.build_metrics_queries(None, None, None, 10, 0)
-    geo_list, _, _ = catalog_queries.build_geographies_queries(None, None, None, 10, 0)
+    geo_list, _, _ = catalog_queries.build_geographies_queries(
+        None, None, None, None, 10, 0
+    )
 
     assert "ORDER BY metric_code" in str(metrics_list)
     assert "ORDER BY geo_id" in str(geo_list)
@@ -416,3 +475,45 @@ def test_empty_catalog_results_are_stable_empty_pages() -> None:
     assert metrics.json() == {"total": 0, "limit": 100, "offset": 0, "items": []}
     assert geographies.status_code == 200
     assert geographies.json() == {"total": 0, "limit": 100, "offset": 0, "items": []}
+
+
+def test_the_value_state_capability_is_derived_from_the_dispatch() -> None:
+    """Covers: API-127 — whether a row can be null is read, not listed.
+
+    A source's serving relations either carry a value state or they do not,
+    and the dispatch entry already says which by declaring the column the
+    neutral read projects. Publishing a second list here would be the thing
+    the registry exists to avoid; publishing nothing left a client to infer
+    the shape from whichever row it happened to read, which is exactly what
+    `observation_dimensions` exists to prevent (API-109).
+
+    Both shapes have to be represented, or the sweep proves only one of them.
+    """
+    sources = list_source_capabilities(app.openapi()["paths"])
+    declared = {
+        item.source_code: item.publishes_value_status
+        for item in sources.items
+        if item.source_code in OBSERVATION_DISPATCH
+    }
+    assert declared, "no discovered source has a dispatch entry"
+    for source_code, publishes in declared.items():
+        dispatch = OBSERVATION_DISPATCH[source_code]
+        assert publishes == (dispatch.value_status_column is not None), source_code
+    assert set(declared.values()) == {True, False}, (
+        f"both shapes must be represented for the rule to mean anything: {declared}"
+    )
+
+
+def test_a_metric_declares_whether_its_own_rows_can_be_null() -> None:
+    """Covers: API-127 — on both resources, for API-119's reason."""
+    row = dict(_METRIC_ROW)
+    client = _client_with(_RowSession(rows=[row]))
+    try:
+        response = client.get(f"/api/v1/catalog/metrics/{row['metric_code']}")
+        sources = list_source_capabilities(app.openapi()["paths"])
+    finally:
+        _clear_overrides()
+
+    declared = {item.source_code: item.publishes_value_status for item in sources.items}
+    assert response.json()["publishes_value_status"] == declared[row["source_code"]]
+    assert declared[row["source_code"]] is True, "CDC publishes a value state"

@@ -868,7 +868,16 @@ def bls_ingest():
     # -----------------------------
     # Task 5: Silver layer (full load)
     # -----------------------------
-    @task(trigger_rule="all_success")
+    # Every task from here to the publisher event runs on ``none_failed``
+    # rather than Airflow's default ``all_success``, as ACS and FRED do. Both
+    # rules refuse to run behind an upstream that *failed*; they differ over one
+    # that was *skipped*, and Airflow marks a mapped task that expands to zero
+    # instances skipped. ``ingest_batch`` below is mapped over the ingestion
+    # plan, so an empty plan under ``all_success`` would skip the silver
+    # transform, the gold refresh, the chunked serving refresh and the
+    # publisher-ready event -- publishing nothing for a run whose only news was
+    # that there was nothing new to fetch.
+    @task(trigger_rule="none_failed")
     def ensure_silver_schema() -> None:
         """Ensure silver_bls schema and tables exist."""
         sql_path = _silver_ddl_path()
@@ -879,7 +888,7 @@ def bls_ingest():
             conn.commit()
 
     @task(
-        trigger_rule="all_success", max_active_tis_per_dag=CONFIG.silver_max_active_tis
+        trigger_rule="none_failed", max_active_tis_per_dag=CONFIG.silver_max_active_tis
     )
     def transform_to_silver_by_program(program: str) -> int:
         """Transform ALL raw BLS data to silver for one program (full load)."""
@@ -911,7 +920,7 @@ def bls_ingest():
     # -----------------------------
     # gold_bls serving layer
     # -----------------------------
-    @task(trigger_rule="all_success")
+    @task(trigger_rule="none_failed")
     def ensure_gold_bls_schema() -> None:
         """Apply the source-specific gold_bls DDL."""
         from data_ingestion_toolbox.bls.gold_bls.transform import (
@@ -920,7 +929,7 @@ def bls_ingest():
 
         ensure_bls_gold_schema()
 
-    @task(trigger_rule="all_success")
+    @task(trigger_rule="none_failed")
     def refresh_gold_geography() -> None:
         """Synchronize the shared current-geography table in a short transaction."""
         hook = _get_postgres_hook()
@@ -929,7 +938,7 @@ def bls_ingest():
             cur.execute("SET statement_timeout = '10min'")
             conn.commit()
 
-    @task(trigger_rule="all_success")
+    @task(trigger_rule="none_failed")
     def refresh_gold_bls_elements() -> int:
         """Refresh BLS dimensions and metric mappings in gold_bls."""
         from data_ingestion_toolbox.bls.gold_bls.transform import (
@@ -938,7 +947,7 @@ def bls_ingest():
 
         return refresh_bls_elements()
 
-    @task(trigger_rule="all_success")
+    @task(trigger_rule="none_failed")
     def refresh_gold_bls_serving_layer() -> dict[str, int]:
         """Refresh changed BLS years as independently committed annual chunks."""
         return refresh_serving_layer_in_year_chunks(
@@ -947,7 +956,7 @@ def bls_ingest():
             task_logger=logger,
         )
 
-    @task(trigger_rule="all_success")
+    @task(trigger_rule="none_failed")
     def emit_bls_publisher_ready() -> None:
         """Append a durable outbox event without waiting for glossary harvest."""
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready

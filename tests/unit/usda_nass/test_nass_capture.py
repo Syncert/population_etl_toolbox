@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -332,4 +333,79 @@ def test_the_reconciliation_cadence_is_evidence_based(day: int, expected: str) -
             moment, deterministic_config(full_reconciliation_day_of_month=28)
         )
         == "full"
+    )
+
+
+# ---------------------------------------------------------------------------
+# DAG-018 — the sweep day is one the schedule reaches
+# ---------------------------------------------------------------------------
+
+_DAG_FILE = Path(__file__).resolve().parents[3] / "dags/usda_nass_crop_ingest_dag.py"
+
+
+def _scheduled_dates(cron: str, months: int) -> list[datetime]:
+    """Every logical date one simple cron expression produces.
+
+    Only the shapes this DAG uses: a fixed minute and hour, a day-of-month
+    field that is `*` or one number, a month field of `*`, and a day-of-week
+    range. POSIX cron takes the **union** of day-of-month and day-of-week
+    when both are restricted, which is what lets one expression say "every
+    weekday, and the first". Written out here rather than imported, because
+    `croniter` ships with Airflow and this tier has neither -- the DAG tier
+    derives the same dates from the DAG's own timetable, so an assumption
+    about cron made here is checked there.
+    """
+    minute, hour, dom, month, dow = cron.split()
+    assert month == "*", f"this helper models no month field: {cron}"
+    start, end = (int(part) for part in dow.split("-")) if "-" in dow else (0, 6)
+    weekdays = {value % 7 for value in range(start, end + 1)}
+    day_of_month = None if dom == "*" else int(dom)
+
+    dates: list[datetime] = []
+    moment = datetime(2026, 1, 1, int(hour), int(minute), tzinfo=timezone.utc)
+    limit = moment + timedelta(days=31 * months)
+    while moment < limit:
+        # `isoweekday() % 7` puts Sunday at 0, as cron does.
+        matches_weekday = moment.isoweekday() % 7 in weekdays
+        matches_day = day_of_month is not None and moment.day == day_of_month
+        if matches_weekday or matches_day:
+            dates.append(moment)
+        moment += timedelta(days=1)
+    return dates
+
+
+def test_the_schedule_reaches_the_sweep_day_every_month() -> None:
+    """Covers: DAG-018 — a promised monthly sweep needs a run to land on it.
+
+    The DAG's docstring and `BETA_RESET_REINGESTION.md` both promise that a
+    run on the first of the month sweeps the whole registered history.
+    `resolve_slice_mode` decides that from `logical_date.day`, and the
+    schedule was `0 10 * * 1-5` with `catchup=False` -- weekdays only. When
+    the first fell on a weekend no logical date landed on it and nothing
+    backfilled the interval, so in the DAG's own two-year window six months
+    ran every slice in `recent` mode and never re-requested prior crop
+    years: 2026-02-01, 2026-03-01, 2026-08-01, 2026-11-01, 2027-05-01 and
+    2027-08-01.
+
+    Nothing reported it. DQ-NASS-002 measures ledger and preflight
+    agreement, not sweep cadence, and the cadence test above hand-picks
+    2026-04-01 -- a Wednesday -- and never asks whether the cron can produce
+    the date.
+    """
+    import re
+
+    cron = re.search(r'schedule="([^"]+)"', _DAG_FILE.read_text(encoding="utf-8"))
+    assert cron is not None, "the DAG declares no cron schedule to read"
+    config = deterministic_config()
+
+    sweeps_by_month: dict[tuple[int, int], list[datetime]] = {}
+    for moment in _scheduled_dates(cron.group(1), months=24):
+        if resolve_slice_mode(moment, config) == "full":
+            sweeps_by_month.setdefault((moment.year, moment.month), []).append(moment)
+
+    months = [(2026 + (index + 0) // 12, (index % 12) + 1) for index in range(24)]
+    missed = [month for month in months if len(sweeps_by_month.get(month, [])) != 1]
+    assert missed == [], (
+        "these months schedule no single history sweep: "
+        f"{[f'{year}-{month:02d}' for year, month in missed]}"
     )

@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-022 — saved analyses in the browser. The token reaches the
 // API only as an authorization header, no user content enters the address

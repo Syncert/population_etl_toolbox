@@ -83,6 +83,23 @@ def build_month_shards(window_start: date, window_end: date) -> list[DateShard]:
     return shards
 
 
+#: The component name each source's gold DDL is recorded under in
+#: `control.schema_migration_state`, in one place rather than four.
+#:
+#: The relation records exactly these: a content hash of one source's gold
+#: DDL files, written by `ensure_gold_schema_from_files` when it applies them.
+#: It records no bootstrap-manifest asset and nothing else writes to it, which
+#: is what DQ-SHARED-004's note has to say -- the rule wants the manifest's
+#: components compared against what was applied, and the applied set is not
+#: recorded anywhere to compare (DQ-014).
+GOLD_SCHEMA_COMPONENTS: dict[str, str] = {
+    "BLS": "gold_ddl_bls",
+    "CENSUS_ACS": "gold_ddl_acs",
+    "CENSUS_PEP": "gold_ddl_pep",
+    "FRED": "gold_ddl_fred",
+}
+
+
 def _ensure_schema_state_table(cur: Any) -> None:
     cur.execute("CREATE SCHEMA IF NOT EXISTS control")
     cur.execute(

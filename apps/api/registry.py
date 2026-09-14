@@ -21,6 +21,8 @@ API development plan forbids.
 
 from __future__ import annotations
 
+import re
+
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -28,6 +30,12 @@ from dataclasses import dataclass
 #: its rows carry a ``place_name`` the other sources do not have; selecting it
 #: unconditionally would fail on relations where the column does not exist.
 _PLACE_AWARE_GEO_NAME = "COALESCE(place_name, county_name, state_name, geo_id)"
+
+#: The one warehouse mapping, applied to a relation that stores the source's
+#: own grain under the name ``geo_level``. Defined in
+#: ``sql/migrations/018_geo_grain_vocabulary.sql``; written here once, the way
+#: the dispatch entries write it once for the columns they read.
+_GRAIN_OF_GEO_TYPE_COLUMN = "gold_glossary.geo_grain(geo_level)"
 _DEFAULT_GEO_NAME = "COALESCE(county_name, state_name, geo_id)"
 
 
@@ -67,6 +75,55 @@ class ServingContract:
     publishes_vintage_and_error: bool = False
     #: True when the source publishes place-level geography names.
     publishes_place_names: bool = False
+    #: How a request's catalog metric code binds to this relation's own code.
+    #:
+    #: Most serving relations store the code the catalog publishes, so the
+    #: condition is equality. Census PEP's reporting view composes a third
+    #: segment from the dataset -- ``'CENSUS_PEP:' || dataset_code || ':' ||
+    #: metric_code`` -- while the catalog publishes ``CENSUS_PEP:<measure>``,
+    #: so the two never met and every PEP metric answered no rows on these
+    #: routes while the same metric answered normally on ``/observations``
+    #: (API-093).
+    #:
+    #: The relation's measure segment is matched against the glossary's own
+    #: published lineage key, not against a segment cut out of the request:
+    #: deriving one identity from another by string surgery on caller text is
+    #: the defect ARC-005 exists to prevent.
+    #:
+    #: A relation that composes its own identity is matched on *both*: the
+    #: catalog's code through the lineage key, and the relation's own code as
+    #: the whole value the caller sent. These routes project ``metric_code``
+    #: from the relation, so a Census PEP page answers rows carrying
+    #: ``CENSUS_PEP:<dataset>:<measure>`` -- and matching only the key made the
+    #: route refuse the identity it had just published, so a client asking for
+    #: more of the metric it was reading got an empty 200 (DB-034).
+    metric_match_condition: str = "metric_code = :metric_code"
+    #: True when the condition above binds ``:metric_key`` -- the lineage key
+    #: the publisher declares in ``physical_lineage`` -- instead of the
+    #: request's own ``:metric_code``.
+    binds_lineage_key: bool = False
+    #: How this source's serving relations spell the geography grain.
+    #:
+    #: Most of them derive the vocabulary word already, so the column is the
+    #: expression. Census PEP's reporting view projects
+    #: ``revision.geo_type AS geo_level``, so the relation holds the source's
+    #: own ``nation``/``state``/``county``/``place`` under that name, and the
+    #: one warehouse mapping turns it into the word the catalog publishes.
+    #: Without it ``geo_level=NATIONAL`` -- the word `valid_geo_grains` lists
+    #: and ``/observations`` accepts -- matched nothing here and answered an
+    #: empty page, while every served row reported a grain the rest of the
+    #: API does not use (API-092). The dispatch entries below declare the same
+    #: thing for the relations *they* read; the two must agree on which
+    #: sources need it.
+    geo_level_expression: str = "geo_level"
+    #: The total order the latest route pages, and the total order the
+    #: history route pages. Each is the relation's own unique-index key with
+    #: the columns the query already pins removed, so no two rows of one
+    #: response can tie on the full list and two consecutive pages can neither
+    #: repeat a row nor skip one. Declared here beside the relations they
+    #: order, the way ``ObservationDispatch`` already declares its own.
+    latest_order: tuple[str, ...] = ()
+    history_order: tuple[str, ...] = ()
 
     @property
     def geo_name_expression(self) -> str:
@@ -93,6 +150,11 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_bls.mv_bls_latest",
             history_relation="gold_bls.rpt_bls_observations",
             publishes_seasonal_adjustment=True,
+            # uq_mv_bls_latest is (geo_id, series_id, metric_code) and
+            # uq_rpt_bls_observations_nk adds observation_date; metric_code is
+            # pinned by the query.
+            latest_order=("geo_id", "series_id"),
+            history_order=("observation_date", "series_id"),
         ),
         ServingContract(
             source_code="CENSUS_ACS",
@@ -103,6 +165,17 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_census.mv_acs_latest",
             history_relation="gold_census.rpt_acs_observations",
             publishes_vintage_and_error=True,
+            # uq_mv_acs_latest / uq_rpt_acs_observations_nk are
+            # (geo_id, observation_date, dataset_code, vintage_year,
+            # variable_code, metric_code). An ACS metric is published under
+            # more than one vintage, so the vintage is part of the order.
+            latest_order=("geo_id", "dataset_code", "vintage_year", "variable_code"),
+            history_order=(
+                "observation_date",
+                "dataset_code",
+                "vintage_year",
+                "variable_code",
+            ),
         ),
         ServingContract(
             source_code="FRED",
@@ -113,6 +186,18 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             latest_relation="gold_fred.mv_fred_latest",
             history_relation="gold_fred.rpt_fred_observations",
             publishes_seasonal_adjustment=True,
+            # uq_mv_fred_latest is (series_id, metric_code, realtime_start,
+            # realtime_end); uq_rpt_fred_observations_nk adds
+            # observation_date. The realtime window is FRED's own vintage
+            # identity and belongs in the history order even though the
+            # silver layer serves one window per observation today.
+            latest_order=("geo_id", "series_id"),
+            history_order=(
+                "observation_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
         ),
         ServingContract(
             source_code="CENSUS_PEP",
@@ -124,6 +209,19 @@ SERVING_CONTRACTS: dict[str, ServingContract] = {
             history_relation="gold_pep.rpt_pep_observations",
             publishes_vintage_and_error=True,
             publishes_place_names=True,
+            geo_level_expression=f"{_GRAIN_OF_GEO_TYPE_COLUMN}",
+            metric_match_condition=(
+                "(metric_code = :metric_code "
+                "OR SPLIT_PART(metric_code, ':', 3) = :metric_key)"
+            ),
+            binds_lineage_key=True,
+            # PEP's latest publication is a series, not a value: every
+            # estimated year of the current vintage, so one geography carries
+            # several rows and geo_id alone leaves ties a page boundary can
+            # fall inside. dataset_code is pinned -- a PEP metric code
+            # composes it -- so the vintage and the capture close the order.
+            latest_order=("geo_id", "observation_date", "vintage_year", "capture_id"),
+            history_order=("observation_date", "vintage_year", "capture_id"),
         ),
     )
 }
@@ -232,6 +330,36 @@ class ObservationDispatch:
     def supported_filters(self) -> tuple[str, ...]:
         return tuple(sorted(param for param, _ in self.filter_conditions))
 
+    def analysis_refusal(self) -> str | None:
+        """Why an aligned single-value read declines this source, or ``None``.
+
+        One statement, because four served surfaces read it against each
+        other: `/distribution/bins`, `/comparison/preflight`, a stored
+        analysis document, and a per-geography reduction on `/observations`
+        -- which is the same ranking the analysis routes apply (API-118).
+        Three of them carried their own copy of the fallback sentence and the
+        fourth worded it differently, so a reader comparing two refusals of
+        the same source could not tell whether they meant the same thing.
+        """
+        if self.analysis_ready:
+            return None
+        return self.analysis_restriction or (
+            f"source '{self.source_code}' is not served by the aligned analysis routes"
+        )
+
+    def published_dimensions(self) -> tuple[str, ...]:
+        """The field names a neutral row's ``dimensions`` object carries.
+
+        Derived from the same declaration the rows are built from, so the
+        capability map cannot drift from what a row holds. The set is a
+        review -- `gold_nass.latest_release_observation` has 53 columns and
+        14 of them ride here, the rest being surrogate keys, slice
+        bookkeeping and the relation's own shape the source-scoped routes
+        serve -- and publishing it is what makes it a contract a client can
+        code against rather than a shape they infer from one row (API-109).
+        """
+        return tuple(sorted(name for name, _ in self.dimension_expressions))
+
 
 #: Year-window conditions shared by the union-family relations, which carry a
 #: date-typed ``observation_date``.
@@ -258,11 +386,93 @@ def normalize_geo_level(value: str) -> str:
     """The vocabulary word for a requested ``geo_level``, alias-aware.
 
     Upper-cased and trimmed; an alias becomes its vocabulary word; anything
-    else is passed through so the filter fails to match rather than a wrong
-    grain silently answering.
+    else is passed through unchanged. Passing it through is what makes
+    ``grain_refusal`` possible: normalising is not validating, and a request
+    carrying a word that is not a grain is refused rather than filtered on
+    (API-122).
     """
     word = str(value).strip().upper()
     return GEO_GRAIN_ALIASES.get(word, word)
+
+
+def grain_refusal(
+    field: str, value: str, vocabulary: tuple[str, ...] = GEO_GRAINS
+) -> str | None:
+    """Why a requested grain is not one, or ``None`` when it is.
+
+    The vocabulary is closed and published: the catalog carries
+    ``valid_geo_grains`` per metric, the consumer guide promises "a grain read
+    from the catalog can be sent straight back", and two routes already refuse
+    a word outside their own subset of it. Everywhere else an unknown word was
+    bound into the filter, matched nothing, and answered 200 with ``total: 0``
+    -- API-093's defect one level down, in its own words: "a total that reads
+    as a complete answer to the question the caller thought they asked".
+    ``geo_level=COUNTRY`` is not a grain with no rows; it is not a grain.
+
+    ``vocabulary`` narrows the answer for a source that publishes a subset, so
+    CDC and USDA NASS keep naming their own three words rather than all five.
+    """
+    if normalize_geo_level(value) in vocabulary:
+        return None
+    return f"{field} must be one of: {', '.join(vocabulary)}"
+
+
+#: Request values whose space is closed, and how each one is checked.
+#:
+#: `geo_level` names a grain: the vocabulary is `GEO_GRAINS`, published per
+#: metric as `valid_geo_grains`. `state_fips` and `county_fips` have a closed
+#: *shape* rather than a closed set -- the reference layer's own CHECK
+#: constraints are `^[0-9]{2}$` and `^[0-9]{3}$` -- so a well-formed code that
+#: names no geography answers an empty page, which is a fact about the
+#: warehouse, while `ZZ` is refused, which is a fact about the request.
+#:
+#: Read by the request layer (`dependencies.reject_values_outside_a_closed_set`)
+#: and by saved-analysis storage, because the two must agree: API-117 made
+#: storage refuse a filter *name* the route would refuse, for the stated reason
+#: that "storage is not a back door for a request the API would refuse", and a
+#: value was never checked -- so a document carrying `geo_level: "NOPE"` stored
+#: clean and replayed as the API-122 refusal its reader never saw (API-123).
+#:
+#: `geo_id` is deliberately absent: its shape is source-dependent (`us:1`,
+#: `state:NN`, `state:NN|county:NNN`, `state:NN|place:NNNNN`, and
+#: `agency:<ORI>` for FBI UCR, whose tail is a provider string), so a shape
+#: rule here would be a second declaration of something the reference layer
+#: owns.
+_FIPS_SHAPES: dict[str, tuple[str, str]] = {
+    "state_fips": (r"\A[0-9]{2}\Z", "two digits"),
+    "county_fips": (r"\A[0-9]{3}\Z", "three digits"),
+}
+
+#: The parameters `closed_value_refusal` has a rule for.
+CLOSED_VALUE_PARAMETERS: frozenset[str] = frozenset({"geo_level"}) | frozenset(
+    _FIPS_SHAPES
+)
+
+
+def closed_value_refusal(name: str, value: object) -> str | None:
+    """Why ``value`` is not one this parameter accepts, or ``None``.
+
+    An empty value is absent: every service reads `if state_fips:` as "no
+    filter", and a saved analysis document records `state_fips: ""` for a
+    source that declares no state filter (API-117, WEB-075), so refusing it
+    would break replaying a stored document.
+    """
+    if name not in CLOSED_VALUE_PARAMETERS:
+        return None
+    word = "" if value is None else str(value).strip()
+    if not word:
+        return None
+    shape = _FIPS_SHAPES.get(name)
+    if shape is not None:
+        pattern, expected = shape
+        if re.match(pattern, word):
+            return None
+        return (
+            f"{name} must be {expected}; a well-formed code that names no "
+            f"geography answers an empty page, and this is not a well-formed "
+            f"code"
+        )
+    return grain_refusal(name, word)
 
 
 #: Sources whose served relation carries the grain as a source-shaped
@@ -338,10 +548,25 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", _DATE_YEAR_FROM),
                 ("year_to", _DATE_YEAR_TO),
             ),
-            latest_order=("geo_id", "observation_date", "variable_code"),
+            # `uq_mv_acs_latest` is (geo_id, dataset_code, vintage_year,
+            # variable_code, metric_code) and
+            # `uq_rpt_acs_observations_nk` adds observation_date.
+            # `metric_code` is pinned by every query here and is composed as
+            # `CENSUS_ACS:<dataset_code>:<variable_code>`, so pinning it pins
+            # those two -- but the order names them anyway, so that it is
+            # provably total against the index rather than total by way of a
+            # composition rule a reader has to know (DB-040).
+            latest_order=(
+                "geo_id",
+                "observation_date",
+                "dataset_code",
+                "vintage_year",
+                "variable_code",
+            ),
             released_order=(
                 "observation_date",
                 "geo_id",
+                "dataset_code",
                 "vintage_year",
                 "variable_code",
             ),
@@ -546,8 +771,32 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", _DATE_YEAR_FROM),
                 ("year_to", _DATE_YEAR_TO),
             ),
-            latest_order=("geo_id", "observation_date", "series_id"),
-            released_order=("observation_date", "geo_id", "as_of_date", "series_id"),
+            # `uq_mv_fred_latest` is (series_id, metric_code, realtime_start,
+            # realtime_end): the index admits one row per realtime window, and
+            # the window used to be NULL for every row, so the order could not
+            # tie. It can now (DB-040).
+            latest_order=(
+                "geo_id",
+                "observation_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
+            # `uq_rpt_fred_observations_nk` is (observation_date, series_id,
+            # metric_code, realtime_start, realtime_end). `metric_code` is
+            # pinned by every released query, and the realtime window is the
+            # rest of the key -- FRED's own vintage identity, which the fact
+            # view published as NULL until DB-040. Without it two revisions of
+            # one observation tie on this order, which is the paging defect
+            # API-083 and API-106 closed for the other sources.
+            released_order=(
+                "observation_date",
+                "geo_id",
+                "as_of_date",
+                "series_id",
+                "realtime_start",
+                "realtime_end",
+            ),
             analysis_ready=True,
             publishes_geo_attribution=True,
         ),
@@ -620,6 +869,30 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
         ),
     )
 }
+
+
+def ranking_tie_break(order: tuple[str, ...]) -> str:
+    """A declared total order, as the tail of a reduction's ``ORDER BY``.
+
+    ``ROW_NUMBER()`` assigns 1 to *some* row of each tie group and SQL does
+    not say which, so a reduction that ranks only on the period (or only on
+    the release) answers a published row that can change between two
+    identical requests -- a different plan, a re-clustered relation -- with
+    no publication in between. Appending the order the entry already
+    declares closes the group: it is the relation's own unique-index key, so
+    no two rows can tie on the whole list.
+
+    The order is appended verbatim rather than pruned against what the
+    ranking expression already decided. A column that is constant inside a
+    tie group contributes nothing to the result, and deriving the tail from
+    the declaration keeps the registry the one place a source's order is
+    written down -- pruning would need this module to parse the expressions
+    it hands to SQL.
+
+    Empty for an entry that declares no order, which leaves the ranking
+    exactly as it was rather than inventing one (API-083).
+    """
+    return "".join(f", {column}" for column in order)
 
 
 def observation_dispatch(source_code: str) -> ObservationDispatch:
@@ -835,4 +1108,73 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             dataset_provider=_nass_datasets,
         ),
     )
+}
+
+
+# ---------------------------------------------------------------------------
+# What a saved analysis document's own route can send
+# ---------------------------------------------------------------------------
+
+#: The route each saved-analysis kind replays through. Named here so the
+#: document's meaning and the route's parameters are checked against one
+#: another rather than each being maintained alone.
+CONFIGURATION_ROUTES: dict[str, str] = {
+    "observations": "/api/v1/observations",
+    "distribution": "/api/v1/distribution/bins",
+    "comparison": "/api/v1/comparison",
+    # A workbench replays through several routes -- one observations read per
+    # series, and the analysis routes for a cross-sectional presentation -- so
+    # the route named here is the one its series replay through, which is the
+    # one its stored fields are checked against.
+    "workbench": "/api/v1/observations",
+}
+
+#: The ``AnalysisDocument`` fields each kind's route accepts, beyond the
+#: per-source `filters` the capability contract governs and the opaque
+#: `visualization` the API never reads.
+#:
+#: One model carries three kinds, so a field belonging to another kind is a
+#: field its route has nowhere to send. `/distribution/bins` and
+#: `/comparison` take neither a scope, a release, nor a reduction: a stored
+#: distribution pinned to a release would reopen as the latest publication
+#: with nothing saying the pin was dropped (API-112). The sets are asserted
+#: against the served contract, so a parameter added to one of the three
+#: routes without a line here fails.
+#: The filter names each kind's route takes as query parameters, or ``None``
+#: where it takes every filter its source declares.
+#:
+#: `/observations` declares one query parameter per filter in the union of
+#: every source's declared set, so its accepted filters *are* the source's.
+#: The analysis routes take two: `geo_level` and `state_fips`. What a
+#: document may carry is therefore the intersection, never the union -- a
+#: stored Census PEP distribution filtered by `state_fips` validated clean
+#: and replayed as a 422, because PEP declares no such filter, and an ACS
+#: distribution filtered by `year_from` validated clean and replayed as the
+#: strict-parameter refusal, because the route has no such parameter
+#: (API-117).
+CONFIGURATION_FILTER_PARAMETERS: dict[str, frozenset[str] | None] = {
+    "observations": None,
+    "distribution": frozenset({"geo_level", "state_fips"}),
+    "comparison": frozenset({"geo_level", "state_fips"}),
+    # Each series is an observations read, so a series' filters are its
+    # source's, exactly as an observations document's are.
+    "workbench": None,
+}
+
+CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
+    "observations": frozenset(
+        {
+            "metric_code",
+            "scope",
+            "release",
+            "newest_per_geography",
+            "newest_release_per_period",
+        }
+    ),
+    "distribution": frozenset({"metric_code", "bin_count"}),
+    "comparison": frozenset({"metric_code_a", "metric_code_b"}),
+    # A workbench carries no top-level measure, scope, release or reduction:
+    # every one of those belongs to a series, and a value at the top would
+    # have nowhere to be replayed -- the API-112 defect, one level up.
+    "workbench": frozenset({"series", "presentation", "alignment"}),
 }

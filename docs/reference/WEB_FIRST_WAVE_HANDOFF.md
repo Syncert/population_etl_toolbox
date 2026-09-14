@@ -179,3 +179,38 @@ Named so they are picked up deliberately rather than rediscovered:
   in `lib/evidencePackets.packetToDocument`/`documentToPacket`. Nothing about
   a packet reaches the address bar from either screen; sharing a packet is
   publishing, and publishing is that later plan's to define.
+- The build-your-own analytics surface is **delivered** as the workbench
+  (`docs/plans/completed/ANALYTICS_WORKBENCH_PLAN.md`, WB-1 through WB-7).
+  It reuses `lib/comparison.ts`, `lib/observationAccess.ts`,
+  `ScatterChart.tsx`, `ChoroplethLegend.tsx` and the saved-analysis
+  destination rule; it added `/comparison/correlation` and
+  `/comparison/matrix` on the API; and it states its grain rules once, in the
+  plan, so a later reader does not rediscover why nothing is rolled up
+  client-side.
+
+  Its own reusable modules, for a surface that comes after it:
+
+  - `lib/workbench.ts` — the whole rule set as pure functions over published
+    evidence: the series model and what may join a composition, the
+    unit-driven axis assignment, which presentations a selection can answer,
+    the cross-sectional refusals, the reference-line rule, the heatmap cell
+    model, and the correlation's eligibility and readings. Nothing here
+    fetches; the page renders decisions this module made.
+  - `lib/comparison.sharedGrainOffer` — the intersection of a set of
+    measures' published grains, for any number of them.
+    `comparisonGrainOffer` is now a wording of it, so the comparison
+    workspace and the workbench cannot reach different conclusions about one
+    publication.
+  - `LineChart.tsx`, `BarChart.tsx`, `HeatmapChart.tsx` — inline SVG in the
+    `ScatterChart`/`TimeSeriesChart` pattern: `role="img"` with a label that
+    states what is drawn *and* what is not, `data-*` hooks for the browser
+    tier, colour never the only carrier of a distinction, and no charting
+    dependency. `BarChart` serves both a time axis and a geography ranking.
+  - `CorrelationPanel.tsx`, `CorrelationMatrixChart.tsx` — the presentation
+    rules for an API-derived statistic: the association caveat first and not
+    collapsible, every coefficient labelled API-derived, a null one showing
+    the API's own reason, and three kinds of cell kept off the diverging
+    scale.
+  - `observationExport.workbenchExport` — the observation envelope plus the
+    four columns a composition needs, with `derived` true only on the
+    coefficients.

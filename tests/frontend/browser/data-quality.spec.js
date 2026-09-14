@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-024 — the data-quality explorer in the browser. The published
 // rollup is presented without a score, four distinct source states stay
@@ -52,6 +52,15 @@ const freshness = {
 };
 
 const blsMetrics = [
+  {
+    // Sorts last by metric code and is the measure a reader came for, so it
+    // is the one the alphabetical sample could not reach (WEB-041).
+    metric_code: "BLS:LAU:ZZ_STALE_MEASURE",
+    metric_display_name: "A measure that went stale",
+    source_code: "BLS",
+    freshness_state: "stale",
+    publication_time: "2026-02-01T00:00:00Z",
+  },
   {
     metric_code: "BLS:LAU:UNEMP_RATE",
     metric_display_name: "Unemployment rate",
@@ -139,11 +148,12 @@ test("per-metric quality shows the publisher's own fields and links back", async
   const partial = page.getByTestId("quality-metric-BLS:LAU:LABOR_FORCE");
   await expect(partial).toContainText("Not published");
 
-  // Quality evidence links back to the context it affects.
-  await expect(page.getByTestId("quality-explore-BLS:LAU:UNEMP_RATE")).toHaveAttribute(
-    "href",
-    /metric=BLS%3ALAU%3AUNEMP_RATE/,
-  );
+  // Quality evidence links back to the context it affects, naming the source
+  // that publishes the measure: without it the link opened Census ACS and
+  // showed one of its metrics instead (WEB-072).
+  const exploreLink = page.getByTestId("quality-explore-BLS:LAU:UNEMP_RATE");
+  await expect(exploreLink).toHaveAttribute("href", /metric=BLS%3ALAU%3AUNEMP_RATE/);
+  await expect(exploreLink).toHaveAttribute("href", /source=BLS/);
 });
 
 test("evidence the rollup does not carry is pointed at, not fabricated", async ({ page }) => {
@@ -158,4 +168,33 @@ test("evidence the rollup does not carry is pointed at, not fabricated", async (
   await expect(locations).toContainText("never a zero");
   await expect(locations).toContainText("not zero crime");
   await expect(locations).toContainText("publisher_contract_version");
+});
+
+test("the sample leads with the measures whose published state needs attention", async ({
+  page,
+}) => {
+  // Covers: WEB-041 — the rollup reports "3 stale of 8" and the table then
+  // showed the alphabetically first rows, so the stale measure a reader came
+  // for could sit past the sample entirely.
+  await installRoutes(page);
+  await page.goto("/quality");
+  await page.getByTestId("quality-select-BLS").click();
+
+  const rows = page.locator("tbody tr[data-testid^='quality-metric-']");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute(
+    "data-testid",
+    "quality-metric-BLS:LAU:ZZ_STALE_MEASURE",
+  );
+  // The unpublished state comes next: a measure the publisher said nothing
+  // about is not thereby current.
+  await expect(rows.nth(1)).toHaveAttribute(
+    "data-testid",
+    "quality-metric-BLS:LAU:LABOR_FORCE",
+  );
+
+  // And the order is stated, so the sample is not read as the catalog's own.
+  await expect(page.getByTestId("quality-explorer")).toContainText(
+    "Ordered by published freshness",
+  );
 });

@@ -16,14 +16,16 @@ snapshot updated to make a red test green is exactly the failure this guards.
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.api.main import app
-from apps.api.versioning import CURRENT_VERSION, UNVERSIONED_PATHS
+from apps.api.main import PUBLIC_ROUTERS, app
+from apps.api.routers import health
+from apps.api.versioning import CURRENT_VERSION, UNVERSIONED_PATHS, VERSIONED_ROOT
 from tests.support.openapi_contract import contract_digest, describe_difference
 
 SNAPSHOT_PATH = (
@@ -84,6 +86,16 @@ def test_deployment_probes_stay_outside_the_version_policy() -> None:
 
     assert client.get("/health").json()["status"] == "ok"
 
+    # And the declaration is the router's, both ways. Asserting only that
+    # every listed path is served lets a probe added to the router go
+    # unlisted, and `UNVERSIONED_PATHS` is what tells the rest of the
+    # application which paths carry no data contract.
+    from apps.api.routers import health
+
+    assert UNVERSIONED_PATHS == {
+        str(route.path) for route in health.probe_router.routes
+    }
+
 
 @pytest.mark.unit
 @pytest.mark.api
@@ -110,3 +122,160 @@ def test_retired_aliases_are_not_served() -> None:
 
     for legacy in ("/api/health", "/api/catalog/metrics", "/api/observations"):
         assert client.get(legacy).status_code == 404, legacy
+
+
+# ---------------------------------------------------------------------------
+# The declared failures are the failures the application raises (API-121)
+# ---------------------------------------------------------------------------
+
+ROUTERS_DIRECTORY = Path(__file__).resolve().parents[3] / "apps" / "api" / "routers"
+
+
+def _raised_statuses(source: str) -> set[int]:
+    """Every HTTP status a module hands to ``HTTPException``.
+
+    Read from the source rather than from a list beside it: a refusal added to
+    a router is a failure the contract has to declare, and a list would only
+    be right until the next one.
+    """
+    raised: set[int] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = node.func
+        name = getattr(callee, "id", None) or getattr(callee, "attr", None)
+        if name != "HTTPException":
+            continue
+        candidates = [
+            keyword.value for keyword in node.keywords if keyword.arg == "status_code"
+        ]
+        candidates.extend(node.args[:1])
+        for candidate in candidates:
+            if isinstance(candidate, ast.Constant) and isinstance(candidate.value, int):
+                raised.add(candidate.value)
+    return raised
+
+
+def _operations_by_module() -> dict[str, list[dict]]:
+    """The served operations each router module contributes.
+
+    Read from the routers the application factory mounts, paired with the
+    served document, rather than from ``app.routes``: this FastAPI version
+    wraps an included router in an opaque object, so walking the application
+    finds only its own documentation routes.
+    """
+    document = app.openapi()
+    mounted = [(router, VERSIONED_ROOT) for router in PUBLIC_ROUTERS]
+    mounted.append((health.probe_router, ""))
+    grouped: dict[str, list[dict]] = {}
+    for router, prefix in mounted:
+        for route in router.routes:
+            endpoint = getattr(route, "endpoint", None)
+            served = document["paths"].get(f"{prefix}{getattr(route, 'path', '')}")
+            if endpoint is None or served is None:
+                continue
+            module = getattr(endpoint, "__module__", "")
+            for method in getattr(route, "methods", set()) or set():
+                operation = served.get(method.lower())
+                if operation is not None:
+                    grouped.setdefault(module, []).append(operation)
+    return grouped
+
+
+def _declared_statuses(operation: dict) -> set[int]:
+    return {int(status) for status in operation.get("responses", {})}
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_every_status_a_router_raises_is_declared_by_it() -> None:
+    """Covers: API-121 — a refusal the code can answer is in the contract.
+
+    The published document declared exactly 200, 201, 204 and 422 across all
+    39 operations, while the routers raise 401, 404, 409 and 503 by hand and
+    the middleware answers 413 and 429. A client generated from
+    `/openapi.json` had no branch for any of them.
+    """
+    grouped = _operations_by_module()
+    for path in sorted(ROUTERS_DIRECTORY.rglob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        module = f"apps.api.routers.{path.stem}"
+        raised = _raised_statuses(path.read_text(encoding="utf-8"))
+        if not raised:
+            continue
+        operations = grouped.get(module)
+        assert operations, f"{module} raises {sorted(raised)} and serves nothing"
+        declared: set[int] = set()
+        for operation in operations:
+            declared |= _declared_statuses(operation)
+        # Per module, not per operation: a module's 404 helper belongs to the
+        # routes that resolve an identifier, and the routes that do not should
+        # not claim it.
+        missing = sorted(raised - declared)
+        assert not missing, f"{module} can answer {missing} and declares neither"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_shared_failures_are_declared_where_they_apply() -> None:
+    """Covers: API-121 — the middleware's and dependencies' failures, too.
+
+    These are raised nowhere in a router: the body limit and the rate limiter
+    are middleware, the sanitized 503 is a dependency, and the 401 is the
+    account dependency. Each is declared for exactly the routes it can reach,
+    so the contract neither hides a failure nor invents one.
+    """
+    document = app.openapi()
+    private_prefixes = ("/api/v1/analysis-configurations", "/api/v1/evidence-packets")
+    for path, item in document["paths"].items():
+        for method, operation in item.items():
+            declared = _declared_statuses(operation)
+            where = f"{method.upper()} {path}"
+            # The strict-parameter dependency is applied application-wide.
+            assert 422 in declared, f"{where} declares no 422"
+            private = path.startswith(private_prefixes)
+            assert (401 in declared) is private, f"{where}: 401 vs authentication"
+            # The health resource and the deployment probes are exempt from
+            # the rate limiter; everything else meters.
+            rate_limited = not path.startswith(("/api/v1/health", "/health"))
+            assert (429 in declared) is rate_limited, f"{where}: 429 vs metering"
+            # Only a route that parses a body can answer the body limit.
+            accepts_body = method.upper() in {"POST", "PUT", "PATCH"}
+            assert (413 in declared) is accepts_body, f"{where}: 413 vs a body"
+
+
+@pytest.mark.unit
+@pytest.mark.api
+def test_every_declared_failure_carries_the_body_it_answers() -> None:
+    """Covers: API-121 — the declared error body is the one the API sends.
+
+    Every hand-raised refusal sends `{"detail": "<sentence>"}`. A 422 has two
+    bodies and both are declared, because which one a client gets says who
+    refused the request.
+    """
+    document = app.openapi()
+    string_form = {"$ref": "#/components/schemas/ErrorDetail"}
+    for path, item in document["paths"].items():
+        for method, operation in item.items():
+            for status, response in operation["responses"].items():
+                if int(status) < 400:
+                    continue
+                where = f"{method.upper()} {path} {status}"
+                assert response.get("description"), f"{where} says nothing"
+                schema = response["content"]["application/json"]["schema"]
+                if int(status) == 422:
+                    assert string_form in schema.get("anyOf", []), where
+                    assert {
+                        "$ref": "#/components/schemas/HTTPValidationError"
+                    } in schema["anyOf"], where
+                elif path == "/health/ready":
+                    # The readiness probe's own report, or the sanitized
+                    # refusal when no session could be opened.
+                    assert string_form in schema.get("anyOf", []), where
+                else:
+                    assert schema == string_form, where
+
+    schemas = document["components"]["schemas"]
+    assert schemas["ErrorDetail"]["properties"]["detail"]["type"] == "string"
+    assert schemas["HTTPValidationError"]["properties"]["detail"]["type"] == "array"

@@ -244,6 +244,16 @@ Provider-neutral endpoints:
   one newest value per geography per side, with both inputs' periods and
   identities on every API-derived difference/ratio; an incompatible pair is
   rejected with the failed rules
+- `GET /api/v1/comparison/correlation` — API-derived Pearson and Spearman
+  coefficients over exactly the pairs `/comparison` would page, with the
+  pair count, each side's coverage, how many pairs were contemporaneous, an
+  optional same-year pin, and caveats led by association-not-causation; a
+  coefficient the pairs cannot support is `null` with its reason, never `0`
+- `GET /api/v1/comparison/matrix` — two to eight measures aligned on
+  geography: a compatibility verdict and, where it allows one, a correlation
+  per unordered pair, plus wide rows over the union of the geographies the
+  measures published, each cell carrying its own period and release. A
+  declined pair is a cell; a declined source refuses the whole request
 - `GET /api/v1/distribution/bins` — API-derived equal-width bins over one
   metric's latest values, dispatched to the owning source; stratified
   sources are declined with their declared restriction
@@ -269,6 +279,10 @@ Source-scoped endpoints:
 - `GET /api/v1/cdc/observations`
 - `GET /api/v1/usda-nass/{observations,series,measures,source-notes}`
 
+Every observation route pages with `limit`/`offset` over a total order, so
+consecutive pages neither repeat a row nor skip one; the orders are listed in
+[the consumer guide](docs/reference/API_CONSUMER_GUIDE.md).
+
 `GET /health` — without the `/api` prefix — is the container and load-balancer
 liveness probe; `GET /health/ready` is the readiness probe (503 while the
 database is unreachable; Redis never gates readiness). Both sit outside the
@@ -281,6 +295,13 @@ TTL; the API engine runs with declared pool, connect, and statement-timeout
 budgets (`API_DB_*`); optional per-client rate limits split catalog from
 analytical cost (`API_RATE_LIMIT_*`, off by default); and every response
 carries an `X-Request-ID` logged with a structured completion line.
+
+The limiter's client is the address the request arrived from, so a deployment
+that fronts the API with a proxy — every topology here does — must declare
+that proxy in `API_TRUSTED_PROXY_IPS` (addresses or CIDR blocks) or the
+per-client budgets become one budget for the whole deployment. A forwarded
+address is read only from a declared hop; from anywhere else the header is
+ignored, so it can never be used to claim a second budget.
 
 Metric identity: `metric_code` is required wherever a metric is named, and is
 its only spelling. The `metric_id` alias and the `population` convenience
@@ -307,6 +328,22 @@ The Next.js app proxies local service traffic using same-origin rewrites:
 Override targets in `apps/web/.env.local`:
 - `NEXT_PUBLIC_API_ORIGIN`
 - `NEXT_PUBLIC_TILES_ORIGIN`
+
+The analytical pages:
+
+- `/catalog` — the published measures and what each one declares.
+- `/explore` — one measure at a time: its map, its history, its table, its
+  distribution, and every field qualifying its values.
+- `/compare` — two measures checked against the declared compatibility rules
+  before any data moves, then aligned on geography.
+- `/workbench` — build your own: any published measures on one chart, as a
+  line, bars, a scatter, a ranking, a geography × period heatmap, or an
+  API-derived correlation. Each series is one measure at one geography;
+  nothing is rolled up from a finer grain, normalised, or rescaled to share an
+  axis. `/builder` is the evidence-packet composer and keeps its name, so
+  "build" means compose a document and "workbench" means compose a chart.
+- `/profiles`, `/articles`, `/quality`, `/saved` — the product surfaces over
+  the same contracts.
 
 ### API-to-Map and Compose Contract Smoke
 
@@ -400,7 +437,9 @@ PYTHONPATH=/opt/data_ingestion_toolbox/src:/opt/data_ingestion_toolbox
 AIRFLOW__CORE__LOAD_EXAMPLES=False
 ```
 
-Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration + metadata DB.
+Use the Airflow-only compose stack at `infra/docker/docker-compose.airflow.yml` when you just need DAG orchestration.
+It runs one PostGIS cluster with Airflow's metadata database and a separate warehouse database
+(`PUBLIC_DATA_DB_NAME`, default `population_etl`) that the `public_data` connection points at.
 
 Use the full platform compose stack at `infra/docker/docker-compose.yml` when you need API + Martin + analytics PostGIS + Airflow together.
 
@@ -443,7 +482,9 @@ lifecycle script.
 
 In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:
 
-- Airflow-only compose seeds `public_data` -> host `postgres`, schema `airflow` (metadata DB).
+- Airflow-only compose seeds `public_data` -> host `postgres`, schema
+  `${PUBLIC_DATA_DB_NAME:-population_etl}` (the warehouse database beside the
+  metadata one, created by `infra/docker/initdb/create_warehouse_database.sh`).
 - Full compose seeds `public_data` -> host `analytics_postgres`, schema `population_etl` (analytics DB).
 
 For production/real runs, set `public_data` to your target analytics warehouse.

@@ -52,6 +52,14 @@ _AGENCY_STATUS_CTE = """
                    WHEN BOOL_OR(relationship_type = 'county'
                                 AND resolution_status = 'ambiguous')
                         THEN 'ambiguous'
+                   -- The provider labelled a county and it did not resolve.
+                   -- That is not `agency_only`, which says the provider
+                   -- named no county at all: one is a gap in this pipeline's
+                   -- resolution and the other is a fact about the source, and
+                   -- an operator can only act on the first (ETL-050).
+                   WHEN BOOL_OR(relationship_type = 'county'
+                                AND resolution_status = 'unresolved')
+                        THEN 'agency_county_unresolved'
                    ELSE 'agency_only'
                END AS geography_status
         FROM silver_fbi.agency_geography_relationship
@@ -492,15 +500,29 @@ def _load_county_relationships(cursor: Any, *, scope: dict) -> None:
                CASE WHEN matched.match_count = 1 THEN matched.geo_id END,
                CASE WHEN matched.match_count = 1 THEN matched.geo_sk END,
                CASE WHEN matched.match_count = 1
-                    THEN 'reviewed_county_name_crosswalk' END,
+                    THEN 'county_label_match' END,
                CASE WHEN matched.match_count = 1 THEN 'resolved'
                     WHEN matched.match_count > 1 THEN 'ambiguous'
                     ELSE 'unresolved' END,
-               CASE WHEN matched.match_count = 1 THEN 'reviewed'
+               -- `derived`, not `reviewed` (ETL-050). The match is exact and
+               -- uniqueness-checked, and it is still a name: no reviewed
+               -- artifact backs it, and a county renamed in a new vintage
+               -- re-points the relationship with no review. `reviewed` is
+               -- what the place path earns from
+               -- silver_fbi.reviewed_place_crosswalk, and a consumer
+               -- filtering on it must not receive this.
+               CASE WHEN matched.match_count = 1 THEN 'derived'
                     ELSE 'unresolved' END,
+               -- A label that matched nothing may name a county the
+               -- reference does not hold, or it may be a label this
+               -- normalisation does not reach -- 'Doña Ana County' against
+               -- DONA ANA, 'LaSalle Parish' against LA SALLE. The join
+               -- cannot tell which, and the vocabulary forbids guessing, so
+               -- the reason says what happened rather than asserting the
+               -- county is absent.
                CASE WHEN matched.match_count > 1 THEN 'ambiguous_county_name'
                     WHEN matched.match_count = 0
-                    THEN 'canonical_county_absent' END,
+                    THEN 'county_label_unmatched' END,
                %(effective_start)s, %(effective_end)s, %(vintage)s,
                'fbi_cde_agency_county_label', matched.capture_id,
                %(product_id)s, %(release_key)s

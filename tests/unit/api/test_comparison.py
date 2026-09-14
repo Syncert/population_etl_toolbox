@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
-from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS
+from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS, OBSERVATION_DISPATCH
 
 pytestmark = [pytest.mark.unit, pytest.mark.api]
 
@@ -67,6 +67,9 @@ class _FakeResult:
     def first(self):
         return self._rows[0] if self._rows else None
 
+    def one(self):
+        return self._rows[0]
+
     def scalar(self):
         return self._scalar_value
 
@@ -74,10 +77,17 @@ class _FakeResult:
 class _ComparisonSession:
     """Resolves glossary lookups per code, records the dispatched SQL."""
 
-    def __init__(self, metric_rows: dict[str, dict], rows=None, total=0):
+    def __init__(self, metric_rows: dict[str, dict], rows=None, total=0, coverage=None):
         self._metric_rows = metric_rows
         self._rows = rows or []
         self._total = total
+        # The counting statement answers one row: the paired total beside each
+        # side's own geography count (API-087).
+        self._coverage = coverage or {
+            "total": total,
+            "geographies_a": total,
+            "geographies_b": total,
+        }
         self.statements: list[str] = []
         self.parameters: list[dict[str, Any]] = []
 
@@ -88,8 +98,8 @@ class _ComparisonSession:
         if "gold_glossary.dim_metric" in rendered:
             row = self._metric_rows.get((params or {}).get("metric_code"))
             return _FakeResult(rows=[row] if row else [])
-        if "COUNT(*)::INT FROM joined" in rendered:
-            return _FakeResult(scalar_value=self._total)
+        if "COUNT(" in rendered:
+            return _FakeResult(rows=[dict(self._coverage)])
         return _FakeResult(rows=self._rows)
 
 
@@ -258,7 +268,10 @@ def test_comparable_pair_aligns_one_newest_value_per_geography() -> None:
     bound = session.parameters[-1]
     assert bound["a_metric_code_value"] == "FRED:UNRATE"
     assert bound["b_metric_code_value"] == "BLS:LNS14000000"
-    assert bound["geo_level"] == "county"
+    # The vocabulary word, not the caller's: this route normalizes like every
+    # other one that takes a grain, so `county`, `COUNTY` and an alias all
+    # bind the one word the relations store (API-094).
+    assert bound["geo_level"] == "COUNTY"
 
 
 def test_comparison_filter_unsupported_by_either_side_is_rejected() -> None:
@@ -333,3 +346,158 @@ def test_both_metric_codes_are_required() -> None:
             assert response.status_code == 422, params
     finally:
         app.dependency_overrides.clear()
+
+
+def test_both_sides_break_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — the aligned analysis ranks the order it declares.
+
+    `_newest_per_geography_source` says the distribution and comparison
+    services "already rank the same way, so a page taken this way and a set
+    of bins describe the same rows". Two reductions that each pick an
+    arbitrary row of a tie group rank by the same expression and then
+    diverge; the claim is only true when both close the group the same way.
+    """
+    rows = {
+        "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
+        "BLS:LNS14000000": _metric("BLS:LNS14000000", "BLS"),
+    }
+    session = _ComparisonSession(rows, rows=[dict(_JOINED_ROW)], total=1)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "BLS:LNS14000000",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    sql = _dispatched(session)[-1]
+    for source_code in ("FRED", "BLS"):
+        dispatch = OBSERVATION_DISPATCH[source_code]
+        expected = ", ".join(
+            (f"{dispatch.period_start_expression} DESC",) + dispatch.latest_order
+        )
+        # The same ordering the neutral resource applies for this source, so
+        # a map page and a comparison row describe the same publication.
+        assert " ".join(expected.split()) in " ".join(sql.split()), (
+            f"{source_code} ranks on an order that can tie: {sql}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# API-087 — a comparison says how much of each side it could not pair
+# ---------------------------------------------------------------------------
+
+
+def test_comparison_reports_each_side_s_own_geography_count() -> None:
+    """Covers: API-087 — an inner join narrows the question silently.
+
+    A geography one side publishes and the other does not is not in the
+    answer at all: not as a row, not in `total`, not in any field. A
+    county-level pair of a measure covering 3,143 counties against one
+    covering 500 answered 500 rows and reported `total: 500`, which reads as
+    "500 counties".
+    """
+    rows = {
+        "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
+        "BLS:LNS14000000": _metric("BLS:LNS14000000", "BLS"),
+    }
+    session = _ComparisonSession(
+        rows,
+        rows=[dict(_JOINED_ROW)],
+        total=1,
+        coverage={"total": 1, "geographies_a": 3143, "geographies_b": 500},
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "BLS:LNS14000000",
+                "geo_level": "county",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    # `total` keeps its meaning: the rows this request can page.
+    assert payload["total"] == 1
+    assert payload["geographies_a"] == 3143
+    assert payload["geographies_b"] == 500
+
+
+def test_comparison_counts_are_measured_in_one_statement() -> None:
+    """Covers: API-087 — three counts read together describe one reading.
+
+    Measuring them in separate statements would let a refresh land between
+    them, and the API-084 lesson is that counts compared against each other
+    belong in one statement over one evaluation of the reductions.
+    """
+    rows = {
+        "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
+        "BLS:LNS14000000": _metric("BLS:LNS14000000", "BLS"),
+    }
+    session = _ComparisonSession(rows, rows=[dict(_JOINED_ROW)], total=1)
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "BLS:LNS14000000",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    counting = [sql for sql in _dispatched(session) if "COUNT(" in sql]
+    assert len(counting) == 1, (
+        f"the three counts must be one statement; {len(counting)} were issued"
+    )
+    sql = " ".join(counting[0].split())
+    assert "FROM joined" in sql
+    assert "FROM side_a" in sql
+    assert "FROM side_b" in sql
+    assert _relations_in(counting[0]) <= ALLOWED_OBSERVATION_RELATIONS
+
+
+def test_a_comparison_that_pairs_everything_reports_equal_counts() -> None:
+    """Covers: API-087 — nothing dropped reads as nothing dropped."""
+    rows = {
+        "FRED:UNRATE": _metric("FRED:UNRATE", "FRED"),
+        "BLS:LNS14000000": _metric("BLS:LNS14000000", "BLS"),
+    }
+    session = _ComparisonSession(
+        rows,
+        rows=[dict(_JOINED_ROW)],
+        total=1,
+        coverage={"total": 1, "geographies_a": 1, "geographies_b": 1},
+    )
+    client = _client_with(session)
+    try:
+        payload = client.get(
+            "/api/v1/comparison",
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "BLS:LNS14000000",
+            },
+        ).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert payload["total"] == payload["geographies_a"] == payload["geographies_b"] == 1
+
+
+def test_comparison_coverage_is_declared_on_the_served_contract() -> None:
+    """Covers: API-087 — an additive field, so it lands in v1."""
+    schema = app.openapi()["components"]["schemas"]["ComparisonResponse"]
+    assert "geographies_a" in schema["properties"]
+    assert "geographies_b" in schema["properties"]

@@ -26,7 +26,12 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import ServingContract, serving_contract
+from apps.api.registry import (
+    ServingContract,
+    normalize_geo_level,
+    serving_contract,
+)
+from apps.api.services.neutral_observations_service import resolve_metric
 from apps.api.services.contracts import (
     ServingContractUnavailable as ServingContractUnavailable,  # re-export
 )
@@ -62,7 +67,25 @@ def _source_select_sql(contract: ServingContract) -> str:
     than omitted, so every source returns the same column set and a consumer
     reading ``margin_of_error`` gets "this source publishes none" instead of a
     missing key.
+
+    ``metric_code`` is the catalog's, not the relation's. For BLS, Census ACS
+    and FRED those are the same string. Census PEP's serving relation
+    composes its identity from the dataset -- which is why the match
+    condition has to accept both spellings -- and selecting that column
+    labelled every row with a code no other resource in this API recognises:
+    404 on `/catalog/metrics/{metric_code}`, 404 on `/observations`, and
+    refused by the stored-document validation as "not a published metric".
+    The composed form's one extra component is already published beside it as
+    ``dataset_code`` (API-108).
     """
+    # `COALESCE` rather than a bare bind: where no catalog row resolves at
+    # all, the relation's own identity is the only one there is, and a null
+    # identity would be worse than a composed one.
+    metric_code_expr = (
+        "COALESCE(:catalog_metric_code, metric_code) AS metric_code"
+        if contract.binds_lineage_key
+        else "metric_code"
+    )
     seasonal_expr = (
         "seasonal_adjustment_status"
         if contract.publishes_seasonal_adjustment
@@ -95,7 +118,7 @@ def _source_select_sql(contract: ServingContract) -> str:
         as_of_date AS release_date,
         updated_at,
         geo_id,
-        geo_level,
+        {contract.geo_level_expression} AS geo_level,
         {contract.geo_name_expression} AS geo_name,
         state_fips,
         county_fips,
@@ -103,7 +126,7 @@ def _source_select_sql(contract: ServingContract) -> str:
         county_name,
         geo_latitude,
         geo_longitude,
-        metric_code,
+        {metric_code_expr},
         metric_display_name,
         value::TEXT AS value,
         value_type,
@@ -137,9 +160,15 @@ def list_latest_observations(
     """Newest cross-source values, falling back to durable history when empty."""
     _require_relation(db, CROSS_SOURCE_LATEST_RELATION)
 
+    # The cross-source contract views store the vocabulary word, and the
+    # builder compares `UPPER(geo_level)`, so this route survived a case
+    # difference and failed on an alias: `UPPER('US')` is not `NATIONAL`.
+    # API-092 promised the words it replaced keep answering, and that promise
+    # is one function, called here too (API-094).
+    grain = normalize_geo_level(geo_level) if geo_level else None
     mv_list_query, mv_count_query, mv_params = build_latest_mv_queries(
         metric_code=metric_code,
-        geo_level=geo_level,
+        geo_level=grain,
         state_fips=state_fips,
         limit=limit,
         offset=offset,
@@ -154,7 +183,7 @@ def list_latest_observations(
         _require_relation(db, CROSS_SOURCE_HISTORY_RELATION)
         rpt_list_query, rpt_count_query, rpt_params = build_latest_rpt_fallback_queries(
             metric_code=metric_code,
-            geo_level=geo_level,
+            geo_level=grain,
             state_fips=state_fips,
             limit=limit,
             offset=offset,
@@ -172,6 +201,7 @@ def list_timeseries_observations(
     start_date: Optional[date],
     end_date: Optional[date],
     limit: int,
+    offset: int,
 ) -> ObservationListResponse:
     """As-published cross-source history for one geography."""
     _require_relation(db, CROSS_SOURCE_HISTORY_RELATION)
@@ -182,10 +212,49 @@ def list_timeseries_observations(
         start_date=start_date,
         end_date=end_date,
         limit=limit,
+        offset=offset,
     )
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()
-    return _rows_to_response(rows, total, limit, offset=0)
+    return _rows_to_response(rows, total, limit, offset)
+
+
+def _metric_identity(
+    db: Session, contract: ServingContract, metric_code: str
+) -> dict[str, object]:
+    """The extra parameter a contract's metric condition binds, if any.
+
+    A relation that stores the catalog's own code needs nothing beyond the
+    request. One that composes its own identity is matched against the
+    lineage key its publisher declares -- read from the glossary, never cut
+    out of the request.
+
+    A code the catalog does not publish binds ``NULL``, so the key half of
+    the condition matches nothing and the route answers an empty page exactly
+    as it did before. It is ``NULL`` rather than the request's own text
+    because the request's text is already matched by the other half, against
+    the relation's own composed identity: binding it here as well would let a
+    code fail both halves and still read as though the key had been tried
+    (DB-034).
+    """
+    if not contract.binds_lineage_key:
+        return {}
+    metric = resolve_metric(db, metric_code)
+    lineage = (metric or {}).get("physical_lineage") or {}
+    key = lineage.get("key") if isinstance(lineage, dict) else None
+    return {
+        "metric_key": key or None,
+        # The catalog's own code, for the row to be labelled with (API-108).
+        # `None` where the request named no catalog metric, and deliberately
+        # not resolved from the request's own third segment: the relation's
+        # composed spelling is a *narrower* address than the catalog code --
+        # one dataset's rows of a measure the catalog publishes across
+        # several -- so resolving it to the catalog row would widen the
+        # lineage half of the match from that dataset to all of them. The
+        # end-to-end tier proved it: a request that answered six rows
+        # answered twelve.
+        "catalog_metric_code": (metric or {}).get("metric_code") or None,
+    }
 
 
 def list_latest_observations_for_source(
@@ -201,11 +270,15 @@ def list_latest_observations_for_source(
     contract = serving_contract(source)
     _require_relation(db, contract.latest_relation)
 
-    where_clauses = ["metric_code = :metric_code"]
+    where_clauses = [contract.metric_match_condition]
     params: dict = {"metric_code": metric_code, "limit": limit, "offset": offset}
+    params.update(_metric_identity(db, contract, metric_code))
     if geo_level:
-        where_clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
-        params["geo_level"] = geo_level
+        # The contract's own expression, and the caller's word normalized on
+        # the way in: a shared link or a saved configuration holding the
+        # catalog's earlier `NATION` keeps answering (ADR-0002, API-092).
+        where_clauses.append(f"{contract.geo_level_expression} = :geo_level")
+        params["geo_level"] = normalize_geo_level(geo_level)
     if state_fips:
         where_clauses.append("state_fips = :state_fips")
         params["state_fips"] = state_fips
@@ -217,7 +290,7 @@ def list_latest_observations_for_source(
             {_source_select_sql(contract)}
         FROM {contract.latest_relation}
         WHERE {where_sql}
-        ORDER BY geo_id ASC
+        ORDER BY {", ".join(contract.latest_order)}
         LIMIT :limit OFFSET :offset
         """
     )
@@ -242,13 +315,20 @@ def list_timeseries_observations_for_source(
     start_date: Optional[date],
     end_date: Optional[date],
     limit: int,
+    offset: int,
 ) -> ObservationListResponse:
     """As-published history from one source's own durable serving contract."""
     contract = serving_contract(source)
     _require_relation(db, contract.history_relation)
 
-    where_clauses = ["metric_code = :metric_code", "geo_id = :geo_id"]
-    params: dict = {"metric_code": metric_code, "geo_id": geo_id, "limit": limit}
+    where_clauses = [contract.metric_match_condition, "geo_id = :geo_id"]
+    params: dict = {
+        "metric_code": metric_code,
+        "geo_id": geo_id,
+        "limit": limit,
+        "offset": offset,
+    }
+    params.update(_metric_identity(db, contract, metric_code))
     if start_date:
         where_clauses.append("observation_date >= :start_date")
         params["start_date"] = start_date
@@ -263,8 +343,8 @@ def list_timeseries_observations_for_source(
             {_source_select_sql(contract)}
         FROM {contract.history_relation}
         WHERE {where_sql}
-        ORDER BY observation_date ASC
-        LIMIT :limit
+        ORDER BY {", ".join(contract.history_order)}
+        LIMIT :limit OFFSET :offset
         """
     )
     count_query = text(
@@ -277,4 +357,4 @@ def list_timeseries_observations_for_source(
 
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()
-    return _rows_to_response(rows, total, limit, offset=0)
+    return _rows_to_response(rows, total, limit, offset)

@@ -92,6 +92,5 @@ markers = [
   "e2e: raw-to-API deterministic end-to-end fixture flow",
   "performance: load, volume, or benchmark scenarios",
   "slow: expected duration exceeds 30 seconds",
-  "frontend: JavaScript unit, component, or browser contract",
   "deployment: container, proxy, or composed-service contract",
 ]

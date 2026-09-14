@@ -112,14 +112,70 @@ Geography resolution is conservative and visible:
 - a state resolves through its exact provider state code;
 - a county association resolves only when the provider county label matches
   exactly one authoritative Census county name inside the agency's own state,
-  and is recorded as `ambiguous` or `unresolved` otherwise;
+  and is recorded as `ambiguous` or `unresolved` otherwise. It is published as
+  `confidence_class = 'derived'`, never `reviewed`: the match is exact and
+  uniqueness-checked, and it is still a name, with no reviewed artifact behind
+  it. A county renamed in a new boundary vintage re-points the association
+  with nobody looking;
 - a place association exists only where the reviewed, effective-dated crosswalk
-  in `src/data_ingestion_toolbox/fbi_ucr/reference.py` covers the whole period;
-  and
+  in `src/data_ingestion_toolbox/fbi_ucr/reference.py` covers the whole period,
+  and is published as `reviewed`; and
 - `NOT SPECIFIED` county labels stay unresolved.
 
 Rows whose geography is `ambiguous` or `unsupported` remain queryable in
 `silver_fbi.fact_crime_observation` and are withheld from `gold_fbi`.
+
+### Reviewing a county association
+
+`gold_fbi.agency_geography` is the operator's view of every association and
+how it was established. Three tokens, and only three, may appear on a resolved
+row -- `exact` for a state code, `reviewed` for the place crosswalk, `derived`
+for a county label match -- and `DQ-FBI-004` fails the release if a row claims
+one its method did not earn.
+
+Start from what did not resolve:
+
+```sql
+SELECT ori, source_label, resolution_status, reason_code, COUNT(*)
+  FROM gold_fbi.agency_geography
+ WHERE relationship_type = 'county'
+   AND resolution_status <> 'resolved'
+ GROUP BY 1, 2, 3, 4
+ ORDER BY 1, 2;
+```
+
+- `county_label_unmatched` -- the label matched no county name in that state.
+  It may name a county the boundary reference does not hold, or it may be a
+  spelling the normalisation does not reach: the comparison upper-cases the
+  reference's county name and strips one legal suffix (`COUNTY`, `PARISH`,
+  `BOROUGH`, `CENSUS AREA`, `MUNICIPALITY`, `MUNICIPIO`, `CITY AND BOROUGH`,
+  `CITY`), and it folds nothing else. `Doña Ana County` against `DONA ANA`,
+  and `La Salle Parish` against `LASALLE`, are both misses. Check the label
+  against `silver_ref.dim_geo_current` by hand:
+
+  ```sql
+  SELECT geo_id, county_name
+    FROM silver_ref.dim_geo_current
+   WHERE geo_type = 'county' AND state_fips = '35' AND is_active;
+  ```
+
+  Do **not** relax the comparison. Accent-folding and space-insensitive
+  matching are name-based matching, which `AGENTS.md` forbids for an
+  authoritative identifier, and both would also make genuinely different
+  county names equal. The fix for a label the normalisation cannot reach is a
+  reviewed mapping, the way the place path works, not a looser join.
+- `ambiguous_county_name` -- the label matched more than one county. The rows
+  stay queryable in silver and are withheld from `gold_fbi`; a duplicate in
+  the boundary reference is the usual cause.
+
+An agency whose county label did not resolve carries
+`geography_status = 'agency_county_unresolved'`, which is **not**
+`agency_only`. `agency_only` says the provider published no county
+association at all (`NOT SPECIFIED`) and is a fact about the source that no
+review changes; `agency_county_unresolved` says the provider named a county
+and this pipeline could not resolve it, and is the state an operator can act
+on. Neither is withheld from `gold_fbi`: the observation is agency-grain and
+its own identity is the ORI.
 
 For parser corrections, replay the complete run from
 `raw_capture.response_capture` through the package replay function. Replay

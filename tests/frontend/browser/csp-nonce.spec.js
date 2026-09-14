@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-032, WEB-035 — the Content-Security-Policy carries a per-request nonce
 // and no longer admits inline scripts wholesale. Every response's policy

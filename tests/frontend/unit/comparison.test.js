@@ -15,6 +15,7 @@ import {
   comparisonCells,
   comparisonColumns,
   comparisonExport,
+  comparisonGrainOffer,
   comparisonMapRows,
   comparisonRequestParams,
   comparisonRowName,
@@ -26,7 +27,10 @@ import {
   incompatibleAlternatives,
   isDerivedField,
   mayRequestComparison,
+  describeComparisonCoverage,
+  mapPeriodMismatchNote,
   periodsDiffer,
+  preferredComparisonGrain,
   preflightRequestParams,
   selectionIsComplete,
 } from "../../../apps/web/lib/comparison";
@@ -318,6 +322,8 @@ describe("the export carries its own interpretation envelope", () => {
       "ratio (API-derived)",
       "caveats",
     ]);
+    // The name a complete read keeps. An export handed no load at all is
+    // read as complete, which is what every caller before WEB-067 did.
     expect(exported.filename).toBe(
       "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
     );
@@ -335,6 +341,59 @@ describe("the export carries its own interpretation envelope", () => {
     expect(first.at(-1)).toContain("unverified units");
   });
 
+  test("a file of a page-bounded read says so in its name and its caveats", () => {
+    // Covers: WEB-067 — the workspace pages `/comparison`, states the
+    // shortfall in its pill ("loaded 8,000 of 12,400 aligned geographies;
+    // the page bound cut the answer short"), and handed the export neither
+    // the count nor the flag. The file outlives the pill, which is the
+    // argument WEB-059 makes for the explorer's own file.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 8000,
+      total: 12400,
+      complete: false,
+    });
+    expect(exported.filename).toBe(
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE" +
+        "-partial-8000-of-12400.csv",
+    );
+    // A bounded read is the first thing a reader needs, so it leads the
+    // caveats rather than trailing what the API published.
+    const caveats = exported.rows[0].at(-1);
+    expect(caveats.startsWith("incomplete: 8000 of 12400 aligned geographies")).toBe(
+      true,
+    );
+    expect(caveats).toContain("the page bound cut the answer short");
+    // And nothing the API said is displaced by it.
+    expect(caveats).toContain("units could not be verified");
+  });
+
+  test("a prefix of an unreported total still says it is a prefix", () => {
+    // `fetchComparisonPages` counts a read with no published total as
+    // incomplete, because without one the client cannot know whether more
+    // exist -- and inventing a total would assert a count the API withheld.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 8000,
+      total: null,
+      complete: false,
+    });
+    expect(exported.filename).toContain("-partial-8000.csv");
+    expect(exported.filename).not.toContain("-of-");
+    expect(exported.rows[0].at(-1)).toContain("no total published");
+  });
+
+  test("a complete read keeps the name it always had", () => {
+    // The load is not a caveat when there is nothing short about it.
+    const exported = comparisonExport(comparison, comparablePreflight, {
+      loaded: 2,
+      total: 2,
+      complete: true,
+    });
+    expect(exported.filename).toBe(
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
+    );
+    expect(exported.rows[0].at(-1)).not.toContain("incomplete");
+  });
+
   test("an absent response exports nothing rather than an invented file", () => {
     const exported = comparisonExport(null, null);
     expect(exported.rows).toEqual([]);
@@ -348,7 +407,17 @@ describe("aligned presentations read the same rows without inventing values", ()
     // A scatter of the two inputs needs no shared axis or unit, and shows
     // each geography's own pair rather than a series implying one scale.
     expect(model.points).toEqual([
-      { geoId: "state:55|county:025", name: "Dane County, Wisconsin", x: 561504, y: 568203 },
+      {
+        geoId: "state:55|county:025",
+        name: "Dane County, Wisconsin",
+        x: 561504,
+        y: 568203,
+        // Each point carries the period each side describes, so the chart can
+        // say what the table already marks (WEB-049).
+        periodA: "2023",
+        periodB: "2024",
+        periodsDiffer: true,
+      },
     ]);
     // The geography missing measure A is excluded and counted — plotting it
     // at zero would state a value neither source published.
@@ -381,12 +450,232 @@ describe("aligned presentations read the same rows without inventing values", ()
     // A geography the API could not derive stays null, so the shared
     // choropleth model leaves it uncoloured rather than colouring a zero.
     expect(rows[1].value).toBeNull();
-    expect(rows[1].value_status).toBe("not published on both sides");
+    // And the reason is the one that applies to this row: its `value_a` is
+    // null, so one side published no number (WEB-079).
+    expect(rows[1].value_status).toBe("one side published no number");
 
     // A field the response never named as derived is not mappable: colouring
     // by a published input would present one side as the comparison.
     expect(comparisonMapRows(comparison, "value_a")).toEqual([]);
     expect(comparisonMapRows(comparison, "")).toEqual([]);
     expect(defaultDerivedField({ ...comparison, derivations: [] })).toBe("");
+  });
+});
+
+describe("an aligned view says when a pair is not contemporaneous", () => {
+  // Covers: WEB-049 — `periodsDiffer` had one call site, in the table body.
+  // The scatter drew a 2023-with-2019 pair as a point like any other and the
+  // map coloured it by a difference computed across those years, while both
+  // panels were otherwise careful about units, derivation, and missing
+  // values. The API carries both periods precisely so the difference is
+  // visible rather than implied away.
+
+  const pairs = {
+    metric_code_a: "A",
+    metric_code_b: "B",
+    derivations: ["difference"],
+    items: [
+      { geo_id: "g1", value_a: 10, value_b: 20, period_a: "2023", period_b: "2019", difference: -10 },
+      { geo_id: "g2", value_a: 30, value_b: 40, period_a: "2023", period_b: "2023", difference: -10 },
+      { geo_id: "g3", value_a: 50, value_b: 60, period_a: "2023", period_b: null, difference: -10 },
+      { geo_id: "g4", value_a: null, value_b: 70, period_a: "2023", period_b: "2019", difference: null },
+    ],
+  };
+
+  test("the scatter counts and marks the points that are not contemporaneous", () => {
+    const model = comparisonScatterModel(pairs);
+    // g4 has no usable pair and is excluded, as it already was.
+    expect(model.points.map((point) => point.geoId)).toEqual(["g1", "g2", "g3"]);
+    expect(model.excluded).toBe(1);
+    // Only g1 pairs two published periods that differ.
+    expect(model.differingPeriods).toBe(1);
+    expect(model.points.map((point) => point.periodsDiffer)).toEqual([true, false, false]);
+    // The periods travel with the point so the reader can see which two.
+    expect(model.points[0].periodA).toBe("2023");
+    expect(model.points[0].periodB).toBe("2019");
+  });
+
+  test("an absent period is not a mismatch", () => {
+    // g3 publishes one period and not the other. That is incompleteness, and
+    // asserting a mismatch from it would state something the row does not.
+    const model = comparisonScatterModel(pairs);
+    const g3 = model.points.find((point) => point.geoId === "g3");
+    expect(g3.periodsDiffer).toBe(false);
+    expect(g3.periodB).toBe("");
+  });
+
+  test("a comparison whose sides share a period says nothing extra", () => {
+    const model = comparisonScatterModel({
+      ...pairs,
+      items: [pairs.items[1]],
+    });
+    expect(model.differingPeriods).toBe(0);
+    expect(model.points[0].periodsDiffer).toBe(false);
+  });
+
+  test("the map reports how many coloured geographies are not contemporaneous", () => {
+    // The map is the sharper half: it colours one number per polygon, and
+    // that number is a subtraction between two publications years apart.
+    expect(mapPeriodMismatchNote(pairs, "difference")).toBe(
+      "1 of 3 coloured geographies combine values published for different periods; " +
+        "each row's two periods are in the table below.",
+    );
+    // Nothing extra where nothing differs, and nothing at all where the map
+    // is not drawn.
+    expect(mapPeriodMismatchNote({ ...pairs, items: [pairs.items[1]] }, "difference")).toBe("");
+    expect(mapPeriodMismatchNote(pairs, "not_a_derived_field")).toBe("");
+    expect(mapPeriodMismatchNote(null, "difference")).toBe("");
+  });
+});
+
+describe("the screen says what its geographies are an intersection of", () => {
+  // Covers: WEB-050 — the route joins its two reduced sides on geography
+  // identity with an inner join, so `total` is the size of the intersection.
+  // The screen reported "N aligned geographies", which reads as the universe.
+
+  const paired = {
+    metric_code_a: "CENSUS_ACS:acs5:B01003_001",
+    metric_code_b: "BLS:LAU:UNEMP_RATE",
+    total: 500,
+    geographies_a: 3143,
+    geographies_b: 500,
+    items: [],
+  };
+
+  test("a side that published more than was paired is named", () => {
+    expect(describeComparisonCoverage(paired)).toBe(
+      "500 geographies are paired here. CENSUS_ACS:acs5:B01003_001 publishes 3,143 " +
+        "and BLS:LAU:UNEMP_RATE publishes 500 under these filters; a geography only " +
+        "one of the two publishes is not in this comparison.",
+    );
+  });
+
+  test("a comparison that paired everything says nothing extra", () => {
+    expect(
+      describeComparisonCoverage({ ...paired, geographies_a: 500, geographies_b: 500 }),
+    ).toBe("");
+  });
+
+  test("an API that publishes neither count reports no shortfall", () => {
+    // An older deployment serves no coverage. Reading an absent count as zero
+    // would report every geography as dropped.
+    expect(describeComparisonCoverage({ metric_code_a: "A", metric_code_b: "B", total: 7 })).toBe(
+      "",
+    );
+    expect(describeComparisonCoverage(null)).toBe("");
+    expect(describeComparisonCoverage({ ...paired, total: undefined })).toBe("");
+  });
+});
+
+describe("the grains a pair can be compared at", () => {
+  // Covers: WEB-074 — the workspace hard-coded NATIONAL/STATE/COUNTY and
+  // ignored both sides' published `valid_geo_grains`, while
+  // `parseComparisonState` accepts all five published words and the workspace
+  // assigned the parsed value straight into the selection. A `?geo_level=PLACE`
+  // link — the analysis routes serve Census PEP, which publishes places — put
+  // a value in the select that no option carried, so the control showed one
+  // grain while the request sent another.
+  const acs = { metric_code: "A", valid_geo_grains: ["NATIONAL", "STATE", "COUNTY"] };
+  const pep = {
+    metric_code: "B",
+    valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
+  };
+  const fbi = { metric_code: "F", valid_geo_grains: ["AGENCY"] };
+
+  test("offers the intersection, and says why it is narrow", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: pep });
+    // A comparison is answered at one grain, so a grain only one side
+    // publishes is not a grain the pair can be read at.
+    expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY"]);
+    expect(offer.narrowed).toBe(true);
+    expect(offer.note).toContain("not offered for the pair");
+    expect(offer.unavailable).toBe("");
+  });
+
+  test("round-trips a grain both sides publish", () => {
+    const offer = comparisonGrainOffer({
+      metricA: pep,
+      metricB: { ...pep, metric_code: "B2" },
+      requested: "PLACE",
+    });
+    expect(offer.levels).toContain("PLACE");
+    expect(offer.unavailable).toBe("");
+    expect(preferredComparisonGrain(offer.levels)).toBe("COUNTY");
+  });
+
+  test("reports a grain neither side publishes rather than holding it", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: pep, requested: "PLACE" });
+    expect(offer.levels).not.toContain("PLACE");
+    expect(offer.unavailable).toContain("Place");
+    expect(offer.unavailable).toContain("does not both publish");
+  });
+
+  test("an agency-grain pair is offered its own grain", () => {
+    const offer = comparisonGrainOffer({
+      metricA: fbi,
+      metricB: { ...fbi, metric_code: "F2" },
+      requested: "AGENCY",
+    });
+    expect(offer.levels).toEqual(["AGENCY"]);
+    expect(offer.unavailable).toBe("");
+    expect(preferredComparisonGrain(offer.levels)).toBe("AGENCY");
+  });
+
+  test("two measures with nothing in common say so", () => {
+    const offer = comparisonGrainOffer({ metricA: acs, metricB: fbi, requested: "COUNTY" });
+    expect(offer.levels).toEqual([]);
+    expect(offer.note).toContain("no geography grain in common");
+    expect(offer.unavailable).toContain("does not both publish");
+    expect(preferredComparisonGrain(offer.levels)).toBe("");
+  });
+
+  test("a measure that declares no grains has unknown grains, not none", () => {
+    // The explorer's own rule (WEB-038): an empty declaration is silence, and
+    // narrowing to nothing on silence would hide a pair that can be read.
+    const offer = comparisonGrainOffer({ metricA: { metric_code: "X" }, metricB: pep });
+    expect(offer.levels).toEqual(["NATIONAL", "STATE", "COUNTY", "PLACE"]);
+    expect(comparisonGrainOffer({ metricA: null, metricB: null }).note).toBe("");
+  });
+});
+
+describe("why a geography in the answer carries no derived number", () => {
+  // Covers: WEB-079 — the reason is the one that applies to the row.
+  //
+  // `/comparison` joins its two sides on geography, so every row in the
+  // answer is on both sides: "not on both sides" describes a geography the
+  // answer does not contain, which `geographies_a` / `geographies_b` report.
+  // The reason a row inside the answer has no ratio is the route's own: it
+  // computes none where the denominator is zero.
+  const withZeroDenominator = {
+    ...comparison,
+    items: [
+      {
+        geo_id: "state:55|county:025",
+        geo_level: "COUNTY",
+        period_a: "2023",
+        period_b: "2023",
+        value_a: 12,
+        value_b: 0,
+        difference: 12,
+        ratio: null,
+      },
+    ],
+  };
+
+  test("a zero denominator is named as one, not as a missing side", () => {
+    const rows = comparisonMapRows(withZeroDenominator, "ratio");
+    expect(rows[0].value).toBeNull();
+    expect(rows[0].value_status).toBe("the denominator is zero");
+  });
+
+  test("the same geography's difference is published, so it is coloured", () => {
+    const rows = comparisonMapRows(withZeroDenominator, "difference");
+    expect(rows[0].value).toBe("12");
+    expect(rows[0].value_status).toBeNull();
+  });
+
+  test("a side that published no number says so", () => {
+    const rows = comparisonMapRows(comparison, "ratio");
+    expect(rows[1].value_status).toBe("one side published no number");
   });
 });

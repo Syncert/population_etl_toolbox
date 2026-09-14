@@ -16,6 +16,12 @@ services:
       DB_NAME: ${ANALYTICS_DB_NAME}
       # apps.api reads a single SQLAlchemy URL; keep it in lockstep with DB_*.
       DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}
+      # API-owned application storage (ADR-0003): a separate role from the
+      # read-only warehouse connection above, on the same external warehouse.
+      # Provision it there with `scripts/provision_app_api.py --apply-schema`
+      # before first start; until it exists the account, saved-analysis, and
+      # evidence-packet routes answer an explicit 503.
+      APP_API_DATABASE_URL: ${APP_API_DATABASE_URL:-postgresql+psycopg2://api_app_writer:${APP_API_DB_PASSWORD:-api_app_writer}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}}
       REDIS_URL: redis://redis:6379/0
       API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
       API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
@@ -26,6 +32,11 @@ services:
       API_DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-15000}
       API_RATE_LIMIT_CATALOG_PER_MINUTE: ${API_RATE_LIMIT_CATALOG_PER_MINUTE:-600}
       API_RATE_LIMIT_ANALYSIS_PER_MINUTE: ${API_RATE_LIMIT_ANALYSIS_PER_MINUTE:-240}
+      # Whose X-Forwarded-For the limiter believes (API-075). Every public
+      # request arrives from the `web` container, so an empty value makes the
+      # budgets above one budget for the deployment. Empty by default: a
+      # forwarded address read from an undeclared hop is attacker-controlled.
+      API_TRUSTED_PROXY_IPS: ${API_TRUSTED_PROXY_IPS:-}
     depends_on:
       - redis
     ports:
@@ -84,8 +95,16 @@ services:
       # cannot fetch task logs from the scheduler's log server (403 FORBIDDEN).
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-internal-dev-log-signing-key}
       DATA_QUALITY_COMMIT_SHA: ${DATA_QUALITY_COMMIT_SHA:-}
-      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-public_data}
+      # The same expression the `public_data` connection below uses for
+      # --conn-schema. These two named different databases: the connection
+      # resolved to the external warehouse while this told every module to
+      # write `public_data`, so ingestion opened a database the operator
+      # never created.
+      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      BLS_API_KEY: ${BLS_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
       USDA_NASS_API_KEY: ${USDA_NASS_API_KEY:-}
@@ -117,7 +136,8 @@ services:
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
-      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit'
+      airflow pools set fbi_cde_api 2 'FBI Crime Data Explorer API limit';
+      airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 
   airflow-webserver:

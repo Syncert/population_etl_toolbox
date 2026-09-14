@@ -3,9 +3,30 @@
 // expressions. No React, no fetch, no browser state.
 
 import type { DistributionResponse, MetricSummary } from "./api/types";
+import { isDrawableTileGrain } from "./tileGrains";
+import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
 
+// Re-exported: the grain vocabulary and its aliases are declared beside
+// `GEO_LEVELS`, and this module's callers have always reached the
+// normalisation through here.
+export { normalizeGeoLevel };
+
 export const CHOROPLETH_FALLBACK_COLOR = "#9fb0ba";
+/**
+ * A geography whose row the source sent **with** a reason for having no
+ * number, as distinct from one it sent no row for.
+ *
+ * Two different facts, and the map used to paint them the same grey under
+ * one label reading "No observation" -- which is false of the first: there
+ * is an observation, and the source said why it carries no value. CDC
+ * PLACES suppresses a small-cell estimate, USDA NASS withholds one as
+ * `(D)`, FBI UCR reports a period as not reported, and the consumer guide
+ * spends a paragraph on the distinction. A reader looking at a county map
+ * could not tell "the source withheld this" from "nobody published this"
+ * (WEB-078).
+ */
+export const CHOROPLETH_WITHHELD_COLOR = "#c8b7a6";
 export const CHOROPLETH_PALETTE = ["#edcf63", "#9dc57d", "#419261", "#2f7fa6", "#594a9b"];
 export const DEFAULT_POPULATION_VARIABLE = "B01003_001";
 
@@ -157,13 +178,6 @@ export function metricOptions(metrics: MetricSummary[] | null | undefined): Metr
   }));
 }
 
-export function normalizeGeoLevel(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-  return value.trim().toUpperCase();
-}
-
 export function metricSupportedGeoLevels(metric: MetricSummary | null | undefined): string[] {
   const grains = Array.isArray(metric?.valid_geo_grains)
     ? metric.valid_geo_grains
@@ -179,6 +193,7 @@ export function preferredGeoLevelForMetric(
 ): string {
   const supported = metricSupportedGeoLevels(metric);
   if (supported.length === 0) {
+    // Unknown grains, not none: the caller's fallback still applies.
     return fallbackGeoLevel;
   }
 
@@ -192,7 +207,13 @@ export function preferredGeoLevelForMetric(
     return "NATIONAL";
   }
 
-  return fallbackGeoLevel;
+  // The measure publishes at a grain outside the spatial three -- Census
+  // PEP's PLACE, FBI UCR's AGENCY. Falling back to the caller's default here
+  // preferred a grain the measure never claimed, so the explorer asked for
+  // it, received nothing, and reported "0 COUNTY records published" as
+  // though the measure published none (WEB-038). Its own first declared
+  // grain is the only honest preference.
+  return supported[0]!;
 }
 
 export interface ObservationPointFeature {
@@ -227,32 +248,28 @@ export function observationToFeature(
   };
 }
 
-export function isCountyObservation(item: ObservationRow | null | undefined): boolean {
-  if (!item) {
+/**
+ * The layer filter that draws exactly one grain.
+ *
+ * The layer carries every geography with a shape -- some 32k places among
+ * them, which have no `county_fips` either -- so a level is matched on the
+ * published `geo_level` rather than inferred from which fips columns a
+ * feature happens to carry.
+ *
+ * A grain the boundary cannot draw is not matched to some other grain's
+ * polygons by fall-through: it gets a filter that matches nothing. Which
+ * grains those are is `DRAWABLE_TILE_GRAINS`, the same declaration
+ * `spatialGrains` reads, so the check that offers the map and the filter
+ * that draws it cannot disagree. The map is not presented at an undrawable
+ * grain at all; if one ever were, an empty map is the honest answer where
+ * another grain's polygons would be a lie.
+ */
+export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
+  const level = normalizeGeoLevel(geoLevel);
+  if (!isDrawableTileGrain(level)) {
     return false;
   }
-
-  if (typeof item.geo_level === "string" && item.geo_level.toUpperCase() === "COUNTY") {
-    return true;
-  }
-
-  if (item.county_fips) {
-    return true;
-  }
-
-  return typeof item.geo_id === "string" && item.geo_id.toLowerCase().includes("|county:");
-}
-
-export function tileFilterForGeoLevel(geoLevel: string): TileFilter {
-  // The layer carries every geography with a shape -- some 32k places among
-  // them, which have no county_fips either -- so a level is matched on the
-  // published geo_level rather than inferred from which fips columns a
-  // feature happens to carry. The national view keeps states and counties
-  // as its backdrop.
-  if (geoLevel === "NATIONAL") {
-    return ["in", ["get", "geo_level"], ["literal", ["STATE", "COUNTY"]]];
-  }
-  return ["==", ["get", "geo_level"], geoLevel === "STATE" ? "STATE" : "COUNTY"];
+  return ["==", ["get", "geo_level"], level];
 }
 
 /**
@@ -265,11 +282,15 @@ export function tileFilterForSelection(
   stateFips: string | null | undefined,
 ): TileFilter {
   const levelFilter = tileFilterForGeoLevel(geoLevel);
+  if (levelFilter === false) {
+    // Narrowing nothing to one state is still nothing.
+    return false;
+  }
   if (!stateFips) {
     return levelFilter;
   }
   const stateFilter = ["==", ["to-string", ["get", "state_fips"]], stateFips];
-  return levelFilter === true ? stateFilter : ["all", levelFilter, stateFilter];
+  return ["all", levelFilter, stateFilter];
 }
 
 export type LngLatBoundsArray = [[number, number], [number, number]];
@@ -493,36 +514,140 @@ export function colorForValue(value: number, minValue: number, maxValue: number)
   return CHOROPLETH_PALETTE[index]!;
 }
 
+/**
+ * What period the API's bins describe, for the legend that reads them.
+ *
+ * `/distribution/bins` reduces each geography to its own newest period, so
+ * two geographies in one answer can describe two different years. The API
+ * publishes which it is; before it did, a choropleth could be painted from a
+ * scale built over a mix of years with nothing saying so, and the client
+ * could not work it out -- the bins are computed over every geography the
+ * metric publishes while the client holds one page of rows (WEB-054).
+ *
+ * Returns `""` when the answer publishes neither fact, so an older API is
+ * described as it is rather than guessed at.
+ */
+/**
+ * What the API said its bins could not carry, for the note beside the map.
+ *
+ * Published strings, rendered as published: the API names the source and the
+ * fields it publishes, and composing a different sentence here would be this
+ * client restating a qualifier it did not derive (WEB-055).
+ */
+export function distributionCaveats(
+  payload: DistributionResponse | null | undefined,
+): string[] {
+  const caveats = payload?.caveats;
+  return Array.isArray(caveats)
+    ? caveats.filter((entry): entry is string => typeof entry === "string" && entry !== "")
+    : [];
+}
+
+export function distributionPeriodNote(
+  payload: DistributionResponse | null | undefined,
+): string {
+  if (payload?.periods_differ === true) {
+    return "bins mix periods: each geography's own newest value";
+  }
+  const period = payload?.period;
+  return typeof period === "string" && period ? `for ${period}` : "";
+}
+
+/**
+ * The API's bins, read rather than rebuilt (WEB-057).
+ *
+ * `/distribution/bins` publishes each bin whole — `bin_index`,
+ * `lower_bound`, `upper_bound`, `count` — and says why it reports the empty
+ * ones too: "an absent bin and a bin holding zero geographies are different
+ * statements ... reporting it as the first makes every consumer rebuild the
+ * gaps from min/max". This model rebuilt them: it recomputed every boundary
+ * from `min_value`/`max_value`/`bin_count` and filled counts with `|| 0`,
+ * discarding the published bounds.
+ *
+ * What made that reachable is the degenerate answer the API documents — one
+ * distinct value is one bin closing on itself. `bin_count` stays what the
+ * caller asked for, so counting bins from it produced five bins over one
+ * point, four of them claiming no geographies, and `colorForDistributionValue`
+ * then fell through `value < upperBound` to the last of them: every
+ * geography drawn in the fifth colour while the legend counted them all in
+ * the first.
+ *
+ * So the bins are the `items`, and a response whose `items` do not cover
+ * `bin_index` 1..N contiguously is refused rather than gap-filled — which is
+ * API-079's own statement read from this side: a bin the API did not report
+ * is not a bin holding nothing.
+ */
 export function distributionBins(
   payload: DistributionResponse | null | undefined,
 ): DistributionBinModel[] {
-  const minValue = Number(payload?.min_value);
-  const maxValue = Number(payload?.max_value);
-  const binCount = Number(payload?.bin_count);
-
-  if (
-    !Number.isFinite(minValue) ||
-    !Number.isFinite(maxValue) ||
-    !Number.isInteger(binCount) ||
-    binCount < 1 ||
-    binCount > CHOROPLETH_PALETTE.length ||
-    Number(payload?.total) < 1
-  ) {
+  if (Number(payload?.total) < 1) {
     return [];
   }
 
-  const counts = new Map(
-    (payload?.items || []).map((item) => [Number(item.bin_index), Number(item.count) || 0]),
-  );
-  const width = (maxValue - minValue) / binCount;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length < 1 || items.length > CHOROPLETH_PALETTE.length) {
+    return [];
+  }
 
-  return CHOROPLETH_PALETTE.slice(0, binCount).map((color, index) => ({
-    binIndex: index + 1,
-    color,
-    lowerBound: minValue + index * width,
-    upperBound: index === binCount - 1 ? maxValue : minValue + (index + 1) * width,
-    count: counts.get(index + 1) || 0,
-  }));
+  const bins = items
+    .map((item) => ({
+      binIndex: Number(item.bin_index),
+      lowerBound: Number(item.lower_bound),
+      upperBound: Number(item.upper_bound),
+      count: Number(item.count),
+    }))
+    .sort((left, right) => left.binIndex - right.binIndex);
+
+  const published = bins.every(
+    (bin, index) =>
+      bin.binIndex === index + 1 &&
+      Number.isFinite(bin.lowerBound) &&
+      Number.isFinite(bin.upperBound) &&
+      Number.isInteger(bin.count) &&
+      bin.count >= 0,
+  );
+  if (!published) {
+    return [];
+  }
+
+  return bins.map((bin, index) => ({ ...bin, color: CHOROPLETH_PALETTE[index]! }));
+}
+
+/**
+ * The filename an observation export is written under (WEB-059).
+ *
+ * The export carries its own reproducibility envelope in its columns --
+ * which scope and release answered, each row's own release identity -- and
+ * the one thing it did not record is that the answer was cut short, which is
+ * the fact the screen it came from led with. A file outlives the screen, so
+ * a prefix names itself: what it holds, and what the API reported.
+ *
+ * A complete read's name is unchanged, so nothing about today's exports
+ * moves. `total` is null when the collection reported none, which
+ * `fetchCollectionPages` already treats as incomplete -- without a total the
+ * client cannot know whether more exist -- so the name says it is a prefix
+ * without claiming a denominator it was not given.
+ */
+export function observationExportFilename(load: {
+  metricCode: string;
+  geoLevel: string;
+  scope: string;
+  release?: string | null;
+  loaded: number;
+  total?: number | null;
+  complete: boolean;
+}): string {
+  const scope =
+    load.scope === "as_released"
+      ? `as-released${load.release ? `-${load.release.replaceAll(":", "-")}` : ""}`
+      : "latest";
+  const stem = `${load.metricCode.replaceAll(":", "-")}-${load.geoLevel.toLowerCase()}-${scope}`;
+  if (load.complete) {
+    return `${stem}.csv`;
+  }
+  const of =
+    typeof load.total === "number" && Number.isFinite(load.total) ? `-of-${load.total}` : "";
+  return `${stem}-partial-${load.loaded}${of}.csv`;
 }
 
 export function colorForDistributionValue(
@@ -645,6 +770,7 @@ function buildLogChoroplethModel(
   joinKey: string,
   bounds: { logMin: number; logMax: number },
   missingValueLabel: string,
+  withheld: WithheldGeographies,
 ): ChoroplethModel {
   const binCount = CHOROPLETH_PALETTE.length;
   const counts = new Array<number>(binCount).fill(0);
@@ -669,10 +795,17 @@ function buildLogChoroplethModel(
             : `${formatLegendValue(edge(index))} - ${formatLegendValue(edge(index + 1))}`,
     count: counts[index],
   }));
+  legendItems.push(...withheldLegendItem(withheld));
   legendItems.push({ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel });
 
   return {
-    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    expression: [
+      "match",
+      ["to-string", ["get", joinKey]],
+      ...keyedValues,
+      ...withheldMatchPairs(withheld),
+      CHOROPLETH_FALLBACK_COLOR,
+    ],
     legendItems,
     minValue: 10 ** bounds.logMin,
     maxValue: 10 ** bounds.logMax,
@@ -680,6 +813,72 @@ function buildLogChoroplethModel(
     valueCount: keyedMap.size,
     scale: "log",
   };
+}
+
+interface WithheldGeographies {
+  /** Map keys whose row published a status instead of a number. */
+  keys: string[];
+  /** The distinct statuses those rows carried, in the source's own words. */
+  statuses: string[];
+}
+
+/**
+ * The geographies whose rows say why they carry no number.
+ *
+ * A row with neither a value nor a status is silence -- nothing to report
+ * beyond the absence the fallback colour already shows -- so it stays out of
+ * this set and out of the legend row it produces.
+ */
+function withheldGeographies(
+  observations: ObservationRow[],
+  joinKey: string,
+  plotted: Map<string, number>,
+): WithheldGeographies {
+  const keys: string[] = [];
+  const statuses: string[] = [];
+  for (const item of observations) {
+    const joinValue = observationJoinValue(item, joinKey);
+    if (!joinValue || publishedNumber(item.value) !== null) {
+      continue;
+    }
+    const status = String(item.value_status || "").trim();
+    if (!status) {
+      continue;
+    }
+    const key = String(joinValue);
+    if (plotted.has(key) || keys.includes(key)) {
+      continue;
+    }
+    keys.push(key);
+    if (!statuses.includes(status)) {
+      statuses.push(status);
+    }
+  }
+  return { keys, statuses };
+}
+
+/** The legend row for the withheld set, or nothing when there is none. */
+function withheldLegendItem(withheld: WithheldGeographies): LegendItem[] {
+  if (withheld.keys.length === 0) {
+    return [];
+  }
+  // The source's own words, so the legend says what the publisher said. A
+  // long vocabulary is trimmed rather than wrapped past the legend's width;
+  // the count is what a reader needs first either way.
+  const shown = withheld.statuses.slice(0, 3).join(", ");
+  const label = withheld.statuses.length > 3 ? `${shown}, …` : shown;
+  return [
+    {
+      color: CHOROPLETH_WITHHELD_COLOR,
+      label: `Value not published: ${label}`,
+      count: withheld.keys.length,
+    },
+  ];
+}
+
+/** `["key", colour, …]` pairs painting the withheld set its own colour. */
+function withheldMatchPairs(withheld: WithheldGeographies): string[] {
+  return withheld.keys.flatMap((key) => [key, CHOROPLETH_WITHHELD_COLOR]);
 }
 
 export function buildChoroplethModel(
@@ -715,10 +914,32 @@ export function buildChoroplethModel(
   }
 
   const values = [...keyedMap.values()];
+  const withheld = withheldGeographies(observations, joinKey, keyedMap);
   if (values.length === 0) {
+    // Nothing to scale, and still something to say: a page of rows that all
+    // carry a reason instead of a number is a published answer, not silence.
+    //
+    // A `match` needs at least one label to match on. Where there is also
+    // nothing withheld -- every row resolved to no join value at all, which
+    // is what a national-grain `geo_id` does against a county tile key --
+    // the pairs are empty and a three-argument `match` is not an expression
+    // MapLibre will parse: it refuses the layer rather than drawing it in
+    // the fallback colour. A constant says the same thing and is valid.
+    const withheldPairs = withheldMatchPairs(withheld);
     return {
-      expression: ["literal", CHOROPLETH_FALLBACK_COLOR],
-      legendItems: [{ color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel }],
+      expression:
+        withheldPairs.length === 0
+          ? ["literal", CHOROPLETH_FALLBACK_COLOR]
+          : [
+              "match",
+              ["to-string", ["get", joinKey]],
+              ...withheldPairs,
+              CHOROPLETH_FALLBACK_COLOR,
+            ],
+      legendItems: [
+        ...withheldLegendItem(withheld),
+        { color: CHOROPLETH_FALLBACK_COLOR, label: missingValueLabel },
+      ],
       minValue: null,
       maxValue: null,
       usesDistribution: false,
@@ -729,7 +950,13 @@ export function buildChoroplethModel(
 
   const logBounds = valueScale === "log" ? logRange(values) : null;
   if (logBounds) {
-    return buildLogChoroplethModel(keyedMap, joinKey, logBounds, missingValueLabel);
+    return buildLogChoroplethModel(
+      keyedMap,
+      joinKey,
+      logBounds,
+      missingValueLabel,
+      withheld,
+    );
   }
 
   const apiBins = distributionBins(distribution);
@@ -780,13 +1007,20 @@ export function buildChoroplethModel(
     };
   });
 
+  legendItems.push(...withheldLegendItem(withheld));
   legendItems.push({
     color: CHOROPLETH_FALLBACK_COLOR,
     label: missingValueLabel,
   });
 
   return {
-    expression: ["match", ["to-string", ["get", joinKey]], ...keyedValues, CHOROPLETH_FALLBACK_COLOR],
+    expression: [
+      "match",
+      ["to-string", ["get", joinKey]],
+      ...keyedValues,
+      ...withheldMatchPairs(withheld),
+      CHOROPLETH_FALLBACK_COLOR,
+    ],
     legendItems,
     minValue,
     maxValue,

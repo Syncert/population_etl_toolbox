@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.registry import normalize_geo_level
 from apps.api.services.cdc_service import list_cdc_observations
 from data_ingestion_toolbox.cdc.registry import enabled_assets
 from apps.api.schemas import CdcObservationListResponse
@@ -31,14 +32,55 @@ def _registered_datasets() -> tuple[str, ...]:
     return tuple(asset.asset_id for asset in enabled_assets())
 
 
+#: The grains a request may name, derived from the words the relation
+#: carries rather than written again: `geo_grain('nation')` is `NATIONAL`,
+#: which is what the catalog publishes and what a consumer sends back.
+_REQUEST_GRAINS: tuple[str, ...] = tuple(
+    dict.fromkeys(normalize_geo_level(word) for word in GEOGRAPHY_TYPES)
+)
+
+
+def _validated_grain(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested grain, or a 422 naming the set.
+
+    The guide promises "a grain read from the catalog can be sent straight
+    back", case-insensitively and with `NATION` accepted for `NATIONAL`.
+    This route took the grain under its own name and compared it to CDC's
+    lowercase relation words, so the catalog's own `COUNTY` was a 422 and so
+    was the alias the guide guarantees (API-116).
+    """
+    if value is None or not value.strip():
+        return None
+    word = normalize_geo_level(value)
+    if word not in _REQUEST_GRAINS:
+        raise HTTPException(
+            422, f"geo_type must be one of: {', '.join(_REQUEST_GRAINS)}"
+        )
+    return word
+
+
 def _validated_choice(
     value: Optional[str], allowed: tuple[str, ...], field: str
 ) -> Optional[str]:
+    """The registered word for a requested choice, or a 422 naming the set.
+
+    Two rules this shares with every other closed value the API takes
+    (API-124). An empty value is absent -- `?dataset=` is the same request as
+    omitting it, which is what the rest of the API reads and what a saved
+    document records for a filter its source does not declare (API-117,
+    WEB-075) -- and the comparison is case-insensitive, returning the word the
+    relation stores, for the reason `_validated_grain` above records: a value
+    read from a response and sent back is the same question.
+    """
     if value is None:
         return None
-    if value not in allowed:
-        raise HTTPException(422, f"{field} must be one of: {', '.join(allowed)}")
-    return value
+    word = value.strip()
+    if not word:
+        return None
+    for registered in allowed:
+        if word.casefold() == registered.casefold():
+            return registered
+    raise HTTPException(422, f"{field} must be one of: {', '.join(allowed)}")
 
 
 @router.get("/observations", response_model=CdcObservationListResponse)
@@ -59,7 +101,7 @@ def get_cdc_observations(
 ) -> CdcObservationListResponse:
     """Return published CDC observations for the latest or a named release."""
     dataset = _validated_choice(dataset, _registered_datasets(), "dataset")
-    geo_type = _validated_choice(geo_type, GEOGRAPHY_TYPES, "geo_type")
+    geo_type = _validated_grain(geo_type)
     adjustment = _validated_choice(adjustment, ADJUSTMENT_STATUSES, "adjustment")
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(422, "year_from must be less than or equal to year_to")

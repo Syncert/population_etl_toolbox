@@ -12,6 +12,8 @@ import {
   buildSampleUrlFromTemplate,
   collectTileCandidates,
   discoverTileMetadata,
+  featuresAtGrain,
+  loadPreviewTileFeatures,
   normalizeTileTemplateFromTileJson,
   prioritizeTileCandidates,
 } from "../../../apps/web/lib/tiles";
@@ -229,5 +231,86 @@ describe("tile discovery releases the response bodies it does not read", () => {
     globalThis.fetch = vi.fn(async (path) => served.get(path));
 
     await expect(discoverTileMetadata()).resolves.toMatchObject({ layerId: "counties" });
+  });
+});
+
+// One feature per grain gold.dim_geo_latest publishes, each carrying the
+// `geo_level` martin.yml declares as a layer property. Only the shape
+// `featuresAtGrain` reads is modelled: a layer with a length and a
+// feature(index) that answers GeoJSON.
+const PREVIEW_FEATURES = [
+  { geo_id: "us", geo_level: "NATIONAL" },
+  { geo_id: "state:06", geo_level: "STATE", state_fips: "06" },
+  { geo_id: "state:06|county:037", geo_level: "COUNTY", state_fips: "06", county_fips: "037" },
+  // A place has no county_fips either. That is what made "not a county"
+  // mean "a state" in the decoder before WEB-062, and the boundary carries
+  // some 32k of them.
+  { geo_id: "state:06|place:44000", geo_level: "PLACE", state_fips: "06" },
+];
+
+const DECODED_LAYER = {
+  length: PREVIEW_FEATURES.length,
+  feature: (index) => ({
+    toGeoJSON: () => ({
+      type: "Feature",
+      properties: { ...PREVIEW_FEATURES[index] },
+      geometry: null,
+    }),
+  }),
+};
+
+describe("the decoded preview carries the grain the map draws", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  const grainsOf = (features) => features.map((feature) => feature.properties.geo_level);
+
+  test("a grain is matched on the published geo_level, not on which fips columns exist", () => {
+    // Covers: WEB-062 — the decoded collection is what the choropleth source
+    // is given, and the layer filter matches `geo_level`. Deciding the grain
+    // any other way here means handing the map features it will then hide:
+    // before this, the state grain carried every place polygon.
+    expect(grainsOf(featuresAtGrain(DECODED_LAYER, "STATE"))).toEqual(["STATE"]);
+    expect(grainsOf(featuresAtGrain(DECODED_LAYER, "COUNTY"))).toEqual(["COUNTY"]);
+    // The grain is read, not the caller's spelling of it.
+    expect(grainsOf(featuresAtGrain(DECODED_LAYER, "county"))).toEqual(["COUNTY"]);
+  });
+
+  test("no grain asked for is every feature the layer carries", () => {
+    // What checking a decoded tile needs. It is the absence of a grain,
+    // spelled as one, rather than a selectable grain the boundary cannot
+    // draw standing in for "everything".
+    expect(grainsOf(featuresAtGrain(DECODED_LAYER, ""))).toEqual([
+      "NATIONAL",
+      "STATE",
+      "COUNTY",
+      "PLACE",
+    ]);
+  });
+
+  test("an undrawable grain selects nothing rather than another grain's features", () => {
+    for (const grain of ["NATIONAL", "PLACE", "AGENCY"]) {
+      expect(featuresAtGrain(DECODED_LAYER, grain)).toEqual([]);
+    }
+  });
+
+  test("an undrawable grain never asks the boundary for a tile", async () => {
+    // The map is not presented at these grains, so there is no tile worth a
+    // request -- and nothing decoded that could be drawn by mistake.
+    const fetchStub = vi.fn(async () => {
+      throw new Error("no tile should be requested for an undrawable grain");
+    });
+    globalThis.fetch = fetchStub;
+    const template = "http://127.0.0.1:3200/tiles/counties/{z}/{x}/{y}";
+    for (const grain of ["NATIONAL", "PLACE", "AGENCY"]) {
+      await expect(loadPreviewTileFeatures(template, "counties", grain)).resolves.toEqual({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 });

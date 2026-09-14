@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-030 — the articles route in the browser. It presents composed
 // evidence blocks and nothing else: no hand-written example, no metric or

@@ -466,6 +466,215 @@ def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
         reader.close()
 
 
+def test_freds_revision_window_reaches_the_served_relation(
+    postgres_connection_factory: Callable[[], connection],
+    fred_silver_token: str,
+) -> None:
+    """Covers: DB-040 — the realtime window is carried into gold, not dropped.
+
+    Migration 004 added `realtime_start`/`realtime_end` to the silver
+    revision, and `uq_rpt_fred_observations_nk`, the latest-selection index
+    and `uq_mv_fred_latest` are all built around them --
+    `gold_fred.fact_fred_observation` published `NULL::DATE` for both, so
+    every served row collapsed onto the `'0001-01-01'` sentinel those keys
+    COALESCE to and the window a row was published under was reachable only
+    in silver. The window seeded here is FRED's own vintage identity, and the
+    served rows must carry it exactly.
+    """
+    series_id = f"TEST_FRED_WINDOW_{fred_silver_token}"
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20990101, "2099-01-01")
+            seed_geography(
+                cursor, geo_type="nation", vintage=2099, name="United States"
+            )
+            cursor.execute(
+                """
+                INSERT INTO silver_fred.fact_economic_indicators (
+                    time_sk, duration_start, duration_end, observation_date,
+                    series_id, domain, value, is_missing, series_title,
+                    unit_of_measure, frequency, seasonal_adjustment,
+                    source_system, load_batch_id, ingested_at,
+                    realtime_start, realtime_end
+                ) VALUES (
+                    20990101, '2099-01-01', '2099-01-31', '2099-01-01',
+                    %s, 'fixture', 42.5, FALSE, 'Window fixture',
+                    'Index', 'Monthly', 'Not Adjusted', 'FRED', %s,
+                    '2024-06-15 12:00:00+00'::TIMESTAMPTZ,
+                    '2024-06-15', '9999-12-31'
+                )
+                """,
+                (series_id, str(uuid4())),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    hook = PostgresHookStub(postgres_connection_factory)
+    assert gold_transform.refresh_fred_elements(hook) >= 1
+
+    refresher = postgres_connection_factory()
+    try:
+        with refresher.cursor() as cursor:
+            cursor.execute(
+                "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                ("2099-01-01", "2099-01-31"),
+            )
+            refresher.commit()
+            # The fact view keys geography and the series surrogate rather
+            # than the series id, so it is read through its dimension.
+            cursor.execute(
+                """
+                SELECT DISTINCT fact.realtime_start::TEXT, fact.realtime_end::TEXT
+                  FROM gold_fred.fact_fred_observation AS fact
+                  JOIN gold_fred.dim_fred_series AS series
+                    ON series.fred_series_sk = fact.fred_series_sk
+                 WHERE series.series_id = %s
+                """,
+                (series_id,),
+            )
+            assert cursor.fetchall() == [("2024-06-15", "9999-12-31")]
+
+            for relation in (
+                "gold_fred.rpt_fred_observations",
+                "gold_fred.mv_fred_latest",
+            ):
+                cursor.execute(
+                    f"""
+                    SELECT DISTINCT realtime_start::TEXT, realtime_end::TEXT
+                      FROM {relation} WHERE series_id = %s
+                    """,
+                    (series_id,),
+                )
+                assert cursor.fetchall() == [("2024-06-15", "9999-12-31")], relation
+    finally:
+        refresher.close()
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for relation in (
+                    "gold_fred.mv_fred_latest",
+                    "gold_fred.rpt_fred_observations",
+                    "gold_fred.dim_fred_series",
+                    "silver_fred.fact_economic_indicators",
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {relation} WHERE series_id = %s", (series_id,)
+                    )
+                cursor.execute(
+                    "DELETE FROM control.serving_refresh_chunk_state "
+                    "WHERE source_code = 'FRED'"
+                )
+                cursor.execute(
+                    "DELETE FROM control.serving_refresh_state "
+                    "WHERE source_code = 'FRED'"
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_fred_release_is_the_ingestion_not_the_refresh(
+    postgres_connection_factory: Callable[[], connection],
+    fred_silver_token: str,
+) -> None:
+    """Covers: DB-039 — re-serving a FRED chunk publishes no new release.
+
+    `gold_fred.fact_fred_observation` published `CURRENT_DATE AS as_of_date`
+    and the serving refresh materialised the literal, so a release of a FRED
+    series was the day a chunk of it was last written. The row is seeded with
+    an ingestion date in the past, which is what makes this failing-first: a
+    test that ingested and served in one session saw today's date either way.
+    """
+    series_id = f"TEST_FRED_RELEASE_{fred_silver_token}"
+    ingested_on = "2024-06-15"
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            _seed_time(cursor, 20990101, "2099-01-01")
+            seed_geography(
+                cursor, geo_type="nation", vintage=2099, name="United States"
+            )
+            cursor.execute(
+                """
+                INSERT INTO silver_fred.fact_economic_indicators (
+                    time_sk, duration_start, duration_end, observation_date,
+                    series_id, domain, value, is_missing, series_title,
+                    unit_of_measure, frequency, seasonal_adjustment,
+                    source_system, load_batch_id, ingested_at
+                ) VALUES (
+                    20990101, '2099-01-01', '2099-01-31', '2099-01-01',
+                    %s, 'fixture', 42.5, FALSE, 'Release fixture',
+                    'Index', 'Monthly', 'Not Adjusted', 'FRED', %s,
+                    %s::TIMESTAMPTZ
+                )
+                """,
+                (series_id, str(uuid4()), f"{ingested_on} 12:00:00+00"),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    hook = PostgresHookStub(postgres_connection_factory)
+    assert gold_transform.refresh_fred_elements(hook) >= 1
+
+    refresher = postgres_connection_factory()
+    try:
+        with refresher.cursor() as cursor:
+            for _ in range(2):
+                cursor.execute(
+                    "CALL gold_fred.refresh_dashboard_serving_layer_fred(%s, %s, TRUE)",
+                    ("2099-01-01", "2099-01-31"),
+                )
+            refresher.commit()
+            cursor.execute(
+                """
+                SELECT DISTINCT as_of_date::TEXT, updated_at::DATE::TEXT
+                  FROM gold_fred.rpt_fred_observations WHERE series_id = %s
+                """,
+                (series_id,),
+            )
+            assert cursor.fetchall() == [(ingested_on, ingested_on)]
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT as_of_date)
+                  FROM gold_fred.rpt_fred_observations WHERE series_id = %s
+                """,
+                (series_id,),
+            )
+            assert cursor.fetchone() == (1,)
+    finally:
+        refresher.close()
+        # This node serves rows and forces a refresh, so it owns three kinds
+        # of state: the served rows, the silver row behind them, and the
+        # source's serving watermark. Leaving the watermark behind is what
+        # makes the next chunked-refresh test plan nothing at all.
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for relation in (
+                    "gold_fred.mv_fred_latest",
+                    "gold_fred.rpt_fred_observations",
+                    "gold_fred.dim_fred_series",
+                    "silver_fred.fact_economic_indicators",
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {relation} WHERE series_id = %s", (series_id,)
+                    )
+                cursor.execute(
+                    "DELETE FROM control.serving_refresh_chunk_state "
+                    "WHERE source_code = 'FRED'"
+                )
+                cursor.execute(
+                    "DELETE FROM control.serving_refresh_state "
+                    "WHERE source_code = 'FRED'"
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
 def test_fred_revision_refreshes_latest_without_losing_prior_date(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,

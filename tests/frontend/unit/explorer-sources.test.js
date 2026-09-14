@@ -14,8 +14,11 @@ import {
 } from "../../../apps/web/lib/explorerSources";
 import {
   datasetFacetOptions,
+  distributionCaveats,
+  distributionPeriodNote,
   preferredDatasetFacet,
 } from "../../../apps/web/lib/explorerViewModel";
+import { servedParameters } from "../support/servedContract.js";
 
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot): every
@@ -25,29 +28,11 @@ import {
 // routes it also publishes. Parameter lists are the served ones (see
 // tests/fixtures/api/openapi_contract.json).
 const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
   {
-    path: "/api/v1/observations",
-    parameters: [
-      "adjustment_status",
-      "county_fips",
-      "domain_desc",
-      "domaincat_desc",
-      "geo_id",
-      "geo_level",
-      "limit",
-      "metric_code",
-      "offset",
-      "release",
-      "scope",
-      "state_fips",
-      "stratum_id",
-      "subject_code",
-      "subject_type",
-      "year_from",
-      "year_to",
-    ],
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
 ];
 
 const sourceRoutes = (segment) => [
@@ -377,5 +362,97 @@ describe("dataset facets derived from published metric identity", () => {
       { value: "pep_nst_alldata", label: "PEP_NST_ALLDATA" },
     ]);
     expect(preferredDatasetFacet(pepMetrics)).toBe("pep_cty_alldata");
+  });
+});
+
+describe("distributionPeriodNote", () => {
+  // Covers: WEB-054 — the legend's own statement of which period its scale
+  // describes. `/distribution/bins` reduces each geography to its own newest
+  // period, so an answer can be built from a mix of them, and the client
+  // cannot work that out: the bins are computed over every geography the
+  // metric publishes while the client holds one page of rows.
+
+  test("names the one period the bins describe", () => {
+    expect(distributionPeriodNote({ period: "2023-01-01", periods_differ: false })).toBe(
+      "for 2023-01-01",
+    );
+  });
+
+  test("says the bins mix periods instead of naming one", () => {
+    // Naming the earliest or the latest would label the whole scale with a
+    // period most of it is not from.
+    expect(distributionPeriodNote({ period: null, periods_differ: true })).toBe(
+      "bins mix periods: each geography's own newest value",
+    );
+  });
+
+  test("an answer publishing neither fact is described as it is", () => {
+    expect(distributionPeriodNote({})).toBe("");
+    expect(distributionPeriodNote(null)).toBe("");
+  });
+});
+
+describe("distributionCaveats", () => {
+  // Covers: WEB-055 — published strings rendered as published. The API names
+  // the source and the fields it publishes; composing a different sentence
+  // here would be this client restating a qualifier it did not derive.
+
+  test("returns the published caveats unchanged", () => {
+    expect(distributionCaveats({ caveats: ["a margin is published"] })).toEqual([
+      "a margin is published",
+    ]);
+  });
+
+  test("an answer carrying none carries none", () => {
+    expect(distributionCaveats({ caveats: [] })).toEqual([]);
+    expect(distributionCaveats({})).toEqual([]);
+    expect(distributionCaveats(null)).toEqual([]);
+  });
+
+  test("anything that is not a published string is not rendered", () => {
+    expect(distributionCaveats({ caveats: ["kept", "", 7, null] })).toEqual(["kept"]);
+  });
+});
+
+// Covers: WEB-061 — the declared dimensions reach the explorer.
+//
+// The table and the export took their dimension columns from the source's
+// *filterable* names, so four of seven sources showed no dimension at all
+// and CDC showed two of fourteen -- `footnote_text`, which is how CDC
+// qualifies an estimate, among the twelve missing. API-109 publishes the
+// declared set as `observation_dimensions`; this is it reaching the client.
+describe("a source carries the dimensions its capability declares", () => {
+  const capability = {
+    source_code: "CDC",
+    display_name: "Centers for Disease Control and Prevention",
+    route_segment: "cdc",
+    served_by_neutral_routes: true,
+    observation_filters: ["adjustment_status", "geo_id", "geo_level", "stratum_id"],
+    observation_dimensions: [
+      "adjustment_status",
+      "footnote_code",
+      "footnote_text",
+      "estimate_method",
+      "stratum_id",
+    ],
+    observation_routes: [
+      { path: "/api/v1/observations", parameters: ["metric_code", "limit", "offset"] },
+    ],
+  };
+
+  test("the declared set travels, distinct from the filterable one", () => {
+    const [source] = buildExplorerSources([capability]);
+    expect(source.publishedDimensions).toEqual(capability.observation_dimensions);
+    // The two lists are genuinely different: this is the whole finding.
+    expect(source.publishedDimensions).not.toEqual(source.dimensionFilters);
+    expect(source.publishedDimensions).toContain("footnote_text");
+    expect(source.dimensionFilters).not.toContain("footnote_text");
+  });
+
+  test("a capability declaring none leaves an empty list, never undefined", () => {
+    const [source] = buildExplorerSources([
+      { ...capability, observation_dimensions: undefined },
+    ]);
+    expect(source.publishedDimensions).toEqual([]);
   });
 });

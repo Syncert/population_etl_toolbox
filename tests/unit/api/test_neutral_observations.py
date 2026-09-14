@@ -960,3 +960,390 @@ def test_newest_per_geography_is_declared_on_the_neutral_route() -> None:
             assert "newest_per_geography" in routes[neutral_path], capability[
                 "source_code"
             ]
+
+
+# ---------------------------------------------------------------------------
+# API-081 — one row per period, ranked by the source's own release order
+# ---------------------------------------------------------------------------
+
+
+def test_newest_release_per_period_ranks_by_the_declared_release_order() -> None:
+    """Covers: API-081 — the API decides which release is newer, not a client.
+
+    A source whose latest relation keeps one row per geography -- Census ACS
+    holds only the newest vintage -- has a geography's history only across
+    its releases. Reducing that to one row per period needs the source's own
+    release order, which every dispatch entry declares and which a client
+    can only guess at.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatched = _dispatched(session)
+    assert dispatched, "the request reached the source relation"
+    for sql in dispatched:
+        assert "ROW_NUMBER() OVER" in sql
+        # One row per geography and period, newest release first, by the
+        # order the dispatch entry declares.
+        assert "PARTITION BY geo_id, estimate_date::TEXT" in sql
+        assert "ORDER BY pep_vintage DESC" in sql
+        assert "newest_release_rank = 1" in sql
+        # Ranked inside the source's own as-released relation.
+        assert "FROM gold_pep.population_estimate_revision" in sql
+    assert any(sql.lstrip().startswith("SELECT COUNT(") for sql in dispatched)
+
+
+def test_newest_release_per_period_keeps_the_declared_filters() -> None:
+    """Covers: API-081 — the reduction composes, it does not replace."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "geo_level": "COUNTY",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    for sql in _dispatched(session):
+        ranked = sql.split("ROW_NUMBER() OVER", 1)[1]
+        assert "gold_glossary.geo_grain(geo_type) = UPPER(:geo_level)" in ranked
+
+
+def test_newest_release_per_period_is_refused_for_a_latest_read() -> None:
+    """Covers: API-081 — only an as-released read has releases to reduce."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "newest_release_per_period" in detail
+    assert "scope=as_released" in detail
+
+
+def test_newest_release_per_period_and_a_pinned_release_are_contradictory() -> None:
+    """Covers: API-081 — a contradiction is refused, never resolved silently."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "release": "2024",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "newest_release_per_period" in detail
+    assert "release" in detail
+
+
+def test_the_two_reductions_cannot_be_asked_for_together() -> None:
+    """Covers: API-081 — each belongs to the scope the other refuses."""
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_per_geography": "true",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+
+
+def test_newest_release_per_period_is_declared_on_the_neutral_route() -> None:
+    """Covers: API-081 — a client discovers it from the capability entry."""
+    paths = app.openapi().get("paths") or {}
+    neutral = paths.get("/api/v1/observations", {}).get("get", {})
+    names = {
+        parameter["name"]
+        for parameter in neutral.get("parameters") or []
+        if parameter.get("in") == "query"
+    }
+    assert "newest_release_per_period" in names
+
+
+# ---------------------------------------------------------------------------
+# API-083 — a reduction that ties picks the same row every time
+# ---------------------------------------------------------------------------
+
+
+def _ranking_order(sql: str, marker: str) -> str:
+    """The ``ORDER BY`` of the window function that assigns ``marker``."""
+    window = sql.split(marker, 1)[0].rsplit("ROW_NUMBER() OVER", 1)[1]
+    ordering = window.split("ORDER BY", 1)[1].rsplit(")", 1)[0]
+    return " ".join(ordering.split())
+
+
+def test_newest_per_geography_breaks_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — ROW_NUMBER picks one row of a tie group, and SQL
+    does not say which.
+
+    Census PEP's latest publication is a series, so a geography carries
+    several rows and more than one can share the newest period. Ranking on
+    the period alone leaves that group undecided: the same request answers a
+    different published row when the plan or the relation's physical order
+    changes, with no publication in between.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatch = OBSERVATION_DISPATCH["CENSUS_PEP"]
+    expected = ", ".join(
+        (f"{dispatch.period_start_expression} DESC",) + dispatch.latest_order
+    )
+    for sql in _dispatched(session):
+        assert _ranking_order(sql, "newest_period_rank") == expected, sql
+
+
+def test_settled_history_breaks_ties_on_the_declared_order() -> None:
+    """Covers: API-083 — the mirror image, over the released relation.
+
+    Two rows of one period inside one release tie on the release order, and
+    the settled history promised the row the source's own declared order
+    names.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "scope": "as_released",
+                "newest_release_per_period": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    dispatch = OBSERVATION_DISPATCH["CENSUS_PEP"]
+    expected = ", ".join(
+        (f"{dispatch.release_order_expression} DESC",) + dispatch.released_order
+    )
+    for sql in _dispatched(session):
+        assert _ranking_order(sql, "newest_release_rank") == expected, sql
+
+
+def test_every_dispatch_entry_declares_the_order_its_reductions_need() -> None:
+    """Covers: API-083 — the gap is visible, not silent.
+
+    A reduction can only be deterministic where the entry declares a total
+    order. Nothing here invents one for a source that does not; CI names the
+    source instead, at the point a source is added.
+    """
+    missing_latest = sorted(
+        code for code, entry in OBSERVATION_DISPATCH.items() if not entry.latest_order
+    )
+    missing_released = sorted(
+        code for code, entry in OBSERVATION_DISPATCH.items() if not entry.released_order
+    )
+    assert missing_latest == [], (
+        "these sources reduce their latest relation on an order that can tie: "
+        f"{missing_latest}"
+    )
+    assert missing_released == [], (
+        "these sources reduce their released relation on an order that can "
+        f"tie: {missing_released}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# API-095 — the releases listing pages a total order
+# ---------------------------------------------------------------------------
+
+
+def _metric_row_for(source_code: str, dispatch) -> dict[str, Any]:
+    """A glossary row that resolves and dispatches to one source.
+
+    Built from the dispatch entry itself -- its lineage relation, its lineage
+    key, its identity columns -- so a source added to the registry is
+    exercised without an edit here.
+    """
+    lineage: dict[str, Any] = {
+        "schema": dispatch.lineage_schema,
+        "relation": dispatch.lineage_relation,
+        "key": "RELEASE_ORDER_KEY",
+    }
+    lineage.update({column: "IDENTITY" for column in dispatch.identity_columns})
+    return {
+        "metric_code": f"{source_code}:RELEASE_ORDER",
+        "source_code": source_code,
+        "metric_display_name": "Release order",
+        "units": None,
+        "physical_lineage": lineage,
+    }
+
+
+def test_every_source_lists_its_releases_in_a_total_order() -> None:
+    """Covers: API-095 — the releases listing cannot repeat or skip a release.
+
+    The guide promises every paged read a total order. This one had it only by
+    coincidence of the registry: it ordered by `MAX(release_order_expression)`
+    alone, and every dispatch entry's ordering expression happens to be its
+    release identity with a cast, so no two groups could share a value. A
+    source whose release identity is a name ordered by a date -- the obvious
+    next shape -- pages non-deterministically the moment two releases land on
+    one date.
+
+    The release identity is the `GROUP BY` key, so naming it as the tie-break
+    makes the order total by construction rather than by inspection. Swept
+    over the reviewed registry, so a source added later is covered here.
+    """
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    for source_code, dispatch in sorted(OBSERVATION_DISPATCH.items()):
+        row = _metric_row_for(source_code, dispatch)
+        session = _DispatchSession(metric_row=row, rows=[], total=0)
+        client = _client_with(session)
+        try:
+            response = client.get(
+                "/api/v1/observations/releases",
+                params={"metric_code": row["metric_code"]},
+            )
+        finally:
+            _clear_overrides()
+        assert response.status_code == 200, response.text
+
+        listing = _dispatched(session)[-1]
+        order = listing.split("ORDER BY", 1)[1].split("LIMIT", 1)[0].strip()
+        assert order.startswith(f"MAX({dispatch.release_order_expression}) DESC"), (
+            f"{source_code} orders its releases by {order!r}, which does not "
+            "begin with the release ordering the dispatch declares"
+        )
+        tie_break = order.split("DESC", 1)[1].strip()
+        assert dispatch.release_expression in tie_break, (
+            f"{source_code} orders its releases by {order!r}, whose tie-break "
+            f"does not name the release identity {dispatch.release_expression!r}; "
+            "two releases sharing an ordering value could then repeat or skip "
+            "across a page boundary"
+        )
+
+
+# ---------------------------------------------------------------------------
+# API-118 — a reduction declines a source that does not reduce
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("reduction", "scope"),
+    [
+        ("newest_per_geography", "latest"),
+        ("newest_release_per_period", "as_released"),
+    ],
+)
+def test_a_reduction_declines_a_stratified_source(reduction: str, scope: str) -> None:
+    """Covers: API-118 — the reduction is the analysis routes' own ranking.
+
+    The guide says of `newest_per_geography` that it is "the same ranking
+    `/distribution/bins` and `/comparison/preflight` already apply", and
+    those routes decline CDC, USDA NASS and FBI UCR with a stated reason:
+    their rows do not reduce to one number per geography. The reduction
+    never consulted `analysis_ready`. It partitioned on `geo_id` alone, and
+    the tie-break then resolved CDC's many rows per geography by
+    `stratum_id`, so the lexicographically first stratum answered as the
+    geography's value and `total` counted only the survivors -- "collapse a
+    source's strata, domains, or subject grain into a single number you did
+    not ask for", which the guide's own "What this API will not do" opens
+    with.
+
+    Every API-066 and API-081 node above uses the Census PEP metric, an
+    analysis-ready source, so the block passed without a stratified one.
+    """
+    session = _DispatchSession(metric_row=dict(_CDC_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _CDC_METRIC["metric_code"],
+                "scope": scope,
+                reduction: "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert reduction in detail
+    assert "CDC" in detail
+    # The restriction is the dispatch entry's own, so the reader is told the
+    # same thing the analysis routes tell them, and what to ask instead.
+    assert "stratum_id" in detail
+    assert not _dispatched(session), "no query may run for a refused reduction"
+
+
+def test_a_reduction_still_answers_for_a_source_that_reduces() -> None:
+    """Covers: API-118 — the refusal is narrow.
+
+    Census PEP is analysis-ready and its latest publication is a series per
+    geography, which is the case the reduction exists for.
+    """
+    session = _DispatchSession(metric_row=dict(_PEP_METRIC))
+    client = _client_with(session)
+    try:
+        response = client.get(
+            "/api/v1/observations",
+            params={
+                "metric_code": _PEP_METRIC["metric_code"],
+                "newest_per_geography": "true",
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200, response.text

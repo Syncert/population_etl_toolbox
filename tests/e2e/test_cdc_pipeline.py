@@ -550,8 +550,11 @@ def test_cdc_fixtures_reach_the_api_and_retain_every_published_release(
         assert {row["release"] for row in neutral_payload["items"]} == {
             EXPECTED["release_watermarks"]["cdi_second_release"]
         }
+        # The one geography-grain vocabulary the warehouse serves (migration
+        # 018): the neutral resource reports NATIONAL where CDC's own relation
+        # stores `nation`, and the catalog publishes the same word.
         neutral_national = next(
-            row for row in neutral_payload["items"] if row["geo_level"] == "nation"
+            row for row in neutral_payload["items"] if row["geo_level"] == "NATIONAL"
         )
         assert neutral_national["value"] == national["value"]
         assert neutral_national["unit"] == national["unit"]

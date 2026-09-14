@@ -13,47 +13,51 @@ import { describe, expect, test } from "vitest";
 
 import { buildExplorerSources, findExplorerSource } from "../../../apps/web/lib/explorerSources";
 import {
+  servedParameters,
+  servedParametersWithout,
+  servedSchemaFields,
+} from "../support/servedContract.js";
+import {
   RELEASE_DIMENSION,
   SCOPE_AS_RELEASED,
   SCOPE_LATEST,
   buildHistoryObservationRequest,
   buildLatestObservationRequest,
+  buildNewestValueRequest,
+  buildSettledHistoryRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
+  describeHistoryLoad,
   countObservationPeriods,
   describeStratification,
+  dimensionsCarriedBy,
   newestPerGeography,
   normalizeObservationRows,
+  OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
+  OBSERVATION_UNCERTAINTY_FIELDS,
+  observationCoverageValue,
+  observationUncertaintyLabel,
+  observationUncertaintyValue,
+  publishesCoverage,
+  publishesUncertainty,
   observationDimensionOptions,
+  observationDimensionLabel,
   observationDimensionValue,
   observationPeriodLabel,
+  sharedObservationPeriod,
   scopedDimensionFilters,
+  stateScopeNote,
   servesAsReleased,
   stratificationDimensions,
 } from "../../../apps/web/lib/observationAccess";
 
 // Shaped exactly like the served CapabilityListResponse items (see
 // docs/reference/API_CONSUMER_GUIDE.md and the OpenAPI snapshot).
-// The served neutral parameter list (tests/fixtures/api/openapi_contract.json).
-const NEUTRAL_PARAMETERS = [
-  "adjustment_status",
-  "county_fips",
-  "domain_desc",
-  "domaincat_desc",
-  "geo_id",
-  "geo_level",
-  "limit",
-  "metric_code",
-  "offset",
-  "release",
-  "scope",
-  "state_fips",
-  "stratum_id",
-  "subject_code",
-  "subject_type",
-  "year_from",
-  "year_to",
-];
+// The served neutral parameter list, read from the reviewed snapshot
+// rather than copied: a copy that claims to be the served list and is
+// not models a weaker API than the one that ships (WEB-043).
+const NEUTRAL_PARAMETERS = servedParameters("/api/v1/observations");
 
 const neutralRoutes = [
   { path: "/api/v1/observations", parameters: NEUTRAL_PARAMETERS },
@@ -597,6 +601,37 @@ describe("as-released reads", () => {
     expect(scopedDimensionFilters(null, SCOPE_AS_RELEASED)).toEqual([]);
   });
 
+  test("a saved view records the stratum its request carried, not its selection", () => {
+    // Covers: WEB-081 — what a saved view records has to be what it asked
+    // for. A document carrying a filter the request never sent replays a
+    // narrower set than the view showed; one missing a filter the request
+    // did send replays a wider one, and for a stratified measure that is a
+    // different population. Read from the request, so a selection that
+    // outlived the scope it was made under cannot be recorded as a narrowing
+    // the view never applied.
+    const stratum = { stratum_id: "female-45-54" };
+    const carried = buildLatestObservationRequest(cdc, {
+      metricCode: "CDC:nvss:INFANT_MORTALITY",
+      geoLevel: "STATE",
+      limit: "500",
+      dimensions: stratum,
+    });
+    expect(carried.params.stratum_id).toBe("female-45-54");
+    expect(dimensionsCarriedBy(carried, cdc.dimensionFilters)).toEqual(stratum);
+
+    // The same selection against a source that declares no such filter: the
+    // builder drops it from the request, so the view records no narrowing.
+    const dropped = buildLatestObservationRequest(fbi, {
+      metricCode: "FBI_UCR:summary:VIOLENT_CRIME",
+      geoLevel: "STATE",
+      limit: "500",
+      dimensions: stratum,
+    });
+    expect(dropped.params.stratum_id).toBeUndefined();
+    expect(dimensionsCarriedBy(dropped, fbi.dimensionFilters)).toEqual({});
+    expect(dimensionsCarriedBy(null, cdc.dimensionFilters)).toEqual({});
+  });
+
   test("an unpinned as-released answer is one series per release, not one value", () => {
     const rows = [
       { geo_id: "state:55|county:025", release: "2022", value: "555000" },
@@ -822,5 +857,537 @@ describe("newest per geography", () => {
       geoLevel: "COUNTY",
     });
     expect(request.params.newest_per_geography).toBeUndefined();
+  });
+});
+
+// Covers: WEB-036 — a bounded read is never presented as a whole answer. A
+// profile card wants one number: the geography's newest published value.
+// Taking the last row of a bounded ascending page is that number only when
+// the whole publication fitted in the page, which for Census PEP -- whose
+// latest publication is every estimated year of the current vintage -- it
+// does not.
+describe("the newest published value for one geography", () => {
+  const pep = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level", "year_from", "year_to"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: [
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "offset",
+            "scope",
+          ],
+        },
+      ],
+    },
+  ])[0];
+
+  // The same capability, except that it does not declare the reduction. The
+  // narrowing is expressed as a subtraction from the served list, so the
+  // client's refusal is caused by that one absence rather than by a fixture
+  // that happens to be narrow in some other way (WEB-043).
+  const withoutReduction = buildExplorerSources([
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: servedParametersWithout("/api/v1/observations", [
+            "newest_per_geography",
+          ]),
+        },
+      ],
+    },
+  ])[0];
+
+  test("it asks the resource to reduce, and takes one row", () => {
+    const request = buildNewestValueRequest(pep, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    expect(request.resource).toBe("/observations");
+    expect(request.params.newest_per_geography).toBe("true");
+    expect(request.params.geo_id).toBe("state:01|county:001");
+    expect(request.params.scope).toBe(SCOPE_LATEST);
+    expect(String(request.params.limit)).toBe("1");
+    expect(request.reducedByResource).toBe(true);
+  });
+
+  test("a source that cannot reduce says so, and reads a bounded page", () => {
+    const request = buildNewestValueRequest(withoutReduction, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+    expect(request.reducedByResource).toBe(false);
+    // Still one geography's own publication, and still bounded.
+    expect(request.params.geo_id).toBe("state:01|county:001");
+    expect(Number(request.params.limit)).toBeGreaterThan(1);
+  });
+
+  test("no parameter the capability did not declare is ever sent", () => {
+    const request = buildNewestValueRequest(withoutReduction, {
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoId: "state:01|county:001",
+    });
+    for (const name of Object.keys(request.params)) {
+      expect(
+        withoutReduction.neutralFilters.includes(name),
+        `${name} is not declared`,
+      ).toBe(true);
+    }
+  });
+});
+
+// Covers: WEB-036 — the trend panel says when the page bound cut the series
+// short, in the same words the map panel already uses. A prefix labelled
+// "N historical observations" reads as the history.
+describe("the history panel's status line", () => {
+  test("a complete history is reported as what it is", () => {
+    expect(describeHistoryLoad(48, 48, true, false)).toBe("48 historical observations");
+    expect(describeHistoryLoad(1, 1, true, false)).toBe("1 historical observation");
+  });
+
+  test("a bounded read names the shortfall and calls the trend incomplete", () => {
+    expect(describeHistoryLoad(5000, 18864, false, false)).toBe(
+      "loaded 5000 of 18864 historical observations; the page bound cut the " +
+        "answer short, so the trend is incomplete",
+    );
+  });
+
+  test("a resource that published no total is not reported as short", () => {
+    // Without a total there is no shortfall to state, and inventing one
+    // would be this client asserting a count the API did not publish.
+    expect(describeHistoryLoad(120, null, false, false)).toBe(
+      "120 historical observations",
+    );
+  });
+
+  test("the release context travels with either shape", () => {
+    expect(describeHistoryLoad(9, 9, true, true)).toBe(
+      "9 historical observations across published releases",
+    );
+    expect(describeHistoryLoad(5000, 9000, false, true)).toContain(
+      "across published releases; the page bound cut the answer short",
+    );
+  });
+});
+
+// Covers: WEB-046 — the settled history is asked for, not computed. Deciding
+// which release is newer is a rule the warehouse publishes and every dispatch
+// entry declares; the client's own comparison could disagree with it, because
+// `2023.10` and `2023.9` order one way as numbers and the other as text.
+describe("a settled history is the resource's answer", () => {
+  const declaring = buildExplorerSources([
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: servedParameters("/api/v1/observations"),
+        },
+      ],
+    },
+  ])[0];
+
+  const olderApi = buildExplorerSources([
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      datasets: [],
+      observation_filters: ["geo_id", "geo_level"],
+      observation_routes: [
+        {
+          path: "/api/v1/observations",
+          parameters: servedParametersWithout("/api/v1/observations", [
+            "newest_release_per_period",
+          ]),
+        },
+      ],
+    },
+  ])[0];
+
+  test("it asks the resource to reduce across releases", () => {
+    const request = buildSettledHistoryRequest(declaring, {
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      geoId: "state:55|county:025",
+      limit: "1000",
+    });
+    expect(request).not.toBeNull();
+    expect(request.resource).toBe("/observations");
+    expect(request.params.scope).toBe(SCOPE_AS_RELEASED);
+    expect(request.params.newest_release_per_period).toBe("true");
+    expect(request.params.geo_id).toBe("state:55|county:025");
+    // A pinned release contradicts the reduction, and the resource refuses
+    // the pair; this client does not send it.
+    expect(request.params.release).toBeUndefined();
+  });
+
+  test("a deployment whose API does not declare it is not sent it", () => {
+    // The trend must not be lost against an older API: the caller falls back
+    // to reading the releases and reducing them, which is why this answers
+    // null rather than a request without the parameter.
+    expect(
+      buildSettledHistoryRequest(olderApi, {
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }),
+    ).toBeNull();
+  });
+
+  test("a source with no as-released surface is not asked at all", () => {
+    const scopedOnly = buildExplorerSources([
+      {
+        source_code: "CENSUS_ACS",
+        display_name: "Census American Community Survey",
+        route_segment: "census",
+        served_by_neutral_routes: false,
+        datasets: [],
+        observation_filters: [],
+        observation_routes: [
+          {
+            path: "/api/v1/census/observations/latest",
+            parameters: ["geo_level", "limit", "metric_code"],
+          },
+          {
+            path: "/api/v1/census/observations/timeseries",
+            parameters: ["geo_id", "limit", "metric_code"],
+          },
+        ],
+      },
+    ])[0];
+    expect(
+      buildSettledHistoryRequest(scopedOnly, {
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoId: "state:55|county:025",
+        limit: "1000",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("a published coverage qualifier travels with its value", () => {
+  // Covers: WEB-051 — FBI UCR is the one source the API refuses to serve
+  // through the per-source row shape, because it publishes agency-level facts
+  // with a participation basis that shape cannot represent honestly. The
+  // neutral envelope carries that basis under `coverage`; normalization
+  // mapped `uncertainty` onto the row and left `coverage` behind, so an
+  // agency's offence count was rendered with no indication of the
+  // participation it rests on.
+
+  const neutralSource = {
+    key: "fbi",
+    accessShape: "neutral",
+    neutralFilters: ["geo_id", "geo_level"],
+    requestFilters: ["geo_id", "geo_level"],
+    dimensionFilters: [],
+    neutralDimensionFilters: [],
+  };
+
+  const reportingRow = {
+    metric_code: "FBI_UCR:summarized:VIOLENT",
+    source_code: "FBI_UCR",
+    geo_id: "agency:WI0130000",
+    geo_level: "AGENCY",
+    value: "412",
+    value_status: "valid",
+    period_start: "2023-01-01",
+    period_end: "2023-12-31",
+    coverage: {
+      population: "269840",
+      participated_population: "167000",
+      coverage_percent: "61.9",
+      coverage_basis: "reported months",
+      participation_status: "partial",
+      population_denominator: "agency service population",
+    },
+  };
+
+  test("every published coverage field survives normalization", () => {
+    // Normalization carries the envelope through by construction -- it
+    // spreads the row it was given -- so this pins that rather than a change
+    // it needed. What was missing was any surface that read the field.
+    const [row] = normalizeObservationRows(neutralSource, [reportingRow]);
+    for (const [field, value] of Object.entries(reportingRow.coverage)) {
+      expect(observationCoverageValue(row, field)).toBe(value);
+    }
+  });
+
+  test("a source that publishes no coverage publishes none", () => {
+    // Absent stays absent: an unpublished qualifier is not an empty one, and
+    // inventing a dash in the data would make the two indistinguishable.
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...reportingRow, coverage: undefined },
+    ]);
+    expect(observationCoverageValue(row, "participation_status")).toBe("");
+    expect(publishesCoverage([row])).toBe(false);
+  });
+
+  test("the answer says whether any row published a participation", () => {
+    // Read from the loaded rows rather than from a list of sources, so a
+    // source that starts publishing coverage is shown it without an edit
+    // here, and one that does not grows no empty column.
+    const [row] = normalizeObservationRows(neutralSource, [reportingRow]);
+    expect(publishesCoverage([row])).toBe(true);
+    expect(publishesCoverage([])).toBe(false);
+    expect(publishesCoverage(null)).toBe(false);
+  });
+
+  test("a not-reported agency keeps its explanation", () => {
+    // The schema's own reason for the field: a not-reported subject keeps
+    // null values, and the coverage context explains the gap instead of the
+    // API inventing a zero. The gap is only explained if it is shown.
+    const [row] = normalizeObservationRows(neutralSource, [
+      {
+        ...reportingRow,
+        value: null,
+        value_status: "not_reported",
+        coverage: { participation_status: "did not report", coverage_percent: "0" },
+      },
+    ]);
+    expect(row.value).toBeNull();
+    expect(observationCoverageValue(row, "participation_status")).toBe("did not report");
+    // `0` is a published number here, not a missing one.
+    expect(observationCoverageValue(row, "coverage_percent")).toBe("0");
+  });
+});
+
+describe("a published uncertainty travels with its value", () => {
+  // Covers: WEB-053 — the envelope's other qualifier object. Normalization
+  // lifts `margin_of_error` and its percentage out of `uncertainty` for the
+  // chart and leaves the other five inside it, and nothing read them: CDC's
+  // published confidence bounds and USDA NASS's coefficient of variation --
+  // the figure NASS publishes a symbol for precisely to say an estimate is
+  // unreliable -- reached neither the table nor the export.
+
+  const neutralSource = {
+    key: "cdc",
+    accessShape: "neutral",
+    neutralFilters: ["geo_id", "geo_level"],
+    requestFilters: ["geo_id", "geo_level"],
+    dimensionFilters: [],
+    neutralDimensionFilters: [],
+  };
+
+  const intervalRow = {
+    metric_code: "CDC:cdc_places_county:OBESITY",
+    source_code: "CDC",
+    geo_id: "state:55|county:025",
+    geo_level: "COUNTY",
+    value: "32.4",
+    value_status: "valid",
+    uncertainty: { confidence_lower: "30.9", confidence_upper: "33.9" },
+  };
+
+  const coefficientRow = {
+    metric_code: "USDA_NASS:CORN:YIELD",
+    source_code: "USDA_NASS",
+    geo_id: "state:55",
+    geo_level: "STATE",
+    value: "181.2",
+    value_status: "valid",
+    uncertainty: { cv_value: "14.7", cv_status: "unreliable", cv_symbol: "(D)" },
+  };
+
+  test("the exported field list is the one the contract declares", () => {
+    // Read from the reviewed snapshot, so a field added to the envelope fails
+    // this rather than being silently dropped from every export.
+    expect([...OBSERVATION_UNCERTAINTY_FIELDS].sort()).toEqual(
+      servedSchemaFields("ObservationUncertainty"),
+    );
+    expect([...OBSERVATION_COVERAGE_FIELDS].sort()).toEqual(
+      servedSchemaFields("ObservationCoverage"),
+    );
+  });
+
+  test("every published uncertainty field survives normalization", () => {
+    for (const source of [intervalRow, coefficientRow]) {
+      const [row] = normalizeObservationRows(neutralSource, [source]);
+      for (const [field, value] of Object.entries(source.uncertainty)) {
+        expect(observationUncertaintyValue(row, field)).toBe(value);
+      }
+    }
+  });
+
+  test("a source-scoped row's top-level margin is read as published", () => {
+    // The per-source shapes carry `margin_of_error` at the top level and no
+    // `uncertainty` object; the accessor reads both rather than only the one
+    // the neutral envelope nests.
+    expect(
+      observationUncertaintyValue({ margin_of_error: "1.5" }, "margin_of_error"),
+    ).toBe("1.5");
+  });
+
+  test("a source that publishes no uncertainty publishes none", () => {
+    // Absent stays absent: an unpublished bound is not an empty one, and a
+    // dash in the exported data would make the two indistinguishable.
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...intervalRow, uncertainty: undefined },
+    ]);
+    expect(observationUncertaintyValue(row, "confidence_lower")).toBe("");
+    expect(publishesUncertainty([row])).toBe(false);
+    expect(observationUncertaintyLabel(row)).toBe("");
+  });
+
+  test("the answer says whether any row published an uncertainty", () => {
+    const [row] = normalizeObservationRows(neutralSource, [intervalRow]);
+    expect(publishesUncertainty([row])).toBe(true);
+    expect(publishesUncertainty([])).toBe(false);
+  });
+
+  test("the label can be asked for the fields beyond the margin", () => {
+    // The profile product decodes the margin itself -- `marginOfErrorText`
+    // knows the Census sentinel margins, which a field-value join cannot --
+    // and needs the rest of what the row published beside it, without
+    // repeating the margin (WEB-060).
+    const [row] = normalizeObservationRows(neutralSource, [
+      { ...intervalRow, uncertainty: { ...intervalRow.uncertainty, margin_of_error: "1200" } },
+    ]);
+    expect(observationUncertaintyLabel(row)).toContain("margin of error 1200");
+    const beyond = observationUncertaintyLabel(row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN);
+    expect(beyond).not.toContain("margin of error");
+    expect(beyond).toContain("confidence lower");
+  });
+
+  test("the fields beyond the margin are derived from the one list", () => {
+    // Not a second list: a field added to OBSERVATION_UNCERTAINTY_FIELDS
+    // reaches every surface that reads it without an edit.
+    expect(OBSERVATION_UNCERTAINTY_BEYOND_MARGIN.every((field) =>
+      OBSERVATION_UNCERTAINTY_FIELDS.includes(field),
+    )).toBe(true);
+    expect([...OBSERVATION_UNCERTAINTY_BEYOND_MARGIN].sort()).toEqual(
+      OBSERVATION_UNCERTAINTY_FIELDS.filter(
+        (field) => !field.startsWith("margin_of_error"),
+      ).slice().sort(),
+    );
+  });
+
+  test("the label names each published field rather than composing a notation", () => {
+    // A margin, an interval and a coefficient of variation are not
+    // interchangeable; rendering them into one notation would be this client
+    // deciding what three sources' numbers mean.
+    const [row] = normalizeObservationRows(neutralSource, [coefficientRow]);
+    expect(observationUncertaintyLabel(row)).toBe(
+      "cv value 14.7 · cv status unreliable · cv symbol (D)",
+    );
+  });
+});
+
+// Covers: WEB-061 — the declared dimensions a table has no column for.
+describe("the declared dimensions ride in one cell", () => {
+  const row = {
+    geo_id: "state:94",
+    dimensions: {
+      footnote_code: "1",
+      footnote_text: "Estimates are model-based",
+      estimate_method: "model-based",
+    },
+  };
+
+  test("each published field is named, under the source's own name", () => {
+    expect(
+      observationDimensionLabel(row, [
+        "footnote_code",
+        "footnote_text",
+        "estimate_method",
+      ]),
+    ).toBe(
+      "footnote code 1 · footnote text Estimates are model-based · "
+        + "estimate method model-based",
+    );
+  });
+
+  test("a field the row did not publish is left out, not shown empty", () => {
+    expect(observationDimensionLabel(row, ["footnote_code", "population_basis"])).toBe(
+      "footnote code 1",
+    );
+  });
+
+  test("a row that published none, or no names asked for, is empty", () => {
+    expect(observationDimensionLabel(row, [])).toBe("");
+    expect(observationDimensionLabel({}, ["footnote_code"])).toBe("");
+    expect(observationDimensionLabel(null, ["footnote_code"])).toBe("");
+  });
+});
+
+describe("the one period a view can honestly name", () => {
+  test("rows that share a period name it; rows that differ name none", () => {
+    // Covers: WEB-069 — what a saved view records as its period, and what
+    // the packet builder then puts in a block's envelope. Census PEP's
+    // latest publication carries every estimated year of the vintage, so
+    // naming one of them would make the other years read as that period's
+    // values.
+    const row = (period) => ({ geo_id: "state:55", period });
+    expect(sharedObservationPeriod([row("2023"), row("2023")])).toBe("2023");
+    expect(sharedObservationPeriod([row("2023"), row("2022")])).toBe("");
+    // Nothing loaded is nothing to name, not a guess.
+    expect(sharedObservationPeriod([])).toBe("");
+    expect(sharedObservationPeriod(null)).toBe("");
+    // A row publishing no period does not veto one that does.
+    expect(sharedObservationPeriod([row("2023"), row("")])).toBe("2023");
+  });
+
+  test("the period is the one the row labels, start and end included", () => {
+    // `observationPeriodLabel`'s own rule: a bounded period reads as its
+    // range, so two rows covering different ranges do not share a period.
+    const ranged = (start, end) => ({ period_start: start, period_end: end });
+    expect(sharedObservationPeriod([ranged("2021", "2023"), ranged("2021", "2023")])).toBe(
+      "2021 – 2023",
+    );
+    expect(sharedObservationPeriod([ranged("2021", "2023"), ranged("2020", "2022")])).toBe(
+      "",
+    );
+  });
+});
+
+describe("what a selected state narrowed", () => {
+  // Covers: WEB-075 — a state narrows the map and the geography picker on
+  // every source, and the rows only where the source declares the filter.
+  // The control was gated on the filter, so Census PEP's county and place
+  // pickers said "select a state first" and could never be given one: a PEP
+  // county's history was reachable only by clicking the map, and places —
+  // the grain PEP alone publishes — not at all.
+  test("says the rows are national when the state did not reach them", () => {
+    const note = stateScopeNote({
+      stateSelected: true,
+      narrowsRows: false,
+      sourceTitle: "Census Population Estimates Program",
+    });
+    expect(note).toContain("Census Population Estimates Program");
+    expect(note).toContain("declares no state filter");
+    expect(note).toContain("these rows are national");
+    expect(note).toContain("narrows the map and the geography list only");
+  });
+
+  test("says nothing when there is nothing to qualify", () => {
+    expect(stateScopeNote({ stateSelected: false, narrowsRows: false })).toBe("");
+    expect(stateScopeNote({ stateSelected: true, narrowsRows: true })).toBe("");
+    // No title is still a sentence, not a blank subject.
+    expect(
+      stateScopeNote({ stateSelected: true, narrowsRows: false, sourceTitle: " " }),
+    ).toContain("This source declares no state filter");
   });
 });

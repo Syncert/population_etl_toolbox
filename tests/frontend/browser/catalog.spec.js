@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-015 — the catalog's search, filters, deterministic limit/offset
 // paging over the API's published total, published provenance and freshness
@@ -165,10 +165,17 @@ test("published provenance, freshness, and explorer links are exact", async ({ p
   await expect(page.getByText("gold_census.rpt_acs_observations").first()).toBeVisible();
   await expect(page.getByText("STATE, COUNTY").first()).toBeVisible();
 
-  // The explorer link carries the metric identity, so the catalog opens a
-  // reproducible view rather than a source-specific page.
+  // The explorer link carries the metric identity *and the source that
+  // publishes it*, so the explorer opens on the named measure. This assertion
+  // pinned the source-less href, which is the defect: `/explore` mounts
+  // Census ACS, and a metric absent from that catalog was silently replaced
+  // by one of its own (WEB-072).
   await expect(page.getByTestId(`catalog-metric-link-${first.metric_code}`))
-    .toHaveAttribute("href", `/explore?metric=${encodeURIComponent(first.metric_code)}`);
+    .toHaveAttribute(
+      "href",
+      `/explore?source=${encodeURIComponent(first.source_code)}` +
+        `&metric=${encodeURIComponent(first.metric_code)}`,
+    );
 
   // A metric publishing almost no provenance shows only what it published,
   // and its unpublished freshness reads as unknown, never as healthy.

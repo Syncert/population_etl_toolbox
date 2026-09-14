@@ -39,11 +39,21 @@ MAX_ANALYTICAL_BLOCKS = 50
 class ReproducibilityEnvelope(BaseModel):
     """What the composer recorded about a block, as it recorded it.
 
-    Only the fields that duplicate the block's query (``metric_codes``,
-    ``scope``, ``release``) are cross-checked against it. The rest are
-    observations about what the source published when the block was
-    composed; the API second-guessing them would substitute its present view
-    for what the composer actually saw.
+    Cross-checked against the block's query, because each duplicates a
+    request parameter the ``document`` carries under the same name:
+    ``metric_codes``, ``scope``, ``release``, the two reductions
+    (``newest_per_geography``, ``newest_release_per_period``), and the
+    geography (``geo_id``, ``geo_level``) when the query filters to one.
+    ``source_codes`` is crossed too, against the sources the query's measures
+    actually resolve to (API-113), and ``api_query`` against the request the
+    query would issue (API-129) -- it is not an observation about a
+    publication but the request itself, spelled out, and the one field a
+    reader re-runs.
+
+    Not cross-checked: ``period``, ``units``, ``transformation`` and
+    ``caveats`` are observations about what the source published when the
+    block was composed; the API second-guessing them would substitute its
+    present view for what the composer actually saw.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -54,6 +64,15 @@ class ReproducibilityEnvelope(BaseModel):
     geo_level: str = Field("", max_length=50)
     scope: Literal["latest", "as_released"] = "latest"
     release: str = Field("", max_length=100)
+    #: The reduction the block's query was viewed with. API-082 and WEB-047
+    #: made a saved view record it, because "a view saved without one replays
+    #: as the whole publication, which for a source whose latest publication
+    #: is a series is a different set of rows". The envelope carried the other
+    #: two duplicated request parameters and not these, so a map block
+    #: composed from one row per county recorded one period and replayed as
+    #: every estimated year under an envelope that declared one (API-120).
+    newest_per_geography: bool = False
+    newest_release_per_period: bool = False
     period: str = Field("", max_length=100)
     units: str = Field("", max_length=100)
     transformation: str = Field("none", max_length=200)

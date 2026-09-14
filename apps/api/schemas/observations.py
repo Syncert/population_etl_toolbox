@@ -3,10 +3,106 @@ per-source observation routes."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
+
+
+@dataclass(frozen=True)
+class FilterBound:
+    """What the observation route accepts for one filter value."""
+
+    #: Longest accepted text, for the filters the route declares as strings.
+    max_length: Optional[int] = None
+    #: Inclusive range, for the filters the route declares as integers.
+    minimum: Optional[int] = None
+    maximum: Optional[int] = None
+
+    def rejection(self, value: Any) -> Optional[str]:
+        """Why the route would refuse ``value``, or ``None``.
+
+        The shape is stated before the length is measured (API-105). API-091
+        added the bound and checked how long a value is, not what it is, and
+        ``AnalysisDocument.filters`` is ``dict[str, Any]``: an array, an
+        object, a null or a fractional number stored clean and reported
+        valid. Measuring first produced answers of its own -- a null was
+        refused for ``state_fips`` (bound 2) and stored for ``geo_id`` (bound
+        200), the same question answered two ways by the width of the bound,
+        and ``year_from: true`` was refused as a year below 1700 because
+        ``int(True)`` is 1.
+        """
+        if value is None:
+            return "must be a value; the route has no null to send"
+        if isinstance(value, (list, tuple, set, frozenset, dict)):
+            return "must be a single value, not a list or an object"
+        if self.minimum is not None or self.maximum is not None:
+            number = _whole_number(value)
+            if number is None:
+                return "must be a whole number"
+            if self.minimum is not None and number < self.minimum:
+                return f"must be at least {self.minimum}"
+            if self.maximum is not None and number > self.maximum:
+                return f"must be at most {self.maximum}"
+            return None
+        if self.max_length is not None and len(str(value)) > self.max_length:
+            return f"must be at most {self.max_length} characters"
+        return None
+
+
+def _whole_number(value: Any) -> Optional[int]:
+    """``value`` as the integer the route would parse, or ``None``.
+
+    A query parameter arrives as text and the route declares an ``int``, so
+    the route is the authority on what parses. Read off `/api/v1/observations`
+    against a real warehouse: `?year_from=2020` and `?year_from=2020.0` pass
+    validation, `?year_from=2020.7`, `?year_from=true` and `?year_from=`
+    answer 422.
+
+    Coercing with ``int()`` instead accepted `2020.7` -- truncating it to a
+    year the caller never wrote, then measuring the bound against that -- and
+    accepted `True` as the year 1.
+    """
+    if isinstance(value, bool):
+        # The route can only ever receive text, and `str(True)` is not a
+        # number. `int(True)` is 1, which is a year nobody asked for.
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        number = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if not number.is_integer():
+        return None
+    return int(number)
+
+
+#: The bound the observation route declares for each filter it accepts.
+#:
+#: Declared here rather than written into the route signature alone, because
+#: two places read it: the route, which enforces it on a live request, and
+#: `saved_analysis_service`, which must refuse to store a configuration
+#: carrying a value that route would refuse. `AnalysisDocument` promises a
+#: stored configuration can never encode a request the API would refuse, and
+#: the names were checked while the values were not -- a 5,000-character
+#: `geo_id` stored clean and failed only when its owner reopened it
+#: (API-091).
+OBSERVATION_FILTER_BOUNDS: dict[str, FilterBound] = {
+    "geo_id": FilterBound(max_length=200),
+    "geo_level": FilterBound(max_length=50),
+    "state_fips": FilterBound(max_length=2),
+    "county_fips": FilterBound(max_length=3),
+    "stratum_id": FilterBound(max_length=200),
+    "adjustment_status": FilterBound(max_length=50),
+    "domain_desc": FilterBound(max_length=200),
+    "domaincat_desc": FilterBound(max_length=200),
+    "subject_type": FilterBound(max_length=50),
+    "subject_code": FilterBound(max_length=50),
+    "year_from": FilterBound(minimum=1700, maximum=2200),
+    "year_to": FilterBound(minimum=1700, maximum=2200),
+}
 
 
 class ObservationDashboard(BaseModel):
@@ -89,9 +185,13 @@ class ObservationCoverage(BaseModel):
 class NeutralObservation(BaseModel):
     """One observation from any completed source, semantics preserved.
 
-    The core fields every source can fill honestly are typed; everything a
-    source publishes beyond them rides in ``dimensions`` under the source's own
-    published field names. ``value`` is text to preserve provider precision and
+    The core fields every source can fill honestly are typed; the source's
+    **declared** fields beyond them ride in ``dimensions`` under the source's
+    own published names. That set is a review, not the serving relation's
+    column list -- the source-scoped routes serve that -- and
+    ``/catalog/capabilities`` answers it per source as
+    ``observation_dimensions``, from the same declaration these rows are
+    built from (API-109). ``value`` is text to preserve provider precision and
     is ``null`` whenever the source did not publish a usable number --
     ``value_status`` (the source's own vocabulary, ``null`` when the source
     publishes none) says why. ``release`` is the source's release identity

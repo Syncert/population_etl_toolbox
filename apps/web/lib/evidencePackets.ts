@@ -13,7 +13,7 @@
 // each block asked for.
 
 import type { AnalysisDocument } from "./api/types";
-import { reopenHref } from "./savedAnalysis";
+import { comparisonDocument, explorerDocument, reopenHref } from "./savedAnalysis";
 
 export const BLOCK_TYPES = [
   "text",
@@ -44,6 +44,13 @@ export interface ReproducibilityEnvelope {
   /** Which publication: the source's latest, or a pinned release. */
   scope: "latest" | "as_released";
   release: string;
+  /**
+   * The reduction the block was viewed with. A map shows one value per
+   * geography; the block's document has to ask for the same thing, or the
+   * envelope's single period describes rows the replay does not answer.
+   */
+  newestPerGeography: boolean;
+  newestReleasePerPeriod: boolean;
   /** The period the presented values describe, as published. */
   period: string;
   units: string;
@@ -62,6 +69,8 @@ export const EMPTY_ENVELOPE: ReproducibilityEnvelope = Object.freeze({
   geoLevel: "",
   scope: "latest",
   release: "",
+  newestPerGeography: false,
+  newestReleasePerPeriod: false,
   period: "",
   units: "",
   transformation: "none",
@@ -268,13 +277,117 @@ export function envelopeFromSavedChart(
     geoLevel: text(chart.geoLevel),
     scope: chart.scope === "as_released" ? "as_released" : "latest",
     release: text(chart.release),
-    period: text(chart.period) || text(chart.savedAt),
+    // The reduction the view was saved with, recorded here as well as in the
+    // document, because it is what makes the envelope's one `period` true: a
+    // map read with `newest_per_geography` shows one period per geography,
+    // and the same block replaying the whole publication shows every
+    // estimated year of the vintage (WEB-071). A view saved before the
+    // explorer recorded a reduction asked for none, which is what these
+    // defaults say about it.
+    newestPerGeography: chart.newestPerGeography === true,
+    newestReleasePerPeriod: chart.newestReleasePerPeriod === true,
+    // No fallback. `savedAt` is when someone pressed save, and putting it
+    // here made every attached block's envelope state a period no source
+    // published -- `2026-09-13T12:41:03.117Z` as the period of a 2023
+    // estimate -- while `packetIssues` saw a filled field and reported the
+    // packet complete. This module's own rule: "a field the view never
+    // captured stays empty so `packetIssues` can report it rather than a
+    // guess filling it in" (WEB-069).
+    period: text(chart.period),
     units: text(chart.units),
     transformation: text(chart.transformation) || "none",
     apiQuery: text(chart.apiQuery),
     caveats,
   };
 }
+
+/**
+ * The dimension narrowing a saved view recorded, under the API's own filter
+ * names.
+ *
+ * Only strings, and only non-empty ones: an empty value is no filter
+ * everywhere else in this client, and a document may carry only values the
+ * route accepts. A view saved before the explorer recorded its dimensions
+ * carries none, which is what an absent field means and never "every
+ * stratum" -- the API refuses a block whose recorded request names a filter
+ * its query does not ask for, so such a view is re-saved rather than
+ * silently replayed wider (WEB-081).
+ */
+function savedDimensions(
+  chart: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  const source = chart?.dimensions;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return {};
+  }
+  const dimensions: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source as Record<string, unknown>)) {
+    if (typeof value === "string" && value) {
+      dimensions[name] = value;
+    }
+  }
+  return dimensions;
+}
+
+/**
+ * The query one attached view replays.
+ *
+ * Built by the same functions the explorer saves through, rather than as a
+ * literal here. A second construction is a second place every rule about
+ * what a document may contain has to be re-learned, and the literal this
+ * replaced had learned none of them: it recorded no reduction, so a map
+ * block replayed the source's whole latest publication while the envelope
+ * beside it recorded `newest_per_geography=true` in its `api_query` -- the
+ * block did not reproduce the request its own envelope names, in the one
+ * resource whose purpose is that a reader can re-derive the evidence without
+ * this application. It also copied a release across unconditionally, which
+ * under a latest scope is a document the API refuses (WEB-048).
+ *
+ * A two-measure view is a comparison, whose route serves no scope: its
+ * document records none, and the envelope's default `latest` is what the
+ * API's envelope/query cross-check compares against.
+ */
+export function documentFromSavedChart(
+  chart: Record<string, unknown> | null | undefined,
+): AnalysisDocument {
+  const envelope = envelopeFromSavedChart(chart);
+  const text = (value: unknown) => (typeof value === "string" && value ? value : "");
+  const stateFips = text(chart?.stateFips);
+
+  if (text(chart?.metricCodeB)) {
+    return comparisonDocument({
+      metricCodeA: text(chart?.metricCode),
+      metricCodeB: text(chart?.metricCodeB),
+      geoLevel: envelope.geoLevel || undefined,
+      stateFips: stateFips || undefined,
+    });
+  }
+
+  return explorerDocument({
+    metricCode: text(chart?.metricCode),
+    scope: envelope.scope,
+    release: envelope.release || undefined,
+    geoLevel: envelope.geoLevel || undefined,
+    stateFips: stateFips || undefined,
+    geoId: envelope.geoId || undefined,
+    // The narrowing the view's own request carried. Without it a stratified
+    // view -- a CDC measure read for one stratum, a NASS one for one domain
+    // -- replayed as every stratum the source publishes, which is a
+    // different population, while the envelope's `apiQuery` beside it still
+    // named the one the block was composed from: the block did not reproduce
+    // its own numbers. The explorer records these under the source's
+    // declared filter names, which is what a document's `filters` takes
+    // (WEB-081).
+    dimensions: savedDimensions(chart),
+    // From the envelope, not the chart a second time: the API cross-checks
+    // the two against each other, so reading one field twice is the one way
+    // they could disagree (WEB-071). A view that recorded no reduction asked
+    // for none, which is what the envelope's defaults say about it.
+    newestPerGeography: envelope.newestPerGeography,
+    newestReleasePerPeriod: envelope.newestReleasePerPeriod,
+  });
+}
+
 
 export interface PacketExport {
   headings: string[];
@@ -287,7 +400,51 @@ export interface PacketExport {
  * envelope alongside it — so the exported file can be read, and its evidence
  * re-derived, without this application.
  */
-export function packetExport(packet: EvidencePacket | null | undefined): PacketExport {
+/** What the export writes for one block's `replay_state`. */
+const REPLAY_STATE_LABELS: Record<BlockReadState["state"], string> = {
+  ok: "replayable",
+  stale: "stale",
+  incomplete: "incomplete",
+  unchecked: "not checked",
+};
+
+/**
+ * The packet as the file a reader is handed (WEB-058).
+ *
+ * ADR-0004's distinction is that "a packet is a document you hand to someone
+ * else", and the article says on screen which blocks the API reports can no
+ * longer be replayed as composed. The export carried one state column,
+ * `live_or_frozen`, which describes the block's *scope*: a packet whose
+ * measure had been retired exported as "frozen to release 2022" and the
+ * reader who received the file was never told. So the API's verdict travels
+ * too, in its own columns -- live-or-frozen and replayable-or-stale are
+ * different facts about a block and neither stands in for the other.
+ *
+ * `states` is `mergeBlockStates(packet, validation)`. Omitted, every
+ * analytical block reports "not checked", which is what an absent verdict
+ * means and never "replayable".
+ */
+/**
+ * Which reduction an envelope records, in the reader's words, or "" for none.
+ *
+ * The two are mutually exclusive -- each belongs to a different scope and the
+ * API refuses both together -- so one column says which, rather than two
+ * columns of `false`.
+ */
+export function reductionLabel(envelope: ReproducibilityEnvelope | undefined): string {
+  if (envelope?.newestPerGeography) {
+    return "newest period per geography";
+  }
+  if (envelope?.newestReleasePerPeriod) {
+    return "newest release per period";
+  }
+  return "";
+}
+
+export function packetExport(
+  packet: EvidencePacket | null | undefined,
+  states: BlockReadState[] = [],
+): PacketExport {
   const headings = [
     "packet",
     "block_id",
@@ -300,15 +457,27 @@ export function packetExport(packet: EvidencePacket | null | undefined): PacketE
     "geo_level",
     "scope",
     "release",
+    // The reduction the block was read with, because the file is where the
+    // envelope has to stand on its own: a column per published row against
+    // one value per geography is a different answer to the same question,
+    // and `period` only reads correctly beside it (WEB-071).
+    "reduction",
     "period",
     "units",
     "transformation",
     "api_query",
     "caveats",
     "live_or_frozen",
+    "replay_state",
+    "replay_reason",
   ];
+  const stateById = new Map(states.map((state) => [state.blockId, state]));
   const rows = (packet?.blocks || []).map((block) => {
     const envelope = block.envelope;
+    // A prose block carries no analysis, so it carries no scope and no
+    // replay verdict either.
+    const analytical = isAnalyticalBlock(block);
+    const state = stateById.get(block.id);
     return [
       packet?.title || "",
       block.id,
@@ -321,12 +490,15 @@ export function packetExport(packet: EvidencePacket | null | undefined): PacketE
       envelope?.geoLevel || "",
       envelope?.scope || "",
       envelope?.release || "",
+      reductionLabel(envelope),
       envelope?.period || "",
       envelope?.units || "",
       envelope?.transformation || "",
       envelope?.apiQuery || "",
       envelope?.caveats.join(" | ") || "",
-      isAnalyticalBlock(block) ? blockLiveStatus(envelope).label : "",
+      analytical ? blockLiveStatus(envelope).label : "",
+      analytical ? REPLAY_STATE_LABELS[state?.state ?? "unchecked"] : "",
+      analytical ? state?.reason || "" : "",
     ];
   });
   const slug = (packet?.title || "packet").toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
@@ -365,6 +537,8 @@ function normalizeEnvelope(value: unknown): ReproducibilityEnvelope | undefined 
     geoLevel: text(source.geoLevel),
     scope: source.scope === "as_released" ? "as_released" : "latest",
     release: text(source.release),
+    newestPerGeography: source.newestPerGeography === true,
+    newestReleasePerPeriod: source.newestReleasePerPeriod === true,
     period: text(source.period),
     units: text(source.units),
     transformation: text(source.transformation) || "none",
@@ -498,6 +672,8 @@ function envelopeToApi(envelope: ReproducibilityEnvelope): ApiReproducibilityEnv
     geo_level: envelope.geoLevel,
     scope: envelope.scope,
     release: envelope.release,
+    newest_per_geography: envelope.newestPerGeography,
+    newest_release_per_period: envelope.newestReleasePerPeriod,
     period: envelope.period,
     units: envelope.units,
     transformation: envelope.transformation || "none",
@@ -514,6 +690,8 @@ function envelopeFromApi(envelope: ApiReproducibilityEnvelope): ReproducibilityE
     geoLevel: envelope.geo_level || "",
     scope: envelope.scope === "as_released" ? "as_released" : "latest",
     release: envelope.release || "",
+    newestPerGeography: envelope.newest_per_geography === true,
+    newestReleasePerPeriod: envelope.newest_release_per_period === true,
     period: envelope.period || "",
     units: envelope.units || "",
     transformation: envelope.transformation || "none",
@@ -595,8 +773,15 @@ export function documentToPacket(
 export interface BlockReadState {
   blockId: string;
   title: string;
-  /** "incomplete" | "stale" | "ok" */
-  state: "incomplete" | "stale" | "ok";
+  /**
+   * `ok` means the API checked this block and it is valid. `unchecked` means
+   * nobody checked: a packet read from the browser draft never reaches the
+   * API, and the packet contract's own rule is that an absent verdict means
+   * "not checked", never "valid". The two were one value, which was
+   * invisible while both on-screen consumers only asked for `stale` and
+   * stopped being invisible in the exported file (WEB-058).
+   */
+  state: "incomplete" | "stale" | "ok" | "unchecked";
   reason: string;
   missing: string[];
 }
@@ -639,6 +824,12 @@ export function mergeBlockStates(
         missing: verdict.missing || [],
       };
     }
-    return { blockId: block.id, title: block.title, state: "ok", reason: "", missing: [] };
+    return {
+      blockId: block.id,
+      title: block.title,
+      state: verdict ? "ok" : "unchecked",
+      reason: "",
+      missing: [],
+    };
   });
 }

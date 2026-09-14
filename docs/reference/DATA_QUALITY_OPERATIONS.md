@@ -13,7 +13,7 @@ append-only: re-running a rule adds evidence, it never rewrites history.
 | Relation | One row per | Use it for |
 | --- | --- | --- |
 | `control.data_quality_run` | assessment execution | run status, commit SHA, rule-set version, bounded failure summary |
-| `control.data_quality_result` | rule × object × partition | exact counts, bounded evidence ids, warning review state |
+| `control.data_quality_result` | rule × object × partition | exact counts for the population the rule measured (`partition_detail` names it where a rule reads a window), bounded evidence ids, warning review state |
 | `control.data_quality_latest_result` | rule × object × partition (latest) | current state of every check without window functions |
 | `control.data_quality_source_status` | source (latest run) | one-line health per source: blocking failures, warnings, open reviews |
 
@@ -176,10 +176,79 @@ and a user-approved plan update — WARN rules must not silently become BLOCK.
 
 ## Release certification
 
-`data_ingestion_toolbox.quality.assessment.certify_release` runs the full
+`data_ingestion_toolbox.quality.assessment.certify_release` runs the
 deterministic suite as one `release` assessment tied to a single 40-character
 commit SHA (explicit, or `DATA_QUALITY_COMMIT_SHA`/`GIT_COMMIT_SHA`), and
 returns a promotability verdict with rule totals by severity and result.
+
+### What a certification actually runs, and what it does not
+
+"The deterministic suite" is every registered executor, and the registered
+executors are **21 of the 64 rules the inventory declares**. Each of the other
+43 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
+covers it instead, under one of two states:
+
+- **7 are `enforced`.** The warehouse itself refuses the violation — each one
+  is a uniqueness rule whose grain is a unique constraint or unique index, and
+  the rule declares which relation and which columns. A duplicate is rejected
+  at write time, which is stronger than measuring it afterwards, with one
+  consequence to be clear about: a constraint produces no evidence row, so a
+  certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
+  holds each declared grain against the bootstrapped warehouse, so a migration
+  that drops or widens one fails there.
+- **36 are `unimplemented`** — no executor runs them, and 24 of those are
+  BLOCK severity. The note says what running each one would have to read,
+  and where part of a rule *is* refused by the warehouse it says which part
+  and names the constraint: `DQ-SHARED-006`'s terminal-finish CHECK and its
+  result-uniqueness key are both checked against the warehouse, and only its
+  append-only claim is unmeasured — the result relation carries no audit
+  column, so a row rewritten after the run cannot be told from one written
+  that way.
+
+A certification cannot report on a rule nobody wrote, and it does not pretend
+to: neither an unimplemented nor an enforced rule appears in a result row, so
+`control.data_quality_result` for a run is the list of what was actually
+measured. Read it, rather than the rule count, when you need to know what a
+`promotable` verdict covers:
+
+```sql
+SELECT rule_id, severity, result, observed_count, expected_count
+  FROM control.data_quality_result
+ WHERE quality_run_id = :quality_run_id
+ ORDER BY severity, rule_id;
+```
+
+`tests/unit/quality/test_rule_automation.py` holds that accounting honest in
+both directions: a rule declared automated with no executor fails, an
+executor under an id the inventory does not declare fails, a rule claiming
+`enforced` alongside an executor fails, and the set of unimplemented rules is
+pinned so it can shrink and cannot grow unnoticed.
+
+**One BLOCK rule is waiting on a prerequisite, not on an executor.**
+`DQ-SHARED-004` wants the bootstrap manifest's schema components compared
+against what a warehouse has applied. `control.schema_migration_state` does
+not hold that: it holds one row per source's gold DDL — a content hash
+written when that DDL is applied — and nothing records a manifest asset at
+all, so there is no applied set to compare the manifest's assets against. A
+comparison written today would report every asset missing. Recording them is
+a deployment decision: the manifest is applied by numbered initdb mounts and
+by the documented reset, neither of which reports back.
+
+**One BLOCK uniqueness rule is only half enforceable, and says so.**
+`DQ-PEP-001` declares PEP facts unique at the capture grain *and* at the
+natural key. The capture grain is the fact table's primary key; the natural
+key is not a constraint and must not become one, because a second capture of
+the same vintage is legitimate and
+`gold_pep.population_estimate_revision` resolves it by capture recency rather
+than refusing it. `silver_pep.pep_fact_natural_key_idx` is a lookup index
+despite its name, and making it unique would reject a re-capture.
+
+**One rule is scope-requiring.** `DQ-CDC-003` reconciles *one* CDC release
+across capture, silver, and gold, so it runs only when the caller names the
+release — `certify_release(..., scope={"asset_id": ..., "release_watermark":
+...})`, the CDC publication gate, or a targeted re-verification. A
+certification that names no release leaves it out rather than reporting it
+green over a release it never read.
 
 - **Promotable** means the run finished and no BLOCK or QUARANTINE rule
   failed. Warnings never block promotion, but they are counted so a reviewer
@@ -187,6 +256,20 @@ returns a promotability verdict with rule totals by severity and result.
 - A release with blocking failures or an errored assessment is not
   promotable, whatever the DAG dashboard says: "all DAGs green" is not
   certification.
+- **A release run rehashes every capture.** `DQ-SHARED-001` is the BLOCK rule
+  that verifies each `response_capture.payload_checksum` against its
+  immutable blob. On a schedule it rehashes a bounded window — the newest
+  1,000 captures by `retrieved_at`, or `scope.capture_limit` if you name one
+  — and the result states the window it read in `partition_detail.window`
+  with `captures_outside_window=N` in its evidence. On a `release` run there
+  is no window: the verdict that says a deployment may proceed reads the
+  whole archive in scope. Before DQ-011 every cadence rehashed the same
+  newest thousand while the rule's declaration said "every", so a blob
+  corrupted eighteen months ago was unreachable on every run and a release
+  certified `promotable=True` over it. Read
+  `partition_detail` on the result before trusting `observed/expected`: on a
+  scheduled run those counts describe the window, and the window is not the
+  archive.
 - After a beta reset and re-ingestion (see
   [`BETA_RESET_REINGESTION.md`](BETA_RESET_REINGESTION.md)), run
   `certify_release` against the candidate commit and store

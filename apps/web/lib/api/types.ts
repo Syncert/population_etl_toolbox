@@ -39,6 +39,14 @@ export interface GeographySummary {
   county_fips?: string | null;
   state_name?: string | null;
   county_name?: string | null;
+  /**
+   * The place a row is, where the row is a place. Published by
+   * `/catalog/geographies` on every row and undeclared here until WEB-064,
+   * which is why the picker had no name to show for Census PEP's own grain
+   * and offered states instead.
+   */
+  place_fips?: string | null;
+  place_name?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   [key: string]: unknown;
@@ -64,6 +72,21 @@ export interface SourceCapability {
   served_by_neutral_routes: boolean;
   datasets?: string[] | null;
   observation_filters?: string[] | null;
+  /**
+   * Field names a neutral row's `dimensions` object carries for this source
+   * (API-109). Declared here because an undeclared field is an invisible
+   * one — WEB-057's lesson — even where an index signature would let it
+   * through.
+   */
+  observation_dimensions?: string[] | null;
+  /**
+   * Whether a row of this source can arrive with `value: null` and a
+   * published `value_status` (API-127). Declared here for WEB-057's reason,
+   * and read for a concrete one: where it is false the serving relations
+   * carry only published numbers, so a period published without one is
+   * absent from the series rather than present and marked.
+   */
+  publishes_value_status?: boolean | null;
   observation_routes?: ObservationRouteCapability[] | null;
   [key: string]: unknown;
 }
@@ -107,15 +130,17 @@ export interface MetricRelease {
   [key: string]: unknown;
 }
 
-/** `/observations/releases`: a metric's published releases, newest first. */
-export interface MetricReleaseListResponse extends CollectionResponse<MetricRelease> {
-  metric_code?: string;
-  source_code?: string;
-}
-
 export interface DistributionBin {
   bin_index: number;
   count: number;
+  /**
+   * The bin's own bounds, as `/distribution/bins` publishes them — required
+   * fields of the served `DistributionBin`, and undeclared here until
+   * WEB-057, which is why every reader of this interface rebuilt them from
+   * the response's `min_value`/`max_value` instead.
+   */
+  lower_bound: number;
+  upper_bound: number;
   [key: string]: unknown;
 }
 
@@ -129,6 +154,12 @@ export interface DistributionResponse {
   derived?: boolean;
   source_code?: string | null;
   units?: string | null;
+  /** The one period every binned row came from, or null when they differ. */
+  period?: string | null;
+  /** True when the bins were built from more than one period (WEB-054). */
+  periods_differ?: boolean;
+  /** What the analysis could not carry, in the caller's terms (WEB-055). */
+  caveats?: string[];
   [key: string]: unknown;
 }
 
@@ -203,7 +234,15 @@ export interface ComparisonResponse {
   units_b?: string | null;
   derivations?: string[];
   caveats?: string[];
+  /** Rows this request can page: the geographies both sides published. */
   total?: number;
+  /**
+   * How many geographies each side published under the same filters, before
+   * the inner join (API-087). Absent on a deployment serving an older
+   * contract, which is not the same as zero.
+   */
+  geographies_a?: number;
+  geographies_b?: number;
   limit?: number;
   offset?: number;
   items: ComparisonRow[];
@@ -218,7 +257,11 @@ export interface HealthResponse {
 // --- Saved analysis configurations (ADR-0003) ---
 
 /** The resources a saved configuration may describe. */
-export type ConfigurationKind = "observations" | "comparison" | "distribution";
+export type ConfigurationKind =
+  | "observations"
+  | "comparison"
+  | "distribution"
+  | "workbench";
 
 /**
  * One saved analysis intent, validated at write time against the same
@@ -228,6 +271,32 @@ export type ConfigurationKind = "observations" | "comparison" | "distribution";
  * analysis follows the warehouse instead of freezing a snapshot of it.
  * `visualization` is opaque user content the API stores verbatim.
  */
+/** One series of a stored workbench: exactly an observations request. */
+export interface SeriesDocument {
+  metric_code: string;
+  scope?: "latest" | "as_released";
+  release?: string | null;
+  newest_per_geography?: boolean;
+  newest_release_per_period?: boolean;
+  filters?: Record<string, unknown>;
+}
+
+/** How a stored workbench was drawn. `options` is opaque to the API. */
+export interface PresentationDocument {
+  type: "line" | "bar" | "scatter" | "ranking" | "correlation" | "heatmap";
+  options?: Record<string, unknown>;
+}
+
+/**
+ * The shared grain a cross-sectional presentation was read at. Absent on a
+ * longitudinal composition, which has no shared grain.
+ */
+export interface AlignmentDocument {
+  geo_level: string;
+  state_fips?: string | null;
+  year?: number | null;
+}
+
 export interface AnalysisDocument {
   kind: ConfigurationKind;
   metric_code?: string | null;
@@ -235,8 +304,23 @@ export interface AnalysisDocument {
   metric_code_b?: string | null;
   scope?: "latest" | "as_released";
   release?: string | null;
+  /**
+   * The reduction the view was read with (API-082). Each belongs to one
+   * scope, and the API refuses the other pairing, so a document carries at
+   * most one.
+   */
+  newest_per_geography?: boolean;
+  newest_release_per_period?: boolean;
   filters?: Record<string, unknown>;
   bin_count?: number | null;
+  /**
+   * A workbench's series, one to eight. Each is validated by the API as an
+   * observations request in its own right, so nothing a series carries can
+   * be a request the observations route would refuse.
+   */
+  series?: SeriesDocument[] | null;
+  presentation?: PresentationDocument | null;
+  alignment?: AlignmentDocument | null;
   visualization?: Record<string, unknown>;
 }
 
@@ -297,6 +381,14 @@ export interface ApiReproducibilityEnvelope {
   geo_level: string;
   scope: "latest" | "as_released";
   release: string;
+  /**
+   * The reduction the block's query was viewed with. Cross-checked against
+   * the block's document by the API, like `scope` and `release`: a map of one
+   * value per geography whose stored query replays the whole publication is a
+   * different set of rows than the packet argued from (API-120/WEB-071).
+   */
+  newest_per_geography: boolean;
+  newest_release_per_period: boolean;
   period: string;
   units: string;
   transformation: string;
@@ -369,4 +461,103 @@ export interface EvidencePacketRecord {
   validation: PacketValidation;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * The API-derived coefficients over one pair, as `/comparison/correlation`
+ * and each `/comparison/matrix` cell serve them.
+ *
+ * Every field is optional because a deployment may serve an older contract,
+ * and an absent coefficient is not the same as a coefficient of zero — which
+ * is exactly the distinction the route exists to keep. Read
+ * `pearson_r != null` before formatting it.
+ */
+export interface CorrelationStatistic {
+  n?: number;
+  contemporaneous_pairs?: number;
+  pearson_r?: number | null;
+  spearman_rho?: number | null;
+  periods_differ?: boolean;
+  derivations?: string[];
+  [key: string]: unknown;
+}
+
+/** `GET /comparison/correlation`: the statistic, its coverage, its caveats. */
+export interface ComparisonCorrelation extends CorrelationStatistic {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  source_code_a?: string | null;
+  source_code_b?: string | null;
+  units_a?: string | null;
+  units_b?: string | null;
+  derived?: boolean;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  year?: number | null;
+  geographies_a?: number;
+  geographies_b?: number;
+  period_a?: string | null;
+  period_b?: string | null;
+  caveats?: string[];
+}
+
+/** One measure as `/comparison/matrix` read it. */
+export interface MatrixMetricSummary {
+  metric_code?: string;
+  source_code?: string | null;
+  units?: string | null;
+  valid_time_grains?: string[];
+  valid_geo_grains?: string[];
+  geographies?: number;
+  period?: string | null;
+  periods_differ?: boolean;
+  [key: string]: unknown;
+}
+
+/** One unordered pair of the matrix: served, or declined with its rules. */
+export interface MatrixPair {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  comparable?: boolean;
+  rules?: ComparisonRule[];
+  caveats?: string[];
+  /** `null` for a declined cell — never a zeroed statistic. */
+  statistic?: CorrelationStatistic | null;
+  [key: string]: unknown;
+}
+
+/** One measure's published value for one geography, or the absence of one. */
+export interface MatrixCell {
+  metric_code?: string;
+  value?: number | null;
+  period?: string | null;
+  release?: string | null;
+}
+
+/** One geography, with one cell per requested measure. */
+export interface MatrixRow {
+  geo_id?: string | null;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  county_fips?: string | null;
+  state_name?: string | null;
+  county_name?: string | null;
+  values?: MatrixCell[];
+  [key: string]: unknown;
+}
+
+/** `GET /comparison/matrix`: two to eight measures aligned on geography. */
+export interface ComparisonMatrix {
+  derived?: boolean;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  year?: number | null;
+  metrics?: MatrixMetricSummary[];
+  pairs?: MatrixPair[];
+  caveats?: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  items?: MatrixRow[];
+  [key: string]: unknown;
 }

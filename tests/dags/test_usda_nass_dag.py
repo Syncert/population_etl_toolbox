@@ -92,3 +92,56 @@ def test_missing_api_key_fails_at_runtime_not_import(
         validated_api_key(NassConfig.from_environment())
     assert caught.value.code == "missing_api_key"
     assert "USDA_NASS_API_KEY" in str(caught.value)
+
+
+@pytest.mark.dag
+def test_the_schedule_reaches_the_sweep_day_every_month(dagbag) -> None:
+    """Covers: DAG-018 — the cron the DAG declares lands on the sweep day.
+
+    The DAG's docstring and `BETA_RESET_REINGESTION.md` both promise that a
+    run on the first of the month sweeps the whole registered history, and
+    `resolve_slice_mode` decides that from `logical_date.day`. The schedule
+    was `0 10 * * 1-5` with `catchup=False`: weekdays only, so a first
+    falling on a weekend produced no logical date and nothing backfilled
+    the interval. Six months of the DAG's own two-year window ran every
+    slice in `recent` mode.
+
+    The dates come from `croniter`, which is what Airflow's own cron
+    timetable uses, so this is where the claim that one expression can mean
+    "weekdays *and* the first" is actually checked: POSIX cron takes the
+    union of day-of-month and day-of-week when both are restricted. The
+    unit tier reasons about the same cadence without croniter, and would
+    agree with a wrong assumption; this node would not.
+    """
+    from datetime import datetime, timezone
+
+    from croniter import croniter
+
+    from data_ingestion_toolbox.usda_nass.capture import resolve_slice_mode
+    from data_ingestion_toolbox.usda_nass.config import NassConfig
+
+    dag = dagbag.dags[DAG_ID]
+    cron = getattr(dag, "schedule_interval", None) or dag.timetable.summary
+    assert isinstance(cron, str) and len(cron.split()) == 5, (
+        f"this node reads a cron schedule; the DAG declares {cron!r}"
+    )
+
+    config = NassConfig.from_environment()
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2028, 1, 1, tzinfo=timezone.utc)
+    schedule = croniter(cron, start)
+    sweeps: dict[tuple[int, int], int] = {}
+    while True:
+        moment = schedule.get_next(datetime)
+        if moment >= end:
+            break
+        if resolve_slice_mode(moment, config) == "full":
+            key = (moment.year, moment.month)
+            sweeps[key] = sweeps.get(key, 0) + 1
+
+    months = [(2026 + index // 12, index % 12 + 1) for index in range(24)]
+    missed = [month for month in months if sweeps.get(month, 0) != 1]
+    assert missed == [], (
+        "these months schedule no single history sweep: "
+        f"{[f'{year}-{month:02d}' for year, month in missed]}"
+    )

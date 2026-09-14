@@ -20,6 +20,7 @@ import { createRequestTracker } from "../lib/api/requestState";
 import type { CollectionResponse, MetricSummary } from "../lib/api/types";
 import {
   EVIDENCE_LOCATIONS,
+  QUALITY_SAMPLE_ORDER,
   UNPUBLISHED_EVIDENCE,
   coverageSegments,
   freshnessRows,
@@ -139,7 +140,7 @@ export default function DataQualityExplorer() {
         </p>
       </header>
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={freshnessStatus.state}
           label="Freshness"
@@ -253,8 +254,8 @@ export default function DataQualityExplorer() {
               <div className="section-kicker">Per measure</div>
               <h2>{selectedSource} metrics</h2>
               <p className="subtle">
-                Showing {shown.length} of {metricRows.length}. A field the publisher did not
-                publish reads as not published, never as a placeholder.
+                Showing {shown.length} of {metricRows.length}. {QUALITY_SAMPLE_ORDER} A field
+                the publisher did not publish reads as not published, never as a placeholder.
               </p>
             </div>
           </div>
@@ -284,7 +285,10 @@ export default function DataQualityExplorer() {
                       {/* Quality evidence links back to the context it affects. */}
                       <Link
                         className="text-link"
-                        href={explorerHref({ metric: row.metricCode })}
+                        href={explorerHref({
+                          metric: row.metricCode,
+                          source: row.sourceCode || undefined,
+                        })}
                         data-testid={`quality-explore-${row.metricCode}`}
                       >
                         Explore

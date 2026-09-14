@@ -21,11 +21,11 @@ verdict is deterministic for a given publication.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.registry import OBSERVATION_DISPATCH, normalize_geo_level
 
 STATUS_PASS = "pass"
 STATUS_FAIL = "fail"
@@ -41,6 +41,31 @@ RULE_AGGREGATION = "aggregation"
 #: Both are explicitly API-derived; the provider-published inputs travel with
 #: every row.
 COMPARISON_DERIVATIONS = ("difference", "ratio")
+
+#: The derived statistics ``/comparison/correlation`` computes over the same
+#: pairs. Pearson because it is the coefficient a reader expects; Spearman
+#: because published economic and demographic measures are routinely skewed
+#: and a rank correlation is the honest companion to a linear one. Both are
+#: API-derived, and both are named here rather than at the route so a caller
+#: reading the compatibility policy sees every statistic it authorises.
+CORRELATION_DERIVATIONS = ("pearson_r", "spearman_rho")
+
+#: The sentence every correlation answer leads with. The product rules make
+#: this a rule rather than a courtesy: "Cross-source association must never be
+#: presented as causation" (``docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md``).
+#: Written once, here, because the route, the consumer guide and the web
+#: panel all present it and three wordings of one rule read as three rules.
+CORRELATION_CAUSATION_CAVEAT = (
+    "association, not causation: a coefficient describes how two published "
+    "measures move together across geographies, never that one causes the "
+    "other; a third measure, a shared geography effect, or the way each "
+    "source defines its universe can produce any coefficient here"
+)
+
+
+def _upper(word: str) -> str:
+    """Time grains are published as one word each and have no aliases."""
+    return word.strip().upper()
 
 
 @dataclass(frozen=True)
@@ -74,9 +99,24 @@ def _units_of(metric: Mapping[str, Any]) -> Optional[str]:
     return str(units).strip()
 
 
-def _grains_of(metric: Mapping[str, Any], field: str) -> frozenset[str]:
+def _grains_of(
+    metric: Mapping[str, Any], field: str, normalize: Callable[[str], str]
+) -> frozenset[str]:
+    """One metric's published grains for ``field``, in one vocabulary.
+
+    ``normalize`` is the geography vocabulary's own function for
+    ``valid_geo_grains`` and a plain upper-case for ``valid_time_grains``,
+    whose words have no aliases. Upper-casing alone was a third local copy of
+    grain normalisation, and it disagreed with the registry: a metric whose
+    catalog row still carries `NATION` -- the word the catalog published for
+    CDC, PEP and USDA NASS before the grains were unified, which ADR-0002
+    promises keeps answering -- shared no grain with one carrying `NATIONAL`,
+    so two measures both published nationally were declared `fail`, "no
+    shared geography grains (NATION vs NATIONAL)", and the comparison route
+    refused the pair (API-126).
+    """
     grains = metric.get(field) or ()
-    return frozenset(str(grain).upper() for grain in grains if grain)
+    return frozenset(normalize(str(grain)) for grain in grains if grain)
 
 
 def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
@@ -89,16 +129,51 @@ def _source_finding(metric: Mapping[str, Any], label: str) -> RuleFinding:
             f"{label} belongs to source '{source_code}', which has no "
             "reviewed observation dispatch entry",
         )
-    if not dispatch.analysis_ready:
-        restriction = dispatch.analysis_restriction or (
-            f"source '{source_code}' is not served by the aligned analysis routes"
-        )
-        return RuleFinding(RULE_SOURCES, STATUS_FAIL, f"{label}: {restriction}")
+    refusal = dispatch.analysis_refusal()
+    if refusal is not None:
+        return RuleFinding(RULE_SOURCES, STATUS_FAIL, f"{label}: {refusal}")
     return RuleFinding(
         RULE_SOURCES,
         STATUS_PASS,
         f"{label} is served by source '{source_code}', whose latest surface "
         "reduces to one newest value per geography",
+    )
+
+
+def uncertainty_caveat(metric: Mapping[str, Any]) -> Optional[str]:
+    """What an aligned analysis cannot carry, for one metric, or ``None``.
+
+    ``ComparisonRow`` publishes no uncertainty, and that is the right shape:
+    the two sides' vocabularies need not match, and a difference of two
+    intervals is a statistic neither source published. Saying nothing about it
+    is the problem. Census ACS is the one analysis-ready source that publishes
+    a margin of error -- and the source most comparisons involve -- so a
+    `difference` and a `ratio` were served from two estimates whose margins
+    this same API publishes on ``/observations``, with no sign of them
+    (API-096).
+
+    The fields come from the dispatch entry's own ``uncertainty_expressions``,
+    so a source that begins publishing one is named without an edit here.
+
+    Shared with ``/distribution/bins``, which reads the same rows through the
+    same reduction: one analysis saying what it dropped and the other, of the
+    same published figures, saying nothing was the inconsistency (API-098).
+
+    It names the source rather than the side, for both reasons that matters:
+    a distribution has one metric and no side to name, and a comparison whose
+    two sides are the same source would otherwise say the same thing twice
+    under two labels. "A derived value" rather than "a difference or a ratio"
+    for the same reason -- a distribution derives bins, not a difference.
+    """
+    source_code = str(metric.get("source_code") or "")
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    if dispatch is None or not dispatch.uncertainty_expressions:
+        return None
+    fields = ", ".join(name for name, _ in dispatch.uncertainty_expressions)
+    return (
+        f"source '{source_code}' publishes {fields}; an aligned analysis "
+        "carries none of it, so read the published uncertainty on "
+        "/observations before treating a derived value as exact"
     )
 
 
@@ -152,12 +227,12 @@ def evaluate_comparison(
         findings.append(RuleFinding(RULE_UNITS, STATUS_UNKNOWN, reason))
         caveats.append(reason)
 
-    for rule, field, label in (
-        (RULE_TIME_GRAINS, "valid_time_grains", "time grains"),
-        (RULE_GEO_GRAINS, "valid_geo_grains", "geography grains"),
+    for rule, field, label, normalize in (
+        (RULE_TIME_GRAINS, "valid_time_grains", "time grains", _upper),
+        (RULE_GEO_GRAINS, "valid_geo_grains", "geography grains", normalize_geo_level),
     ):
-        grains_a = _grains_of(metric_a, field)
-        grains_b = _grains_of(metric_b, field)
+        grains_a = _grains_of(metric_a, field, normalize)
+        grains_b = _grains_of(metric_b, field, normalize)
         if grains_a and grains_b:
             shared = grains_a & grains_b
             if shared:
@@ -179,9 +254,20 @@ def evaluate_comparison(
                     )
                 )
         else:
+            # Named the way the units rule beside it names them: a caveat
+            # saying only that something is incomplete leaves the caller to
+            # guess which of the two measures to go and look at.
+            unpublished = " and ".join(
+                label_of
+                for label_of, grains in (
+                    ("metric_code_a", grains_a),
+                    ("metric_code_b", grains_b),
+                )
+                if not grains
+            )
             reason = (
-                f"published {label} are incomplete; {label} compatibility "
-                "cannot be verified"
+                f"{unpublished} publish no {label}; {label} compatibility "
+                "cannot be verified from the publication"
             )
             findings.append(RuleFinding(rule, STATUS_UNKNOWN, reason))
             caveats.append(reason)
@@ -212,6 +298,15 @@ def evaluate_comparison(
         )
         findings.append(RuleFinding(RULE_AGGREGATION, STATUS_UNKNOWN, reason))
         caveats.append(reason)
+
+    # Not a rule: a published margin does not make two metrics incomparable,
+    # it makes the difference less precise than the numbers look. One caveat
+    # per source that publishes one -- the two sides of a same-source pair
+    # say the same thing, and saying it twice is noise, not emphasis.
+    for metric in (metric_a, metric_b):
+        caveat = uncertainty_caveat(metric)
+        if caveat is not None and caveat not in caveats:
+            caveats.append(caveat)
 
     comparable = all(finding.status != STATUS_FAIL for finding in findings)
     return CompatibilityDecision(

@@ -1,0 +1,123 @@
+name: api-integration
+
+# The tier `TESTING_CONTRACT.md` and `tests/run.ps1` call the integration
+# tier includes `tests/integration/api`, and no workflow ran it. Four of its
+# files -- the catalog/serving agreement sweeps, the evidence-packet contract,
+# the request snapshot, and the stored-work listing -- were run by nothing,
+# scheduled or otherwise, while eleven plan frontmatters verified against
+# them and the evidence map claimed they rode three other jobs (ENV-015).
+#
+# `postgres-integration` cannot widen its path: it installs `.[airflow-dev]`
+# to exercise the DAG callables, and Airflow 2.9 pins SQLAlchemy 1.4 while the
+# API requires 2.x -- an environment split `TESTING_CONTRACT.md` records. So
+# this tier gets its own job, with the API extras and both services the tier's
+# own marker expression needs, named after what it proves.
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "src/data_ingestion_toolbox/**"
+      - "sql/**"
+      - "tests/integration/api/**"
+      - "tests/integration/database/conftest.py"
+      - "tests/support/**"
+      - "pyproject.toml"
+      - ".github/workflows/api-integration.yml"
+  push:
+    # Every branch prefix the plan inventory declares, so a plan's work
+    # gets CI feedback on push and not only once a pull request exists
+    # (ENV-012). Guarded by tests/unit/shared/test_ci_evidence_manifest.py.
+    branches:
+      - main
+      - "claude/**"
+      - "copilot/**"
+      - "docs/**"
+      - "feat/**"
+      - "fix/**"
+      - "test/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-database:
+    name: API integration (PostGIS 16 + Redis 7 + Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
+        env:
+          POSTGRES_USER: population_test
+          POSTGRES_PASSWORD: population_test
+          POSTGRES_DB: population_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U population_test -d population_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # The tier's own expression selects one Redis-marked file, and the
+      # service is what makes a local result mean what a CI result means.
+      redis:
+        image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RUN_INTEGRATION_TESTS: "1"
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_USER: population_test
+      TEST_POSTGRES_PASSWORD: population_test
+      TEST_POSTGRES_DATABASE: population_etl_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: >-
+            ${{ runner.os }}-pip-api-integration-py311-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install API and test dependencies
+        run: |
+          python -m pip install -e ".[api,dev]"
+          python -m pip check
+
+      - name: Run API integration tests
+        # The tier's own expression, as RUNNING_TESTS.md documents it. The
+        # fixtures apply the reviewed warehouse manifest to the service
+        # database themselves.
+        run: >-
+          pytest tests/integration/api
+          -m "integration and database and not slow"
+          --tb=short -q --junitxml=junit-api-integration.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: junit-api-integration
+          path: junit-api-integration.xml

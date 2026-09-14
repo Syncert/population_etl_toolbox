@@ -41,14 +41,40 @@ SELECT
     s.duration_end,
     fs.fred_series_sk,
     s.value,
-    NULL::DATE   AS realtime_start,
-    NULL::DATE   AS realtime_end,
+    -- FRED's own vintage window, carried rather than dropped (DB-040).
+    -- Migration 004 added these to the silver revision and the reporting
+    -- table's natural key, its latest-selection index and `uq_mv_fred_latest`
+    -- are all built around them -- and this view published NULL, so every
+    -- served row collapsed onto the `'0001-01-01'` sentinel those keys
+    -- COALESCE to. The window a row was published under was reachable only in
+    -- silver. A row ingested before migration 004 carries no window and stays
+    -- at the sentinel, which is a fact about that row rather than a default.
+    s.realtime_start,
+    s.realtime_end,
     s.frequency,
     s.unit_of_measure AS units,
     s.seasonal_adjustment,
     NULL::TEXT   AS transform_applied,
     'FRED'       AS source_provider,
-    CURRENT_DATE AS as_of_date,
+    -- The publication this row was read from, not the day the warehouse
+    -- last re-served it (DB-039). `CURRENT_DATE` here was materialised into
+    -- the reporting table by every chunked refresh, so a release of a BLS or
+    -- FRED series was the calendar day a chunk of it was last written: the
+    -- driver re-serves only changed years, so re-serving 2019 on Monday and
+    -- 2020 on Tuesday made `/observations/releases` list two published
+    -- releases the provider never published, and a full re-serve collapsed
+    -- every release into one.
+    --
+    -- `ingested_at` is the honest identity available here. Neither provider
+    -- publishes a release in the response -- BLS publishes none at all, and
+    -- FRED's `realtime_start` is dropped by this view (its own plan) -- so
+    -- what a release can mean is "the warehouse's read of the series", and
+    -- the silver upsert makes that exact: ETL-037 advances `ingested_at`
+    -- only when the row's own content changed, so it is stable across a
+    -- re-serve and moves when the value moves. It is also already what
+    -- `updated_at` publishes, so the two are one fact rather than two
+    -- unrelated clocks.
+    s.ingested_at::DATE AS as_of_date,
     s.ingested_at AS updated_at
 FROM silver_fred.fact_economic_indicators s
 JOIN gold_fred.dim_fred_series fs ON fs.series_id = s.series_id
@@ -74,6 +100,11 @@ CREATE TABLE IF NOT EXISTS gold_fred.rpt_fred_observations (
     county_fips                TEXT,
     state_name                 TEXT,
     county_name                TEXT,
+    -- Carried so the observation contract views can call
+    -- gold_glossary.geo_name with the same arguments the geography
+    -- catalog does (DB-038). Without it a place answered under its
+    -- state's name here and its own name on /catalog/geographies.
+    place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
     -- FRED-specific columns (no NULLs for these)
@@ -203,6 +234,7 @@ BEGIN
         county_fips,
         state_name,
         county_name,
+        place_name,
         geo_latitude,
         geo_longitude,
         metric_code,
@@ -235,6 +267,7 @@ BEGIN
         gl.county_fips,
         gl.state_name,
         gl.county_name,
+        gl.place_name,
         gl.latitude,
         gl.longitude,
         'FRED:' || fs.series_id,

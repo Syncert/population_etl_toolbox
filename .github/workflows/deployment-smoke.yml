@@ -14,7 +14,17 @@ on:
       - "tests/unit/deployment/**"
       - ".github/workflows/deployment-smoke.yml"
   push:
-    branches: [main, "copilot/**", "feat/**"]
+    # Every branch prefix the plan inventory declares, so a plan's work
+    # gets CI feedback on push and not only once a pull request exists
+    # (ENV-012). Guarded by tests/unit/shared/test_ci_evidence_manifest.py.
+    branches:
+      - main
+      - "claude/**"
+      - "copilot/**"
+      - "docs/**"
+      - "feat/**"
+      - "fix/**"
+      - "test/**"
   workflow_dispatch:
 
 permissions:

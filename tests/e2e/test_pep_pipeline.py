@@ -305,8 +305,10 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         )
         # The canonical identifier is what survives to a consumer: the
         # observation contract carries no place_fips column, so a place is
-        # addressable only as its exact canonical geo_id.
-        assert place_item["geo_level"] == "place"
+        # addressable only as its exact canonical geo_id. The grain comes back
+        # in the one vocabulary the warehouse serves (migration 018), whatever
+        # word the request used and whatever word the relation stores.
+        assert place_item["geo_level"] == "PLACE"
         assert place_item["dataset_code"] == "pep_subcounty"
         assert float(place_item["value"]) == PLACE_2025_ESTIMATE
 
@@ -420,7 +422,7 @@ def test_pep_fixtures_reach_the_api_with_vintage_and_place_identity_intact(
         place_row = next(
             row for row in neutral_place["items"] if row["period_start"] == "2025-07-01"
         )
-        assert place_row["geo_level"] == "place"
+        assert place_row["geo_level"] == "PLACE"
         assert float(place_row["value"]) == PLACE_2025_ESTIMATE
         assert place_row["dimensions"]["dataset_code"] == "pep_subcounty"
 

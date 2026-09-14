@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   describeConflict,
+  describeLibraryLoad,
   describeDocument,
   describeSaveFailure,
   describeSaveSuccess,
@@ -45,6 +46,8 @@ describe("a configuration is intent, not data", () => {
       metric_code: "CENSUS_ACS:acs5:B01003_001",
       scope: "latest",
       release: null,
+      newest_per_geography: false,
+      newest_release_per_period: false,
       filters: {
         geo_level: "COUNTY",
         state_fips: "55",
@@ -55,9 +58,20 @@ describe("a configuration is intent, not data", () => {
     });
     // Nothing observation-shaped is stored: a saved analysis follows the
     // warehouse rather than freezing a snapshot of it.
-    const serialized = JSON.stringify(document);
-    expect(serialized).not.toContain("value");
-    expect(serialized).not.toContain("period");
+    //
+    // This used to be a substring search over the serialized document, which
+    // read a configuration key named for a reduction (`newest_release_per_period`)
+    // as though it were a stored datum. Walk the document's own keys instead:
+    // an observation arrives under one of these names, and a configuration
+    // never carries one (WEB-047).
+    const observationShaped = ["value", "observation_date", "as_of_date", "items", "observations"];
+    const keysOf = (node) =>
+      node && typeof node === "object"
+        ? Object.entries(node).flatMap(([key, child]) => [key, ...keysOf(child)])
+        : [];
+    for (const name of observationShaped) {
+      expect(keysOf(document)).not.toContain(name);
+    }
   });
 
   test("a release is stored only under the scope that accepts it", () => {
@@ -309,5 +323,143 @@ describe("save destination", () => {
     // user their work is safe somewhere they did not choose is worse than
     // telling them it was not saved.
     expect(describeSaveFailure(new Error("network")).destination).toBeNull();
+  });
+});
+
+// Covers: WEB-044 — an account library is a paged collection, and a partial
+// answer is never green. Three screens read theirs with one request at the
+// route's maximum of 200 and reported the result as ok, so a library past
+// two hundred entries was shown two hundred with no way to reach the rest.
+describe("the account library status line", () => {
+  test("a complete library reads as what it is, and counts one correctly", () => {
+    expect(describeLibraryLoad(7, 7, true, "packet", "packets")).toBe("7 packets");
+    expect(describeLibraryLoad(1, 1, true, "packet", "packets")).toBe("1 packet");
+    expect(describeLibraryLoad(0, 0, true, "packet", "packets")).toBe("0 packets");
+  });
+
+  test("a bound-limited read names the shortfall and calls the list incomplete", () => {
+    expect(describeLibraryLoad(2000, 2400, false, "packet", "packets")).toBe(
+      "loaded 2000 of 2400 packets; the page bound cut the answer short, so " +
+        "this list is incomplete",
+    );
+  });
+
+  test("a resource that published no total is not reported as short", () => {
+    expect(describeLibraryLoad(3, null, false, "packet", "packets")).toBe("3 packets");
+  });
+});
+
+// Covers: WEB-047 — a saved view reopens as the view. The map asks the
+// resource for one value per geography; a document that records no reduction
+// replays as the whole latest publication, which for a source whose latest
+// publication is a series is a different set of rows.
+describe("a saved view records the reduction it was viewed with", () => {
+  test("a map view stores the reduction it asked for", () => {
+    const document = explorerDocument({
+      metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      geoLevel: "COUNTY",
+      newestPerGeography: true,
+    });
+    expect(document.newest_per_geography).toBe(true);
+    expect(document.newest_release_per_period).toBe(false);
+    expect(document.scope).toBe("latest");
+  });
+
+  test("a settled history stores its own reduction, under its own scope", () => {
+    const document = explorerDocument({
+      metricCode: "CENSUS_ACS:acs5:B01003_001",
+      scope: "as_released",
+      newestReleasePerPeriod: true,
+    });
+    expect(document.newest_release_per_period).toBe(true);
+    expect(document.newest_per_geography).toBe(false);
+    expect(document.scope).toBe("as_released");
+    // A settled history and a pinned release contradict each other, and the
+    // API refuses the pair.
+    expect(document.release).toBeNull();
+  });
+
+  test("never a contradiction the API would refuse", () => {
+    // Each reduction belongs to one scope. Asked for under the other, it is
+    // dropped rather than stored: a document the live route would reject is
+    // one the reader could not reopen.
+    expect(
+      explorerDocument({
+        metricCode: "M",
+        scope: "as_released",
+        newestPerGeography: true,
+      }).newest_per_geography,
+    ).toBe(false);
+    expect(
+      explorerDocument({ metricCode: "M", newestReleasePerPeriod: true })
+        .newest_release_per_period,
+    ).toBe(false);
+    // Both at once is refused by the API; the second is dropped with its scope.
+    const both = explorerDocument({
+      metricCode: "M",
+      newestPerGeography: true,
+      newestReleasePerPeriod: true,
+    });
+    expect(both.newest_per_geography).toBe(true);
+    expect(both.newest_release_per_period).toBe(false);
+  });
+
+  test("a view that asked for neither stores neither", () => {
+    const document = explorerDocument({ metricCode: "M" });
+    expect(document.newest_per_geography).toBe(false);
+    expect(document.newest_release_per_period).toBe(false);
+  });
+});
+
+describe("a browser view migrates as the view it was", () => {
+  // Covers: WEB-048 — a chart that recorded what its request asked migrates
+  // with it. WEB-047 left this recording no reduction because the chart did
+  // not carry one; it does now.
+  test("a migrated map keeps the reduction it asked for", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c1",
+        title: "Population by county",
+        chartType: "choropleth",
+        metricCode: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+        geoLevel: "COUNTY",
+        stateFips: "55",
+        scope: "latest",
+        newestPerGeography: true,
+      },
+    ]);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].document.newest_per_geography).toBe(true);
+    expect(candidates[0].document.scope).toBe("latest");
+  });
+
+  test("a chart saved before this change migrates exactly as it did", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c2",
+        title: "ACS population",
+        chartType: "choropleth",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        geoLevel: "COUNTY",
+      },
+    ]);
+    expect(candidates[0].document.newest_per_geography).toBe(false);
+    expect(candidates[0].document.scope).toBe("latest");
+    expect(candidates[0].document.release).toBeNull();
+  });
+
+  test("a pinned release migrates under the scope that accepts it", () => {
+    const { candidates } = planLocalMigration([
+      {
+        id: "c3",
+        title: "ACS as released",
+        chartType: "choropleth",
+        metricCode: "CENSUS_ACS:acs5:B01003_001",
+        scope: "as_released",
+        release: "2023",
+      },
+    ]);
+    expect(candidates[0].document.scope).toBe("as_released");
+    expect(candidates[0].document.release).toBe("2023");
   });
 });

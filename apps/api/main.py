@@ -2,15 +2,25 @@ import hashlib
 import json
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 
 from apps.api.database import DatabaseNotConfigured, dispose_engine
-from apps.api.dependencies import serving_contract_unavailable
+from apps.api.dependencies import (
+    reject_undeclared_query_parameters,
+    reject_values_outside_a_closed_set,
+    serving_contract_unavailable,
+)
+from apps.api.failures import (
+    EVERY_ROUTE_FAILURES,
+    PRIVATE_STORE_FAILURES,
+    WAREHOUSE_READ_FAILURES,
+)
 from apps.api.freshness import PublicationEpochProvider
 from apps.api.middleware import (
     RedisResponseCacheMiddleware,
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,
+    build_cache_targets,
 )
 from apps.api.ratelimit import RateLimitMiddleware
 from apps.api.appdb import dispose_app_engine
@@ -40,8 +50,13 @@ from data_ingestion_toolbox.config import Settings, get_settings
 #: manifest asset creates and reported whichever happened to exist -- naming
 #: them in the response body. Modelling surfaces are a plan non-goal; when one
 #: is designed, it arrives as a declared contract, not a probe.
-PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
-    health.router,
+#: The public analytical reads. Every one is a bounded, provider-published GET
+#: over the warehouse, so every one is cacheable -- and the cache targets are
+#: built from these routers' own paths (API-076) rather than from a list of
+#: path fragments that nothing checked against the served contract. The
+#: fragment list this replaced missed 13 of them, including the neutral
+#: ``/observations`` resource the consumer guide tells clients to prefer.
+CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
     catalog.router,
     observations.router,
     distribution.router,
@@ -52,12 +67,28 @@ PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
     *SOURCE_ROUTERS,
     cdc.router,
     usda_nass.router,
-    # API-owned, user-scoped storage (ADR-0003). Authenticated and never
-    # publicly cached; its paths sit outside the cacheable prefixes.
+)
+
+#: API-owned, user-scoped storage: saved analysis (ADR-0003) and evidence
+#: packets (ADR-0004). Authenticated, answered ``private, no-store``, and
+#: never publicly cached -- they are deliberately absent from
+#: ``CACHEABLE_ROUTERS`` above, and API-063 and API-076 both hold them there.
+PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     saved_analysis.router,
-    # Evidence packets (ADR-0004): the same discipline, a separate resource.
     evidence_packets.router,
 )
+
+PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
+    # The versioned health resource. Never cached: a probe answer must
+    # describe now, not the last five minutes.
+    health.router,
+    *CACHEABLE_ROUTERS,
+    *PRIVATE_ROUTERS,
+)
+
+#: The exact paths the response cache may serve from, derived once from the
+#: routers above.
+PUBLIC_CACHE_TARGETS = build_cache_targets(CACHEABLE_ROUTERS)
 
 
 def contract_fingerprint(application: FastAPI) -> str:
@@ -92,6 +123,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=configured.api_version,
         description=configured.api_description,
         lifespan=_lifespan,
+        # Applied to every route the application serves, including the health
+        # resource and the private ones, and solved before any route's own
+        # dependencies. A query parameter no route declares is a caller
+        # mistake this API used to answer with a confident wrong page
+        # (API-093); it declares no parameters of its own, so the published
+        # contract is unchanged.
+        dependencies=[
+            Depends(reject_undeclared_query_parameters),
+            Depends(reject_values_outside_a_closed_set),
+        ],
+        # And declared on every route for the same reason: that dependency
+        # refuses an undeclared query parameter with a 422 before any route
+        # runs, so every operation can answer one. The published document
+        # declared only the statuses FastAPI generates, so a client built from
+        # it typed `422.detail` as an array and had no branch for the failures
+        # the guide promises (API-121).
+        responses=EVERY_ROUTE_FAILURES,
     )
 
     @application.exception_handler(ServingContractUnavailable)
@@ -110,7 +158,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Each router is mounted once, under the versioned prefix. API-008 retired
     # the unversioned aliases; /api/v1 is the whole public surface.
     for router in PUBLIC_ROUTERS:
-        application.include_router(router, prefix=VERSIONED_ROOT)
+        # What the shared middleware and dependencies behind each group can
+        # answer. A route adds the failures only it can raise -- a 404 for an
+        # identifier it resolves, a 409 for a name it holds unique, a 413 for
+        # a body it parses -- beside its own declaration.
+        if router in PRIVATE_ROUTERS:
+            group = PRIVATE_STORE_FAILURES
+        elif router is health.router:
+            # The versioned health resource reads nothing and is exempt from
+            # the rate limiter, so the application-wide 422 is all it can
+            # answer.
+            group = EVERY_ROUTE_FAILURES
+        else:
+            group = WAREHOUSE_READ_FAILURES
+        application.include_router(router, prefix=VERSIONED_ROOT, responses=group)
 
     application.include_router(health.probe_router)
 
@@ -129,6 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
         analysis_per_minute=configured.api_rate_limit_analysis_per_minute,
+        trusted_proxies=configured.api_trusted_proxy_ips,
     )
     application.add_middleware(
         RedisResponseCacheMiddleware,
@@ -136,6 +198,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ttl_seconds=configured.api_cache_ttl_seconds,
         contract_fingerprint=contract_fingerprint(application),
         epoch_provider=PublicationEpochProvider(configured.api_cache_freshness_seconds),
+        targets=PUBLIC_CACHE_TARGETS,
     )
     application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(RequestTelemetryMiddleware)

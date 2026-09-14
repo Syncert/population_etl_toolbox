@@ -69,6 +69,19 @@ export interface ExplorerSource {
    * becomes a control instead of being dropped.
    */
   dimensionFilters: string[];
+  /**
+   * The field names a row's `dimensions` object carries for this source, as
+   * `/catalog/capabilities` declares them (`observation_dimensions`).
+   *
+   * A different list from `dimensionFilters`, and the reason this exists:
+   * the table and the export took their dimension columns from the
+   * filterable names, so four of seven sources showed no dimension at all
+   * and CDC showed two of fourteen -- `footnote_text`, which is how CDC
+   * qualifies an estimate, among the twelve missing (WEB-061). Read from
+   * the declaration rather than from a loaded row, so a declared dimension
+   * a page happens not to publish is still shown, empty.
+   */
+  publishedDimensions: string[];
   /** True when `/distribution/bins` is declared for this source. */
   servesDistribution: boolean;
   /**
@@ -107,6 +120,19 @@ export interface ExplorerSource {
    * whole latest publication and reducing it here.
    */
   supportsNewestPerGeography: boolean;
+  /** True when `/observations` declares `newest_release_per_period` (API-081). */
+  supportsSettledHistory: boolean;
+  /**
+   * True when this source's rows can arrive with `value: null` and a
+   * published `value_status` saying why — the capability's own
+   * `publishes_value_status` (API-127).
+   *
+   * False is the fact a chart needs: the serving relations then carry only
+   * published numbers, so a period the source published *without* one is
+   * absent from the series rather than present and marked, and a gap in a
+   * line is that period rather than an interval the measure moved across.
+   */
+  publishesValueStatus: boolean;
 }
 
 const LATEST_SUFFIX = "/observations/latest";
@@ -168,10 +194,18 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     accessShape: "source-scoped",
     requestFilters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     dimensionFilters: [],
+    publishedDimensions: [],
     servesDistribution: true,
     servesComparison: false,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
-    timeseriesParameters: ["end_date", "geo_id", "limit", "metric_code", "start_date"],
+    timeseriesParameters: [
+      "end_date",
+      "geo_id",
+      "limit",
+      "metric_code",
+      "offset",
+      "start_date",
+    ],
     // The offline fallback claims no neutral surface: with discovery
     // unavailable nothing has declared one, and an as-released control the
     // API never declared would be this client inventing a contract.
@@ -181,6 +215,11 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     supportsAsReleased: false,
     supportsReleasePin: false,
     supportsNewestPerGeography: false,
+    supportsSettledHistory: false,
+    // Claiming a published value state with discovery unavailable would be
+    // this client inventing a contract; claiming none is the conservative
+    // reading, and the note it produces is true of the fallback source.
+    publishesValueStatus: false,
   },
 ];
 
@@ -268,6 +307,7 @@ export function buildExplorerSources(
       accessShape: usesNeutral ? "neutral" : "source-scoped",
       requestFilters,
       dimensionFilters: dimensionFiltersOf(requestFilters),
+      publishedDimensions: [...(capability.observation_dimensions || [])],
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
       servesComparison: declaredPaths.has(`${API_BASE}${COMPARISON_PREFLIGHT_PATH}`),
       latestParameters,
@@ -280,6 +320,10 @@ export function buildExplorerSources(
       supportsNewestPerGeography: neutralParameters.includes(
         "newest_per_geography",
       ),
+      supportsSettledHistory: neutralParameters.includes(
+        "newest_release_per_period",
+      ),
+      publishesValueStatus: Boolean(capability.publishes_value_status),
     });
   }
 
@@ -295,7 +339,17 @@ export function findExplorerSource(
     return null;
   }
   const wanted = key.toLowerCase();
-  return sources.find((source) => source.key.toLowerCase() === wanted) || null;
+  return (
+    sources.find((source) => source.key.toLowerCase() === wanted) ||
+    // Either published identity resolves. The tab key is the source's route
+    // segment, which is what the explorer's own links carry; a link built
+    // from a metric row carries `source_code`, because that is the only
+    // source identity a metric publishes. Both come from the API, so the
+    // resolver accepts both rather than making every caller learn that
+    // `CENSUS_ACS` is reached at `census` (WEB-072).
+    sources.find((source) => source.sourceCode.toLowerCase() === wanted) ||
+    null
+  );
 }
 
 /** Whether the API declares this source accepts a filter on its reads. */

@@ -17,6 +17,7 @@ here), so a registry change automatically changes what these rules expect.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from data_ingestion_toolbox.census_pep.silver_pep.replay import (
@@ -24,7 +25,7 @@ from data_ingestion_toolbox.census_pep.silver_pep.replay import (
 )
 from data_ingestion_toolbox.usda_nass.silver_nass.values import SYMBOL_STATUS
 
-from .reconciliation import EVIDENCE_LIMIT
+from .reconciliation import EVIDENCE_LIMIT, _offenders
 from .runner import RuleExecutor, RuleOutcome
 
 #: Slice-ledger states that mean the slice never finished its work.
@@ -34,14 +35,6 @@ _UNFINISHED_SLICE_STATUSES = ("planned", "running")
 def _count(cursor: Any, sql: str, params: tuple[Any, ...] = ()) -> int:
     cursor.execute(sql, params)
     return cursor.fetchone()[0]
-
-
-def _ids(cursor: Any, sql: str, params: tuple[Any, ...] = ()) -> list[str]:
-    cursor.execute(sql, params)
-    return [
-        "|".join(str(part) for part in row)
-        for row in cursor.fetchall()[:EVIDENCE_LIMIT]
-    ]
 
 
 def _ledger_outcome(
@@ -61,7 +54,7 @@ def _ledger_outcome(
     total = _count(cursor, f"SELECT COUNT(*) FROM {table}")
     if total == 0:
         return RuleOutcome(object_name, "not_applicable")
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
         f"""
         SELECT {label_columns}, status
@@ -69,15 +62,14 @@ def _ledger_outcome(
          WHERE status IN %s
             OR status = 'failed'
             OR (status = 'success' AND rows_loaded = 0)
-         ORDER BY 1
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        (_UNFINISHED_SLICE_STATUSES,),
+        order_by="1",
+        params=(_UNFINISHED_SLICE_STATUSES,),
     )
     return RuleOutcome(
         object_name,
         "fail" if offenders else "pass",
-        observed_count=len(offenders),
+        observed_count=offenders_total,
         expected_count=0,
         evidence=offenders[:EVIDENCE_LIMIT],
     )
@@ -130,23 +122,24 @@ def fred_slice_reconciliation(
     if configured == 0:
         outcomes.append(RuleOutcome("raw_fred.fred_datasets", "not_applicable"))
         return outcomes
-    unmatched = _ids(
+    unmatched, unmatched_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT dataset.domain, dataset.series_id
           FROM raw_fred.fred_datasets AS dataset
           LEFT JOIN raw_fred.fred_series AS series
             ON series.series_id = dataset.series_id
          WHERE series.series_id IS NULL
-         ORDER BY dataset.domain, dataset.series_id
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        # Positions of this select list, like every other rule: the ordering
+        # is applied outside the subquery, where `dataset` is not in scope.
+        order_by="1, 2",
     )
     outcomes.append(
         RuleOutcome(
             "raw_fred.fred_datasets",
             "fail" if unmatched else "pass",
-            observed_count=len(unmatched),
+            observed_count=unmatched_total,
             expected_count=0,
             evidence=unmatched[:EVIDENCE_LIMIT],
         )
@@ -162,24 +155,23 @@ def pep_release_completeness(
     total = _count(cursor, "SELECT COUNT(*) FROM silver_pep.fact_population_estimate")
     if total == 0:
         return [RuleOutcome("silver_pep.release_load", "not_applicable")]
-    unverified = _ids(
+    unverified, unverified_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT DISTINCT fact.capture_id
           FROM silver_pep.fact_population_estimate AS fact
           LEFT JOIN silver_pep.release_load AS load
             ON load.capture_id = fact.capture_id
          WHERE load.capture_id IS NULL
             OR load.completeness_status <> 'complete'
-         ORDER BY 1
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1",
     )
     return [
         RuleOutcome(
             "silver_pep.release_load",
             "fail" if unverified else "pass",
-            observed_count=len(unverified),
+            observed_count=unverified_total,
             expected_count=0,
             evidence=unverified[:EVIDENCE_LIMIT],
         )
@@ -194,22 +186,21 @@ def pep_registry_reconciliation(
     loaded = _count(cursor, "SELECT COUNT(*) FROM silver_pep.fact_population_estimate")
     if loaded == 0:
         return [RuleOutcome("silver_pep.pep_release", "not_applicable")]
-    unregistered = _ids(
+    unregistered, unregistered_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT DISTINCT fact.dataset_code, fact.release_vintage
           FROM silver_pep.fact_population_estimate AS fact
           LEFT JOIN silver_pep.pep_release AS release
             ON release.dataset_code = fact.dataset_code
            AND release.vintage_year = fact.release_vintage
          WHERE release.dataset_code IS NULL
-         ORDER BY 1, 2
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2",
     )
-    unloaded = _ids(
+    unloaded, unloaded_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT release.dataset_code, release.vintage_year
           FROM silver_pep.pep_release AS release
          WHERE release.status = 'published'
@@ -220,16 +211,17 @@ def pep_registry_reconciliation(
                   AND load.release_vintage = release.vintage_year
                   AND load.completeness_status = 'complete'
            )
-         ORDER BY 1, 2
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2",
     )
     offenders = unregistered + unloaded
     return [
         RuleOutcome(
             "silver_pep.pep_release",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            # Two offender sets, so the exact count is their sum -- not the
+            # length of the bounded evidence this rule concatenates.
+            observed_count=unregistered_total + unloaded_total,
             expected_count=0,
             evidence=(
                 ["unregistered:" + entry for entry in unregistered]
@@ -247,25 +239,24 @@ def pep_sentinel_conformance(
     total = _count(cursor, "SELECT COUNT(*) FROM silver_pep.observation_revision")
     if total == 0:
         return [RuleOutcome("silver_pep.observation_revision", "not_applicable")]
-    cursor.execute(
-        f"""
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
         SELECT capture_id, source_row_index, source_column_index
           FROM silver_pep.observation_revision
          WHERE (BTRIM(COALESCE(value_source, '')) = ANY(%s)
                 AND value_status <> 'sentinel')
             OR (value_status = 'sentinel'
                 AND BTRIM(COALESCE(value_source, '')) <> ALL(%s))
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        (sorted(_CENSUS_NULL_SENTINELS), sorted(_CENSUS_NULL_SENTINELS)),
+        order_by="1, 2, 3",
+        params=(sorted(_CENSUS_NULL_SENTINELS), sorted(_CENSUS_NULL_SENTINELS)),
     )
-    offenders = ["|".join(str(part) for part in row) for row in cursor.fetchall()]
     return [
         RuleOutcome(
             "silver_pep.observation_revision",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
         )
@@ -280,9 +271,9 @@ def cdc_watermark_monotonicity(
     total = _count(cursor, "SELECT COUNT(*) FROM control.cdc_dataset_release")
     if total == 0:
         return [RuleOutcome("control.cdc_dataset_release", "not_applicable")]
-    regressions = _ids(
+    regressions, regressions_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT release.asset_id, release.release_watermark
           FROM control.cdc_dataset_release AS release
          WHERE release.decision = 'ingest'
@@ -294,15 +285,14 @@ def cdc_watermark_monotonicity(
                   AND earlier.created_at < release.created_at
                   AND earlier.release_watermark > release.release_watermark
            )
-         ORDER BY 1, 2
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2",
     )
     return [
         RuleOutcome(
             "control.cdc_dataset_release",
             "fail" if regressions else "pass",
-            observed_count=len(regressions),
+            observed_count=regressions_total,
             expected_count=0,
             evidence=regressions[:EVIDENCE_LIMIT],
         )
@@ -317,22 +307,21 @@ def cdc_suppression_conformance(
     total = _count(cursor, "SELECT COUNT(*) FROM silver_cdc.fact_health_observation")
     if total == 0:
         return [RuleOutcome("silver_cdc.fact_health_observation", "not_applicable")]
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT asset_id, release_watermark, source_record_id
           FROM silver_cdc.fact_health_observation
          WHERE value_status IN ('suppressed', 'missing')
            AND value IS NOT NULL
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2, 3",
     )
     return [
         RuleOutcome(
             "silver_cdc.fact_health_observation",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
         )
@@ -370,7 +359,7 @@ def fbi_participation_coverage(
        WHERE release.status = 'published'
          AND fact.geography_status NOT IN ('ambiguous', 'unsupported')
     """
-    uncovered = _ids(
+    uncovered, uncovered_total = _offenders(
         cursor,
         f"""
         SELECT fact.product_id, fact.release_key, fact.source_record_id
@@ -384,9 +373,8 @@ def fbi_participation_coverage(
                   AND coverage.subject_code = fact.subject_code
                   AND coverage.period = fact.period
            )
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2, 3",
     )
     expected = _count(cursor, f"SELECT COUNT(*) {publishable}")
     served = _count(cursor, "SELECT COUNT(*) FROM gold_fbi.crime_observation")
@@ -394,7 +382,7 @@ def fbi_participation_coverage(
         RuleOutcome(
             "silver_fbi.fact_crime_observation",
             "fail" if uncovered else "pass",
-            observed_count=len(uncovered),
+            observed_count=uncovered_total,
             expected_count=0,
             evidence=uncovered[:EVIDENCE_LIMIT],
         ),
@@ -418,26 +406,85 @@ def fbi_reported_vs_absent(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     total = _count(cursor, "SELECT COUNT(*) FROM silver_fbi.fact_crime_observation")
     if total == 0:
         return [RuleOutcome("silver_fbi.fact_crime_observation", "not_applicable")]
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT product_id, release_key, source_record_id, value_status
           FROM silver_fbi.fact_crime_observation
          WHERE (value_status = 'not_reported' AND value IS NOT NULL)
             OR (value_status = 'reported' AND value IS NULL)
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2, 3",
     )
     return [
         RuleOutcome(
             "silver_fbi.fact_crime_observation",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
         )
     ]
+
+
+#: What each resolution method is allowed to claim about itself (ETL-050).
+#:
+#: Public because a second reader compares it with the warehouse: the keys
+#: are the methods `silver_fbi.agency_geography_relationship.resolution_method`
+#: allows and the values are a subset of the classes its `confidence_class`
+#: allows, and DB-042 holds both against those CHECK constraints -- so a
+#: migration that adds a method without extending this mapping fails at
+#: build time rather than the next time such a row exists.
+#: `exact` is the registered state-code contract, `reviewed` a crosswalk
+#: carrying a reviewer, an evidence URL and a review note, and `derived` a
+#: name match that is exact and uniqueness-checked and backed by no review.
+#: The county path claimed `reviewed` from a name join for as long as this
+#: rule's only reading was a fanout count, and a rule that declares
+#: "attribution flows only through exact state codes, reviewed crosswalks, or
+#: a label match published as derived" has to be able to see that.
+FBI_RESOLUTION_CONFIDENCE: Mapping[str, str] = MappingProxyType(
+    {
+        "exact_state_code": "exact",
+        "reviewed_place_crosswalk": "reviewed",
+        "county_label_match": "derived",
+    }
+)
+
+
+def _fbi_confidence_claims(cursor: Any) -> RuleOutcome:
+    """Every resolved relationship claims the confidence its method earns.
+
+    The allowed pairs are bound as a VALUES list built from
+    ``FBI_RESOLUTION_CONFIDENCE``, so adding a resolution method to the
+    mapping extends the rule and adding one without extending the mapping
+    fails it. A resolved relationship whose method the mapping does not know
+    is an offender too: an unreviewed spelling is exactly how the county path
+    came to claim `reviewed`.
+    """
+    pairs = sorted(FBI_RESOLUTION_CONFIDENCE.items())
+    values = ", ".join("(%s, %s)" for _ in pairs)
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        SELECT relationship.ori, relationship.relationship_type,
+               relationship.resolution_method, relationship.confidence_class
+          FROM silver_fbi.agency_geography_relationship AS relationship
+          LEFT JOIN (VALUES {values}) AS claim (method, confidence)
+                 ON claim.method = relationship.resolution_method
+         WHERE relationship.resolution_status = 'resolved'
+           AND (claim.confidence IS NULL
+                OR claim.confidence <> relationship.confidence_class)
+        """,
+        order_by="1, 2",
+        params=tuple(value for pair in pairs for value in pair),
+    )
+    return RuleOutcome(
+        "silver_fbi.agency_geography_relationship",
+        "pass" if offenders_total == 0 else "fail",
+        observed_count=offenders_total,
+        expected_count=0,
+        evidence=offenders,
+    )
 
 
 def fbi_aggregation_boundary(
@@ -445,12 +492,14 @@ def fbi_aggregation_boundary(
 ) -> list[RuleOutcome]:
     """DQ-FBI-004 — the area filter stays at agency grain, never a total."""
     del scope
+    claims = _fbi_confidence_claims(cursor)
     total = _count(
         cursor, "SELECT COUNT(*) FROM gold_fbi.agency_observation_area_filter"
     )
     if total == 0:
         return [
-            RuleOutcome("gold_fbi.agency_observation_area_filter", "not_applicable")
+            claims,
+            RuleOutcome("gold_fbi.agency_observation_area_filter", "not_applicable"),
         ]
     distinct = _count(
         cursor,
@@ -468,6 +517,7 @@ def fbi_aggregation_boundary(
         """,
     )
     return [
+        claims,
         RuleOutcome(
             "gold_fbi.agency_observation_area_filter",
             "pass" if distinct == total else "fail",
@@ -478,7 +528,7 @@ def fbi_aggregation_boundary(
                 if distinct == total
                 else [f"rows={total}", f"distinct_agency_grain={distinct}"]
             ),
-        )
+        ),
     ]
 
 
@@ -488,38 +538,37 @@ def nass_slice_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome
     total = _count(cursor, "SELECT COUNT(*) FROM control.usda_nass_slice")
     if total == 0:
         return [RuleOutcome("control.usda_nass_slice", "not_applicable")]
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT slice.run_id, slice.slice_key, slice.status
           FROM control.usda_nass_slice AS slice
          WHERE slice.status IN ('preflighted')
             OR (slice.status = 'captured'
                 AND slice.captured_row_count <> slice.provider_count)
             OR (slice.status = 'captured' AND slice.data_capture_id IS NULL)
-         ORDER BY 1, 2
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2",
     )
-    advanced = _ids(
+    advanced, advanced_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT release.run_id, release.product_id
           FROM control.usda_nass_release AS release
           JOIN control.usda_nass_slice AS slice
             ON slice.run_id = release.run_id
          WHERE release.decision = 'ingest'
            AND slice.status IN ('over_limit', 'partial')
-         ORDER BY 1, 2
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2",
     )
     combined = offenders + ["advanced:" + entry for entry in advanced]
     return [
         RuleOutcome(
             "control.usda_nass_slice",
             "fail" if combined else "pass",
-            observed_count=len(combined),
+            # Two offender sets, so the exact count is their sum.
+            observed_count=offenders_total + advanced_total,
             expected_count=0,
             evidence=combined[:EVIDENCE_LIMIT],
         )
@@ -536,25 +585,24 @@ def nass_suppression_vocabulary(
         return [RuleOutcome("silver_nass.fact_crop_observation", "not_applicable")]
     symbols = sorted(SYMBOL_STATUS)
     statuses = [SYMBOL_STATUS[symbol] for symbol in symbols]
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT product_id, release_watermark, source_record_id,
                value_source, value_status
           FROM silver_nass.fact_crop_observation
           JOIN UNNEST(%s::TEXT[], %s::TEXT[]) AS mapping(symbol, status)
             ON BTRIM(value_source) = mapping.symbol
          WHERE value_status <> mapping.status
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
-        (symbols, statuses),
+        order_by="1, 2, 3",
+        params=(symbols, statuses),
     )
     return [
         RuleOutcome(
             "silver_nass.fact_crop_observation",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
         )
@@ -569,22 +617,21 @@ def reference_resolution_accounting(
     total = _count(cursor, "SELECT COUNT(*) FROM silver_ref.geography_resolution")
     if total == 0:
         return [RuleOutcome("silver_ref.geography_resolution", "not_applicable")]
-    offenders = _ids(
+    offenders, offenders_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT provider_source, provider_dataset, source_code, status
           FROM silver_ref.geography_resolution
          WHERE (status = 'resolved' AND geo_sk IS NULL)
             OR (status <> 'resolved' AND geo_sk IS NOT NULL)
-         ORDER BY 1, 2, 3
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1, 2, 3",
     )
     return [
         RuleOutcome(
             "silver_ref.geography_resolution",
             "fail" if offenders else "pass",
-            observed_count=len(offenders),
+            observed_count=offenders_total,
             expected_count=0,
             evidence=offenders[:EVIDENCE_LIMIT],
         )
@@ -599,9 +646,9 @@ def publisher_registry_reconciliation(
     total = _count(cursor, "SELECT COUNT(*) FROM gold_glossary.publisher_registry")
     if total == 0:
         return [RuleOutcome("gold_glossary.publisher_registry", "not_applicable")]
-    dangling = _ids(
+    dangling, dangling_total = _offenders(
         cursor,
-        f"""
+        """
         SELECT registry.source_code, registry.publisher_schema,
                registry.publisher_view
           FROM gold_glossary.publisher_registry AS registry
@@ -609,15 +656,14 @@ def publisher_registry_reconciliation(
             ON live.table_schema = registry.publisher_schema
            AND live.table_name = registry.publisher_view
          WHERE live.table_name IS NULL
-         ORDER BY 1
-         LIMIT {EVIDENCE_LIMIT + 1}
         """,
+        order_by="1",
     )
     return [
         RuleOutcome(
             "gold_glossary.publisher_registry",
             "fail" if dangling else "pass",
-            observed_count=len(dangling),
+            observed_count=dangling_total,
             expected_count=0,
             evidence=dangling[:EVIDENCE_LIMIT],
         )
@@ -625,10 +671,131 @@ def publisher_registry_reconciliation(
 
 
 #: Every DQ-004 executor keyed by the rule it measures.
+
+
+def fred_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-007 — the served views carry the published fact, unaltered.
+
+    The conformance direction, which is the one that cannot lag: every row a
+    contract view serves must trace to a fact the warehouse published, with
+    the metric code derived from that fact's own series and the same value.
+    An invented row, an altered value, or a metric code that names no series
+    is a number the API presents and the warehouse does not hold -- the worst
+    thing this warehouse can do -- and nothing measured it.
+
+    The completeness direction is deliberately *not* measured here. The
+    serving layer is rebuilt a calendar year at a time with a commit per
+    chunk (DB-041), so a fact published after the last refresh is legitimately
+    absent, and DQ-FRED-002 measures that ledger. For the same reason the
+    value comparison exempts a fact revised after the refresh watermark:
+    ETL-037 advances `ingested_at` only when a row's content changed, so a
+    revision inside the window is a served value the next refresh will
+    replace, not a value the serving layer invented.
+
+    A source with no `control.serving_refresh_state` row is read strictly --
+    `infinity`, so nothing is exempt -- rather than leniently. The chunked
+    driver seeds that row before it refreshes anything, so its absence means
+    no refresh has run, and served rows that exist anyway are the anomaly
+    this rule is for. Defaulting the other way would have made the value
+    comparison unreachable: every fact is ingested after `-infinity`.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_fred.fact_observation")
+    if total == 0:
+        return [
+            RuleOutcome("gold_fred.fact_observation", "not_applicable"),
+            RuleOutcome("gold_fred.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_fred.metric_publisher", "not_applicable"),
+        ]
+
+    unbacked, unbacked_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code, served.observation_date
+          FROM gold_fred.fact_observation AS served
+          LEFT JOIN control.serving_refresh_state AS refreshed
+            ON refreshed.source_code = 'FRED'
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM silver_fred.fact_economic_indicators AS published
+                    WHERE 'FRED:' || published.series_id = served.metric_code
+                      AND published.observation_date = served.observation_date
+                      AND published.is_missing = FALSE
+                      AND (
+                          published.value IS NOT DISTINCT FROM served.value
+                          OR published.ingested_at > COALESCE(
+                              refreshed.last_silver_ingested_at,
+                              'infinity'::TIMESTAMPTZ
+                          )
+                      )
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.observation_date
+          FROM gold_fred.v_metric_latest_by_geo AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_fred.fact_observation AS released
+                    WHERE released.metric_code = latest.metric_code
+                      AND released.observation_date = latest.observation_date
+                      AND released.value IS NOT DISTINCT FROM latest.value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT DISTINCT served.metric_code
+          FROM gold_fred.fact_observation AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_fred.metric_publisher AS exported
+                    WHERE 'FRED:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_fred.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-FRED-002": fred_slice_reconciliation,
+    "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,
     "DQ-PEP-003": pep_registry_reconciliation,
     "DQ-PEP-004": pep_sentinel_conformance,

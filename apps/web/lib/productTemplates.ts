@@ -19,6 +19,16 @@
 //    those slots would read as though the place had no such conditions.
 
 import type { MetricSummary } from "./api/types";
+import type { ObservationRow } from "./explorerViewModel";
+import { observationUnit } from "./explorerViewModel";
+import { displayMetricName } from "./format";
+import {
+  OBSERVATION_COVERAGE_FIELDS,
+  OBSERVATION_UNCERTAINTY_FIELDS,
+  observationCoverageValue,
+  observationPeriodLabel,
+  observationUncertaintyValue,
+} from "./observationAccess";
 
 export interface TemplateMeasure {
   /** Stable slot identity, for URL state and saved configurations. */
@@ -344,4 +354,88 @@ export function templateMetricCodes(
       ),
     ),
   ];
+}
+
+/** One measure's published answer for the selected place. */
+export interface MeasureAnswer {
+  /** The published row for this place, or `null` when none was published. */
+  row: ObservationRow | null;
+  state: string;
+  message: string;
+}
+
+export interface ProductExport {
+  headings: string[];
+  rows: string[][];
+}
+
+/**
+ * The profile as the file a reader keeps (WEB-060).
+ *
+ * It carried one uncertainty column, `margin_of_error`, read straight off the
+ * row -- so it saw only what `normalizeObservationRows` happens to lift, two
+ * of seven fields and only for a neutral-shaped source -- and no coverage
+ * column at all. WEB-051 and WEB-053 wrote down why that is wrong, for the
+ * explorer's export: "a file that carried a subset would be this client
+ * deciding which part of a source's participation basis a reader may have",
+ * and the same for every field `ObservationUncertainty` publishes. The
+ * profile product is a product screen, the polished surface a
+ * non-specialist reads, and its template already configures a CDC slot --
+ * CDC publishes confidence bounds, not a margin.
+ *
+ * Extracted from the component so the file's contents can be asserted:
+ * neither export's rows were covered anywhere, which is how this survived
+ * the screen that was fixed.
+ */
+export function profileExport(
+  template: ProductTemplate | null | undefined,
+  sections: ResolvedSection[] | null | undefined,
+  answers: Record<string, MeasureAnswer> | null | undefined,
+  place: { geoId: string; placeName: string },
+): ProductExport {
+  const headings = [
+    "product",
+    "section",
+    "slot",
+    "metric_code",
+    "metric_name",
+    "source",
+    "geo_id",
+    "geo_name",
+    "period",
+    "value",
+    "value_status",
+    "unit",
+    ...OBSERVATION_UNCERTAINTY_FIELDS,
+    ...OBSERVATION_COVERAGE_FIELDS,
+    "availability",
+  ];
+  const byId = answers || {};
+  const rows: string[][] = [];
+  for (const entry of sections || []) {
+    for (const measure of entry.measures) {
+      const answer = byId[measure.slot.id];
+      const row = answer?.row ?? null;
+      rows.push([
+        template?.title || "",
+        entry.section.title,
+        measure.slot.label,
+        measure.metricCode,
+        measure.metric ? displayMetricName(measure.metric) : "",
+        String(measure.metric?.source_code ?? ""),
+        place.geoId,
+        place.placeName,
+        row ? observationPeriodLabel(row) : "",
+        row?.value == null ? "" : String(row.value),
+        String(row?.value_status ?? ""),
+        row ? observationUnit(row) : "",
+        ...OBSERVATION_UNCERTAINTY_FIELDS.map((field) =>
+          observationUncertaintyValue(row, field),
+        ),
+        ...OBSERVATION_COVERAGE_FIELDS.map((field) => observationCoverageValue(row, field)),
+        measure.available ? answer?.message || "not requested" : measure.reason,
+      ]);
+    }
+  }
+  return { headings, rows };
 }

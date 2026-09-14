@@ -176,11 +176,117 @@ def test_reporting_refreshes_never_write_the_raw_geography_vocabulary() -> None:
 
 
 def test_fact_views_normalise_the_national_geography_level() -> None:
-    """Covers: ETL-047 — the normalised vocabulary has one definition."""
+    """Covers: ETL-047, DB-037 — the normalised vocabulary has one definition.
+
+    It now has exactly one: `gold_glossary.geo_grain`. The ACS and BLS fact
+    views each carried their own `CASE ... LOWER(geo_level) = 'us' THEN
+    'NATIONAL' ...` copy of it, which is the structure migration 018 exists to
+    end. What stays in the views is the *other* rule beside it — a grain
+    inferred from the row's identity when its producer wrote no grain word —
+    and that is asserted here too, so consolidating the vocabulary cannot
+    quietly take the inference with it.
+    """
     for name in ("acs", "bls"):
         sql = _read(SOURCE_FILES[name]["gold"])
-        assert "LOWER(s.geo_level) = 'us'" in sql or "LOWER(ao.geo_level) = 'us'" in sql
-        assert "THEN 'NATIONAL'" in sql
+        assert "gold_glossary.geo_grain(s.geo_level)" in sql
+        assert "LOWER(s.geo_level) = 'us'" not in sql
+        assert "WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'" in sql
 
     fred = _read(SOURCE_FILES["fred"]["gold"])
     assert "'NATIONAL'," in fred
+
+
+#: A statement clock. Any of these in a published release or as-of expression
+#: makes the value the moment the refresh ran rather than a fact about the row.
+_STATEMENT_CLOCKS = (
+    "CURRENT_DATE",
+    "CURRENT_TIMESTAMP",
+    "LOCALTIMESTAMP",
+    "NOW()",
+    "STATEMENT_TIMESTAMP",
+)
+
+
+def _released_expressions() -> list[tuple[Path, str]]:
+    """Every `... AS as_of_date` expression in the source gold DDL.
+
+    Read from the files rather than listed, so a fourth source that publishes
+    the column is covered the day it is written.
+    """
+    found = []
+    for path in sorted(REPO_ROOT.glob("src/data_ingestion_toolbox/*/gold_*/DDL/*.sql")):
+        for line in _read(path).splitlines():
+            stripped = line.strip()
+            if stripped.startswith("--"):
+                continue
+            if "AS as_of_date" in stripped:
+                found.append((path, stripped))
+    return found
+
+
+def test_a_served_release_is_never_the_refresh_clock() -> None:
+    """Covers: DB-039 — `as_of_date` is a fact about the row, not the refresh.
+
+    `API_CONSUMER_GUIDE.md` says `release` and `as_of` "trace a row back to
+    its publication". BLS, FRED and ACS all published `CURRENT_DATE AS
+    as_of_date`, and the chunked serving refresh materialised that literal
+    into the reporting table -- so a "release" was the calendar day a chunk
+    was last written. The chunk driver re-serves only changed years, so
+    re-serving 2019 on Monday and 2020 on Tuesday made
+    `/observations/releases` list two published releases nobody published,
+    and a full re-serve collapsed every release into one.
+
+    BLS and FRED publish no release identity in their responses, so the
+    honest identity is the warehouse's read, and `ingested_at` is exact about
+    that: ETL-037's upsert advances it only when the row's content changed.
+    Census PEP does carry a provider release date and uses it.
+    """
+    expressions = _released_expressions()
+    assert expressions, "no gold DDL publishes as_of_date; the rule read nothing"
+
+    offenders = [
+        f"{path.name}: {expression}"
+        for path, expression in expressions
+        if any(clock in expression.upper() for clock in _STATEMENT_CLOCKS)
+    ]
+    assert not offenders, (
+        "these serving views publish the refresh's clock as a release date, "
+        "so a re-serve invents a release the provider never published: "
+        + "; ".join(offenders)
+    )
+
+
+def test_no_seeded_serving_row_dates_itself_from_the_clock() -> None:
+    """Covers: DB-039 — the live-stack fixtures encode what the refresh produces.
+
+    `as_of_date` and `updated_at` on a served row are one fact: the refresh
+    derives the release date from the silver row's `ingested_at`, and
+    `updated_at` publishes that same value. The two live-stack seeds set
+    `as_of_date` to a fixed date and `updated_at` to `NOW()`, so the fixture
+    encoded a row the refresh can no longer produce -- and the seeds were not
+    reproducible, since the row's timestamp moved with the day it was applied.
+    That is the shape of defect the smoke tier's own header warns about: "the
+    fixtures encoded a shape the real services do not serve".
+    """
+    offenders = []
+    for path in sorted((REPO_ROOT / "tests/sql").glob("*.sql")):
+        source = _read(path)
+        for statement in source.split(";"):
+            if "INSERT INTO" not in statement.upper():
+                continue
+            target = statement.upper().split("INSERT INTO", 1)[1].strip()
+            if not (".RPT_" in target or ".MV_" in target):
+                continue
+            body = "\n".join(
+                line
+                for line in statement.splitlines()
+                if not line.strip().startswith("--")
+            )
+            named = any(clock in body.upper() for clock in _STATEMENT_CLOCKS)
+            if named:
+                offenders.append(f"{path.name}: {target.splitlines()[0]}")
+    assert not offenders, (
+        "these fixtures date a served row from the clock, so the seed is not "
+        "reproducible and the row is one the refresh would not write: "
+        + "; ".join(offenders)
+    )

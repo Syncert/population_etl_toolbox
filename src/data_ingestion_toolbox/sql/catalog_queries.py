@@ -36,6 +36,38 @@ CATALOG_RELATIONS: frozenset[str] = frozenset(
     {SOURCE_RELATION, METRIC_RELATION, GEOGRAPHY_RELATION}
 )
 
+#: The escape character the ``q`` searches declare, rather than relying on the
+#: server's default.
+_LIKE_ESCAPE = "\\"
+
+#: Spelled into the SQL as a one-character literal. ``standard_conforming_strings``
+#: has been on by default since PostgreSQL 9.1, so this is one backslash.
+LIKE_ESCAPE_CLAUSE = "ESCAPE '\\'"
+
+
+def like_contains(value: str) -> str:
+    """``value`` as a bound ``LIKE`` operand that matches it literally.
+
+    ``q`` is a search box, not a pattern language: the route is named ``q``,
+    the guide calls it "Metric search", and nothing in the contract offers
+    wildcard syntax. Without escaping, ``LIKE``'s two reserved characters made
+    it one anyway -- and every metric code this warehouse publishes carries an
+    underscore (``CENSUS_ACS:acs5:B01003_001``, ``BLS:LAU:UNEMP_RATE``), so
+    the most ordinary search there is ran as a pattern, while a bare ``%``
+    returned the whole catalog under a filter the caller believed narrowed it.
+
+    The value was always bound, so this was never an injection. It was a
+    wrong answer.
+    """
+    escaped = (
+        str(value)
+        .replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", f"{_LIKE_ESCAPE}%")
+        .replace("_", f"{_LIKE_ESCAPE}_")
+    )
+    return f"%{escaped}%"
+
+
 #: Explicit projections. ``SELECT *`` would silently widen the API's read
 #: surface whenever the warehouse adds a column; these lists are the reviewed
 #: statement of exactly what discovery serves.
@@ -48,7 +80,8 @@ _METRIC_COLUMNS = (
 )
 _GEOGRAPHY_COLUMNS = (
     "geo_id, geo_level, geo_name, state_fips, county_fips, place_fips, "
-    "state_name, county_name, place_name, geo_latitude, geo_longitude"
+    "state_name, county_name, place_name, geo_latitude, geo_longitude, "
+    "geography_state, retired_at, is_active"
 )
 
 # ---------------------------------------------------------------------------
@@ -86,9 +119,10 @@ def _build_metric_where(
         clauses.append("is_active = TRUE")
     if q:
         clauses.append(
-            "(UPPER(metric_code) LIKE UPPER(:q) OR UPPER(metric_display_name) LIKE UPPER(:q))"
+            f"(UPPER(metric_code) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
+            f" OR UPPER(metric_display_name) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE})"
         )
-        params["q"] = f"%{q}%"
+        params["q"] = like_contains(q)
     return " AND ".join(clauses) if clauses else "TRUE"
 
 
@@ -126,10 +160,13 @@ def build_metric_detail_query(metric_code: str) -> tuple[TextClause, dict]:
 def _build_geo_where(
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     params: dict,
 ) -> str:
     clauses: list[str] = []
+    if active_only:
+        clauses.append("is_active = TRUE")
     if geo_level:
         clauses.append("UPPER(geo_level) = UPPER(:geo_level)")
         params["geo_level"] = geo_level
@@ -138,23 +175,33 @@ def _build_geo_where(
         params["state_fips"] = state_fips
     if q:
         clauses.append(
-            "(UPPER(geo_id) LIKE UPPER(:q) OR UPPER(geo_name) LIKE UPPER(:q)"
-            " OR UPPER(state_name) LIKE UPPER(:q) OR UPPER(county_name) LIKE UPPER(:q)"
-            " OR UPPER(place_name) LIKE UPPER(:q))"
+            f"(UPPER(geo_id) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
+            f" OR UPPER(geo_name) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
+            f" OR UPPER(state_name) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
+            f" OR UPPER(county_name) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE}"
+            f" OR UPPER(place_name) LIKE UPPER(:q) {LIKE_ESCAPE_CLAUSE})"
         )
-        params["q"] = f"%{q}%"
+        params["q"] = like_contains(q)
     return " AND ".join(clauses) if clauses else "TRUE"
 
 
 def build_geographies_queries(
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> tuple[TextClause, TextClause, dict]:
+    """The geography catalog page, retired geographies included by default.
+
+    A geography the reference stops listing is retired rather than deleted
+    (DB-038), and its observations are still served, so hiding it by default
+    would leave rows a client resolving through the catalog could not name.
+    ``active_only`` is the caller's choice, exactly as it is for metrics.
+    """
     params: dict = {"limit": limit, "offset": offset}
-    where = _build_geo_where(geo_level, state_fips, q, params)
+    where = _build_geo_where(geo_level, state_fips, active_only, q, params)
     list_q = text(
         f"SELECT {_GEOGRAPHY_COLUMNS} FROM {GEOGRAPHY_RELATION} WHERE {where} "
         "ORDER BY geo_id LIMIT :limit OFFSET :offset"

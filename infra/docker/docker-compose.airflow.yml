@@ -1,12 +1,28 @@
 services:
   postgres:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # PostGIS rather than plain Postgres: the warehouse database created
+    # beside the metadata database below runs `CREATE EXTENSION postgis` from
+    # silver_ref's and every gold schema's DDL, so a stock image cannot host
+    # the DAGs this stack exists to run.
+    image: postgis/postgis:16-3.5-alpine@sha256:b193e996618e9e632e2c6e268462b350c28a9c871cb0352b32905fc01e0299bd
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
+      # Airflow's own metadata database. The warehouse is a separate database
+      # in the same cluster; see the initdb hook below for why.
       POSTGRES_DB: airflow
+      WAREHOUSE_DB_NAME: ${PUBLIC_DATA_DB_NAME:-population_etl}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./initdb/create_warehouse_database.sh:/docker-entrypoint-initdb.d/000_create_warehouse_database.sh:ro
+    healthcheck:
+      # initdb runs on first start and restarts the server once to apply it;
+      # a dependent that waits only for the container sees "the database
+      # system is starting up".
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   airflow-common: &airflow-common
     build:
@@ -22,7 +38,7 @@ services:
       # cannot fetch task logs from the scheduler's log server (403 FORBIDDEN).
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-internal-dev-log-signing-key}
       DATA_QUALITY_COMMIT_SHA: ${DATA_QUALITY_COMMIT_SHA:-}
-      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-airflow}
+      PUBLIC_DATA_DB_NAME: ${PUBLIC_DATA_DB_NAME:-population_etl}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
@@ -50,7 +66,7 @@ services:
       --role Admin
       --email admin@example.com || true;
       airflow connections delete public_data >/dev/null 2>&1 || true;
-      airflow connections add public_data --conn-type postgres --conn-host postgres --conn-port 5432 --conn-login airflow --conn-password airflow --conn-schema airflow;
+      airflow connections add public_data --conn-type postgres --conn-host postgres --conn-port 5432 --conn-login airflow --conn-password airflow --conn-schema ${PUBLIC_DATA_DB_NAME:-population_etl};
       airflow pools set census_api 4 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';

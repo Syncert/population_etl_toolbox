@@ -4,7 +4,11 @@ Containerization artifacts and runtime definitions.
 
 ## Compose Stacks
 
-- `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + a single Postgres metadata/service DB.
+- `docker-compose.airflow.yml`: Airflow-focused stack for scheduler/webserver + one PostGIS
+  cluster holding two databases: Airflow's `airflow` metadata database and the warehouse
+  the DAGs write (`PUBLIC_DATA_DB_NAME`, default `population_etl`), created at first start
+  by `initdb/create_warehouse_database.sh`. They are never the same database: ingestion
+  inside Airflow's metadata database makes the documented reset drop Airflow with it.
 - `docker-compose.yml`: Internal self-contained stack with analytics PostGIS DB, service Postgres, Redis, API, Martin, the Next.js MVP app, and Airflow services.
 - `docker-compose.external.yml`: External integration stack targeting existing analytics and Airflow metadata Postgres hosts. Supports service-only local MVP (`redis`, `api`, `martin`, `web`) by default, with optional local Airflow services under profile `airflow-local`.
 
@@ -23,6 +27,9 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 ```bash
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
 python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
+# The API's own application storage (ADR-0003). Without this role the account,
+# saved-analysis, and evidence-packet routes answer an explicit 503.
+python scripts/provision_app_api.py --env-file infra/docker/stack.external.env --apply-schema
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 
@@ -34,6 +41,7 @@ This is the recommended local workflow when an existing Airflow deployment and p
 cp infra/docker/stack.external.env.example infra/docker/stack.external.env
 # fill secrets/host values in infra/docker/stack.external.env
 python scripts/provision_api_readonly.py --env-file infra/docker/stack.external.env --write-env
+python scripts/provision_app_api.py --env-file infra/docker/stack.external.env --apply-schema
 docker compose --env-file infra/docker/stack.external.env -f infra/docker/docker-compose.external.yml up -d redis api martin web
 ```
 

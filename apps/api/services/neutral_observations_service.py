@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.registry import (
     normalize_geo_level,
+    ranking_tie_break,
     OBSERVATION_DISPATCH,
     ObservationDispatch,
 )
@@ -59,6 +60,15 @@ SCOPE_AS_RELEASED = "as_released"
 #: the source's ``filter_conditions`` to be usable for that source.
 UNIVERSAL_PARAMETERS = ("metric_code", "scope", "release", "limit", "offset")
 
+#: The two query parameters that reduce a read to one row per geography (and,
+#: for the second, per period within a geography).
+REDUCTION_NEWEST_PER_GEOGRAPHY = "newest_per_geography"
+REDUCTION_NEWEST_RELEASE_PER_PERIOD = "newest_release_per_period"
+PER_GEOGRAPHY_REDUCTIONS = (
+    REDUCTION_NEWEST_PER_GEOGRAPHY,
+    REDUCTION_NEWEST_RELEASE_PER_PERIOD,
+)
+
 
 class NeutralQueryError(ValueError):
     """A request the resource can explain rather than serve (HTTP 422)."""
@@ -68,6 +78,33 @@ class NeutralQueryError(ValueError):
         self.detail = detail
 
 
+def reduction_refusal(dispatch: ObservationDispatch, reduction: str) -> Optional[str]:
+    """Why a per-geography reduction declines this source, or ``None``.
+
+    A reduction to one row per geography -- or, for
+    ``newest_release_per_period``, one row per geography and period -- is the
+    same ranking `/distribution/bins` and `/comparison/preflight` apply, which
+    is what the guide says of it. Those routes decline a source whose rows do
+    not reduce to one number per geography, and this did not: it partitioned on
+    the geography expression alone, so ``ranking_tie_break`` resolved CDC's
+    many rows per geography by ``stratum_id`` and the lexicographically first
+    stratum answered as the geography's value, with ``total`` counting only the
+    survivors. That is the first thing the guide's "What this API will not do"
+    rules out: "Collapse a source's strata, domains, or subject grain into a
+    single number you did not ask for" (API-118).
+
+    The reason is the dispatch entry's own, so the reader is told exactly what
+    the analysis routes tell them about the same source.
+    """
+    refusal = dispatch.analysis_refusal()
+    if refusal is None:
+        return None
+    return (
+        f"{reduction} reduces a source to one row per geography, which "
+        f"'{dispatch.source_code}' does not publish: {refusal}"
+    )
+
+
 def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]:
     """The glossary row owning ``metric_code``, or ``None`` when unknown."""
     require_relation(db, METRIC_RELATION)
@@ -75,7 +112,18 @@ def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]
     return db.execute(detail_query, params).mappings().first()
 
 
-def _dispatch_for(metric: Mapping[str, Any]) -> ObservationDispatch:
+def dispatch_for_metric(metric: Mapping[str, Any]) -> ObservationDispatch:
+    """The reviewed dispatch entry owning ``metric``, or the 422 that explains.
+
+    The glossary can publish a metric whose source has no entry here:
+    warehouse work lands before API registry work by design, and
+    ``catalog_service.get_metric_capability`` answers such a metric's
+    semantics with no routes rather than pretending it is unservable. Every
+    route that dispatches on a metric goes through this one function, so the
+    explanation is the same wherever a caller meets it -- ``/distribution/bins``
+    reached into the registry directly and answered a ``KeyError`` as a 500
+    (API-078).
+    """
     source_code = metric.get("source_code") or ""
     dispatch = OBSERVATION_DISPATCH.get(source_code)
     if dispatch is None:
@@ -283,12 +331,48 @@ def _newest_per_geography_source(
                 SELECT source.*,
                     ROW_NUMBER() OVER (
                         PARTITION BY {dispatch.geo_id_expression}
-                        ORDER BY {dispatch.period_start_expression} DESC
+                        ORDER BY {dispatch.period_start_expression} DESC\
+{ranking_tie_break(dispatch.latest_order)}
                     ) AS newest_period_rank
                 FROM {relation} AS source
                 WHERE {where_sql}
             ) AS ranked
             WHERE ranked.newest_period_rank = 1
+        )"""
+
+
+def _newest_release_per_period_source(
+    dispatch: ObservationDispatch,
+    relation: str,
+    where_sql: str,
+) -> str:
+    """``relation`` reduced to the newest release of each geography's periods.
+
+    The mirror image of ``_newest_per_geography_source``, and the same
+    reason: the source is the only place that knows how its releases order.
+    A source whose latest relation keeps one row per geography -- Census ACS
+    holds only the newest vintage -- has a geography's history only across
+    its releases, and reducing that to one row per period means deciding
+    which release is newer. Every dispatch entry declares that already, as
+    ``release_order_expression``, and ``/observations/releases`` orders by
+    it; a client re-deriving it from the release identity's spelling can
+    disagree, because ``2023.10`` and ``2023.9`` sort one way as numbers and
+    the other as text (API-081).
+    """
+    return f"""(
+            SELECT ranked.*
+            FROM (
+                SELECT source.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {dispatch.geo_id_expression}, \
+{dispatch.period_start_expression}
+                        ORDER BY {dispatch.release_order_expression} DESC\
+{ranking_tie_break(dispatch.released_order)}
+                    ) AS newest_release_rank
+                FROM {relation} AS source
+                WHERE {where_sql}
+            ) AS ranked
+            WHERE ranked.newest_release_rank = 1
         )"""
 
 
@@ -301,12 +385,13 @@ def list_neutral_observations(
     limit: int,
     offset: int,
     newest_per_geography: bool = False,
+    newest_release_per_period: bool = False,
 ) -> Optional[NeutralObservationListResponse]:
     """One metric's observations from its owning source's serving contract.
 
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
-    if release is not None and scope != SCOPE_AS_RELEASED:
+    if release and scope != SCOPE_AS_RELEASED:
         raise NeutralQueryError(
             "release can only be combined with scope=as_released; scope=latest "
             "always serves the source's own latest publication"
@@ -318,11 +403,43 @@ def list_neutral_observations(
             "reducing it to one row per geography would present whichever "
             "release sorted last as the value"
         )
+    if newest_release_per_period and scope != SCOPE_AS_RELEASED:
+        raise NeutralQueryError(
+            "newest_release_per_period can only be combined with "
+            "scope=as_released; a latest read answers one publication, which "
+            "has no releases to reduce"
+        )
+    if newest_release_per_period and release:
+        raise NeutralQueryError(
+            "release and newest_release_per_period contradict each other: one "
+            "pins a single published release, the other asks for the newest "
+            "release of every period"
+        )
+    if newest_release_per_period and newest_per_geography:
+        # Unreachable while each refuses the other's scope, and stated anyway:
+        # a future scope that admitted both would otherwise inherit whichever
+        # branch happened to be written first.
+        raise NeutralQueryError(
+            "newest_per_geography and newest_release_per_period cannot be "
+            "combined: each reduces a different axis of a different scope"
+        )
 
     metric = resolve_metric(db, metric_code)
     if metric is None:
         return None
-    dispatch = _dispatch_for(metric)
+    dispatch = dispatch_for_metric(metric)
+
+    reduction = (
+        REDUCTION_NEWEST_PER_GEOGRAPHY
+        if newest_per_geography
+        else REDUCTION_NEWEST_RELEASE_PER_PERIOD
+        if newest_release_per_period
+        else None
+    )
+    if reduction is not None:
+        refusal = reduction_refusal(dispatch, reduction)
+        if refusal is not None:
+            raise NeutralQueryError(refusal)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(
@@ -330,7 +447,12 @@ def list_neutral_observations(
     )
     conditions.extend(filter_conditions)
     params.update(filter_params)
-    if release is not None:
+    # Falsy, not `is not None`: an empty value is absent everywhere else in
+    # this API, and `release` alone declared `min_length=1`, so a client that
+    # serialises its whole parameter set -- or replays a stored document, which
+    # records `""` for a release it does not pin -- was refused for sending no
+    # release at all (API-124).
+    if release:
         conditions.append(f"{dispatch.release_expression} = :release")
         params["release"] = release
 
@@ -348,6 +470,12 @@ def list_neutral_observations(
         # statement reads the result rather than filtering it again.
         source_sql = (
             f"{_newest_per_geography_source(dispatch, relation, where_sql)}"
+            " AS observations"
+        )
+        outer_where = ""
+    elif newest_release_per_period:
+        source_sql = (
+            f"{_newest_release_per_period_source(dispatch, relation, where_sql)}"
             " AS observations"
         )
         outer_where = ""
@@ -394,12 +522,22 @@ def list_metric_releases(
 ) -> Optional[MetricReleaseListResponse]:
     """The published releases holding one metric's observations, newest first.
 
+    Ordered by the release ordering each dispatch entry declares, then by the
+    release identity itself. The identity is the ``GROUP BY`` key, so the
+    second term makes the order total by construction: two consecutive pages
+    can neither repeat a release nor skip one whatever the first term does.
+    Ordering by the first term alone was total only by coincidence of the
+    registry -- every entry's ordering expression is its identity with a cast
+    -- and a source whose release identity is a name ordered by a date would
+    have paged non-deterministically the moment two releases shared one date
+    (API-095).
+
     Returns ``None`` for an unknown metric code; the router owns the 404.
     """
     metric = resolve_metric(db, metric_code)
     if metric is None:
         return None
-    dispatch = _dispatch_for(metric)
+    dispatch = dispatch_for_metric(metric)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     relation = dispatch.released_relation
@@ -419,7 +557,8 @@ def list_metric_releases(
         FROM {relation}
         WHERE {where_sql}
         GROUP BY 1
-        ORDER BY MAX({dispatch.release_order_expression}) DESC
+        ORDER BY MAX({dispatch.release_order_expression}) DESC,
+                 {dispatch.release_expression} DESC
         LIMIT :limit OFFSET :offset
         """
     )

@@ -15,7 +15,11 @@
       ],
       "responses": {
         "204": "no-content",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -35,7 +39,11 @@
       ],
       "responses": {
         "204": "no-content",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -68,7 +76,10 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisListResponse",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -88,7 +99,11 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -149,7 +164,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "bls"
@@ -194,6 +211,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -202,7 +230,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "bls"
@@ -211,7 +241,10 @@
     "GET /api/v1/catalog/capabilities": {
       "parameters": [],
       "responses": {
-        "200": "application/json:CapabilityListResponse"
+        "200": "application/json:CapabilityListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -220,7 +253,10 @@
     "GET /api/v1/catalog/freshness": {
       "parameters": [],
       "responses": {
-        "200": "application/json:FreshnessListResponse"
+        "200": "application/json:FreshnessListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -228,6 +264,12 @@
     },
     "GET /api/v1/catalog/geographies": {
       "parameters": [
+        {
+          "in": "query",
+          "name": "active_only",
+          "required": false,
+          "type": "boolean | null"
+        },
         {
           "constraints": {
             "maxLength": 50
@@ -280,7 +322,9 @@
       ],
       "responses": {
         "200": "application/json:GeographyListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -337,7 +381,9 @@
       ],
       "responses": {
         "200": "application/json:MetricListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -358,7 +404,10 @@
       ],
       "responses": {
         "200": "application/json:MetricCapability",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -367,7 +416,10 @@
     "GET /api/v1/catalog/sources": {
       "parameters": [],
       "responses": {
-        "200": "application/json:array<SourceSystem>"
+        "200": "application/json:array<SourceSystem>",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "catalog"
@@ -492,7 +544,9 @@
       ],
       "responses": {
         "200": "application/json:CdcObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "cdc"
@@ -553,7 +607,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census"
@@ -598,6 +654,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -606,7 +673,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census"
@@ -677,7 +746,146 @@
       ],
       "responses": {
         "200": "application/json:ComparisonResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/comparison/correlation": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_a",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_code_b",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 9999,
+            "minimum": 1000
+          },
+          "in": "query",
+          "name": "year",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonCorrelationResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "comparison"
+      ]
+    },
+    "GET /api/v1/comparison/matrix": {
+      "parameters": [
+        {
+          "constraints": {
+            "maxLength": 50
+          },
+          "in": "query",
+          "name": "geo_level",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 1700,
+            "minLength": 1
+          },
+          "in": "query",
+          "name": "metric_codes",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "constraints": {
+            "maxLength": 2
+          },
+          "in": "query",
+          "name": "state_fips",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "constraints": {
+            "maximum": 9999,
+            "minimum": 1000
+          },
+          "in": "query",
+          "name": "year",
+          "required": false,
+          "type": "integer | null"
+        }
+      ],
+      "responses": {
+        "200": "application/json:ComparisonMatrixResponse",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "comparison"
@@ -708,7 +916,10 @@
       ],
       "responses": {
         "200": "application/json:ComparisonPreflightResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "comparison"
@@ -758,7 +969,10 @@
       ],
       "responses": {
         "200": "application/json:DistributionBinsResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "distribution"
@@ -791,7 +1005,10 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacketListResponse",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -811,7 +1028,11 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -872,7 +1093,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "fred"
@@ -917,6 +1140,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -925,7 +1159,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "fred"
@@ -934,7 +1170,8 @@
     "GET /api/v1/health": {
       "parameters": [],
       "responses": {
-        "200": "application/json:HealthResponse"
+        "200": "application/json:HealthResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError"
       },
       "tags": [
         "health"
@@ -1028,6 +1265,15 @@
         },
         {
           "constraints": {
+            "default": false
+          },
+          "in": "query",
+          "name": "newest_release_per_period",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "constraints": {
             "default": 0,
             "maximum": 100000,
             "minimum": 0
@@ -1039,8 +1285,7 @@
         },
         {
           "constraints": {
-            "maxLength": 100,
-            "minLength": 1
+            "maxLength": 100
           },
           "in": "query",
           "name": "release",
@@ -1119,7 +1364,10 @@
       ],
       "responses": {
         "200": "application/json:NeutralObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1180,7 +1428,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1223,7 +1473,10 @@
       ],
       "responses": {
         "200": "application/json:MetricReleaseListResponse",
-        "422": "application/json:HTTPValidationError"
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1268,6 +1521,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -1276,7 +1540,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "observations"
@@ -1337,7 +1603,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census-pep"
@@ -1382,6 +1650,17 @@
           "type": "string"
         },
         {
+          "constraints": {
+            "default": 0,
+            "maximum": 100000,
+            "minimum": 0
+          },
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "in": "query",
           "name": "start_date",
           "required": false,
@@ -1390,7 +1669,9 @@
       ],
       "responses": {
         "200": "application/json:ObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "census-pep"
@@ -1399,7 +1680,10 @@
     "GET /api/v1/usda-nass/measures": {
       "parameters": [],
       "responses": {
-        "200": "application/json:NassMeasureListResponse"
+        "200": "application/json:NassMeasureListResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1596,7 +1880,9 @@
       ],
       "responses": {
         "200": "application/json:NassObservationListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1710,7 +1996,9 @@
       ],
       "responses": {
         "200": "application/json:NassSeriesListResponse",
-        "422": "application/json:HTTPValidationError"
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1719,7 +2007,10 @@
     "GET /api/v1/usda-nass/source-notes": {
       "parameters": [],
       "responses": {
-        "200": "application/json:NassSourceNotesResponse"
+        "200": "application/json:NassSourceNotesResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "usda-nass"
@@ -1728,7 +2019,8 @@
     "GET /health": {
       "parameters": [],
       "responses": {
-        "200": "application/json:HealthResponse"
+        "200": "application/json:HealthResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError"
       },
       "tags": [
         "health"
@@ -1737,7 +2029,9 @@
     "GET /health/ready": {
       "parameters": [],
       "responses": {
-        "200": "application/json:ReadinessResponse"
+        "200": "application/json:ReadinessResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "503": "application/json:ReadinessResponse | ErrorDetail"
       },
       "tags": [
         "health"
@@ -1747,7 +2041,12 @@
       "parameters": [],
       "responses": {
         "201": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -1757,7 +2056,12 @@
       "parameters": [],
       "responses": {
         "201": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -1777,7 +2081,13 @@
       ],
       "responses": {
         "200": "application/json:SavedAnalysisConfiguration",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "analysis-configurations"
@@ -1797,7 +2107,13 @@
       ],
       "responses": {
         "200": "application/json:EvidencePacket",
-        "422": "application/json:HTTPValidationError"
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
       },
       "tags": [
         "evidence-packets"
@@ -1805,16 +2121,31 @@
     }
   },
   "schemas": {
+    "AlignmentDocument": {
+      "properties": {
+        "geo_level": "string",
+        "state_fips": "string | null",
+        "year": "integer | null"
+      },
+      "required": [
+        "geo_level"
+      ]
+    },
     "AnalysisDocument": {
       "properties": {
+        "alignment": "AlignmentDocument | null",
         "bin_count": "integer | null",
         "filters": "object",
         "kind": "string",
         "metric_code": "string | null",
         "metric_code_a": "string | null",
         "metric_code_b": "string | null",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
+        "presentation": "PresentationDocument | null",
         "release": "string | null",
         "scope": "string",
+        "series": "array<SeriesDocument> | null",
         "visualization": "object"
       },
       "required": [
@@ -1919,6 +2250,59 @@
         "total"
       ]
     },
+    "ComparisonCorrelationResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "contemporaneous_pairs": "integer",
+        "derivations": "array<string>",
+        "derived": "boolean",
+        "geo_level": "string | null",
+        "geographies_a": "integer",
+        "geographies_b": "integer",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "n": "integer",
+        "pearson_r": "number | null",
+        "period_a": "string | null",
+        "period_b": "string | null",
+        "periods_differ": "boolean",
+        "source_code_a": "string | null",
+        "source_code_b": "string | null",
+        "spearman_rho": "number | null",
+        "state_fips": "string | null",
+        "units_a": "string | null",
+        "units_b": "string | null",
+        "year": "integer | null"
+      },
+      "required": [
+        "metric_code_a",
+        "metric_code_b",
+        "n"
+      ]
+    },
+    "ComparisonMatrixResponse": {
+      "properties": {
+        "caveats": "array<string>",
+        "derived": "boolean",
+        "geo_level": "string | null",
+        "items": "array<MatrixRow>",
+        "limit": "integer",
+        "metrics": "array<MatrixMetricSummary>",
+        "offset": "integer",
+        "pairs": "array<MatrixPair>",
+        "state_fips": "string | null",
+        "total": "integer",
+        "year": "integer | null"
+      },
+      "required": [
+        "items",
+        "limit",
+        "metrics",
+        "offset",
+        "pairs",
+        "total"
+      ]
+    },
     "ComparisonPreflightResponse": {
       "properties": {
         "caveats": "array<string>",
@@ -1941,6 +2325,8 @@
       "properties": {
         "caveats": "array<string>",
         "derivations": "array<string>",
+        "geographies_a": "integer",
+        "geographies_b": "integer",
         "items": "array<ComparisonRow>",
         "limit": "integer",
         "metric_code_a": "string",
@@ -2001,6 +2387,19 @@
         "valid"
       ]
     },
+    "CorrelationStatistic": {
+      "properties": {
+        "contemporaneous_pairs": "integer",
+        "derivations": "array<string>",
+        "n": "integer",
+        "pearson_r": "number | null",
+        "periods_differ": "boolean",
+        "spearman_rho": "number | null"
+      },
+      "required": [
+        "n"
+      ]
+    },
     "DistributionBin": {
       "properties": {
         "bin_index": "integer",
@@ -2018,12 +2417,15 @@
     "DistributionBinsResponse": {
       "properties": {
         "bin_count": "integer",
+        "caveats": "array<string>",
         "derived": "boolean",
         "geo_level": "string | null",
         "items": "array<DistributionBin>",
         "max_value": "number | null",
         "metric_code": "string",
         "min_value": "number | null",
+        "period": "string | null",
+        "periods_differ": "boolean",
         "source_code": "string | null",
         "total": "integer",
         "units": "string | null"
@@ -2033,6 +2435,14 @@
         "items",
         "metric_code",
         "total"
+      ]
+    },
+    "ErrorDetail": {
+      "properties": {
+        "detail": "string"
+      },
+      "required": [
+        "detail"
       ]
     },
     "EvidencePacket": {
@@ -2139,8 +2549,11 @@
         "geo_level": "string | null",
         "geo_longitude": "number | null",
         "geo_name": "string | null",
+        "geography_state": "string | null",
+        "is_active": "boolean | null",
         "place_fips": "string | null",
         "place_name": "string | null",
+        "retired_at": "string(date-time) | null",
         "state_fips": "string | null",
         "state_name": "string | null"
       },
@@ -2178,6 +2591,59 @@
         "status"
       ]
     },
+    "MatrixCell": {
+      "properties": {
+        "metric_code": "string",
+        "period": "string | null",
+        "release": "string | null",
+        "value": "number | null"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "MatrixMetricSummary": {
+      "properties": {
+        "geographies": "integer",
+        "metric_code": "string",
+        "period": "string | null",
+        "periods_differ": "boolean",
+        "source_code": "string | null",
+        "units": "string | null",
+        "valid_geo_grains": "array<string>",
+        "valid_time_grains": "array<string>"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
+    "MatrixPair": {
+      "properties": {
+        "caveats": "array<string>",
+        "comparable": "boolean",
+        "metric_code_a": "string",
+        "metric_code_b": "string",
+        "rules": "array<CompatibilityFinding>",
+        "statistic": "CorrelationStatistic | null"
+      },
+      "required": [
+        "comparable",
+        "metric_code_a",
+        "metric_code_b"
+      ]
+    },
+    "MatrixRow": {
+      "properties": {
+        "county_fips": "string | null",
+        "county_name": "string | null",
+        "geo_id": "string | null",
+        "geo_level": "string | null",
+        "state_fips": "string | null",
+        "state_name": "string | null",
+        "values": "array<MatrixCell>"
+      },
+      "required": []
+    },
     "MetricCapability": {
       "properties": {
         "aggregation_characteristic": "string | null",
@@ -2186,11 +2652,13 @@
         "measure_kind": "string | null",
         "metric_code": "string",
         "metric_display_name": "string | null",
+        "observation_dimensions": "array<string>",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
         "physical_lineage": "object | null",
         "publication_time": "string(date-time) | null",
         "publisher_contract_version": "string | null",
+        "publishes_value_status": "boolean",
         "served_by_neutral_routes": "boolean",
         "source_code": "string | null",
         "source_object_key": "string | null",
@@ -2663,6 +3131,15 @@
         "valid"
       ]
     },
+    "PresentationDocument": {
+      "properties": {
+        "options": "object",
+        "type": "string"
+      },
+      "required": [
+        "type"
+      ]
+    },
     "ReadinessResponse": {
       "properties": {
         "cache": "string",
@@ -2682,6 +3159,8 @@
         "geo_id": "string",
         "geo_level": "string",
         "metric_codes": "array<string>",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
         "period": "string",
         "release": "string",
         "scope": "string",
@@ -2764,12 +3243,27 @@
         "name"
       ]
     },
+    "SeriesDocument": {
+      "properties": {
+        "filters": "object",
+        "metric_code": "string",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
+        "release": "string | null",
+        "scope": "string"
+      },
+      "required": [
+        "metric_code"
+      ]
+    },
     "SourceCapability": {
       "properties": {
         "datasets": "array<string>",
         "display_name": "string",
+        "observation_dimensions": "array<string>",
         "observation_filters": "array<string>",
         "observation_routes": "array<ObservationRouteCapability>",
+        "publishes_value_status": "boolean",
         "route_segment": "string | null",
         "served_by_neutral_routes": "boolean",
         "source_code": "string"

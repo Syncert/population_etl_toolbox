@@ -264,6 +264,12 @@ def test_packet_lifecycle_against_the_real_schema(
     unknown = _packet(metric_code)
     unknown["blocks"][1]["document"]["metric_code"] = "NO:SUCH:METRIC"
     unknown["blocks"][1]["envelope"]["metric_codes"] = ["NO:SUCH:METRIC"]
+    # And the recorded request names the same measure, so the block is
+    # internally consistent and the refusal is the live contract's rather than
+    # the recorded-request cross-check's (API-129).
+    unknown["blocks"][1]["envelope"]["api_query"] = (
+        "/api/v1/observations?metric_code=NO:SUCH:METRIC"
+    )
     refused = client.post(
         "/api/v1/evidence-packets",
         headers=_auth(token),

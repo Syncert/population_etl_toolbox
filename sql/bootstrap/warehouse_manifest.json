@@ -12,6 +12,16 @@
       "path": "sql/migrations/002_gold_glossary_decoupling.sql"
     },
     {
+      "id": "migration-021",
+      "phase": "glossary-migration",
+      "path": "sql/migrations/021_geo_grain_vocabulary_early.sql"
+    },
+    {
+      "id": "migration-023",
+      "phase": "glossary-migration",
+      "path": "sql/migrations/023_geo_name_vocabulary_early.sql"
+    },
+    {
       "id": "migration-013",
       "phase": "quality-foundation",
       "path": "sql/migrations/013_data_quality_evidence.sql"
@@ -112,6 +122,16 @@
       "path": "sql/migrations/014_release_publisher_measure_identity.sql"
     },
     {
+      "id": "migration-019",
+      "phase": "source-fix",
+      "path": "sql/migrations/019_stratum_shape_contract.sql"
+    },
+    {
+      "id": "migration-025",
+      "phase": "source-fix",
+      "path": "sql/migrations/025_county_label_is_not_reviewed.sql"
+    },
+    {
       "id": "gold-census",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
@@ -165,6 +185,26 @@
       "id": "migration-018",
       "phase": "glossary",
       "path": "sql/migrations/018_geo_grain_vocabulary.sql"
+    },
+    {
+      "id": "migration-020",
+      "phase": "glossary",
+      "path": "sql/migrations/020_resolved_geography_serving.sql"
+    },
+    {
+      "id": "migration-022",
+      "phase": "glossary",
+      "path": "sql/migrations/022_fbi_publisher_geo_grain.sql"
+    },
+    {
+      "id": "migration-024",
+      "phase": "glossary",
+      "path": "sql/migrations/024_served_place_name.sql"
+    },
+    {
+      "id": "migration-026",
+      "phase": "glossary",
+      "path": "sql/migrations/026_released_date_is_not_the_refresh_clock.sql"
     },
     {
       "id": "migration-003",

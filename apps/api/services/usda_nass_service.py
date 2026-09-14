@@ -15,6 +15,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from apps.api.registry import normalize_geo_level
 from apps.api.schemas import (
     NassMeasureListResponse,
     NassMeasureRow,
@@ -27,10 +28,14 @@ from apps.api.schemas import (
 )
 from data_ingestion_toolbox.usda_nass.registry import (
     ALL_PRODUCTS,
+    SOURCE_PROGRAMS,
     SUPPORTED_AGG_LEVELS,
     SUPPRESSION_SYMBOLS,
 )
-from data_ingestion_toolbox.usda_nass.silver_nass.values import SYMBOL_STATUS
+from data_ingestion_toolbox.usda_nass.silver_nass.values import (
+    SYMBOL_STATUS,
+    VALUE_STATUSES,
+)
 
 #: As-released history and the newest validated release, as separate relations.
 AS_RELEASED_RELATION = "gold_nass.crop_observation"
@@ -73,6 +78,102 @@ class NassQueryError(ValueError):
     """A caller filter cannot produce a well-defined USDA NASS query."""
 
 
+def _absent_if_blank(value: Optional[str]) -> Optional[str]:
+    """``None`` for a filter the caller sent empty, else the trimmed value.
+
+    The rest of the API reads an empty filter value as no filter -- the
+    catalog's `if geo_level:`, `closed_value_refusal`'s "an empty value is
+    absent" -- and a saved analysis document records `""` for a filter its
+    source does not declare (API-117, WEB-075). This router alone tested
+    `is not None`, so `?commodity_desc=` bound `commodity_desc = ''`, matched
+    no row the provider can publish, and answered 200 with `total: 0`
+    (API-124).
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+#: The value states a row can carry, as the warehouse's own CHECK constraint
+#: spells them (``sql/migrations/012_usda_nass_crop_pipeline.sql``), read from
+#: the adapter that writes them rather than re-listed here. Sorted so the
+#: refusal names them in one order.
+_VALUE_STATUS_VOCABULARY: tuple[str, ...] = tuple(sorted(VALUE_STATUSES))
+
+
+def _validated_closed_value(
+    field: str, value: Optional[str], vocabulary: tuple[str, ...], word: str
+) -> Optional[str]:
+    """``word`` when it is in ``vocabulary``, else a refusal naming the words.
+
+    The same rule `_validated_grain` applies to the grain, for the other two
+    closed provider vocabularies these routes filter on. Bound and matched
+    instead, an unknown word answered 200 with ``total: 0`` -- the API-122
+    defect on this router's own parameters: `value_status=suppressed`, the
+    word the consumer guide prints as an example, reads as "nothing was
+    suppressed" when the vocabulary's word is `withheld` (API-124).
+    """
+    if value is None:
+        return None
+    if word not in vocabulary:
+        raise NassQueryError(f"{field} must be one of " + ", ".join(vocabulary))
+    return word
+
+
+def _validated_source_program(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested ``source_desc``, or a refusal.
+
+    Case is normalised for the reason `_validated_grain` records: the relation
+    stores the vocabulary word, so a caller echoing a published `SURVEY` and a
+    caller typing `survey` are asking one question. Only `/observations`
+    checked this at all, and only by exact match -- so its sibling
+    `/series` bound `BOGUS` into the filter and answered an empty page
+    (API-124).
+    """
+    if value is None:
+        return None
+    return _validated_closed_value(
+        "source_desc", value, SOURCE_PROGRAMS, str(value).strip().upper()
+    )
+
+
+def _validated_value_status(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested ``value_status``, or a refusal.
+
+    Lower-cased rather than upper: this vocabulary is published lower-case,
+    so `WITHHELD` and `withheld` are one word here exactly as `COUNTY` and
+    `county` are one grain.
+    """
+    if value is None:
+        return None
+    return _validated_closed_value(
+        "value_status", value, _VALUE_STATUS_VOCABULARY, str(value).strip().lower()
+    )
+
+
+def _validated_grain(value: Optional[str]) -> Optional[str]:
+    """The vocabulary word for a requested `agg_level_desc`, or a refusal.
+
+    The guide promises "a grain read from the catalog can be sent straight
+    back", case-insensitively and with `NATION` accepted for `NATIONAL`.
+    This parameter is the grain under NASS's own name, and it was compared
+    by exact match against the upper-case registry words -- so `county` was
+    a 422, and so was the alias the guide guarantees (API-116).
+
+    The relation stores the vocabulary word, so normalising the request is
+    the whole fix; nothing about the comparison changes.
+    """
+    if value is None:
+        return None
+    word = normalize_geo_level(value)
+    if word not in SUPPORTED_AGG_LEVELS:
+        raise NassQueryError(
+            "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
+        )
+    return word
+
+
 @dataclass
 class NassObservationFilters:
     """Bound, validated filter set for one USDA NASS observation query."""
@@ -104,17 +205,11 @@ class NassObservationFilters:
                 raise NassQueryError(
                     "year_start must be less than or equal to year_end"
                 )
-        if self.agg_level_desc is not None and (
-            self.agg_level_desc not in SUPPORTED_AGG_LEVELS
-        ):
-            raise NassQueryError(
-                "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
-            )
-        if self.source_desc is not None and self.source_desc not in {
-            "SURVEY",
-            "CENSUS",
-        }:
-            raise NassQueryError("source_desc must be SURVEY or CENSUS")
+        for name in _EQUALITY_FILTERS:
+            setattr(self, name, _absent_if_blank(getattr(self, name)))
+        self.agg_level_desc = _validated_grain(self.agg_level_desc)
+        self.source_desc = _validated_source_program(self.source_desc)
+        self.value_status = _validated_value_status(self.value_status)
         if self.release_watermark is not None and self.latest_release_only:
             raise NassQueryError("release_watermark and latest cannot be combined")
 
@@ -171,12 +266,10 @@ class NassSeriesFilters:
     )
 
     def __post_init__(self) -> None:
-        if self.agg_level_desc is not None and (
-            self.agg_level_desc not in SUPPORTED_AGG_LEVELS
-        ):
-            raise NassQueryError(
-                "agg_level_desc must be one of " + ", ".join(SUPPORTED_AGG_LEVELS)
-            )
+        for name in self._columns:
+            setattr(self, name, _absent_if_blank(getattr(self, name)))
+        self.agg_level_desc = _validated_grain(self.agg_level_desc)
+        self.source_desc = _validated_source_program(self.source_desc)
 
     def clauses(self) -> tuple[list[str], dict[str, Any]]:
         conditions: list[str] = []
@@ -210,7 +303,15 @@ def list_observations(
         session.execute(
             text(
                 f"SELECT {_OBSERVATION_COLUMNS} FROM {filters.relation} {where} "
-                "ORDER BY product_id, release_watermark, short_desc, geo_id, year "
+                "ORDER BY product_id, release_watermark, short_desc, geo_id, "
+                # observation_sk breaks any remaining tie, as CDC's order
+                # already does (API-080). The Quick Stats grain is
+                # multidimensional -- a commodity published across several
+                # domain categories answers several rows carrying one
+                # short_desc -- so without it a page boundary falls inside a
+                # tie PostgreSQL promises nothing about, and two pages can
+                # repeat a row and skip another.
+                "year, observation_sk "
                 "LIMIT :limit OFFSET :offset"
             ),
             {**parameters, "limit": filters.limit, "offset": filters.offset},
@@ -256,7 +357,10 @@ def list_series(
                 FROM gold_nass.crop_series
                 """
                 + where
-                + " ORDER BY product_id, short_desc, geo_id "
+                # series_id is an MD5 over the exact tuple this view groups
+                # by, so it is unique per row by construction and makes the
+                # order total (API-080).
+                + " ORDER BY product_id, short_desc, geo_id, series_id "
                 "LIMIT :limit OFFSET :offset"
             ),
             {**parameters, "limit": filters.limit, "offset": filters.offset},

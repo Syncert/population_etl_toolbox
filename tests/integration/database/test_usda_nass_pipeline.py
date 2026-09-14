@@ -24,6 +24,7 @@ from data_ingestion_toolbox.usda_nass.silver_nass.transform import (
     transform_release,
 )
 from data_ingestion_toolbox.usda_nass.silver_nass.values import NassReplayError
+from apps.api.registry import GEO_GRAINS
 from tests.support import usda_nass as nass_support
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -413,5 +414,91 @@ def test_a_release_with_quarantined_rows_still_reconciles_exactly(
             assert quarantine_count == 1
             assert record_count == transformed + quarantine_count
             assert status == "published"
+    finally:
+        reader.close()
+
+
+def test_an_unsupported_aggregate_level_is_kept_but_not_served(
+    nass_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: DB-035 — the row stays in silver and leaves the served surface.
+
+    Quick Stats publishes agricultural districts, watersheds, ZIP Codes and
+    congressional districts, and this adapter deliberately models none of
+    them: they "must never be coerced into a county". The fact table therefore
+    admits `geo_type = 'unsupported'` with `geo_id IS NULL` by constraint, and
+    `gold_nass.crop_observation` filtered on the release status alone, so the
+    row was served with a null geography and its grain — passed through by
+    `gold_glossary.geo_grain` so an unknown word surfaces as itself — was
+    published as one a client could filter by. It could not: sending
+    `UNSUPPORTED` back reached the NASS filter and answered an empty 200.
+    """
+    product = get_product("corn_survey_annual")
+    document = _fixture(product.product_id)
+    rows = document["slices"]["COUNTY"]["data"]["data"]
+    unsupported = dict(rows[-1])
+    unsupported["agg_level_desc"] = "AGRICULTURAL DISTRICT"
+    unsupported["location_desc"] = "ALABAMA, NORTHERN VALLEY"
+    rows[-1] = unsupported
+
+    _release, transformed, published = _run_to_gold(nass_warehouse, product, document)
+    # `publish_release` counts the rows it serves, so the publication count is
+    # one short of what silver holds — and the difference is the row the
+    # resolution ledger explains, not a row lost on the way.
+    assert published == transformed - 1
+
+    reader = nass_warehouse()
+    try:
+        with reader.cursor() as cursor:
+            # Kept: the fact table holds it, and the ledger says why it is
+            # not a geography.
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM silver_nass.fact_crop_observation
+                WHERE product_id = %s AND geography_status = 'unsupported'
+                """,
+                (product.product_id,),
+            )
+            assert cursor.fetchone() == (1,)
+            cursor.execute(
+                """
+                SELECT status, reason_code, geo_sk
+                FROM silver_ref.geography_resolution
+                WHERE provider_source = 'USDA_NASS' AND status = 'unsupported'
+                """
+            )
+            ledger = cursor.fetchall()
+            assert ledger
+            for status, reason_code, geo_sk in ledger:
+                assert (status, reason_code, geo_sk) == (
+                    "unsupported",
+                    "unsupported_aggregate_level",
+                    None,
+                )
+
+            # Not served, and not published as a grain.
+            cursor.execute(
+                """
+                SELECT COUNT(*),
+                       COUNT(*) FILTER (WHERE geo_id IS NULL)
+                FROM gold_nass.crop_observation
+                WHERE product_id = %s
+                """,
+                (product.product_id,),
+            )
+            served, without_geography = cursor.fetchone()
+            assert served == transformed - 1
+            assert without_geography == 0
+            cursor.execute(
+                """
+                SELECT DISTINCT UNNEST(valid_geo_grains)
+                FROM gold_nass.metric_publisher
+                ORDER BY 1
+                """
+            )
+            grains = {row[0] for row in cursor.fetchall()}
+            assert grains and grains <= set(GEO_GRAINS), grains
+            assert "AGRICULTURAL DISTRICT" not in grains
     finally:
         reader.close()

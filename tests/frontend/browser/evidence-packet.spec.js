@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-023 — the evidence packet composer in the browser. The grant
 // template arrives with methodology and limits already present, an
@@ -33,6 +33,24 @@ const savedViews = [
     release: "2022",
     period: "2022",
     apiQuery: "/api/v1/observations?scope=as_released&release=2022",
+    savedAt: "2026-09-03T00:00:00Z",
+  },
+  {
+    // A comparison captures no single period -- it carries one per side,
+    // which WEB-049 exists to keep visible -- so its saved view records
+    // none. Before WEB-069 the builder filled the gap with `savedAt`, and
+    // this block would have claimed `2026-09-03T00:00:00Z` as its period
+    // and reported itself complete.
+    id: "chart:3",
+    title: "Population against estimates",
+    chartType: "comparison",
+    metricCode: "CENSUS_ACS:acs5:B01003_001",
+    metricCodeB: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+    source: "CENSUS_ACS",
+    sourceB: "CENSUS_PEP",
+    geoLevel: "COUNTY",
+    transformation: "api-derived",
+    apiQuery: "/api/v1/comparison?metric_code_a=CENSUS_ACS%3Aacs5%3AB01003_001",
     savedAt: "2026-09-03T00:00:00Z",
   },
 ];
@@ -109,6 +127,31 @@ test("an analytical block is filled from a saved view and keeps its envelope", a
   // With both blocks carrying an envelope the packet reports itself complete.
   await expect(page.getByTestId("evidence-packet")).toHaveAttribute("data-complete", "true");
   await expect(page.getByTestId("packet-issues")).toHaveCount(0);
+});
+
+test("a view that captured no period leaves the block incomplete, not complete", async ({
+  page,
+}) => {
+  // Covers: WEB-069 — `envelopeFromSavedChart` filled an absent period with
+  // `savedAt`, the moment someone pressed save. No producer wrote `period`
+  // at all, so every block attached in the builder claimed a timestamp as
+  // the period of its figures and the packet reported itself complete. The
+  // module's own rule is that "a field the view never captured stays empty
+  // so `packetIssues` can report it rather than a guess filling it in".
+  await seedSavedViews(page);
+  await page.goto("/builder");
+
+  await page.getByTestId("packet-target").selectOption("population-evidence");
+  await page.getByTestId("packet-attach-chart:3").click();
+
+  const packet = page.getByTestId("evidence-packet");
+  await expect(packet).toHaveAttribute("data-complete", "false");
+  const issue = page.getByTestId("issue-population-evidence");
+  await expect(issue).toContainText("period");
+  // And the timestamp never reaches the envelope as a period.
+  await expect(page.getByTestId("envelope-population-evidence")).not.toContainText(
+    "2026-09-03T00:00:00Z",
+  );
 });
 
 test("the preview keeps every block's evidence, and a new empty block reopens the gap", async ({

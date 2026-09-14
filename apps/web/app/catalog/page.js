@@ -160,30 +160,38 @@ export default function CatalogPage() {
         </label>
       </section>
 
-      <div className="catalog-summary">
-        {/* The count is the API's own published total for these filters; a
-            page of results is never presented as the total. */}
-        <strong data-testid="catalog-total">
-          {status === "ready" && page.total !== null ? page.total.toLocaleString() : "-"}
-        </strong>{" "}
-        matching metrics
-        <span data-testid="catalog-range">
-          {page.firstRow === null
-            ? "none shown"
-            : `showing ${page.firstRow.toLocaleString()}-${page.lastRow.toLocaleString()}`}
-          {page.pageCount > 0 ? ` · page ${page.pageIndex + 1} of ${page.pageCount}` : ""}
-        </span>
-      </div>
-
-      {status === "loading" ? <div className="loading-state">Loading catalog...</div> : null}
-      {status === "error" ? (
-        <div className="notice error" data-testid="catalog-error">
-          The catalog could not be loaded: {error}
+      {/* The search is live: there is no submit button, and the request is
+          debounced on each keystroke. One always-present polite region
+          carries the whole result state -- count, range, loading, empty,
+          error -- so the first render is the baseline and only later
+          changes speak (WEB-037). Four separate elements appearing and
+          disappearing said nothing at all. */}
+      <div data-testid="catalog-status" role="status">
+        <div className="catalog-summary">
+          {/* The count is the API's own published total for these filters; a
+              page of results is never presented as the total. */}
+          <strong data-testid="catalog-total">
+            {status === "ready" && page.total !== null ? page.total.toLocaleString() : "-"}
+          </strong>{" "}
+          matching metrics
+          <span data-testid="catalog-range">
+            {page.firstRow === null
+              ? "none shown"
+              : `showing ${page.firstRow.toLocaleString()}-${page.lastRow.toLocaleString()}`}
+            {page.pageCount > 0 ? ` · page ${page.pageIndex + 1} of ${page.pageCount}` : ""}
+          </span>
         </div>
-      ) : null}
-      {status === "ready" && groups.length === 0 ? (
-        <div className="empty-state">No metrics match these filters.</div>
-      ) : null}
+
+        {status === "loading" ? <div className="loading-state">Loading catalog...</div> : null}
+        {status === "error" ? (
+          <div className="notice error" data-testid="catalog-error">
+            The catalog could not be loaded: {error}
+          </div>
+        ) : null}
+        {status === "ready" && groups.length === 0 ? (
+          <div className="empty-state">No metrics match these filters.</div>
+        ) : null}
+      </div>
 
       {/* While a new page or filter is in flight the loaded rows are the
           previous answer; marking the list busy keeps them from reading as
@@ -213,7 +221,14 @@ export default function CatalogPage() {
                   return (
                     <div className="metric-row" key={metric.metric_code}>
                       <Link
-                        href={explorerHref({ metric: metric.metric_code })}
+                        href={explorerHref({
+                          metric: metric.metric_code,
+                          // The measure's own source, as the catalog row
+                          // publishes it. Without it `/explore` mounted
+                          // Census ACS and silently selected one of its
+                          // metrics instead (WEB-072).
+                          source: metric.source_code || undefined,
+                        })}
                         data-testid={`catalog-metric-link-${metric.metric_code}`}
                       >
                         <span>

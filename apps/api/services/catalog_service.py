@@ -23,6 +23,7 @@ from apps.api.registry import (
     OBSERVATION_DISPATCH,
     SOURCE_DISCOVERY,
     SourceDiscovery,
+    normalize_geo_level,
 )
 from apps.api.schemas import (
     CapabilityListResponse,
@@ -38,6 +39,7 @@ from apps.api.schemas import (
     SourceSystem,
 )
 from apps.api.services.contracts import require_relation
+from apps.api.services.metric_freshness import is_retired
 from apps.api.versioning import VERSIONED_ROOT
 from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_RELATION,
@@ -83,14 +85,20 @@ def list_geographies(
     db: Session,
     geo_level: Optional[str],
     state_fips: Optional[str],
+    active_only: Optional[bool],
     q: Optional[str],
     limit: int,
     offset: int,
 ) -> GeographyListResponse:
     require_relation(db, GEOGRAPHY_RELATION)
+    # `gold_glossary.dim_geo_latest` stores the vocabulary word, and the
+    # builder compares `UPPER(geo_level)`, so an alias the catalog itself
+    # used to publish -- `NATION`, `US` -- matched nothing here while
+    # `/observations` answered it (API-094).
     list_query, count_query, params = build_geographies_queries(
-        geo_level=geo_level,
+        geo_level=normalize_geo_level(geo_level) if geo_level else None,
         state_fips=state_fips,
+        active_only=active_only,
         q=q,
         limit=limit,
         offset=offset,
@@ -155,6 +163,25 @@ def _observation_filters_for(source_code: str) -> list[str]:
     return list(dispatch.supported_filters()) if dispatch is not None else []
 
 
+def _observation_dimensions_for(source_code: str) -> list[str]:
+    """The `dimensions` field names the source's dispatch entry declares."""
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return list(dispatch.published_dimensions()) if dispatch is not None else []
+
+
+def _publishes_value_status(source_code: str) -> bool:
+    """Whether the source's served relations carry a value state.
+
+    Derived from the dispatch entry's `value_status_column`, which is what
+    the neutral read actually projects: a source that declares none is served
+    `NULL::TEXT`, and its serving relation carries only rows that hold a
+    number, because the gold view selects on the value being present. So the
+    two facts are one declaration rather than a second list to keep in step.
+    """
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return dispatch is not None and dispatch.value_status_column is not None
+
+
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
     """Every completed source's reviewed capability entry, ordered by code."""
     operations = _versioned_get_operations(openapi_paths)
@@ -167,6 +194,8 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             datasets=list(discovery.registered_datasets()),
             observation_routes=_routes_for(discovery, operations),
             observation_filters=_observation_filters_for(discovery.source_code),
+            observation_dimensions=_observation_dimensions_for(discovery.source_code),
+            publishes_value_status=_publishes_value_status(discovery.source_code),
         )
         for discovery in sorted(
             SOURCE_DISCOVERY.values(), key=lambda entry: entry.source_code
@@ -196,11 +225,33 @@ def get_metric_capability(
 
     capability = MetricCapability.model_validate(row)
     discovery = SOURCE_DISCOVERY.get(capability.source_code or "")
-    if discovery is not None:
-        operations = _versioned_get_operations(openapi_paths)
-        capability.served_by_neutral_routes = discovery.served_by_neutral_routes
-        capability.observation_routes = _routes_for(discovery, operations)
-        capability.observation_filters = _observation_filters_for(discovery.source_code)
+    if discovery is None:
+        return capability
+
+    # The dimensions a row of this source carries. Declared for the source and
+    # published on the source resource since API-109, but not here, so a
+    # client that discovered a metric had to enumerate sources to learn the
+    # shape of its own rows (API-119).
+    capability.observation_dimensions = _observation_dimensions_for(
+        discovery.source_code
+    )
+    # Whether a row of this metric can arrive with `value: null`, for the same
+    # reason the dimensions are here: it describes the rows the warehouse
+    # published, so it stays true of a retired measure's history as well.
+    capability.publishes_value_status = _publishes_value_status(discovery.source_code)
+    if is_retired(capability.freshness_state):
+        # A retired measure keeps its catalog entry and its history; no route
+        # answers its observations. Copying the source's routes and
+        # `served_by_neutral_routes` here advertised six routes that answer it
+        # `total: 0`, which is exactly the silent empty page the discovery
+        # registry exists to prevent. The dimensions stay: they describe the
+        # rows the warehouse published, not a route that would serve them.
+        return capability
+
+    operations = _versioned_get_operations(openapi_paths)
+    capability.served_by_neutral_routes = discovery.served_by_neutral_routes
+    capability.observation_routes = _routes_for(discovery, operations)
+    capability.observation_filters = _observation_filters_for(discovery.source_code)
     return capability
 
 

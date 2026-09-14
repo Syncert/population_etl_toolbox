@@ -7,13 +7,15 @@
 
 import type {
   CollectionResponse,
+  ComparisonCorrelation,
+  ComparisonMatrix,
   ComparisonPreflight,
   ComparisonResponse,
+  ComparisonRow,
   DistributionResponse,
   GeographySummary,
   HealthResponse,
   AnalysisDocument,
-  MetricReleaseListResponse,
   MetricSummary,
   Observation,
   EvidencePacketDocument,
@@ -100,9 +102,19 @@ export class ApiError extends Error {
 
 // Status-first message for UI state pills: the HTTP status stays visible
 // and the API's own `detail` travels with it when present.
+//
+// Where the API published a `Retry-After`, the interval travels too. Its own
+// detail for a limited request reads "rate limit exceeded; retry after the
+// indicated interval" -- a sentence that points at a number the client held
+// on the error object and dropped on the way to the screen (WEB-040). The
+// reader decides whether to retry; this only tells them when they could.
 export function apiErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    return `status ${error.status}${error.detail ? `: ${error.detail}` : ""}`;
+    const status = `status ${error.status}${error.detail ? `: ${error.detail}` : ""}`;
+    const retryAfter = Number(error.retryAfter);
+    return Number.isFinite(retryAfter) && retryAfter > 0
+      ? `${status} (retry in ${retryAfter}s)`
+      : status;
   }
   if (error instanceof Error && error.message) {
     return error.message;
@@ -127,11 +139,61 @@ export function buildApiPath(resource: string, params: QueryParams = {}): string
   return `${API_BASE}${path}${buildQuery(params)}`;
 }
 
+/** How many field refusals a message carries before it counts the rest. */
+const VALIDATION_DETAIL_LIMIT = 3;
+
+/**
+ * A refusal the API made before the endpoint ran, as a readable sentence.
+ *
+ * `422` answers two bodies (see the consumer guide's Errors section): a
+ * string for a refusal the API decided, and `HTTPValidationError` -- an
+ * array of `{loc, msg, type}` -- for a request refused against the declared
+ * parameter and body schemas. This renders the second, because a reader told
+ * only "status 422" on the one class of error the API can explain has been
+ * handed the explanation and shown the number.
+ *
+ * `loc` is the path to what was refused, so it is what names the parameter.
+ * The entry's `input` is deliberately not rendered: it is the caller's own
+ * submitted value, of unbounded size, and it says nothing the `loc` and the
+ * message do not. The count is bounded for the same reason.
+ */
+function describeValidationDetail(entries: unknown[]): string | null {
+  const described: string[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const { loc, msg } = entry as { loc?: unknown; msg?: unknown };
+    if (typeof msg !== "string" || !msg) {
+      continue;
+    }
+    const where = Array.isArray(loc)
+      ? loc
+          .filter((part) => typeof part === "string" || typeof part === "number")
+          .join(".")
+      : "";
+    described.push(where ? `${where}: ${msg}` : msg);
+  }
+  if (described.length === 0) {
+    return null;
+  }
+  const shown = described.slice(0, VALIDATION_DETAIL_LIMIT);
+  const remaining = described.length - shown.length;
+  return remaining > 0
+    ? `${shown.join("; ")} (and ${remaining} more)`
+    : shown.join("; ");
+}
+
 async function decodeErrorDetail(response: Response): Promise<string | null> {
   try {
     const payload: unknown = await response.json();
     const detail = (payload as { detail?: unknown } | null)?.detail;
-    return typeof detail === "string" ? detail : null;
+    if (typeof detail === "string") {
+      return detail;
+    }
+    // A body carrying no usable entry falls through to null, so the caller
+    // still shows the status line rather than an empty sentence.
+    return Array.isArray(detail) ? describeValidationDetail(detail) : null;
   } catch {
     return null;
   }
@@ -195,7 +257,7 @@ export interface CollectionPages<T> {
 // prefix rather than handed a truncated list as if it were whole.
 export async function fetchCollectionPages<T>(
   resource: string,
-  { params = {}, pageSize = 1000, maxPages = 50, signal, fetchImpl }: PageOptions = {},
+  { params = {}, pageSize = 1000, maxPages = 50, signal, fetchImpl, token }: PageOptions = {},
 ): Promise<CollectionPages<T>> {
   const items: T[] = [];
   let offset = 0;
@@ -207,6 +269,10 @@ export async function fetchCollectionPages<T>(
       params: { ...params, limit: String(pageSize), offset: String(offset) },
       signal,
       fetchImpl,
+      // Carried on every page, and only as an `Authorization` header: an
+      // account's own library is a paged collection like any other
+      // (WEB-044).
+      token,
     });
     const pageItems = Array.isArray(payload.items) ? payload.items : [];
     total =
@@ -228,11 +294,47 @@ export async function fetchCollectionPages<T>(
   return { items, total, complete: true };
 }
 
+/** A read the page bound cut short, so the list it returned is a prefix. */
+export class IncompleteCollectionError extends Error {
+  readonly resource: string;
+  readonly received: number;
+  readonly total: number | null;
+
+  constructor(resource: string, received: number, total: number | null) {
+    super(
+      `${resource} answered ${received}${total === null ? "" : ` of ${total}`}` +
+        " records within the page bound; that is a prefix, not the whole list",
+    );
+    this.name = "IncompleteCollectionError";
+    this.resource = resource;
+    this.received = received;
+    this.total = total;
+  }
+}
+
+/**
+ * Every record of a collection, or a refusal.
+ *
+ * `fetchCollectionPages` computes `complete` because "a caller that hits the
+ * bound is told the answer is a prefix rather than handed a truncated list as
+ * if it were whole" -- and this wrapper used to drop it, which is every
+ * caller in the application. A prefix rendered as a measure list or a county
+ * picker is a list a person searches and does not find themselves in, told
+ * nothing; the data-quality screen went further and stated its length as the
+ * number published (WEB-056).
+ *
+ * Callers already have a failure path for a failed read, so raising is what
+ * makes the bound visible. `fetchCollectionPages` is still there for a caller
+ * that wants the prefix and the flag.
+ */
 export async function fetchAllPages<T>(
   resource: string,
   options: PageOptions = {},
 ): Promise<T[]> {
-  const { items } = await fetchCollectionPages<T>(resource, options);
+  const { items, total, complete } = await fetchCollectionPages<T>(resource, options);
+  if (!complete) {
+    throw new IncompleteCollectionError(resource, items.length, total);
+  }
   return items;
 }
 
@@ -299,19 +401,6 @@ export function getObservations(
   options: RequestOptions = {},
 ): Promise<CollectionResponse<Observation>> {
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
-}
-
-// The release identities `scope=as_released` accepts for one metric,
-// newest first. This is the only way to learn what `release=` accepts; a
-// client must not invent or infer a release identity.
-export function getObservationReleases(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<MetricReleaseListResponse> {
-  return apiFetch<MetricReleaseListResponse>("/observations/releases", {
-    ...options,
-    params,
-  });
 }
 
 // Legacy MVP shapes (Census ACS, BLS, FRED only); retained consumers should
@@ -382,6 +471,113 @@ export function getComparison(
   options: RequestOptions = {},
 ): Promise<ComparisonResponse> {
   return apiFetch<ComparisonResponse>("/comparison", { ...options, params });
+}
+
+/**
+ * The API-derived correlation over a comparable pair (API-130).
+ *
+ * Takes the parameters `/comparison` takes and no paging: the statistic is
+ * over the whole join, so there is no page to ask for. An incomparable pair
+ * answers 422 with its failed rules, exactly as `/comparison` does, which is
+ * why a caller asks `/comparison/preflight` first.
+ */
+export function getComparisonCorrelation(
+  params: QueryParams,
+  options: RequestOptions = {},
+): Promise<ComparisonCorrelation> {
+  return apiFetch<ComparisonCorrelation>("/comparison/correlation", {
+    ...options,
+    params,
+  });
+}
+
+/**
+ * Two to eight measures aligned on geography, with a verdict per pair
+ * (API-132).
+ *
+ * A pair the policy declines is a cell in `pairs`, not an error; a measure
+ * whose source the analysis routes decline refuses the whole request. `items`
+ * pages the union of the geographies the measures published, so this is the
+ * one comparison-family read whose rows are not an intersection.
+ */
+export function getComparisonMatrix(
+  params: QueryParams,
+  options: RequestOptions = {},
+): Promise<ComparisonMatrix> {
+  return apiFetch<ComparisonMatrix>("/comparison/matrix", { ...options, params });
+}
+
+/** A paged comparison: one envelope, every aligned row it could reach. */
+export interface ComparisonPages {
+  /** The first page's response, with every page's rows in `items`. */
+  payload: ComparisonResponse | null;
+  items: ComparisonRow[];
+  total: number | null;
+  /** False when a page bound stopped the read before the reported total. */
+  complete: boolean;
+}
+
+/**
+ * Every aligned geography `/comparison` will serve for one selection.
+ *
+ * The route caps `limit` at 1000 and a national county comparison aligns
+ * 3,144 geographies, so a single request held the first thousand rows
+ * ordered by `geo_id` -- Alabama through part of Illinois -- and the scatter
+ * plot, the choropleth, and the export were drawn from them (WEB-039). That
+ * is not a sample of the United States; it is a systematically biased subset
+ * no reader could identify from the chart.
+ *
+ * The envelope -- units, derivations, caveats, the metric and source
+ * identities -- describes the pair rather than the page, so it is taken from
+ * the first response and kept. Only rows accumulate.
+ */
+export async function fetchComparisonPages(
+  params: QueryParams,
+  { pageSize = 1000, maxPages = 8, signal, fetchImpl }: PageOptions = {},
+): Promise<ComparisonPages> {
+  let payload: ComparisonResponse | null = null;
+  const items: ComparisonRow[] = [];
+  let total: number | null = null;
+  let offset = 0;
+  let pages = 0;
+
+  do {
+    const page = await apiFetch<ComparisonResponse>("/comparison", {
+      params: { ...params, limit: String(pageSize), offset: String(offset) },
+      signal,
+      fetchImpl,
+    });
+    const pageItems = Array.isArray(page.items) ? page.items : [];
+    if (payload === null) {
+      payload = page;
+    }
+    total =
+      typeof page.total === "number" && Number.isFinite(page.total) ? page.total : null;
+    items.push(...pageItems);
+    offset += pageItems.length;
+    pages += 1;
+
+    if (pageItems.length === 0) {
+      break;
+    }
+    if (pages >= maxPages) {
+      return {
+        payload: payload === null ? null : { ...payload, items },
+        items,
+        total,
+        // A resource that published no total states no shortfall, and
+        // inventing one would assert a count the API did not publish.
+        complete: total === null || items.length >= total,
+      };
+    }
+  } while (total === null || items.length < total);
+
+  return {
+    payload: payload === null ? null : { ...payload, items },
+    items,
+    total,
+    complete: true,
+  };
 }
 
 // --- Health ---

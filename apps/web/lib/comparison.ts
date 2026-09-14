@@ -20,7 +20,9 @@ import type {
   ComparisonRule,
   MetricSummary,
 } from "./api/types";
+import { metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
+import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -331,6 +333,20 @@ export interface ComparisonExport {
 }
 
 /**
+ * How much of the aligned answer a file holds.
+ *
+ * The workspace pages `/comparison` and computes this to say "loaded 8,000
+ * of 12,400 aligned geographies; the page bound cut the answer short" in its
+ * status pill. The file outlives the pill, so it travels with the export
+ * (WEB-067) -- the argument WEB-059 makes for the explorer's own file.
+ */
+export interface ComparisonLoad {
+  loaded: number;
+  total?: number | null;
+  complete: boolean;
+}
+
+/**
  * The export carries its own interpretation envelope: both measures and
  * their sources and units, each row's own published values and periods, the
  * derived fields marked as derived in the heading itself, and every caveat
@@ -340,12 +356,26 @@ export interface ComparisonExport {
 export function comparisonExport(
   response: ComparisonResponse | null | undefined,
   preflight: ComparisonPreflight | null | undefined,
+  load: ComparisonLoad | null = null,
 ): ComparisonExport {
   const items = Array.isArray(response?.items) ? response.items : [];
   const derivations = Array.isArray(response?.derivations) ? response.derivations : [];
   const codeA = response?.metric_code_a || "";
   const codeB = response?.metric_code_b || "";
+  // A bounded read is the first thing a reader of this file needs to know,
+  // so it leads the caveats rather than trailing the API's own.
+  const shortfall =
+    load && !load.complete
+      ? [
+          typeof load.total === "number" && Number.isFinite(load.total)
+            ? `incomplete: ${load.loaded} of ${load.total} aligned geographies; ` +
+              "the page bound cut the answer short"
+            : `incomplete: ${load.loaded} aligned geographies loaded and no ` +
+              "total published, so whether more exist is unknown",
+        ]
+      : [];
   const caveats = [
+    ...shortfall,
     ...(Array.isArray(response?.caveats) ? response.caveats : []),
     ...describePreflight(preflight).unverified.map(
       (rule) => `unverified ${rule.rule}: ${rule.reason}`,
@@ -393,10 +423,20 @@ export function comparisonExport(
   ]);
 
   const slug = (code: string) => code.replaceAll(":", "-") || "measure";
+  const stem = `comparison-${slug(codeA)}-vs-${slug(codeB)}`;
+  // Named the way the explorer's partial file is (WEB-059): a complete read
+  // keeps the name it always had.
+  const of =
+    load && typeof load.total === "number" && Number.isFinite(load.total)
+      ? `-of-${load.total}`
+      : "";
   return {
     headings,
     rows,
-    filename: `comparison-${slug(codeA)}-vs-${slug(codeB)}.csv`,
+    filename:
+      load && !load.complete
+        ? `${stem}-partial-${load.loaded}${of}.csv`
+        : `${stem}.csv`,
   };
 }
 
@@ -427,12 +467,26 @@ export interface ScatterPoint {
   x: number;
   /** Measure B's published value. */
   y: number;
+  /** The period each side's value describes, or `""` where none was published. */
+  periodA: string;
+  periodB: string;
+  /** True when the two published periods differ, so the pair is not contemporaneous. */
+  periodsDiffer: boolean;
 }
 
 export interface ScatterModel {
   points: ScatterPoint[];
   /** Geographies left out because one side published no usable number. */
   excluded: number;
+  /**
+   * Plotted points whose two sides describe different published periods.
+   *
+   * The route combines each side's own newest value rather than aligning
+   * them to a shared period, and carries both periods so that is visible.
+   * Counting it here lets the chart say so; the table already marks the row
+   * (WEB-049).
+   */
+  differingPeriods: number;
   minX: number;
   maxX: number;
   minY: number;
@@ -442,6 +496,7 @@ export interface ScatterModel {
 const EMPTY_SCATTER: ScatterModel = Object.freeze({
   points: [],
   excluded: 0,
+  differingPeriods: 0,
   minX: 0,
   maxX: 0,
   minY: 0,
@@ -483,7 +538,15 @@ export function comparisonScatterModel(
       excluded += 1;
       continue;
     }
-    points.push({ geoId: String(row.geo_id ?? ""), name: comparisonRowName(row), x, y });
+    points.push({
+      geoId: String(row.geo_id ?? ""),
+      name: comparisonRowName(row),
+      x,
+      y,
+      periodA: String(row.period_a ?? ""),
+      periodB: String(row.period_b ?? ""),
+      periodsDiffer: periodsDiffer(row),
+    });
   }
 
   if (points.length === 0) {
@@ -495,12 +558,90 @@ export function comparisonScatterModel(
   return {
     points,
     excluded,
+    differingPeriods: points.filter((point) => point.periodsDiffer).length,
     minX: Math.min(...xs),
     maxX: Math.max(...xs),
     minY: Math.min(...ys),
     maxY: Math.max(...ys),
   };
 }
+
+/**
+ * What the comparison map must say about the periods it coloured, or `""`.
+ *
+ * The map is the sharper of the two aligned views: it colours one number per
+ * polygon, and that number is an API-derived subtraction or ratio between two
+ * publications that may be years apart. "Coloured by difference" reads as a
+ * difference at a time, and the route deliberately does not align its sides
+ * to one.
+ *
+ * Empty when nothing differs, so this is a fact about the answer rather than
+ * a standing disclaimer, and empty when the map is not drawn at all
+ * (WEB-049).
+ */
+export function mapPeriodMismatchNote(
+  response: ComparisonResponse | null | undefined,
+  field: string,
+): string {
+  const rows = comparisonMapRows(response, field);
+  if (rows.length === 0) {
+    return "";
+  }
+  const items = Array.isArray(response?.items) ? response.items : [];
+  const coloured = rows.filter((row) => row.value !== null).length;
+  const differing = items.filter(
+    (row, index) => rows[index]?.value !== null && periodsDiffer(row),
+  ).length;
+  if (differing === 0) {
+    return "";
+  }
+  return (
+    `${differing} of ${coloured} coloured geographies combine values published ` +
+    "for different periods; each row's two periods are in the table below."
+  );
+}
+
+
+function publishedCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * What this comparison's geography count is an intersection of, or `""`.
+ *
+ * The route joins its two reduced sides on geography identity with an inner
+ * join, so a geography only one side publishes is absent from the answer
+ * entirely. "500 aligned geographies" then reads as the universe when it is
+ * 500 of 3,143. API-087 serves each side's own count; this says it.
+ *
+ * Empty when both sides published exactly what was paired, so this is a fact
+ * about the answer rather than a standing disclaimer, and empty when the API
+ * publishes no counts at all -- an older deployment states no shortfall, and
+ * reading an absent count as zero would report every geography as dropped
+ * (WEB-050).
+ */
+export function describeComparisonCoverage(
+  response: ComparisonResponse | null | undefined,
+): string {
+  const total = publishedCount(response?.total);
+  const countA = publishedCount(response?.geographies_a);
+  const countB = publishedCount(response?.geographies_b);
+  if (total === null || countA === null || countB === null) {
+    return "";
+  }
+  if (countA <= total && countB <= total) {
+    return "";
+  }
+  const codeA = response?.metric_code_a || "measure A";
+  const codeB = response?.metric_code_b || "measure B";
+  return (
+    `${total.toLocaleString()} geographies are paired here. ` +
+    `${codeA} publishes ${countA.toLocaleString()} and ${codeB} publishes ` +
+    `${countB.toLocaleString()} under these filters; a geography only one of ` +
+    "the two publishes is not in this comparison."
+  );
+}
+
 
 /** The derived field a comparison map colours: the first the API named. */
 export function defaultDerivedField(
@@ -538,7 +679,231 @@ export function comparisonMapRows(
       state_name: row.state_name,
       county_name: row.county_name,
       value: usable ? String(value) : null,
-      value_status: usable ? null : "not published on both sides",
+      // Read by the shared choropleth model as the reason this geography
+      // carries no number, and rendered into its legend after "Value not
+      // published:" (WEB-078) -- so the words are the phrase that completes
+      // that sentence rather than a sentence of their own.
+      value_status: usable ? null : uncolouredReason(row, field),
     } as ObservationRow;
   });
+}
+
+/**
+ * Why one geography in the answer carries no derived number.
+ *
+ * A single phrase covered every case and named the wrong one for the case
+ * that actually happens. `/comparison` joins the two sides on geography, so
+ * every row in the answer *is* on both sides -- "not on both sides" is the
+ * reason a geography is missing from the answer, which is what
+ * `geographies_a` / `geographies_b` report, not the reason a row inside it
+ * has no ratio. The route computes no ratio where the denominator is zero,
+ * and a zero is an ordinary published value for a count in a small county,
+ * so that is the reason a reader actually meets (WEB-079).
+ *
+ * The sides' own missing values are kept as a case even though the four
+ * sources the aligned routes accept all serve published numbers only
+ * (API-127): a source that publishes a value state becoming analysis-ready
+ * would make it reachable, and the phrase would otherwise be wrong again.
+ */
+function uncolouredReason(row: ComparisonRow, field: string): string {
+  const published = (side: unknown): boolean =>
+    side !== null && side !== undefined && Number.isFinite(Number(side));
+  if (!published(row.value_a) || !published(row.value_b)) {
+    return "one side published no number";
+  }
+  if (field === "ratio" && Number(row.value_b) === 0) {
+    return "the denominator is zero";
+  }
+  return "not derived for this geography";
+}
+
+// ---------------------------------------------------------------------------
+// Which grains a pair can be compared at (WEB-074)
+// ---------------------------------------------------------------------------
+
+/** One grain the set cannot be read at, and which measures removed it. */
+export interface AbsentGrain {
+  level: string;
+  /** The metric codes that do not publish this grain. */
+  withoutIt: string[];
+}
+
+/** The grains a set of measures can all be read at, and what narrowed it. */
+export interface SharedGrainOffer {
+  /** The grains every named measure publishes, in the vocabulary's order. */
+  levels: string[];
+  /** True when the offered set is narrower than the whole vocabulary. */
+  narrowed: boolean;
+  /** Why the list is narrow, in the publisher's terms. "" when it is not. */
+  note: string;
+  /** A grain that was asked for and the set does not publish. "" otherwise. */
+  unavailable: string;
+  /** Per unoffered grain, the measures that do not publish it. */
+  absent: AbsentGrain[];
+}
+
+/** The grains a comparison offers, and what it could not offer. */
+export interface ComparisonGrainOffer {
+  /** The grains both sides publish, in the published vocabulary's order. */
+  levels: string[];
+  /** True when the offered set is narrower than the whole vocabulary. */
+  narrowed: boolean;
+  /** Why the list is narrow, in the publisher's terms. "" when it is not. */
+  note: string;
+  /** A grain that was asked for and neither side publishes. "" otherwise. */
+  unavailable: string;
+}
+
+function publishedGrains(metric: MetricSummary | null | undefined): string[] {
+  const declared = metricSupportedGeoLevels(metric);
+  // A measure that declares no grains is a measure whose grains are unknown,
+  // which is not the same as one published at none — the explorer's own rule
+  // (WEB-038), so the whole vocabulary stays offered for it.
+  return declared.length > 0 ? declared : [...GEO_GRAIN_ORDER];
+}
+
+function grainWords(levels: readonly string[]): string {
+  return levels.map((level) => GEO_GRAIN_LABELS[level]?.one || level).join(", ");
+}
+
+/**
+ * The grains a set of measures can all be read at, and what narrowed it.
+ *
+ * The offer is the *intersection*: a cross-sectional reading is answered at
+ * one grain, so a grain only some of the measures publish is a grain the set
+ * cannot be read at. A measure declaring no grains does not narrow the offer,
+ * because unknown is not none — the explorer's own rule (WEB-038).
+ *
+ * Written for any number of measures because the comparison workspace asks it
+ * of two and the workbench asks it of two to eight. One implementation rather
+ * than two, so the two screens cannot come to different conclusions about the
+ * same publication.
+ *
+ * `absent` names, per grain the whole vocabulary offers but this set does not,
+ * which measures failed to publish it — criterion 1's "says which publisher
+ * removed each absent grain". Without it a reader sees a shorter list of
+ * grains with no way to tell which of their measures shortened it.
+ */
+export function sharedGrainOffer({
+  metrics,
+  requested,
+}: {
+  metrics: readonly (MetricSummary | null | undefined)[];
+  requested?: string | null;
+}): SharedGrainOffer {
+  const named = metrics.filter(
+    (metric): metric is MetricSummary => Boolean(metric),
+  );
+  const declared = named.map((metric) => ({
+    metric,
+    grains: publishedGrains(metric),
+  }));
+
+  const levels = GEO_GRAIN_ORDER.filter((level) =>
+    declared.every((entry) => entry.grains.includes(level)),
+  );
+  const narrowed = levels.length < GEO_GRAIN_ORDER.length;
+
+  const absent = GEO_GRAIN_ORDER.filter(
+    (level) => !levels.includes(level),
+  ).map((level) => ({
+    level,
+    // Only the measures that actually fail to publish it. A measure declaring
+    // nothing is not among them: it did not remove the grain, and naming it
+    // would report an absence the publication does not claim.
+    withoutIt: declared
+      .filter((entry) => !entry.grains.includes(level))
+      .map((entry) => String(entry.metric.metric_code)),
+  }));
+
+  let note = "";
+  if (named.length > 0 && narrowed) {
+    note =
+      levels.length === 0
+        ? "These measures publish no geography grain in common, so there is " +
+          "no level to read them at together. A cross-sectional answer is " +
+          "read at one grain; this is the publishers' declaration, not a " +
+          "limit of this screen."
+        : `These measures are all published at ${grainWords(levels)}, so the ` +
+          "other view levels are not offered. A cross-sectional answer is " +
+          "read at one grain, so a grain only some of them publish cannot " +
+          "be read here.";
+  }
+
+  const wanted = normalizeGeoLevel(requested);
+  const unavailable =
+    wanted && !levels.includes(wanted)
+      ? `This link asked to read at ${
+          GEO_GRAIN_LABELS[wanted]?.one || wanted
+        }, which these measures do not all publish` +
+        (levels.length > 0 ? `; showing ${grainWords(levels.slice(0, 1))}.` : ".")
+      : "";
+
+  return { levels: [...levels], narrowed, note, unavailable, absent };
+}
+
+/**
+ * The grains a pair of measures can be compared at.
+ *
+ * The workspace hard-coded `NATIONAL`, `STATE`, `COUNTY` and ignored what
+ * either side publishes, while `parseComparisonState` accepts all five words
+ * and the workspace assigned the parsed value straight into the selection. So
+ * a `?geo_level=PLACE` link — reachable data: the analysis routes serve
+ * Census PEP, which publishes places — put a value in the select that no
+ * option carried, and the control showed one grain while the request sent
+ * another (WEB-074).
+ *
+ * The pair's own wording is kept ("these two measures", "compare") because it
+ * is what the comparison workspace says, and a screen about a pair should not
+ * start talking about a set. The decision underneath is `sharedGrainOffer`'s.
+ */
+export function comparisonGrainOffer({
+  metricA,
+  metricB,
+  requested,
+}: {
+  metricA: MetricSummary | null | undefined;
+  metricB: MetricSummary | null | undefined;
+  requested?: string | null;
+}): ComparisonGrainOffer {
+  const shared = sharedGrainOffer({ metrics: [metricA, metricB], requested });
+  const named = Boolean(metricA || metricB);
+
+  let note = "";
+  if (named && shared.narrowed) {
+    note =
+      shared.levels.length === 0
+        ? "These two measures publish no geography grain in common, so there " +
+          "is no level to compare them at. A comparison is answered at one " +
+          "grain; this is the publishers' declaration, not a limit of this " +
+          "screen."
+        : `These measures are both published at ${grainWords(shared.levels)}, so the ` +
+          "other view levels are not offered for the pair. A comparison is " +
+          "answered at one grain, so a grain only one side publishes cannot " +
+          "be read here.";
+  }
+
+  const wanted = normalizeGeoLevel(requested);
+  const unavailable =
+    wanted && !shared.levels.includes(wanted)
+      ? `This link asked to compare at ${
+          GEO_GRAIN_LABELS[wanted]?.one || wanted
+        }, which the pair does not both publish` +
+        (shared.levels.length > 0
+          ? `; showing ${grainWords(shared.levels.slice(0, 1))}.`
+          : ".")
+      : "";
+
+  return { levels: [...shared.levels], narrowed: shared.narrowed, note, unavailable };
+}
+
+/** The grain to show when the asked-for one is not offered. */
+export function preferredComparisonGrain(
+  levels: readonly string[],
+  fallback = "COUNTY",
+): string {
+  if (levels.length === 0) {
+    return "";
+  }
+  return levels.includes(fallback) ? fallback : (levels[0] ?? "");
 }

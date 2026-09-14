@@ -46,10 +46,13 @@ CREATE TABLE IF NOT EXISTS gold_census.dim_acs_variable (
 CREATE OR REPLACE VIEW gold_census.fact_acs_observation AS
 SELECT
     s.geo_id,
+    -- The vocabulary through `gold_glossary.geo_grain` (migration 018, moved
+    -- ahead of this phase by 021); the identity-shape inference below is a
+    -- different rule and stays. The final ELSE keeps the downstream
+    -- `geo_level TEXT NOT NULL` satisfiable (DB-037).
     CASE
-        WHEN LOWER(s.geo_level) = 'us'     THEN 'NATIONAL'
-        WHEN LOWER(s.geo_level) = 'state'  THEN 'STATE'
-        WHEN LOWER(s.geo_level) = 'county' THEN 'COUNTY'
+        WHEN COALESCE(TRIM(s.geo_level), '') <> ''
+            THEN gold_glossary.geo_grain(s.geo_level)
         WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'
         WHEN s.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
         WHEN s.geo_id LIKE 'state:%'       THEN 'STATE'
@@ -68,7 +71,13 @@ SELECT
     s.margin_of_error_pct,
     NULL::TEXT AS estimate_annotation,
     NULL::TEXT AS moe_annotation,
-    CURRENT_DATE AS as_of_date,
+    -- ACS's release identity is `vintage_year` (the registry's release
+    -- expression), and `as_of` is served from this column -- so the same rule
+    -- applies to it as to BLS and FRED: it is the row's own ingestion
+    -- evidence, never the refresh's clock (DB-039). `CURRENT_DATE` here moved
+    -- an ACS row's `as_of` every time a chunk was re-served, on a field the
+    -- consumer guide says traces a row back to its publication.
+    s.ingested_at::DATE AS as_of_date,
     s.ingested_at AS updated_at
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av
@@ -97,6 +106,11 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     county_fips                TEXT,
     state_name                 TEXT,
     county_name                TEXT,
+    -- Carried so the observation contract views can call
+    -- gold_glossary.geo_name with the same arguments the geography
+    -- catalog does (DB-038). Without it a place answered under its
+    -- state's name here and its own name on /catalog/geographies.
+    place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
     -- ACS-specific columns (no NULLs for these)
@@ -253,6 +267,7 @@ BEGIN
         county_fips,
         state_name,
         county_name,
+        place_name,
         geo_latitude,
         geo_longitude,
         metric_code,
@@ -288,6 +303,7 @@ BEGIN
         gl.county_fips,
         gl.state_name,
         gl.county_name,
+        gl.place_name,
         gl.latitude,
         gl.longitude,
         -- The catalog is the published discovery surface, and the glossary

@@ -1,4 +1,8 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
+import {
+  servedParameters,
+  servedParametersWithout,
+} from "../support/servedContract.js";
 
 // Covers: WEB-021 — the community conditions profile in the browser. The
 // product is configuration over published catalog identities: each filled
@@ -7,12 +11,34 @@ import { expect, test } from "../../../apps/web/node_modules/@playwright/test/in
 // instead of disappearing, a measure the place did not publish is never a
 // zero, and the link reproduces the product and place.
 
+// Read from the reviewed snapshot rather than copied (WEB-043). The
+// profile depends on `newest_per_geography` being among them: a card asks
+// the resource for the place's newest published value rather than
+// reducing a page here.
 const neutralRoutes = [
+  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
+  {
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
+  },
+];
+
+// The same routes as a deployment serving an older contract declares them:
+// no `newest_per_geography`. ADR-0002 lands an additive parameter in v1, so
+// a client meets deployments on both sides of one, and this is the shape
+// where a card must page and reduce -- the case the bounded message exists
+// for (WEB-070).
+const routesWithoutReduction = [
   {
     path: "/api/v1/observations",
-    parameters: ["geo_id", "geo_level", "limit", "metric_code", "release", "scope", "state_fips"],
+    parameters: servedParametersWithout("/api/v1/observations", [
+      "newest_per_geography",
+    ]),
   },
-  { path: "/api/v1/observations/releases", parameters: ["limit", "metric_code", "offset"] },
+  {
+    path: "/api/v1/observations/releases",
+    parameters: servedParameters("/api/v1/observations/releases"),
+  },
 ];
 
 const capabilities = {
@@ -134,9 +160,22 @@ const observationsByMetric = {
   "BLS:LAU:UNEMP_RATE": [],
 };
 
-async function installRoutes(page, { observationRequests = [] } = {}) {
+async function installRoutes(
+  page,
+  { observationRequests = [], truncate = false } = {},
+) {
   await page.route("**/api/v1/catalog/capabilities", (route) =>
-    route.fulfill({ json: capabilities }),
+    route.fulfill({
+      json: truncate
+        ? {
+            ...capabilities,
+            items: capabilities.items.map((item) => ({
+              ...item,
+              observation_routes: routesWithoutReduction,
+            })),
+          }
+        : capabilities,
+    }),
   );
   await page.route("**/api/v1/catalog/metrics/*", (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -173,7 +212,11 @@ async function installRoutes(page, { observationRequests = [] } = {}) {
         metric_code: params.get("metric_code"),
         source_code: "CENSUS_ACS",
         scope: "latest",
-        total: items.length,
+        // A page the bound cut short: the publication holds far more rows
+        // than this answer carries, which is what makes the newest row
+        // this client can identify possibly not the newest published
+        // (WEB-070).
+        total: truncate && items.length ? 19000 : items.length,
         limit: 50,
         offset: 0,
         items,
@@ -181,6 +224,41 @@ async function installRoutes(page, { observationRequests = [] } = {}) {
     });
   });
 }
+
+test("a card whose read was bounded says so beside the number", async ({ page }) => {
+  // Covers: WEB-070 — the answer's message says "read N of M published
+  // rows; the page bound cut the answer short, so this may not be the
+  // newest". The card rendered it only `when there is no row`, which is the
+  // one case it is not for: with a row from a truncated page the number
+  // showed with no qualifier at all, while `profileExport` wrote the same
+  // sentence into the file's `availability` column. The screen said less
+  // than the file it produced.
+  await installRoutes(page, { truncate: true });
+  await page.goto("/profiles");
+
+  // A measure is only asked for once a place is chosen.
+  await page.getByTestId("profile-place").selectOption(GEO_ID);
+
+  const value = page.getByTestId("measure-value-total-population");
+  await expect(value).toContainText("561,504");
+  // The qualifier is beside the value, not in place of it.
+  const answer = page.getByTestId("measure-answer-total-population");
+  await expect(answer).toContainText("the page bound cut the answer short");
+  await expect(answer).toContainText("read 1 of 19000 published rows");
+
+  // And the file says exactly what the card says.
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("profile-export").click(),
+  ]);
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  const csv = Buffer.concat(chunks).toString("utf8");
+  expect(csv).toContain("the page bound cut the answer short");
+});
 
 test("the community profile reads a place through published identities", async ({ page }) => {
   const observationRequests = [];
@@ -247,11 +325,28 @@ test("the community profile reads a place through published identities", async (
   expect(observationRequests.every((request) => request.geo_id === GEO_ID)).toBe(true);
   expect(observationRequests.every((request) => request.scope === "latest")).toBe(true);
 
-  // Each measure keeps a direct path into the explorer.
-  await expect(page.getByTestId("measure-explore-total-population")).toHaveAttribute(
+  // Covers: WEB-036 — a card wants the place's newest published value, and
+  // asks the resource for exactly that. It used to read a 50-row page of the
+  // publication and take the last row, which is the newest one only when the
+  // whole publication fitted in the page; Census PEP's latest publication is
+  // every estimated year of the current vintage, so it did not.
+  expect(observationRequests.length).toBeGreaterThan(0);
+  expect(
+    observationRequests.every((request) => request.newest_per_geography === "true"),
+  ).toBe(true);
+  expect(observationRequests.every((request) => request.limit === "1")).toBe(true);
+
+  // Each measure keeps a direct path into the explorer, and that path names
+  // the source publishing the measure as well as the measure itself
+  // (WEB-072): the metric alone lands on whichever catalog `/explore`
+  // mounts, which silently substitutes when that catalog does not publish
+  // the code.
+  const explore = page.getByTestId("measure-explore-total-population");
+  await expect(explore).toHaveAttribute(
     "href",
     /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
   );
+  await expect(explore).toHaveAttribute("href", /source=CENSUS_ACS/);
 
   // The link reproduces the product and the place.
   await expect(page).toHaveURL(/place=state%3A55%7Ccounty%3A025/);
@@ -281,4 +376,100 @@ test("the products are configuration: switching rebuilds the same screen", async
   await expect(product).toHaveAttribute("data-template", "population-growth");
   await expect(product).toHaveAttribute("data-geo-id", GEO_ID);
   await expect(page.getByTestId("measure-value-population-estimate")).toContainText("568,203");
+});
+
+// Covers: WEB-060 — the profile shows every field that qualifies a value.
+//
+// The card ended with `Margin of error: {marginOfErrorText(row)}` and nothing
+// else. CDC publishes a confidence interval, not a margin, so a filled CDC
+// slot read "Margin of error: Not published" -- true, and reading as though
+// the value carried no published uncertainty at all. The slot is in the
+// shipped template; the test above asserts the unfilled path, this one the
+// filled one.
+test("a filled CDC slot shows the interval CDC published", async ({ page }) => {
+  const cdcMetric = {
+    metric_code: "CDC:cdi:ALC1_1:crude",
+    metric_display_name: "Binge drinking among adults",
+    source_code: "CDC",
+    units: "percent",
+    freshness_state: "fresh",
+    valid_geo_grains: ["COUNTY"],
+  };
+  await installRoutes(page);
+  // Published after the shared stubs, so these win for this test only; a
+  // source the capability map does not declare cannot be asked at all, so
+  // CDC has to be declared as well as published.
+  await page.route("**/api/v1/catalog/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        total: capabilities.items.length + 1,
+        items: [
+          ...capabilities.items,
+          {
+            source_code: "CDC",
+            display_name: "Centers for Disease Control and Prevention",
+            route_segment: "cdc",
+            served_by_neutral_routes: true,
+            observation_filters: ["geo_id", "geo_level"],
+            observation_routes: neutralRoutes,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/catalog/metrics/*", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const code = decodeURIComponent(path.split("/catalog/metrics/")[1] || "");
+    return code === cdcMetric.metric_code
+      ? route.fulfill({ json: cdcMetric })
+      : route.fallback();
+  });
+  await page.route("**/api/v1/observations?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get("metric_code") !== cdcMetric.metric_code) {
+      return route.fallback();
+    }
+    return route.fulfill({
+      json: {
+        metric_code: cdcMetric.metric_code,
+        source_code: "CDC",
+        scope: "latest",
+        total: 1,
+        limit: 50,
+        offset: 0,
+        items: [
+          {
+            metric_code: cdcMetric.metric_code,
+            source_code: "CDC",
+            geo_id: GEO_ID,
+            geo_level: "COUNTY",
+            value: "18.2",
+            value_status: "valid",
+            unit: "percent",
+            period_start: "2022-01-01",
+            period_end: "2022-12-31",
+            // The neutral envelope, where these fields actually arrive.
+            uncertainty: { confidence_lower: "16.9", confidence_upper: "19.5" },
+          },
+        ],
+      },
+    });
+  });
+
+  await page.goto("/profiles?place=state%3A55%7Ccounty%3A025");
+
+  await expect(page.getByTestId("measure-cdc-indicator")).toHaveAttribute(
+    "data-available",
+    "true",
+  );
+  await expect(page.getByTestId("measure-value-cdc-indicator")).toContainText("18.2");
+  // The interval is shown, not suppressed behind an absent margin.
+  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
+    "confidence lower 16.9",
+  );
+  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
+    "confidence upper 19.5",
+  );
+  // A measure that published no interval grows no such line.
+  await expect(page.getByTestId("measure-uncertainty-population-estimate")).toHaveCount(0);
 });

@@ -21,17 +21,19 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import observation_dispatch
+from apps.api.registry import normalize_geo_level
 from apps.api.schemas import DistributionBin, DistributionBinsResponse
 from apps.api.services.comparison_service import (
     UnknownAnalysisMetric,
     ranked_latest_cte,
 )
+from apps.api.services.compatibility import uncertainty_caveat
 from apps.api.services.contracts import require_relation
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     _filter_conditions,
     _metric_conditions,
+    dispatch_for_metric,
     resolve_metric,
 )
 
@@ -48,12 +50,15 @@ def list_distribution_bins(
         raise UnknownAnalysisMetric("metric_code")
     source_code = str(metric.get("source_code") or "")
 
-    dispatch = observation_dispatch(source_code)
-    if not dispatch.analysis_ready:
-        restriction = dispatch.analysis_restriction or (
-            f"source '{source_code}' is not served by the aligned analysis routes"
-        )
-        raise NeutralQueryError(restriction)
+    # Through the shared helper, not the registry: a metric whose source has
+    # no reviewed entry is a 422 that names the source and points at
+    # /catalog/capabilities, exactly as /observations answers it. Reaching
+    # into the registry here raised a KeyError this route did not catch
+    # (API-078).
+    dispatch = dispatch_for_metric(metric)
+    refusal = dispatch.analysis_refusal()
+    if refusal is not None:
+        raise NeutralQueryError(refusal)
 
     conditions, params = _metric_conditions(dispatch, metric_code, metric)
     filter_conditions, filter_params = _filter_conditions(
@@ -63,25 +68,89 @@ def list_distribution_bins(
     params.update(filter_params)
     require_relation(db, dispatch.latest_relation)
 
-    base_sql = f"""
-    WITH latest AS ({ranked_latest_cte(dispatch, conditions)})
-    """
-    stats_query = text(
-        base_sql
-        + """
+    # One statement, one snapshot, one evaluation of the reduction.
+    #
+    # The range and the counts used to be two executions of this CTE. Each
+    # took its own snapshot, so a serving refresh committing between them --
+    # which is what the relation is rebuilt by, one calendar year at a time
+    # and one commit per year (DB-041) -- left `min_value` describing rows the
+    # counts no longer measured. A value
+    # published below it buckets to 0, a bin `items` never asks for, so the
+    # geography disappeared from the bins while `total` still counted it;
+    # one published above it was clamped into a last bin whose upper bound
+    # the response reported as a maximum it was not. A CTE referenced more
+    # than once is evaluated once, which makes both impossible rather than
+    # handled (API-084).
+    #
+    # `width_bucket` rejects a range whose bounds are equal, so a measure
+    # with one distinct value bins against an upper bound one unit above it:
+    # every value is then the lower bound and falls in bin 1, and the
+    # degenerate answer below replaces the bins anyway.
+    query = text(
+        f"""
+    WITH latest AS ({ranked_latest_cte(dispatch, conditions)}),
+    published AS (
+        SELECT value, period_start FROM latest WHERE value IS NOT NULL
+    ),
+    stats AS (
         SELECT
             COUNT(*)::INT AS total,
             MIN(value)::DOUBLE PRECISION AS min_value,
-            MAX(value)::DOUBLE PRECISION AS max_value
-        FROM latest
-        WHERE value IS NOT NULL
-        """
+            MAX(value)::DOUBLE PRECISION AS max_value,
+            -- Measured here, over the same reduced rows the counts are taken
+            -- from, for the reason the range is: a period read in a second
+            -- statement could describe a different set than the bins it
+            -- labels.
+            COUNT(DISTINCT period_start)::INT AS period_count,
+            MIN(period_start)::TEXT AS binned_period
+        FROM published
+    ),
+    binned AS (
+        SELECT
+            LEAST(
+                width_bucket(
+                    published.value,
+                    stats.min_value,
+                    CASE
+                        WHEN stats.max_value = stats.min_value
+                        THEN stats.min_value + 1
+                        ELSE stats.max_value
+                    END,
+                    :bin_count
+                ),
+                :bin_count
+            )::INT AS bin_index,
+            COUNT(*)::INT AS count
+        FROM published CROSS JOIN stats
+        GROUP BY 1
+    )
+    SELECT stats.total, stats.min_value, stats.max_value,
+           stats.period_count, stats.binned_period,
+           binned.bin_index, binned.count
+    FROM stats LEFT JOIN binned ON TRUE
+    ORDER BY binned.bin_index
+    """
     )
 
-    stats_row = db.execute(stats_query, params).mappings().one()
-    total = int(stats_row["total"] or 0)
-    min_value = stats_row["min_value"]
-    max_value = stats_row["max_value"]
+    rows = db.execute(query, {**params, "bin_count": bin_count}).mappings().all()
+    # `stats` always produces exactly one row -- an aggregate over no rows is
+    # still a row -- so the LEFT JOIN answers the range even when nothing was
+    # published, and `bin_index` is null on that row.
+    first = rows[0]
+    total = int(first["total"] or 0)
+    min_value = first["min_value"]
+    max_value = first["max_value"]
+    # One period when every binned row came from the same one; none when they
+    # differ, because naming the earliest or the latest would label the whole
+    # histogram with a period most of it is not from (API-097).
+    period_count = int(first["period_count"] or 0)
+    period = first["binned_period"] if period_count == 1 else None
+    periods_differ = period_count > 1
+    counts = {
+        int(row["bin_index"]): int(row["count"])
+        for row in rows
+        if row["bin_index"] is not None
+    }
 
     def _response(
         total: int,
@@ -93,7 +162,20 @@ def list_distribution_bins(
             metric_code=metric_code,
             source_code=source_code,
             units=metric.get("units"),
-            geo_level=geo_level,
+            # The grain these bins describe, in the vocabulary -- not the word
+            # the caller happened to type. This field is what a saved analysis
+            # and an evidence packet record as what the analysis measured, so
+            # echoing `us` over a set of `NATIONAL` bins mislabels the record
+            # as well as the response (API-094).
+            geo_level=normalize_geo_level(geo_level) if geo_level else None,
+            period=period,
+            periods_differ=periods_differ,
+            # The same note the comparison publishes, from the same helper:
+            # two analyses of one source's figures must not describe it
+            # differently (API-098).
+            caveats=[
+                caveat for caveat in (uncertainty_caveat(metric),) if caveat is not None
+            ],
             total=total,
             bin_count=bin_count,
             min_value=min_value,
@@ -122,48 +204,25 @@ def list_distribution_bins(
             ],
         )
 
-    bins_query = text(
-        base_sql
-        + """
-        SELECT
-            LEAST(
-                width_bucket(value, :min_value, :max_value, :bin_count),
-                :bin_count
-            )::INT AS bin_index,
-            COUNT(*)::INT AS count
-        FROM latest
-        WHERE value IS NOT NULL
-        GROUP BY bin_index
-        ORDER BY bin_index
-        """
-    )
-    bins_rows = (
-        db.execute(
-            bins_query,
-            {
-                **params,
-                "min_value": min_value,
-                "max_value": max_value,
-                "bin_count": bin_count,
-            },
-        )
-        .mappings()
-        .all()
-    )
-
+    # Every bin the caller asked for, including the ones nothing falls into
+    # (API-079). ``GROUP BY`` returns no row for an empty bin, and an absent
+    # bin and a bin holding zero geographies are different statements: the
+    # second is a fact this query measured, and reporting it as the first
+    # makes every consumer rebuild the gaps from min/max.
     width = (max_value - min_value) / float(bin_count)
-    items: list[DistributionBin] = []
-    for row in bins_rows:
-        bin_index = int(row["bin_index"])
-        lower = min_value + (bin_index - 1) * width
-        upper = max_value if bin_index == bin_count else min_value + bin_index * width
-        items.append(
-            DistributionBin(
-                bin_index=bin_index,
-                lower_bound=lower,
-                upper_bound=upper,
-                count=int(row["count"]),
-            )
+    items = [
+        DistributionBin(
+            bin_index=bin_index,
+            lower_bound=min_value + (bin_index - 1) * width,
+            # The last bin closes on the observed maximum rather than on
+            # min + n*width, so floating-point width never leaves the largest
+            # value outside the range it was binned into.
+            upper_bound=(
+                max_value if bin_index == bin_count else min_value + bin_index * width
+            ),
+            count=counts.get(bin_index, 0),
         )
+        for bin_index in range(1, bin_count + 1)
+    ]
 
     return _response(total, min_value, max_value, items)

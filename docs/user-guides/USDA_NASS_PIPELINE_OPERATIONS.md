@@ -101,6 +101,27 @@ coerced into a county. `canonical_geography_absent` rows mean the shared
 geography reference lacks that county for the observation's year: fix the
 geography contract and replay, never insert a guessed row.
 
+**Where an unresolved geography goes.** `gold_nass.crop_observation` serves
+only rows whose geography resolved, so an agricultural district, watershed,
+ZIP Code or congressional district never reaches `/observations` and never
+appears in a product's `valid_geo_grains`. The rows stay in
+`silver_nass.fact_crop_observation` with `geography_status = 'unsupported'`
+and `geo_id IS NULL`:
+
+```sql
+SELECT product_id, release_watermark, agg_level_desc, location_desc, count(*)
+FROM silver_nass.fact_crop_observation
+WHERE geography_status = 'unsupported'
+GROUP BY product_id, release_watermark, agg_level_desc, location_desc
+ORDER BY count(*) DESC;
+```
+
+`unmapped` rows **are** served: their level is one the adapter models, so the
+fix is the geography contract rather than the filter. `published_row_count` on
+the publish task counts what is served, so a release carrying unsupported
+levels publishes fewer rows than silver holds — the difference is what the
+ledger above explains.
+
 ## Reading the published data
 
 Suppression is never zero. Every observation keeps the exact provider text in

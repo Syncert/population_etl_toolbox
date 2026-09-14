@@ -20,10 +20,25 @@ that all of them mount the same staged revision.
 
 Pause `silver_ref`, `acs_ingest`, `census_pep_ingest`, `bls_ingest`,
 `fred_ingest`, `cdc_ingest`, `fbi_ucr_ingest`, and
-`usda_nass_crop_ingest`. Confirm that
-`public_data` is the disposable analytics database and not the Airflow metadata
-database. Preserve environment configuration and API keys; the reset does not
-recreate Airflow connections, variables, pools, or secrets.
+`usda_nass_crop_ingest`. Preserve environment configuration and API keys; the
+reset does not recreate Airflow connections, variables, pools, or secrets.
+
+**The database this section drops is the one your deployment names, not a
+literal.** `public_data` is the id of the Airflow *connection* every DAG
+resolves; the database it points at is that connection's `--conn-schema`,
+which each Compose stack sets alongside `PUBLIC_DATA_DB_NAME` from one value
+(`population_etl` on the shipped stacks, your own name on an external one).
+Read it once and substitute it for `public_data` in the commands below:
+
+```bash
+airflow connections get public_data -o json   # the "schema" field
+```
+
+Confirm it is the disposable analytics database and not the Airflow metadata
+database. A deployment where those are the same database has a defect that
+predates this reset: dropping the warehouse would drop Airflow with it. The
+Compose stacks are guarded against it (DEPLOY-007) and the Airflow-only
+stack's Postgres refuses to initialize if the two names agree.
 
 From a PostgreSQL administrator session connected to the maintenance database
 `postgres`, run:
@@ -132,7 +147,11 @@ Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 reference succeeds. A USDA NASS run whose logical date falls on the first of
 the month sweeps the whole registered year range, so a bootstrap should be
 triggered on that date, or with that logical date, to reproduce the reviewed
-history in one run. Check geography resolution rather than silently
+history in one run. The schedule reaches that date whatever day of the week
+it is: `0 10 1 * 1-5` is weekdays *and* the first, because cron takes the
+union when day-of-month and day-of-week are both restricted. It used to be
+weekdays only, so a first that fell on a weekend produced no run and, with
+`catchup=False`, was never backfilled (DAG-018). Check geography resolution rather than silently
 accepting misses:
 
 ```sql

@@ -251,3 +251,123 @@ def test_every_publisher_reads_its_grains_from_rows() -> None:
 
     assert not declared, "\n".join(declared)
     assert len(checked) >= 6, f"only {checked} were checked; a publisher went missing"
+
+
+# --------------------------------------------------------------------------
+# The lineage a publisher declares is the one the registry reads rows by.
+# --------------------------------------------------------------------------
+
+_LINEAGE_OBJECT = re.compile(
+    r"jsonb_build_object\((?P<body>.*?)\)\s*AS\s+physical_lineage",
+    re.IGNORECASE | re.DOTALL,
+)
+_LINEAGE_KEY = re.compile(r"'(?P<name>[A-Za-z_][A-Za-z0-9_]*)'\s*,")
+_LINEAGE_LITERAL = re.compile(
+    r"'(?P<name>schema|relation)'\s*,\s*'(?P<value>[^']*)'", re.IGNORECASE
+)
+
+
+def _declared_lineage(body: str) -> tuple[dict[str, str], set[str]]:
+    """The ``schema``/``relation`` literals and every key name a body declares."""
+    match = _LINEAGE_OBJECT.search(body)
+    if match is None:
+        return {}, set()
+    arguments = match.group("body")
+    literals = {
+        entry.group("name").lower(): entry.group("value")
+        for entry in _LINEAGE_LITERAL.finditer(arguments)
+    }
+    # `jsonb_build_object` alternates key, value; the keys are the quoted
+    # names that are followed by a comma at the top level of the call.
+    names = {entry.group("name") for entry in _LINEAGE_KEY.finditer(arguments)}
+    return literals, names - {"schema", "relation"} - set(literals.values())
+
+
+def _dispatch_by_schema() -> dict[str, object]:
+    """Each publishing schema's reviewed dispatch entry, where one exists."""
+    published = _publisher_source_codes()
+    by_code = {entry.source_code: entry for entry in OBSERVATION_DISPATCH.values()}
+    return {
+        schema: by_code[source_code]
+        for schema, source_code in published.items()
+        if source_code in by_code
+    }
+
+
+def test_every_publisher_declares_the_lineage_its_dispatch_entry_reads() -> None:
+    """Covers: ARC-007 — the relation a publisher names is the one the API reads.
+
+    A metric's serving rows are found through ``physical_lineage``. Before
+    reading any, the neutral resource requires the lineage's declared
+    ``schema``/``relation`` to equal the registry's, "so a publication/registry
+    disagreement fails loudly instead of reading the wrong rows" -- and loudly
+    means a sanitized 503 on every request for that source. The API is right
+    to refuse; what was missing is anything that notices before a deployment
+    does.
+
+    ARC-005 attributes composed ``metric_code`` prefixes to their publishers,
+    which is identity's front half. This is the half that finds the rows.
+    """
+    disagreements: list[str] = []
+    bodies = _publisher_bodies()
+    for schema, dispatch in sorted(_dispatch_by_schema().items()):
+        path, body = bodies[schema]
+        literals, _ = _declared_lineage(body)
+        published = (literals.get("schema"), literals.get("relation"))
+        declared = (dispatch.lineage_schema, dispatch.lineage_relation)
+        if published != declared:
+            disagreements.append(
+                f"{path.name}: {schema}.metric_publisher publishes lineage "
+                f"{published[0]}.{published[1]} but the dispatch entry for "
+                f"{dispatch.source_code} declares {declared[0]}.{declared[1]}"
+            )
+    assert not disagreements, "\n".join(disagreements)
+
+
+def test_every_publisher_declares_the_identity_its_dispatch_entry_binds() -> None:
+    """Covers: ARC-007 — the keys the API binds are the keys the publisher writes.
+
+    An ``identity_columns`` entry binds ``lineage.get(field)`` for each
+    declared column, and a lineage that publishes no such key is refused with
+    "publishes no '<field>', so its serving rows cannot be identified". A
+    lineage-key entry needs ``key``. Source-agnostic: a source added later is
+    checked without an edit here.
+    """
+    missing: list[str] = []
+    bodies = _publisher_bodies()
+    for schema, dispatch in sorted(_dispatch_by_schema().items()):
+        path, body = bodies[schema]
+        _, names = _declared_lineage(body)
+        required = (
+            set(dispatch.identity_columns)
+            if dispatch.identity_columns
+            else {"key"}
+            if dispatch.lineage_key_column
+            else set()
+        )
+        absent = sorted(required - names)
+        if absent:
+            missing.append(
+                f"{path.name}: {schema}.metric_publisher publishes lineage keys "
+                f"{sorted(names)}, which do not include {absent} that the "
+                f"dispatch entry for {dispatch.source_code} binds"
+            )
+    assert not missing, "\n".join(missing)
+
+
+def test_a_schema_without_a_dispatch_entry_is_not_judged() -> None:
+    """Covers: ARC-007 — the registry lists what the API serves, not what exists.
+
+    A publishing schema the API has not declared a dispatch entry for is
+    outside these checks rather than a failure: the catalog can carry a source
+    the observation resource has not yet been taught to reach, and
+    ``get_metric_capability`` says exactly that about it.
+    """
+    judged = set(_dispatch_by_schema())
+    published = set(_publisher_source_codes())
+    assert judged <= published
+    # And the checks above are not vacuous: every dispatch entry whose source
+    # publishes through a `metric_publisher` view is judged.
+    served = {entry.source_code for entry in OBSERVATION_DISPATCH.values()}
+    publishing = {code for code in _publisher_source_codes().values() if code in served}
+    assert len(judged) == len(publishing) >= 4, (judged, publishing)

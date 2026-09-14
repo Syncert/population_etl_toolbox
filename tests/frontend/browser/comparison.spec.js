@@ -1,4 +1,4 @@
-import { expect, test } from "../../../apps/web/node_modules/@playwright/test/index.mjs";
+import { expect, test } from "../support/servedRequests.js";
 
 // Covers: WEB-019 and WEB-020 — the comparison workspace in the browser. The declared
 // compatibility verdict is presented before any comparison data is
@@ -46,7 +46,7 @@ const sourceRoutes = (segment) => [
 ];
 
 const capabilities = {
-  total: 3,
+  total: 4,
   items: [
     {
       source_code: "CENSUS_ACS",
@@ -73,26 +73,71 @@ const capabilities = {
       observation_filters: ["geo_id", "stratum_id"],
       observation_routes: neutralRoutes,
     },
+    {
+      // Published at the agency grain, and declined by the analysis routes.
+      // Both facts matter: which grains a pair offers is what its measures
+      // publish, and is decided separately from whether the pair is
+      // comparable (WEB-074).
+      source_code: "FBI_UCR",
+      display_name: "FBI Uniform Crime Reporting",
+      route_segment: null,
+      served_by_neutral_routes: true,
+      observation_filters: ["geo_id", "subject_type"],
+      observation_routes: neutralRoutes,
+    },
   ],
 };
 
 const METRIC_A = "CENSUS_ACS:acs5:B01003_001";
 const METRIC_B = "CENSUS_PEP:pep_cty_alldata:POPESTIMATE";
+const METRIC_B2 = "CENSUS_PEP:pep_cty_alldata:BIRTHS";
 const METRIC_CDC = "CDC:cdc_places_county:OBESITY";
+const METRIC_FBI = "FBI_UCR:summarized:VIOLENT_CRIME";
 
+// `/catalog/metrics` publishes `valid_geo_grains`, and the grain control is
+// built from it: a fixture without them models a weaker contract than the one
+// that ships, and the client then goes untested for the narrowing (WEB-043,
+// WEB-074). Census PEP publishes places where Census ACS does not, which is
+// why `PLACE` is reachable data on the analysis routes and why a pair of one
+// each cannot be read there.
 const metricsBySource = {
   CENSUS_ACS: [
-    { metric_code: METRIC_A, metric_display_name: "Total population", source_code: "CENSUS_ACS" },
+    {
+      metric_code: METRIC_A,
+      metric_display_name: "Total population",
+      source_code: "CENSUS_ACS",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY"],
+    },
   ],
   CENSUS_PEP: [
     {
       metric_code: METRIC_B,
       metric_display_name: "Resident population estimate",
       source_code: "CENSUS_PEP",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
+    },
+    {
+      metric_code: METRIC_B2,
+      metric_display_name: "Births",
+      source_code: "CENSUS_PEP",
+      valid_geo_grains: ["NATIONAL", "STATE", "COUNTY", "PLACE"],
     },
   ],
   CDC: [
-    { metric_code: METRIC_CDC, metric_display_name: "Obesity prevalence", source_code: "CDC" },
+    {
+      metric_code: METRIC_CDC,
+      metric_display_name: "Obesity prevalence",
+      source_code: "CDC",
+      valid_geo_grains: ["COUNTY"],
+    },
+  ],
+  FBI_UCR: [
+    {
+      metric_code: METRIC_FBI,
+      metric_display_name: "Violent crime, actual count",
+      source_code: "FBI_UCR",
+      valid_geo_grains: ["AGENCY"],
+    },
   ],
 };
 
@@ -185,7 +230,10 @@ const comparisonPayload = {
   ],
 };
 
-async function installRoutes(page, { preflightRequests = [], comparisonRequests = [] } = {}) {
+async function installRoutes(
+  page,
+  { preflightRequests = [], comparisonRequests = [], truncate = false, payload = null } = {},
+) {
   await page.route("**/api/v1/catalog/capabilities", (route) =>
     route.fulfill({ json: capabilities }),
   );
@@ -214,8 +262,9 @@ async function installRoutes(page, { preflightRequests = [], comparisonRequests 
   await page.route("**/api/v1/comparison/preflight?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     preflightRequests.push(Object.fromEntries(params));
+    const declined = new Set([METRIC_CDC, METRIC_FBI]);
     const verdict =
-      params.get("metric_code_a") === METRIC_CDC || params.get("metric_code_b") === METRIC_CDC
+      declined.has(params.get("metric_code_a")) || declined.has(params.get("metric_code_b"))
         ? blockedVerdict
         : comparableVerdict;
     return route.fulfill({ json: verdict });
@@ -223,7 +272,20 @@ async function installRoutes(page, { preflightRequests = [], comparisonRequests 
   await page.route("**/api/v1/comparison?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
     comparisonRequests.push(Object.fromEntries(params));
-    return route.fulfill({ json: comparisonPayload });
+    if (truncate) {
+      // More aligned geographies than the client's page bound can reach:
+      // one row per page against a total no number of pages will meet.
+      const offset = Number(params.get("offset") || 0);
+      return route.fulfill({
+        json: {
+          ...comparisonPayload,
+          total: 9999,
+          offset,
+          items: [{ ...comparisonPayload.items[0], geo_id: `county:${offset}` }],
+        },
+      });
+    }
+    return route.fulfill({ json: payload || comparisonPayload });
   });
 
   // The Martin boundary. Its published fields are what decide whether this
@@ -420,6 +482,81 @@ test("the comparison link reproduces the pair and carries no verdict", async ({ 
   await reopened.close();
 });
 
+test("the view levels are the ones both measures publish", async ({ page }) => {
+  // Covers: WEB-074 — the control offered a hard-coded NATIONAL/STATE/COUNTY
+  // and ignored `valid_geo_grains` on either side. Census PEP publishes
+  // places and Census ACS does not, so the pair cannot be read at PLACE —
+  // and a `?geo_level=PLACE` link put exactly that value into the selection,
+  // leaving the control showing one grain while the request sent another.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests });
+  await page.goto("/compare?geo_level=PLACE");
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText(["National", "State", "County"]);
+  // Reported, not silently held: the link asked for a grain the pair does not
+  // both publish, and the screen says so and shows what it can.
+  await expect(page.getByTestId("comparison-grain-unavailable")).toContainText("Place");
+  await expect(level).toHaveValue("COUNTY");
+  await expect(page.getByTestId("comparison-grain-note")).toContainText(
+    "not offered for the pair",
+  );
+  const grains = comparisonRequests.map((entry) => entry.geo_level).filter(Boolean);
+  expect(grains.length).toBeGreaterThan(0);
+  expect(grains).not.toContain("PLACE");
+});
+
+test("a pair that publishes places is compared at places, and a link says so", async ({
+  page,
+}) => {
+  // Covers: WEB-074 — two Census PEP measures publish places, so PLACE is a
+  // level the pair can be read at and a copied link reopens there.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests });
+  await page.goto(
+    `/compare?a=${encodeURIComponent(METRIC_B)}` +
+      `&source_a=pep&b=${encodeURIComponent(METRIC_B2)}` +
+      "&source_b=pep&geo_level=PLACE",
+  );
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText([
+    "National",
+    "State",
+    "County",
+    "Place",
+  ]);
+  await expect(level).toHaveValue("PLACE");
+  await expect(page.getByTestId("comparison-grain-unavailable")).toHaveCount(0);
+  await expect(page).toHaveURL(/geo_level=PLACE/);
+  await expect
+    .poll(() =>
+      comparisonRequests.filter((entry) => entry.geo_level === "PLACE").length,
+    )
+    .toBeGreaterThan(0);
+});
+
+test("an agency-grain pair is offered its own grain, declined or not", async ({ page }) => {
+  // Covers: WEB-074 — which grains a pair offers is what its measures
+  // publish; whether the pair is comparable is the API's separate verdict.
+  // FBI UCR publishes agency-grain facts and the analysis routes decline it,
+  // and both statements have to survive together.
+  await installRoutes(page);
+  await page.goto(
+    `/compare?a=${encodeURIComponent(METRIC_FBI)}` +
+      `&source_a=FBI_UCR&b=${encodeURIComponent(METRIC_FBI)}` +
+      "&source_b=FBI_UCR&geo_level=AGENCY",
+  );
+
+  const level = page.getByTestId("comparison-geo-level");
+  await expect(level.locator("option")).toHaveText(["Agency"]);
+  await expect(level).toHaveValue("AGENCY");
+  await expect(page.getByTestId("comparison-workspace")).toHaveAttribute(
+    "data-comparable",
+    "false",
+  );
+});
+
 test("the aligned presentations appear only where the comparison can answer them", async ({
   page,
 }) => {
@@ -534,4 +671,152 @@ test("a comparison saves to the account when signed in, storing the pair and not
   expect(document).not.toHaveProperty("derivations");
   expect(document).not.toHaveProperty("caveats");
   expect(document).not.toHaveProperty("verdict");
+});
+
+test("a comparison too large for the page bound says so, and is not reported healthy", async ({
+  page,
+}) => {
+  // Covers: WEB-039 — `/comparison` caps `limit` at 1000 and a national
+  // county comparison aligns 3,144 geographies. One request held the first
+  // thousand rows ordered by geo_id and reported them as `ok`, so a scatter
+  // plot of alphabetically-first counties read as the comparison.
+  const comparisonRequests = [];
+  await installRoutes(page, { comparisonRequests, truncate: true });
+  await page.goto(
+    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+  );
+
+  const status = page.getByTestId("comparison-status");
+  await expect(status).toContainText("the page bound cut the answer short");
+  await expect(status).toContainText("of 9999 aligned geographies");
+  // A partial answer is never green.
+  await expect(status).toHaveClass(/pill bad/);
+
+  // It paged rather than asking once, and each page asked for the next rows.
+  const offsets = comparisonRequests.map((entry) => Number(entry.offset));
+  expect(offsets.length).toBeGreaterThan(1);
+  expect(offsets[0]).toBe(0);
+  expect(offsets[1]).toBe(1);
+});
+
+test("the file of a page-bounded comparison says so in its own name", async ({
+  page,
+}) => {
+  // Covers: WEB-067 — the pill said "the page bound cut the answer short";
+  // the file said nothing, and the file is what a reader keeps. WEB-059 made
+  // the explorer's export name its own shortfall for the same reason.
+  await installRoutes(page, { truncate: true });
+  await page.goto(
+    `/compare?metric_a=${encodeURIComponent(METRIC_A)}&metric_b=${encodeURIComponent(METRIC_B)}`,
+  );
+  await expect(page.getByTestId("comparison-status")).toContainText(
+    "the page bound cut the answer short",
+  );
+
+  // The export is never refused: a reader may want the rows they have.
+  const exportButton = page.getByTestId("comparison-export");
+  await expect(exportButton).toBeEnabled();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    exportButton.click(),
+  ]);
+  const name = download.suggestedFilename();
+  expect(name).toContain("-partial-");
+  expect(name).toContain("-of-9999.csv");
+});
+
+test("an aligned view says when a pair is not contemporaneous", async ({ page }) => {
+  // Covers: WEB-049 — the route combines each side's own newest value rather
+  // than aligning them to a shared period, and carries both periods so that
+  // is visible. The table marked it; the scatter drew a pair four years apart
+  // as a point like any other, and the map coloured it by a difference
+  // computed across those years, with nothing on either panel saying so.
+  const payload = {
+    ...comparisonPayload,
+    total: 3,
+    items: [
+      // Not contemporaneous.
+      comparisonPayload.items[0],
+      {
+        ...comparisonPayload.items[0],
+        geo_id: "state:55|county:009",
+        county_name: "Brown County",
+        period_a: "2023",
+        period_b: "2023",
+        value_a: 268740,
+        value_b: 270000,
+        difference: -1260,
+        ratio: 0.99533,
+      },
+      comparisonPayload.items[1],
+    ],
+  };
+  await installRoutes(page, { payload });
+  await page.goto("/compare");
+
+  const workspace = page.getByTestId("comparison-workspace");
+  await expect(workspace).toHaveAttribute("data-plottable-points", "2");
+
+  // The chart marks the pair, counts it, and keeps it: both values are
+  // published, so dropping it would answer a narrower question.
+  await expect(page.getByTestId("scatter-point-differing")).toHaveCount(1);
+  await expect(page.getByTestId("scatter-point")).toHaveCount(1);
+  const note = page.getByTestId("scatter-differing-periods");
+  await expect(note).toContainText("1 of 2 plotted geographies pairs values");
+  await expect(note).toContainText("different periods");
+
+  // And the map, which colours one API-derived number per polygon, says how
+  // many of those numbers span two publications.
+  await expect(page.getByTestId("map-period-note")).toContainText(
+    "1 of 2 coloured geographies combine values published for different periods",
+  );
+});
+
+test("a comparison whose sides share a period says nothing extra", async ({ page }) => {
+  // Covers: WEB-049 — the note is a fact about this answer, not a standing
+  // disclaimer on every comparison.
+  const contemporaneous = {
+    ...comparisonPayload,
+    items: comparisonPayload.items.map((row) => ({ ...row, period_b: row.period_a })),
+  };
+  await installRoutes(page, { payload: contemporaneous });
+  await page.goto("/compare");
+
+  await expect(page.getByTestId("comparison-map-panel")).toBeVisible();
+  await expect(page.getByTestId("map-period-note")).toHaveCount(0);
+  await expect(page.getByTestId("scatter-differing-periods")).toHaveCount(0);
+});
+
+test("the screen says what its geographies are an intersection of", async ({ page }) => {
+  // Covers: WEB-050 — the route joins its two reduced sides on geography
+  // identity with an inner join. "500 aligned geographies" reads as the
+  // universe when it is 500 of 3,143, and the map and the scatter draw only
+  // the intersection with nothing saying so.
+  const narrowed = {
+    ...comparisonPayload,
+    total: 2,
+    geographies_a: 3143,
+    geographies_b: 2,
+  };
+  await installRoutes(page, { payload: narrowed });
+  await page.goto("/compare");
+
+  const note = page.getByTestId("comparison-coverage-note");
+  await expect(note).toContainText("2 geographies are paired here");
+  await expect(note).toContainText("publishes 3,143");
+  await expect(note).toContainText("not in this comparison");
+  // A different fact from the page-bound shortfall, which this comparison
+  // does not have: the status stays what it was.
+  await expect(page.getByTestId("comparison-status")).toContainText("aligned geographies");
+});
+
+test("a comparison that paired everything says nothing extra", async ({ page }) => {
+  // Covers: WEB-050 — a fact about this answer, not a standing disclaimer.
+  await installRoutes(page, {
+    payload: { ...comparisonPayload, total: 2, geographies_a: 2, geographies_b: 2 },
+  });
+  await page.goto("/compare");
+
+  await expect(page.getByTestId("comparison-table-panel")).toBeVisible();
+  await expect(page.getByTestId("comparison-coverage-note")).toHaveCount(0);
 });

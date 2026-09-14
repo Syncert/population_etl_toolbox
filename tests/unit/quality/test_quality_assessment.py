@@ -45,8 +45,14 @@ def test_monthly_cadence_adds_warn_only_plausibility() -> None:
 
 
 def test_targeting_narrows_to_one_rule_or_source() -> None:
-    """Covers: DQ-005 — repair verification can target one rule or source."""
+    """Covers: DQ-005, DQ-012 — repair verification can target one rule or source.
+
+    `DQ-CDC-003` is named beside `DQ-CDC-002` deliberately: this test used to
+    exercise only the neighbouring id that happened to be registered, while
+    the operations guide's own worked example named the scoped one and raised.
+    """
     assert set(select_executors("weekly", rule_id="DQ-CDC-002")) == {"DQ-CDC-002"}
+    assert set(select_executors("weekly", rule_id="DQ-CDC-003")) == {"DQ-CDC-003"}
 
     narrowed = set(select_executors("weekly", source_code="USDA_NASS"))
     assert "DQ-NASS-002" in narrowed

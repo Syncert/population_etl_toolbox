@@ -100,24 +100,45 @@ def test_latest_relation_keys_on_geography_series_and_metric() -> None:
     assert "SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)" in procedure
 
 
-def test_publisher_reads_laus_grains_from_the_fact_rows() -> None:
-    """Covers: ETL-048 — grains are aggregated, never declared as a constant."""
+def test_publisher_reads_laus_grains_from_the_served_rows() -> None:
+    """Covers: ETL-048, DB-036, DB-037 — grains come from what is served.
+
+    Aggregated rather than declared as a constant (ETL-048), and aggregated
+    from `mv_bls_latest` rather than the fact view over silver (DB-036): a
+    grain published here is one the API can answer, and the fact view's rows
+    advance at silver ingest, before the serving refresh.
+    """
     sql = _read(PUBLISHER_DDL)
     export = sql.split("CREATE OR REPLACE VIEW gold_bls.measure_export AS", 1)[1]
     export = export.split("CREATE OR REPLACE VIEW gold_bls.metric_publisher AS", 1)[0]
 
-    assert "ARRAY_AGG(DISTINCT UPPER(fact.geo_level)" in export
+    # Through the one vocabulary mapping (DB-037), not this view's own
+    # upper-casing of the served word.
+    assert "ARRAY_AGG(DISTINCT gold_glossary.geo_grain(latest.geo_level)" in export
+    assert "FROM gold_bls.mv_bls_latest AS latest" in export
     assert "ARRAY['STATE']" not in export
     assert "ARRAY['COUNTY']" not in export
 
 
 def test_publisher_emits_measure_rows_and_excludes_their_series() -> None:
-    """Covers: ETL-048 — a measure-identified program publishes once, not twice."""
+    """Covers: ETL-048, DB-036 — a measure-identified row publishes once.
+
+    Per `(program_code, measure_code)`, which is how the serving refresh
+    assigns identity: `COALESCE('BLS:' || measure.metric_key, 'BLS:' ||
+    series.series_id)`. Excluding whole *programs* instead meant an LA
+    measure code `dim_bls_measure` does not hold served rows under a series
+    identity the publisher never published (DB-036).
+    """
     sql = _read(PUBLISHER_DDL)
     assert "'measure'::TEXT," in sql
+    assert "JOIN gold_bls.dim_bls_measure AS measure" in sql
+    assert "AND measure.measure_code = fact.measure_code" in sql
+    # A series with no rows at all is the one case the program still decides:
+    # an empty-answer LAUS series must not become a single-place metric.
     assert (
-        "WHERE series.program_code NOT IN "
-        "(SELECT DISTINCT program_code FROM gold_bls.dim_bls_measure)" in sql
+        "OR series.program_code NOT IN (\n"
+        "            SELECT DISTINCT program_code FROM gold_bls.dim_bls_measure\n"
+        "        )" in sql
     )
     assert "UNION ALL" in sql
 

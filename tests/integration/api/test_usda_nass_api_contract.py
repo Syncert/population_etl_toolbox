@@ -162,3 +162,62 @@ def test_series_and_measures_read_the_published_views(
     measures = published_nass_api.get("/api/v1/usda-nass/measures").json()
     assert measures["total"] > 0
     assert all(item["unit"] for item in measures["items"])
+
+
+def test_a_vocabulary_word_in_any_case_matches_the_published_rows(
+    published_nass_api: TestClient,
+) -> None:
+    """Covers: API-124 — the normalised word is the word the relation stores.
+
+    The unit tier proves which word is bound; only a real query proves the
+    bound word matches. The two vocabularies are stored in opposite cases --
+    `source_desc` upper, `value_status` lower -- so normalising to the wrong
+    one would answer an empty page, which is the defect API-124 closed
+    wearing different clothes.
+    """
+    baseline = published_nass_api.get(
+        "/api/v1/usda-nass/observations", params={"limit": 500}
+    ).json()
+    assert baseline["total"] > 0, "the fixture published nothing to filter"
+    statuses = {item["value_status"] for item in baseline["items"]}
+    programs = {item["source_desc"] for item in baseline["items"]}
+    assert statuses and programs
+
+    for parameter, published in (
+        ("value_status", statuses),
+        ("source_desc", programs),
+    ):
+        for word in sorted(published):
+            expected = sum(1 for item in baseline["items"] if item[parameter] == word)
+            for sent in (word, word.swapcase()):
+                answer = published_nass_api.get(
+                    "/api/v1/usda-nass/observations",
+                    params={parameter: sent, "limit": 500},
+                )
+                assert answer.status_code == 200, answer.text
+                body = answer.json()
+                assert body["total"] == expected, (
+                    f"{parameter}={sent!r} answered {body['total']} of the "
+                    f"{expected} rows published with {word!r}"
+                )
+                assert {item[parameter] for item in body["items"]} == {word}
+
+
+def test_an_empty_filter_value_answers_the_unfiltered_page(
+    published_nass_api: TestClient,
+) -> None:
+    """Covers: API-124 — an empty value is absent against real rows too.
+
+    Bound as a condition on the empty string it answered `total: 0`, which
+    reads as an answer about the warehouse rather than about the request.
+    """
+    unfiltered = published_nass_api.get(
+        "/api/v1/usda-nass/observations", params={"limit": 1}
+    ).json()
+    assert unfiltered["total"] > 0
+    for parameter in ("commodity_desc", "value_status", "source_desc", "geo_id"):
+        answer = published_nass_api.get(
+            "/api/v1/usda-nass/observations", params={parameter: "", "limit": 1}
+        )
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["total"] == unfiltered["total"], parameter

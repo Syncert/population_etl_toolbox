@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.failures import NOT_FOUND
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
     list_metric_releases,
@@ -16,6 +17,7 @@ from apps.api.services.observations_service import (
     list_timeseries_observations,
 )
 from apps.api.schemas import (
+    OBSERVATION_FILTER_BOUNDS,
     MetricReleaseListResponse,
     NeutralObservationListResponse,
     ObservationListResponse,
@@ -32,23 +34,52 @@ REVERSED_YEAR_DETAIL = "year_from must be less than or equal to year_to"
     response_model=NeutralObservationListResponse,
     name="get_neutral_observations",
     summary="Observations for any completed source's metric",
+    responses=NOT_FOUND,
 )
 def get_neutral_observations(
     metric_code: str = Query(..., min_length=1, max_length=200),
     scope: Literal["latest", "as_released"] = Query("latest"),
-    release: Optional[str] = Query(None, min_length=1, max_length=100),
-    geo_id: Optional[str] = Query(None, max_length=200),
-    geo_level: Optional[str] = Query(None, max_length=50),
-    state_fips: Optional[str] = Query(None, max_length=2),
-    county_fips: Optional[str] = Query(None, max_length=3),
-    stratum_id: Optional[str] = Query(None, max_length=200),
-    adjustment_status: Optional[str] = Query(None, max_length=50),
-    domain_desc: Optional[str] = Query(None, max_length=200),
-    domaincat_desc: Optional[str] = Query(None, max_length=200),
-    subject_type: Optional[str] = Query(None, max_length=50),
-    subject_code: Optional[str] = Query(None, max_length=50),
-    year_from: Optional[int] = Query(None, ge=1700, le=2200),
-    year_to: Optional[int] = Query(None, ge=1700, le=2200),
+    release: Optional[str] = Query(None, max_length=100),
+    geo_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_id"].max_length
+    ),
+    geo_level: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["geo_level"].max_length
+    ),
+    state_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["state_fips"].max_length
+    ),
+    county_fips: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["county_fips"].max_length
+    ),
+    stratum_id: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["stratum_id"].max_length
+    ),
+    adjustment_status: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["adjustment_status"].max_length
+    ),
+    domain_desc: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["domain_desc"].max_length
+    ),
+    domaincat_desc: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["domaincat_desc"].max_length
+    ),
+    subject_type: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["subject_type"].max_length
+    ),
+    subject_code: Optional[str] = Query(
+        None, max_length=OBSERVATION_FILTER_BOUNDS["subject_code"].max_length
+    ),
+    year_from: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_from"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_from"].maximum,
+    ),
+    year_to: Optional[int] = Query(
+        None,
+        ge=OBSERVATION_FILTER_BOUNDS["year_to"].minimum,
+        le=OBSERVATION_FILTER_BOUNDS["year_to"].maximum,
+    ),
     newest_per_geography: bool = Query(
         False,
         description=(
@@ -57,6 +88,17 @@ def get_neutral_observations(
             "is a series answers several periods per geography by default, "
             "which is the whole publication; this reduces it the same way "
             "/distribution/bins and /comparison/preflight already do."
+        ),
+    ),
+    newest_release_per_period: bool = Query(
+        False,
+        description=(
+            "Answer one row per geography and period: the one from the newest "
+            "published release. Valid only with scope=as_released, and not "
+            "with a pinned release. The ranking is the source's own declared "
+            "release order, which is the same order /observations/releases "
+            "lists by -- a client re-deriving it from the identity's spelling "
+            "can disagree with it."
         ),
     ),
     limit: int = Query(100, ge=1, le=5000),
@@ -75,6 +117,11 @@ def get_neutral_observations(
     a source that publishes a series is several periods per geography.
     ``newest_per_geography=true`` reduces that to one row per geography
     without changing the default.
+
+    ``scope=as_released`` answers every published release.
+    ``newest_release_per_period=true`` reduces that to a settled history: one
+    row per geography and period, from the newest release that published it,
+    ranked by the source's own declared release order.
     """
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(status_code=422, detail=REVERSED_YEAR_DETAIL)
@@ -102,6 +149,7 @@ def get_neutral_observations(
             limit=limit,
             offset=offset,
             newest_per_geography=newest_per_geography,
+            newest_release_per_period=newest_release_per_period,
         )
     except NeutralQueryError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from exc
@@ -117,6 +165,7 @@ def get_neutral_observations(
     response_model=MetricReleaseListResponse,
     name="get_metric_releases",
     summary="Published releases holding a metric's observations",
+    responses=NOT_FOUND,
 )
 def get_metric_releases(
     metric_code: str = Query(..., min_length=1, max_length=200),
@@ -167,6 +216,7 @@ def get_timeseries_observations(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> ObservationListResponse:
     if start_date and end_date and start_date > end_date:
@@ -182,6 +232,7 @@ def get_timeseries_observations(
             start_date=start_date,
             end_date=end_date,
             limit=limit,
+            offset=offset,
         )
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc

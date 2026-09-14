@@ -70,10 +70,17 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_measure (
 CREATE OR REPLACE VIEW gold_bls.fact_bls_observation AS
 SELECT
     s.geo_id,
+    -- Two different rules, and only the first is the vocabulary. A parsed
+    -- row's own grain word goes through `gold_glossary.geo_grain` (migration
+    -- 018, defined ahead of this phase by 021); a row whose producer wrote
+    -- none has its grain *inferred from its identity*, which is a separate
+    -- decision and stays here. The final ELSE keeps the downstream
+    -- `geo_level TEXT NOT NULL` satisfiable; the BLS geography parser's
+    -- vocabulary is closed (us, state, county, or nothing), so it is
+    -- unreachable for a parsed series (DB-037).
     CASE
-        WHEN LOWER(s.geo_level) = 'us'     THEN 'NATIONAL'
-        WHEN LOWER(s.geo_level) = 'state'  THEN 'STATE'
-        WHEN LOWER(s.geo_level) = 'county' THEN 'COUNTY'
+        WHEN COALESCE(TRIM(s.geo_level), '') <> ''
+            THEN gold_glossary.geo_grain(s.geo_level)
         WHEN s.geo_id = 'us:1'             THEN 'NATIONAL'
         WHEN s.geo_id LIKE 'state:%|county:%' THEN 'COUNTY'
         WHEN s.geo_id LIKE 'state:%'       THEN 'STATE'
@@ -92,7 +99,25 @@ SELECT
     sv.observation_basis,
     sr.measure_category,
     sr.value_type,
-    CURRENT_DATE       AS as_of_date,
+    -- The publication this row was read from, not the day the warehouse
+    -- last re-served it (DB-039). `CURRENT_DATE` here was materialised into
+    -- the reporting table by every chunked refresh, so a release of a BLS or
+    -- FRED series was the calendar day a chunk of it was last written: the
+    -- driver re-serves only changed years, so re-serving 2019 on Monday and
+    -- 2020 on Tuesday made `/observations/releases` list two published
+    -- releases the provider never published, and a full re-serve collapsed
+    -- every release into one.
+    --
+    -- `ingested_at` is the honest identity available here. Neither provider
+    -- publishes a release in the response -- BLS publishes none at all, and
+    -- FRED's `realtime_start` is dropped by this view (its own plan) -- so
+    -- what a release can mean is "the warehouse's read of the series", and
+    -- the silver upsert makes that exact: ETL-037 advances `ingested_at`
+    -- only when the row's own content changed, so it is stable across a
+    -- re-serve and moves when the value moves. It is also already what
+    -- `updated_at` publishes, so the two are one fact rather than two
+    -- unrelated clocks.
+    s.ingested_at::DATE AS as_of_date,
     s.ingested_at      AS updated_at,
     -- Appended, not inserted: CREATE OR REPLACE VIEW only permits new columns
     -- at the end of the select list.
@@ -122,6 +147,11 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_bls_observations (
     county_fips                TEXT,
     state_name                 TEXT,
     county_name                TEXT,
+    -- Carried so the observation contract views can call
+    -- gold_glossary.geo_name with the same arguments the geography
+    -- catalog does (DB-038). Without it a place answered under its
+    -- state's name here and its own name on /catalog/geographies.
+    place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
     -- BLS-specific columns (no NULLs for these)
@@ -251,6 +281,7 @@ BEGIN
         county_fips,
         state_name,
         county_name,
+        place_name,
         geo_latitude,
         geo_longitude,
         series_id,
@@ -283,6 +314,7 @@ BEGIN
         gl.county_fips,
         gl.state_name,
         gl.county_name,
+        gl.place_name,
         gl.latitude,
         gl.longitude,
         bs.series_id,

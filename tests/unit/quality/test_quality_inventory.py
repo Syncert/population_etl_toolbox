@@ -65,7 +65,15 @@ def test_repository_inventory_is_valid() -> None:
 
 
 def test_every_published_object_has_owner_grain_scope_and_rule() -> None:
-    """Covers: DQ-001 — the ticket's acceptance criterion, asserted directly."""
+    """Covers: DQ-001 — the ticket's acceptance criterion, asserted directly.
+
+    This is a *declaration* check, and only that: it asserts a published
+    object is named by a deterministic rule, not that the rule can be run.
+    Forty-four of the sixty-four declared rules have no executor, so this
+    passing says less than it looks like it says --
+    `tests/unit/quality/test_rule_automation.py` is where executability is
+    held (DQ-012), and the inventory now records per rule which it is.
+    """
     coverage = rules_by_object()
     for entry in ALL_OBJECTS:
         assert entry.source, entry.name

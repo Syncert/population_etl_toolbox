@@ -30,9 +30,13 @@ import { metricQualityState } from "../lib/catalog";
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
-  buildHistoryObservationRequest,
+  ACTIVE_GEOGRAPHIES_ONLY,
+  OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
+  buildNewestValueRequest,
   normalizeObservationRows,
+  sharedObservationPeriod,
   observationPeriodLabel,
+  observationUncertaintyLabel,
 } from "../lib/observationAccess";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
@@ -41,24 +45,18 @@ import {
   DEFAULT_TEMPLATE_ID,
   PRODUCT_TEMPLATES,
   findTemplate,
+  profileExport,
   resolveTemplate,
   templateCoverage,
   templateMetricCodes,
 } from "../lib/productTemplates";
-import type { ResolvedMeasure } from "../lib/productTemplates";
+import type { MeasureAnswer, ResolvedMeasure } from "../lib/productTemplates";
 import { saveChart } from "../lib/savedCharts";
 import { explorerHref, parseProfileState, serializeProfileState } from "../lib/urlState";
 
 const CATALOG_PAGE_SIZE = 1000;
 
 interface RequestStatus {
-  state: string;
-  message: string;
-}
-
-interface MeasureAnswer {
-  /** The published row for this place, or `null` when none was published. */
-  row: ObservationRow | null;
   state: string;
   message: string;
 }
@@ -137,11 +135,11 @@ export default function ProfileProduct() {
       try {
         const [stateItems, countyItems] = await Promise.all([
           fetchAllPages<GeographySummary>("/catalog/geographies", {
-            params: { geo_level: "STATE" },
+            params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "STATE" },
             pageSize: CATALOG_PAGE_SIZE,
           }),
           fetchAllPages<GeographySummary>("/catalog/geographies", {
-            params: { geo_level: "COUNTY" },
+            params: { ...ACTIVE_GEOGRAPHIES_ONLY, geo_level: "COUNTY" },
             pageSize: CATALOG_PAGE_SIZE,
           }),
         ]);
@@ -243,18 +241,38 @@ export default function ProfileProduct() {
             return;
           }
           try {
-            const { resource, params } = buildHistoryObservationRequest(source, {
-              metricCode: measure.metricCode,
-              geoId,
-              limit: "50",
-            });
+            // A card wants the place's newest published value, not a page of
+            // its history. Every observation order is ascending, so the last
+            // row of a bounded page is the newest one only when the whole
+            // publication fitted inside the page -- and Census PEP's latest
+            // publication is every estimated year of the current vintage.
+            // Where the resource declares `newest_per_geography` it answers
+            // the question directly, in one row (WEB-036).
+            const { resource, params, reducedByResource } = buildNewestValueRequest(
+              source,
+              { metricCode: measure.metricCode, geoId },
+            );
             const payload = await apiFetch<CollectionResponse<Observation>>(resource, { params });
             const rows = normalizeObservationRows(
               source,
               Array.isArray(payload.items) ? payload.items : [],
             );
+            const total = typeof payload.total === "number" ? payload.total : null;
+            // Bounded page: the newest row this client can identify is the
+            // last one, and whether that is the publication's newest is
+            // exactly what the bound decides.
+            const bounded =
+              !reducedByResource && total !== null && total > rows.length;
             next[measure.slot.id] = rows.length
-              ? { row: rows[rows.length - 1]!, state: "ok", message: `${rows.length} published` }
+              ? {
+                  row: rows[rows.length - 1]!,
+                  state: bounded ? "warn" : "ok",
+                  message: bounded
+                    ? `read ${rows.length} of ${total} published rows; the page bound cut the answer short, so this may not be the newest`
+                    : reducedByResource
+                      ? "newest published value"
+                      : `${rows.length} published`,
+                }
               : {
                   row: null,
                   state: "warn",
@@ -312,45 +330,10 @@ export default function ProfileProduct() {
   }, [templateId, geoId]);
 
   function exportCsv() {
-    const headings = [
-      "product",
-      "section",
-      "slot",
-      "metric_code",
-      "metric_name",
-      "source",
-      "geo_id",
-      "geo_name",
-      "period",
-      "value",
-      "value_status",
-      "unit",
-      "margin_of_error",
-      "availability",
-    ];
-    const rows: string[][] = [];
-    for (const entry of resolved) {
-      for (const measure of entry.measures) {
-        const answer = answers[measure.slot.id];
-        const row = answer?.row;
-        rows.push([
-          template.title,
-          entry.section.title,
-          measure.slot.label,
-          measure.metricCode,
-          measure.metric ? displayMetricName(measure.metric) : "",
-          String(measure.metric?.source_code ?? ""),
-          geoId,
-          placeName,
-          row ? observationPeriodLabel(row) : "",
-          row?.value == null ? "" : String(row.value),
-          String(row?.value_status ?? ""),
-          row ? observationUnit(row) : "",
-          row?.margin_of_error == null ? "" : String(row.margin_of_error),
-          measure.available ? answer?.message || "not requested" : measure.reason,
-        ]);
-      }
-    }
+    const { headings, rows } = profileExport(template, resolved, answers, {
+      geoId,
+      placeName,
+    });
     const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const content = [headings, ...rows].map((row) => row.map(escape).join(",")).join("\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -371,6 +354,13 @@ export default function ProfileProduct() {
       geoId: geoId || null,
       metrics: availableMeasures.map((measure) => measure.metricCode),
       transformation: "none",
+      // The one period every answered measure describes, or empty where
+      // they differ -- a profile mixes sources, so often they do (WEB-069).
+      period: sharedObservationPeriod(
+        availableMeasures
+          .map((measure) => answers[measure.slot.id]?.row)
+          .filter((row): row is ObservationRow => Boolean(row)),
+      ),
       savedAt: new Date().toISOString(),
     });
     setSaveStatus("Saved for Builder");
@@ -453,7 +443,7 @@ export default function ProfileProduct() {
       </section>
       {saveStatus ? <div className="save-toast" role="status">{saveStatus}</div> : null}
 
-      <section className="status-row">
+      <section className="status-row" role="status">
         <StatusPill
           state={catalogStatus.state}
           label="Measures"
@@ -525,6 +515,10 @@ function MeasureCard({
   const metric = measure.metric;
   const row = answer?.row || null;
   const quality = metricQualityState(metric);
+  const uncertaintyBeyondMargin = observationUncertaintyLabel(
+    row,
+    OBSERVATION_UNCERTAINTY_BEYOND_MARGIN,
+  );
 
   return (
     <div data-testid={`measure-${measure.slot.id}`} data-available="true">
@@ -550,6 +544,15 @@ function MeasureCard({
         {row ? ` · Period: ${observationPeriodLabel(row) || "not published"}` : ""}
       </small>
       {row ? <small>Margin of error: {marginOfErrorText(row)}</small> : null}
+      {/* Everything else the row published to qualify this value. A CDC
+          measure publishes confidence bounds and a NASS one the CV trio,
+          and "Margin of error: Not published" alone reads as though the
+          value carried no published uncertainty at all (WEB-060). */}
+      {uncertaintyBeyondMargin ? (
+        <small data-testid={`measure-uncertainty-${measure.slot.id}`}>
+          Published uncertainty: {uncertaintyBeyondMargin}
+        </small>
+      ) : null}
       <small>
         <StatusPill
           state={quality.state}
@@ -558,14 +561,27 @@ function MeasureCard({
           testId={`measure-freshness-${measure.slot.id}`}
         />
       </small>
-      {answer && !row ? (
+      {/* The answer's own state, whenever it is not `ok` -- beside the value
+          and not only in place of it. The message that says "read 1,000 of
+          19,000 published rows; the page bound cut the answer short, so
+          this may not be the newest" exists for the case where a row *did*
+          arrive, and that was the one case the card did not render: the
+          number showed with no qualifier while the exported CSV carried
+          the sentence (WEB-070). */}
+      {answer && answer.state !== "ok" ? (
         <small data-testid={`measure-answer-${measure.slot.id}`}>{answer.message}</small>
       ) : null}
       {measure.slot.note ? <small>{measure.slot.note}</small> : null}
       <small>
         <Link
           className="text-link"
-          href={explorerHref({ metric: measure.metricCode, geoId: geoId || undefined })}
+          href={explorerHref({
+            metric: measure.metricCode,
+            // The source the resolved metric publishes under, from the
+            // catalog row this card already read (WEB-072).
+            source: metric?.source_code || undefined,
+            geoId: geoId || undefined,
+          })}
           data-testid={`measure-explore-${measure.slot.id}`}
         >
           Explore {placeName ? `for ${placeName}` : "this measure"} <ArrowRight size={13} />

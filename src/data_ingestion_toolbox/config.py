@@ -68,6 +68,19 @@ class Settings:
         self.api_rate_limit_analysis_per_minute: int = int(
             os.environ.get("API_RATE_LIMIT_ANALYSIS_PER_MINUTE", "0")
         )
+        #: Reverse proxies whose ``X-Forwarded-For`` the rate limiter may
+        #: believe (API-075), as addresses or CIDR blocks. Empty -- the
+        #: default -- means the limiter keys on the TCP peer and ignores the
+        #: header, which is the only safe reading when the hop in front is
+        #: unknown. Every deployed topology here fronts the API with a proxy,
+        #: so a deployment that leaves this empty gives the whole site one
+        #: budget; `infra/docker/stack.env.example` declares the compose
+        #: stack's own networks.
+        self.api_trusted_proxy_ips: tuple[str, ...] = tuple(
+            entry.strip()
+            for entry in os.environ.get("API_TRUSTED_PROXY_IPS", "").split(",")
+            if entry.strip()
+        )
         # The largest request body any route accepts (ADR-0004). Bounds the
         # authenticated write resources' JSONB documents; public reads carry
         # no body. 256 KB is the evidence packet cap.

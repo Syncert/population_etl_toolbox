@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -11,6 +10,7 @@ from io import BytesIO
 from data_ingestion_toolbox.utility.db_connection import (
     PostgresConnectionFactory,
     PostgresConnectionDetails,
+    warehouse_database,
 )
 from .config import CONFIG
 
@@ -21,7 +21,7 @@ from .config import CONFIG
 # Change this if your metadata lives somewhere else.
 # Overridable so self-contained stacks can point at their own warehouse
 # database; production deployments default to the shared "public_data".
-_TARGET_DATABASE = os.environ.get("PUBLIC_DATA_DB_NAME", "public_data")
+_TARGET_DATABASE = warehouse_database()
 
 # When running inside Airflow, you can let CONFIG.postgres_conn_id drive the
 # connection. In local dev (no Airflow), this will be None and the factory

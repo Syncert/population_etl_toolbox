@@ -23,11 +23,17 @@ import type {
   ConfigurationValidation,
   SavedAnalysisConfiguration,
   SavedAnalysisSummary,
+  SeriesDocument,
 } from "./api/types";
-import { explorerHref, comparisonHref } from "./urlState";
-import type { GeoLevel } from "./urlState";
+import { explorerHref, comparisonHref, workbenchHref } from "./urlState";
+import type { GeoLevel, WorkbenchPresentationWord } from "./urlState";
 
-export const CONFIGURATION_KINDS = ["observations", "comparison", "distribution"] as const;
+export const CONFIGURATION_KINDS = [
+  "observations",
+  "comparison",
+  "distribution",
+  "workbench",
+] as const;
 
 /** The document an explorer selection saves as. */
 export function explorerDocument(input: {
@@ -38,6 +44,10 @@ export function explorerDocument(input: {
   stateFips?: string;
   geoId?: string;
   dimensions?: Record<string, string>;
+  /** The view asked the resource for one row per geography (API-066). */
+  newestPerGeography?: boolean;
+  /** The view read a settled history: newest release per period (API-081). */
+  newestReleasePerPeriod?: boolean;
 }): AnalysisDocument {
   const filters: Record<string, unknown> = {};
   if (input.geoLevel) {
@@ -54,13 +64,35 @@ export function explorerDocument(input: {
       filters[name] = value;
     }
   }
+  // A view that asked the resource to reduce must say so, or it reopens as
+  // a different set of rows: a map saved without `newest_per_geography`
+  // replays as the whole latest publication, which for a source publishing
+  // a series per geography colours whichever row arrived last (WEB-047).
+  //
+  // Each reduction belongs to one scope, and the API refuses the other
+  // pairing and the two together. A contradiction is dropped here rather
+  // than stored, because a document the live route would reject is one the
+  // reader could not reopen.
+  const scope = input.scope || "latest";
+  const newestPerGeography = Boolean(input.newestPerGeography) && scope === "latest";
+  const newestReleasePerPeriod =
+    Boolean(input.newestReleasePerPeriod) &&
+    scope === "as_released" &&
+    !newestPerGeography;
   return {
     kind: "observations",
     metric_code: input.metricCode,
-    scope: input.scope || "latest",
+    scope,
     // A release identity is meaningful only under `as_released`; carrying
-    // one otherwise would store a request the API refuses.
-    release: input.scope === "as_released" && input.release ? input.release : null,
+    // one otherwise would store a request the API refuses. A settled history
+    // refuses it too: one pins a release, the other asks for the newest of
+    // every period.
+    release:
+      scope === "as_released" && input.release && !newestReleasePerPeriod
+        ? input.release
+        : null,
+    newest_per_geography: newestPerGeography,
+    newest_release_per_period: newestReleasePerPeriod,
     filters,
     visualization: {},
   };
@@ -85,6 +117,94 @@ export function comparisonDocument(input: {
     metric_code_a: input.metricCodeA,
     metric_code_b: input.metricCodeB,
     filters,
+    visualization: {},
+  };
+}
+
+/**
+ * The document a workbench composition saves as.
+ *
+ * Each series becomes a `SeriesDocument` carrying exactly what an
+ * `observations` document carries, because that is what the API validates it
+ * as. The geography goes into `filters` rather than beside them, for the same
+ * reason `explorerDocument` puts it there: `geo_id` and `geo_level` are
+ * declared filters the capability contract governs.
+ *
+ * The alignment is carried only for a cross-sectional presentation. A
+ * longitudinal composition has no shared grain — each series is one geography
+ * at its own — and storing one would be inventing the roll-up this surface
+ * refuses.
+ *
+ * A contradiction is dropped here rather than stored, exactly as
+ * `explorerDocument` drops one: a document the live route would reject is one
+ * the reader could not reopen.
+ */
+export function workbenchDocument(input: {
+  series: {
+    metricCode: string;
+    scope?: "latest" | "as_released";
+    release?: string;
+    geoLevel?: string;
+    geoId?: string;
+    filters?: Record<string, string>;
+  }[];
+  presentation: WorkbenchPresentationWord;
+  presentationOptions?: Record<string, unknown>;
+  alignment?: {
+    geoLevel?: string;
+    stateFips?: string;
+    year?: number | null;
+  } | null;
+}): AnalysisDocument {
+  const series: SeriesDocument[] = input.series.map((entry) => {
+    const filters: Record<string, unknown> = {};
+    if (entry.geoLevel) {
+      filters.geo_level = entry.geoLevel;
+    }
+    if (entry.geoId) {
+      filters.geo_id = entry.geoId;
+    }
+    for (const [name, value] of Object.entries(entry.filters || {})) {
+      if (value) {
+        filters[name] = value;
+      }
+    }
+    const scope = entry.scope || "latest";
+    return {
+      metric_code: entry.metricCode,
+      scope,
+      release: scope === "as_released" && entry.release ? entry.release : null,
+      newest_per_geography: false,
+      // The workbench reads a settled history where the resource serves one,
+      // which is an as-released read of the newest release per period. Under
+      // `latest` the flag is a contradiction the API refuses, so it is not
+      // carried there.
+      newest_release_per_period: scope === "as_released" && !entry.release,
+      filters,
+    };
+  });
+
+  const alignment =
+    input.alignment && input.alignment.geoLevel
+      ? {
+          geo_level: input.alignment.geoLevel,
+          state_fips:
+            input.alignment.stateFips && input.alignment.geoLevel !== "NATIONAL"
+              ? input.alignment.stateFips
+              : null,
+          year: input.alignment.year ?? null,
+        }
+      : null;
+
+  return {
+    kind: "workbench",
+    series,
+    presentation: {
+      type: input.presentation,
+      options: input.presentationOptions || {},
+    },
+    alignment,
+    filters: {},
     visualization: {},
   };
 }
@@ -141,6 +261,53 @@ export function reopenHref(document: AnalysisDocument | null | undefined): strin
       stateFips,
     });
   }
+
+  if (document.kind === "workbench") {
+    // A stored series names its measure but not the source key the workbench
+    // resolves an access shape from; the link carries the measure and the
+    // page re-derives the source from the capability list on open. That is
+    // the same order the page already works in, and it means a source that
+    // changed route segments since the save still reopens.
+    return workbenchHref({
+      series: (document.series || []).map((entry) => {
+        const seriesFilters = (entry.filters || {}) as Record<string, unknown>;
+        const dimensions: Record<string, string> = {};
+        for (const [name, value] of Object.entries(seriesFilters)) {
+          if (
+            name !== "geo_level" &&
+            name !== "geo_id" &&
+            typeof value === "string"
+          ) {
+            dimensions[name] = value;
+          }
+        }
+        return {
+          // The source key is unknown to the document, so the link carries
+          // the measure's own prefix, which `findExplorerSource` resolves
+          // case-insensitively against the discovered keys.
+          sourceKey: String(entry.metric_code || "").split(":")[0] || "",
+          metricCode: String(entry.metric_code || ""),
+          scope: entry.scope,
+          release: entry.release || undefined,
+          geoLevel:
+            typeof seriesFilters.geo_level === "string"
+              ? (seriesFilters.geo_level as GeoLevel)
+              : undefined,
+          geoId:
+            typeof seriesFilters.geo_id === "string"
+              ? (seriesFilters.geo_id as string)
+              : undefined,
+          filters: Object.keys(dimensions).length > 0 ? dimensions : undefined,
+        };
+      }),
+      presentation: document.presentation?.type,
+      alignmentGeoLevel: document.alignment?.geo_level as GeoLevel | undefined,
+      stateFips: document.alignment?.state_fips || undefined,
+      year: document.alignment?.year ?? undefined,
+      correlation: document.presentation?.type === "correlation" || undefined,
+    });
+  }
+
   return explorerHref({
     metric: document.metric_code || undefined,
     geoLevel: geoLevel as GeoLevel | undefined,
@@ -158,6 +325,17 @@ export function describeDocument(document: AnalysisDocument | null | undefined):
   }
   if (document.kind === "comparison") {
     return `${document.metric_code_a || "?"} vs ${document.metric_code_b || "?"}`;
+  }
+  if (document.kind === "workbench") {
+    const series = document.series || [];
+    const presentation = document.presentation?.type || "chart";
+    const grain = document.alignment?.geo_level
+      ? ` at ${document.alignment.geo_level}`
+      : "";
+    return (
+      `${series.length} series as a ${presentation}${grain}: ` +
+      series.map((entry) => entry.metric_code || "?").join(", ")
+    );
   }
   const scope = document.scope === "as_released"
     ? document.release
@@ -281,11 +459,19 @@ export function planLocalMigration(
     candidates.push({
       localId,
       name,
+      // What the view asked, where the chart recorded it. A chart saved
+      // before it recorded any of this carries none of these fields, and
+      // migrates exactly as it did: `latest`, no release, no reduction
+      // (WEB-048).
       document: explorerDocument({
         metricCode: String(chart.metricCode),
+        scope: chart.scope === "as_released" ? "as_released" : "latest",
+        release: chart.release ? String(chart.release) : undefined,
         geoLevel: chart.geoLevel ? String(chart.geoLevel) : undefined,
         stateFips: chart.stateFips ? String(chart.stateFips) : undefined,
         geoId: chart.geoId ? String(chart.geoId) : undefined,
+        newestPerGeography: chart.newestPerGeography === true,
+        newestReleasePerPeriod: chart.newestReleasePerPeriod === true,
       }),
     });
   }
@@ -391,4 +577,41 @@ export function describeSaveSuccess(destination: SaveDestination, name: string):
     message: "Saved in this browser only — sign in on Saved analyses to keep it",
     destination,
   };
+}
+
+// --- Account libraries ---------------------------------------------------
+//
+// An account's saved analyses and evidence packets are paged collections:
+// `/analysis-configurations` and `/evidence-packets` cap `limit` at 200 and
+// declare `offset`. Three screens read them with one request at that maximum
+// and reported the result in green, so a library past two hundred entries was
+// shown two hundred of them with no way to open, edit, or compose from the
+// rest (WEB-044).
+
+/** One page of an account library, and how many of them to read. */
+export const LIBRARY_PAGE_SIZE = 200;
+export const LIBRARY_PAGE_LIMIT = 10;
+
+/**
+ * The library status line, honest about the page bound.
+ *
+ * Follows WEB-036's wording: a bound-limited read names the shortfall and is
+ * reported as a failure, and a resource that published no total is never
+ * reported as short, because there is no shortfall to state.
+ */
+export function describeLibraryLoad(
+  loaded: number,
+  total: number | null,
+  complete: boolean,
+  one: string,
+  many: string,
+): string {
+  const noun = loaded === 1 ? one : many;
+  if (!complete && total !== null) {
+    return (
+      `loaded ${loaded} of ${total} ${many}; the page bound cut the answer ` +
+      "short, so this list is incomplete"
+    );
+  }
+  return `${loaded} ${noun}`;
 }

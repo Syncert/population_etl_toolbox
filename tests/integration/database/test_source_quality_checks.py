@@ -15,6 +15,10 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.quality.reconciliation import (
+    EVIDENCE_LIMIT,
+    SHARED_RECONCILIATION_EXECUTORS,
+)
 from data_ingestion_toolbox.quality.sources import (
     SOURCE_EXECUTORS,
     acs_slice_reconciliation,
@@ -195,6 +199,43 @@ def test_cdc_backward_watermark_ingest_fails(
     postgres_connection.rollback()
 
 
+def test_an_offender_count_is_exact_beside_bounded_evidence(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-008 — the count is exact, the evidence is bounded.
+
+    `DATA_QUALITY_OPERATIONS.md` says `control.data_quality_result` holds
+    "exact counts, bounded evidence ids" -- two different things -- and its
+    operator query selects `observed_count` to judge how bad a failure is.
+    The offender queries fetched `EVIDENCE_LIMIT + 1`, one more than the cap
+    and written deliberately so truncation could be detected, and the helper
+    sliced the extra row away: the count was the evidence's length, so twenty
+    bad rows and twenty thousand both recorded 20.
+    """
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO control.acs_ingestion_slices
+                (dataset, year, geo_level, state_fips, status, rows_loaded,
+                 started_at)
+            SELECT 'acs5', 2021, 'county', LPAD(generated::TEXT, 2, '0'),
+                   'failed', 0, NOW()
+              FROM generate_series(1, 43) AS generated
+            """
+        )
+        [outcome] = acs_slice_reconciliation(cursor, {})
+        assert outcome.result == "fail"
+        assert outcome.observed_count == 43, (
+            "the offender count saturated at the evidence cap: an operator "
+            "reading it cannot tell a handful of bad rows from a systemic "
+            "failure"
+        )
+        assert len(outcome.evidence) == EVIDENCE_LIMIT
+        # The sample is the rule's own order, not whatever the scan returned.
+        assert outcome.evidence == sorted(outcome.evidence)
+    postgres_connection.rollback()
+
+
 def test_nass_ledger_mismatch_and_advanced_partial_slice_fail(
     postgres_connection_factory: Callable[[], connection],
     postgres_connection: connection,
@@ -328,3 +369,131 @@ def test_reference_and_registry_defects_fail(
         assert outcome.result == "fail"
         assert outcome.evidence == ["PROBE_MISSING|gold_probe|metric_publisher"]
     postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-009 — an offender query is ordered by what the wrapping statement sees
+# ---------------------------------------------------------------------------
+
+
+def test_a_fred_dataset_without_its_series_row_fails_the_rule(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-009 — the reproduction, as a failing-first test.
+
+    DQ-008 moved every rule's `ORDER BY` onto the wrapping statement.
+    Fourteen rules wrote positions; this one wrote `dataset.domain,
+    dataset.series_id`, naming the relation *inside* the subquery, where the
+    wrapper places the clause outside and only `offender` is in scope.
+    PostgreSQL refuses it outright, so the rule raised
+    `UndefinedTable: missing FROM-clause entry for table "dataset"` the first
+    time a FRED dataset had no series row -- the exact condition it exists to
+    report -- and an errored assessment is not promotable.
+
+    Three tiers missed it: the unit tier runs no SQL, and this module empties
+    `raw_fred.fred_datasets` so the rule answers `not_applicable` before
+    `_offenders` is reached. Only the DAG pipeline tier, which seeds the
+    warehouse and runs the real rule, reached the statement.
+    """
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO raw_fred.fred_datasets
+                (domain, series_id, is_available, first_seen_at, last_checked_at)
+            VALUES ('labor', 'UNMATCHED_SERIES', TRUE, NOW(), NOW())
+            """
+        )
+        outcomes = fred_slice_reconciliation(cursor, {})
+
+    dataset_outcome = next(
+        outcome
+        for outcome in outcomes
+        if outcome.object_name == "raw_fred.fred_datasets"
+    )
+    assert dataset_outcome.result == "fail"
+    assert dataset_outcome.observed_count == 1
+    assert dataset_outcome.evidence == ["labor|UNMATCHED_SERIES"]
+    postgres_connection.rollback()
+
+
+class _ExplainingCursor:
+    """Runs every offender statement through the planner, and nothing else.
+
+    A rule reaches `_offenders` only after its configured relation reports
+    rows, which is why an empty warehouse proves nothing about the statement:
+    every rule here returns `not_applicable` first. This answers each
+    preliminary count with one row so the rule proceeds, then hands the
+    offender statement to PostgreSQL as an `EXPLAIN` -- which resolves every
+    name, type and scope without needing an offender to exist.
+    """
+
+    def __init__(self, cursor) -> None:
+        self._cursor = cursor
+        self.explained: list[str] = []
+        self._last_was_offender = False
+
+    def execute(self, sql: str, params=()) -> None:
+        statement = str(sql)
+        self._last_was_offender = "COUNT(*) OVER () AS offender_total" in statement
+        if self._last_was_offender:
+            self.explained.append(statement)
+            self._cursor.execute(f"EXPLAIN {statement}", params)
+            self._cursor.fetchall()
+            return
+        # Anything else is a preliminary count or a bounded read the rule
+        # makes its own decisions from; it runs for real.
+        self._cursor.execute(statement, params)
+
+    def fetchall(self):
+        if self._last_was_offender:
+            # Explained, not executed: there are no offender rows to return,
+            # and the rule reports `pass` rather than a fabricated failure.
+            return []
+        return self._cursor.fetchall()
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        # Every rule gates its offender query behind `SELECT COUNT(*) …`; a
+        # zero would return `not_applicable` before the statement is reached.
+        if row is not None and len(row) == 1 and row[0] == 0:
+            return (1,)
+        return row
+
+
+def test_every_offender_statement_is_one_postgresql_can_run(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-009 — the wrapper contract, proved on every rule.
+
+    DQ-008 proved the wrapper on one rule's exact count and left the other
+    fourteen unproved; the one that did not follow its convention raised at
+    run time. Seeding an offender for each would mean writing a capture,
+    release and geography chain per source; what the defect is about is
+    whether each statement can run at all, so each is handed to the planner,
+    which resolves every name and scope without an offender existing.
+
+    The rules whose *fail* outcome is separately seeded from real rows are
+    the ACS, BLS and FRED ledgers, the FRED dataset join above, USDA NASS's
+    slice ledger, Census PEP's sentinel conformance, the CDC watermark, the
+    reference accounting and the publisher registry -- the nodes above this
+    one. The rest are proved runnable here.
+    """
+    executors = {**SOURCE_EXECUTORS, **SHARED_RECONCILIATION_EXECUTORS}
+    # DQ-SHARED-001 recomputes checksums over a bounded window and uses no
+    # offender wrapper, so it contributes no statement.
+    assert len(executors) >= 16, f"only {len(executors)} executors found"
+
+    explained: dict[str, int] = {}
+    for rule_id, executor in sorted(executors.items()):
+        with postgres_connection.cursor() as cursor:
+            probe = _ExplainingCursor(cursor)
+            executor(probe, {})
+            explained[rule_id] = len(probe.explained)
+        postgres_connection.rollback()
+
+    # Every rule that carries an offender query reached it, and the total is
+    # the number of call sites in the two modules.
+    assert sum(explained.values()) >= 19, (
+        f"only {sum(explained.values())} offender statements were planned, so "
+        f"some rule returned before its own: {explained}"
+    )
