@@ -1263,20 +1263,51 @@ correlation's "absent for a longitudinal composition" criterion would have
 made the control unreachable and became a named statement on the panel
 instead.
 
-**Environment-limited checks, not run.** The integration tier is unreachable
-here — no PostgreSQL and no Redis — so the following are recorded rather than
-reported as passing:
+**The database integration tier was reached after all, and it found a gap.**
 
-- `./tests/run.ps1 integration`, covering the reduction-parity fixture WB-3
-  names, the generated SQL of both new routes against a real warehouse
-  (`corr`, the `RANK()` tie arithmetic, the matrix's chained CTEs), and the
-  real-schema saved-analysis contract against the actual `app_api` JSONB
-  column for a `workbench` document.
-- `python -m pytest tests/dags -q` — Airflow is not installed, and installing
-  `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x, which is why CI
-  runs those tiers in separate jobs. No phase touched the DAGs.
+Earlier phases of this plan recorded the tier as unreachable. It was not: the
+environment has PostgreSQL 16 and PostGIS could be installed, so the warehouse
+bootstraps and the tier runs. Every entry above that says "not run: the
+integration tier" is superseded by this:
 
-As partial compensation for the first, all three generated statements were
-parse-checked against the PostgreSQL grammar with `sqlglot` (recorded in WB-4
-as weaker evidence than a real database, and deliberately not added as a
-project dependency).
+```text
+python -m pytest tests/integration -q -m "integration and database and not slow"
+# 231 passed, 2 skipped, 1 failed
+```
+
+The one failure — `test_a_metric_carries_the_same_value_state_declaration_as_its_source`
+— fails identically on this plan's base commit (`b4ea126`), verified in a
+worktree. It asserts "the catalog published no metric", which is true of a
+warehouse bootstrapped from DDL with no ingested content; it needs seeded
+catalog data this environment has no source for. Not caused by, and not
+touched by, this plan.
+
+**What the tier caught that nothing else could.** `/comparison/correlation`
+and `/comparison/matrix` both declare `geo_level`, and
+`test_every_route_that_takes_a_grain_takes_the_same_grain_words` sweeps every
+route that does, asserting each answers an alias exactly as it answers the
+vocabulary word. Its own rule is that a route declaring `geo_level` with no
+request in the sweep *fails* rather than skipping — so the two new routes
+failed it. The guard was working; the gap was mine.
+
+Closing it needed a real fixture change, because the matrix refuses a repeated
+code (a measure against itself correlates 1 with no information), so it cannot
+be swept with one measure against itself the way `/comparison` is, and no two
+distinct fixture measures were comparable — PEP against FRED differs in units
+and in time grain. `published_pep_metrics` is now parameterised on how many
+measures to publish; two measures in one PEP dataset share their units, their
+time grain and their geography grain, so the pair is comparable by the
+policy's own rules rather than by a fixture asserting it.
+`published_pep_metric` is a thin wrapper yielding the first, so every existing
+caller reads unchanged.
+
+The generated SQL was also executed directly against that PostgreSQL, not only
+parse-checked: the correlation's statement returns a Pearson coefficient equal
+to the definition computed independently in Python, ranks a monotone pair at
+Spearman 1.0, excludes a pair whose side published no number while still
+counting that geography in `geographies_a`, answers `null` rather than `0`
+over an empty join, and honours the year pin on the right rows.
+
+**Still not run:** `python -m pytest tests/dags -q`. Airflow is not installed,
+and installing `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x,
+which is why CI runs those tiers in separate jobs. No phase touched the DAGs.

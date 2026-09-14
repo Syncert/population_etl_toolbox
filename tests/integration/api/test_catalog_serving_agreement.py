@@ -662,10 +662,21 @@ PEP_DATASET = "pep_agreement_test"
 
 
 @pytest.fixture
-def published_pep_metric(
+def published_pep_metrics(
     postgres_connection_factory: Callable[[], connection],
-) -> Iterator[str]:
-    """Publish one Census PEP metric at the national grain, end to end.
+    request: pytest.FixtureRequest,
+) -> Iterator[list[str]]:
+    """Publish one or more Census PEP metrics at the national grain, end to end.
+
+    Parameterised on how many to publish, because `/comparison/matrix` needs
+    two **distinct** comparable measures and refuses a repeat — a measure
+    against itself correlates 1 with no information in it. Two PEP measures in
+    one dataset share their units, their time grain and their geography grain,
+    so the pair is comparable by the policy's own rules rather than by a
+    fixture pretending it is.
+
+    `published_pep_metric` below is this fixture publishing one, kept as its
+    own name so every existing caller reads the same.
 
     PEP is the source the grain mapping exists for: its reporting view
     projects ``revision.geo_type AS geo_level``, so the served relation stores
@@ -680,10 +691,14 @@ def published_pep_metric(
     """
     from tests.support.capture_seed import seed_capture
 
+    count = int(getattr(request, "param", 1))
     token = uuid4().hex[:8].upper()
     # POPESTIMATE-family codes carry a non-negative check; any other code
     # is unconstrained, and the sweep cares about the grain, not the measure.
-    measure_code = f"AGREEMENT_{token}"
+    measure_codes = [
+        f"AGREEMENT_{token}" if index == 0 else f"AGREEMENT_{token}_{index}"
+        for index in range(count)
+    ]
 
     writer = postgres_connection_factory()
     try:
@@ -711,16 +726,17 @@ def published_pep_metric(
                 """,
                 (PEP_DATASET,),
             )
-            database_cursor.execute(
-                """
-                INSERT INTO silver_pep.dim_measure (
-                    metric_code, display_name, unit, value_type, is_component,
-                    allows_negative, population_universe, updated_at
-                ) VALUES (%s, 'Grain sweep population', 'persons', 'count',
-                          FALSE, FALSE, 'resident population', NOW())
-                """,
-                (measure_code,),
-            )
+            for measure_code in measure_codes:
+                database_cursor.execute(
+                    """
+                    INSERT INTO silver_pep.dim_measure (
+                        metric_code, display_name, unit, value_type, is_component,
+                        allows_negative, population_universe, updated_at
+                    ) VALUES (%s, 'Grain sweep population', 'persons', 'count',
+                              FALSE, FALSE, 'resident population', NOW())
+                    """,
+                    (measure_code,),
+                )
             database_cursor.execute(
                 """
                 INSERT INTO silver_pep.pep_release (
@@ -755,58 +771,61 @@ def published_pep_metric(
                 """,
                 (capture_id, PEP_DATASET, PEP_VINTAGE),
             )
-            # The fact keys back to the revision it was parsed from, so the
-            # parsed row exists first -- the same order the loader writes in.
-            database_cursor.execute(
-                """
-                INSERT INTO silver_pep.observation_revision (
-                    capture_id, source_row_index, source_column_index,
-                    source_header, dataset_code, release_vintage, product_code,
-                    observation_year, metric_code, unit, summary_level,
-                    state_fips_source, name_source, value_source, value,
-                    value_status, parser_version, parsed_at
-                ) VALUES (
-                    %s, 1, 1, %s, %s, %s, 'alldata', %s, %s, 'persons', '010',
-                    NULL, 'United States', '331000000', 331000000,
-                    'valid', '1', NOW()
+            for row_index, measure_code in enumerate(measure_codes, start=1):
+                # The fact keys back to the revision it was parsed from, so the
+                # parsed row exists first -- the same order the loader writes in.
+                database_cursor.execute(
+                    """
+                    INSERT INTO silver_pep.observation_revision (
+                        capture_id, source_row_index, source_column_index,
+                        source_header, dataset_code, release_vintage, product_code,
+                        observation_year, metric_code, unit, summary_level,
+                        state_fips_source, name_source, value_source, value,
+                        value_status, parser_version, parsed_at
+                    ) VALUES (
+                        %s, %s, 1, %s, %s, %s, 'alldata', %s, %s, 'persons', '010',
+                        NULL, 'United States', '331000000', 331000000,
+                        'valid', '1', NOW()
+                    )
+                    """,
+                    (
+                        capture_id,
+                        row_index,
+                        measure_code,
+                        PEP_DATASET,
+                        PEP_VINTAGE,
+                        PEP_YEAR,
+                        measure_code,
+                    ),
                 )
-                """,
-                (
-                    capture_id,
-                    measure_code,
-                    PEP_DATASET,
-                    PEP_VINTAGE,
-                    PEP_YEAR,
-                    measure_code,
-                ),
-            )
-            database_cursor.execute(
-                """
-                INSERT INTO silver_pep.fact_population_estimate (
-                    capture_id, source_row_index, source_column_index,
-                    dataset_code, release_vintage, product_code, metric_code,
-                    observation_year, estimate_date, geo_id, geo_sk, geo_type,
-                    geography_basis_date, resolution_status, summary_level,
-                    source_geo_code, source_name, value_source, value, unit,
-                    transformed_at
-                ) VALUES (
-                    %s, 1, 1, %s, %s, 'alldata', %s, %s, %s,
-                    'nation:us', %s,
-                    'nation', %s, 'resolved', '010', '1', 'United States',
-                    '331000000', 331000000, 'persons', NOW()
+                database_cursor.execute(
+                    """
+                    INSERT INTO silver_pep.fact_population_estimate (
+                        capture_id, source_row_index, source_column_index,
+                        dataset_code, release_vintage, product_code, metric_code,
+                        observation_year, estimate_date, geo_id, geo_sk, geo_type,
+                        geography_basis_date, resolution_status, summary_level,
+                        source_geo_code, source_name, value_source, value, unit,
+                        transformed_at
+                    ) VALUES (
+                        %s, %s, 1, %s, %s, 'alldata', %s, %s, %s,
+                        'nation:us', %s,
+                        'nation', %s, 'resolved', '010', '1', 'United States',
+                        '331000000', 331000000, 'persons', NOW()
+                    )
+                    """,
+                    (
+                        capture_id,
+                        row_index,
+                        PEP_DATASET,
+                        PEP_VINTAGE,
+                        measure_code,
+                        PEP_YEAR,
+                        PEP_ESTIMATE_DATE,
+                        geo_sk,
+                        PEP_ESTIMATE_DATE,
+                    ),
                 )
-                """,
-                (
-                    capture_id,
-                    PEP_DATASET,
-                    PEP_VINTAGE,
-                    measure_code,
-                    PEP_YEAR,
-                    PEP_ESTIMATE_DATE,
-                    geo_sk,
-                    PEP_ESTIMATE_DATE,
-                ),
-            )
         writer.commit()
     finally:
         writer.close()
@@ -815,36 +834,43 @@ def published_pep_metric(
     harvest_publisher(postgres_connection_factory, Publisher("gold_pep"))
 
     reader = postgres_connection_factory()
+    published: list[str] = []
     try:
         with reader.cursor() as database_cursor:
-            database_cursor.execute(
-                """
-                SELECT metric_code FROM gold_glossary.dim_metric_catalog
-                WHERE source_code = 'CENSUS_PEP' AND source_object_key = %s
-                """,
-                (measure_code,),
-            )
-            published = database_cursor.fetchone()
+            for measure_code in measure_codes:
+                database_cursor.execute(
+                    """
+                    SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                    WHERE source_code = 'CENSUS_PEP' AND source_object_key = %s
+                    """,
+                    (measure_code,),
+                )
+                row = database_cursor.fetchone()
+                assert row is not None, (
+                    f"the harvest published no PEP catalog row for {measure_code}"
+                )
+                published.append(row[0])
     finally:
         reader.close()
-    assert published is not None, "the harvest published no PEP catalog row"
+    assert len(published) == len(measure_codes)
 
     try:
-        yield published[0]
+        yield published
     finally:
         cleanup = postgres_connection_factory()
         try:
             with cleanup.cursor() as database_cursor:
-                database_cursor.execute(
-                    "DELETE FROM gold_glossary.dim_metric_catalog "
-                    "WHERE source_object_key = %s AND source_code = 'CENSUS_PEP'",
-                    (measure_code,),
-                )
-                database_cursor.execute(
-                    "DELETE FROM silver_pep.fact_population_estimate "
-                    "WHERE metric_code = %s",
-                    (measure_code,),
-                )
+                for measure_code in measure_codes:
+                    database_cursor.execute(
+                        "DELETE FROM gold_glossary.dim_metric_catalog "
+                        "WHERE source_object_key = %s AND source_code = 'CENSUS_PEP'",
+                        (measure_code,),
+                    )
+                    database_cursor.execute(
+                        "DELETE FROM silver_pep.fact_population_estimate "
+                        "WHERE metric_code = %s",
+                        (measure_code,),
+                    )
                 database_cursor.execute(
                     "DELETE FROM silver_pep.observation_revision "
                     "WHERE dataset_code = %s",
@@ -1027,6 +1053,13 @@ def _digest_token() -> str:
     hand-edited row out of the warehouse.
     """
     return uuid4().hex + uuid4().hex
+
+
+@pytest.fixture
+def published_pep_metric(published_pep_metrics: list[str]) -> str:
+    """One published PEP metric — the shape every existing caller reads."""
+    return published_pep_metrics[0]
+
 
 
 @pytest.fixture
@@ -1378,7 +1411,7 @@ def test_every_route_answers_the_metric_code_it_published(
 
 
 def _grain_requests(
-    fred_metric: str, pep_metric: str, acs_metric: str
+    fred_metric: str, pep_metric: str, acs_metric: str, pep_pair: list[str]
 ) -> dict[str, dict[str, object]]:
     """One request per route that declares ``geo_level``, minus the grain.
 
@@ -1400,12 +1433,33 @@ def _grain_requests(
         "/api/v1/fred/observations/latest": {"metric_code": fred_metric, "limit": 5},
         "/api/v1/census/observations/latest": {"metric_code": acs_metric, "limit": 5},
         "/api/v1/bls/observations/latest": {"metric_code": "BLS:UNUSED", "limit": 5},
+        "/api/v1/comparison/correlation": {
+            "metric_code_a": pep_metric,
+            "metric_code_b": pep_metric,
+        },
+        "/api/v1/comparison/matrix": {
+            # Two distinct measures, because the matrix refuses a repeat: a
+            # measure against itself correlates 1 with no information in it.
+            # Both are PEP, so the pair is comparable by the policy's own
+            # rules rather than by this fixture asserting that it is.
+            "metric_codes": ",".join(pep_pair),
+            "limit": 5,
+        },
     }
 
 
+#: The field each route answers its row count in. `total` everywhere except
+#: the correlation, which is one statistic over a set of pairs rather than a
+#: page of rows and counts them in `n`.
+_GRAIN_COUNT_FIELD: dict[str, str] = {
+    "/api/v1/comparison/correlation": "n",
+}
+
+
+@pytest.mark.parametrize("published_pep_metrics", [2], indirect=True)
 def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     api_client: TestClient,
-    published_pep_metric: str,
+    published_pep_metrics: list[str],
     published_fred_metric: str,
     published_acs_metric: str,
 ) -> None:
@@ -1438,7 +1492,10 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
         )
     }
     requests = _grain_requests(
-        published_fred_metric, published_pep_metric, published_acs_metric
+        published_fred_metric,
+        published_pep_metrics[0],
+        published_acs_metric,
+        published_pep_metrics,
     )
     assert declared == set(requests), (
         "routes declaring geo_level with no request in this sweep: "
@@ -1451,15 +1508,16 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
 
     for path, base in sorted(requests.items()):
         for alias, word in sorted(GEO_GRAIN_ALIASES.items()):
+            count_field = _GRAIN_COUNT_FIELD.get(path, "total")
             canonical = api_client.get(path, params={**base, "geo_level": word})
             assert canonical.status_code == 200, canonical.text
-            expected = int(canonical.json()["total"])
+            expected = int(canonical.json()[count_field])
             if expected:
                 exercised.append(f"{path}@{word}")
             for spelling in (alias, alias.lower(), word.lower()):
                 answer = api_client.get(path, params={**base, "geo_level": spelling})
                 assert answer.status_code == 200, answer.text
-                actual = int(answer.json()["total"])
+                actual = int(answer.json()[count_field])
                 if actual != expected:
                     disagreements.append(
                         f"{path} answers {expected} row(s) for geo_level "
