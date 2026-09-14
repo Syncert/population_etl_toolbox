@@ -1008,3 +1008,92 @@ ruff check .                            # passed
 
 Not run: the integration tier, as for the phases before it — no PostgreSQL is
 reachable here. `./tests/run.ps1 integration` is the command.
+
+### WB-6 — Saving a workbench
+
+Status: **complete**, 2026-09-14.
+
+Implementation:
+
+- `apps/api/schemas/saved_analysis.py` — `SeriesDocument`,
+  `PresentationDocument`, `AlignmentDocument`, `WorkbenchPresentationType`,
+  and `AnalysisDocument`'s three new fields; `ConfigurationKind` gains
+  `"workbench"`.
+- `apps/api/registry.py` — the three per-kind tables gain a workbench row.
+- `apps/api/services/saved_analysis_service.py` —
+  `_require_consistent_observation_read` extracted so a series and an
+  observations document run the same checks, and `_validate_workbench`.
+- `docs/decisions/0003-…md` — the amendment.
+- `docs/reference/API_CONSUMER_GUIDE.md` — the kind, its shape and its rules.
+- `apps/web/lib/api/types.ts`, `lib/savedAnalysis.ts` —
+  `workbenchDocument`, and `reopenHref`/`describeDocument` for the new kind.
+- `apps/web/components/WorkbenchPage.tsx` — the save control and handler.
+- Tests: 15 API cases in `test_saved_analysis.py`, 15 web cases in
+  `workbench-saved.test.js`, 2 browser cases.
+- `docs/reference/TESTING_CONTRACT.md` — API-134, API-135, WEB-095…WEB-097;
+  totals 449 → 454; `catalog_evidence.py` API 133 → 135, WEB 94 → 97.
+
+**The API-112 gate was extended, not exempted.** `test_the_fields_each_kind_carries_are_the_ones_its_route_declares`
+reads the per-kind field table against the served contract, and a workbench's
+three fields are containers rather than query parameters, so the literal check
+failed. Weakening it to skip the kind would have left the new nesting
+unguarded. Instead the check moved inside: every field a `SeriesDocument`
+carries must be a parameter `/observations` declares, and for this kind what
+the top level withholds must be *exactly* what a `SeriesDocument` carries —
+so a field in neither place fails. Nothing was lost; it moved down a level,
+and the gate now says so.
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **`_require_consistent_observation_read` was extracted rather than
+   duplicated.** A series is an observations request, so the contradictions
+   `/observations` refuses are checked by the code that checks them for an
+   observations document. Two copies would drift the first time one moved,
+   which is how API-091, API-117 and API-122 each arrived.
+2. **Every series refusal names the series by position.** "series 2: release
+   can only be combined with scope=as_released" is actionable; "a series" is
+   not.
+3. **A top-level `filters` is refused, not ignored.** A workbench's filters
+   belong to its series; one at the top has nowhere to be replayed, which is
+   API-112's defect one level up.
+4. **A measure declaring no grains does not block an alignment.** Unknown is
+   not none — the rule the composing screen applies, applied again at write
+   because storage must not be a back door for a value the screen refused,
+   nor stricter than it.
+5. **The reopen link carries the measure's own prefix as the source key.** A
+   stored series names its measure but not the route segment the workbench
+   resolves an access shape from; the page re-derives the source from the
+   capability list on open, which it already does, so a source that changed
+   segments since the save still reopens.
+6. **The browser store gets one envelope per series**, carrying each one's
+   source, grain, unit, newest period, release, dropped-period count and
+   truncation — so the evidence packet's completeness rule (criterion 4) sees
+   every series rather than one envelope for a composition of eight.
+
+**One thing to watch, recorded for WB-7.** `/workbench/page` is now 465.2 kB
+against the 474 kB budget WB-1 declared — 8.8 kB of headroom. WB-7 adds the
+CSV export; if it does not fit, WB-7 records the measured cost and the
+decision rather than silently raising the budget, which is what its criterion
+3 asks for.
+
+Validation run:
+
+```text
+python -m pytest tests/unit -q              # 1702 passed
+python -m pytest tests/unit/api/test_saved_analysis.py -q   # 95 passed
+ruff check .                                # passed
+python -m tests.support.regenerate_openapi_contract   # 41 operations, 67 schemas; diff purely additive
+npm --prefix apps/web run test:unit         # 33 files, 513 passed
+npm --prefix apps/web run lint              # passed
+npm --prefix apps/web run typecheck         # passed
+npm --prefix apps/web run build             # passed; /workbench 18 kB, 143 kB First Load JS
+npm --prefix apps/web run check:bundle      # /workbench/page 465.2 kB / 474 kB
+npm --prefix apps/web run check:csp         # passed
+npx playwright test                         # 109 passed (the whole browser tier)
+```
+
+Not run: the integration tier. The real-schema saved-analysis contract
+(`tests/integration/api/test_saved_analysis_contract.py`) is the tier that
+would exercise a workbench document against the actual `app_api` JSONB
+column; no PostgreSQL is reachable here. `./tests/run.ps1 integration` is the
+command.

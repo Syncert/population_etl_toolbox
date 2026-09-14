@@ -1122,6 +1122,11 @@ CONFIGURATION_ROUTES: dict[str, str] = {
     "observations": "/api/v1/observations",
     "distribution": "/api/v1/distribution/bins",
     "comparison": "/api/v1/comparison",
+    # A workbench replays through several routes -- one observations read per
+    # series, and the analysis routes for a cross-sectional presentation -- so
+    # the route named here is the one its series replay through, which is the
+    # one its stored fields are checked against.
+    "workbench": "/api/v1/observations",
 }
 
 #: The ``AnalysisDocument`` fields each kind's route accepts, beyond the
@@ -1151,6 +1156,9 @@ CONFIGURATION_FILTER_PARAMETERS: dict[str, frozenset[str] | None] = {
     "observations": None,
     "distribution": frozenset({"geo_level", "state_fips"}),
     "comparison": frozenset({"geo_level", "state_fips"}),
+    # Each series is an observations read, so a series' filters are its
+    # source's, exactly as an observations document's are.
+    "workbench": None,
 }
 
 CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
@@ -1165,4 +1173,8 @@ CONFIGURATION_DOCUMENT_FIELDS: dict[str, frozenset[str]] = {
     ),
     "distribution": frozenset({"metric_code", "bin_count"}),
     "comparison": frozenset({"metric_code_a", "metric_code_b"}),
+    # A workbench carries no top-level measure, scope, release or reduction:
+    # every one of those belongs to a series, and a value at the top would
+    # have nowhere to be replayed -- the API-112 defect, one level up.
+    "workbench": frozenset({"series", "presentation", "alignment"}),
 }

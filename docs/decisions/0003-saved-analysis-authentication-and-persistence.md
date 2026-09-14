@@ -117,3 +117,51 @@ revoked tokens), cache/telemetry isolation proofs, and the provisioning
 script for `app_api`/`api_app_writer`. The deployment gains one schema, one
 role, and one provisioning step; nothing about the public analytical surface
 changes.
+
+## Amendment — the `workbench` kind (2026-09-14, WB-6)
+
+`ConfigurationKind` gains a fourth word, `workbench`: a composition of one to
+eight `series`, a `presentation`, and an optional `alignment`. It is the first
+kind whose document is not one request.
+
+**Each series is validated individually, not against a composite contract.**
+A `SeriesDocument` carries exactly the fields an `observations` document
+carries — `metric_code`, `scope`, `release`, the two reductions, and
+`filters` — and the same three functions check it: the measure resolves and is
+not retired, the filters are ones the source declares *and* the route accepts
+with values inside their bounds and closed sets, and the scope, release and
+reduction combination is one `/observations` itself would answer. A composite
+contract would have to be kept in step with the observations contract by hand,
+and the two would drift the first time a filter bound moved. Instead, a series
+is an observations request, so it is checked by the code that checks one, and
+a refusal names which series ("series 2: release can only be combined with
+scope=as_released") because "a series" is not actionable.
+
+**Nothing may sit at the top level that belongs to a series.** A workbench
+carries no `metric_code`, `scope`, `release`, reduction or `filters` of its
+own. The per-kind field table refuses them, and the test that reads the table
+against the served contract was extended rather than exempted: for this kind,
+what the top level withholds must be *exactly* what a `SeriesDocument`
+carries. A field in neither place would be a parameter a stored workbench
+could never replay — API-112's defect, one level up.
+
+**The alignment is checked against the intersection of the series' published
+grains.** A cross-sectional presentation reads every measure at one grain, so
+a stored grain only some of them publish would reopen to a control with no
+option for it and a request answered empty; reaching it would mean rolling a
+coarser measure down, which nothing in this system does. A measure declaring
+no grains does not narrow the intersection, because unknown is not none — the
+rule the composing screen applies, applied again here because storage must not
+be a back door for a value the screen refused.
+
+**`presentation.type` is a closed vocabulary; `presentation.options` is
+opaque.** The type is validated because a document naming a presentation the
+application cannot draw reopens to a control with no option for it. The
+options are stored and returned verbatim, like `visualization` and for the
+same reason: what a reader chose about the look of their own chart is not
+something the API has a contract for.
+
+Everything else in this decision is unchanged — ownership, optimistic
+concurrency, the private no-store answer, and staleness reported rather than
+repaired all apply to this kind exactly as they apply to the other three.
+

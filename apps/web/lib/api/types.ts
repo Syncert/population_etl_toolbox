@@ -263,7 +263,11 @@ export interface HealthResponse {
 // --- Saved analysis configurations (ADR-0003) ---
 
 /** The resources a saved configuration may describe. */
-export type ConfigurationKind = "observations" | "comparison" | "distribution";
+export type ConfigurationKind =
+  | "observations"
+  | "comparison"
+  | "distribution"
+  | "workbench";
 
 /**
  * One saved analysis intent, validated at write time against the same
@@ -273,6 +277,32 @@ export type ConfigurationKind = "observations" | "comparison" | "distribution";
  * analysis follows the warehouse instead of freezing a snapshot of it.
  * `visualization` is opaque user content the API stores verbatim.
  */
+/** One series of a stored workbench: exactly an observations request. */
+export interface SeriesDocument {
+  metric_code: string;
+  scope?: "latest" | "as_released";
+  release?: string | null;
+  newest_per_geography?: boolean;
+  newest_release_per_period?: boolean;
+  filters?: Record<string, unknown>;
+}
+
+/** How a stored workbench was drawn. `options` is opaque to the API. */
+export interface PresentationDocument {
+  type: "line" | "bar" | "scatter" | "ranking" | "correlation" | "heatmap";
+  options?: Record<string, unknown>;
+}
+
+/**
+ * The shared grain a cross-sectional presentation was read at. Absent on a
+ * longitudinal composition, which has no shared grain.
+ */
+export interface AlignmentDocument {
+  geo_level: string;
+  state_fips?: string | null;
+  year?: number | null;
+}
+
 export interface AnalysisDocument {
   kind: ConfigurationKind;
   metric_code?: string | null;
@@ -289,6 +319,14 @@ export interface AnalysisDocument {
   newest_release_per_period?: boolean;
   filters?: Record<string, unknown>;
   bin_count?: number | null;
+  /**
+   * A workbench's series, one to eight. Each is validated by the API as an
+   * observations request in its own right, so nothing a series carries can
+   * be a request the observations route would refuse.
+   */
+  series?: SeriesDocument[] | null;
+  presentation?: PresentationDocument | null;
+  alignment?: AlignmentDocument | null;
   visualization?: Record<string, unknown>;
 }
 

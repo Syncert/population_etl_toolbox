@@ -33,6 +33,7 @@ from apps.api.registry import (
     CONFIGURATION_ROUTES,
     OBSERVATION_DISPATCH,
     closed_value_refusal,
+    normalize_geo_level,
 )
 from apps.api.schemas.observations import OBSERVATION_FILTER_BOUNDS
 from apps.api.schemas import (
@@ -192,6 +193,130 @@ def _require_fields_the_route_can_send(document: AnalysisDocument) -> None:
         )
 
 
+def _require_consistent_observation_read(read: Any, *, label: str = "") -> None:
+    """The contradictions ``/observations`` itself refuses (API-066, API-081).
+
+    Storage is not a back door for a request the API would refuse, and a
+    stored contradiction would replay as a 422 the reader never saw when they
+    saved it.
+
+    Takes anything carrying the five observation-read fields, so an
+    ``AnalysisDocument`` of kind ``observations`` and one series of a
+    workbench are checked by this code rather than by two copies of it --
+    which is the whole reason a ``SeriesDocument`` carries exactly the fields
+    an observations document carries. ``label`` names the series in the
+    refusal, because "series 3" is actionable where "a series" is not.
+    """
+    where = f"{label}: " if label else ""
+    if read.release is not None and read.scope != "as_released":
+        raise ConfigurationInvalid(
+            f"{where}release can only be combined with scope=as_released"
+        )
+    if read.newest_per_geography and read.scope != "latest":
+        raise ConfigurationInvalid(
+            f"{where}newest_per_geography can only be combined with scope=latest"
+        )
+    if read.newest_release_per_period and read.scope != "as_released":
+        raise ConfigurationInvalid(
+            f"{where}newest_release_per_period can only be combined with "
+            "scope=as_released"
+        )
+    if read.newest_release_per_period and read.release is not None:
+        raise ConfigurationInvalid(
+            f"{where}release and newest_release_per_period contradict each other"
+        )
+    if read.newest_per_geography and read.newest_release_per_period:
+        raise ConfigurationInvalid(
+            f"{where}newest_per_geography and newest_release_per_period cannot "
+            "be combined"
+        )
+
+
+def _validate_workbench(
+    warehouse: Session, document: AnalysisDocument
+) -> frozenset[str]:
+    """A stored composition, checked series by series (WB-6).
+
+    Each series is validated exactly as an ``observations`` document is,
+    through the same three functions, because a series *is* an observations
+    request. A composite contract would have to be kept in step with the
+    observations contract by hand, and the two would drift the first time a
+    filter bound moved.
+
+    Beyond the series, two things only a composition can get wrong:
+
+    - **An alignment naming a grain a series does not publish.** A
+      cross-sectional presentation reads every measure at one grain, so a
+      stored grain only some of them publish reopens to a control with no
+      option for it and a request the route answers empty. The check is the
+      intersection the composing screen computes, made again here because
+      storage must not be a back door for a value the screen refused.
+    - **A top-level ``filters``.** A workbench's filters belong to its series;
+      one at the top has nowhere to be replayed, which is API-112's defect a
+      level up. Refused rather than ignored.
+    """
+    series = list(document.series or ())
+    if not series:
+        raise ConfigurationInvalid(
+            "a workbench carries at least one series; series is required for "
+            "this configuration kind"
+        )
+    if document.filters:
+        raise ConfigurationInvalid(
+            "a workbench carries its filters on each series, not at the top "
+            f"level: {', '.join(sorted(document.filters))} has nowhere to be "
+            "replayed"
+        )
+    if document.presentation is None:
+        raise ConfigurationInvalid(
+            "presentation is required for this configuration kind"
+        )
+
+    metrics = []
+    for index, entry in enumerate(series, start=1):
+        label = f"series {index}"
+        metric = _require_metric(
+            warehouse, entry.metric_code, f"{label} metric_code"
+        )
+        _require_declared_filters(metric, dict(entry.filters or {}), kind="workbench")
+        _require_consistent_observation_read(entry, label=label)
+        metrics.append(metric)
+
+    alignment = document.alignment
+    if alignment is not None:
+        refusal = closed_value_refusal("geo_level", alignment.geo_level)
+        if refusal is not None:
+            raise ConfigurationInvalid(f"alignment geo_level: {refusal}")
+        wanted = normalize_geo_level(alignment.geo_level)
+        without_it = [
+            str(metric.get("metric_code") or "")
+            for metric in metrics
+            # A measure declaring no grains does not narrow the offer --
+            # unknown is not none, the rule the composing screen applies --
+            # so it is not named here either.
+            if metric.get("valid_geo_grains")
+            and wanted
+            not in {
+                normalize_geo_level(str(grain))
+                for grain in (metric.get("valid_geo_grains") or ())
+                if grain
+            }
+        ]
+        if without_it:
+            raise ConfigurationInvalid(
+                f"alignment geo_level '{wanted}' is not published by "
+                f"{', '.join(without_it)}; a cross-sectional reading is "
+                "answered at one grain, and nothing is rolled up to reach it"
+            )
+        if alignment.state_fips is not None:
+            bound = OBSERVATION_FILTER_BOUNDS.get("state_fips")
+            rejection = bound.rejection(alignment.state_fips) if bound else ""
+            if rejection:
+                raise ConfigurationInvalid(f"alignment state_fips {rejection}")
+
+    return _owning_sources(*metrics)
+
+
 def _owning_sources(*metrics) -> frozenset[str]:
     """The sources the resolved measures belong to, upper-cased.
 
@@ -221,31 +346,11 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
     if document.kind == "observations":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
         _require_declared_filters(metric, filters, kind="observations")
-        if document.release is not None and document.scope != "as_released":
-            raise ConfigurationInvalid(
-                "release can only be combined with scope=as_released"
-            )
-        # The same contradictions the live route refuses (API-066, API-081).
-        # Storage is not a back door for a request the API would refuse, and
-        # a stored contradiction would replay as a 422 the reader never saw
-        # when they saved it.
-        if document.newest_per_geography and document.scope != "latest":
-            raise ConfigurationInvalid(
-                "newest_per_geography can only be combined with scope=latest"
-            )
-        if document.newest_release_per_period and document.scope != "as_released":
-            raise ConfigurationInvalid(
-                "newest_release_per_period can only be combined with scope=as_released"
-            )
-        if document.newest_release_per_period and document.release is not None:
-            raise ConfigurationInvalid(
-                "release and newest_release_per_period contradict each other"
-            )
-        if document.newest_per_geography and document.newest_release_per_period:
-            raise ConfigurationInvalid(
-                "newest_per_geography and newest_release_per_period cannot be combined"
-            )
+        _require_consistent_observation_read(document)
         return _owning_sources(metric)
+
+    if document.kind == "workbench":
+        return _validate_workbench(warehouse, document)
 
     if document.kind == "distribution":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")

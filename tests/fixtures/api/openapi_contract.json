@@ -2121,8 +2121,19 @@
     }
   },
   "schemas": {
+    "AlignmentDocument": {
+      "properties": {
+        "geo_level": "string",
+        "state_fips": "string | null",
+        "year": "integer | null"
+      },
+      "required": [
+        "geo_level"
+      ]
+    },
     "AnalysisDocument": {
       "properties": {
+        "alignment": "AlignmentDocument | null",
         "bin_count": "integer | null",
         "filters": "object",
         "kind": "string",
@@ -2131,8 +2142,10 @@
         "metric_code_b": "string | null",
         "newest_per_geography": "boolean",
         "newest_release_per_period": "boolean",
+        "presentation": "PresentationDocument | null",
         "release": "string | null",
         "scope": "string",
+        "series": "array<SeriesDocument> | null",
         "visualization": "object"
       },
       "required": [
@@ -3118,6 +3131,15 @@
         "valid"
       ]
     },
+    "PresentationDocument": {
+      "properties": {
+        "options": "object",
+        "type": "string"
+      },
+      "required": [
+        "type"
+      ]
+    },
     "ReadinessResponse": {
       "properties": {
         "cache": "string",
@@ -3219,6 +3241,19 @@
         "document",
         "expected_version",
         "name"
+      ]
+    },
+    "SeriesDocument": {
+      "properties": {
+        "filters": "object",
+        "metric_code": "string",
+        "newest_per_geography": "boolean",
+        "newest_release_per_period": "boolean",
+        "release": "string | null",
+        "scope": "string"
+      },
+      "required": [
+        "metric_code"
       ]
     },
     "SourceCapability": {

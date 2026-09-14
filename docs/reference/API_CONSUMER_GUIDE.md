@@ -656,17 +656,39 @@ Authenticated, user-owned storage — see ADR-0003.
 - Documents are validated on write against the same capability and
   compatibility contracts above, so a saved configuration cannot encode a
   request the API would refuse.
-- **A document carries only its own kind's fields.** One shape serves three
-  kinds, and the three routes do not take the same parameters: an
+- **A document carries only its own kind's fields.** One shape serves four
+  kinds, and their routes do not take the same parameters: an
   `observations` document carries `metric_code`, `scope`, `release` and the
   two reductions; a `distribution` document carries `metric_code` and
   `bin_count`; a `comparison` document carries `metric_code_a` and
-  `metric_code_b`. A field belonging to another kind is refused rather than
+  `metric_code_b`; a `workbench` document carries `series`, `presentation`
+  and `alignment`. A field belonging to another kind is refused rather than
   stored, because `/distribution/bins` and `/comparison` have no scope,
   release or reduction to send it to — a distribution saved "as released in
   2022" would reopen as the latest publication with nothing saying the pin
   was dropped. A field left at its default is not a refusal: it changes no
   request, so a document that simply spells `scope: "latest"` is unaffected.
+- **A `workbench` document is a composition, and its series are ordinary
+  observations requests.** It carries one to eight `series`, a `presentation`,
+  and an optional `alignment`; it carries no `metric_code`, `scope`,
+  `release`, reduction or top-level `filters` of its own, because those belong
+  to a series and a value at the top has nowhere to be replayed. Each series
+  entry holds exactly the fields an `observations` document holds, and is
+  validated by exactly the same rules — so a filter the source does not
+  declare, a value outside its bound, a retired measure, or a
+  `release` without `scope: "as_released"` is refused inside a composition
+  just as it is on its own. The refusal names which series, by position.
+
+  `alignment` is `{geo_level, state_fips?, year?}` and describes a
+  cross-sectional reading: it is refused unless every series' measure
+  publishes that grain, because such a reading is answered at one grain and
+  nothing is rolled up to reach it. A measure that declares no grains does not
+  narrow the check — unknown is not none. Leave `alignment` out for a
+  longitudinal composition, which has no shared grain.
+
+  `presentation.type` is one of `line`, `bar`, `scatter`, `ranking`,
+  `correlation`, `heatmap`; `presentation.options` is opaque user content,
+  stored and returned verbatim like `visualization`.
 - `filters` maps a filter name to **one value**, the value the route would
   receive as a query parameter. An array, an object, or a null is refused:
   these parameters are single-valued, so a document naming two cannot replay

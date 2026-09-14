@@ -23,11 +23,17 @@ import type {
   ConfigurationValidation,
   SavedAnalysisConfiguration,
   SavedAnalysisSummary,
+  SeriesDocument,
 } from "./api/types";
-import { explorerHref, comparisonHref } from "./urlState";
-import type { GeoLevel } from "./urlState";
+import { explorerHref, comparisonHref, workbenchHref } from "./urlState";
+import type { GeoLevel, WorkbenchPresentationWord } from "./urlState";
 
-export const CONFIGURATION_KINDS = ["observations", "comparison", "distribution"] as const;
+export const CONFIGURATION_KINDS = [
+  "observations",
+  "comparison",
+  "distribution",
+  "workbench",
+] as const;
 
 /** The document an explorer selection saves as. */
 export function explorerDocument(input: {
@@ -115,6 +121,94 @@ export function comparisonDocument(input: {
   };
 }
 
+/**
+ * The document a workbench composition saves as.
+ *
+ * Each series becomes a `SeriesDocument` carrying exactly what an
+ * `observations` document carries, because that is what the API validates it
+ * as. The geography goes into `filters` rather than beside them, for the same
+ * reason `explorerDocument` puts it there: `geo_id` and `geo_level` are
+ * declared filters the capability contract governs.
+ *
+ * The alignment is carried only for a cross-sectional presentation. A
+ * longitudinal composition has no shared grain — each series is one geography
+ * at its own — and storing one would be inventing the roll-up this surface
+ * refuses.
+ *
+ * A contradiction is dropped here rather than stored, exactly as
+ * `explorerDocument` drops one: a document the live route would reject is one
+ * the reader could not reopen.
+ */
+export function workbenchDocument(input: {
+  series: {
+    metricCode: string;
+    scope?: "latest" | "as_released";
+    release?: string;
+    geoLevel?: string;
+    geoId?: string;
+    filters?: Record<string, string>;
+  }[];
+  presentation: WorkbenchPresentationWord;
+  presentationOptions?: Record<string, unknown>;
+  alignment?: {
+    geoLevel?: string;
+    stateFips?: string;
+    year?: number | null;
+  } | null;
+}): AnalysisDocument {
+  const series: SeriesDocument[] = input.series.map((entry) => {
+    const filters: Record<string, unknown> = {};
+    if (entry.geoLevel) {
+      filters.geo_level = entry.geoLevel;
+    }
+    if (entry.geoId) {
+      filters.geo_id = entry.geoId;
+    }
+    for (const [name, value] of Object.entries(entry.filters || {})) {
+      if (value) {
+        filters[name] = value;
+      }
+    }
+    const scope = entry.scope || "latest";
+    return {
+      metric_code: entry.metricCode,
+      scope,
+      release: scope === "as_released" && entry.release ? entry.release : null,
+      newest_per_geography: false,
+      // The workbench reads a settled history where the resource serves one,
+      // which is an as-released read of the newest release per period. Under
+      // `latest` the flag is a contradiction the API refuses, so it is not
+      // carried there.
+      newest_release_per_period: scope === "as_released" && !entry.release,
+      filters,
+    };
+  });
+
+  const alignment =
+    input.alignment && input.alignment.geoLevel
+      ? {
+          geo_level: input.alignment.geoLevel,
+          state_fips:
+            input.alignment.stateFips && input.alignment.geoLevel !== "NATIONAL"
+              ? input.alignment.stateFips
+              : null,
+          year: input.alignment.year ?? null,
+        }
+      : null;
+
+  return {
+    kind: "workbench",
+    series,
+    presentation: {
+      type: input.presentation,
+      options: input.presentationOptions || {},
+    },
+    alignment,
+    filters: {},
+    visualization: {},
+  };
+}
+
 export interface ValidationState {
   /** Shared request-state vocabulary value, for the status pill. */
   state: string;
@@ -167,6 +261,53 @@ export function reopenHref(document: AnalysisDocument | null | undefined): strin
       stateFips,
     });
   }
+
+  if (document.kind === "workbench") {
+    // A stored series names its measure but not the source key the workbench
+    // resolves an access shape from; the link carries the measure and the
+    // page re-derives the source from the capability list on open. That is
+    // the same order the page already works in, and it means a source that
+    // changed route segments since the save still reopens.
+    return workbenchHref({
+      series: (document.series || []).map((entry) => {
+        const seriesFilters = (entry.filters || {}) as Record<string, unknown>;
+        const dimensions: Record<string, string> = {};
+        for (const [name, value] of Object.entries(seriesFilters)) {
+          if (
+            name !== "geo_level" &&
+            name !== "geo_id" &&
+            typeof value === "string"
+          ) {
+            dimensions[name] = value;
+          }
+        }
+        return {
+          // The source key is unknown to the document, so the link carries
+          // the measure's own prefix, which `findExplorerSource` resolves
+          // case-insensitively against the discovered keys.
+          sourceKey: String(entry.metric_code || "").split(":")[0] || "",
+          metricCode: String(entry.metric_code || ""),
+          scope: entry.scope,
+          release: entry.release || undefined,
+          geoLevel:
+            typeof seriesFilters.geo_level === "string"
+              ? (seriesFilters.geo_level as GeoLevel)
+              : undefined,
+          geoId:
+            typeof seriesFilters.geo_id === "string"
+              ? (seriesFilters.geo_id as string)
+              : undefined,
+          filters: Object.keys(dimensions).length > 0 ? dimensions : undefined,
+        };
+      }),
+      presentation: document.presentation?.type,
+      alignmentGeoLevel: document.alignment?.geo_level as GeoLevel | undefined,
+      stateFips: document.alignment?.state_fips || undefined,
+      year: document.alignment?.year ?? undefined,
+      correlation: document.presentation?.type === "correlation" || undefined,
+    });
+  }
+
   return explorerHref({
     metric: document.metric_code || undefined,
     geoLevel: geoLevel as GeoLevel | undefined,
@@ -184,6 +325,17 @@ export function describeDocument(document: AnalysisDocument | null | undefined):
   }
   if (document.kind === "comparison") {
     return `${document.metric_code_a || "?"} vs ${document.metric_code_b || "?"}`;
+  }
+  if (document.kind === "workbench") {
+    const series = document.series || [];
+    const presentation = document.presentation?.type || "chart";
+    const grain = document.alignment?.geo_level
+      ? ` at ${document.alignment.geo_level}`
+      : "";
+    return (
+      `${series.length} series as a ${presentation}${grain}: ` +
+      series.map((entry) => entry.metric_code || "?").join(", ")
+    );
   }
   const scope = document.scope === "as_released"
     ? document.release

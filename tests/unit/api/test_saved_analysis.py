@@ -880,19 +880,42 @@ def test_the_document_still_forbids_an_undeclared_key(
 def test_the_fields_each_kind_carries_are_the_ones_its_route_declares() -> None:
     """Covers: API-112 — the per-kind field sets are read, not asserted.
 
-    `AnalysisDocument` is one model for three kinds, and the three routes do
+    `AnalysisDocument` is one model for four kinds, and the routes do
     not take the same parameters. The registry says which fields each kind
     carries; this checks that claim against the served contract in both
     directions, so a parameter added to one of the three routes without a
     line in the registry fails rather than becoming a field nothing validates.
     """
     from apps.api.registry import CONFIGURATION_DOCUMENT_FIELDS, CONFIGURATION_ROUTES
+    from apps.api.schemas.saved_analysis import SeriesDocument
 
     document = app.openapi()
     # `kind` names the route; `filters` is the per-source capability
     # contract, checked elsewhere; `visualization` is opaque user content.
     fields = set(AnalysisDocument.model_fields) - {"kind", "filters", "visualization"}
     assert fields, "parsing broke: the document declares no request fields"
+
+    # A workbench's three fields are containers, not request parameters: they
+    # hold the composition's shape, and what replays through a route is each
+    # `series` entry. So they are exempt from the parameter cross-check below
+    # and the check moves inside them -- every field a `SeriesDocument` carries
+    # must be a parameter `/observations` declares, which is the same claim
+    # API-112 makes about a flat document, made about the nested one (WB-6).
+    COMPOSITION_FIELDS = {"series", "presentation", "alignment"}
+    observation_parameters = {
+        parameter["name"]
+        for parameter in document["paths"]["/api/v1/observations"]["get"].get(
+            "parameters"
+        )
+        or []
+        if parameter.get("in") == "query"
+    }
+    series_fields = set(SeriesDocument.model_fields) - {"filters"}
+    assert series_fields <= observation_parameters, (
+        "/api/v1/observations declares no "
+        f"{sorted(series_fields - observation_parameters)}, which a stored "
+        "workbench series carries: a field nothing could replay"
+    )
 
     assert set(CONFIGURATION_ROUTES) == set(CONFIGURATION_DOCUMENT_FIELDS)
     for kind, path in CONFIGURATION_ROUTES.items():
@@ -902,12 +925,24 @@ def test_the_fields_each_kind_carries_are_the_ones_its_route_declares() -> None:
             for parameter in operation.get("parameters") or []
             if parameter.get("in") == "query"
         }
-        credited = CONFIGURATION_DOCUMENT_FIELDS[kind]
+        credited = CONFIGURATION_DOCUMENT_FIELDS[kind] - COMPOSITION_FIELDS
         assert credited <= declared, (
             f"{path} declares no {sorted(credited - declared)}, which the "
             f"registry says a {kind} configuration carries"
         )
-        withheld = (fields - credited) & declared
+        withheld = (fields - COMPOSITION_FIELDS - credited) & declared
+        if kind == "workbench":
+            # Nothing is lost here; it moved down a level. A workbench carries
+            # no top-level measure, scope, release or reduction -- those are a
+            # series' -- so what the top level withholds must be exactly what
+            # a `SeriesDocument` carries. A field in neither place would be a
+            # parameter a stored workbench could never replay.
+            assert withheld == series_fields, (
+                f"{path} accepts {sorted(withheld ^ series_fields)}, which is "
+                "neither a top-level workbench field nor a series field: a "
+                "parameter a stored workbench could never replay"
+            )
+            continue
         assert not withheld, (
             f"{path} accepts {sorted(withheld)}, which the registry withholds "
             f"from a {kind} configuration: a storable field nothing validates"
@@ -1411,3 +1446,241 @@ def test_storage_and_the_route_refuse_the_same_value(name: str, value: str) -> N
         )
     assert route_refusal in refused.value.detail
     assert name in refused.value.detail
+
+
+# ---------------------------------------------------------------------------
+# API-134, API-135 — a stored workbench is its series, each checked as one
+# ---------------------------------------------------------------------------
+
+
+_PEP_STATE_METRIC = {
+    "metric_code": "CENSUS_PEP:POP",
+    "source_code": "CENSUS_PEP",
+    "units": "people",
+    "valid_time_grains": ["ANNUAL"],
+    "valid_geo_grains": ["STATE", "COUNTY"],
+    "aggregation_characteristic": None,
+    "physical_lineage": {
+        "schema": "gold_pep",
+        "relation": "population_estimate_revision",
+        "key": "POP",
+    },
+    "freshness_state": "current",
+}
+
+_WORKBENCH_METRICS = {
+    _FRED_METRIC["metric_code"]: _FRED_METRIC,
+    _PEP_STATE_METRIC["metric_code"]: _PEP_STATE_METRIC,
+}
+
+
+def _workbench(**overrides) -> AnalysisDocument:
+    document: dict[str, Any] = {
+        "kind": "workbench",
+        "series": [
+            {"metric_code": _FRED_METRIC["metric_code"]},
+            {"metric_code": _PEP_STATE_METRIC["metric_code"]},
+        ],
+        "presentation": {"type": "line", "options": {}},
+    }
+    document.update(overrides)
+    return AnalysisDocument(**document)
+
+
+def _validate_workbench(document: AnalysisDocument):
+    return saved_analysis_service.validate_document(
+        _WarehouseSession(_WORKBENCH_METRICS), document
+    )
+
+
+def test_a_workbench_records_every_series_source() -> None:
+    """Covers: API-134 — a composition validates and names its sources."""
+    sources = _validate_workbench(_workbench())
+    assert sources == frozenset({"FRED", "CENSUS_PEP"})
+
+
+def test_a_workbench_without_series_or_presentation_is_refused() -> None:
+    """Covers: API-134 — the two fields a composition cannot be without."""
+    for overrides, expected in (
+        ({"series": []}, "at least one series"),
+        ({"presentation": None}, "presentation is required"),
+    ):
+        with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+            _validate_workbench(_workbench(**overrides))
+        assert expected in refused.value.detail
+
+
+def test_a_ninth_series_is_refused_by_the_schema() -> None:
+    """Covers: API-134 — the eight-series ceiling the screen and matrix hold."""
+    with pytest.raises(Exception) as refused:
+        _workbench(
+            series=[
+                {"metric_code": _FRED_METRIC["metric_code"]} for _ in range(9)
+            ]
+        )
+    assert "series" in str(refused.value)
+
+
+def test_a_series_naming_an_unpublished_measure_names_which_series() -> None:
+    """Covers: API-134 — the refusal is actionable: which series, and why."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(
+            _workbench(
+                series=[
+                    {"metric_code": _FRED_METRIC["metric_code"]},
+                    {"metric_code": "NO:SUCH"},
+                ]
+            )
+        )
+    assert "series 2" in refused.value.detail
+    assert "NO:SUCH" in refused.value.detail
+
+
+def test_a_series_carrying_a_filter_its_source_refuses_is_refused() -> None:
+    """Covers: API-134 — a series is checked by the observations code path.
+
+    FRED declares no `stratum_id`, so the observations route answers a request
+    carrying one with a 422. Storing it inside a composition must not be a way
+    around that (`storage-is-not-a-back-door-for-a-refused-value`).
+    """
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(
+            _workbench(
+                series=[
+                    {
+                        "metric_code": _FRED_METRIC["metric_code"],
+                        "filters": {"stratum_id": "OVR"},
+                    }
+                ]
+            )
+        )
+    assert "stratum_id" in refused.value.detail
+
+
+def test_a_series_carrying_a_contradiction_is_refused_by_series() -> None:
+    """Covers: API-134 — the observations contradictions, per series."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(
+            _workbench(
+                series=[
+                    {"metric_code": _FRED_METRIC["metric_code"]},
+                    {
+                        "metric_code": _PEP_STATE_METRIC["metric_code"],
+                        "release": "v2023",
+                        "scope": "latest",
+                    },
+                ]
+            )
+        )
+    assert "series 2" in refused.value.detail
+    assert "scope=as_released" in refused.value.detail
+
+
+def test_a_series_naming_a_retired_measure_is_refused() -> None:
+    """Covers: API-134 — a retired measure cannot be replayed, in a series either."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession(
+                {_FRED_METRIC["metric_code"]: _RETIRED_FRED_METRIC}
+            ),
+            _workbench(series=[{"metric_code": _FRED_METRIC["metric_code"]}]),
+        )
+    assert "series 1" in refused.value.detail
+
+
+def test_a_workbench_cannot_carry_a_top_level_filter_or_measure() -> None:
+    """Covers: API-135 — a value at the top has nowhere to be replayed."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(_workbench(filters={"geo_level": "STATE"}))
+    assert "on each series" in refused.value.detail
+
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(_workbench(metric_code=_FRED_METRIC["metric_code"]))
+    assert "cannot carry metric_code" in refused.value.detail
+
+
+def test_an_alignment_grain_a_series_does_not_publish_is_refused() -> None:
+    """Covers: API-135 — one grain for all of them, or none.
+
+    FRED publishes NATIONAL only; Census PEP publishes STATE and COUNTY. A
+    stored alignment at STATE would reopen to a control with no option for it
+    and a request the route answers empty, and reaching it would mean rolling
+    a national figure down to states, which nothing here does.
+    """
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(
+            _workbench(
+                presentation={"type": "scatter"},
+                alignment={"geo_level": "STATE"},
+            )
+        )
+    assert _FRED_METRIC["metric_code"] in refused.value.detail
+    assert "nothing is rolled up" in refused.value.detail
+
+
+def test_an_alignment_grain_every_series_publishes_is_stored() -> None:
+    """Covers: API-135 — the intersection is what is accepted."""
+    document = _workbench(
+        series=[{"metric_code": _PEP_STATE_METRIC["metric_code"]}],
+        presentation={"type": "ranking"},
+        alignment={"geo_level": "STATE", "state_fips": "06", "year": 2023},
+    )
+    assert _validate_workbench(document) == frozenset({"CENSUS_PEP"})
+    # Stored as written; the check refuses, it does not rewrite.
+    assert document.alignment.geo_level == "STATE"
+    assert document.alignment.year == 2023
+
+
+def test_an_alignment_grain_that_is_not_a_grain_is_refused() -> None:
+    """Covers: API-135 — the closed vocabulary the request layer applies."""
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        _validate_workbench(
+            _workbench(
+                presentation={"type": "scatter"},
+                alignment={"geo_level": "PLANET"},
+            )
+        )
+    assert "alignment geo_level" in refused.value.detail
+
+
+def test_an_alignment_grain_alias_resolves_to_the_vocabulary_word() -> None:
+    """Covers: API-135 — ADR-0002's promise holds for a stored alignment."""
+    document = _workbench(
+        series=[{"metric_code": _FRED_METRIC["metric_code"]}],
+        presentation={"type": "ranking"},
+        alignment={"geo_level": "NATION"},
+    )
+    assert _validate_workbench(document) == frozenset({"FRED"})
+
+
+def test_a_measure_declaring_no_grains_does_not_block_an_alignment() -> None:
+    """Covers: API-135 — unknown is not none, as everywhere else."""
+    unknown = {**_PEP_STATE_METRIC, "valid_geo_grains": []}
+    saved_analysis_service.validate_document(
+        _WarehouseSession(
+            {
+                _FRED_METRIC["metric_code"]: _FRED_METRIC,
+                _PEP_STATE_METRIC["metric_code"]: unknown,
+            }
+        ),
+        _workbench(
+            series=[{"metric_code": _PEP_STATE_METRIC["metric_code"]}],
+            presentation={"type": "scatter"},
+            alignment={"geo_level": "COUNTY"},
+        ),
+    )
+
+
+def test_a_presentation_outside_the_vocabulary_is_refused() -> None:
+    """Covers: API-135 — a stored presentation this screen cannot draw."""
+    with pytest.raises(Exception) as refused:
+        _workbench(presentation={"type": "pie"})
+    assert "presentation" in str(refused.value)
+
+
+def test_presentation_options_are_stored_verbatim() -> None:
+    """Covers: API-135 — the look of a chart is not the API's contract."""
+    options = {"palette": "mono", "stacked": True, "nested": {"any": [1, 2]}}
+    document = _workbench(presentation={"type": "bar", "options": dict(options)})
+    _validate_workbench(document)
+    assert document.presentation.options == options

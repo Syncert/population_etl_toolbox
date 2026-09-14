@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { Save } from "lucide-react";
 import BarChart from "./BarChart";
 import CorrelationMatrixChart from "./CorrelationMatrixChart";
 import CorrelationPanel from "./CorrelationPanel";
@@ -28,6 +29,7 @@ import {
   fetchAllMetrics,
   fetchAllPages,
   fetchCollectionPages,
+  createSavedAnalysis,
   fetchComparisonPages,
   getCapabilities,
   getComparisonCorrelation,
@@ -102,6 +104,15 @@ import type {
   WorkbenchPresentation,
   WorkbenchSeries,
 } from "../lib/workbench";
+import { saveChart } from "../lib/savedCharts";
+import { useStoredToken } from "../lib/apiToken";
+import {
+  describeSaveFailure,
+  describeSaveSuccess,
+  saveDestination,
+  workbenchDocument,
+} from "../lib/savedAnalysis";
+import type { SaveOutcome } from "../lib/savedAnalysis";
 import {
   parseWorkbenchState,
   serializeWorkbenchState,
@@ -206,6 +217,10 @@ export default function WorkbenchPage() {
   const [correlationError, setCorrelationError] = useState("");
   const [correlationLoading, setCorrelationLoading] = useState(false);
   const correlationTracker = useRef(createRequestTracker()).current;
+
+  const { token: accountToken } = useStoredToken();
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveOutcome | null>(null);
 
   // --- The requested composition, read once ---------------------------------
 
@@ -1199,6 +1214,137 @@ export default function WorkbenchPage() {
     [matrix, coefficient],
   );
 
+  // --- Saving the composition (WB-6) ----------------------------------------
+
+  /**
+   * The document this composition saves as.
+   *
+   * Built from the same state the chart is drawn from, so what is stored and
+   * what is on screen cannot disagree — the WEB-081 rule: a saved view records
+   * the request it issued, not the selection it was built out of. The
+   * alignment rides only a cross-sectional presentation, because a
+   * longitudinal composition has no shared grain and storing one would invent
+   * the roll-up this surface refuses.
+   */
+  const document = useMemo(
+    () =>
+      workbenchDocument({
+        series: series.map((entry) => ({
+          metricCode: entry.metricCode,
+          scope: entry.scope,
+          release: entry.release,
+          geoLevel: entry.geoLevel,
+          geoId: entry.geoId,
+          filters: entry.filters,
+        })),
+        presentation: effectivePresentation,
+        alignment: isCrossSectional(effectivePresentation)
+          ? {
+              geoLevel: alignmentGeoLevel,
+              stateFips: alignmentStateFips,
+              year: yearPin,
+            }
+          : null,
+      }),
+    [
+      series,
+      effectivePresentation,
+      alignmentGeoLevel,
+      alignmentStateFips,
+      yearPin,
+    ],
+  );
+
+  const saveTitle = useMemo(
+    () =>
+      plotted.length > 0
+        ? `${PRESENTATION_LABELS[effectivePresentation]}: ${plotted
+            .map((entry) => entry.label)
+            .join(", ")}`
+        : "Workbench composition",
+    [plotted, effectivePresentation],
+  );
+
+  const onSave = useCallback(async () => {
+    if (series.length === 0) {
+      return;
+    }
+    const destination = saveDestination(accountToken);
+    if (destination === "account") {
+      setSaving(true);
+      setSaveStatus({
+        state: "loading",
+        message: "Saving to your account",
+        destination: null,
+      });
+      try {
+        await createSavedAnalysis(accountToken, {
+          name: saveTitle,
+          document,
+        });
+        setSaveStatus(describeSaveSuccess("account", saveTitle));
+      } catch (error) {
+        // Reported where the reader asked for it, and never redirected to the
+        // browser store: a save they were told went to their account and
+        // silently did not is worse than a save that failed.
+        setSaveStatus(describeSaveFailure(error));
+      } finally {
+        setSaving(false);
+      }
+      window.setTimeout(() => setSaveStatus(null), 4000);
+      return;
+    }
+
+    saveChart({
+      id: `workbench:${series.map((entry) => seriesKey(entry)).join("~")}`,
+      version: 1,
+      title: saveTitle,
+      chartType: "workbench",
+      presentation: effectivePresentation,
+      // One envelope per series, so the evidence packet's completeness rule
+      // sees every series' source, measure, grain, geography, period, release
+      // and caveats rather than one envelope for a composition of eight.
+      series: plotted.map((entry) => ({
+        metricCode: entry.series.metricCode,
+        source: entry.series.sourceCode,
+        geoLevel: entry.series.geoLevel,
+        geoId: entry.series.geoId,
+        unit: entry.unitUnpublished ? null : entry.unit,
+        period: entry.points.length > 0
+          ? entry.points[entry.points.length - 1]!.period
+          : null,
+        release: entry.points.length > 0
+          ? String(entry.points[entry.points.length - 1]!.row?.release || "") || null
+          : null,
+        droppedPeriods: entry.droppedPeriods,
+        truncated: entry.truncated,
+        filters: entry.series.filters,
+      })),
+      caveats: [
+        ...(correlation?.caveats || []),
+        ...(matrix?.caveats || []),
+        ...preflightModel.caveats,
+      ],
+      transformation: isCrossSectional(effectivePresentation)
+        ? "api-derived"
+        : "published",
+      document,
+      savedAt: new Date().toISOString(),
+    });
+    setSaveStatus(describeSaveSuccess("browser", saveTitle));
+    window.setTimeout(() => setSaveStatus(null), 4000);
+  }, [
+    series,
+    accountToken,
+    saveTitle,
+    document,
+    plotted,
+    effectivePresentation,
+    correlation,
+    matrix,
+    preflightModel,
+  ]);
+
   // --- The shareable link ---------------------------------------------------
 
   const urlState = useMemo<WorkbenchUrlState>(
@@ -1970,6 +2116,50 @@ export default function WorkbenchPage() {
           </div>
         </section>
       ) : null}
+
+      {saveStatus ? (
+        <div
+          className="save-toast"
+          data-state={saveStatus.state}
+          data-destination={saveStatus.destination || ""}
+          data-testid="workbench-save-toast"
+          role="status"
+        >
+          {saveStatus.message}
+        </div>
+      ) : null}
+
+      <section className="grid">
+        <div className="card span-2">
+          <h2>Save</h2>
+          <p className="subtle">
+            A saved workbench stores the composition, not the values: which
+            measures, at which geographies, read how, drawn as what. It reopens
+            against the live publication, so it follows the warehouse rather
+            than freezing a copy of it.
+          </p>
+          <div className="command-row">
+            <button
+              type="button"
+              className="button primary"
+              onClick={onSave}
+              disabled={saving || series.length === 0}
+              title={
+                saveDestination(accountToken) === "account"
+                  ? "Saves to your account"
+                  : "Saves in this browser only; sign in on Saved analyses to keep it"
+              }
+              data-testid="workbench-save"
+              data-destination={saveDestination(accountToken)}
+            >
+              <Save size={15} />{" "}
+              {saveDestination(accountToken) === "account"
+                ? "Save to account"
+                : "Save in browser"}
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="grid">
         <div className="card span-2">

@@ -903,3 +903,96 @@ test("the year pin is off by default and its effect is read from the answer", as
     "reduced within 2023",
   );
 });
+
+// --- WB-6: saving the composition ------------------------------------------
+//
+// Covers: WEB-097 — the save control names its destination before and after
+// the save, a refused account save is reported where the reader asked for it
+// and never redirected to the browser store, and a saved composition reopens
+// as the same chart.
+
+test("the save states its destination, and a refusal is not redirected", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+
+  const posted = [];
+  await page.route("**/api/v1/analysis-configurations", (route) => {
+    posted.push(JSON.parse(route.request().postData() || "{}"));
+    return route.fulfill({
+      status: 403,
+      json: { detail: "this token cannot write configurations" },
+    });
+  });
+
+  // `sessionStorage`, never `localStorage`: the token's only home in the
+  // browser, and deliberately not beside the public saved-chart store.
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem(
+      "economic-data-studio:api-token",
+      "operator-token",
+    );
+  });
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  const save = page.getByTestId("workbench-save");
+  await expect(save).toHaveAttribute("data-destination", "account");
+  await expect(save).toContainText("Save to account");
+  await save.click();
+
+  // The refusal is reported where the reader asked for it. It is never
+  // quietly written to the browser store instead: a save they were told went
+  // to their account and silently did not is worse than one that failed.
+  const toast = page.getByTestId("workbench-save-toast");
+  await expect(toast).toBeVisible();
+  await expect(toast).not.toHaveAttribute("data-destination", "browser");
+
+  // And what it tried to store is a workbench document with one series each.
+  expect(posted).toHaveLength(1);
+  expect(posted[0].document.kind).toBe("workbench");
+  expect(posted[0].document.series).toHaveLength(2);
+  expect(posted[0].document.series[0].metric_code).toBe(METRIC_ACS);
+  expect(posted[0].document.filters).toEqual({});
+});
+
+test("a composition saved in the browser reopens as the same chart", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  const save = page.getByTestId("workbench-save");
+  await expect(save).toHaveAttribute("data-destination", "browser");
+  await save.click();
+  await expect(page.getByTestId("workbench-save-toast")).toBeVisible();
+
+  const stored = await page.evaluate(() =>
+    JSON.parse(
+      window.localStorage.getItem("economic-data-studio:saved-charts:v1") || "[]",
+    ),
+  );
+  expect(stored).toHaveLength(1);
+  expect(stored[0].chartType).toBe("workbench");
+  // One envelope per series, so a packet's completeness rule sees each one.
+  expect(stored[0].series).toHaveLength(2);
+  expect(stored[0].series[0].source).toBe("CENSUS_ACS");
+  expect(stored[0].series[0].geoLevel).toBe("STATE");
+  expect(stored[0].series[0].unit).toBe("People");
+  expect(stored[0].document.kind).toBe("workbench");
+  expect(stored[0].document.series[0].filters).toMatchObject({
+    geo_level: "STATE",
+    geo_id: "state:06",
+  });
+
+  // And the page's own link reopens the same composition.
+  const shared = page.url();
+  await page.goto(shared);
+  await expect(page.locator("[data-testid='workbench']")).toHaveAttribute(
+    "data-series-count",
+    "2",
+  );
+});
