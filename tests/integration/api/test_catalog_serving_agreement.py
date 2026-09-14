@@ -2095,12 +2095,21 @@ def test_a_source_that_publishes_no_value_state_serves_only_numbers(
 
 def test_a_metric_carries_the_same_value_state_declaration_as_its_source(
     api_client: TestClient,
+    published_acs_metric: str,
 ) -> None:
     """Covers: API-127 — the declaration is on both resources.
 
     The reason API-119 records for the dimensions: a client that discovered a
     metric should not have to enumerate sources to learn the shape of its own
     rows.
+
+    `/catalog/capabilities` is composed from the registry and answers on an
+    empty warehouse; the metric catalog is rows, and the disposable database
+    this suite runs against is bootstrapped with the DDL and no data. So the
+    sweep needs a metric to have been published, and every fixture here
+    publishes one for the length of a test and takes it away again. ACS is
+    the source whose own fixture already carries a value state, which is the
+    half of the agreement a bare catalog could not exercise at all.
     """
     capabilities = {
         entry["source_code"]: entry["publishes_value_status"]
@@ -2109,7 +2118,10 @@ def test_a_metric_carries_the_same_value_state_declaration_as_its_source(
     metrics = api_client.get(
         "/api/v1/catalog/metrics", params={"limit": SWEEP_SAMPLE}
     ).json()["items"]
-    assert metrics, "the catalog published no metric; the rule read nothing"
+    assert metrics, (
+        "the catalog published no metric; the fixture's metric should be "
+        "here, so the publish did not land rather than the rule being wrong"
+    )
     checked = 0
     for metric in metrics:
         detail = api_client.get(

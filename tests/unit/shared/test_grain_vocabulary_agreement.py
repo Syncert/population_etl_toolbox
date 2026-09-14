@@ -108,6 +108,7 @@ def test_every_alias_names_a_grain_in_the_vocabulary() -> None:
     )
 
 
+@pytest.mark.api
 def test_the_two_observation_scopes_are_the_same_two_scopes() -> None:
     """Covers: ENV-017 — the application offers the scopes the API declares.
 
@@ -117,6 +118,15 @@ def test_the_two_observation_scopes_are_the_same_two_scopes() -> None:
     both ends. The API's side is read from the served document -- the
     declaration a generated client sees -- rather than from the router, so
     this compares what is published against what the application sends.
+
+    Marked `api` because reading the served document means importing the
+    application: the rest of this module compares two declarations and needs
+    only `apps.api.registry`, but this one needs FastAPI installed. The
+    `etl-unit` job selects `unit and not api` into an environment built from
+    the `airflow-dev` extra, which carries no FastAPI, so without the marker
+    the job collects a test it cannot import. `make test-unit` -- the
+    `coverage` job, which is the run the evidence register names for ENV
+    rows -- installs the `api` extra and still runs it.
     """
     match = _SCOPES.search(_source())
     assert match, "OBSERVATION_SCOPES is not declared in the shape this rule reads"
