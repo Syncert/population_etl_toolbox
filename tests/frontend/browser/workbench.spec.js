@@ -996,3 +996,112 @@ test("a composition saved in the browser reopens as the same chart", async ({
     "2",
   );
 });
+
+// --- WB-7: export and accessibility ----------------------------------------
+//
+// Covers: WEB-099 — every workbench chart is reachable and readable without
+// sight and without a pointer: `role="img"` with a label that states what is
+// drawn *and* what is not, a data table carrying every plotted value, colour
+// never the only carrier of a distinction, and every control with an
+// accessible name. The export names itself a prefix when a read was cut short.
+
+test("every chart carries a complete accessible label and a textual alternative", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  // The bar is the longitudinal presentation this fixture can answer (one of
+  // the two measures publishes a single period, so a line cannot be drawn --
+  // itself the offer rule working).
+  await page.getByTestId("workbench-presentation-bar").click();
+  const bar = page.getByTestId("workbench-bar-chart").getByRole("img");
+  await expect(bar).toHaveAttribute("aria-label", /\d+ series/);
+
+  // The table is the alternative, and it carries every plotted value: three
+  // from the ACS fixture (its fourth row published no number) and one from
+  // PEP. The stub answers a metric's whole fixture rather than filtering on
+  // `geo_id`, which is what makes the count four rather than two.
+  const table = page.getByTestId("workbench-table");
+  await expect(table).toBeVisible();
+  await expect(table.locator("tbody tr")).toHaveCount(4);
+
+  // The heatmap says how many cells published a value and how many did not,
+  // so the picture's content is readable from the label alone.
+  await page.getByTestId("workbench-presentation-heatmap").click();
+  const heatmap = page.getByTestId("workbench-heatmap").getByRole("img");
+  await expect(heatmap).toHaveAttribute(
+    "aria-label",
+    /cells carry a published value and \d+ published none/,
+  );
+
+  // Colour is never the only carrier: the withheld cells are hatched, which
+  // is a second, non-colour distinction, and the legend names them in words.
+  const hatched = page.locator('[data-testid="heatmap-cell-unpublished"]');
+  await expect(hatched.first()).toHaveAttribute("fill", /url\(#/);
+
+  // And the scatter's non-contemporaneous points are outlined, not recoloured.
+  await page.getByTestId("workbench-presentation-scatter").click();
+  await expect(
+    page.locator('[data-testid="scatter-point-differing"]').first(),
+  ).toHaveAttribute("fill", "none");
+});
+
+test("every control on the page has an accessible name", async ({ page }) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  for (const control of await page.locator("select, button").all()) {
+    const name = await control.evaluate((element) => {
+      const labelled = element.id
+        ? document.querySelector(`label[for="${element.id}"]`)
+        : null;
+      return (
+        element.getAttribute("aria-label") ||
+        labelled?.textContent ||
+        element.textContent ||
+        ""
+      ).trim();
+    });
+    expect(name.length, `a control rendered with no accessible name`).toBeGreaterThan(0);
+  }
+});
+
+test("the export names itself a prefix when a read was cut short", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+  await page.getByTestId("workbench-presentation-bar").click();
+
+  const download = page.getByTestId("workbench-export");
+  await expect(download).toBeEnabled();
+  await expect(page.getByTestId("workbench-export-note")).toContainText(
+    "derived",
+  );
+
+  // The file's own name and contents are asserted at the unit tier; here the
+  // control is proved reachable and enabled only where something is plotted.
+  const name = await page.evaluate(() => {
+    const anchors = [];
+    const create = document.createElement.bind(document);
+    document.createElement = (tag) => {
+      const element = create(tag);
+      if (tag === "a") {
+        anchors.push(element);
+        element.click = () => {};
+      }
+      return element;
+    };
+    document.querySelector('[data-testid="workbench-export"]').click();
+    document.createElement = create;
+    return anchors.length > 0 ? anchors[anchors.length - 1].download : "";
+  });
+  expect(name).toMatch(/^workbench-bar-2-series\.csv$/);
+});

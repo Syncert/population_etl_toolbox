@@ -15,10 +15,11 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. Claimed 2026-09-13. Authored the same day from a
-  product request and an inspection of the comparison workspace, the explorer,
-  the analysis routes, and the saved-analysis contract.
-- **Last updated:** 2026-09-13
+- **Status:** Ready for review. Claimed 2026-09-13, all seven phases complete
+  2026-09-14. Authored 2026-09-13 from a product request and an inspection of
+  the comparison workspace, the explorer, the analysis routes, and the
+  saved-analysis contract.
+- **Last updated:** 2026-09-14
 - **Phase order taken:** WB-3, WB-4, WB-1, WB-2, WB-5, WB-6, WB-7. The plan
   leaves WB-1 and WB-3 in either order; the API-first order is taken because
   `AGENTS.md` builds frontend behaviour against stable API contracts, and
@@ -35,9 +36,9 @@ verify:
   `API_DEVELOPMENT_PLAN.md` (completed). Phases WB-3 and WB-4 add API
   behaviour and must land before the web phases that consume them; the
   phase table below states the order.
-- **Next pickup:** claim the plan, then start at WB-1. WB-1 and WB-3 are
-  independent and may be worked in either order; WB-2 needs WB-1, WB-4 needs
-  WB-3, WB-5 needs WB-2 and WB-4.
+- **Next pickup:** none. See "Plan close-out" at the end of this document for
+  what was delivered, the two recorded corrections to the criteria, and the
+  environment-limited checks that were not run.
 
 ## The request, and how this plan reads it
 
@@ -1097,3 +1098,111 @@ Not run: the integration tier. The real-schema saved-analysis contract
 would exercise a workbench document against the actual `app_api` JSONB
 column; no PostgreSQL is reachable here. `./tests/run.ps1 integration` is the
 command.
+
+### WB-7 — Export, accessibility, gates, documentation
+
+Status: **complete**, 2026-09-14.
+
+Implementation:
+
+- `apps/web/lib/observationExport.ts` — `workbenchExport`,
+  `workbenchExportFilename`.
+- `apps/web/components/WorkbenchPage.tsx` — the export control and its note.
+- `docs/reference/CI_EVIDENCE_MAP.md` — one row naming every owning path and
+  the three jobs that run them.
+- `docs/reference/WEB_FIRST_WAVE_HANDOFF.md` — the surface is marked
+  delivered and its reusable modules are listed.
+- `README.md` — the analytical pages, including `/workbench` and why
+  `/builder` keeps its name.
+- Tests: `tests/frontend/unit/workbench-export.test.js` (13) and three
+  browser cases.
+- `docs/reference/TESTING_CONTRACT.md` — WEB-098, WEB-099; totals 454 → 456;
+  `catalog_evidence.py` WEB 97 → 99.
+
+**Criterion 3, measured.** `npm run check:bundle` passes **without raising the
+budget**. `/workbench/page` finished at **469.4 kB against the 474 kB** WB-1
+declared — 4.6 kB of headroom. The progression across the phases, for a later
+reader deciding whether something else fits:
+
+| After | Route bundle | Budget |
+| --- | --- | --- |
+| WB-1 (shell, line, bar) | 411.5 kB | 474 kB |
+| WB-2 (+ scatter, ranking, heatmap) | 440.3 kB | 474 kB |
+| WB-5 (+ correlation panel, matrix) | 454.4 kB | 474 kB |
+| WB-6 (+ save) | 465.2 kB | 474 kB |
+| WB-7 (+ export) | 469.4 kB | 474 kB |
+
+The three new charts fit, so the plan's contingency ("if the three new charts
+cannot fit, the plan records the measured cost and the decision") did not
+arise. The headroom is now thin: the next thing added to this route will
+likely need the budget raised, and that should be a deliberate, recorded
+decision rather than a `--update` run — which rewrites *all* fourteen other
+routes' budgets upward against the current build, as WB-1 recorded.
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **The export adds four columns, not one.** The plan asks for `derived`;
+   a composition also needs `series` (eight measures' rows in one file must be
+   separable), `geo_level` and the pinned `geo_id` (the rows come from several
+   geographies at several grains, and a row's own attribution does not say
+   which series it belongs to).
+2. **The coefficients come last and carry no period or release.** A
+   coefficient describes a set of pairs rather than a publication, and putting
+   them last means a reader sorting by `derived` still has the published half
+   of the file intact.
+3. **The dimension columns are the union across the composition's sources.**
+   WEB-061's rule for several sources: a file carrying a subset would be this
+   client deciding which part of a source's published description a reader may
+   have, and a composition has several descriptions in it.
+4. **A composition is "partial" when any one series was truncated.** A file
+   whose third series is a prefix is a partial file, whatever the other seven
+   did.
+
+Validation run:
+
+```text
+python -m pytest tests/unit -q              # 1702 passed
+ruff check .                                # passed
+npm --prefix apps/web run test:unit         # 34 files, 526 passed
+npm --prefix apps/web run lint              # passed
+npm --prefix apps/web run typecheck         # passed
+npm --prefix apps/web run build             # passed
+npm --prefix apps/web run check:bundle      # /workbench/page 469.4 kB / 474 kB; budget unchanged
+npm --prefix apps/web run check:csp         # passed
+npx playwright test                         # 112 passed (the whole browser tier)
+```
+
+## Plan close-out
+
+All seven phases are complete. Delivered:
+
+- **API**: `GET /comparison/correlation` (API-130, API-131),
+  `GET /comparison/matrix` (API-132, API-133), and the saved `workbench` kind
+  (API-134, API-135) with its ADR-0003 amendment.
+- **Web**: `/workbench` with the measure picker, six presentations, the
+  correlation panel and matrix, save to account or browser, a CSV export, and
+  a shareable link — WEB-082 through WEB-099.
+
+Two plan corrections are recorded above, in WB-3's and WB-5's entries: the
+cacheability criterion needed a test rather than an edit, and the
+correlation's "absent for a longitudinal composition" criterion would have
+made the control unreachable and became a named statement on the panel
+instead.
+
+**Environment-limited checks, not run.** The integration tier is unreachable
+here — no PostgreSQL and no Redis — so the following are recorded rather than
+reported as passing:
+
+- `./tests/run.ps1 integration`, covering the reduction-parity fixture WB-3
+  names, the generated SQL of both new routes against a real warehouse
+  (`corr`, the `RANK()` tie arithmetic, the matrix's chained CTEs), and the
+  real-schema saved-analysis contract against the actual `app_api` JSONB
+  column for a `workbench` document.
+- `python -m pytest tests/dags -q` — Airflow is not installed, and installing
+  `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x, which is why CI
+  runs those tiers in separate jobs. No phase touched the DAGs.
+
+As partial compensation for the first, all three generated statements were
+parse-checked against the PostgreSQL grammar with `sqlglot` (recorded in WB-4
+as weaker evidence than a real database, and deliberately not added as a
+project dependency).

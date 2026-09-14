@@ -329,6 +329,22 @@ Override targets in `apps/web/.env.local`:
 - `NEXT_PUBLIC_API_ORIGIN`
 - `NEXT_PUBLIC_TILES_ORIGIN`
 
+The analytical pages:
+
+- `/catalog` — the published measures and what each one declares.
+- `/explore` — one measure at a time: its map, its history, its table, its
+  distribution, and every field qualifying its values.
+- `/compare` — two measures checked against the declared compatibility rules
+  before any data moves, then aligned on geography.
+- `/workbench` — build your own: any published measures on one chart, as a
+  line, bars, a scatter, a ranking, a geography × period heatmap, or an
+  API-derived correlation. Each series is one measure at one geography;
+  nothing is rolled up from a finer grain, normalised, or rescaled to share an
+  axis. `/builder` is the evidence-packet composer and keeps its name, so
+  "build" means compose a document and "workbench" means compose a chart.
+- `/profiles`, `/articles`, `/quality`, `/saved` — the product surfaces over
+  the same contracts.
+
 ### API-to-Map and Compose Contract Smoke
 
 Run the centralized disposable service checks end-to-end:

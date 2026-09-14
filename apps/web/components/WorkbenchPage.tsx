@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Save } from "lucide-react";
+import { Download, Save } from "lucide-react";
 import BarChart from "./BarChart";
 import CorrelationMatrixChart from "./CorrelationMatrixChart";
 import CorrelationPanel from "./CorrelationPanel";
@@ -104,6 +104,10 @@ import type {
   WorkbenchPresentation,
   WorkbenchSeries,
 } from "../lib/workbench";
+import {
+  workbenchExport,
+  workbenchExportFilename,
+} from "../lib/observationExport";
 import { saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
@@ -1345,6 +1349,67 @@ export default function WorkbenchPage() {
     preflightModel,
   ]);
 
+  // --- Export (WB-7) --------------------------------------------------------
+
+  /**
+   * Every dimension the selected sources declare, one column each.
+   *
+   * The declared set rather than the filterable subset, and the union across
+   * the composition's sources rather than one source's: a file carrying a
+   * subset would be this client deciding which part of a source's published
+   * description a reader may have (WEB-061), and a composition has several
+   * descriptions in it.
+   */
+  const exportDimensions = useMemo(() => {
+    const names = new Set<string>();
+    for (const entry of series) {
+      const source = findExplorerSource(sources, entry.sourceKey);
+      for (const name of source?.publishedDimensions || []) {
+        names.add(name);
+      }
+    }
+    return [...names].sort();
+  }, [series, sources]);
+
+  const onExport = useCallback(() => {
+    const { headings, rows } = workbenchExport(plotted, {
+      dimensions: exportDimensions,
+      geographyNames,
+      // The coefficients travel only where one was asked for and answered,
+      // and they are the only rows the file marks `derived`.
+      correlation:
+        correlation && pair
+          ? {
+              metricCodeA: pair[0],
+              metricCodeB: pair[1],
+              readings,
+            }
+          : null,
+    });
+    const escape = (value: unknown) =>
+      `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const blob = new Blob(
+      [[headings, ...rows].map((row) => row.map(escape).join(",")).join("\n")],
+      { type: "text/csv;charset=utf-8" },
+    );
+    const link = window.document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = workbenchExportFilename({
+      presentation: effectivePresentation,
+      plotted,
+    });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }, [
+    plotted,
+    exportDimensions,
+    geographyNames,
+    correlation,
+    pair,
+    readings,
+    effectivePresentation,
+  ]);
+
   // --- The shareable link ---------------------------------------------------
 
   const urlState = useMemo<WorkbenchUrlState>(
@@ -2157,7 +2222,24 @@ export default function WorkbenchPage() {
                 ? "Save to account"
                 : "Save in browser"}
             </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={onExport}
+              disabled={plotted.every((entry) => entry.points.length === 0)}
+              data-testid="workbench-export"
+            >
+              <Download size={15} /> Export CSV
+            </button>
           </div>
+          <p className="subtle" data-testid="workbench-export-note">
+            The file carries one row per plotted value with its full envelope —
+            every published uncertainty and coverage field, the period, the
+            release and the scope — and a <code>derived</code> column that is
+            true only for the API-computed coefficients. A read the page bound
+            cut short is named a prefix in the file name, because the screen
+            says so and the file has to say it too.
+          </p>
         </div>
       </section>
 
