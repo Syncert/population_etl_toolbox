@@ -7,8 +7,8 @@ name: live-deployment-smoke
 # `/health/ready` answers `SELECT 1`, so a deployment serving zero rows for
 # every metric reports itself healthy and draws a blank chart on every screen
 # with no error anywhere in the stack. `frontend-smoke` runs the same tier
-# this job runs, but against a Compose stack seeded with one ACS measure --
-# it proves the client reads the API correctly, and can say nothing about
+# this job runs, but against a Compose stack whose seed it also owns -- it
+# proves the client reads the API correctly, and can say nothing about
 # whether the deployment has content.
 #
 # So this job points the existing live-stack tier at the real origin, on a
@@ -29,6 +29,11 @@ name: live-deployment-smoke
 #   DEPLOYMENT_SMOKE_REQUIRE_ALL_SOURCES
 #                               optional; "0" to accept a deployment that has
 #                               loaded only some sources. Defaults to "1".
+#   DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES
+#                               optional; "1" to fail when any source carries a
+#                               measure its publisher has stopped emitting.
+#                               Defaults to "0" -- the drifting sources are
+#                               reported either way.
 #
 # Until DEPLOYMENT_SMOKE_BASE_URL is set this job fails, deliberately and
 # with instructions. A scheduled observer that skips when it is not
@@ -80,6 +85,15 @@ jobs:
       # quietly lost six of its seven sources still passes.
       SMOKE_REQUIRE_ALL_SOURCES: >-
         ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_ALL_SOURCES == '0' && '0' || '1' }}
+      # Opt-in, unlike the bound above. A source carrying a stale measure is
+      # one whose publisher stopped emitting it and has not retired it: real,
+      # worth seeing, and often just a provider discontinuing one series --
+      # not a reason to fail a nightly job. The content report names the
+      # drifting sources on every run either way (the step below prints it),
+      # so an operator who wants drift to be an error sets this and one who
+      # wants it to be a reading does not.
+      SMOKE_REQUIRE_FRESH_SOURCES: >-
+        ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES == '1' && '1' || '0' }}
 
     steps:
       - uses: actions/checkout@v6

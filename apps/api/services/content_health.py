@@ -178,11 +178,24 @@ def grade_content(
         for report in reports
         if report["registered"] and report["status"] != SERVING
     ]
+    # Drifting, not yet silent. A measure the warehouse marks `stale` is one
+    # the publisher has stopped emitting but has not retired: it still serves
+    # its last values, so nothing about the served answer looks wrong, and
+    # the source is on its way to publishing nothing. Summarized beside
+    # `silent_sources` so an operator can alert on a field rather than
+    # reducing the rows themselves -- these are the two lists worth watching,
+    # and they mean different things.
+    drifting = [
+        report["source_code"]
+        for report in reports
+        if report["registered"] and report["metrics_stale"] > 0
+    ]
 
     return {
         "status": _overall_status(serving, silent),
         "sources": reports,
         "silent_sources": silent,
+        "stale_sources": drifting,
     }
 
 

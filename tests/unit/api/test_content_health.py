@@ -133,6 +133,53 @@ def test_the_overall_status_separates_never_loaded_from_stopped_part_way() -> No
     assert nothing["silent_sources"] == registered
 
 
+def test_a_drifting_source_is_named_before_it_goes_silent() -> None:
+    """Covers: API-137 — stale is the early warning, not the outage.
+
+    A measure the warehouse marks ``stale`` is one the publisher stopped
+    emitting and has not retired. It still serves its last values, so the
+    served answer looks exactly like a healthy one — which is why the source
+    has to be named somewhere before every one of its measures retires and it
+    turns silent. ``stale_sources`` is that place; the status word is
+    deliberately unchanged, because the source is still answering.
+    """
+    report = grade_content(
+        ["CENSUS_ACS", "FRED"],
+        [
+            _row("CENSUS_ACS", metrics_total=2, metrics_current=1, metrics_stale=1),
+            _row("FRED", metrics_total=1, metrics_current=1),
+        ],
+    )
+
+    assert report["stale_sources"] == ["CENSUS_ACS"]
+    # Still serving: a drifting source answers rows, and calling the
+    # deployment degraded for it would cry wolf on every provider that ever
+    # discontinues one series.
+    assert report["status"] == SERVING
+    assert report["silent_sources"] == []
+
+
+def test_a_source_whose_measures_all_went_stale_is_both_silent_and_drifting() -> None:
+    """Covers: API-137 — the two lists overlap where the drift completed.
+
+    This is what the warning is warning about, so the source appears in both:
+    silent because nothing is current, stale because the reason is drift
+    rather than a warehouse that never loaded it. The counts tell those two
+    empties apart, and so do the lists.
+    """
+    report = grade_content(["BLS"], [_row("BLS", metrics_total=3, metrics_stale=3)])
+
+    assert report["status"] == EMPTY
+    assert report["silent_sources"] == ["BLS"]
+    assert report["stale_sources"] == ["BLS"]
+
+    # A source the warehouse never published is silent and *not* drifting:
+    # nothing drifted, there was never anything there.
+    never = grade_content(["BLS"], [])
+    assert never["silent_sources"] == ["BLS"]
+    assert never["stale_sources"] == []
+
+
 def test_a_published_source_no_route_serves_is_reported_but_not_counted() -> None:
     """Covers: API-137 — a warehouse fact to see, not an outage to declare.
 
@@ -198,6 +245,7 @@ def test_the_resource_reports_every_registered_source() -> None:
     payload = response.json()
     assert payload["status"] == SERVING
     assert payload["silent_sources"] == []
+    assert payload["stale_sources"] == []
     assert {source["source_code"] for source in payload["sources"]} == set(
         OBSERVATION_DISPATCH
     )

@@ -49,7 +49,8 @@ This resource reports on content, per source:
       "last_publication_time": "2026-09-01T04:11:22+00:00"
     }
   ],
-  "silent_sources": ["FBI_UCR"]
+  "silent_sources": ["FBI_UCR"],
+  "stale_sources": ["BLS"]
 }
 ```
 
@@ -68,7 +69,14 @@ This resource reports on content, per source:
   not account for `metrics_total` — a warehouse state this API has not been
   taught, and a signal that the counts are a partial tally.
 - `silent_sources` lists the registered sources publishing nothing. It is the
-  field to alert on.
+  field to page on: every chart over those sources draws nothing.
+- `stale_sources` lists the registered sources carrying at least one measure
+  the warehouse has marked `stale` — the publisher stopped emitting it and it
+  has not been retired. Those measures still serve their last values, so
+  nothing about the answer looks wrong; this is the early warning, and a
+  source can be in both lists once the drift finishes. Watch it, but a
+  provider discontinuing one series lands here legitimately, so it is a lower
+  grade of alarm than `silent_sources`.
 
 It answers `200` in every content state, `empty` included: a report you
 cannot read in the state you need it is not a report. A `503` here means the

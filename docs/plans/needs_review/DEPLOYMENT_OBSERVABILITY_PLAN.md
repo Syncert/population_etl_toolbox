@@ -15,8 +15,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Both deliverables are implemented, validated,
-  and documented. One operator action is required before the scheduled job can
+- **Status:** Ready for review. All five deliverables are implemented,
+  validated, and documented. One operator action is required before the scheduled job can
   be green: setting `DEPLOYMENT_SMOKE_BASE_URL` (see *Operator setup* below).
 - **Last updated:** 2026-09-14
 - **Current milestone:** delivered.
@@ -169,6 +169,64 @@ Decisions worth reviewing:
   participation row, which its fact table's foreign key requires, and PEP's
   observation revision, which its as-released surface reads.
 
+### 4. The catalog/serving sweeps reach every source they name (DB-043)
+
+`test_every_registered_source_answers_each_current_catalog_code` walked the
+reviewed dispatch registry and did `if not codes: continue` — so a sweep that
+checked three of seven sources reported the same green as one that checked all
+seven, and named neither the four it skipped nor the reason. On the warehouse
+CI builds the skipped set was BLS, FBI UCR and USDA NASS every run, including
+FBI's `identity_columns` pair over a participation basis and NASS's
+five-column tuple: the two widest cases of the identity strategy DB-032 had
+already caught once. The source-scoped sweep
+(`test_every_route_answers_the_metric_code_it_published`) had the same shape,
+with one Census PEP assertion standing in for all four of its contracts.
+
+Every registered source now has a fixture publishing one current code, the
+`continue` is gone, and a source contributing nothing fails naming itself.
+
+Decisions worth reviewing:
+
+- **FBI UCR and USDA NASS run their real pipelines.** Both already have
+  support modules (`tests/support/fbi_release.py`, `tests/support/usda_nass.py`)
+  that replay reviewed captures through transform and publish, and remove all
+  of their own state afterwards. A fixture that hand-wrote gold rows for them
+  would be asserting agreement between two things this file wrote.
+- **BLS is seeded by hand**, through the publisher's series arm — the branch
+  that publishes a series whose program no measure identity claims — because
+  it has no such support module.
+- **The fixtures' own codes are asserted answerable**, separately from the
+  coverage check. A source carrying thousands of other catalog rows could
+  otherwise satisfy coverage without the identity strategy under test being
+  read at all.
+
+### 5. Drift is named, and fails somewhere (API-137, WEB-102)
+
+`freshness_state` distinguishes `stale` from `current`: a stale measure is one
+the publisher stopped emitting and has not retired. It still serves its last
+values, so nothing about the served answer looks wrong — the source reads
+`serving`, `silent_sources` is empty, every chart draws — right up until the
+last of its measures retires and it goes silent. Nothing named that state.
+
+`stale_sources` now does, beside `silent_sources`, and
+`SMOKE_REQUIRE_FRESH_SOURCES` makes it fail.
+
+Decisions worth reviewing:
+
+- **A separate bound from `SMOKE_REQUIRE_ALL_SOURCES`, and opt-in for
+  deployments.** The two differ in what a violation means. A source publishing
+  nothing is an outage on every screen that reads it. A source carrying one
+  stale measure may simply have had a provider discontinue one series — real,
+  worth seeing, not worth waking anyone for. `frontend-smoke` sets it (the seed
+  publishes only current measures, so a violation there can only mean the rule
+  or the report broke, which keeps the check exercised on every pull request);
+  a deployment opts in with `DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES=1`.
+- **The summary is checked against the rows on every run regardless**, in both
+  directions. A field an operator alerts on that can disagree with the rows it
+  is derived from is worse than not having the field.
+- **The status word is deliberately unchanged by drift.** A drifting source is
+  still answering, and grading the deployment down for it would cry wolf.
+
 ## Operator setup
 
 The scheduled job is red until one repository variable is set:
@@ -196,6 +254,10 @@ leaving it unconfigured.
 - [x] The live-stack seed publishes one measure per registered source, with
       every catalog row derived from that source's own publisher view, and
       `frontend-smoke` grades against all of them.
+- [x] The catalog/serving sweeps require every registered source and every
+      source-scoped contract, with no silent skip.
+- [x] Sources drifting toward silence are named in the report and fail a
+      bound that CI sets.
 - [x] `TESTING_CONTRACT.md`, `CI_EVIDENCE_MAP.md`, `API_CONSUMER_GUIDE.md`,
       the CI evidence manifest, and the reviewed OpenAPI snapshot are updated
       together with the implementation.
@@ -221,6 +283,9 @@ and Redis 7.
 | Every seeded metric answers | the tier's own loop (`buildExplorerSources` + `buildLatestObservationRequest` + `apiFetch`) against a live API on that stack | **8 of 8 answered `total=1`**, up from 2; every source resolved to the neutral `/observations` shape |
 | Served geographies join the boundary | `/observations` for each county-grain measure | every one serves `state:55\|county:025`, the one polygon the Martin seed draws |
 | All-sources bound | `SMOKE_REQUIRE_ALL_SOURCES=1 npm run test:smoke` (content-health file) | **5 passed**, including the bound that was skipped before the seed grew |
+| Sweeps reach every source | `pytest -o addopts='' tests/integration/api` | **81 passed** on a CI-shaped warehouse; removing the USDA NASS fixture fails the sweep with `these registered sources published no current catalog code … ['USDA_NASS']` |
+| Drift bound, clean stack | `SMOKE_REQUIRE_ALL_SOURCES=1 SMOKE_REQUIRE_FRESH_SOURCES=1 npm run test:smoke` | **7 passed** |
+| Drift bound bites | one FRED measure marked `stale` beside a current one | report reads `status: serving`, `silent_sources: []`, `stale_sources: ['FRED']` — everything looks healthy — and only the drift bound fails, which is the signal that previously had no home |
 
 Mutation check, to establish the tests fail for the right reason: changing the
 grading rule from `current > 0` to `total > 0` turned
@@ -267,12 +332,7 @@ still failing and naming the six sources that remained silent.
 
 ## Follow-on work this plan deliberately does not do
 
-1. **The catalog/serving sweeps are as wide as their fixtures.**
-   `test_every_registered_source_answers_each_current_catalog_code` loops the
-   registered sources but does `if not codes: continue`, so sources without a
-   seed fixture in that suite are silently skipped. Per-source coverage does
-   exist in `tests/e2e`; the cross-cutting sweep is narrower than it reads.
-2. **Staleness is not alerted on.** `freshness_state` distinguishes `stale`
-   from `current`, and the content report now counts both, but nothing fails
-   when a source drifts to stale. The counts are the input a future check
-   would need.
+Nothing outstanding from the original audit. The gaps it opened with — no
+deployment check, a readiness probe blind to content, a one-row smoke seed,
+sweeps that skipped four of seven sources silently, and an unwatched drift
+signal — are each closed above.

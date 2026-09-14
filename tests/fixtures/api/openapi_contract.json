@@ -2403,11 +2403,13 @@
       "properties": {
         "silent_sources": "array<string>",
         "sources": "array<SourceContent>",
+        "stale_sources": "array<string>",
         "status": "string"
       },
       "required": [
         "silent_sources",
         "sources",
+        "stale_sources",
         "status"
       ]
     },

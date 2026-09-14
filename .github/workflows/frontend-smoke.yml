@@ -60,6 +60,13 @@ jobs:
       # resolving its lineage, fails this job at pull-request time instead of
       # surviving until someone opens that source in the deployed explorer.
       SMOKE_REQUIRE_ALL_SOURCES: "1"
+      # And no source may be drifting. The seed publishes only measures the
+      # publisher is still emitting, so this bound is free here -- which is
+      # exactly why it belongs here: it keeps the drift check exercised on
+      # every pull request, against a stack where a violation can only mean
+      # the rule or the report broke, never that a provider discontinued a
+      # series. Deployments opt in separately.
+      SMOKE_REQUIRE_FRESH_SOURCES: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

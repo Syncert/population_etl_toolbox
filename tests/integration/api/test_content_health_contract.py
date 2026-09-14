@@ -265,6 +265,36 @@ def test_a_source_whose_measures_have_all_retired_is_reported_empty(
         writer.close()
 
 
+def test_a_drifting_source_is_named_from_the_warehouses_own_state(
+    one_measure_per_state: list[str], settings: PostgresTestConfig
+) -> None:
+    """Covers: API-137 — `stale_sources` reads the stored state, not a guess.
+
+    The fixture seeds one measure in each of the three states, so the source
+    carries a stale measure and a current one at the same time. That is the
+    condition the warning exists for: the source answers rows, nothing about
+    the served answer looks wrong, and a publisher has already stopped
+    emitting one of its measures.
+    """
+    payload = _read_report(settings)
+    fred = _source(payload, FIXTURE_SOURCE)
+
+    assert fred["metrics_stale"] >= 1
+    assert FIXTURE_SOURCE in payload["stale_sources"], payload["stale_sources"]
+    # Still serving, and therefore not silent: the two lists answer different
+    # questions and a drifting source must not be reported as an outage.
+    assert fred["status"] == SERVING
+    assert FIXTURE_SOURCE not in payload["silent_sources"]
+
+    # Every name in the list is a registered source that really carries one,
+    # in both directions, so the summary cannot drift from the rows.
+    for entry in payload["sources"]:
+        if not entry["registered"]:
+            continue
+        drifting = entry["source_code"] in payload["stale_sources"]
+        assert drifting is (entry["metrics_stale"] > 0), entry
+
+
 def test_the_catalog_refuses_a_state_outside_the_counted_vocabulary(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:

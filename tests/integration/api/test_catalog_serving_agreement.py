@@ -30,6 +30,9 @@ from apps.api.main import app
 from apps.api.registry import OBSERVATION_DISPATCH
 from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
+from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
+from tests.support import fbi_release
+from tests.support import usda_nass as nass_support
 from tests.support.capture_seed import delete_geography, seed_geography
 from tests.support.postgres import PostgresHookStub, PostgresTestConfig
 
@@ -511,31 +514,245 @@ def test_no_acs_serving_row_survives_under_the_abandoned_spelling(
         database_connection.close()
 
 
+# ---------------------------------------------------------------------------
+# The three sources the sweep below could not reach (DB-043)
+#
+# `test_every_registered_source_answers_each_current_catalog_code` walked the
+# reviewed dispatch registry and skipped every source whose catalog held no
+# current code. On the warehouse CI builds that was BLS, FBI UCR and USDA
+# NASS -- three of seven, and between them two of the three identity
+# strategies' widest cases: FBI's `identity_columns` pair over a participation
+# basis, and NASS's five-column tuple. The sweep read green having exercised
+# neither, and the skip was silent, so nothing said which sources it had not
+# checked.
+#
+# These publish one current code each, so the sweep can require every
+# registered source rather than accepting whichever happened to be seeded.
+# FBI UCR and USDA NASS run their real pipelines from reviewed captures --
+# both already have support modules that replay, transform, publish, and
+# remove all of their own state -- because a fixture that hand-wrote gold
+# rows for them would be asserting agreement between two things this file
+# wrote. BLS has no such module, so its rows are seeded here, through the
+# publisher's series arm (the branch that publishes a series whose program no
+# measure identity claims).
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def published_bls_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one BLS metric, and serve one row under the code it publishes."""
+    token = uuid4().hex[:8].upper()
+    program_code = f"S{token[:2]}"
+    series_id = f"SWEEP{token}"
+    metric_code = f"BLS:{series_id}"
+    registered_before = _registration_state(postgres_connection_factory, "BLS")
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_survey (
+                    program_code, survey_name, observation_basis
+                ) VALUES (%s, 'Catalog agreement survey', 'JOBS')
+                """,
+                (program_code,),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_series (
+                    bls_survey_sk, program_code, series_id, series_title,
+                    measure_category, value_type, unit_of_measure,
+                    seasonal_adjustment_status
+                )
+                SELECT bls_survey_sk, %s, %s, 'Catalog agreement series',
+                       'EMPLOYMENT', 'LEVEL', 'persons', 'Seasonally Adjusted'
+                FROM gold_bls.dim_bls_survey WHERE program_code = %s
+                """,
+                (program_code, series_id, program_code),
+            )
+            # The reporting table and the latest projection carry the same
+            # row: the publisher reads the latest projection for the grains it
+            # advertises, and the sweep reads whichever the dispatch selects.
+            for relation in ("rpt_bls_observations", "mv_bls_latest"):
+                database_cursor.execute(
+                    f"""
+                    INSERT INTO gold_bls.{relation} (
+                        source_code, observation_date, duration_start,
+                        duration_end, time_sk, as_of_date, updated_at, geo_id,
+                        geo_level, series_id, program_code, series_title,
+                        value, units, seasonal_adjustment_status, metric_code,
+                        metric_display_name
+                    ) VALUES (
+                        'BLS', %s, %s, %s, 20970101, %s, %s, 'us:1',
+                        'NATIONAL', %s, %s, 'Catalog agreement series', 1234,
+                        'persons', 'Seasonally Adjusted', %s,
+                        'Catalog agreement series'
+                    )
+                    """,
+                    (
+                        BLS_PERIOD_START,
+                        BLS_PERIOD_START,
+                        BLS_PERIOD_END,
+                        BLS_PERIOD_END,
+                        f"{BLS_PERIOD_END} 00:00:00+00",
+                        series_id,
+                        program_code,
+                        metric_code,
+                    ),
+                )
+        writer.commit()
+    finally:
+        writer.close()
+
+    harvest_publisher(postgres_connection_factory, Publisher("gold_bls"))
+    _assert_catalog_published(postgres_connection_factory, "BLS", series_id)
+
+    try:
+        yield metric_code
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as database_cursor:
+                database_cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_code = 'BLS' AND source_object_key = %s",
+                    (series_id,),
+                )
+                for relation in ("mv_bls_latest", "rpt_bls_observations"):
+                    database_cursor.execute(
+                        f"DELETE FROM gold_bls.{relation} WHERE series_id = %s",
+                        (series_id,),
+                    )
+                database_cursor.execute(
+                    "DELETE FROM gold_bls.dim_bls_series WHERE series_id = %s",
+                    (series_id,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM gold_bls.dim_bls_survey WHERE program_code = %s",
+                    (program_code,),
+                )
+                _remove_registration(database_cursor, registered_before, "BLS")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+@pytest.fixture
+def published_fbi_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one FBI UCR metric by running its real release pipeline."""
+    for factory in fbi_release.reviewed_warehouse(postgres_connection_factory):
+        captured = fbi_release.persist_fixture_release(factory)
+        fbi_release.run_pipeline(factory, captured)
+        harvest_publisher(factory, Publisher("gold_fbi"))
+        yield _one_published_code(factory, "FBI_UCR")
+
+
+@pytest.fixture
+def published_nass_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish one USDA NASS metric by running its real release pipeline."""
+    factory = nass_support.reviewed_warehouse(postgres_connection_factory, request)
+    product = get_nass_product("corn_survey_annual")
+    nass_support.run_to_gold(
+        factory, product, nass_support.load_product_fixture(product.product_id)
+    )
+    harvest_publisher(factory, Publisher("gold_nass"))
+    return _one_published_code(factory, "USDA_NASS")
+
+
+def _assert_catalog_published(
+    factory: Callable[[], connection], source_code: str, source_object_key: str
+) -> None:
+    """Fail loudly when a harvest published nothing for a seeded measure."""
+    reader = factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = %s AND source_object_key = %s
+                """,
+                (source_code, source_object_key),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, (
+        f"the harvest published no {source_code} catalog row for "
+        f"{source_object_key!r}; the fixture proves nothing about the sweep"
+    )
+
+
+def _one_published_code(factory: Callable[[], connection], source_code: str) -> str:
+    """The first current catalog code the harvest published for a source."""
+    reader = factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = %s AND freshness_state = 'current'
+                ORDER BY metric_code LIMIT 1
+                """,
+                (source_code,),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, (
+        f"the harvest published no current {source_code} catalog row, so the "
+        "sweep would skip that source exactly as it used to"
+    )
+    return str(published[0])
+
+
 def test_every_registered_source_answers_each_current_catalog_code(
-    api_client: TestClient, published_acs_metric: str, published_cdc_metric: str
+    api_client: TestClient,
+    published_acs_metric: str,
+    published_cdc_metric: str,
+    published_fred_metric: str,
+    published_pep_metric: str,
+    published_bls_metric: str,
+    published_fbi_metric: str,
+    published_nass_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
     Source-agnostic by construction: the sources come from the reviewed
     observation-dispatch registry, never from a list written here.
 
-    A source whose catalog holds no ``current`` code contributes nothing, not
-    because an unresolvable code is tolerable but because an unpopulated
-    warehouse publishes no codes at all -- that is a warehouse with no content
-    for the source, not a source advertising something it cannot serve. The
-    final assertion is what stops that from becoming a vacuous pass: at least
-    one registered source must actually have been exercised, and the fixture
-    above guarantees Census ACS is one of them on any warehouse.
+    Covers: DB-043 -- and every registered source is exercised, not whichever
+    the warehouse happened to carry.
+
+    This sweep used to `continue` past a source whose catalog held no current
+    code, on the reasoning that an unpopulated warehouse is not a source
+    advertising what it cannot serve. That reasoning is sound and the
+    behaviour was not: the skip was silent, so a sweep that checked three of
+    seven sources reported the same green as one that checked all seven, and
+    nothing named the four it had not looked at. On the warehouse CI builds,
+    BLS, FBI UCR and USDA NASS were skipped every run -- including FBI's
+    `identity_columns` pair over a participation basis and NASS's five-column
+    tuple, the two widest cases of the strategy DB-032 had already caught once.
+
+    Every registered source now has a fixture that publishes one current code,
+    so a source contributing nothing is a failure that names it rather than a
+    silent pass.
     """
     unresolvable: list[str] = []
-    exercised: list[str] = []
+    exercised: dict[str, list[str]] = {}
 
     for source_code in sorted(OBSERVATION_DISPATCH):
-        codes = _current_catalog_codes(api_client, source_code)
-        if not codes:
-            continue
-        for metric_code in codes[:SWEEP_SAMPLE]:
-            exercised.append(f"{source_code}:{metric_code}")
+        for metric_code in _current_catalog_codes(api_client, source_code)[
+            :SWEEP_SAMPLE
+        ]:
+            exercised.setdefault(source_code, []).append(metric_code)
             if _answers(api_client, metric_code) < 1:
                 unresolvable.append(
                     f"{source_code} publishes current catalog code "
@@ -544,15 +761,33 @@ def test_every_registered_source_answers_each_current_catalog_code(
                 )
 
     assert not unresolvable, "\n".join(unresolvable)
-    assert exercised, (
-        "no registered source published a current catalog code, so this guard "
-        "proved nothing; the warehouse under test carries no catalog content"
+
+    # The registry is the list, so a source added to the dispatch without a
+    # fixture fails here rather than quietly joining the ones nobody checks.
+    unexercised = sorted(set(OBSERVATION_DISPATCH) - set(exercised))
+    assert not unexercised, (
+        f"these registered sources published no current catalog code, so the "
+        f"sweep proved nothing about them: {unexercised}. Every source needs a "
+        "fixture that publishes one; a source that cannot get one is a source "
+        "this guard does not cover."
     )
-    # Census ACS is identified by a metric-code column. CDC is identified by
-    # `identity_columns` -- three lineage keys composed into a row predicate --
-    # and no fixture published one, so on a warehouse with no CDC content this
-    # sweep skipped that whole strategy while reading green (DB-032).
-    assert f"CDC:{published_cdc_metric}" in exercised, exercised
+
+    # And the codes the fixtures published are among the codes swept: a source
+    # whose catalog carried thousands of other rows could otherwise satisfy
+    # the check above without the identity strategy under test being read.
+    for source_code, metric_code in (
+        ("CENSUS_ACS", published_acs_metric),
+        ("CDC", published_cdc_metric),
+        ("FRED", published_fred_metric),
+        ("CENSUS_PEP", published_pep_metric),
+        ("BLS", published_bls_metric),
+        ("FBI_UCR", published_fbi_metric),
+        ("USDA_NASS", published_nass_metric),
+    ):
+        assert _answers(api_client, metric_code) >= 1, (
+            f"{source_code}'s fixture published '{metric_code}', which "
+            "/api/v1/observations answers with no rows"
+        )
 
 
 def _current_catalog_grains(
@@ -1339,7 +1574,11 @@ def test_the_stratum_the_warehouse_accepts_is_the_stratum_the_api_serves(
 
 
 def test_every_route_answers_the_metric_code_it_published(
-    api_client: TestClient, published_pep_metric: str
+    api_client: TestClient,
+    published_pep_metric: str,
+    published_acs_metric: str,
+    published_fred_metric: str,
+    published_bls_metric: str,
 ) -> None:
     """Covers: DB-034 — a route's own answer is a request it accepts.
 
@@ -1351,11 +1590,14 @@ def test_every_route_answers_the_metric_code_it_published(
     used to be an empty 200. A route refusing an identity it published in its
     own response is the route disagreeing with itself.
 
+    Covers: DB-043 -- and every source-scoped contract is exercised.
+
     Source-agnostic: the contracts come from the reviewed registry and the
     codes from the served catalog, so a contract added later is covered
-    without an edit here. A source with no catalog content contributes
-    nothing, and the PEP assertion below is what stops that from passing
-    vacuously -- PEP is the source whose two identities differ at all.
+    without an edit here. It used to be possible for a contract to contribute
+    nothing and say so to nobody -- one PEP assertion stood in for all four --
+    so every segment the registry declares now has a fixture publishing a
+    code, and a segment that reaches no row fails naming itself.
     """
     from apps.api.registry import SERVING_CONTRACTS
 
@@ -1397,11 +1639,22 @@ def test_every_route_answers_the_metric_code_it_published(
                     )
 
     assert not disagreements, "\n".join(disagreements)
+
     # Census PEP is the source whose published identity and catalog identity
     # differ at all. If it was not exercised the sweep proved nothing.
     assert any(
         entry.startswith(f"pep:{published_pep_metric}->") for entry in exercised
     ), exercised
+
+    # And every other source-scoped contract too: a segment whose catalog code
+    # reached no row was skipped silently, so three of the four could have
+    # stopped answering with this sweep green on PEP alone.
+    reached = {entry.split(":", 1)[0] for entry in exercised}
+    unreached = sorted(set(SERVING_CONTRACTS) - reached)
+    assert not unreached, (
+        f"these source-scoped contracts answered no row for any current "
+        f"catalog code, so the sweep proved nothing about them: {unreached}"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -53,4 +53,11 @@ class ContentHealthResponse(BaseModel):
 
     status: str
     sources: list[SourceContent]
+    #: Registered sources publishing no current measure: nothing a client can
+    #: ask for. The field to page on.
     silent_sources: list[str]
+    #: Registered sources carrying at least one measure the warehouse has
+    #: marked ``stale`` -- the publisher stopped emitting it and it has not
+    #: been retired. Still served, so nothing about the answer looks wrong;
+    #: this is the early warning, not the outage.
+    stale_sources: list[str]

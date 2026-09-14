@@ -16,16 +16,21 @@ import { beforeAll, describe, expect, test } from "vitest";
 // blank chart on every screen with no error anywhere. Every tier was green
 // while that was true, because every tier seeds its own content.
 //
-// Two bounds, deliberately different:
+// Three bounds, deliberately different in how hard each one bites:
 //
 //   - `status` must not be `empty`, always. A deployment publishing no
 //     current measure at all cannot draw anything, and no seeding story
 //     makes that acceptable.
-//   - `silent_sources` must be empty only under SMOKE_REQUIRE_ALL_SOURCES,
-//     the way the end-to-end tier grades against its product inventory under
-//     E2E_REQUIRE_ALL_PRODUCTS. The Compose stack this tier also runs
-//     against seeds one ACS measure, so six of seven sources are legitimately
-//     silent there; a fully loaded deployment has no excuse.
+//   - `silent_sources` must be empty under SMOKE_REQUIRE_ALL_SOURCES, the way
+//     the end-to-end tier grades against its product inventory under
+//     E2E_REQUIRE_ALL_PRODUCTS. Both stacks this tier runs against now set
+//     it: the Compose seed publishes one measure per registered source, and a
+//     deployment that has loaded its warehouse has no excuse either.
+//   - `stale_sources` must be empty only under SMOKE_REQUIRE_FRESH_SOURCES,
+//     which is opt-in. A drifting source still answers rows, so failing on it
+//     everywhere would cry wolf on any provider that discontinues one series;
+//     the summary is checked against the rows on every run regardless, so the
+//     field an operator alerts on is always known to be honest.
 
 import { apiFetch } from "../../../apps/web/lib/api/client";
 import { reportUnhandledErrors } from "./unhandledErrors";
@@ -34,6 +39,21 @@ const BASE_URL = (process.env.SMOKE_BASE_URL || "").replace(/\/+$/, "");
 
 /** Every source must publish a current measure, not merely some source. */
 const REQUIRE_ALL_SOURCES = process.env.SMOKE_REQUIRE_ALL_SOURCES === "1";
+
+/**
+ * No source may be drifting: every measure it publishes is one its publisher
+ * is still emitting.
+ *
+ * Separate from REQUIRE_ALL_SOURCES, and opt-in rather than on by default,
+ * because the two bounds differ in what a violation means. A source
+ * publishing nothing is an outage on every screen that reads it. A source
+ * carrying one stale measure may simply have had a provider discontinue one
+ * series — real, worth seeing, and not worth waking anyone for. So the
+ * Compose stack sets it (its seed publishes only current measures, which
+ * makes the bound free and keeps the code path exercised), and a deployment
+ * opts in when its operators want drift to be an error rather than a reading.
+ */
+const REQUIRE_FRESH_SOURCES = process.env.SMOKE_REQUIRE_FRESH_SOURCES === "1";
 
 /** The words the resource publishes, as `apps/api/services/content_health.py` declares them. */
 const SERVING = "serving";
@@ -49,7 +69,7 @@ function installOriginResolvingFetch() {
 }
 
 describe.skipIf(!BASE_URL)("deployed content health", () => {
-  /** @type {{status: string, sources: Array<Record<string, unknown>>, silent_sources: string[]}} */
+  /** @type {{status: string, sources: Array<Record<string, unknown>>, silent_sources: string[], stale_sources: string[]}} */
   let report;
 
   beforeAll(async () => {
@@ -118,6 +138,39 @@ describe.skipIf(!BASE_URL)("deployed content health", () => {
     expect(checked, "the content report named no registered source").toBeGreaterThan(0);
     expect(disagreements).toEqual([]);
   }, 60_000);
+
+  test("the drifting sources are named, and agree with the rows", () => {
+    // Always checked, whether or not drift is an error here: the summary an
+    // operator alerts on has to agree with the rows it is derived from, in
+    // both directions, or the field is worse than not having it.
+    expect(Array.isArray(report.stale_sources)).toBe(true);
+
+    const registered = report.sources.filter((source) => source.registered);
+    const disagreements = registered
+      .filter(
+        (source) =>
+          report.stale_sources.includes(source.source_code) !==
+          (Number(source.metrics_stale) > 0),
+      )
+      .map(
+        (source) =>
+          `${source.source_code}: metrics_stale=${source.metrics_stale} but ` +
+          `${report.stale_sources.includes(source.source_code) ? "in" : "not in"} stale_sources`,
+      );
+    expect(disagreements).toEqual([]);
+  });
+
+  test.skipIf(!REQUIRE_FRESH_SOURCES)("no registered source is drifting", () => {
+    // A stale measure is one the publisher stopped emitting and has not
+    // retired. It still serves its last values, so the screen looks healthy
+    // right up until the source goes silent -- which is the whole reason to
+    // fail on it somewhere rather than only reporting it.
+    expect(
+      report.stale_sources,
+      "SMOKE_REQUIRE_FRESH_SOURCES=1 but these sources carry measures their " +
+        "publisher has stopped emitting; they still answer, and will stop",
+    ).toEqual([]);
+  });
 
   test.skipIf(!REQUIRE_ALL_SOURCES)("every registered source publishes a measure", () => {
     // Only where the deployment claims to be fully loaded. Against the
