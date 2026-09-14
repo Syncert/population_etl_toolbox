@@ -13,9 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect; WEB-036/WEB-056's rule unapplied on the product screen.**
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Investigated and authored 2026-09-13;
+  delivered 2026-09-13 (`0b2f6e4`). WEB-036/WEB-056's rule was
+  unapplied on the product screen; see "What changed" and "Validation".
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/components/ProfileProduct.tsx`
 
 ## Context

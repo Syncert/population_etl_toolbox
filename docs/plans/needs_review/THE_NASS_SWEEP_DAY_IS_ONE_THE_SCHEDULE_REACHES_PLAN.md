@@ -13,9 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect.**
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Investigated and authored 2026-09-13;
+  delivered 2026-09-13 (`604e10c`, schedule table corrected in
+  `631a5b9`). See "What changed" and "Validation".
+- **Last updated:** 2026-09-14
 - **Owner surface:** `dags/usda_nass_crop_ingest_dag.py`,
   `src/data_ingestion_toolbox/usda_nass/capture.py`
 

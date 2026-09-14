@@ -12,10 +12,14 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. Authored and claimed 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Authored and claimed 2026-09-13; delivered
+  2026-09-13 as API-085. The status, validation and remaining-work fields
+  below were reconciled with the folder on 2026-09-14: the implementation,
+  its tests and its catalog row had landed, and this document alone still
+  said "everything" remained.
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/freshness.py`
-- **Next pickup:** read the whole published state, not its maximum.
+- **Next pickup:** none.
 
 ## Context
 
@@ -77,10 +81,56 @@ property; a maximum over one column of it does not.
   cache hits; it never serves a stale body, which is the property that
   matters.
 
+## What changed
+
+- `apps/api/freshness.py` reads the whole of
+  `gold_glossary.publisher_harvest_state` -- `source_code`,
+  `last_publication_time`, `last_content_fingerprint` and
+  `last_source_watermark`, ordered by source -- and `publication_epoch(rows)`
+  digests it: the rows are sorted again in Python, serialized as JSON so
+  field boundaries are unambiguous, hashed with SHA-256 and cut to sixteen
+  hex characters, the width the served-contract fingerprint already uses.
+  The epoch rule is a pure function over rows so it is provable without a
+  database (criteria 1--3).
+- An empty table answers the constant `never-published`, and the provider's
+  refresh path is unchanged: a failed read logs and keeps the last known
+  epoch, `epoch-unknown` before any read succeeds, and is retried only after
+  the freshness window (criterion 4).
+- `docs/reference/TESTING_CONTRACT.md` row **API-085** names the behaviour;
+  `tests/unit/api/test_operational_hardening.py` carries its four nodes
+  (criterion 5):
+  - `test_the_epoch_changes_when_any_recorded_state_changes` -- an unchanged
+    state keeps its key; changing any one of the three recorded fields
+    rotates it;
+  - `test_a_source_behind_another_still_rotates_the_epoch` -- a correction
+    whose declared time is behind another publisher's still moves the key,
+    which `MAX` never did;
+  - `test_the_epoch_is_a_stable_opaque_token` -- row order is not part of
+    the state, and the token is sixteen lowercase hex characters;
+  - `test_an_empty_harvest_state_still_answers` -- nothing published is a
+    cacheable state, distinct from any published one.
+- The module docstring records why the maximum was wrong, in the same terms
+  migration 016 used for the harvest guard, so the next reader does not
+  rediscover it.
+
 ## Validation
 
-To be recorded by the agent that claims this.
+Run 2026-09-14 on this branch, in a clean virtual environment built from
+`.[api,dev,martin-test]`:
+
+- `python -m pytest tests/unit/api/test_operational_hardening.py -k "epoch or published"`
+  -- **6 passed** (the four API-085 nodes and the two API-054 epoch nodes).
+- `python -m pytest -m "unit and api" tests/unit/api -q` -- **572 passed**.
+- `python -m pytest tests/unit/shared -q` -- **227 passed**.
+- `python -m tests.support.catalog_evidence` renders API-085 as `FULL`,
+  owned by `api-unit`, `redis-integration` and `e2e-performance`.
+- `ruff check .` and `ruff format --check .` -- clean.
+
+Not run here: the Redis integration tier that exercises the provider
+against a live cache. It owns API-054's memoization and failure-keeps-last-
+epoch behaviour, which this plan did not change; the epoch rule itself has
+no database in it and is covered in full by the unit nodes above.
 
 ## Remaining work
 
-- Everything.
+- None. Review is the remaining step.

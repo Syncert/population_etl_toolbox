@@ -13,9 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect on every composed block.**
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Investigated and authored 2026-09-13;
+  delivered 2026-09-13 (`5669a3d`). The defect was present on every
+  composed block; see "What changed" and "Validation".
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/lib/evidencePackets.ts`, the three saved-chart
   producers
 

@@ -12,9 +12,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect; the sibling of API-091 and API-105 for the analysis kinds.**
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Investigated and authored 2026-09-13;
+  delivered 2026-09-13 (`4c6fea9`). The sibling of API-091 and API-105
+  for the analysis kinds; see "What changed" and "Validation".
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/saved_analysis_service.py`
 
 ## Context

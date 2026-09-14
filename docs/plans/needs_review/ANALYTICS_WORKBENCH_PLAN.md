@@ -1311,3 +1311,27 @@ over an empty join, and honours the year pin on the right rows.
 **Still not run:** `python -m pytest tests/dags -q`. Airflow is not installed,
 and installing `.[airflow-dev]` pins SQLAlchemy 1.4 against the API's 2.x,
 which is why CI runs those tiers in separate jobs. No phase touched the DAGs.
+
+**Format drift, found and fixed 2026-09-14 after close-out.** Every
+validation run above lists `ruff check .` and none lists
+`ruff format --check .`, which the `lint` workflow runs as its own step
+before the lint check. Eight files this plan wrote or touched --
+`apps/api/schemas/saved_analysis.py`, the comparison, comparison-matrix and
+saved-analysis services, and the four test modules for them -- carried
+hand-wrapped lines the formatter would join. The gate would have failed on
+the first push of this branch. `ruff format .` was applied to exactly those
+eight files, with no change of behaviour, and the full run afterwards is:
+
+```text
+ruff format --check .                       # 463 files already formatted
+ruff check .                                # All checks passed
+python -m pytest tests/unit -q              # 1708 passed
+python -m tests.support.catalog_evidence    # 459 rows, every one FULL
+npm --prefix apps/web run test:unit         # 526 passed
+npm --prefix apps/web run lint              # passed
+npm --prefix apps/web run typecheck         # passed
+npm --prefix apps/web run build             # passed
+npm --prefix apps/web run check:bundle      # /workbench/page 471.4 kB / 474 kB
+npm --prefix apps/web run check:csp         # passed
+CI=1 npx playwright test                    # 114 passed, against the build
+```

@@ -12,9 +12,10 @@ verify:
 
 ## Plan status
 
-- **Status:** To do. Investigated and authored 2026-09-13. **Present
-  defect; the two routes API-094 did not sweep.**
-- **Last updated:** 2026-09-13
+- **Status:** Needs review. Investigated and authored 2026-09-13;
+  delivered 2026-09-13 (`5faa19a`). The two routes API-094 did not
+  sweep; see "What changed" and "Validation".
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/routers/cdc.py`,
   `apps/api/services/usda_nass_service.py`
 
