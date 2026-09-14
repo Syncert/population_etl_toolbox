@@ -50,6 +50,16 @@ jobs:
       SMOKE_BASE_URL: http://127.0.0.1:33001
       # Refuse to pass by skipping.
       SMOKE_REQUIRED: "1"
+      # Grade the stack against every registered source, not just the ones
+      # that happen to be loaded. This became possible when
+      # `tests/sql/frontend_smoke_seed.sql` grew from one ACS measure to one
+      # per source: before that, six of seven sources were legitimately
+      # silent here and this bound could only have been satisfied by
+      # weakening it. Now it is the thing that keeps the seed honest -- a
+      # source dropped from the seed, or a dispatch entry that stops
+      # resolving its lineage, fails this job at pull-request time instead of
+      # surviving until someone opens that source in the deployed explorer.
+      SMOKE_REQUIRE_ALL_SOURCES: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
