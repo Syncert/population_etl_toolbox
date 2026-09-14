@@ -1514,9 +1514,7 @@ def test_a_ninth_series_is_refused_by_the_schema() -> None:
     """Covers: API-134 — the eight-series ceiling the screen and matrix hold."""
     with pytest.raises(Exception) as refused:
         _workbench(
-            series=[
-                {"metric_code": _FRED_METRIC["metric_code"]} for _ in range(9)
-            ]
+            series=[{"metric_code": _FRED_METRIC["metric_code"]} for _ in range(9)]
         )
     assert "series" in str(refused.value)
 
@@ -1580,9 +1578,7 @@ def test_a_series_naming_a_retired_measure_is_refused() -> None:
     """Covers: API-134 — a retired measure cannot be replayed, in a series either."""
     with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
         saved_analysis_service.validate_document(
-            _WarehouseSession(
-                {_FRED_METRIC["metric_code"]: _RETIRED_FRED_METRIC}
-            ),
+            _WarehouseSession({_FRED_METRIC["metric_code"]: _RETIRED_FRED_METRIC}),
             _workbench(series=[{"metric_code": _FRED_METRIC["metric_code"]}]),
         )
     assert "series 1" in refused.value.detail
@@ -1696,6 +1692,7 @@ def test_an_alignment_state_fips_that_is_not_one_is_refused() -> None:
     the length bound applied, so it stored clean, reported `valid: true`, and
     replayed as a 422 its owner never saw when they saved it.
     """
+
     def stored(value: str):
         return _validate_workbench(
             _workbench(

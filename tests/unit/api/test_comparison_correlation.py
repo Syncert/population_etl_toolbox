@@ -69,7 +69,9 @@ def _statistics(
         "n": n,
         "geographies_a": geographies_a,
         "geographies_b": geographies_b,
-        "contemporaneous_pairs": n if contemporaneous_pairs is None else contemporaneous_pairs,
+        "contemporaneous_pairs": n
+        if contemporaneous_pairs is None
+        else contemporaneous_pairs,
         "pearson_r": pearson_r,
         "spearman_rho": spearman_rho,
         "distinct_a": distinct_a,
@@ -391,7 +393,9 @@ def test_too_few_pairs_answers_null_coefficients_with_the_reason() -> None:
     """Covers: API-131 — ``n < 3`` is null, never ``0``, and says why."""
     session = _CorrelationSession(
         _fred_pair(),
-        _statistics(n=2, geographies_a=2, geographies_b=2, pearson_r=1.0, spearman_rho=1.0),
+        _statistics(
+            n=2, geographies_a=2, geographies_b=2, pearson_r=1.0, spearman_rho=1.0
+        ),
     )
     client = _client_with(session)
     try:
@@ -739,9 +743,7 @@ def test_coverage_below_either_side_is_stated() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert any(
-        "50 of the 3143" in caveat for caveat in response.json()["caveats"]
-    )
+    assert any("50 of the 3143" in caveat for caveat in response.json()["caveats"])
 
 
 def test_full_coverage_states_no_coverage_caveat() -> None:

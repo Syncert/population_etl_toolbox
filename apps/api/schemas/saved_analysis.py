@@ -24,9 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 #: individually — each one against the observations contract it will replay
 #: through — rather than against a composite contract that would have to be
 #: kept in step with three routes at once.
-ConfigurationKind = Literal[
-    "observations", "comparison", "distribution", "workbench"
-]
+ConfigurationKind = Literal["observations", "comparison", "distribution", "workbench"]
 
 #: The presentations a stored workbench may name. A closed vocabulary,
 #: because a document naming a presentation this application cannot draw

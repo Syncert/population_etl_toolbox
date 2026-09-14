@@ -549,10 +549,10 @@ def metric_correlation(
     # the counts rather than inherited from the aggregate, so the answer and
     # the caveat explaining it are made by one rule -- and so a coefficient
     # over two points is never served as the ±1 it arithmetically is.
-    measurable = (
-        n >= MINIMUM_CORRELATION_PAIRS and distinct_a > 1 and distinct_b > 1
+    measurable = n >= MINIMUM_CORRELATION_PAIRS and distinct_a > 1 and distinct_b > 1
+    pearson_r = (
+        float(row["pearson_r"]) if measurable and row["pearson_r"] is not None else None
     )
-    pearson_r = float(row["pearson_r"]) if measurable and row["pearson_r"] is not None else None
     spearman_rho = (
         float(row["spearman_rho"])
         if measurable and row["spearman_rho"] is not None

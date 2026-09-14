@@ -129,9 +129,7 @@ def _statistic_from(fact: Mapping[str, Any]) -> tuple[CorrelationStatistic, int,
     contemporaneous = int(fact["contemporaneous"] or 0)
     distinct_a = int(fact["distinct_a"] or 0)
     distinct_b = int(fact["distinct_b"] or 0)
-    measurable = (
-        n >= MINIMUM_CORRELATION_PAIRS and distinct_a > 1 and distinct_b > 1
-    )
+    measurable = n >= MINIMUM_CORRELATION_PAIRS and distinct_a > 1 and distinct_b > 1
     return (
         CorrelationStatistic(
             n=n,
@@ -161,9 +159,7 @@ def _side_ctes(
     return ",\n    ".join(
         f"{_alias(index)} AS ("
         f"{ranked_latest_cte(dispatch, list(side_conditions), include_release=True)})"
-        for index, (dispatch, side_conditions) in enumerate(
-            zip(dispatches, conditions)
-        )
+        for index, (dispatch, side_conditions) in enumerate(zip(dispatches, conditions))
     )
 
 
@@ -256,9 +252,7 @@ def _pair_statistic_ctes(pairs: Sequence[tuple[int, int]]) -> str:
     return ",\n    ".join(blocks)
 
 
-def _facts_select(
-    codes: Sequence[str], pairs: Sequence[tuple[int, int]]
-) -> str:
+def _facts_select(codes: Sequence[str], pairs: Sequence[tuple[int, int]]) -> str:
     """Every number in the answer, as one union of labelled facts.
 
     One statement, so the geography counts, the period summaries and every
@@ -293,9 +287,7 @@ def _facts_select(
 
 
 def _rows_select(count: int) -> str:
-    values = ", ".join(
-        f"v{index}, p{index}, r{index}" for index in range(count)
-    )
+    values = ", ".join(f"v{index}, p{index}, r{index}" for index in range(count))
     return f"""SELECT geo_id, geo_level, {", ".join(_ATTRIBUTION_COLUMNS)},
            {values}
     FROM wide
@@ -370,9 +362,7 @@ def metric_matrix(
     filters = {"geo_level": geo_level, "state_fips": state_fips}
     conditions: list[list[str]] = []
     params: dict[str, Any] = {}
-    for index, (code, metric, dispatch) in enumerate(
-        zip(codes, metrics, dispatches)
-    ):
+    for index, (code, metric, dispatch) in enumerate(zip(codes, metrics, dispatches)):
         side_conditions, side_params = _side_conditions(
             db, dispatch, code, metric, filters, f"m{index}_"
         )
@@ -388,8 +378,7 @@ def metric_matrix(
         params["year_to"] = year
 
     base_sql = (
-        f"WITH {_side_ctes(dispatches, conditions)},\n"
-        f"    {_keys_and_wide(len(codes))}"
+        f"WITH {_side_ctes(dispatches, conditions)},\n    {_keys_and_wide(len(codes))}"
     )
     statistics_sql = base_sql
     if comparable_pairs:
@@ -410,9 +399,7 @@ def metric_matrix(
     for fact in facts:
         by_kind.setdefault(str(fact["kind"]), []).append(fact)
     total = int(by_kind.get("total", [{"n": 0}])[0]["n"] or 0)
-    metric_facts = {
-        str(fact["code_a"]): fact for fact in by_kind.get("metric", [])
-    }
+    metric_facts = {str(fact["code_a"]): fact for fact in by_kind.get("metric", [])}
     pair_facts = {
         (str(fact["code_a"]), str(fact["code_b"])): fact
         for fact in by_kind.get("pair", [])
@@ -509,14 +496,10 @@ def metric_matrix(
                     metric_code=code,
                     value=row[f"v{index}"],
                     period=(
-                        None
-                        if row[f"p{index}"] is None
-                        else str(row[f"p{index}"])
+                        None if row[f"p{index}"] is None else str(row[f"p{index}"])
                     ),
                     release=(
-                        None
-                        if row[f"r{index}"] is None
-                        else str(row[f"r{index}"])
+                        None if row[f"r{index}"] is None else str(row[f"r{index}"])
                     ),
                 )
                 for index, code in enumerate(codes)

@@ -275,9 +275,7 @@ def _validate_workbench(
     metrics = []
     for index, entry in enumerate(series, start=1):
         label = f"series {index}"
-        metric = _require_metric(
-            warehouse, entry.metric_code, f"{label} metric_code"
-        )
+        metric = _require_metric(warehouse, entry.metric_code, f"{label} metric_code")
         _require_declared_filters(metric, dict(entry.filters or {}), kind="workbench")
         _require_consistent_observation_read(entry, label=label)
         metrics.append(metric)

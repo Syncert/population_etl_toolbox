@@ -70,7 +70,9 @@ def _total(n: int = 3) -> dict[str, Any]:
     }
 
 
-def _metric_fact(code: str, geographies: int = 3, period: str = "2023") -> dict[str, Any]:
+def _metric_fact(
+    code: str, geographies: int = 3, period: str = "2023"
+) -> dict[str, Any]:
     return {
         "kind": "metric",
         "code_a": code,
@@ -247,9 +249,7 @@ def test_an_unknown_code_is_a_404_naming_it() -> None:
     session = _MatrixSession(_fred_three(), facts=_three_comparable_facts())
     client = _client_with(session)
     try:
-        response = client.get(
-            MATRIX, params={"metric_codes": "FRED:UNRATE,NO:SUCH"}
-        )
+        response = client.get(MATRIX, params={"metric_codes": "FRED:UNRATE,NO:SUCH"})
     finally:
         app.dependency_overrides.clear()
 
@@ -309,9 +309,7 @@ def test_every_pair_declined_answers_422_naming_each_failure() -> None:
 def test_one_declined_pair_is_a_cell_and_the_request_still_answers() -> None:
     """Covers: API-132 — a 3x3 with one declined cell is still an answer."""
     metrics = _fred_three()
-    metrics["BLS:LNS14000000"] = _metric(
-        "BLS:LNS14000000", "BLS", units="Persons"
-    )
+    metrics["BLS:LNS14000000"] = _metric("BLS:LNS14000000", "BLS", units="Persons")
     facts = [
         _total(3),
         _metric_fact("FRED:UNRATE"),
@@ -324,9 +322,7 @@ def test_one_declined_pair_is_a_cell_and_the_request_still_answers() -> None:
     try:
         response = client.get(
             MATRIX,
-            params={
-                "metric_codes": "FRED:UNRATE,FRED:CIVPART,BLS:LNS14000000"
-            },
+            params={"metric_codes": "FRED:UNRATE,FRED:CIVPART,BLS:LNS14000000"},
         )
     finally:
         app.dependency_overrides.clear()
@@ -460,9 +456,7 @@ def test_the_statistics_are_measured_over_the_join_not_the_page() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    statistics_sql = next(
-        sql for sql in _dispatched(session) if "'total'" in sql
-    )
+    statistics_sql = next(sql for sql in _dispatched(session) if "'total'" in sql)
     assert "LIMIT" not in statistics_sql.upper()
     assert "corr(" in statistics_sql
 
@@ -515,7 +509,9 @@ def test_every_relation_read_is_a_reviewed_one() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_a_cell_whose_pairs_cannot_carry_a_coefficient_is_null_with_its_reason() -> None:
+def test_a_cell_whose_pairs_cannot_carry_a_coefficient_is_null_with_its_reason() -> (
+    None
+):
     """Covers: API-133 — the WB-3 null rule holds cell by cell."""
     facts = [
         _total(3),
@@ -523,7 +519,13 @@ def test_a_cell_whose_pairs_cannot_carry_a_coefficient_is_null_with_its_reason()
         _metric_fact("FRED:CIVPART"),
         _metric_fact("FRED:EMRATIO"),
         _pair_fact("FRED:UNRATE", "FRED:CIVPART", n=2, pearson_r=1.0, spearman_rho=1.0),
-        _pair_fact("FRED:UNRATE", "FRED:EMRATIO", distinct_b=1, pearson_r=None, spearman_rho=None),
+        _pair_fact(
+            "FRED:UNRATE",
+            "FRED:EMRATIO",
+            distinct_b=1,
+            pearson_r=None,
+            spearman_rho=None,
+        ),
         _pair_fact("FRED:CIVPART", "FRED:EMRATIO"),
     ]
     session = _MatrixSession(_fred_three(), facts=facts)
@@ -537,8 +539,7 @@ def test_a_cell_whose_pairs_cannot_carry_a_coefficient_is_null_with_its_reason()
         app.dependency_overrides.clear()
 
     pairs = {
-        (p["metric_code_a"], p["metric_code_b"]): p
-        for p in response.json()["pairs"]
+        (p["metric_code_a"], p["metric_code_b"]): p for p in response.json()["pairs"]
     }
     too_few = pairs[("FRED:UNRATE", "FRED:CIVPART")]
     assert too_few["statistic"]["pearson_r"] is None
@@ -547,8 +548,7 @@ def test_a_cell_whose_pairs_cannot_carry_a_coefficient_is_null_with_its_reason()
     constant = pairs[("FRED:UNRATE", "FRED:EMRATIO")]
     assert constant["statistic"]["spearman_rho"] is None
     assert any(
-        "metric_code_b publishes one distinct value" in c
-        for c in constant["caveats"]
+        "metric_code_b publishes one distinct value" in c for c in constant["caveats"]
     )
 
     served = pairs[("FRED:CIVPART", "FRED:EMRATIO")]
@@ -616,9 +616,7 @@ def test_a_source_with_no_dispatch_entry_is_refused_not_a_failure() -> None:
     session = _MatrixSession(metrics, facts=_three_comparable_facts())
     client = _client_with(session)
     try:
-        response = client.get(
-            MATRIX, params={"metric_codes": "MYSTERY:X,FRED:UNRATE"}
-        )
+        response = client.get(MATRIX, params={"metric_codes": "MYSTERY:X,FRED:UNRATE"})
     finally:
         app.dependency_overrides.clear()
 

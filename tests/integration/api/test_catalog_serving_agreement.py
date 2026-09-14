@@ -1061,7 +1061,6 @@ def published_pep_metric(published_pep_metrics: list[str]) -> str:
     return published_pep_metrics[0]
 
 
-
 @pytest.fixture
 def published_cdc_metric(
     postgres_connection_factory: Callable[[], connection],
