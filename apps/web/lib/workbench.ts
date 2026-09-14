@@ -364,11 +364,20 @@ export function presentationOffer({
   series,
   facts,
   crossSectionalReason = "",
+  correlationReason = "",
   heatmapReason = "",
 }: {
   series: readonly WorkbenchSeries[];
   facts: readonly PresentationSeriesFacts[];
   crossSectionalReason?: string;
+  /**
+   * The correlation's own reason, separate since WB-5: a scatter and a
+   * ranking read `/comparison` for one chosen pair, while a correlation reads
+   * `/comparison/matrix` for up to eight measures at once. One reason for
+   * both would have to be the stricter of the two, which would withhold a
+   * correlation the API would serve.
+   */
+  correlationReason?: string;
   heatmapReason?: string;
 }): PresentationOffer {
   const count = (series || []).length;
@@ -427,12 +436,18 @@ export function presentationOffer({
       ? { available: false, reason: heatmapReason }
       : { available: true, reason: "" };
 
+  const correlation: PresentationState = empty
+    ? { available: false, reason: noSeries }
+    : correlationReason
+      ? { available: false, reason: correlationReason }
+      : { available: true, reason: "" };
+
   return {
     line,
     bar,
     scatter: crossSectional,
     ranking: crossSectional,
-    correlation: crossSectional,
+    correlation,
     heatmap,
   };
 }
@@ -649,9 +664,17 @@ export function describeChart(
 export function crossSectionalRefusal({
   series,
   sharedGrains,
+  chosenPair = null,
 }: {
   series: readonly WorkbenchSeries[];
   sharedGrains: readonly string[];
+  /**
+   * The pair the reader picked when more than two measures are selected.
+   * Before WB-5 this case was refused outright; the matrix route now answers
+   * every pair's verdict, so the screen offers a chooser and draws one chart
+   * rather than a grid of small scatters nobody can read.
+   */
+  chosenPair?: readonly [string, string] | null;
 }): string {
   const measures = new Set((series || []).map((entry) => entry.metricCode));
   if (measures.size < 2) {
@@ -660,12 +683,12 @@ export function crossSectionalRefusal({
       "grain. Add another measure."
     );
   }
-  if (measures.size > 2) {
+  if (measures.size > 2 && !chosenPair) {
     return (
-      "An aligned answer for more than two measures needs the matrix route, " +
-      `which arrives with a later phase of this page. ${measures.size} ` +
-      "measures are selected; a scatter, a ranking and a correlation are " +
-      "offered for exactly two."
+      `${measures.size} measures are selected. A scatter and a ranking are ` +
+      "each about one pair — `/comparison` aligns two measures by contract — " +
+      "so choose which pair to draw. The correlation reads all of them at " +
+      "once through the matrix route."
     );
   }
   if ((sharedGrains || []).length === 0) {
@@ -689,6 +712,7 @@ export function crossSectionalRefusal({
  */
 export function crossSectionalPair(
   series: readonly WorkbenchSeries[],
+  chosen: readonly [string, string] | null = null,
 ): [string, string] | null {
   const codes: string[] = [];
   for (const entry of series || []) {
@@ -696,7 +720,33 @@ export function crossSectionalPair(
       codes.push(entry.metricCode);
     }
   }
+  if (chosen) {
+    // Honoured only where both codes are still selected: a chooser left over
+    // from a measure the reader has since removed must not name it.
+    return codes.includes(chosen[0]) && codes.includes(chosen[1])
+      ? [chosen[0], chosen[1]]
+      : null;
+  }
   return codes.length === 2 ? [codes[0] as string, codes[1] as string] : null;
+}
+
+/** Every unordered pair of the selected measures, for the pair chooser. */
+export function selectablePairs(
+  series: readonly WorkbenchSeries[],
+): [string, string][] {
+  const codes: string[] = [];
+  for (const entry of series || []) {
+    if (!codes.includes(entry.metricCode)) {
+      codes.push(entry.metricCode);
+    }
+  }
+  const pairs: [string, string][] = [];
+  for (let left = 0; left < codes.length; left += 1) {
+    for (let right = left + 1; right < codes.length; right += 1) {
+      pairs.push([codes[left] as string, codes[right] as string]);
+    }
+  }
+  return pairs;
 }
 
 /** A national measure offered as a reference line on a cross-sectional bar. */
@@ -983,4 +1033,389 @@ export function heatmapModel({
     capped,
     capNote,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The correlation, on screen (WB-5)
+// ---------------------------------------------------------------------------
+
+/** The measure count `/comparison/matrix` serves between, mirrored here. */
+export const MIN_MATRIX_METRICS = 2;
+export const MAX_MATRIX_METRICS = 8;
+
+/** Whether a correlation may be asked for, and what to say when it may not. */
+export interface CorrelationEligibility {
+  eligible: boolean;
+  /** Which route would answer it. `null` when none would. */
+  route: "correlation" | "matrix" | null;
+  /** Why not, in the API's or the publication's terms. "" when eligible. */
+  reason: string;
+}
+
+/**
+ * Whether the current selection can be asked for a correlation.
+ *
+ * The order of the refusals is the order a reader can act on them, and each
+ * one names something the API or the publication decided rather than
+ * something this screen preferred:
+ *
+ * 1. **Fewer than two, or more than eight, measures.** The bounds
+ *    `/comparison/matrix` declares.
+ * 2. **A source the analysis routes decline.** Carried from the capability
+ *    entry, so CDC, USDA NASS and FBI UCR are named before a request is made
+ *    rather than after a 422.
+ * 3. **An incomparable pair.** The preflight's own verdict, presented as the
+ *    rules worded it.
+ *
+ * The route follows from the count, because the API's shape does:
+ * `/comparison/correlation` answers a pair and `/comparison/matrix` answers
+ * three to eight.
+ *
+ * **What this deliberately does not check is the presentation on screen.**
+ * The plan asks the control to be absent for "a longitudinal composition",
+ * and the literal reading — refuse while a line or bar is selected — makes
+ * the control unreachable, because the correlation *is* one of the
+ * presentations a reader selects. So the refusal moved to where it is true
+ * and useful: `CORRELATION_IS_ACROSS_GEOGRAPHIES` rides the panel, telling a
+ * reader who arrived from a line chart that this coefficient is measured
+ * across geographies at the shared grain and is not a correlation of the two
+ * histories they were just looking at. The statistic the plan declines to
+ * offer is still not offered; it is named rather than silently absent.
+ */
+export const CORRELATION_IS_ACROSS_GEOGRAPHIES =
+  "This coefficient is measured across geographies at the shared grain — one " +
+  "newest value per geography for each measure — not across the periods on " +
+  "the line chart. A correlation between two histories of one geography is a " +
+  "different statistic, with a shared time trend able to produce a " +
+  "coefficient on its own, and this page does not offer it.";
+
+export function correlationEligibility({
+  series,
+  analysisRefusals = {},
+  preflightBlocking = [],
+  preflightRead = true,
+}: {
+  series: readonly WorkbenchSeries[];
+  /** Per source code, the reason the analysis routes decline it. */
+  analysisRefusals?: Record<string, string>;
+  /** The failed preflight rules, for a pair. Empty when comparable. */
+  preflightBlocking?: readonly { rule: string; reason: string }[];
+  /** False while the verdict for a pair has not come back yet. */
+  preflightRead?: boolean;
+}): CorrelationEligibility {
+  const measures = [...new Set((series || []).map((entry) => entry.metricCode))];
+  if (measures.length < MIN_MATRIX_METRICS) {
+    return {
+      eligible: false,
+      route: null,
+      reason:
+        `A correlation is a statistic about at least ${MIN_MATRIX_METRICS} ` +
+        "measures read at one grain. Add another measure.",
+    };
+  }
+  if (measures.length > MAX_MATRIX_METRICS) {
+    return {
+      eligible: false,
+      route: null,
+      reason:
+        `The matrix route answers between ${MIN_MATRIX_METRICS} and ` +
+        `${MAX_MATRIX_METRICS} measures; ${measures.length} are selected. ` +
+        "Remove some before asking for a correlation.",
+    };
+  }
+
+  const declined = [
+    ...new Set(
+      (series || [])
+        .filter((entry) => analysisRefusals[entry.sourceCode])
+        .map((entry) => entry.sourceCode),
+    ),
+  ];
+  if (declined.length > 0) {
+    return {
+      eligible: false,
+      route: null,
+      // The API's own sentence, not a paraphrase of it.
+      reason: declined
+        .map((code) => analysisRefusals[code] as string)
+        .join(" "),
+    };
+  }
+
+  const route = measures.length === 2 ? "correlation" : "matrix";
+
+  if (route === "correlation") {
+    if (!preflightRead) {
+      return {
+        eligible: false,
+        route: null,
+        reason:
+          "Checking whether these two measures may be read together before " +
+          "asking for a coefficient.",
+      };
+    }
+    if (preflightBlocking.length > 0) {
+      return {
+        eligible: false,
+        route: null,
+        reason: preflightBlocking.map((rule) => rule.reason).join("; "),
+      };
+    }
+  }
+
+  return { eligible: true, route, reason: "" };
+}
+
+/** One line of the correlation panel, ready to render. */
+export interface CorrelationReading {
+  label: string;
+  /** The formatted coefficient, or the reason there is none. */
+  value: string;
+  /** True when this reading is an API computation rather than a published
+   *  figure, which is every coefficient on this panel. */
+  derived: boolean;
+}
+
+/**
+ * How many decimal places a coefficient is shown to.
+ *
+ * Three. Two hides the difference between 0.412 and 0.418, which is the kind
+ * of difference a reader comparing two cells of a matrix is looking at; four
+ * implies a precision the inputs' own uncertainty does not support — and the
+ * uncertainty caveat travels with the answer saying exactly that.
+ */
+export const CORRELATION_PRECISION = 3;
+
+export function formatCoefficient(value: number | null | undefined): string {
+  return value === null || value === undefined || !Number.isFinite(value)
+    ? ""
+    : Number(value).toFixed(CORRELATION_PRECISION);
+}
+
+/**
+ * The panel's readings, in the order they are read.
+ *
+ * `n` first, because a coefficient's meaning depends on how many pairs it was
+ * measured over and a reader who sees the number first anchors on it. Then
+ * both coefficients, then the coverage and contemporaneity the caveats
+ * elaborate.
+ *
+ * A null coefficient shows the reason rather than an em-dash: "no coefficient
+ * is reported" with nothing after it teaches a reader that the screen is
+ * broken, and the API already sent the reason in `caveats`.
+ */
+export function correlationReadings(
+  statistic: CorrelationLike | null | undefined,
+  {
+    geographiesA,
+    geographiesB,
+    nullReason = "",
+  }: {
+    geographiesA?: number | null;
+    geographiesB?: number | null;
+    nullReason?: string;
+  } = {},
+): CorrelationReading[] {
+  if (!statistic) {
+    return [];
+  }
+  const n = Number(statistic.n ?? 0);
+  const readings: CorrelationReading[] = [
+    {
+      label: "Paired geographies",
+      value: n.toLocaleString(),
+      derived: false,
+    },
+  ];
+
+  for (const [label, value] of [
+    ["Pearson r", statistic.pearson_r],
+    ["Spearman ρ", statistic.spearman_rho],
+  ] as const) {
+    const formatted = formatCoefficient(value as number | null | undefined);
+    readings.push({
+      label,
+      value: formatted || nullReason || "not reported for these pairs",
+      derived: true,
+    });
+  }
+
+  const coverage = [geographiesA, geographiesB]
+    .map((count) => (typeof count === "number" ? count : null))
+    .filter((count): count is number => count !== null);
+  if (coverage.length > 0) {
+    readings.push({
+      label: "Coverage",
+      value:
+        `${n.toLocaleString()} paired of ` +
+        `${coverage.map((count) => count.toLocaleString()).join(" and ")} published`,
+      derived: false,
+    });
+  }
+
+  const contemporaneous = Number(statistic.contemporaneous_pairs ?? 0);
+  readings.push({
+    label: "Contemporaneous pairs",
+    value: `${contemporaneous.toLocaleString()} of ${n.toLocaleString()}`,
+    derived: false,
+  });
+
+  return readings;
+}
+
+/** The shape both `/comparison/correlation` and a matrix cell share. */
+export interface CorrelationLike {
+  n?: number;
+  contemporaneous_pairs?: number;
+  pearson_r?: number | null;
+  spearman_rho?: number | null;
+  periods_differ?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The correlation matrix, as a heatmap
+// ---------------------------------------------------------------------------
+
+/** One cell of the pairwise correlation matrix. */
+export interface CorrelationMatrixCell {
+  metricCodeA: string;
+  metricCodeB: string;
+  /** `null` on the declined cells and on the diagonal. */
+  value: number | null;
+  /** Why a cell carries no coefficient: declined, or not measurable. */
+  reason: string;
+  /** True where the compatibility policy declined the pair outright. */
+  declined: boolean;
+  /** True on the diagonal, where a measure meets itself. */
+  identity: boolean;
+  n: number;
+}
+
+export interface CorrelationMatrixModel {
+  codes: string[];
+  cells: CorrelationMatrixCell[];
+  /** How many cells carry a coefficient. */
+  measuredCount: number;
+  declinedCount: number;
+}
+
+/**
+ * The pairwise matrix as a square grid, from `/comparison/matrix`'s answer.
+ *
+ * The diagonal is filled with `identity: true` and no coefficient rather than
+ * with `1`. A measure correlates perfectly with itself by arithmetic, not by
+ * measurement, and a grid whose diagonal reads 1.000 invites the eye to
+ * calibrate the rest of the scale against a number nothing measured.
+ *
+ * A declined cell carries `declined: true` and the failed rules' own words.
+ * It is drawn in the not-published colour — never a colour on the diverging
+ * scale — for the reason the heatmap's own cells are: a declined pair and a
+ * coefficient near zero are different statements, and colour must not conflate
+ * them.
+ *
+ * `which` chooses the coefficient; both are served for every comparable pair,
+ * and the panel lets a reader switch because Pearson and Spearman disagreeing
+ * is itself information.
+ */
+export function correlationMatrixModel({
+  codes,
+  pairs,
+  which = "pearson_r",
+}: {
+  codes: readonly string[];
+  pairs: readonly {
+    metric_code_a?: string;
+    metric_code_b?: string;
+    comparable?: boolean;
+    rules?: readonly { rule: string; status: string; reason: string }[];
+    statistic?: CorrelationLike | null;
+  }[];
+  which?: "pearson_r" | "spearman_rho";
+}): CorrelationMatrixModel {
+  const byPair = new Map<string, (typeof pairs)[number]>();
+  for (const pair of pairs || []) {
+    const a = String(pair.metric_code_a ?? "");
+    const b = String(pair.metric_code_b ?? "");
+    if (!a || !b) {
+      continue;
+    }
+    // Stored under both orders: the route answers each unordered pair once,
+    // and the grid asks for it from both sides of the diagonal.
+    byPair.set(`${a}␟${b}`, pair);
+    byPair.set(`${b}␟${a}`, pair);
+  }
+
+  const cells: CorrelationMatrixCell[] = [];
+  let measuredCount = 0;
+  let declinedCount = 0;
+
+  for (const rowCode of codes) {
+    for (const columnCode of codes) {
+      if (rowCode === columnCode) {
+        cells.push({
+          metricCodeA: rowCode,
+          metricCodeB: columnCode,
+          value: null,
+          reason:
+            "A measure against itself. Perfect by arithmetic, not by " +
+            "measurement, so no coefficient is drawn here.",
+          declined: false,
+          identity: true,
+          n: 0,
+        });
+        continue;
+      }
+      const pair = byPair.get(`${rowCode}␟${columnCode}`);
+      if (!pair) {
+        cells.push({
+          metricCodeA: rowCode,
+          metricCodeB: columnCode,
+          value: null,
+          reason: "The matrix carried no answer for this pair.",
+          declined: false,
+          identity: false,
+          n: 0,
+        });
+        continue;
+      }
+      if (pair.comparable === false) {
+        declinedCount += 1;
+        cells.push({
+          metricCodeA: rowCode,
+          metricCodeB: columnCode,
+          value: null,
+          reason: (pair.rules || [])
+            .filter((rule) => rule.status === "fail")
+            .map((rule) => rule.reason)
+            .join("; "),
+          declined: true,
+          identity: false,
+          n: 0,
+        });
+        continue;
+      }
+      const statistic = pair.statistic || null;
+      const value =
+        statistic && statistic[which] !== null && statistic[which] !== undefined
+          ? Number(statistic[which])
+          : null;
+      if (value !== null) {
+        measuredCount += 1;
+      }
+      cells.push({
+        metricCodeA: rowCode,
+        metricCodeB: columnCode,
+        value,
+        reason:
+          value === null
+            ? "These pairs cannot carry a coefficient; the caveats say why."
+            : "",
+        declined: false,
+        identity: false,
+        n: Number(statistic?.n ?? 0),
+      });
+    }
+  }
+
+  return { codes: [...codes], cells, measuredCount, declinedCount };
 }

@@ -272,7 +272,7 @@ describe("which presentations the selection can answer", () => {
   });
 
   test("the cross-sectional reason is the caller's, presented unchanged", () => {
-    const refusal = "an aligned answer for more than two measures needs the matrix route";
+    const refusal = "choose which pair to draw";
     const offer = presentationOffer({
       series: [series(), series({ geoId: "state:06" }), series({ geoId: "state:36" })],
       facts: [
@@ -284,8 +284,39 @@ describe("which presentations the selection can answer", () => {
     });
     expect(offer.scatter.reason).toBe(refusal);
     expect(offer.ranking.reason).toBe(refusal);
-    expect(offer.correlation.reason).toBe(refusal);
     expect(offer.line.available).toBe(true);
+  });
+
+  test("the correlation carries its own reason, not the scatter's", () => {
+    // A scatter and a ranking read `/comparison` for one chosen pair; a
+    // correlation reads `/comparison/matrix` for up to eight measures at
+    // once. One reason for both would have to be the stricter of the two,
+    // which would withhold a correlation the API would serve.
+    const offer = presentationOffer({
+      series: [series(), series({ geoId: "state:06" }), series({ geoId: "state:36" })],
+      facts: [
+        { key: "a", metricCode: "A", periodCount: 4 },
+        { key: "b", metricCode: "B", periodCount: 4 },
+        { key: "c", metricCode: "C", periodCount: 4 },
+      ],
+      crossSectionalReason: "choose which pair to draw",
+      correlationReason: "",
+    });
+    expect(offer.scatter.available).toBe(false);
+    expect(offer.correlation.available).toBe(true);
+
+    const declined = presentationOffer({
+      series: [series(), series({ geoId: "state:06" })],
+      facts: [
+        { key: "a", metricCode: "A", periodCount: 4 },
+        { key: "b", metricCode: "B", periodCount: 4 },
+      ],
+      crossSectionalReason: "",
+      correlationReason: "source 'CDC' publishes stratified observations",
+    });
+    expect(declined.scatter.available).toBe(true);
+    expect(declined.correlation.available).toBe(false);
+    expect(declined.correlation.reason).toMatch(/stratified/);
   });
 });
 

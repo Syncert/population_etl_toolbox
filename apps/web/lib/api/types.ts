@@ -430,3 +430,102 @@ export interface EvidencePacketRecord {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * The API-derived coefficients over one pair, as `/comparison/correlation`
+ * and each `/comparison/matrix` cell serve them.
+ *
+ * Every field is optional because a deployment may serve an older contract,
+ * and an absent coefficient is not the same as a coefficient of zero — which
+ * is exactly the distinction the route exists to keep. Read
+ * `pearson_r != null` before formatting it.
+ */
+export interface CorrelationStatistic {
+  n?: number;
+  contemporaneous_pairs?: number;
+  pearson_r?: number | null;
+  spearman_rho?: number | null;
+  periods_differ?: boolean;
+  derivations?: string[];
+  [key: string]: unknown;
+}
+
+/** `GET /comparison/correlation`: the statistic, its coverage, its caveats. */
+export interface ComparisonCorrelation extends CorrelationStatistic {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  source_code_a?: string | null;
+  source_code_b?: string | null;
+  units_a?: string | null;
+  units_b?: string | null;
+  derived?: boolean;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  year?: number | null;
+  geographies_a?: number;
+  geographies_b?: number;
+  period_a?: string | null;
+  period_b?: string | null;
+  caveats?: string[];
+}
+
+/** One measure as `/comparison/matrix` read it. */
+export interface MatrixMetricSummary {
+  metric_code?: string;
+  source_code?: string | null;
+  units?: string | null;
+  valid_time_grains?: string[];
+  valid_geo_grains?: string[];
+  geographies?: number;
+  period?: string | null;
+  periods_differ?: boolean;
+  [key: string]: unknown;
+}
+
+/** One unordered pair of the matrix: served, or declined with its rules. */
+export interface MatrixPair {
+  metric_code_a?: string;
+  metric_code_b?: string;
+  comparable?: boolean;
+  rules?: ComparisonRule[];
+  caveats?: string[];
+  /** `null` for a declined cell — never a zeroed statistic. */
+  statistic?: CorrelationStatistic | null;
+  [key: string]: unknown;
+}
+
+/** One measure's published value for one geography, or the absence of one. */
+export interface MatrixCell {
+  metric_code?: string;
+  value?: number | null;
+  period?: string | null;
+  release?: string | null;
+}
+
+/** One geography, with one cell per requested measure. */
+export interface MatrixRow {
+  geo_id?: string | null;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  county_fips?: string | null;
+  state_name?: string | null;
+  county_name?: string | null;
+  values?: MatrixCell[];
+  [key: string]: unknown;
+}
+
+/** `GET /comparison/matrix`: two to eight measures aligned on geography. */
+export interface ComparisonMatrix {
+  derived?: boolean;
+  geo_level?: string | null;
+  state_fips?: string | null;
+  year?: number | null;
+  metrics?: MatrixMetricSummary[];
+  pairs?: MatrixPair[];
+  caveats?: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  items?: MatrixRow[];
+  [key: string]: unknown;
+}

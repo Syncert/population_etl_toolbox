@@ -914,3 +914,97 @@ ruff check .                            # passed
 
 Not run: the integration tier, as for WB-3 and WB-4 — no PostgreSQL is
 reachable here. `./tests/run.ps1 integration` is the command.
+
+### WB-5 — Correlation on screen
+
+Status: **complete**, 2026-09-14.
+
+Implementation:
+
+- `apps/web/lib/api/types.ts` — `CorrelationStatistic`,
+  `ComparisonCorrelation`, `ComparisonMatrix` and the matrix's own row, cell,
+  pair and metric-summary shapes.
+- `apps/web/lib/api/client.ts` — `getComparisonCorrelation`,
+  `getComparisonMatrix`.
+- `apps/web/lib/workbench.ts` — `correlationEligibility`,
+  `CORRELATION_IS_ACROSS_GEOGRAPHIES`, `correlationReadings`,
+  `formatCoefficient`, `correlationMatrixModel`, `selectablePairs`; the >2
+  refusal became a pair chooser now that the matrix route exists, and
+  `presentationOffer` gained a separate `correlationReason`.
+- `apps/web/components/CorrelationPanel.tsx`,
+  `CorrelationMatrixChart.tsx` (new).
+- `apps/web/components/WorkbenchPage.tsx` — the coefficient control, the
+  same-year pin, the pair chooser, both requests, and the panel and matrix.
+- Tests: `tests/frontend/unit/workbench-correlation.test.js` (23), four
+  browser cases, and one WB-1 case updated for the deliberate split.
+- `docs/reference/TESTING_CONTRACT.md` — WEB-091…WEB-094, totals 445 → 449;
+  `tests/support/catalog_evidence.py` WEB count 90 → 94.
+
+**A correction to criterion 1, and the reason for it.** The criterion says
+the control "is absent, with the API's reason … for a longitudinal
+composition". Read literally that makes the control unreachable: the
+correlation *is* one of the presentations a reader selects, so it would be
+refused while a line is on screen, and a line is on screen until it stops
+being refused. The browser tier found it as a 30-second timeout waiting for a
+button that could never appear.
+
+The statistic the plan declines to offer is still not offered — and is now
+*named* rather than silently absent. `CORRELATION_IS_ACROSS_GEOGRAPHIES`
+rides the panel and tells a reader arriving from a line chart that this
+coefficient is measured across geographies at the shared grain, one newest
+value per geography, and is not a correlation of the two histories they were
+just looking at, a shared time trend being able to produce a coefficient on
+its own. The eligibility check no longer reads the presentation at all.
+
+Two smaller defects the browser tier caught, both test-side:
+
+1. A `not.toContainText("—")` assertion about a blank coefficient matched the
+   em dash inside the new scope sentence. Rewritten to assert about the two
+   coefficient readings themselves.
+2. Playwright resolves the most recently registered matching route first, so a
+   blanket correlation stub registered after a year-aware one shadowed it and
+   the year-pin test read the unpinned answer. Order corrected, with the rule
+   written down beside it.
+
+Other decisions beyond what the plan wrote:
+
+1. **The `>2` refusal became a pair chooser.** WB-2 shipped
+   "an aligned answer for more than two measures needs the matrix route" as a
+   deliberate interim; with WB-4 landed, a scatter and a ranking are each
+   about one pair, so the screen offers every unordered pair and draws one
+   chart — criterion 3's "pair chooser over the matrix rather than a
+   scatter-matrix grid". A choice naming a measure since removed is not
+   honoured.
+2. **The correlation's reason is separate from the scatter's and ranking's.**
+   Those read `/comparison` for one chosen pair; the correlation reads
+   `/comparison/matrix` for up to eight at once. One reason for both would
+   have to be the stricter, which would withhold a correlation the API serves.
+3. **The diagonal carries no coefficient and the scale is fixed to ±1.** A
+   grid whose diagonal reads 1.000 invites calibrating every other cell
+   against a number nothing measured; a scale rescaled per answer paints a
+   matrix whose strongest pair is 0.3 exactly as one whose strongest is 0.95.
+4. **The null-coefficient reason is lifted from the answer's caveats**, not
+   composed here from `n` — that would be this screen re-deriving a rule the
+   API owns and could change.
+5. **The pinnable years come from the periods the measures published**, so
+   the control cannot ask for a year no side has rows in, which would answer
+   an empty correlation and report it as a coverage problem.
+6. **The bundle budget still did not move.** `/workbench/page` is 454.4 kB
+   against the 474 kB WB-1 declared.
+
+Validation run:
+
+```text
+npm --prefix apps/web run test:unit     # 32 files, 498 passed
+npm --prefix apps/web run lint          # passed
+npm --prefix apps/web run typecheck     # passed
+npm --prefix apps/web run build         # passed; /workbench 17.1 kB, 139 kB First Load JS
+npm --prefix apps/web run check:bundle  # /workbench/page 454.4 kB / 474 kB; every route within budget
+npm --prefix apps/web run check:csp     # passed
+npx playwright test                     # 107 passed (the whole browser tier)
+python -m pytest tests/unit -q          # 1687 passed
+ruff check .                            # passed
+```
+
+Not run: the integration tier, as for the phases before it — no PostgreSQL is
+reachable here. `./tests/run.ps1 integration` is the command.

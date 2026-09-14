@@ -7,6 +7,8 @@
 
 import type {
   CollectionResponse,
+  ComparisonCorrelation,
+  ComparisonMatrix,
   ComparisonPreflight,
   ComparisonResponse,
   ComparisonRow,
@@ -483,6 +485,40 @@ export function getComparison(
   options: RequestOptions = {},
 ): Promise<ComparisonResponse> {
   return apiFetch<ComparisonResponse>("/comparison", { ...options, params });
+}
+
+/**
+ * The API-derived correlation over a comparable pair (API-130).
+ *
+ * Takes the parameters `/comparison` takes and no paging: the statistic is
+ * over the whole join, so there is no page to ask for. An incomparable pair
+ * answers 422 with its failed rules, exactly as `/comparison` does, which is
+ * why a caller asks `/comparison/preflight` first.
+ */
+export function getComparisonCorrelation(
+  params: QueryParams,
+  options: RequestOptions = {},
+): Promise<ComparisonCorrelation> {
+  return apiFetch<ComparisonCorrelation>("/comparison/correlation", {
+    ...options,
+    params,
+  });
+}
+
+/**
+ * Two to eight measures aligned on geography, with a verdict per pair
+ * (API-132).
+ *
+ * A pair the policy declines is a cell in `pairs`, not an error; a measure
+ * whose source the analysis routes decline refuses the whole request. `items`
+ * pages the union of the geographies the measures published, so this is the
+ * one comparison-family read whose rows are not an intersection.
+ */
+export function getComparisonMatrix(
+  params: QueryParams,
+  options: RequestOptions = {},
+): Promise<ComparisonMatrix> {
+  return apiFetch<ComparisonMatrix>("/comparison/matrix", { ...options, params });
 }
 
 /** A paged comparison: one envelope, every aligned row it could reach. */

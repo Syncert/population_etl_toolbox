@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import BarChart from "./BarChart";
+import CorrelationMatrixChart from "./CorrelationMatrixChart";
+import CorrelationPanel from "./CorrelationPanel";
 import HeatmapChart from "./HeatmapChart";
 import LineChart, { seriesStroke } from "./LineChart";
 import ScatterChart from "./ScatterChart";
@@ -28,11 +30,15 @@ import {
   fetchCollectionPages,
   fetchComparisonPages,
   getCapabilities,
+  getComparisonCorrelation,
+  getComparisonMatrix,
   getComparisonPreflight,
   getMetric,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
 import type {
+  ComparisonCorrelation,
+  ComparisonMatrix,
   ComparisonPreflight,
   ComparisonResponse,
   ComparisonRow,
@@ -71,8 +77,12 @@ import {
   PRESENTATION_LABELS,
   UNPUBLISHED_UNIT_LABEL,
   admitSeries,
+  correlationEligibility,
+  correlationMatrixModel,
+  correlationReadings,
   crossSectionalPair,
   crossSectionalRefusal,
+  selectablePairs,
   heatmapModel,
   isCrossSectional,
   referenceLineOffer,
@@ -182,6 +192,21 @@ export default function WorkbenchPage() {
   const preflightTracker = useRef(createRequestTracker()).current;
   const comparisonTracker = useRef(createRequestTracker()).current;
 
+  // The correlation: which coefficient is shown, the optional same-year pin,
+  // the chosen pair once more than two measures are selected, and the answer.
+  const [coefficient, setCoefficient] = useState<"pearson_r" | "spearman_rho">(
+    "pearson_r",
+  );
+  const [yearPin, setYearPin] = useState<number | null>(null);
+  const [chosenPair, setChosenPair] = useState<[string, string] | null>(null);
+  const [correlation, setCorrelation] = useState<ComparisonCorrelation | null>(
+    null,
+  );
+  const [matrix, setMatrix] = useState<ComparisonMatrix | null>(null);
+  const [correlationError, setCorrelationError] = useState("");
+  const [correlationLoading, setCorrelationLoading] = useState(false);
+  const correlationTracker = useRef(createRequestTracker()).current;
+
   // --- The requested composition, read once ---------------------------------
 
   useEffect(() => {
@@ -272,6 +297,9 @@ export default function WorkbenchPage() {
     }
     if (requested.stateFips) {
       setAlignmentStateFips(requested.stateFips);
+    }
+    if (typeof requested.year === "number") {
+      setYearPin(requested.year);
     }
   }, [sources]);
 
@@ -646,7 +674,13 @@ export default function WorkbenchPage() {
   // --- The cross-sectional reading (WB-2) -----------------------------------
 
   /** The two measures a cross-sectional presentation is about, if there are two. */
-  const pair = useMemo(() => crossSectionalPair(series), [series]);
+  const pair = useMemo(
+    () => crossSectionalPair(series, chosenPair),
+    [series, chosenPair],
+  );
+
+  /** Every pair the reader may draw, once more than two measures are on. */
+  const pairChoices = useMemo(() => selectablePairs(series), [series]);
 
   /**
    * The grains the whole selection can be read at together.
@@ -678,8 +712,12 @@ export default function WorkbenchPage() {
 
   const crossSectionReason = useMemo(
     () =>
-      crossSectionalRefusal({ series, sharedGrains: grainOffer.levels }),
-    [series, grainOffer],
+      crossSectionalRefusal({
+        series,
+        sharedGrains: grainOffer.levels,
+        chosenPair: pair,
+      }),
+    [series, grainOffer, pair],
   );
 
   /**
@@ -897,6 +935,41 @@ export default function WorkbenchPage() {
     [heatmapSeries, loaded, geographyNames],
   );
 
+  // --- The correlation (WB-5) -----------------------------------------------
+
+  /**
+   * Why each source's analysis routes decline it, from the capability entry.
+   *
+   * A source that declares no comparison routes is one the analysis surface
+   * has already declined, so the correlation control names it before a
+   * request is made rather than after a 422. Derived from the discovery
+   * answer, never from a list of source codes here.
+   */
+  const analysisRefusals = useMemo(() => {
+    const refusals: Record<string, string> = {};
+    for (const source of sources) {
+      if (!source.servesComparison) {
+        refusals[source.sourceCode] =
+          `${source.title} is not served by the aligned analysis routes: it ` +
+          "publishes stratified, multi-dimensional or agency-grain " +
+          "observations that a one-value-per-geography analysis would " +
+          "silently collapse. Read it on the explorer with its own filters.";
+      }
+    }
+    return refusals;
+  }, [sources]);
+
+  const correlationOffer = useMemo(
+    () =>
+      correlationEligibility({
+        series,
+        analysisRefusals,
+        preflightBlocking: preflightModel.blocking,
+        preflightRead: Boolean(preflight) || !pair,
+      }),
+    [series, analysisRefusals, preflightModel, preflight, pair],
+  );
+
   /**
    * Why the heatmap cannot be drawn, or "".
    *
@@ -942,6 +1015,9 @@ export default function WorkbenchPage() {
                     .map((rule) => rule.reason)
                     .join("; ")}`
                 : ""),
+        // The correlation's own eligibility, which is a different route's
+        // question than the scatter's and the ranking's.
+        correlationReason: correlationOffer.reason,
         heatmapReason: heatmapReason,
       }),
     [
@@ -952,6 +1028,7 @@ export default function WorkbenchPage() {
       preflightError,
       preflightModel,
       comparable,
+      correlationOffer,
       heatmapReason,
     ],
   );
@@ -992,6 +1069,136 @@ export default function WorkbenchPage() {
     [plotted, geographyNames],
   );
 
+  useEffect(() => {
+    if (
+      !correlationOffer.eligible ||
+      !alignmentGeoLevel ||
+      effectivePresentation !== "correlation"
+    ) {
+      return;
+    }
+    const request = correlationTracker.begin();
+    setCorrelationLoading(true);
+    (async () => {
+      const filters = {
+        geo_level: alignmentGeoLevel,
+        ...(alignmentStateFips && alignmentGeoLevel !== "NATIONAL"
+          ? { state_fips: alignmentStateFips }
+          : {}),
+        ...(yearPin ? { year: String(yearPin) } : {}),
+      };
+      try {
+        if (correlationOffer.route === "correlation" && pair) {
+          const answer = await getComparisonCorrelation({
+            metric_code_a: pair[0],
+            metric_code_b: pair[1],
+            ...filters,
+          });
+          if (request.isCurrent()) {
+            setCorrelation(answer);
+            setMatrix(null);
+            setCorrelationError("");
+          }
+        } else {
+          const answer = await getComparisonMatrix({
+            metric_codes: [
+              ...new Set(series.map((entry) => entry.metricCode)),
+            ].join(","),
+            ...filters,
+          });
+          if (request.isCurrent()) {
+            setMatrix(answer);
+            setCorrelation(null);
+            setCorrelationError("");
+          }
+        }
+      } catch (error) {
+        if (request.isCurrent()) {
+          setCorrelation(null);
+          setMatrix(null);
+          setCorrelationError(apiErrorMessage(error));
+        }
+      } finally {
+        if (request.isCurrent()) {
+          setCorrelationLoading(false);
+        }
+      }
+    })();
+    return () => {
+      correlationTracker.invalidate();
+    };
+  }, [
+    correlationOffer,
+    alignmentGeoLevel,
+    alignmentStateFips,
+    yearPin,
+    effectivePresentation,
+    pair,
+    series,
+    correlationTracker,
+  ]);
+
+  /**
+   * The reason a coefficient is null, taken from the answer's own caveats.
+   *
+   * The API states it ("no coefficient is reported: 2 paired geographies is
+   * fewer than…"), so the panel presents that sentence rather than composing
+   * its own from `n` — which would be this screen re-deriving a rule the API
+   * owns and could change.
+   */
+  const nullCoefficientReason = useMemo(
+    () =>
+      (correlation?.caveats || []).find((caveat) =>
+        caveat.startsWith("no coefficient is reported"),
+      ) || "",
+    [correlation],
+  );
+
+  const readings = useMemo(
+    () =>
+      correlationReadings(correlation, {
+        geographiesA: correlation?.geographies_a,
+        geographiesB: correlation?.geographies_b,
+        nullReason: nullCoefficientReason,
+      }),
+    [correlation, nullCoefficientReason],
+  );
+
+  /**
+   * The years the same-year pin offers.
+   *
+   * Read from the periods the selected measures actually published, so the
+   * control cannot ask for a year no side has rows in — which would answer an
+   * empty correlation and report it as a coverage problem. Newest first,
+   * because a reader pinning a year is almost always pinning a recent one.
+   */
+  const pinnableYears = useMemo(() => {
+    const years = new Set<number>();
+    for (const entry of plotted) {
+      for (const point of entry.points) {
+        const year = Number(String(point.period).slice(0, 4));
+        if (Number.isInteger(year) && year > 1000) {
+          years.add(year);
+        }
+      }
+    }
+    return [...years].sort((left, right) => right - left);
+  }, [plotted]);
+
+  const matrixModel = useMemo(
+    () =>
+      matrix
+        ? correlationMatrixModel({
+            codes: (matrix.metrics || []).map((entry) =>
+              String(entry.metric_code ?? ""),
+            ),
+            pairs: matrix.pairs || [],
+            which: coefficient,
+          })
+        : null,
+    [matrix, coefficient],
+  );
+
   // --- The shareable link ---------------------------------------------------
 
   const urlState = useMemo<WorkbenchUrlState>(
@@ -1015,8 +1222,20 @@ export default function WorkbenchPage() {
             stateFips: alignmentStateFips || undefined,
           }
         : {}),
+      // The year pin and the correlation toggle are carried only where they
+      // describe the answer on screen, for the same reason the grain is: a
+      // link to a line chart should not reopen controls that are not on it.
+      ...(effectivePresentation === "correlation"
+        ? { correlation: true, year: yearPin ?? undefined }
+        : {}),
     }),
-    [series, effectivePresentation, alignmentGeoLevel, alignmentStateFips],
+    [
+      series,
+      effectivePresentation,
+      alignmentGeoLevel,
+      alignmentStateFips,
+      yearPin,
+    ],
   );
 
   useEffect(() => {
@@ -1416,6 +1635,140 @@ export default function WorkbenchPage() {
               ) : null}
             </div>
           ) : null}
+
+          {pairChoices.length > 1 && isCrossSectional(effectivePresentation) ? (
+            <div className="control-group" data-testid="workbench-pair-chooser">
+              <label htmlFor="workbench-pair">Pair to draw</label>
+              <select
+                id="workbench-pair"
+                className="select"
+                value={pair ? `${pair[0]}|${pair[1]}` : ""}
+                onChange={(event) => {
+                  const [left, right] = event.target.value.split("|");
+                  setChosenPair(left && right ? [left, right] : null);
+                }}
+                data-testid="workbench-pair"
+              >
+                <option value="">Choose a pair</option>
+                {pairChoices.map(([left, right]) => (
+                  <option key={`${left}|${right}`} value={`${left}|${right}`}>
+                    {`${metricLabel(metricIndex[left]) || left} against ${
+                      metricLabel(metricIndex[right]) || right
+                    }`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {effectivePresentation === "correlation" ? (
+            <div className="selector-grid" data-testid="workbench-correlation-controls">
+              <div className="control-group">
+                <label htmlFor="workbench-coefficient">Coefficient</label>
+                <select
+                  id="workbench-coefficient"
+                  className="select"
+                  value={coefficient}
+                  onChange={(event) =>
+                    setCoefficient(
+                      event.target.value === "spearman_rho"
+                        ? "spearman_rho"
+                        : "pearson_r",
+                    )
+                  }
+                  data-testid="workbench-coefficient"
+                >
+                  <option value="pearson_r">Pearson r</option>
+                  <option value="spearman_rho">Spearman ρ</option>
+                </select>
+              </div>
+              <div className="control-group">
+                <label htmlFor="workbench-year-pin">Same-year pin</label>
+                <select
+                  id="workbench-year-pin"
+                  className="select"
+                  value={yearPin === null ? "" : String(yearPin)}
+                  onChange={(event) =>
+                    setYearPin(
+                      event.target.value ? Number(event.target.value) : null,
+                    )
+                  }
+                  data-testid="workbench-year-pin"
+                >
+                  <option value="">
+                    Off — each side&apos;s own newest value
+                  </option>
+                  {pinnableYears.map((year) => (
+                    <option key={year} value={String(year)}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : null}
+
+          {correlationLoading ? (
+            <p className="subtle" data-testid="workbench-correlation-loading">
+              Asking the API for the coefficient…
+            </p>
+          ) : null}
+
+          {correlationError ? (
+            <p className="notice error" data-testid="workbench-correlation-error">
+              {correlationError}
+            </p>
+          ) : null}
+
+          {effectivePresentation === "correlation" && correlation ? (
+            <CorrelationPanel
+              readings={readings}
+              caveats={correlation.caveats || []}
+              year={correlation.year ?? null}
+              periodA={correlation.period_a ?? null}
+              periodB={correlation.period_b ?? null}
+            />
+          ) : null}
+
+          {effectivePresentation === "correlation" && matrixModel && matrix ? (
+            <>
+              <CorrelationMatrixChart
+                model={matrixModel}
+                which={coefficient}
+                labelFor={(code) => metricLabel(metricIndex[code]) || code}
+              />
+              {(matrix.caveats || []).length > 0 ? (
+                <p className="notice" data-testid="workbench-matrix-causation">
+                  <strong>{(matrix.caveats || [])[0]}</strong>
+                </p>
+              ) : null}
+              <ul className="subtle" data-testid="workbench-matrix-pairs">
+                {(matrix.pairs || []).map((entry) => {
+                  const code = `${entry.metric_code_a}|${entry.metric_code_b}`;
+                  const label = `${
+                    metricLabel(metricIndex[String(entry.metric_code_a)]) ||
+                    entry.metric_code_a
+                  } against ${
+                    metricLabel(metricIndex[String(entry.metric_code_b)]) ||
+                    entry.metric_code_b
+                  }`;
+                  return (
+                    <li key={code} data-pair={code}>
+                      <strong>{label}</strong>:{" "}
+                      {entry.comparable === false
+                        ? (entry.rules || [])
+                            .filter((rule) => rule.status === "fail")
+                            .map((rule) => rule.reason)
+                            .join("; ")
+                        : (entry.caveats || []).join(" ") ||
+                          `${(entry.statistic?.n ?? 0).toLocaleString()} paired geographies.`}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : null}
+
 
           {isCrossSectional(effectivePresentation) && grainOffer.note ? (
             <p className="subtle" data-testid="workbench-grain-note">

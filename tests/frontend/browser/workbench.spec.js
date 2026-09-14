@@ -700,3 +700,206 @@ test("the heatmap hatches a period that published no value", async ({ page }) =>
   await expect(withheldRow).toHaveCount(1);
   await expect(withheldRow).toContainText("(1)");
 });
+
+// --- WB-5: the correlation on screen ---------------------------------------
+//
+// Covers: WEB-094 — the correlation panel leads with the association caveat,
+// labels every coefficient API-derived, shows a null coefficient's reason
+// rather than a blank, and reports coverage and contemporaneity from the
+// answer. The matrix draws a declined cell off its scale with the failed rule
+// in its tooltip, and a longitudinal composition is refused with the reason.
+
+const CORRELATION_ROUTES = [
+  {
+    path: "/api/v1/comparison/correlation",
+    parameters: ["geo_level", "metric_code_a", "metric_code_b", "state_fips", "year"],
+  },
+  {
+    path: "/api/v1/comparison/matrix",
+    parameters: ["geo_level", "limit", "metric_codes", "offset", "state_fips", "year"],
+  },
+];
+
+const CAUSATION =
+  "association, not causation: a coefficient describes how two published measures move together across geographies, never that one causes the other; a third measure, a shared geography effect, or the way each source defines its universe can produce any coefficient here";
+
+const correlationAnswer = {
+  metric_code_a: METRIC_ACS,
+  metric_code_b: METRIC_PEP_STATE,
+  source_code_a: "CENSUS_ACS",
+  source_code_b: "CENSUS_PEP",
+  units_a: "People",
+  units_b: "People",
+  derived: true,
+  geo_level: "STATE",
+  state_fips: null,
+  year: null,
+  n: 48,
+  geographies_a: 52,
+  geographies_b: 51,
+  contemporaneous_pairs: 30,
+  pearson_r: 0.9871,
+  spearman_rho: 0.9123,
+  period_a: "2023",
+  period_b: null,
+  periods_differ: true,
+  derivations: ["pearson_r", "spearman_rho"],
+  caveats: [
+    CAUSATION,
+    "aggregation characteristics are not fully published; do not sum derived values across geographies",
+    "coverage: 48 of the 52 geographies either side published were paired; a geography one side publishes and the other does not is absent from the coefficient entirely",
+    "18 of 48 pairs combine two different periods, because each side reduces to its own newest published value; pin a year to ask for a same-year answer, at the cost of the coverage that answer will report",
+  ],
+};
+
+async function installCorrelationRoutes(page, { answer = correlationAnswer } = {}) {
+  await page.route("**/api/v1/catalog/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        total: 2,
+        items: alignedCapabilities.items.map((entry) => ({
+          ...entry,
+          observation_routes: [...entry.observation_routes, ...CORRELATION_ROUTES],
+        })),
+      },
+    }),
+  );
+  await page.route("**/api/v1/comparison/correlation?*", (route) =>
+    route.fulfill({ json: answer }),
+  );
+}
+
+test("the correlation panel leads with the caveat and labels the coefficients", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  await page.getByTestId("workbench-presentation-correlation").click();
+
+  const panel = page.getByTestId("workbench-correlation");
+  await expect(panel).toBeVisible();
+
+  // The association sentence is first, in full, and not behind a control.
+  await expect(page.getByTestId("workbench-correlation-causation")).toContainText(
+    "association, not causation",
+  );
+
+  // `n` is the first reading, so the coefficient is read against it.
+  const readings = page.getByTestId("correlation-reading");
+  await expect(readings.first()).toContainText("Paired geographies");
+  await expect(readings.first()).toContainText("48");
+
+  // Both coefficients, at three decimal places, each labelled API-derived.
+  await expect(panel).toContainText("0.987");
+  await expect(panel).toContainText("0.912");
+  await expect(page.getByTestId("correlation-derived")).toHaveCount(2);
+
+  // Coverage and contemporaneity come from the answer, not from a guess.
+  await expect(panel).toContainText("48 paired of 52 and 51 published");
+  await expect(panel).toContainText("30 of 48");
+
+  // And every remaining caveat is listed.
+  await expect(page.getByTestId("workbench-correlation-caveats")).toContainText(
+    "pin a year to ask for a same-year answer",
+  );
+});
+
+test("a null coefficient shows the reason the API gave", async ({ page }) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page, {
+    answer: {
+      ...correlationAnswer,
+      n: 2,
+      pearson_r: null,
+      spearman_rho: null,
+      caveats: [
+        CAUSATION,
+        "no coefficient is reported: 2 paired geographies is fewer than the 3 a correlation needs to carry any information",
+      ],
+    },
+  });
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+  await page.getByTestId("workbench-presentation-correlation").click();
+
+  const panel = page.getByTestId("workbench-correlation");
+  await expect(panel).toContainText("fewer than the 3 a correlation needs");
+  // Both coefficient readings carry the reason, and neither is a bare dash
+  // where a number should be.
+  const derivedReadings = page
+    .getByTestId("correlation-reading")
+    .filter({ hasText: "API-derived" });
+  await expect(derivedReadings).toHaveCount(2);
+  for (const reading of await derivedReadings.all()) {
+    const text = (await reading.textContent()) || "";
+    expect(text).toContain("no coefficient is reported");
+    expect(text.trim()).not.toMatch(/(API-derived)\s*[—–-]\s*$/);
+  }
+});
+
+test("the panel says the coefficient is across geographies, not across time", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await installCorrelationRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  await page.getByTestId("workbench-presentation-correlation").click();
+
+  // The statistic this plan declines to offer is named rather than silently
+  // absent: a reader arriving from a time chart is told what this coefficient
+  // is measured over, and what it is not.
+  await expect(page.getByTestId("workbench-correlation-scope")).toContainText(
+    "across geographies at the shared grain",
+  );
+  await expect(page.getByTestId("workbench-correlation-scope")).toContainText(
+    "shared time trend",
+  );
+});
+
+test("the year pin is off by default and its effect is read from the answer", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  const pinned = {
+    ...correlationAnswer,
+    year: 2023,
+    n: 30,
+    contemporaneous_pairs: 30,
+    period_a: "2023",
+    period_b: "2023",
+    periods_differ: false,
+    caveats: [
+      CAUSATION,
+      "coverage: 30 of the 52 geographies either side published were paired; a geography one side publishes and the other does not is absent from the coefficient entirely",
+    ],
+  };
+  await installCorrelationRoutes(page, { answer: correlationAnswer });
+  // Registered after the blanket handler on purpose: Playwright resolves the
+  // most recently registered matching route first, so this one answers.
+  await page.route("**/api/v1/comparison/correlation?*", (route) => {
+    const year = new URL(route.request().url()).searchParams.get("year");
+    return route.fulfill({ json: year ? pinned : correlationAnswer });
+  });
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+  await page.getByTestId("workbench-presentation-correlation").click();
+
+  await expect(page.getByTestId("workbench-year-pin")).toHaveValue("");
+  await expect(page.getByTestId("workbench-correlation-periods")).toContainText(
+    "own newest published value",
+  );
+
+  await page.getByTestId("workbench-year-pin").selectOption("2023");
+  // The coverage the pin cost is reported from the answer, never predicted.
+  await expect(page.getByTestId("workbench-correlation")).toContainText(
+    "30 paired of 52 and 51 published",
+  );
+  await expect(page.getByTestId("workbench-correlation-periods")).toContainText(
+    "reduced within 2023",
+  );
+});
