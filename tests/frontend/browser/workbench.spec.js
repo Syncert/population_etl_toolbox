@@ -292,3 +292,411 @@ test("an unanswerable presentation is listed with its reason, not hidden", async
   await expect(page.getByTestId("workbench-presentation-line")).toBeVisible();
   await expect(page.getByTestId("workbench-presentation-bar")).toBeVisible();
 });
+
+// --- WB-2: the cross-sectional pair and the matrix heatmap -----------------
+//
+// Covers: WEB-090 — the workbench reads a comparable pair at the shared
+// grain, refuses an incomparable one without issuing a single `/comparison`
+// request, ranks by either side, and lays one measure out as geographies by
+// periods with the cells that published no value hatched and counted.
+
+const ANALYSIS_ROUTES = [
+  {
+    path: "/api/v1/comparison/preflight",
+    parameters: ["metric_code_a", "metric_code_b"],
+  },
+  {
+    path: "/api/v1/comparison",
+    parameters: [
+      "geo_level",
+      "limit",
+      "metric_code_a",
+      "metric_code_b",
+      "offset",
+      "state_fips",
+    ],
+  },
+];
+
+const METRIC_ACS = "CENSUS_ACS:acs5:B01003_001";
+const METRIC_PEP_STATE = "CENSUS_PEP:pep_state:POPESTIMATE";
+
+const alignedCapabilities = {
+  total: 2,
+  items: [
+    {
+      source_code: "CENSUS_ACS",
+      display_name: "Census American Community Survey",
+      route_segment: "census",
+      served_by_neutral_routes: true,
+      observation_filters: ["geo_id", "geo_level", "state_fips"],
+      observation_routes: [...NEUTRAL_ROUTES, ...ANALYSIS_ROUTES],
+    },
+    {
+      source_code: "CENSUS_PEP",
+      display_name: "Census Population Estimates Program",
+      route_segment: "pep",
+      served_by_neutral_routes: true,
+      observation_filters: ["geo_id", "geo_level", "state_fips"],
+      observation_routes: [...NEUTRAL_ROUTES, ...ANALYSIS_ROUTES],
+    },
+  ],
+};
+
+const alignedMetrics = {
+  CENSUS_ACS: [
+    {
+      metric_code: METRIC_ACS,
+      metric_display_name: "Total population",
+      source_code: "CENSUS_ACS",
+      units: "People",
+      valid_geo_grains: ["STATE", "COUNTY"],
+      valid_time_grains: ["ANNUAL"],
+    },
+  ],
+  CENSUS_PEP: [
+    {
+      metric_code: METRIC_PEP_STATE,
+      metric_display_name: "Resident population estimate",
+      source_code: "CENSUS_PEP",
+      units: "People",
+      valid_geo_grains: ["STATE"],
+      valid_time_grains: ["ANNUAL"],
+    },
+  ],
+};
+
+const comparableVerdict = {
+  metric_code_a: METRIC_ACS,
+  metric_code_b: METRIC_PEP_STATE,
+  source_code_a: "CENSUS_ACS",
+  source_code_b: "CENSUS_PEP",
+  comparable: true,
+  derivations: ["difference", "ratio"],
+  rules: [
+    {
+      rule: "source_analysis_ready",
+      status: "pass",
+      reason: "both sources are served by the aligned analysis routes",
+    },
+    { rule: "units", status: "pass", reason: "both metrics publish 'People'" },
+    { rule: "time_grains", status: "pass", reason: "both publish ANNUAL" },
+    { rule: "geo_grains", status: "pass", reason: "shared geography grains: STATE" },
+    {
+      rule: "aggregation",
+      status: "unknown",
+      reason:
+        "aggregation characteristics are not fully published; do not sum derived values across geographies",
+    },
+  ],
+  caveats: [
+    "aggregation characteristics are not fully published; do not sum derived values across geographies",
+  ],
+};
+
+const alignedComparison = {
+  metric_code_a: METRIC_ACS,
+  metric_code_b: METRIC_PEP_STATE,
+  source_code_a: "CENSUS_ACS",
+  source_code_b: "CENSUS_PEP",
+  units_a: "People",
+  units_b: "People",
+  derivations: ["difference", "ratio"],
+  caveats: comparableVerdict.caveats,
+  total: 3,
+  // Each side publishes more than the pairing: the coverage note must say so.
+  geographies_a: 52,
+  geographies_b: 51,
+  limit: 1000,
+  offset: 0,
+  items: [
+    {
+      geo_id: "state:06",
+      geo_level: "STATE",
+      state_fips: "06",
+      state_name: "California",
+      metric_code_a: METRIC_ACS,
+      metric_code_b: METRIC_PEP_STATE,
+      period_a: "2023",
+      period_b: "2023",
+      value_a: 39000000,
+      value_b: 39100000,
+      difference: -100000,
+      ratio: 0.997,
+    },
+    {
+      geo_id: "state:36",
+      geo_level: "STATE",
+      state_fips: "36",
+      state_name: "New York",
+      metric_code_a: METRIC_ACS,
+      metric_code_b: METRIC_PEP_STATE,
+      period_a: "2023",
+      period_b: "2022",
+      value_a: 19600000,
+      value_b: 19700000,
+      difference: -100000,
+      ratio: 0.995,
+    },
+    {
+      // A geography one side published no number for: not a bar, and counted.
+      geo_id: "state:55",
+      geo_level: "STATE",
+      state_fips: "55",
+      state_name: "Wisconsin",
+      metric_code_a: METRIC_ACS,
+      metric_code_b: METRIC_PEP_STATE,
+      period_a: "2023",
+      period_b: "2023",
+      value_a: null,
+      value_b: 5900000,
+      difference: null,
+      ratio: null,
+    },
+  ],
+};
+
+const alignedObservations = {
+  [METRIC_ACS]: [
+    {
+      metric_code: METRIC_ACS,
+      geo_id: "state:06",
+      geo_level: "STATE",
+      period_start: "2022",
+      period_end: "2022",
+      value: "38900000",
+      release: "acs5:2022",
+    },
+    {
+      metric_code: METRIC_ACS,
+      geo_id: "state:06",
+      geo_level: "STATE",
+      period_start: "2023",
+      period_end: "2023",
+      value: "39000000",
+      release: "acs5:2023",
+    },
+    {
+      metric_code: METRIC_ACS,
+      geo_id: "state:36",
+      geo_level: "STATE",
+      period_start: "2022",
+      period_end: "2022",
+      value: "19700000",
+      release: "acs5:2022",
+    },
+    {
+      // Published without a number, with the source's own reason.
+      metric_code: METRIC_ACS,
+      geo_id: "state:36",
+      geo_level: "STATE",
+      period_start: "2023",
+      period_end: "2023",
+      value: null,
+      value_status: "suppressed",
+      release: "acs5:2023",
+    },
+  ],
+  [METRIC_PEP_STATE]: [
+    {
+      metric_code: METRIC_PEP_STATE,
+      geo_id: "state:06",
+      geo_level: "STATE",
+      period_start: "2023",
+      period_end: "2023",
+      value: "39100000",
+      release: "v2023",
+    },
+  ],
+};
+
+async function installAlignedRoutes(page, { preflight = comparableVerdict } = {}) {
+  await page.route("**/api/v1/catalog/capabilities", (route) =>
+    route.fulfill({ json: alignedCapabilities }),
+  );
+  await page.route("**/api/v1/catalog/metrics?*", (route) => {
+    const sourceCode = new URL(route.request().url()).searchParams.get("source_code");
+    const items = alignedMetrics[sourceCode] || [];
+    return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+  });
+  await page.route(/\/api\/v1\/catalog\/metrics\/[^?]+$/, (route) => {
+    const code = decodeURIComponent(
+      new URL(route.request().url()).pathname.split("/").pop(),
+    );
+    const metric = Object.values(alignedMetrics)
+      .flat()
+      .find((entry) => entry.metric_code === code);
+    return metric
+      ? route.fulfill({ json: metric })
+      : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+  });
+  await page.route("**/api/v1/catalog/geographies?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 2,
+        limit: 1000,
+        offset: 0,
+        items: [
+          {
+            geo_id: "state:06",
+            geo_level: "STATE",
+            state_fips: "06",
+            state_name: "California",
+          },
+          {
+            geo_id: "state:36",
+            geo_level: "STATE",
+            state_fips: "36",
+            state_name: "New York",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/observations?*", (route) => {
+    const metricCode = new URL(route.request().url()).searchParams.get("metric_code");
+    const items = alignedObservations[metricCode] || [];
+    return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+  });
+  await page.route("**/api/v1/comparison/preflight?*", (route) =>
+    route.fulfill({ json: preflight }),
+  );
+  await page.route("**/api/v1/comparison?*", (route) =>
+    route.fulfill({ json: alignedComparison }),
+  );
+}
+
+async function addAlignedPair(page) {
+  await page.getByTestId("workbench-source").selectOption("census");
+  await page.getByTestId("workbench-metric").selectOption(METRIC_ACS);
+  await page.getByTestId("workbench-grain").selectOption("STATE");
+  await page.getByTestId("workbench-geography").selectOption("state:06");
+  await page.getByTestId("workbench-add-series").click();
+
+  await page.getByTestId("workbench-source").selectOption("pep");
+  await page.getByTestId("workbench-metric").selectOption(METRIC_PEP_STATE);
+  await page.getByTestId("workbench-grain").selectOption("STATE");
+  await page.getByTestId("workbench-geography").selectOption("state:06");
+  await page.getByTestId("workbench-add-series").click();
+}
+
+test("a comparable pair draws a scatter at the shared grain", async ({ page }) => {
+  await installAlignedRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  await page.getByTestId("workbench-presentation-scatter").click();
+
+  // The grain offer is the intersection: ACS publishes STATE and COUNTY, PEP
+  // only STATE, so only STATE is offered and the note names PEP.
+  const grainOptions = page
+    .getByTestId("workbench-alignment-grain")
+    .locator("option");
+  await expect(grainOptions).toHaveCount(1);
+  await expect(grainOptions.first()).toHaveText("State");
+  await expect(page.getByTestId("workbench-grain-note")).toContainText(
+    METRIC_PEP_STATE,
+  );
+
+  await expect(page.getByTestId("workbench-preflight-status")).toContainText(
+    "comparable",
+  );
+  // The rule the publication could not verify travels as a caveat, unchanged.
+  await expect(page.getByTestId("workbench-preflight-caveats")).toContainText(
+    "do not sum derived values across geographies",
+  );
+
+  // Two of the three rows have both sides published; the third is counted.
+  await expect(page.locator('[data-testid="scatter-point"]')).toHaveCount(1);
+  await expect(
+    page.locator('[data-testid="scatter-point-differing"]'),
+  ).toHaveCount(1);
+  await expect(page.getByTestId("scatter-excluded")).toContainText(
+    "1 geography is not plotted",
+  );
+
+  // And the partial pairing is visible against each side's own count.
+  await expect(page.getByTestId("workbench-coverage")).toContainText("52");
+});
+
+test("an incomparable pair is explained and never queried", async ({ page }) => {
+  await installAlignedRoutes(page, {
+    preflight: {
+      ...comparableVerdict,
+      comparable: false,
+      derivations: [],
+      rules: [
+        {
+          rule: "units",
+          status: "fail",
+          reason:
+            "units differ ('People' vs 'Percent'); a difference or ratio of unlike units would present incomparable quantities as comparable",
+        },
+      ],
+    },
+  });
+  const comparisonRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("/api/v1/comparison")) {
+      comparisonRequests.push(url.toString());
+    }
+  });
+
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+  await expect(page.getByTestId("workbench-preflight-status")).toContainText(
+    "not comparable",
+  );
+  await expect(page.getByTestId("workbench-unavailable-presentations")).toContainText(
+    "units differ",
+  );
+  expect(comparisonRequests).toEqual([]);
+});
+
+test("the ranking sorts by the chosen side and counts the unpublished", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  await page.goto("/workbench");
+  await addAlignedPair(page);
+
+  await page.getByTestId("workbench-presentation-ranking").click();
+  await expect(page.locator('[data-testid="workbench-bar"]')).toHaveCount(2);
+  await expect(page.getByTestId("bar-unpublished")).toContainText(
+    "1 geography published no value",
+  );
+
+  // Sorting by the other side brings Wisconsin back: PEP published it.
+  await page.getByTestId("workbench-rank-by").selectOption("b");
+  await expect(page.locator('[data-testid="workbench-bar"]')).toHaveCount(3);
+});
+
+test("the heatmap hatches a period that published no value", async ({ page }) => {
+  await installAlignedRoutes(page);
+  await page.goto("/workbench");
+
+  await page.getByTestId("workbench-source").selectOption("census");
+  await page.getByTestId("workbench-metric").selectOption(METRIC_ACS);
+  await page.getByTestId("workbench-grain").selectOption("STATE");
+  await page.getByTestId("workbench-geography").selectOption("state:06");
+  await page.getByTestId("workbench-add-series").click();
+
+  await page.getByTestId("workbench-presentation-heatmap").click();
+
+  const heatmap = page.getByTestId("workbench-heatmap");
+  await expect(heatmap).toHaveAttribute("data-geography-count", "2");
+  await expect(heatmap).toHaveAttribute("data-period-count", "2");
+  await expect(page.locator('[data-testid="heatmap-cell"]')).toHaveCount(3);
+  await expect(
+    page.locator('[data-testid="heatmap-cell-unpublished"]'),
+  ).toHaveCount(1);
+
+  // The legend carries the withheld set as its own row, counted, in a colour
+  // that is never one on the scale.
+  const withheldRow = heatmap
+    .locator(".map-legend .legend-row")
+    .filter({ hasText: "No published value" });
+  await expect(withheldRow).toHaveCount(1);
+  await expect(withheldRow).toContainText("(1)");
+});

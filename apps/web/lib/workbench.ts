@@ -622,3 +622,365 @@ export function describeChart(
   }
   return `${parts.join("; ")}.`;
 }
+
+// ---------------------------------------------------------------------------
+// Cross-sectional: one shared grain, one newest value per geography (WB-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why the cross-sectional presentations cannot be served, or `""`.
+ *
+ * The three cases, in the order a reader meets them:
+ *
+ * - **Fewer than two measures.** A scatter, a ranking and a correlation are
+ *   all statements about two or more measures read at one grain.
+ * - **More than two measures.** `/comparison` is a pair by contract, and the
+ *   matrix route that answers more arrives with WB-5. This interim state is
+ *   one the plan ships deliberately, and it is stated rather than hidden.
+ * - **No shared grain.** The intersection of the measures' published grains
+ *   is empty, so there is no level to read them at. The publishers' own
+ *   declaration, reported as such.
+ *
+ * The *preflight* verdict is deliberately not decided here. It is the API's,
+ * it is presented through `describePreflight` unchanged, and a screen that
+ * paraphrased it would be this application restating a compatibility
+ * decision it does not make.
+ */
+export function crossSectionalRefusal({
+  series,
+  sharedGrains,
+}: {
+  series: readonly WorkbenchSeries[];
+  sharedGrains: readonly string[];
+}): string {
+  const measures = new Set((series || []).map((entry) => entry.metricCode));
+  if (measures.size < 2) {
+    return (
+      "A cross-sectional reading needs at least two measures at one shared " +
+      "grain. Add another measure."
+    );
+  }
+  if (measures.size > 2) {
+    return (
+      "An aligned answer for more than two measures needs the matrix route, " +
+      `which arrives with a later phase of this page. ${measures.size} ` +
+      "measures are selected; a scatter, a ranking and a correlation are " +
+      "offered for exactly two."
+    );
+  }
+  if ((sharedGrains || []).length === 0) {
+    return (
+      "These two measures publish no geography grain in common, so there is " +
+      "no level to read them at together. The publishers' declaration, not a " +
+      "limit of this screen."
+    );
+  }
+  return "";
+}
+
+/**
+ * The two measures a cross-sectional reading is about, in selection order.
+ *
+ * `null` unless exactly two distinct measures are selected. Several series of
+ * one measure at several geographies is a longitudinal composition, not a
+ * pair: `/comparison` reads one newest value per geography for each of two
+ * measures, so the geographies are the route's answer rather than the
+ * reader's selection.
+ */
+export function crossSectionalPair(
+  series: readonly WorkbenchSeries[],
+): [string, string] | null {
+  const codes: string[] = [];
+  for (const entry of series || []) {
+    if (!codes.includes(entry.metricCode)) {
+      codes.push(entry.metricCode);
+    }
+  }
+  return codes.length === 2 ? [codes[0] as string, codes[1] as string] : null;
+}
+
+/** A national measure offered as a reference line on a cross-sectional bar. */
+export interface ReferenceLineOffer {
+  eligible: boolean;
+  /** Why it is not offered, or how it will be drawn. Never empty. */
+  reason: string;
+}
+
+/**
+ * Whether a NATIONAL-only measure may be drawn as a reference line.
+ *
+ * Three conditions, and each exists to stop a specific wrong picture:
+ *
+ * 1. **Its only published grain is NATIONAL.** A measure published at STATE
+ *    *and* nationally belongs on the axis as a geography like any other; it
+ *    does not need a reference line, and drawing it as one would hide the
+ *    state values it publishes.
+ * 2. **Its unit equals the axis's unit.** A line is a position on the value
+ *    axis, so drawing a measure in different units at that position asserts a
+ *    comparison the units refuse — the same thing the `units` compatibility
+ *    rule fails a pair for.
+ * 3. **The chart is cross-sectional.** On a time axis a national measure is
+ *    an ordinary series with its own history; flattening it to one line would
+ *    discard periods it published.
+ *
+ * An eligible line is labelled with its own period, and never enters
+ * `/comparison` or a correlation: it is one geography, and a correlation over
+ * one point is not a statistic.
+ */
+export function referenceLineOffer({
+  grains,
+  unit,
+  axisUnit,
+  presentation,
+}: {
+  /** The measure's published `valid_geo_grains`, normalised. */
+  grains: readonly string[];
+  unit: string | null | undefined;
+  /** The unit of the axis the bar chart is drawn against. */
+  axisUnit: string | null | undefined;
+  presentation: WorkbenchPresentation;
+}): ReferenceLineOffer {
+  if (!isCrossSectional(presentation)) {
+    return {
+      eligible: false,
+      reason:
+        "A national measure is an ordinary series on a time axis, with its " +
+        "own published history. A reference line is offered only on a " +
+        "cross-sectional chart.",
+    };
+  }
+  const published = [...(grains || [])];
+  if (published.length === 0) {
+    return {
+      eligible: false,
+      reason:
+        "This measure publishes no geography grain, so it cannot be shown to " +
+        "be national. Unknown is not national.",
+    };
+  }
+  const others = published.filter((grain) => grain !== "NATIONAL");
+  if (others.length > 0) {
+    return {
+      eligible: false,
+      reason:
+        `This measure publishes geographies at ${others.join(", ")}, so it ` +
+        "belongs on the axis as those geographies rather than as one line.",
+    };
+  }
+  const own = typeof unit === "string" ? unit.trim() : "";
+  const axis = typeof axisUnit === "string" ? axisUnit.trim() : "";
+  if (!own || !axis) {
+    return {
+      eligible: false,
+      reason:
+        "A reference line sits on the value axis, so its unit must be the " +
+        "axis's. One of the two publishes no unit, so they cannot be shown " +
+        "to agree.",
+    };
+  }
+  if (own.toLocaleLowerCase() !== axis.toLocaleLowerCase()) {
+    return {
+      eligible: false,
+      reason:
+        `This measure publishes ${own} and the axis is ${axis}. A line drawn ` +
+        "at a position on an axis in another unit asserts a comparison the " +
+        "units refuse.",
+    };
+  }
+  return {
+    eligible: true,
+    reason:
+      `Drawn as a horizontal line in ${own}, labelled with its own period. ` +
+      "It is one national value, not a geography on this axis, and it is " +
+      "never sent to the comparison or entered into a correlation.",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The geography x period heatmap (WB-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The most cells one heatmap draws, per side.
+ *
+ * Sixty by sixty is 3,600 rects, which renders and reads. Past it the cells
+ * are narrower than their own borders, so the picture stops carrying the
+ * values it claims to. The cap is reported with the narrowing that would fit
+ * — a state, a year range — rather than silently truncating, because a
+ * heatmap quietly showing the first sixty counties of 3,143 is a picture of
+ * Alabama labelled as the country.
+ */
+export const MAX_HEATMAP_GEOGRAPHIES = 60;
+export const MAX_HEATMAP_PERIODS = 60;
+
+/** One cell: a published value, or the stated absence of one. */
+export interface HeatmapCell {
+  geoId: string;
+  period: string;
+  /** `null` where the measure published no value for this geography-period. */
+  value: number | null;
+  /** The source's own word for why, where it published one. */
+  valueStatus: string | null;
+  release: string | null;
+}
+
+export interface HeatmapModel {
+  /** Row keys, in the order the rows are drawn. */
+  geographies: { geoId: string; name: string }[];
+  /** Column keys, chronological. */
+  periods: string[];
+  cells: HeatmapCell[];
+  minValue: number | null;
+  maxValue: number | null;
+  /** Cells with a published number. */
+  valueCount: number;
+  /** Cells the measure published no number for. */
+  unpublishedCount: number;
+  /** True when the cap cut the answer down. */
+  capped: boolean;
+  /** What the cap did and what would fit, or "". */
+  capNote: string;
+}
+
+const EMPTY_HEATMAP: HeatmapModel = {
+  geographies: [],
+  periods: [],
+  cells: [],
+  minValue: null,
+  maxValue: null,
+  valueCount: 0,
+  unpublishedCount: 0,
+  capped: false,
+  capNote: "",
+};
+
+/**
+ * One measure's settled history laid out as geographies by periods.
+ *
+ * Every geography-period pair in the drawn rectangle becomes a cell, whether
+ * or not a row arrived for it, because the absence is the thing a reader most
+ * needs to see: a heatmap that only drew the rows it received would show a
+ * ragged block and leave "not published" indistinguishable from the edge of
+ * the data.
+ *
+ * A cell whose row published no number carries `value: null` and the source's
+ * own `value_status` where there is one. It is never `0`, and its colour is
+ * never a colour on the scale — the WEB-078 rule, one layer over from the
+ * choropleth: a withheld value and no observation are different statements,
+ * and both are different from a low value.
+ *
+ * Nothing is aggregated. Where a geography-period somehow carries two rows,
+ * the first is kept and the second ignored rather than summed or averaged,
+ * because a cell is one published value and a derived one would be this
+ * client authoring a fact. The rows are keyed through a nested map rather
+ * than a joined string, so a geography identity containing any separator this
+ * module might have chosen cannot collide with another.
+ */
+export function heatmapModel({
+  rows,
+  geographyNames = {},
+}: {
+  rows: readonly ObservationRow[];
+  geographyNames?: Record<string, string>;
+}): HeatmapModel {
+  if (!rows || rows.length === 0) {
+    return EMPTY_HEATMAP;
+  }
+
+  const periodSet = new Set<string>();
+  const byGeography = new Map<string, Map<string, ObservationRow>>();
+  for (const row of rows) {
+    const geoId = String(row?.geo_id ?? "");
+    const period = observationPeriodLabel(row);
+    if (!geoId || !period) {
+      continue;
+    }
+    periodSet.add(period);
+    let periodsOf = byGeography.get(geoId);
+    if (!periodsOf) {
+      periodsOf = new Map<string, ObservationRow>();
+      byGeography.set(geoId, periodsOf);
+    }
+    if (!periodsOf.has(period)) {
+      periodsOf.set(period, row);
+    }
+  }
+
+  const allPeriods = [...periodSet].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const allGeographies = [...byGeography.keys()].sort((left, right) =>
+    (geographyNames[left] || left).localeCompare(geographyNames[right] || right),
+  );
+
+  const periods = allPeriods.slice(0, MAX_HEATMAP_PERIODS);
+  const geographies = allGeographies
+    .slice(0, MAX_HEATMAP_GEOGRAPHIES)
+    .map((geoId) => ({ geoId, name: geographyNames[geoId] || geoId }));
+
+  const capped =
+    allPeriods.length > periods.length ||
+    allGeographies.length > geographies.length;
+  const capNote = capped
+    ? [
+        allGeographies.length > geographies.length
+          ? `${allGeographies.length} geographies published values and this ` +
+            `heatmap draws the first ${MAX_HEATMAP_GEOGRAPHIES}. Narrow to a ` +
+            "state to see the rest."
+          : "",
+        allPeriods.length > periods.length
+          ? `${allPeriods.length} periods were published and this heatmap ` +
+            `draws the earliest ${MAX_HEATMAP_PERIODS}. Narrow the year range ` +
+            "to see the rest."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
+  const cells: HeatmapCell[] = [];
+  let minValue: number | null = null;
+  let maxValue: number | null = null;
+  let valueCount = 0;
+  let unpublishedCount = 0;
+
+  for (const geography of geographies) {
+    const periodsOf = byGeography.get(geography.geoId);
+    for (const period of periods) {
+      const row = periodsOf?.get(period);
+      const value = row ? publishedNumber(row.value) : null;
+      if (value === null) {
+        unpublishedCount += 1;
+      } else {
+        valueCount += 1;
+        minValue = minValue === null ? value : Math.min(minValue, value);
+        maxValue = maxValue === null ? value : Math.max(maxValue, value);
+      }
+      cells.push({
+        geoId: geography.geoId,
+        period,
+        value,
+        valueStatus:
+          row && typeof row.value_status === "string" && row.value_status
+            ? row.value_status
+            : null,
+        release:
+          row && row.release !== null && row.release !== undefined
+            ? String(row.release)
+            : null,
+      });
+    }
+  }
+
+  return {
+    geographies,
+    periods,
+    cells,
+    minValue,
+    maxValue,
+    valueCount,
+    unpublishedCount,
+    capped,
+    capNote,
+  };
+}

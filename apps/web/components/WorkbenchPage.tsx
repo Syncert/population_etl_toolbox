@@ -17,22 +17,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import BarChart from "./BarChart";
+import HeatmapChart from "./HeatmapChart";
 import LineChart, { seriesStroke } from "./LineChart";
+import ScatterChart from "./ScatterChart";
 import StatusPill from "./StatusPill";
 import {
   apiErrorMessage,
   fetchAllMetrics,
   fetchAllPages,
   fetchCollectionPages,
+  fetchComparisonPages,
   getCapabilities,
+  getComparisonPreflight,
   getMetric,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
 import type {
+  ComparisonPreflight,
+  ComparisonResponse,
+  ComparisonRow,
   GeographySummary,
   MetricSummary,
   Observation,
 } from "../lib/api/types";
+import {
+  comparisonRowName,
+  comparisonScatterModel,
+  compatibilityState,
+  describeComparisonCoverage,
+  describePreflight,
+  incompatibleAlternatives,
+  mayRequestComparison,
+  sharedGrainOffer,
+} from "../lib/comparison";
 import { buildExplorerSources, findExplorerSource } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import {
@@ -44,12 +61,21 @@ import {
 } from "../lib/observationAccess";
 import { GEO_GRAIN_LABELS, geographyPickerState } from "../lib/geographyPicker";
 import { GEO_GRAIN_ORDER } from "../lib/geographyPicker";
-import { metricSupportedGeoLevels } from "../lib/explorerViewModel";
+import {
+  metricSupportedGeoLevels,
+  publishedNumber,
+} from "../lib/explorerViewModel";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import {
   MAX_WORKBENCH_SERIES,
   PRESENTATION_LABELS,
+  UNPUBLISHED_UNIT_LABEL,
   admitSeries,
+  crossSectionalPair,
+  crossSectionalRefusal,
+  heatmapModel,
+  isCrossSectional,
+  referenceLineOffer,
   assignValueAxes,
   availablePresentations,
   buildPlottedSeries,
@@ -78,6 +104,10 @@ const CATALOG_PAGE_SIZE = 1000;
 /** Pages of history per series. Ten pages of 1,000 covers any published run. */
 const HISTORY_PAGE_SIZE = 1000;
 const HISTORY_PAGE_LIMIT = 10;
+/** The comparison route's own declared page limit. */
+const COMPARISON_PAGE_SIZE = 1000;
+/** Eight pages reach 8,000 aligned geographies; a national county grain is 3,144. */
+const COMPARISON_PAGE_LIMIT = 8;
 const DEFAULT_PRESENTATION: WorkbenchPresentation = "line";
 
 interface LoadedSeries {
@@ -135,6 +165,22 @@ export default function WorkbenchPage() {
   const [metricIndex, setMetricIndex] = useState<Record<string, MetricSummary>>(
     {},
   );
+
+  // The cross-sectional reading: one shared grain, the API's verdict on the
+  // pair, and the aligned rows it serves where the verdict allows them.
+  const [alignmentGeoLevel, setAlignmentGeoLevel] = useState("");
+  const [alignmentStateFips, setAlignmentStateFips] = useState("");
+  const [preflight, setPreflight] = useState<ComparisonPreflight | null>(null);
+  const [preflightError, setPreflightError] = useState("");
+  const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
+  const [comparisonRows, setComparisonRows] = useState<ComparisonRow[]>([]);
+  const [comparisonComplete, setComparisonComplete] = useState(true);
+  const [comparisonError, setComparisonError] = useState("");
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  /** Which of the pair the ranking sorts by: the first measure or the second. */
+  const [rankBy, setRankBy] = useState<"a" | "b">("a");
+  const preflightTracker = useRef(createRequestTracker()).current;
+  const comparisonTracker = useRef(createRequestTracker()).current;
 
   // --- The requested composition, read once ---------------------------------
 
@@ -220,6 +266,12 @@ export default function WorkbenchPage() {
     }
     if (restored.length > 0) {
       setSeries(restored);
+    }
+    if (requested.alignmentGeoLevel) {
+      setAlignmentGeoLevel(requested.alignmentGeoLevel);
+    }
+    if (requested.stateFips) {
+      setAlignmentStateFips(requested.stateFips);
     }
   }, [sources]);
 
@@ -580,6 +632,294 @@ export default function WorkbenchPage() {
     [plotted],
   );
 
+  const geographyNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const row of [...states, ...geographies]) {
+      if (row?.geo_id) {
+        names[String(row.geo_id)] =
+          String(row.county_name || row.place_name || row.state_name || row.geo_id);
+      }
+    }
+    return names;
+  }, [states, geographies]);
+
+  // --- The cross-sectional reading (WB-2) -----------------------------------
+
+  /** The two measures a cross-sectional presentation is about, if there are two. */
+  const pair = useMemo(() => crossSectionalPair(series), [series]);
+
+  /**
+   * The grains the whole selection can be read at together.
+   *
+   * `sharedGrainOffer` is `lib/comparison`'s own function, generalised from
+   * the pair the workspace asks about to the set this page composes, so both
+   * screens reach the same conclusion from the same publication (WEB-074).
+   */
+  const grainOffer = useMemo(
+    () =>
+      sharedGrainOffer({
+        metrics: [...new Set(series.map((entry) => entry.metricCode))].map(
+          (code) => metricIndex[code],
+        ),
+        requested: alignmentGeoLevel,
+      }),
+    [series, metricIndex, alignmentGeoLevel],
+  );
+
+  useEffect(() => {
+    setAlignmentGeoLevel((current) =>
+      current && grainOffer.levels.includes(current)
+        ? current
+        : (grainOffer.levels.includes("COUNTY")
+            ? "COUNTY"
+            : (grainOffer.levels[0] ?? "")),
+    );
+  }, [grainOffer]);
+
+  const crossSectionReason = useMemo(
+    () =>
+      crossSectionalRefusal({ series, sharedGrains: grainOffer.levels }),
+    [series, grainOffer],
+  );
+
+  /**
+   * The preflight for the pair, asked before any aligned data moves.
+   *
+   * Asked whenever there is a pair, not only when a cross-sectional
+   * presentation is on screen: the verdict is what decides whether those
+   * presentations may be offered at all, so asking it lazily would leave the
+   * control enabled until a request came back and refused.
+   */
+  useEffect(() => {
+    if (!pair) {
+      setPreflight(null);
+      setPreflightError("");
+      return;
+    }
+    const request = preflightTracker.begin();
+    (async () => {
+      try {
+        const verdict = await getComparisonPreflight({
+          metric_code_a: pair[0],
+          metric_code_b: pair[1],
+        });
+        if (request.isCurrent()) {
+          setPreflight(verdict);
+          setPreflightError("");
+        }
+      } catch (error) {
+        if (request.isCurrent()) {
+          setPreflight(null);
+          setPreflightError(apiErrorMessage(error));
+        }
+      }
+    })();
+    return () => {
+      preflightTracker.invalidate();
+    };
+  }, [pair, preflightTracker]);
+
+  const preflightModel = useMemo(() => describePreflight(preflight), [preflight]);
+  const comparable = mayRequestComparison(preflight);
+
+  /**
+   * The aligned rows, requested only where the preflight says they may be.
+   *
+   * `mayRequestComparison` is the same gate the comparison workspace uses,
+   * called rather than reimplemented: the route enforces exactly the
+   * preflight's verdict, so a screen that decided for itself when to ask
+   * would be a second compatibility policy that could disagree with the one
+   * the API publishes.
+   *
+   * Paged with the bounded reader at the route's declared 1,000-row limit, so
+   * a full county grain arrives whole; `comparisonComplete` carries whether
+   * the page bound cut it short, which the coverage note then states.
+   */
+  useEffect(() => {
+    if (!pair || !comparable || !alignmentGeoLevel || !isCrossSectional(presentation)) {
+      return;
+    }
+    const request = comparisonTracker.begin();
+    setComparisonLoading(true);
+    (async () => {
+      try {
+        const pages = await fetchComparisonPages(
+          {
+            metric_code_a: pair[0],
+            metric_code_b: pair[1],
+            geo_level: alignmentGeoLevel,
+            ...(alignmentStateFips && alignmentGeoLevel !== "NATIONAL"
+              ? { state_fips: alignmentStateFips }
+              : {}),
+          },
+          { pageSize: COMPARISON_PAGE_SIZE, maxPages: COMPARISON_PAGE_LIMIT },
+        );
+        if (request.isCurrent()) {
+          setComparison(pages.payload);
+          setComparisonRows(pages.items);
+          setComparisonComplete(pages.complete);
+          setComparisonError("");
+          setComparisonLoading(false);
+        }
+      } catch (error) {
+        if (request.isCurrent()) {
+          setComparison(null);
+          setComparisonRows([]);
+          setComparisonComplete(true);
+          setComparisonError(apiErrorMessage(error));
+          setComparisonLoading(false);
+        }
+      }
+    })();
+    return () => {
+      comparisonTracker.invalidate();
+    };
+  }, [
+    pair,
+    comparable,
+    alignmentGeoLevel,
+    alignmentStateFips,
+    presentation,
+    comparisonTracker,
+  ]);
+
+  /** The whole envelope the scatter and ranking read: every paged row. */
+  const alignedResponse = useMemo<ComparisonResponse | null>(
+    () => (comparison ? { ...comparison, items: comparisonRows } : null),
+    [comparison, comparisonRows],
+  );
+
+  const scatter = useMemo(
+    () => comparisonScatterModel(alignedResponse),
+    [alignedResponse],
+  );
+
+  const coverageNote = useMemo(
+    () => describeComparisonCoverage(alignedResponse),
+    [alignedResponse],
+  );
+
+  /**
+   * The ranking: one bar per geography, sorted by the chosen side.
+   *
+   * A geography whose chosen side published no number is not a bar and is
+   * counted instead — the same rule the scatter applies to a pair with a
+   * missing side, and the same reason: zero is a published value a county can
+   * really have.
+   */
+  const rankingBars = useMemo(() => {
+    if (!pair) {
+      return { bars: [], unpublished: 0 };
+    }
+    const field = rankBy === "a" ? "value_a" : "value_b";
+    const periodField = rankBy === "a" ? "period_a" : "period_b";
+    const otherPeriod = rankBy === "a" ? "period_b" : "period_a";
+    const code = rankBy === "a" ? pair[0] : pair[1];
+    const unit = metricUnit(metricIndex[code]) || UNPUBLISHED_UNIT_LABEL;
+    const rows = [];
+    let unpublished = 0;
+    for (const row of comparisonRows) {
+      const raw = (row as Record<string, unknown>)[field];
+      const value = publishedNumber(raw);
+      if (value === null) {
+        unpublished += 1;
+        continue;
+      }
+      rows.push({
+        key: String(row.geo_id ?? ""),
+        category: comparisonRowName(row),
+        value,
+        unit,
+        groupKey: code,
+        groupLabel: `${metricLabel(metricIndex[code]) || code}`,
+        // Both periods ride the tooltip: the route combines each side's own
+        // newest value, so a bar sorted by one side can be paired with a
+        // different year on the other (WEB-049's rule, in a bar's terms).
+        period: `${String((row as Record<string, unknown>)[periodField] ?? "")}${
+          String((row as Record<string, unknown>)[otherPeriod] ?? "") &&
+          String((row as Record<string, unknown>)[otherPeriod]) !==
+            String((row as Record<string, unknown>)[periodField])
+            ? ` against ${String((row as Record<string, unknown>)[otherPeriod])}`
+            : ""
+        }`,
+      });
+    }
+    rows.sort((left, right) => right.value - left.value);
+    return { bars: rows, unpublished };
+  }, [comparisonRows, pair, rankBy, metricIndex]);
+
+  /**
+   * The national measures the reader could add to the ranking as a line.
+   *
+   * Offered from the selection itself rather than from a search: a reference
+   * line is a measure already on the composition, drawn differently because
+   * the cross-sectional axis cannot hold it as a geography.
+   */
+  const referenceLines = useMemo(() => {
+    const axisUnit = pair
+      ? metricUnit(metricIndex[rankBy === "a" ? pair[0] : pair[1]])
+      : null;
+    return plotted
+      .map((entry) => {
+        const metric = metricIndex[entry.series.metricCode];
+        const offer = referenceLineOffer({
+          grains: metricSupportedGeoLevels(metric),
+          unit: metricUnit(metric),
+          axisUnit,
+          presentation,
+        });
+        const newest = entry.points[entry.points.length - 1];
+        return { entry, offer, newest };
+      })
+      .filter((row) => row.offer.eligible && row.newest);
+  }, [plotted, metricIndex, pair, rankBy, presentation]);
+
+  // --- The geography by period heatmap (WB-2) -------------------------------
+
+  /**
+   * The measure the heatmap lays out.
+   *
+   * The first selected series' measure: the heatmap is one measure by
+   * definition, and picking the first is the composition's own order rather
+   * than a choice this page makes for the reader. A selection of several
+   * measures still draws the first, and the caption names it.
+   */
+  const heatmapSeries = plotted[0] || null;
+
+  const heatmap = useMemo(
+    () =>
+      heatmapSeries
+        ? heatmapModel({
+            rows: loaded[heatmapSeries.key]?.rows || [],
+            geographyNames,
+          })
+        : null,
+    [heatmapSeries, loaded, geographyNames],
+  );
+
+  /**
+   * Why the heatmap cannot be drawn, or "".
+   *
+   * It is one measure at one grain over its own settled history, so the only
+   * things that stop it are having nothing selected and the selected measure
+   * having published nothing. A selection of several measures still draws the
+   * first; the caption names which.
+   */
+  const heatmapReason = useMemo(() => {
+    if (series.length === 0) {
+      return "Add a measure to lay out.";
+    }
+    const first = plotted[0];
+    if (!first || first.points.length === 0) {
+      return (
+        `${first?.label || series[0]?.metricCode} published no values over ` +
+        "this read, so there is nothing to lay out. An empty answer is not a " +
+        "grid of zeroes."
+      );
+    }
+    return "";
+  }, [series, plotted]);
+
   const offer = useMemo(
     () =>
       presentationOffer({
@@ -589,18 +929,31 @@ export default function WorkbenchPage() {
           metricCode: entry.series.metricCode,
           periodCount: new Set(entry.points.map((point) => point.period)).size,
         })),
-        // WB-2 lands the cross-sectional presentations and WB-2/WB-5 the
-        // heatmap; until then they are listed with the reason rather than
-        // rendered as controls that do nothing.
+        // The selection's own refusals first; then the API's verdict on the
+        // pair, presented as the preflight worded it rather than paraphrased.
         crossSectionalReason:
-          "A cross-sectional reading — scatter, ranking, correlation — needs " +
-          "one shared grain and the aligned analysis routes. It arrives with " +
-          "the next phase of this page.",
-        heatmapReason:
-          "The geography × period heatmap arrives with the next phase of " +
-          "this page.",
+          crossSectionReason ||
+          (preflightError
+            ? `The compatibility verdict could not be read: ${preflightError}`
+            : !preflight
+              ? "Checking whether these two measures may be read together…"
+              : !comparable
+                ? `Not comparable: ${preflightModel.blocking
+                    .map((rule) => rule.reason)
+                    .join("; ")}`
+                : ""),
+        heatmapReason: heatmapReason,
       }),
-    [series, plotted],
+    [
+      series,
+      plotted,
+      crossSectionReason,
+      preflight,
+      preflightError,
+      preflightModel,
+      comparable,
+      heatmapReason,
+    ],
   );
 
   const offered = useMemo(() => availablePresentations(offer), [offer]);
@@ -613,17 +966,6 @@ export default function WorkbenchPage() {
     offer[presentation].available || offered.length === 0
       ? presentation
       : (offered[0] as WorkbenchPresentation);
-
-  const geographyNames = useMemo(() => {
-    const names: Record<string, string> = {};
-    for (const row of [...states, ...geographies]) {
-      if (row?.geo_id) {
-        names[String(row.geo_id)] =
-          String(row.county_name || row.place_name || row.state_name || row.geo_id);
-      }
-    }
-    return names;
-  }, [states, geographies]);
 
   const colorOf = useCallback(
     (key: string) => {
@@ -664,8 +1006,17 @@ export default function WorkbenchPage() {
         filters: entry.filters,
       })),
       presentation: effectivePresentation,
+      // Carried only where it means something: a shared grain and a state
+      // scope describe a cross-sectional reading, and putting them in a link
+      // to a line chart would reopen controls that are not on screen.
+      ...(isCrossSectional(effectivePresentation)
+        ? {
+            alignmentGeoLevel: (alignmentGeoLevel || undefined) as never,
+            stateFips: alignmentStateFips || undefined,
+          }
+        : {}),
     }),
-    [series, effectivePresentation],
+    [series, effectivePresentation, alignmentGeoLevel, alignmentStateFips],
   );
 
   useEffect(() => {
@@ -1002,6 +1353,201 @@ export default function WorkbenchPage() {
               {assignment.note}
             </p>
           ) : null}
+
+          {isCrossSectional(effectivePresentation) && pair ? (
+            <div className="selector-grid" data-testid="workbench-alignment">
+              <div className="control-group">
+                <label htmlFor="workbench-alignment-grain">Shared grain</label>
+                <select
+                  id="workbench-alignment-grain"
+                  className="select"
+                  value={alignmentGeoLevel}
+                  onChange={(event) => setAlignmentGeoLevel(event.target.value)}
+                  data-testid="workbench-alignment-grain"
+                >
+                  {grainOffer.levels.map((level) => (
+                    <option key={level} value={level}>
+                      {GEO_GRAIN_LABELS[level]?.one || level}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {alignmentGeoLevel !== "NATIONAL" ? (
+                <div className="control-group">
+                  <label htmlFor="workbench-alignment-state">State scope</label>
+                  <select
+                    id="workbench-alignment-state"
+                    className="select"
+                    value={alignmentStateFips}
+                    onChange={(event) =>
+                      setAlignmentStateFips(event.target.value)
+                    }
+                    data-testid="workbench-alignment-state"
+                  >
+                    <option value="">Every state</option>
+                    {states.map((row) => (
+                      <option key={String(row.geo_id)} value={String(row.state_fips)}>
+                        {String(row.state_name)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {effectivePresentation === "ranking" ? (
+                <div className="control-group">
+                  <label htmlFor="workbench-rank-by">Sort by</label>
+                  <select
+                    id="workbench-rank-by"
+                    className="select"
+                    value={rankBy}
+                    onChange={(event) =>
+                      setRankBy(event.target.value === "b" ? "b" : "a")
+                    }
+                    data-testid="workbench-rank-by"
+                  >
+                    <option value="a">
+                      {metricLabel(metricIndex[pair[0]]) || pair[0]}
+                    </option>
+                    <option value="b">
+                      {metricLabel(metricIndex[pair[1]]) || pair[1]}
+                    </option>
+                  </select>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {isCrossSectional(effectivePresentation) && grainOffer.note ? (
+            <p className="subtle" data-testid="workbench-grain-note">
+              {grainOffer.note}
+              {grainOffer.absent
+                .filter((entry) => entry.withoutIt.length > 0)
+                .map((entry) => (
+                  <span key={entry.level} data-absent-grain={entry.level}>
+                    {` ${GEO_GRAIN_LABELS[entry.level]?.one || entry.level} is ` +
+                      `not offered because ${entry.withoutIt.join(", ")} ` +
+                      `${entry.withoutIt.length === 1 ? "does" : "do"} not publish it.`}
+                  </span>
+                ))}
+            </p>
+          ) : null}
+
+          {pair && preflight ? (
+            <div className="status-row" role="status">
+              <StatusPill
+                {...compatibilityState(preflight)}
+                label="Compatibility"
+                testId="workbench-preflight-status"
+              />
+            </div>
+          ) : null}
+
+          {pair && preflight && !comparable ? (
+            <div className="notice error" data-testid="workbench-incomparable">
+              <ul>
+                {preflightModel.blocking.map((rule) => (
+                  <li key={rule.rule} data-rule={rule.rule}>
+                    {rule.reason}
+                  </li>
+                ))}
+              </ul>
+              <ul>
+                {incompatibleAlternatives(preflight).map((alternative) => (
+                  <li key={alternative}>{alternative}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {pair && preflightModel.unverified.length > 0 ? (
+            <ul className="subtle" data-testid="workbench-preflight-caveats">
+              {preflightModel.unverified.map((rule) => (
+                <li key={rule.rule}>{rule.reason}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {comparisonLoading ? (
+            <p className="subtle" data-testid="workbench-comparison-loading">
+              Reading the aligned rows…
+            </p>
+          ) : null}
+
+          {comparisonError ? (
+            <p className="notice error" data-testid="workbench-comparison-error">
+              {comparisonError}
+            </p>
+          ) : null}
+
+          {offer[effectivePresentation].available &&
+          effectivePresentation === "scatter" &&
+          pair ? (
+            <ScatterChart
+              model={scatter}
+              labelX={metricLabel(metricIndex[pair[0]]) || pair[0]}
+              labelY={metricLabel(metricIndex[pair[1]]) || pair[1]}
+              testId="workbench-scatter"
+            />
+          ) : null}
+
+          {offer[effectivePresentation].available &&
+          effectivePresentation === "ranking" &&
+          pair ? (
+            <>
+              <BarChart
+                bars={rankingBars.bars}
+                orientation="geography"
+                colorOf={() => seriesStroke(rankBy === "a" ? 0 : 1)}
+                unpublished={rankingBars.unpublished}
+                label={
+                  `Ranking of ${rankingBars.bars.length} geographies by ` +
+                  `${metricLabel(metricIndex[rankBy === "a" ? pair[0] : pair[1]]) || ""}` +
+                  `, highest first. ${rankingBars.unpublished} published no value.`
+                }
+                testId="workbench-ranking"
+              />
+              {referenceLines.length > 0 ? (
+                <ul className="subtle" data-testid="workbench-reference-lines">
+                  {referenceLines.map((row) => (
+                    <li key={row.entry.key} data-series-key={row.entry.key}>
+                      <strong>{row.entry.label}</strong>:{" "}
+                      {row.newest!.value.toLocaleString()} {row.entry.unit} (
+                      {row.newest!.period}). {row.offer.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : null}
+
+          {isCrossSectional(effectivePresentation) && coverageNote ? (
+            <p className="subtle" data-testid="workbench-coverage">
+              {coverageNote}
+            </p>
+          ) : null}
+
+          {isCrossSectional(effectivePresentation) && !comparisonComplete ? (
+            <p className="notice" data-testid="workbench-comparison-partial">
+              The page bound cut this read short, so the geographies shown are a
+              prefix of the ones the route paired. Narrow to a state to see the
+              rest.
+            </p>
+          ) : null}
+
+          {offer[effectivePresentation].available &&
+          effectivePresentation === "heatmap" &&
+          heatmap &&
+          heatmapSeries ? (
+            <HeatmapChart
+              model={heatmap}
+              measureLabel={describeSeries(
+                heatmapSeries,
+                geographyNames[heatmapSeries.series.geoId],
+              )}
+              unit={heatmapSeries.unit}
+            />
+          ) : null}
+
 
           {offer[effectivePresentation].available &&
           effectivePresentation === "line" ? (

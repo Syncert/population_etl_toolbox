@@ -827,3 +827,90 @@ The browser tier ran here against the pre-installed Chromium
 (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`,
 which `playwright.config.mjs` already reads); the four workbench specs and
 the ninety-five that preceded them all pass.
+
+### WB-2 — Cross-sectional pair and the matrix heatmap
+
+Status: **complete**, 2026-09-14.
+
+Implementation:
+
+- `apps/web/lib/comparison.ts` — `sharedGrainOffer` (new, N-ary) with
+  `comparisonGrainOffer` rewritten to delegate to it, keeping the pair's own
+  wording. `AbsentGrain`/`SharedGrainOffer` types.
+- `apps/web/lib/workbench.ts` — `crossSectionalRefusal`, `crossSectionalPair`,
+  `referenceLineOffer`, `heatmapModel`, and the 60×60 caps.
+- `apps/web/components/HeatmapChart.tsx` (new), reusing `ChoroplethLegend` and
+  the choropleth palette and withheld colour.
+- `apps/web/components/WorkbenchPage.tsx` — the shared-grain control, the
+  state scope, the preflight, the bounded `/comparison` read, the scatter
+  (`ScatterChart` reused), the ranking (`BarChart` with
+  `orientation="geography"`), the reference-line list, and the heatmap.
+- `apps/web/app/styles/profiles.css` — `.line-chart .map-legend` flows.
+- Tests: `tests/frontend/unit/workbench-cross-section.test.js` (25) and four
+  browser cases appended to `tests/frontend/browser/workbench.spec.js`.
+- `docs/reference/TESTING_CONTRACT.md` — WEB-087…WEB-090, totals 441 → 445;
+  `tests/support/catalog_evidence.py` WEB count 86 → 90.
+
+Two defects the browser tier caught, neither visible at the unit tier:
+
+1. **The colour legend rendered outside the flow.** `ChoroplethLegend` uses
+   `.map-legend`, which is `position: absolute` because on a map it overlays
+   the canvas. Inside a chart figure there is no canvas, so it was positioned
+   against an unrelated ancestor and Playwright correctly reported it as not
+   visible. `.line-chart .map-legend` now flows; the swatch, rows and type
+   stay the choropleth's, so a colour still means the same on both surfaces.
+2. **The compatibility verdict was only rendered while a cross-sectional
+   presentation was on screen.** An incomparable pair makes those
+   presentations unavailable, so the pair that most needed explaining showed
+   no verdict at all — the reason was in the unavailable-presentations list
+   and nowhere else. The verdict, the blocking rules and the alternatives now
+   render whenever there is a pair.
+
+Decisions taken while implementing, beyond what the plan wrote:
+
+1. **`comparisonGrainOffer` was rewritten to delegate rather than the
+   workbench getting its own intersection.** Criterion 1 asks for "the same
+   attribution to the publishers that WEB-074 gives"; two implementations of
+   that rule is how the two screens come to disagree about one publication.
+   The workspace keeps its own sentences — a screen about a pair should not
+   start talking about a set — and `comparison.test.js`'s 35 cases pass
+   unchanged, which is the evidence the refactor is behaviour-preserving.
+2. **`absent` names, per unoffered grain, the measures that removed it.** The
+   plan asks the screen to say "which publisher removed each absent grain";
+   the offer had no field for it, so one was added rather than the page
+   recomputing it. A measure declaring no grains is never named, because
+   unknown is not none.
+3. **The preflight is asked whenever there is a pair**, not lazily when a
+   cross-sectional presentation is selected — the verdict is what decides
+   whether those presentations may be offered, so asking it lazily would
+   leave the control enabled until a request came back and refused.
+4. **The heatmap lays out the first selected series' measure.** The plan says
+   "one measure at one grain"; the composition's own order picks which,
+   rather than this page choosing for the reader, and the caption names it.
+5. **Heatmap cells are keyed through a nested map, not a joined string.** A
+   geography identity is `state:55|county:025` — it contains both of the
+   separators a joined key would plausibly use.
+6. **The reference lines are offered from the composition itself**, not from
+   a search: a reference line is a measure already on the chart, drawn
+   differently because the cross-sectional axis cannot hold it as a geography.
+7. **The bundle budget did not move.** `/workbench/page` grew from 411.5 kB to
+   440.3 kB against its declared 474 kB, so the three new charts fit inside
+   the budget WB-1 declared. Recorded because WB-7 criterion 3 asks for the
+   measurement either way.
+
+Validation run:
+
+```text
+npm --prefix apps/web run test:unit     # 31 files, 474 passed
+npm --prefix apps/web run lint          # passed
+npm --prefix apps/web run typecheck     # passed
+npm --prefix apps/web run build         # passed; /workbench 13.3 kB, 135 kB First Load JS
+npm --prefix apps/web run check:bundle  # /workbench/page 440.3 kB / 474 kB; every route within budget
+npm --prefix apps/web run check:csp     # passed
+npx playwright test                     # 103 passed (the whole browser tier)
+python -m pytest tests/unit -q          # 1687 passed
+ruff check .                            # passed
+```
+
+Not run: the integration tier, as for WB-3 and WB-4 — no PostgreSQL is
+reachable here. `./tests/run.ps1 integration` is the command.

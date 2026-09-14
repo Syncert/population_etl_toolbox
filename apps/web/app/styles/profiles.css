@@ -146,3 +146,18 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* A colour legend inside a chart figure flows with the figure.
+   `.map-legend` is absolutely positioned because on a map it overlays the
+   canvas; inside a heatmap there is no canvas to overlay, and the absolute
+   position took it out of the flow entirely -- the browser tier found it
+   rendered but not visible. The swatch, the rows and the type stay the
+   choropleth's, so a colour still means the same thing on both surfaces. */
+.line-chart .map-legend {
+  position: static;
+  margin-top: 10px;
+  box-shadow: none;
+  background: transparent;
+  pointer-events: auto;
+  max-width: none;
+}

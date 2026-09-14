@@ -721,6 +721,27 @@ function uncolouredReason(row: ComparisonRow, field: string): string {
 // Which grains a pair can be compared at (WEB-074)
 // ---------------------------------------------------------------------------
 
+/** One grain the set cannot be read at, and which measures removed it. */
+export interface AbsentGrain {
+  level: string;
+  /** The metric codes that do not publish this grain. */
+  withoutIt: string[];
+}
+
+/** The grains a set of measures can all be read at, and what narrowed it. */
+export interface SharedGrainOffer {
+  /** The grains every named measure publishes, in the vocabulary's order. */
+  levels: string[];
+  /** True when the offered set is narrower than the whole vocabulary. */
+  narrowed: boolean;
+  /** Why the list is narrow, in the publisher's terms. "" when it is not. */
+  note: string;
+  /** A grain that was asked for and the set does not publish. "" otherwise. */
+  unavailable: string;
+  /** Per unoffered grain, the measures that do not publish it. */
+  absent: AbsentGrain[];
+}
+
 /** The grains a comparison offers, and what it could not offer. */
 export interface ComparisonGrainOffer {
   /** The grains both sides publish, in the published vocabulary's order. */
@@ -746,6 +767,82 @@ function grainWords(levels: readonly string[]): string {
 }
 
 /**
+ * The grains a set of measures can all be read at, and what narrowed it.
+ *
+ * The offer is the *intersection*: a cross-sectional reading is answered at
+ * one grain, so a grain only some of the measures publish is a grain the set
+ * cannot be read at. A measure declaring no grains does not narrow the offer,
+ * because unknown is not none — the explorer's own rule (WEB-038).
+ *
+ * Written for any number of measures because the comparison workspace asks it
+ * of two and the workbench asks it of two to eight. One implementation rather
+ * than two, so the two screens cannot come to different conclusions about the
+ * same publication.
+ *
+ * `absent` names, per grain the whole vocabulary offers but this set does not,
+ * which measures failed to publish it — criterion 1's "says which publisher
+ * removed each absent grain". Without it a reader sees a shorter list of
+ * grains with no way to tell which of their measures shortened it.
+ */
+export function sharedGrainOffer({
+  metrics,
+  requested,
+}: {
+  metrics: readonly (MetricSummary | null | undefined)[];
+  requested?: string | null;
+}): SharedGrainOffer {
+  const named = metrics.filter(
+    (metric): metric is MetricSummary => Boolean(metric),
+  );
+  const declared = named.map((metric) => ({
+    metric,
+    grains: publishedGrains(metric),
+  }));
+
+  const levels = GEO_GRAIN_ORDER.filter((level) =>
+    declared.every((entry) => entry.grains.includes(level)),
+  );
+  const narrowed = levels.length < GEO_GRAIN_ORDER.length;
+
+  const absent = GEO_GRAIN_ORDER.filter(
+    (level) => !levels.includes(level),
+  ).map((level) => ({
+    level,
+    // Only the measures that actually fail to publish it. A measure declaring
+    // nothing is not among them: it did not remove the grain, and naming it
+    // would report an absence the publication does not claim.
+    withoutIt: declared
+      .filter((entry) => !entry.grains.includes(level))
+      .map((entry) => String(entry.metric.metric_code)),
+  }));
+
+  let note = "";
+  if (named.length > 0 && narrowed) {
+    note =
+      levels.length === 0
+        ? "These measures publish no geography grain in common, so there is " +
+          "no level to read them at together. A cross-sectional answer is " +
+          "read at one grain; this is the publishers' declaration, not a " +
+          "limit of this screen."
+        : `These measures are all published at ${grainWords(levels)}, so the ` +
+          "other view levels are not offered. A cross-sectional answer is " +
+          "read at one grain, so a grain only some of them publish cannot " +
+          "be read here.";
+  }
+
+  const wanted = normalizeGeoLevel(requested);
+  const unavailable =
+    wanted && !levels.includes(wanted)
+      ? `This link asked to read at ${
+          GEO_GRAIN_LABELS[wanted]?.one || wanted
+        }, which these measures do not all publish` +
+        (levels.length > 0 ? `; showing ${grainWords(levels.slice(0, 1))}.` : ".")
+      : "";
+
+  return { levels: [...levels], narrowed, note, unavailable, absent };
+}
+
+/**
  * The grains a pair of measures can be compared at.
  *
  * The workspace hard-coded `NATIONAL`, `STATE`, `COUNTY` and ignored what
@@ -756,8 +853,9 @@ function grainWords(levels: readonly string[]): string {
  * option carried, and the control showed one grain while the request sent
  * another (WEB-074).
  *
- * The offer is the *intersection*: a comparison is answered at one grain, so
- * a grain only one side publishes is a grain the pair cannot be read at.
+ * The pair's own wording is kept ("these two measures", "compare") because it
+ * is what the comparison workspace says, and a screen about a pair should not
+ * start talking about a set. The decision underneath is `sharedGrainOffer`'s.
  */
 export function comparisonGrainOffer({
   metricA,
@@ -768,23 +866,18 @@ export function comparisonGrainOffer({
   metricB: MetricSummary | null | undefined;
   requested?: string | null;
 }): ComparisonGrainOffer {
-  const declaredA = publishedGrains(metricA);
-  const declaredB = publishedGrains(metricB);
-  const levels = GEO_GRAIN_ORDER.filter(
-    (level) => declaredA.includes(level) && declaredB.includes(level),
-  );
-  const narrowed = levels.length < GEO_GRAIN_ORDER.length;
+  const shared = sharedGrainOffer({ metrics: [metricA, metricB], requested });
   const named = Boolean(metricA || metricB);
 
   let note = "";
-  if (named && narrowed) {
+  if (named && shared.narrowed) {
     note =
-      levels.length === 0
+      shared.levels.length === 0
         ? "These two measures publish no geography grain in common, so there " +
           "is no level to compare them at. A comparison is answered at one " +
           "grain; this is the publishers' declaration, not a limit of this " +
           "screen."
-        : `These measures are both published at ${grainWords(levels)}, so the ` +
+        : `These measures are both published at ${grainWords(shared.levels)}, so the ` +
           "other view levels are not offered for the pair. A comparison is " +
           "answered at one grain, so a grain only one side publishes cannot " +
           "be read here.";
@@ -792,14 +885,16 @@ export function comparisonGrainOffer({
 
   const wanted = normalizeGeoLevel(requested);
   const unavailable =
-    wanted && !levels.includes(wanted)
+    wanted && !shared.levels.includes(wanted)
       ? `This link asked to compare at ${
           GEO_GRAIN_LABELS[wanted]?.one || wanted
         }, which the pair does not both publish` +
-        (levels.length > 0 ? `; showing ${grainWords(levels.slice(0, 1))}.` : ".")
+        (shared.levels.length > 0
+          ? `; showing ${grainWords(shared.levels.slice(0, 1))}.`
+          : ".")
       : "";
 
-  return { levels: [...levels], narrowed, note, unavailable };
+  return { levels: [...shared.levels], narrowed: shared.narrowed, note, unavailable };
 }
 
 /** The grain to show when the asked-for one is not offered. */
