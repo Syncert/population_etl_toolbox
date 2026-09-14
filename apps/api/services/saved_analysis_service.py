@@ -45,7 +45,10 @@ from apps.api.schemas import (
 )
 from apps.api.services.compatibility import evaluate_comparison
 from apps.api.services.metric_freshness import retirement_refusal
-from apps.api.services.neutral_observations_service import resolve_metric
+from apps.api.services.neutral_observations_service import (
+    reduction_refusal,
+    resolve_metric,
+)
 
 #: Document fields that belong to no single kind: the kind itself, the
 #: per-source `filters` the capability contract governs, and the opaque
@@ -193,8 +196,10 @@ def _require_fields_the_route_can_send(document: AnalysisDocument) -> None:
         )
 
 
-def _require_consistent_observation_read(read: Any, *, label: str = "") -> None:
-    """The contradictions ``/observations`` itself refuses (API-066, API-081).
+def _require_consistent_observation_read(
+    read: Any, *, metric: Any = None, label: str = ""
+) -> None:
+    """The reads ``/observations`` itself refuses (API-066, API-081, API-118).
 
     Storage is not a back door for a request the API would refuse, and a
     stored contradiction would replay as a 422 the reader never saw when they
@@ -206,6 +211,16 @@ def _require_consistent_observation_read(read: Any, *, label: str = "") -> None:
     which is the whole reason a ``SeriesDocument`` carries exactly the fields
     an observations document carries. ``label`` names the series in the
     refusal, because "series 3" is actionable where "a series" is not.
+
+    Two kinds of refusal live here. The first is a contradiction between the
+    fields alone, which needs nothing but the read. The second is a reduction
+    the *source* does not publish (API-118): a source whose rows do not reduce
+    to one number per geography declines ``newest_per_geography`` on the live
+    route, so a document naming that pair is a stored 422 exactly as a
+    contradiction is. That one needs the measure, so ``metric`` is passed by
+    every caller that has resolved it; the refusal is
+    ``reduction_refusal``'s own words, so the reader is told at write what
+    ``/observations`` would tell them at replay.
     """
     where = f"{label}: " if label else ""
     if read.release is not None and read.scope != "as_released":
@@ -230,6 +245,20 @@ def _require_consistent_observation_read(read: Any, *, label: str = "") -> None:
             f"{where}newest_per_geography and newest_release_per_period cannot "
             "be combined"
         )
+    if metric is None:
+        return
+    dispatch = OBSERVATION_DISPATCH.get(str(metric.get("source_code") or ""))
+    if dispatch is None:
+        return
+    for name, asked in (
+        ("newest_per_geography", read.newest_per_geography),
+        ("newest_release_per_period", read.newest_release_per_period),
+    ):
+        if not asked:
+            continue
+        refusal = reduction_refusal(dispatch, name)
+        if refusal is not None:
+            raise ConfigurationInvalid(f"{where}{refusal}")
 
 
 def _validate_workbench(
@@ -277,7 +306,7 @@ def _validate_workbench(
         label = f"series {index}"
         metric = _require_metric(warehouse, entry.metric_code, f"{label} metric_code")
         _require_declared_filters(metric, dict(entry.filters or {}), kind="workbench")
-        _require_consistent_observation_read(entry, label=label)
+        _require_consistent_observation_read(entry, metric=metric, label=label)
         metrics.append(metric)
 
     alignment = document.alignment
@@ -356,7 +385,7 @@ def validate_document(warehouse: Session, document: AnalysisDocument) -> frozens
     if document.kind == "observations":
         metric = _require_metric(warehouse, document.metric_code, "metric_code")
         _require_declared_filters(metric, filters, kind="observations")
-        _require_consistent_observation_read(document)
+        _require_consistent_observation_read(document, metric=metric)
         return _owning_sources(metric)
 
     if document.kind == "workbench":

@@ -1729,3 +1729,73 @@ def test_an_alignment_state_fips_that_is_not_one_is_refused() -> None:
     )
     _validate_workbench(document)
     assert document.alignment.state_fips == "06"
+
+
+@pytest.mark.parametrize(
+    "reduction",
+    ["newest_per_geography", "newest_release_per_period"],
+)
+def test_a_stored_reduction_a_source_declines_is_refused_on_write(reduction) -> None:
+    """Covers: API-118 — the reduction refusal reaches the write, not only the read.
+
+    `/observations` declines a per-geography reduction for a source whose rows
+    do not reduce to one number per geography: CDC publishes many strata per
+    geography, so ranking them would answer with the lexicographically first
+    stratum. The document carries the same two fields the route does, and the
+    observations branch checked only the contradictions between them, so the
+    document stored clean, listed clean and reported `valid: true` — then
+    replayed as the 422 its owner never saw.
+    """
+    scope = "latest" if reduction == "newest_per_geography" else "as_released"
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_CDC_METRIC["metric_code"],
+        scope=scope,
+        **{reduction: True},
+    )
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            _WarehouseSession({_CDC_METRIC["metric_code"]: _CDC_METRIC}), document
+        )
+    # The route's own sentence, so the reader is told at write what they would
+    # have been told at replay.
+    assert reduction in refused.value.detail
+    assert "'CDC'" in refused.value.detail
+
+
+def test_a_reduction_a_source_publishes_is_stored_as_it_is() -> None:
+    """Covers: API-118 — the check refuses a source, never the reduction."""
+    document = AnalysisDocument(
+        kind="observations",
+        metric_code=_PEP_STATE_METRIC["metric_code"],
+        scope="latest",
+        newest_per_geography=True,
+    )
+    saved_analysis_service.validate_document(
+        _WarehouseSession({_PEP_STATE_METRIC["metric_code"]: _PEP_STATE_METRIC}),
+        document,
+    )
+    assert document.newest_per_geography is True
+
+
+def test_a_series_asking_a_source_for_a_reduction_it_declines_is_refused() -> None:
+    """Covers: API-118, API-134 — the same rule, named by series."""
+    warehouse = _WarehouseSession(
+        {**_WORKBENCH_METRICS, _CDC_METRIC["metric_code"]: _CDC_METRIC}
+    )
+    with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+        saved_analysis_service.validate_document(
+            warehouse,
+            _workbench(
+                series=[
+                    {"metric_code": _FRED_METRIC["metric_code"]},
+                    {
+                        "metric_code": _CDC_METRIC["metric_code"],
+                        "scope": "latest",
+                        "newest_per_geography": True,
+                    },
+                ]
+            ),
+        )
+    assert "series 2" in refused.value.detail
+    assert "newest_per_geography" in refused.value.detail

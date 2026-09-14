@@ -104,3 +104,46 @@ the lexicographically first stratum wins, silently.
 ## Remaining work
 
 - None.
+
+## A gap this plan created, found and closed at review (2026-09-14)
+
+Criterion 1 says the reduction is refused "on every route that accepts the
+reduction". The saved-analysis write route accepts it inside the document —
+`AnalysisDocument` and `SeriesDocument` both carry `newest_per_geography` and
+`newest_release_per_period` — and the `observations` branch of
+`validate_document` checked only the contradictions *between* those fields.
+The `distribution` branch immediately below it already applied
+`analysis_refusal`, so the two kinds disagreed about one source.
+
+The consequence was the one
+`_require_consistent_observation_read`'s own docstring exists to rule out: a
+document naming a CDC measure with `newest_per_geography: true` stored clean,
+listed clean and reported `valid: true`, then replayed as the API-118 422 its
+owner never saw when they saved it. Before this plan that document replayed
+as a 200, so the gap is this plan's own.
+
+Closed in `apps/api/services/saved_analysis_service.py`:
+`_require_consistent_observation_read` now takes the resolved measure and
+calls `reduction_refusal(dispatch, name)` for whichever reduction the read
+asks for, raising the live route's own sentence. It is one place, so the
+workbench's per-series check inherits it and names the series, which is why
+the check lives there rather than beside the two call sites.
+
+Three nodes in `tests/unit/api/test_saved_analysis.py`, each failing with the
+gate removed and passing with it:
+
+- `test_a_stored_reduction_a_source_declines_is_refused_on_write`,
+  parametrised over both reductions, asserts the refusal names the reduction
+  and the source;
+- `test_a_reduction_a_source_publishes_is_stored_as_it_is` keeps Census PEP
+  storing, so the check refuses a source and never the reduction;
+- `test_a_series_asking_a_source_for_a_reduction_it_declines_is_refused`
+  asserts the workbench refusal names `series 2`.
+
+The API-118 row in `docs/reference/TESTING_CONTRACT.md` records the extension.
+
+```text
+python -m pytest -m "unit and api" tests/unit/api -q   # 576 passed
+ruff check . / ruff format --check .                   # clean
+```
+
