@@ -24,6 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import PUBLIC_ROUTERS, app
+from apps.api.ratelimit import EXEMPT_PATHS
 from apps.api.routers import health
 from apps.api.versioning import CURRENT_VERSION, UNVERSIONED_PATHS, VERSIONED_ROOT
 from tests.support.openapi_contract import contract_digest, describe_difference
@@ -236,9 +237,14 @@ def test_shared_failures_are_declared_where_they_apply() -> None:
             assert 422 in declared, f"{where} declares no 422"
             private = path.startswith(private_prefixes)
             assert (401 in declared) is private, f"{where}: 401 vs authentication"
-            # The health resource and the deployment probes are exempt from
-            # the rate limiter; everything else meters.
-            rate_limited = not path.startswith(("/api/v1/health", "/health"))
+            # Which paths the limiter exempts is the limiter's own answer,
+            # read from it rather than restated here. This was a prefix test
+            # -- everything under `/api/v1/health` was assumed unmetered --
+            # which was true until the content report (API-137) put a
+            # warehouse read under that prefix on a router the limiter does
+            # not exempt. A prefix cannot see that, and would have insisted
+            # the metered route declare no 429.
+            rate_limited = path not in EXEMPT_PATHS
             assert (429 in declared) is rate_limited, f"{where}: 429 vs metering"
             # Only a route that parses a body can answer the body limit.
             accepts_body = method.upper() in {"POST", "PUT", "PATCH"}

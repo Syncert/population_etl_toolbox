@@ -23,10 +23,32 @@ from __future__ import annotations
 
 from typing import Any
 
+#: The warehouse's published state for a measure the provider still publishes.
+#: The only state that makes a measure answerable: a source publishing no
+#: ``current`` measure serves no observation, whatever else its catalog holds.
+FRESHNESS_CURRENT = "current"
+
+#: Harvested, but not seen in the most recent harvests. Still served -- the
+#: warehouse has not decided the series ended -- and worth counting apart,
+#: because a source drifting from ``current`` to ``stale`` is a source on its
+#: way to answering nothing.
+FRESHNESS_STALE = "stale"
+
 #: The warehouse's published state for a measure whose provider series has
 #: ended. Its history stays queryable through the catalog; its observations
 #: are not served.
 FRESHNESS_RETIRED = "retired"
+
+#: Every state ``gold_glossary.dim_metric_catalog`` may hold, as its own CHECK
+#: constraint declares them (migration 002). Written down so a reader counting
+#: the states can tell a complete tally from a partial one: a row in none of
+#: these is a state this code has never heard of, and a count that silently
+#: dropped it would report a smaller catalog than the warehouse holds.
+PUBLISHED_FRESHNESS_STATES: tuple[str, ...] = (
+    FRESHNESS_CURRENT,
+    FRESHNESS_STALE,
+    FRESHNESS_RETIRED,
+)
 
 
 def is_retired(freshness_state: Any) -> bool:

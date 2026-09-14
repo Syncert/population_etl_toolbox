@@ -9,8 +9,10 @@ its own version policy without moving an ETL module.
 from __future__ import annotations
 
 from apps.api.schemas.health import (
+    ContentHealthResponse,
     HealthResponse,
     ReadinessResponse,
+    SourceContent,
 )
 from apps.api.schemas.catalog import (
     SourceSystem,
@@ -97,6 +99,7 @@ __all__ = [
     "ComparisonMatrixResponse",
     "ComparisonPreflightResponse",
     "ConfigurationValidation",
+    "ContentHealthResponse",
     "ComparisonResponse",
     "ComparisonRow",
     "CorrelationStatistic",
@@ -128,6 +131,7 @@ __all__ = [
     "SavedAnalysisSummary",
     "SavedAnalysisUpdateRequest",
     "SourceCapability",
+    "SourceContent",
     "SourceFreshness",
     "HealthResponse",
     "MetricCapability",
