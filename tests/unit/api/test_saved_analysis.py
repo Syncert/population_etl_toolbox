@@ -1684,3 +1684,51 @@ def test_presentation_options_are_stored_verbatim() -> None:
     document = _workbench(presentation={"type": "bar", "options": dict(options)})
     _validate_workbench(document)
     assert document.presentation.options == options
+
+
+def test_an_alignment_state_fips_that_is_not_one_is_refused() -> None:
+    """Covers: API-136 — the bound is a length; a length is not a shape.
+
+    `ZZ`, `6` and `""` are each two characters or fewer and none of them is a
+    state FIPS code. Every live route refuses them through
+    `reject_values_outside_a_closed_set`, and every series filter is checked
+    by `closed_value_refusal` -- but the alignment's own `state_fips` had only
+    the length bound applied, so it stored clean, reported `valid: true`, and
+    replayed as a 422 its owner never saw when they saved it.
+    """
+    def stored(value: str):
+        return _validate_workbench(
+            _workbench(
+                series=[{"metric_code": _PEP_STATE_METRIC["metric_code"]}],
+                presentation={"type": "ranking"},
+                alignment={"geo_level": "STATE", "state_fips": value},
+            )
+        )
+
+    # The assertion is a *correspondence*, not a list: whatever the rule the
+    # request layer applies refuses, the write refuses, and whatever it
+    # accepts, the write accepts. Written this way so the two cannot drift --
+    # an empty value is accepted by both today, and if that ever changes it
+    # changes in one place.
+    for value in ("ZZ", "6", "", "06", "99"):
+        refusal = closed_value_refusal("state_fips", value)
+        if refusal is None:
+            stored(value)
+            continue
+        with pytest.raises(saved_analysis_service.ConfigurationInvalid) as refused:
+            stored(value)
+        assert "state_fips" in refused.value.detail
+        assert refusal in refused.value.detail
+
+    # At least one of those must actually have been refused, or the
+    # correspondence above is vacuous.
+    assert closed_value_refusal("state_fips", "ZZ") is not None
+
+    # And a real one stores unrewritten.
+    document = _workbench(
+        series=[{"metric_code": _PEP_STATE_METRIC["metric_code"]}],
+        presentation={"type": "ranking"},
+        alignment={"geo_level": "STATE", "state_fips": "06"},
+    )
+    _validate_workbench(document)
+    assert document.alignment.state_fips == "06"

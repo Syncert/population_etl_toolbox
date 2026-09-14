@@ -24,7 +24,9 @@ from fastapi.testclient import TestClient
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
 from apps.api.ratelimit import RateLimitMiddleware
-from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS
+from dataclasses import replace
+
+from apps.api.registry import ALLOWED_OBSERVATION_RELATIONS, OBSERVATION_DISPATCH
 from apps.api.services.compatibility import (
     CORRELATION_CAUSATION_CAVEAT,
     CORRELATION_DERIVATIONS,
@@ -486,8 +488,17 @@ def test_no_pairs_answers_nulls_rather_than_a_coefficient_of_zero() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_the_year_pin_constrains_the_period_the_reduction_ranks_on() -> None:
-    """Covers: API-131 — ``year`` reduces each side within that year."""
+def test_the_year_pin_is_the_sources_own_declared_year_filter() -> None:
+    """Covers: API-136 — a pinned year means what the source says it means.
+
+    The pin used to read the first four characters of
+    ``period_start_expression``, on the claim that they are always the
+    calendar year. For Census ACS they are not: an ``acs5`` row's
+    ``duration_start`` is ``estimate_year - 4``, because a five-year estimate
+    covers a window. The pin is now the entry's own ``year_from``/``year_to``,
+    so it asks each side exactly what
+    ``/observations?year_from=Y&year_to=Y`` asks it.
+    """
     session = _CorrelationSession(_fred_pair())
     client = _client_with(session)
     try:
@@ -505,10 +516,47 @@ def test_the_year_pin_constrains_the_period_the_reduction_ranks_on() -> None:
     assert response.status_code == 200
     assert response.json()["year"] == 2023
     sql = _dispatched(session)[-1]
-    assert sql.count("FROM 1 FOR 4) = :year_pin") == 2, (
-        "both sides must be pinned to the requested year"
-    )
-    assert session.parameters[-1]["year_pin"] == "2023"
+    declared = dict(OBSERVATION_DISPATCH["FRED"].filter_conditions)
+    for condition in (declared["year_from"], declared["year_to"]):
+        assert sql.count(condition) == 2, (
+            "both sides must be pinned by the source's own year filter"
+        )
+    # Never the period text the reduction ranks by, which for a five-year
+    # estimate is the window's start rather than the year a reader means.
+    assert "FROM 1 FOR 4" not in sql
+    bound = session.parameters[-1]
+    assert bound["year_from"] == 2023
+    assert bound["year_to"] == 2023
+
+
+def test_every_analysis_ready_source_pins_a_year_the_way_it_filters_one() -> None:
+    """Covers: API-136 — read from the registry, not asserted about it.
+
+    The defect was a claim about every entry that was false for one of them.
+    This reads all four rather than trusting a sentence: an analysis-ready
+    source must declare both year filters, because that declaration *is* the
+    pin. A fifth arriving without them is refused by name rather than
+    answered as though the pin had applied, which the next case proves.
+    """
+    for source_code, dispatch in OBSERVATION_DISPATCH.items():
+        if not dispatch.analysis_ready:
+            continue
+        declared = dict(dispatch.filter_conditions)
+        assert "year_from" in declared and "year_to" in declared, (
+            f"{source_code} is analysis-ready but declares no year filter, so "
+            "a same-year correlation cannot be pinned for it"
+        )
+
+
+def test_a_source_declaring_no_year_filter_refuses_the_pin() -> None:
+    """Covers: API-136 — an unhonourable pin is refused, never ignored."""
+    from apps.api.services.comparison_service import _year_pin_conditions
+    from apps.api.services.neutral_observations_service import NeutralQueryError
+
+    without = replace(OBSERVATION_DISPATCH["FRED"], filter_conditions=())
+    with pytest.raises(NeutralQueryError) as refused:
+        _year_pin_conditions(without)
+    assert "declares no year filter" in refused.value.detail
 
 
 def test_without_a_year_the_reduction_is_the_newest_overall() -> None:
@@ -527,7 +575,8 @@ def test_without_a_year_the_reduction_is_the_newest_overall() -> None:
         app.dependency_overrides.clear()
 
     assert response.json()["year"] is None
-    assert "year_pin" not in session.parameters[-1]
+    assert "year_from" not in session.parameters[-1]
+    assert "year_to" not in session.parameters[-1]
 
 
 def test_contemporaneity_is_counted_and_stated() -> None:
@@ -633,6 +682,43 @@ def test_an_unverifiable_rule_and_a_published_margin_both_travel() -> None:
     assert caveats[0] == CORRELATION_CAUSATION_CAVEAT
     assert any("publish no units" in caveat for caveat in caveats)
     assert any("margin_of_error" in caveat for caveat in caveats)
+
+
+def test_the_coverage_caveat_names_both_reasons_a_pair_is_absent() -> None:
+    """Covers: API-136 — the gap has two causes, and both are stated.
+
+    `geographies_a`/`geographies_b` count each side's reduced rows, which the
+    reduction does not filter on value; `n` counts pairs where both sides
+    published a number. So the gap is a geography one side does not publish
+    *or* one where a side published a row without a number. The sentence used
+    to name only the first, which sent a reader looking for a coverage
+    difference when what they had was suppression -- both measures publishing
+    every county, one of them withholding half the values.
+    """
+    session = _CorrelationSession(
+        _fred_pair(),
+        # Both sides published 100 geographies; only 50 pairs carry numbers.
+        _statistics(n=50, geographies_a=100, geographies_b=100),
+    )
+    client = _client_with(session)
+    try:
+        response = client.get(
+            CORRELATION,
+            params={
+                "metric_code_a": "FRED:UNRATE",
+                "metric_code_b": "FRED:CIVPART",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    caveat = next(
+        entry for entry in response.json()["caveats"] if entry.startswith("coverage:")
+    )
+    assert "50 of the 100" in caveat
+    assert "does not publish it" in caveat
+    assert "suppressed, missing or non-numeric" in caveat
+    assert "counted as zero" in caveat
 
 
 def test_coverage_below_either_side_is_stated() -> None:

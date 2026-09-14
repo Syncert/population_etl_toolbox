@@ -313,6 +313,18 @@ def _validate_workbench(
             rejection = bound.rejection(alignment.state_fips) if bound else ""
             if rejection:
                 raise ConfigurationInvalid(f"alignment state_fips {rejection}")
+            # The bound is a length, and a length is not a shape. `ZZ`, `6`
+            # and `""` are all two characters or fewer and none of them is a
+            # state FIPS code, which `dependencies.reject_values_outside_a_
+            # closed_set` refuses on every live route. Checking only the
+            # length here stored an alignment that replayed as a 422 its
+            # owner never saw when they saved it -- API-123's defect, in the
+            # one field of this document that had the bound applied without
+            # the closed set beside it. The grain above and every series
+            # filter already go through this rule.
+            refusal = closed_value_refusal("state_fips", alignment.state_fips)
+            if refusal is not None:
+                raise ConfigurationInvalid(f"alignment state_fips: {refusal}")
 
     return _owning_sources(*metrics)
 

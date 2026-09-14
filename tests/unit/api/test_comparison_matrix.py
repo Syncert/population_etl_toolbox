@@ -594,6 +594,63 @@ def test_the_year_pin_reaches_every_side() -> None:
         app.dependency_overrides.clear()
 
     assert response.json()["year"] == 2023
+
+
+# ---------------------------------------------------------------------------
+# API-136 — the refusals and the pin agree with the routes beside them
+# ---------------------------------------------------------------------------
+
+
+def test_a_source_with_no_dispatch_entry_is_refused_not_a_failure() -> None:
+    """Covers: API-136 — a 422 here, as `/comparison` gives for the same code.
+
+    The glossary can publish a metric whose source has no reviewed dispatch
+    entry: warehouse work lands before API registry work by design. The pair
+    routes answer that with the 422 `compatibility._source_finding` composes,
+    because they evaluate the pair before touching the registry. This route
+    resolved the dispatch first, so `observation_dispatch` raised and the same
+    measure answered a sanitized 500 here and a 422 there.
+    """
+    metrics = _fred_three()
+    metrics["MYSTERY:X"] = _metric("MYSTERY:X", "MYSTERY")
+    session = _MatrixSession(metrics, facts=_three_comparable_facts())
+    client = _client_with(session)
+    try:
+        response = client.get(
+            MATRIX, params={"metric_codes": "MYSTERY:X,FRED:UNRATE"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "MYSTERY" in detail
+    assert "no reviewed observation dispatch entry" in detail
+    assert not _dispatched(session)
+
+
+def test_the_matrix_pins_a_year_the_way_each_source_filters_one() -> None:
+    """Covers: API-136 — the same pin the correlation uses, for every side."""
+    from apps.api.registry import OBSERVATION_DISPATCH
+
+    session = _MatrixSession(_fred_three(), facts=_three_comparable_facts())
+    client = _client_with(session)
+    try:
+        response = client.get(
+            MATRIX,
+            params={
+                "metric_codes": "FRED:UNRATE,FRED:CIVPART,FRED:EMRATIO",
+                "year": 2023,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
     page_sql = _dispatched(session)[-1]
-    assert page_sql.count("FROM 1 FOR 4) = :year_pin") == 3
-    assert session.parameters[-1]["year_pin"] == "2023"
+    declared = dict(OBSERVATION_DISPATCH["FRED"].filter_conditions)
+    for condition in (declared["year_from"], declared["year_to"]):
+        assert page_sql.count(condition) == 3, "every side must carry the pin"
+    assert "FROM 1 FOR 4" not in page_sql
+    assert session.parameters[-1]["year_from"] == 2023
+    assert session.parameters[-1]["year_to"] == 2023

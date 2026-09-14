@@ -1163,7 +1163,46 @@ with the test that would have caught each:
    the only way to see this: with both answers instant, the stale one is
    replaced before anyone can read it and the defect stays in the code.
 
-2. **WEB-101 — the heatmap laid out one geography.** It reused the loaded rows
+2. **API-136 — four API corrections, one of them serious.**
+
+   - **The `year` pin meant two different things on the two sides.** It read
+     the first four characters of `period_start_expression`, on the claim
+     (written into its own docstring) that those are always the calendar year.
+     For Census ACS they are not: an `acs5` row's `duration_start` is
+     `estimate_year - 4`, because a five-year estimate covers a window. So
+     `year=2023` pinned FRED to 2023 and ACS to the estimate whose window
+     *opens* in 2023 — a vintage that does not exist. The join came back empty
+     and the answer said "0 paired geographies is fewer than the 3 a
+     correlation needs", presenting *there was not enough data* for *the pin
+     meant two different things*; once a 2027 vintage lands it would have
+     silently correlated the wrong one. The pin is now each entry's own
+     declared `year_from`/`year_to`, so it asks a side exactly what
+     `/observations?year_from=Y&year_to=Y` asks it, and the test reads all
+     four analysis-ready entries rather than asserting about them.
+   - **`/comparison/matrix` answered 500 where its siblings answer 422.** The
+     glossary can publish a metric whose source has no reviewed dispatch entry
+     — warehouse work lands before API registry work by design. `/comparison`
+     and `/comparison/correlation` evaluate the pair first, so
+     `compatibility._source_finding` composes a 422; the matrix resolved the
+     dispatch first and `observation_dispatch` raised.
+   - **A stored alignment's `state_fips` had a length bound and no shape
+     rule.** `ZZ` is two characters; it stored clean, reported `valid: true`,
+     and replayed as a 422 its owner never saw. The test asserts a
+     *correspondence* with `closed_value_refusal` rather than a list of
+     values, so the two cannot drift.
+   - **The coverage caveat named one of two causes.** The gap between `n` and
+     each side's published count is a geography one side does not publish *or*
+     one where a side published a row without a number, and the sentence
+     blamed only the first — sending a reader looking for a coverage
+     difference when what they had was suppression.
+
+   None of these were caught by the existing tests, because the unit tier
+   drives a session double that never executes SQL and always resolves a
+   metric to a known source. That is a real limit of the tier, recorded here:
+   the SQL's *shape* is asserted, its *meaning against a real warehouse* is
+   the integration tier's, and that tier does not run in this environment.
+
+3. **WEB-101 — the heatmap laid out one geography.** It reused the loaded rows
    of the series it draws, and a series is one measure at *one geography* by
    definition, so its read pins `geo_id`. Laying those rows out as geographies
    × periods produces a grid exactly one row tall — which renders, carries a

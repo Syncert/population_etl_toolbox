@@ -314,26 +314,45 @@ def list_metric_comparison(
 MINIMUM_CORRELATION_PAIRS = 3
 
 
-def _year_pin_condition(dispatch: ObservationDispatch) -> str:
-    """Constrain a side's reduction to one calendar year.
+def _year_pin_conditions(dispatch: ObservationDispatch) -> list[str]:
+    """Constrain a side's reduction to one calendar year, the source's way.
 
-    The condition closes over the dispatch entry's own
-    ``period_start_expression`` -- the same expression the reduction ranks by
-    -- rather than over a per-source ``year`` filter, for two reasons. The
-    analysis-ready sources do not all declare one (``year_from``/``year_to``
-    belong to the union family), so reading it from ``filter_conditions``
-    would answer a same-year correlation for some sources and refuse it for
-    others with no difference a caller could see. And the pin's meaning is
-    "rank within this year", which is a statement about the reduction, not
-    about which rows the relation offers; writing it against the ranking
-    expression is what makes those the same sentence.
+    The conditions are the entry's **own declared** ``year_from`` and
+    ``year_to``, bound to the same year. So a pinned correlation asks each
+    side exactly what ``/observations?year_from=Y&year_to=Y`` asks it, and
+    "the year a row is about" is the reviewed definition in the registry
+    rather than a second one invented here.
 
-    Every ``period_start_expression`` in the registry projects to text whose
-    first four characters are the calendar year -- an ISO date, or a bare
-    year for the annual sources -- which is what lets one condition serve all
-    of them.
+    This replaced ``SUBSTRING(period_start_expression FROM 1 FOR 4)``, whose
+    docstring claimed every entry's period text starts with the calendar
+    year. It does not, and Census ACS is the case that matters: its
+    ``period_start`` is ``COALESCE(duration_start, observation_date)``, and
+    the silver transform sets an ``acs5`` row's ``duration_start`` to
+    ``estimate_year - 4`` because a five-year estimate covers a window. So
+    ``year=2023`` pinned FRED to 2023 and pinned ACS to the estimate whose
+    *window opens* in 2023 -- the 2027 vintage, which does not exist. The
+    join came back empty and the answer said "0 paired geographies is fewer
+    than the 3 a correlation needs", presenting "there was not enough data"
+    for "the pin meant two different things on the two sides". Worse, once a
+    2027 vintage lands it would silently correlate the wrong one. The same
+    entry's own ``year_from`` reads ``observation_date``, which
+    ``gold_acs.sql`` sets to ``MAKE_DATE(estimate_year, 1, 1)`` -- the year a
+    reader means.
+
+    A source declaring no year filter cannot honour a pin, and is refused by
+    name rather than answered as though the pin had applied. All four
+    analysis-ready entries declare both today; the refusal is what keeps a
+    fifth from silently ignoring the parameter.
     """
-    return f"SUBSTRING({dispatch.period_start_expression} FROM 1 FOR 4) = :year_pin"
+    declared = dict(dispatch.filter_conditions)
+    conditions = [declared.get("year_from"), declared.get("year_to")]
+    if any(condition is None for condition in conditions):
+        raise NeutralQueryError(
+            f"source '{dispatch.source_code}' declares no year filter, so a "
+            "same-year answer cannot be pinned for it; ask without `year` and "
+            "read the periods the answer reports"
+        )
+    return [condition for condition in conditions if condition]
 
 
 def correlation_caveats(
@@ -382,13 +401,25 @@ def correlation_caveats(
                     "geographies, so it varies with nothing"
                 )
 
-    unpaired = max(geographies_a, geographies_b) - n
+    published = max(geographies_a, geographies_b)
+    unpaired = published - n
     if unpaired > 0:
+        # Two causes, and the sentence used to name only the first.
+        # `geographies_a`/`geographies_b` count each side's *reduced rows*,
+        # which `ranked_latest_cte` does not filter on value; `n` counts pairs
+        # where both sides published a number. So the gap is a geography one
+        # side does not publish **or** one where a side published a row
+        # without a number. Naming only the first sent a reader looking for a
+        # coverage difference when what they had was suppression -- both
+        # metrics publishing all 3,143 counties, one of them withholding the
+        # value in half.
         caveats.append(
-            f"coverage: {n} of the {max(geographies_a, geographies_b)} "
-            "geographies either side published were paired; a geography one "
-            "side publishes and the other does not is absent from the "
-            "coefficient entirely"
+            f"coverage: {n} of the {published} geographies either side "
+            "published were paired. A geography is absent from the "
+            "coefficient when one side does not publish it, and when a side "
+            "published a row whose value was suppressed, missing or "
+            "non-numeric -- such a pair is excluded rather than counted as "
+            "zero"
         )
 
     if contemporaneous_pairs < n:
@@ -455,9 +486,12 @@ def metric_correlation(
 
     params: dict[str, Any] = {**params_a, **params_b}
     if year is not None:
-        conditions_a.append(_year_pin_condition(dispatch_a))
-        conditions_b.append(_year_pin_condition(dispatch_b))
-        params["year_pin"] = f"{year:04d}"
+        conditions_a.extend(_year_pin_conditions(dispatch_a))
+        conditions_b.extend(_year_pin_conditions(dispatch_b))
+        # One year, bound once and shared by both sides, exactly as
+        # `geo_level` is: the pin asks both sides the same question.
+        params["year_from"] = year
+        params["year_to"] = year
 
     query = text(
         f"""

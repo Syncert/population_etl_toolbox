@@ -39,7 +39,11 @@ from typing import Any, Mapping, Optional, Sequence
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from apps.api.registry import ObservationDispatch, normalize_geo_level
+from apps.api.registry import (
+    OBSERVATION_DISPATCH,
+    ObservationDispatch,
+    normalize_geo_level,
+)
 from apps.api.schemas import (
     CompatibilityFinding,
     ComparisonMatrixResponse,
@@ -52,9 +56,8 @@ from apps.api.schemas import (
 from apps.api.services.comparison_service import (
     MINIMUM_CORRELATION_PAIRS,
     UnknownAnalysisMetric,
-    _analysis_dispatch,
     _side_conditions,
-    _year_pin_condition,
+    _year_pin_conditions,
     correlation_caveats,
     ranked_latest_cte,
 )
@@ -322,11 +325,30 @@ def metric_matrix(
     # A source the analysis routes decline refuses the whole request, before
     # any pair is evaluated, so the reason a reader is given names the measure
     # rather than every combination it appears in.
-    dispatches = [_analysis_dispatch(metric) for metric in metrics]
-    for code, dispatch in zip(codes, dispatches):
+    #
+    # A source with no reviewed dispatch entry at all is refused here too, and
+    # by `.get` rather than by `observation_dispatch`, which raises. The
+    # glossary can publish a metric whose source has no entry -- warehouse work
+    # lands before API registry work by design, as
+    # `neutral_observations_service.dispatch_for_metric` records -- and
+    # `/comparison` and `/comparison/correlation` answer that with the 422
+    # `compatibility._source_finding` composes, because they evaluate the pair
+    # before touching the registry. This route resolved the dispatch first, so
+    # the same measure answered a sanitized 500 here and a 422 there.
+    dispatches = []
+    for code, metric in zip(codes, metrics):
+        source_code = str(metric.get("source_code") or "")
+        dispatch = OBSERVATION_DISPATCH.get(source_code)
+        if dispatch is None:
+            raise NeutralQueryError(
+                f"{code} belongs to source '{source_code}', which has no "
+                "reviewed observation dispatch entry; see /catalog/capabilities "
+                "for the sources the analysis routes serve"
+            )
         refusal = dispatch.analysis_refusal()
         if refusal is not None:
             raise NeutralQueryError(f"{code}: {refusal}")
+        dispatches.append(dispatch)
 
     decisions = {
         (left, right): evaluate_comparison(metrics[left], metrics[right])
@@ -355,12 +377,15 @@ def metric_matrix(
             db, dispatch, code, metric, filters, f"m{index}_"
         )
         if year is not None:
-            side_conditions.append(_year_pin_condition(dispatch))
+            side_conditions.extend(_year_pin_conditions(dispatch))
         conditions.append(side_conditions)
         params.update(side_params)
         params[f"code_{index}"] = code
     if year is not None:
-        params["year_pin"] = f"{year:04d}"
+        # One year for every side, bound once: the pin asks them all the same
+        # question, in each source's own declared terms.
+        params["year_from"] = year
+        params["year_to"] = year
 
     base_sql = (
         f"WITH {_side_ctes(dispatches, conditions)},\n"

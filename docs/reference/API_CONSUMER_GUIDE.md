@@ -592,6 +592,16 @@ are `null` when they differ — the `/distribution/bins` convention. Passing
 buys contemporaneity at the cost of coverage; the answer reports the coverage
 you actually got rather than predicting it.
 
+`year` means for each side exactly what `year_from=YYYY&year_to=YYYY` means
+for it on `/observations` — it is that source's own declared year filter, not
+a second reading of "which year a row is about". This matters for Census ACS:
+a five-year estimate covers a window, so its period *starts* four years before
+the estimate year, while its `year_from` filter reads the estimate year. `year`
+follows the filter, so pinning 2023 against a FRED series pins the ACS5 2023
+estimate and not the one whose window opens in 2023. A source declaring no
+year filter refuses the pin by name rather than answering as though it had
+applied.
+
 **Every answer leads with the same caveat, and it is not decoration.** A
 correlation is an association between two published measures, never evidence
 that one causes the other: a third measure, a shared geography effect, or the
@@ -635,16 +645,17 @@ each measure's own coverage is `metrics[].geographies`. Read the two against
 each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
-measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR)
-answers `422` naming that measure — a matrix with a row of holes labelled
-"stratified" invites exactly the reading the refusal exists to prevent. An
-unknown code answers `404`. And a request in which *every* pair is declined
+measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR),
+or whose source the API has not registered at all, answers `422` naming that
+measure — a matrix with a row of holes labelled "stratified" invites exactly
+the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined
 answers `422` naming each failure, because there is nothing in it to answer.
 Anything else about a *combination* is a cell.
 
 `items` pages `(geo_level, geo_id)` under the usual `limit`/`offset`; the
 statistics are measured over the whole join, never over the page you asked
-for. `year` works as it does on `/comparison/correlation` and pins every side.
+for. `year` works as it does on `/comparison/correlation` — each side's own
+declared year filter — and pins every side.
 
 ## Saved analysis configurations
 
