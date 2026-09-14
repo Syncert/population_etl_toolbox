@@ -12,9 +12,7 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated and authored 2026-09-13;
-  delivered 2026-09-13 (`5faa19a`). The two routes API-094 did not
-  sweep; see "What changed" and "Validation".
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated and authored 2026-09-13; delivered 2026-09-13 (`5faa19a`). The two routes API-094 did not sweep; see "What changed" and "Validation".)
 - **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/routers/cdc.py`,
   `apps/api/services/usda_nass_service.py`
@@ -54,8 +52,10 @@ private vocabularies.
    finds every capability-map parameter whose name or description says
    grain and asserts the normaliser is applied.
 3. The guide's grain section names the two parameters.
-4. The behaviour is a `TESTING_CONTRACT.md` catalog row (next free `API-`
-   identifier; API-117 at authoring time).
+4. The behaviour is `TESTING_CONTRACT.md` catalog row **API-116** (the
+   plan said "next free identifier; API-117 at authoring time", but
+   API-117 was taken by the stored-analysis-filter plan before this one
+   landed; the row that satisfies this criterion is API-116).
 
 ## Non-goals
 

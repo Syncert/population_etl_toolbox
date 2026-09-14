@@ -4,7 +4,7 @@
 - **Date:** 2026-09-12
 - **Accepted:** 2026-09-12 (human review; the evidence packet plan's explicit precondition)
 - **Decision owners:** API platform maintainers
-- **Related work:** implemented by the [evidence packet persistence plan](../plans/needs_review/EVIDENCE_PACKET_PERSISTENCE_PLAN.md); unblocks WEB-007 in the [web analytics first-wave plan](../plans/needs_review/WEB_ANALYTICS_FIRST_WAVE_PLAN.md); extends [ADR-0003](0003-saved-analysis-authentication-and-persistence.md)
+- **Related work:** implemented by the [evidence packet persistence plan](../plans/completed/EVIDENCE_PACKET_PERSISTENCE_PLAN.md); unblocks WEB-007 in the [web analytics first-wave plan](../plans/needs_review/WEB_ANALYTICS_FIRST_WAVE_PLAN.md); extends [ADR-0003](0003-saved-analysis-authentication-and-persistence.md)
 
 ## Context
 

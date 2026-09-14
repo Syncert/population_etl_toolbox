@@ -13,9 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/evidence_packet_service.py`,
   `apps/api/schemas/evidence_packet.py`,
   `apps/web/lib/observationAccess.ts`, `apps/web/lib/evidencePackets.ts`,

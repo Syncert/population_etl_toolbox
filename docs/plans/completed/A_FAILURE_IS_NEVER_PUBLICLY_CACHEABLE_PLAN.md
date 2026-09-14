@@ -13,11 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
-  assessment agent; claimed and completed 2026-09-13. It was a present
-  defect. Register row **API-115** (API-112, suggested at authoring time,
-  had been taken).
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Implemented; awaiting review. Authored 2026-09-13 by the assessment agent; claimed and completed 2026-09-13. It was a present defect. Register row **API-115** (API-112, suggested at authoring time, had been taken).)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/middleware.py`
 
 ## Context

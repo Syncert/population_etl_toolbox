@@ -14,8 +14,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Delivered 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Delivered 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `.github/workflows/`, `tests/support/ci_evidence_manifest.json`
 
 ## Context

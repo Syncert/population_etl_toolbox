@@ -12,9 +12,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Complete, awaiting review. Authored, claimed, and delivered
-  2026-09-13 as catalog row API-090.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Complete, awaiting review. Authored, claimed, and delivered 2026-09-13 as catalog row API-090.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/appdb.py`
 
 ## Context

@@ -14,9 +14,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/lib/urlState.ts`,
   `apps/web/lib/explorerViewModel.ts`,
   `tests/unit/shared/test_grain_vocabulary_agreement.py`

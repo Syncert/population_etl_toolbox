@@ -13,10 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13. **The same defect as `a-grain-that-is-not-one-is-refused`, on
-  the parameters that sweep did not reach.**
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13. **The same defect as `a-grain-that-is-not-one-is-refused`, on the parameters that sweep did not reach.**)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/usda_nass_service.py`,
   `apps/api/routers/cdc.py`, `apps/api/routers/observations.py`,
   `apps/api/services/neutral_observations_service.py`,

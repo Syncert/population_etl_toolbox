@@ -14,9 +14,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Authored, claimed, and delivered 2026-09-13,
-  as the consumer half of API-081, which is in `needs_review/`.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Ready for review. Authored, claimed, and delivered 2026-09-13, as the consumer half of API-081, which is in `needs_review/`.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/lib/observationAccess.ts`,
   `apps/web/components/SourceExplorerPage.tsx`
 - **Depends on:** `newest-release-per-period` (API-081). Its parameter must

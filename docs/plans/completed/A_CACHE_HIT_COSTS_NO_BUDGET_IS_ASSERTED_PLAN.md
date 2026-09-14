@@ -13,8 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented; awaiting review. Claimed and completed 2026-09-13.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Implemented; awaiting review. Claimed and completed 2026-09-13.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `tests/unit/api/`, `tests/integration/api/`
 
 ## Context

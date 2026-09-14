@@ -13,9 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13. **Present defect, found by running the API.**
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13. **Present defect, found by running the API.**)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/registry.py`, `apps/api/dependencies.py`,
   `apps/api/main.py`, `docs/reference/API_CONSUMER_GUIDE.md`
 

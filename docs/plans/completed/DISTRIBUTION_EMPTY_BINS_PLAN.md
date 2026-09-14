@@ -13,9 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Authored, claimed, and delivered 2026-09-13
-  from an investigation of the analysis response shapes.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Ready for review. Authored, claimed, and delivered 2026-09-13 from an investigation of the analysis response shapes.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/distribution_service.py`
 - **Depends on:** nothing.
 - **Next pickup:** none.

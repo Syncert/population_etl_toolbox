@@ -13,11 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented; awaiting review. Authored 2026-09-13 by the
-  assessment agent; claimed and completed 2026-09-13. It was a present
-  defect; WEB-059 is the same fix for the other export. Register row
-  **WEB-067** (WEB-066, suggested at authoring time, had been taken).
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Implemented; awaiting review. Authored 2026-09-13 by the assessment agent; claimed and completed 2026-09-13. It was a present defect; WEB-059 is the same fix for the other export. Register row **WEB-067** (WEB-066, suggested at authoring time, had been taken).)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/components/ComparisonWorkspace.tsx`,
   `apps/web/lib/comparison.ts`
 

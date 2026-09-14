@@ -14,9 +14,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Complete, awaiting review. Authored, claimed, and delivered
-  2026-09-13 as the consumer half of API-082, which is in `needs_review/`.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Complete, awaiting review. Authored, claimed, and delivered 2026-09-13 as the consumer half of API-082, which is in `needs_review/`.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/lib/savedAnalysis.ts`,
   `apps/web/components/SourceExplorerPage.tsx`
 - **Depends on:** `saved-view-records-its-reduction` (API-082). Its two

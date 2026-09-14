@@ -13,9 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Authored, claimed, and delivered 2026-09-13
-  from an investigation of the explorer's geography-grain handling.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Ready for review. Authored, claimed, and delivered 2026-09-13 from an investigation of the explorer's geography-grain handling.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/components/SourceExplorerPage.tsx`,
   `apps/web/lib/explorerViewModel.ts`, `apps/web/lib/urlState.ts`
 - **Depends on:** nothing.

@@ -17,11 +17,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Claimed 2026-09-12, the day ADR-0004 was
-  accepted (created directly in `in_progress/` because acceptance of the ADR
-  was the approval the `to_do/` state would have recorded); every phase
-  delivered with evidence the same day.
-- **Last updated:** 2026-09-12
+- **Status:** Accepted 2026-09-14 (Ready for review. Claimed 2026-09-12, the day ADR-0004 was accepted (created directly in `in_progress/` because acceptance of the ADR was the approval the `to_do/` state would have recorded); every phase delivered with evidence the same day.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/schemas/evidence_packet.py`,
   `apps/api/services/evidence_packet_service.py`,
   `apps/api/routers/evidence_packets.py`, `apps/api/middleware.py`,

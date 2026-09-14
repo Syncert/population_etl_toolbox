@@ -12,10 +12,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13. **No live defect: the guard passed on the first run, which is
-  the answer to the question it was written to ask.**
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13. **No live defect: the guard passed on the first run, which is the answer to the question it was written to ask.**)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `tests/integration/api/test_dispatch_expressions_execute.py`
 
 ## Context
@@ -43,6 +41,20 @@ FRED.
 
 So a broken dimension expression, order column or filter condition for CDC,
 FBI UCR, USDA NASS, BLS, ACS or PEP would reach a deployment.
+
+## Acceptance criteria
+
+1. An integration module drives `list_neutral_observations`, the production
+   path, for every source in `OBSERVATION_DISPATCH`, with only the catalog
+   lookup stubbed, so each declared expression is executed by PostgreSQL.
+2. Three kinds of node per source: both scopes; every declared filter, one
+   at a time, read from the same `supported_filters()` the capability
+   resource publishes; and both ranked reductions, where a source that
+   refuses a reduction must explain rather than execute.
+3. A broken expression of any kind fails the guard by name (proved by
+   breaking a dimension expression and an order column).
+4. The behaviour is `TESTING_CONTRACT.md` catalog row API-128 with CI
+   ownership.
 
 ## What was changed
 
@@ -76,6 +88,12 @@ E  LINE 16:         ORDER BY observation_date, geo_id, as_of_dat, series...
 E  HINT:  Perhaps you meant to reference the column "rpt_bls_observations.as_of_date".
 ```
 
+Register: the behaviour is catalog row **API-128** (`Integration / api
+database`) in `docs/reference/TESTING_CONTRACT.md`, owned by the
+`api-integration` job per `docs/reference/CI_EVIDENCE_MAP.md`;
+`python -m tests.support.catalog_evidence` grades it `FULL` (re-run
+2026-09-14 on the review head: 459 rows, every one `FULL`).
+
 ## Deliberately not done
 
 - **The values are not checked.** This asks whether each statement runs, not
@@ -88,3 +106,7 @@ E  HINT:  Perhaps you meant to reference the column "rpt_bls_observations.as_of_
   against a seeded fixture (`test_usda_nass_api_contract`,
   `test_cdc_pipeline`). The registry is the surface where one typo is
   invisible because six sources share the mechanism.
+
+## Remaining work
+
+- None. Review is the remaining step.

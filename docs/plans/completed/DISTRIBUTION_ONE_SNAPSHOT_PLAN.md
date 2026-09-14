@@ -14,9 +14,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Complete, awaiting review. Authored, claimed, and delivered
-  2026-09-13 as catalog row API-084.
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Complete, awaiting review. Authored, claimed, and delivered 2026-09-13 as catalog row API-084.)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/api/services/distribution_service.py`
 - **Depends on:** API-083, which made the reduction under this route's CTE
   deterministic. This closes the other half: two readings of it.

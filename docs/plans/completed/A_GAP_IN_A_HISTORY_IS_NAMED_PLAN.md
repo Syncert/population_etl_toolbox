@@ -13,10 +13,8 @@ verify:
 
 ## Plan status
 
-- **Status:** Needs review. Investigated, authored and implemented
-  2026-09-13. **The web half of API-127, plus the test-harness defect found
-  while writing its tests.**
-- **Last updated:** 2026-09-13
+- **Status:** Accepted 2026-09-14 (Needs review. Investigated, authored and implemented 2026-09-13. **The web half of API-127, plus the test-harness defect found while writing its tests.**)
+- **Last updated:** 2026-09-14
 - **Owner surface:** `apps/web/components/TimeSeriesChart.js`,
   `apps/web/lib/explorerSources.ts`, `apps/web/lib/api/types.ts`,
   `apps/web/components/SourceExplorerPage.tsx`, `tests/frontend/setup.js`
