@@ -130,12 +130,6 @@ export interface MetricRelease {
   [key: string]: unknown;
 }
 
-/** `/observations/releases`: a metric's published releases, newest first. */
-export interface MetricReleaseListResponse extends CollectionResponse<MetricRelease> {
-  metric_code?: string;
-  source_code?: string;
-}
-
 export interface DistributionBin {
   bin_index: number;
   count: number;

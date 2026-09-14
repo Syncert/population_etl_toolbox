@@ -482,7 +482,9 @@ lifecycle script.
 
 In the compose environment, `airflow-init` automatically seeds the `public_data` Airflow connection:
 
-- Airflow-only compose seeds `public_data` -> host `postgres`, schema `airflow` (metadata DB).
+- Airflow-only compose seeds `public_data` -> host `postgres`, schema
+  `${PUBLIC_DATA_DB_NAME:-population_etl}` (the warehouse database beside the
+  metadata one, created by `infra/docker/initdb/create_warehouse_database.sh`).
 - Full compose seeds `public_data` -> host `analytics_postgres`, schema `population_etl` (analytics DB).
 
 For production/real runs, set `public_data` to your target analytics warehouse.

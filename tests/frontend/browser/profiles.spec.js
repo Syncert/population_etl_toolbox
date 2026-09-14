@@ -336,11 +336,17 @@ test("the community profile reads a place through published identities", async (
   ).toBe(true);
   expect(observationRequests.every((request) => request.limit === "1")).toBe(true);
 
-  // Each measure keeps a direct path into the explorer.
-  await expect(page.getByTestId("measure-explore-total-population")).toHaveAttribute(
+  // Each measure keeps a direct path into the explorer, and that path names
+  // the source publishing the measure as well as the measure itself
+  // (WEB-072): the metric alone lands on whichever catalog `/explore`
+  // mounts, which silently substitutes when that catalog does not publish
+  // the code.
+  const explore = page.getByTestId("measure-explore-total-population");
+  await expect(explore).toHaveAttribute(
     "href",
     /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
   );
+  await expect(explore).toHaveAttribute("href", /source=CENSUS_ACS/);
 
   // The link reproduces the product and the place.
   await expect(page).toHaveURL(/place=state%3A55%7Ccounty%3A025/);

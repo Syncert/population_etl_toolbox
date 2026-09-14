@@ -283,4 +283,31 @@ describe("the connected-source band never names a source the API did not", () =>
       expect(source).not.toContain(name);
     }
   });
+
+  test("the snapshot panel's explorer link names a source, not a metric alone", () => {
+    // Covers: WEB-072 — a link carrying only `metric` lands on whichever
+    // catalog `/explore` mounts, and a measure that catalog does not publish
+    // is silently replaced. The landing panel is read from its own source
+    // for the same reason the hard-coded-name guard above is: there is no
+    // browser node that visits `/`, so the page itself is the evidence.
+    let directory = process.cwd();
+    let source = "";
+    for (;;) {
+      try {
+        source = readFileSync(join(directory, "apps", "web", "app", "page.js"), "utf8");
+        break;
+      } catch {
+        const parent = dirname(directory);
+        if (parent === directory) {
+          throw new Error("apps/web/app/page.js not found from " + process.cwd());
+        }
+        directory = parent;
+      }
+    }
+    const call = source.slice(source.indexOf("explorerHref({"));
+    const panel = call.slice(0, call.indexOf("})"));
+    expect(panel).toContain("metric:");
+    expect(panel).toContain("source:");
+    expect(panel).toContain("source_code");
+  });
 });

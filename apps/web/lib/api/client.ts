@@ -16,7 +16,6 @@ import type {
   GeographySummary,
   HealthResponse,
   AnalysisDocument,
-  MetricReleaseListResponse,
   MetricSummary,
   Observation,
   EvidencePacketDocument,
@@ -402,19 +401,6 @@ export function getObservations(
   options: RequestOptions = {},
 ): Promise<CollectionResponse<Observation>> {
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
-}
-
-// The release identities `scope=as_released` accepts for one metric,
-// newest first. This is the only way to learn what `release=` accepts; a
-// client must not invent or infer a release identity.
-export function getObservationReleases(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<MetricReleaseListResponse> {
-  return apiFetch<MetricReleaseListResponse>("/observations/releases", {
-    ...options,
-    params,
-  });
 }
 
 // Legacy MVP shapes (Census ACS, BLS, FRED only); retained consumers should

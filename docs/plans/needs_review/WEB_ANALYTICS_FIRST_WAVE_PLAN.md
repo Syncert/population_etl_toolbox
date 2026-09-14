@@ -1608,7 +1608,7 @@ After this plan is completed and human-accepted, a separate publishing and socia
 ## Primary repository references
 
 - `AGENTS.md` — delivery hierarchy, plan workflow, test-driven design, and definition of done.
-- `docs/plans/to_do/API_DEVELOPMENT_PLAN.md` — required versioned API platform and frontend handoff.
+- `docs/plans/completed/API_DEVELOPMENT_PLAN.md` — required versioned API platform and frontend handoff.
 - `docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md` — first-wave products, analytical guardrails, and product-wide definition of done.
 - `docs/reference/TESTING_CONTRACT.md` — current WEB-001 through WEB-008 contracts and frontend test ownership.
 - `docs/reference/CI_EVIDENCE_MAP.md` — frontend, API, Martin, deployment, and coverage evidence ownership.

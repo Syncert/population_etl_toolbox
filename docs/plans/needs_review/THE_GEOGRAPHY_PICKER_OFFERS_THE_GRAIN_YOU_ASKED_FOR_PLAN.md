@@ -131,7 +131,7 @@ only source publishing places — does not, because
 already made the *county* picker unusable on PEP before this plan. That is a
 separate defect with a design question attached (what the observations status
 line should say when a state narrows the map but not the rows), recorded as
-`docs/plans/to_do/THE_STATE_CONTROL_NARROWS_WHAT_IT_CAN_NARROW_PLAN.md`
+`docs/plans/completed/THE_STATE_CONTROL_NARROWS_WHAT_IT_CAN_NARROW_PLAN.md`
 rather than folded in here.
 
 So the browser tier asserts what a reader can actually see: at PLACE and at
