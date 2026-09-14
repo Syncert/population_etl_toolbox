@@ -1131,13 +1131,48 @@ reader deciding whether something else fits:
 | WB-5 (+ correlation panel, matrix) | 454.4 kB | 474 kB |
 | WB-6 (+ save) | 465.2 kB | 474 kB |
 | WB-7 (+ export) | 469.4 kB | 474 kB |
+| Post-review fixes (WEB-100, WEB-101) | 471.4 kB | 474 kB |
 
 The three new charts fit, so the plan's contingency ("if the three new charts
 cannot fit, the plan records the measured cost and the decision") did not
-arise. The headroom is now thin: the next thing added to this route will
-likely need the budget raised, and that should be a deliberate, recorded
-decision rather than a `--update` run — which rewrites *all* fourteen other
-routes' budgets upward against the current build, as WB-1 recorded.
+arise.
+
+**The headroom is now 2.6 kB, and the next addition to this route needs a
+budget decision.** That decision should be deliberate and recorded — not a
+`--update` run, which rewrites *all* fourteen other routes' budgets upward
+against the current build, as WB-1 recorded. The honest options when it comes
+are: raise this one route's number with the measurement beside it, or split
+the correlation surface out of the workbench route so the composing page does
+not carry the matrix chart for readers who never ask for one.
+
+## Post-review corrections (2026-09-14)
+
+Found reviewing the delivered code rather than by a failing gate, and fixed
+with the test that would have caught each:
+
+1. **WEB-100 — a derived answer outlived the selection it described.** Every
+   effect used `createRequestTracker`, which stops a stale *response* being
+   committed; nothing stopped a stale *answer* being kept. The correlation
+   effect returned early for an ineligible selection and left the previous
+   answer in state — invisible while the presentation fell back, and rendered
+   again unchanged the moment the selection became eligible, or while a
+   narrowed read was in flight. A reader narrowing from every state to one saw
+   the fifty-two-state coefficient under the loading note. The aligned rows had
+   the same shape of defect. Both are now dropped before the effect decides
+   whether to fetch. The browser test holds the second answer open, which is
+   the only way to see this: with both answers instant, the stale one is
+   replaced before anyone can read it and the defect stays in the code.
+
+2. **WEB-101 — the heatmap laid out one geography.** It reused the loaded rows
+   of the series it draws, and a series is one measure at *one geography* by
+   definition, so its read pins `geo_id`. Laying those rows out as geographies
+   × periods produces a grid exactly one row tall — which renders, carries a
+   legend and a colour scale, and is a single line. `buildSettledSurfaceRequest`
+   now reads every geography at the grain with no geography pinned, and the
+   heatmap has its own optional state scope. The browser fixture had hidden
+   it by answering a metric's whole set regardless of `geo_id`; the new test
+   watches the requests the page actually makes, which is the only tier that
+   can see it.
 
 Decisions taken while implementing, beyond what the plan wrote:
 

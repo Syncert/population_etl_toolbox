@@ -464,6 +464,63 @@ export function buildSettledHistoryRequest(
 }
 
 
+/** Many geographies' settled histories at one grain: the heatmap's read. */
+export interface SettledSurfaceQuery extends ScopedQuery {
+  metricCode: string;
+  geoLevel: string;
+  stateFips?: string;
+  limit?: string | number;
+  dimensions?: Record<string, string>;
+}
+
+/**
+ * Every geography's settled history at one grain, for a geography × period
+ * layout.
+ *
+ * Deliberately *not* `buildSettledHistoryRequest` with the geography left
+ * out. That builder answers one geography's history and pins `geo_id`; a
+ * heatmap's rows are geographies, so asking it for one geography's history
+ * and laying that out as a grid produces a grid one row tall — which looks
+ * like a heatmap and is a single series.
+ *
+ * The difference is the filter: this pins `geo_level` (and a `state_fips`
+ * scope where the source declares one and the reader asked), and pins no
+ * geography at all. Everything else is the same settled-history read — the
+ * newest release of each period, so each cell is the period as its newest
+ * release left it rather than whichever release arrived last.
+ *
+ * `null` where the source does not declare the settled-history parameters, as
+ * the sibling builder returns null, so this client never sends something the
+ * capability entry did not publish.
+ */
+export function buildSettledSurfaceRequest(
+  source: ExplorerSource | null | undefined,
+  query: SettledSurfaceQuery,
+): ObservationRequest | null {
+  if (!source || !source.supportsSettledHistory || !source.supportsAsReleased) {
+    return null;
+  }
+  return {
+    resource: NEUTRAL_OBSERVATIONS_PATH,
+    params: {
+      metric_code: query.metricCode,
+      scope: SCOPE_AS_RELEASED,
+      newest_release_per_period: "true",
+      limit: query.limit,
+      ...declaredOnly(
+        source,
+        { geo_level: query.geoLevel, state_fips: query.stateFips },
+        source.neutralFilters,
+      ),
+      ...dimensionParams(
+        scopedDimensionFilters(source, SCOPE_AS_RELEASED),
+        query.dimensions,
+      ),
+    },
+  };
+}
+
+
 function firstText(...values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value === "string" && value !== "") {

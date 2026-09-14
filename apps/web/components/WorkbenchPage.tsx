@@ -64,6 +64,7 @@ import {
   ACTIVE_GEOGRAPHIES_ONLY,
   buildHistoryObservationRequest,
   buildSettledHistoryRequest,
+  buildSettledSurfaceRequest,
   normalizeObservationRows,
   observationPeriodLabel,
 } from "../lib/observationAccess";
@@ -221,6 +222,14 @@ export default function WorkbenchPage() {
   const [correlationError, setCorrelationError] = useState("");
   const [correlationLoading, setCorrelationLoading] = useState(false);
   const correlationTracker = useRef(createRequestTracker()).current;
+
+  // The heatmap reads every geography at one grain, so it has its own request
+  // and its own optional state scope -- not the series' pinned geography.
+  const [heatmapRows, setHeatmapRows] = useState<ObservationRow[]>([]);
+  const [heatmapStateFips, setHeatmapStateFips] = useState("");
+  const [heatmapError, setHeatmapError] = useState("");
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const heatmapTracker = useRef(createRequestTracker()).current;
 
   const { token: accountToken } = useStoredToken();
   const [saving, setSaving] = useState(false);
@@ -952,14 +961,8 @@ export default function WorkbenchPage() {
   const heatmapSeries = plotted[0] || null;
 
   const heatmap = useMemo(
-    () =>
-      heatmapSeries
-        ? heatmapModel({
-            rows: loaded[heatmapSeries.key]?.rows || [],
-            geographyNames,
-          })
-        : null,
-    [heatmapSeries, loaded, geographyNames],
+    () => heatmapModel({ rows: heatmapRows, geographyNames }),
+    [heatmapRows, geographyNames],
   );
 
   // --- The correlation (WB-5) -----------------------------------------------
@@ -1371,6 +1374,72 @@ export default function WorkbenchPage() {
     correlation,
     matrix,
     preflightModel,
+  ]);
+
+  /**
+   * The heatmap's own read: every geography at one grain, not one geography.
+   *
+   * It cannot reuse the series' loaded rows. Each series is read with its
+   * geography pinned — that is what a series *is* — so laying those rows out
+   * as geographies × periods produces a grid one row tall, which looks like a
+   * heatmap and is a single line. This asks for the same settled history at
+   * the grain instead, with no geography pinned.
+   */
+  useEffect(() => {
+    setHeatmapRows([]);
+    setHeatmapError("");
+    if (!heatmapSeries || effectivePresentation !== "heatmap") {
+      setHeatmapLoading(false);
+      return;
+    }
+    const source = findExplorerSource(sources, heatmapSeries.series.sourceKey);
+    const request = buildSettledSurfaceRequest(source, {
+      metricCode: heatmapSeries.series.metricCode,
+      geoLevel: heatmapSeries.series.geoLevel,
+      stateFips: heatmapStateFips || undefined,
+      dimensions: heatmapSeries.series.filters,
+    });
+    if (!request) {
+      setHeatmapError(
+        `${source?.title || heatmapSeries.series.sourceCode} publishes no ` +
+          "settled-history route, so a geography × period layout cannot be " +
+          "read for it without mixing releases.",
+      );
+      return;
+    }
+    const tracked = heatmapTracker.begin();
+    setHeatmapLoading(true);
+    (async () => {
+      try {
+        const page = await fetchCollectionPages<Observation>(request.resource, {
+          params: request.params,
+          pageSize: HISTORY_PAGE_SIZE,
+          maxPages: HISTORY_PAGE_LIMIT,
+        });
+        if (tracked.isCurrent()) {
+          setHeatmapRows(
+            normalizeObservationRows(source, page.items) as ObservationRow[],
+          );
+          setHeatmapError("");
+          setHeatmapLoading(false);
+        }
+      } catch (error) {
+        if (tracked.isCurrent()) {
+          setHeatmapRows([]);
+          setHeatmapError(apiErrorMessage(error));
+          setHeatmapLoading(false);
+        }
+      }
+    })();
+    return () => {
+      heatmapTracker.invalidate();
+    };
+  }, [
+    heatmapSeries,
+    effectivePresentation,
+    heatmapStateFips,
+    sources,
+    heatmapTracker,
   ]);
 
   // --- Export (WB-7) --------------------------------------------------------
@@ -2119,6 +2188,40 @@ export default function WorkbenchPage() {
               The page bound cut this read short, so the geographies shown are a
               prefix of the ones the route paired. Narrow to a state to see the
               rest.
+            </p>
+          ) : null}
+
+          {effectivePresentation === "heatmap" && heatmapSeries ? (
+            <div className="selector-grid" data-testid="workbench-heatmap-controls">
+              <div className="control-group">
+                <label htmlFor="workbench-heatmap-state">State scope</label>
+                <select
+                  id="workbench-heatmap-state"
+                  className="select"
+                  value={heatmapStateFips}
+                  onChange={(event) => setHeatmapStateFips(event.target.value)}
+                  data-testid="workbench-heatmap-state"
+                >
+                  <option value="">Every geography at this grain</option>
+                  {states.map((row) => (
+                    <option key={String(row.geo_id)} value={String(row.state_fips)}>
+                      {String(row.state_name)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : null}
+
+          {heatmapLoading ? (
+            <p className="subtle" data-testid="workbench-heatmap-loading">
+              Reading every geography&apos;s settled history at this grain…
+            </p>
+          ) : null}
+
+          {effectivePresentation === "heatmap" && heatmapError ? (
+            <p className="notice error" data-testid="workbench-heatmap-error">
+              {heatmapError}
             </p>
           ) : null}
 

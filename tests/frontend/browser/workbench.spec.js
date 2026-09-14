@@ -672,6 +672,55 @@ test("the ranking sorts by the chosen side and counts the unpublished", async ({
   await expect(page.locator('[data-testid="workbench-bar"]')).toHaveCount(3);
 });
 
+// Covers: WEB-101 — the heatmap reads every geography at one grain rather
+// than the pinned geography of the series it lays out, because its rows are
+// geographies and a series' read pins one by definition.
+test("the heatmap asks for a grain, not for the series' pinned geography", async ({
+  page,
+}) => {
+  await installAlignedRoutes(page);
+  const asked = [];
+  await page.route("**/api/v1/observations?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    asked.push({
+      metricCode: params.get("metric_code"),
+      geoId: params.get("geo_id"),
+      geoLevel: params.get("geo_level"),
+      stateFips: params.get("state_fips"),
+      settled: params.get("newest_release_per_period"),
+    });
+    const items = alignedObservations[params.get("metric_code")] || [];
+    return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+  });
+
+  await page.goto("/workbench");
+  await page.getByTestId("workbench-source").selectOption("census");
+  await page.getByTestId("workbench-metric").selectOption(METRIC_ACS);
+  await page.getByTestId("workbench-grain").selectOption("STATE");
+  await page.getByTestId("workbench-geography").selectOption("state:06");
+  await page.getByTestId("workbench-add-series").click();
+  await page.getByTestId("workbench-presentation-heatmap").click();
+  await expect(page.getByTestId("workbench-heatmap")).toBeVisible();
+
+  // The series' own read pins the geography; the heatmap's does not, because
+  // its rows *are* geographies. A layout built from one geography's history
+  // would be a grid one row tall.
+  const surface = asked.filter((request) => request.geoId === null);
+  expect(surface.length).toBeGreaterThan(0);
+  expect(surface[surface.length - 1]).toMatchObject({
+    metricCode: METRIC_ACS,
+    geoLevel: "STATE",
+    settled: "true",
+  });
+  expect(asked.some((request) => request.geoId === "state:06")).toBe(true);
+
+  // Narrowing to a state narrows the heatmap's read, and only that read.
+  await page.getByTestId("workbench-heatmap-state").selectOption("06");
+  await expect
+    .poll(() => asked.filter((request) => request.stateFips === "06").length)
+    .toBeGreaterThan(0);
+});
+
 test("the heatmap hatches a period that published no value", async ({ page }) => {
   await installAlignedRoutes(page);
   await page.goto("/workbench");
