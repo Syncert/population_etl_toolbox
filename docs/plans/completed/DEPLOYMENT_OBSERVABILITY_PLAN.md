@@ -15,11 +15,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. All five deliverables are implemented,
-  validated, and documented. One operator action is required before the scheduled job can
-  be green: setting `DEPLOYMENT_SMOKE_BASE_URL` (see *Operator setup* below).
-- **Last updated:** 2026-09-14
-- **Current milestone:** delivered.
+- **Status:** Accepted. All five deliverables are implemented, validated, and
+  documented. Delivered as `603455c` on `claude/branch-merge-audit-119eof` and
+  merged to `main` in `6fc28b7` (PR #58); accepted by the repository owner on
+  2026-09-15. One operator action remains outside this plan before the
+  scheduled job can be green: setting `DEPLOYMENT_SMOKE_BASE_URL` (see
+  *Operator setup* below), which is tracked by
+  `to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md`.
+- **Last updated:** 2026-09-15
+- **Current milestone:** complete.
 
 ## Why
 

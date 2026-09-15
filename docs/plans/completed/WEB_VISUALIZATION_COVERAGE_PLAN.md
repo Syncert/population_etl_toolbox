@@ -17,10 +17,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. The matrix, both offline halves, the live
-  sweep and the three defects the audit found are implemented and validated.
+- **Status:** Accepted. The matrix, both offline halves, the live sweep and
+  the three defects the audit found are implemented and validated. Delivered
+  as `27bf583` on `claude/analytics-api-data-coverage-29xn1n` and merged to
+  `main` in `765f1c0` (PR #59); accepted by the repository owner on
+  2026-09-15.
 - **Last updated:** 2026-09-15
-- **Current milestone:** delivered.
+- **Current milestone:** complete.
 
 ## Why
 
