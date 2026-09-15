@@ -14,8 +14,9 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Every acceptance criterion has inspectable
-  implementation evidence and was verified on a genuinely fresh clone.
+- **Status:** Accepted 2026-09-15 (Ready for review. Authored, claimed, and
+  delivered 2026-09-15; every acceptance criterion has inspectable
+  implementation evidence and was verified on a genuinely fresh clone.)
 - **Last updated:** 2026-09-15
 - **Current milestone:** complete.
 - **Dependencies:** none declared; none required.
