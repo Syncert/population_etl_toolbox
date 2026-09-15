@@ -16,12 +16,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. All four deliverables are implemented and
-  verified against running stacks, and the three findings originally scoped out
-  are fixed too. The changes are **uncommitted** on
-  `claude/web-viz-metrics-checks-qttkzz`, on top of `e500d40`.
+- **Status:** Accepted. All four deliverables are implemented and verified
+  against running stacks, and the three findings originally scoped out are
+  fixed too. Delivered as `ed33276` on
+  `claude/web-viz-metrics-checks-qttkzz`, on top of `e500d40`; accepted by the
+  repository owner on 2026-09-14.
 - **Last updated:** 2026-09-14
-- **Current milestone:** delivered.
+- **Current milestone:** complete.
 
 Measured after the change, each database recreated from scratch:
 
