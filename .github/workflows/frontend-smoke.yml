@@ -60,6 +60,15 @@ jobs:
       # resolving its lineage, fails this job at pull-request time instead of
       # surviving until someone opens that source in the deployed explorer.
       SMOKE_REQUIRE_ALL_SOURCES: "1"
+      # Every visualization the web offers must answer, for every source the
+      # reviewed matrix says it serves (WEB-104). The matrix is the coverage
+      # claim -- "all web viz, all sources" -- and this is the run that turns
+      # it from a declaration into a request. Both bounds are on here because
+      # this stack's content is seeded and therefore known: a violation can
+      # only mean a screen stopped being servable, never that a warehouse is
+      # part-way through a load. A deployment opts in separately.
+      SMOKE_REQUIRE_ALL_VIZ: "1"
+      SMOKE_REQUIRE_FULL_VIZ_SAMPLE: "1"
       # And no source may be drifting. The seed publishes only measures the
       # publisher is still emitting, so this bound is free here -- which is
       # exactly why it belongs here: it keeps the drift check exercised on

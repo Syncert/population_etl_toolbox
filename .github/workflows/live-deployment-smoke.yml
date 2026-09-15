@@ -34,6 +34,21 @@ name: live-deployment-smoke
 #                               measure its publisher has stopped emitting.
 #                               Defaults to "0" -- the drifting sources are
 #                               reported either way.
+#   DEPLOYMENT_SMOKE_REQUIRE_ALL_VIZ
+#                               optional; "0" to accept a deployment where some
+#                               visualization answers nothing for a source the
+#                               reviewed matrix says it serves. Defaults to
+#                               "1": a screen the API declares servable and
+#                               that draws nothing is the blank-chart-no-error
+#                               failure this tier exists for.
+#   DEPLOYMENT_SMOKE_REQUIRE_FULL_VIZ_SAMPLE
+#                               optional; "1" to also fail when a served cell
+#                               could not be probed at all -- no current
+#                               measure, or none at a grain the screen needs.
+#                               Defaults to "0", because a part-way-loaded
+#                               warehouse is a content state rather than a
+#                               broken deployment. The coverage table names
+#                               those cells on every run either way.
 #
 # Until DEPLOYMENT_SMOKE_BASE_URL is set this job fails, deliberately and
 # with instructions. A scheduled observer that skips when it is not
@@ -94,6 +109,20 @@ jobs:
       # wants it to be a reading does not.
       SMOKE_REQUIRE_FRESH_SOURCES: >-
         ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES == '1' && '1' || '0' }}
+      # Every visualization the web offers, asked for against the deployment,
+      # for every source the reviewed matrix says it serves (WEB-104). On by
+      # default for the same reason SMOKE_REQUIRE_ALL_SOURCES is: a request
+      # that was made and answered nothing means the API declared a screen
+      # servable and it is not, which no amount of warehouse loading explains.
+      SMOKE_REQUIRE_ALL_VIZ: >-
+        ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_ALL_VIZ == '0' && '0' || '1' }}
+      # Opt-in, unlike the bound above, and for the drift bound's reason. A
+      # cell that could not be probed is a warehouse that has not loaded a
+      # measure at the grain that screen needs -- a content state an operator
+      # may be mid-way through, not a deployment that is wrong. The coverage
+      # table names those cells on every run either way.
+      SMOKE_REQUIRE_FULL_VIZ_SAMPLE: >-
+        ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_FULL_VIZ_SAMPLE == '1' && '1' || '0' }}
 
     steps:
       - uses: actions/checkout@v6

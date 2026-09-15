@@ -107,7 +107,7 @@ list.
 | `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `q`, `active_only`) — see below |
-| `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, and `observation_filters` — the neutral filters that source supports |
+| `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal |
 
 **A value outside a closed set is refused, not answered empty.** `geo_level`
@@ -246,6 +246,16 @@ the question those sources can answer. Reducing them anyway would present
 whichever stratum the tie-break sorted first as the geography's value, with
 `total` counting only the survivors: collapsing a grain you did not ask to
 collapse.
+
+**Ask before you send: `publishes_aligned_reduction` on
+`/catalog/capabilities`.** The route declares both reduction parameters for
+every source, because a route declares one parameter set; whether a *source*
+reduces to one value per geography is the separate fact this flag publishes,
+derived from the same declaration the 422 is read from. A client that checked
+only the route's parameter list learned that all seven sources accept a
+reduction three of them refuse — which is a request you cannot avoid sending
+and a screen that draws nothing when you do. The flag is on the metric
+resource too, for the reason `publishes_value_status` is.
 
 `GET /api/v1/observations/releases?metric_code=...` lists a metric's published
 releases newest-first with observation counts — this is how you discover what
@@ -615,6 +625,15 @@ USDA NASS, and FBI UCR are declined with a stated reason: they publish
 stratified, multi-dimensional, or agency-grain observations that an aligned
 one-value-per-geography analysis would silently collapse. Query them through
 `/observations` with the appropriate stratum, domain, or subject filters.
+
+All four analysis routes — `/comparison`, `/comparison/preflight`,
+`/comparison/correlation`, `/comparison/matrix` — and `/distribution/bins`
+appear in `observation_routes` on `/catalog/capabilities` for exactly the
+sources they answer for, so you learn which of them you may call without
+trying one. The two correlation routes were absent from that list until
+API-138: they were served, they were declined for the same three sources as
+the routes beside them, and nothing said so, which left a client inferring
+one route's availability from another's.
 
 `GET /api/v1/comparison/correlation?metric_code_a=…&metric_code_b=…` answers
 two API-derived coefficients over **exactly the pairs `/comparison` would

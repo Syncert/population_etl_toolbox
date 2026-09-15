@@ -10,6 +10,10 @@ import { describe, expect, test } from "vitest";
 // Covers: WEB-093 — the correlation matrix keeps three kinds of cell off its
 // diverging scale: the diagonal, a declined pair, and a comparable pair whose
 // data cannot carry a coefficient.
+// Covers: WEB-103 — the route a correlation would be asked on must be one the
+// capability entry declares. The panel used to read `/comparison/preflight`
+// and send to `/comparison/correlation`, which is an inference about one
+// route standing in for a contract about another.
 
 import {
   CORRELATION_IS_ACROSS_GEOGRAPHIES,
@@ -26,6 +30,21 @@ import {
   CORRELATION_DIVERGING_SCALE,
   correlationColor,
 } from "../../../apps/web/components/CorrelationMatrixChart";
+
+/**
+ * Which correlation routes each source in these cases declares.
+ *
+ * Spelled rather than defaulted, because `correlationEligibility` treats a
+ * source it has no entry for as declaring neither: an unknown capability is
+ * not a capability. FRED and Census ACS are analysis-ready sources whose
+ * capability entries carry both routes; CDC is one the analysis surface
+ * declines, so it declares neither.
+ */
+const DECLARED_ROUTES = {
+  FRED: { correlation: true, matrix: true },
+  CENSUS_ACS: { correlation: true, matrix: true },
+  CDC: { correlation: false, matrix: false },
+};
 
 function series(metricCode, sourceCode = "FRED", geoId = "county:06001") {
   return {
@@ -49,7 +68,10 @@ describe("when a correlation may be asked for", () => {
     // two histories of one geography — is instead named on the panel, so it
     // is stated rather than silently absent.
     expect(
-      correlationEligibility({ series: [series("A"), series("B")] }).eligible,
+      correlationEligibility({
+        series: [series("A"), series("B")],
+        declaredRoutes: DECLARED_ROUTES,
+      }).eligible,
     ).toBe(true);
     expect(CORRELATION_IS_ACROSS_GEOGRAPHIES).toMatch(/shared time trend/);
     expect(CORRELATION_IS_ACROSS_GEOGRAPHIES).toMatch(/across geographies/);
@@ -59,12 +81,14 @@ describe("when a correlation may be asked for", () => {
     expect(
       correlationEligibility({
         series: [series("A"), series("B")],
+        declaredRoutes: DECLARED_ROUTES,
       }),
     ).toEqual({ eligible: true, route: "correlation", reason: "" });
 
     expect(
       correlationEligibility({
         series: [series("A"), series("B"), series("C")],
+        declaredRoutes: DECLARED_ROUTES,
       }).route,
     ).toBe("matrix");
   });
@@ -73,7 +97,10 @@ describe("when a correlation may be asked for", () => {
     const many = Array.from({ length: MAX_MATRIX_METRICS + 1 }, (_, index) =>
       series(`M${index}`),
     );
-    const verdict = correlationEligibility({ series: many });
+    const verdict = correlationEligibility({
+      series: many,
+      declaredRoutes: DECLARED_ROUTES,
+    });
     expect(verdict.eligible).toBe(false);
     expect(verdict.reason).toContain(String(MAX_MATRIX_METRICS + 1));
   });
@@ -84,6 +111,7 @@ describe("when a correlation may be asked for", () => {
     const verdict = correlationEligibility({
       series: [series("A"), series("CDC:x", "CDC")],
       analysisRefusals: { CDC: refusal },
+      declaredRoutes: DECLARED_ROUTES,
     });
     expect(verdict.eligible).toBe(false);
     // Presented unchanged, not paraphrased.
@@ -93,6 +121,7 @@ describe("when a correlation may be asked for", () => {
   test("a blocked pair carries the preflight's failed rules", () => {
     const verdict = correlationEligibility({
       series: [series("A"), series("B")],
+      declaredRoutes: DECLARED_ROUTES,
       preflightBlocking: [{ rule: "units", reason: "units differ" }],
     });
     expect(verdict.eligible).toBe(false);
@@ -102,6 +131,7 @@ describe("when a correlation may be asked for", () => {
   test("an unread verdict is a wait, not a refusal", () => {
     const verdict = correlationEligibility({
       series: [series("A"), series("B")],
+      declaredRoutes: DECLARED_ROUTES,
       preflightRead: false,
     });
     expect(verdict.eligible).toBe(false);
@@ -112,10 +142,41 @@ describe("when a correlation may be asked for", () => {
     expect(
       correlationEligibility({
         series: [series("A"), series("B"), series("C")],
+        declaredRoutes: DECLARED_ROUTES,
         preflightRead: false,
         preflightBlocking: [{ rule: "units", reason: "units differ" }],
       }).eligible,
     ).toBe(true);
+  });
+
+  test("a route the capability entry does not declare is refused, by name", () => {
+    // The pair route is declared for FRED and not for this source, and the
+    // analysis surface has not declined it either — so nothing else in the
+    // chain of refusals above would catch it. Before the routes were declared
+    // separately this case could not be expressed: the panel asked about
+    // `/comparison/preflight` and sent to `/comparison/correlation`.
+    const verdict = correlationEligibility({
+      series: [series("A"), series("B", "CENSUS_ACS")],
+      declaredRoutes: {
+        FRED: { correlation: true, matrix: true },
+        CENSUS_ACS: { correlation: false, matrix: true },
+      },
+    });
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.route).toBeNull();
+    expect(verdict.reason).toContain("/comparison/correlation");
+    expect(verdict.reason).toContain("CENSUS_ACS");
+  });
+
+  test("a source with no capability entry declares neither route", () => {
+    // An unknown capability is not a capability: a source discovery never
+    // returned cannot be assumed to serve a route this client would send to.
+    const verdict = correlationEligibility({
+      series: [series("A"), series("B")],
+      declaredRoutes: {},
+    });
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.reason).toContain("/comparison/correlation");
   });
 });
 

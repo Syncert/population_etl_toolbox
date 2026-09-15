@@ -92,6 +92,21 @@ export interface ExplorerSource {
    * saying before a reader picks it.
    */
   servesComparison: boolean;
+  /**
+   * True when `/comparison/correlation` is declared for this source.
+   *
+   * Read rather than inferred. The workbench used to offer its correlation
+   * panel wherever `/comparison/preflight` was declared, because the two
+   * routes were declined for the same three sources and the API declared
+   * neither correlation route for anybody — so an inference about one route
+   * stood in for a contract about another. Restricting correlation for a
+   * source would have left the panel offered and the answer empty, which is
+   * the blank screen with no error this client reads declarations to avoid
+   * (API-138).
+   */
+  servesCorrelation: boolean;
+  /** True when `/comparison/matrix` is declared: several measures at once. */
+  servesMatrix: boolean;
   latestParameters: string[];
   timeseriesParameters: string[];
   /**
@@ -115,13 +130,35 @@ export interface ExplorerSource {
   /** True when the neutral resource declares `release`, so one can be pinned. */
   supportsReleasePin: boolean;
   /**
-   * True when the neutral resource declares `newest_per_geography`, so the
-   * map can ask for one row per geography instead of paging a source's
-   * whole latest publication and reducing it here.
+   * True when the neutral resource declares `newest_per_geography` *and* the
+   * source publishes an aligned per-geography reduction, so the map can ask
+   * for one row per geography instead of paging a source's whole latest
+   * publication and reducing it here.
+   *
+   * Both halves are needed, and reading only the first was a defect. A route
+   * declares one parameter set for every source, so `newest_per_geography`
+   * is declared for all seven; whether a *source* reduces to one value per
+   * geography is a different fact, and the resource answers a 422 naming the
+   * strata a reduction would collapse. The capability entry publishes that
+   * fact as `publishes_aligned_reduction` (API-139), and the three screens
+   * that send a reduction read it here rather than sending the request and
+   * drawing nothing.
    */
   supportsNewestPerGeography: boolean;
-  /** True when `/observations` declares `newest_release_per_period` (API-081). */
+  /**
+   * True when `/observations` declares `newest_release_per_period` (API-081)
+   * and the source publishes the aligned reduction, for the reason above:
+   * the settled surface is the same per-geography reduction, one period at a
+   * time, and is refused for the same sources.
+   */
   supportsSettledHistory: boolean;
+  /**
+   * The capability's own `publishes_aligned_reduction`: whether this source
+   * reduces to one value per geography at all. Carried separately from the
+   * two flags above so a screen can say *why* a reduction is unavailable
+   * rather than only that it is.
+   */
+  publishesAlignedReduction: boolean;
   /**
    * True when this source's rows can arrive with `value: null` and a
    * published `value_status` saying why — the capability's own
@@ -144,6 +181,8 @@ export const NEUTRAL_OBSERVATIONS_PATH = "/observations";
 export const RELEASES_PATH = "/observations/releases";
 const DISTRIBUTION_PATH = "/distribution/bins";
 const COMPARISON_PREFLIGHT_PATH = "/comparison/preflight";
+const COMPARISON_CORRELATION_PATH = "/comparison/correlation";
+const COMPARISON_MATRIX_PATH = "/comparison/matrix";
 
 /**
  * Parameters the neutral resource accepts for every source regardless of
@@ -197,6 +236,10 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     publishedDimensions: [],
     servesDistribution: true,
     servesComparison: false,
+    // With discovery unavailable nothing has declared the analysis routes, so
+    // claiming either would be this client inventing a contract.
+    servesCorrelation: false,
+    servesMatrix: false,
     latestParameters: ["geo_level", "limit", "metric_code", "offset", "state_fips"],
     timeseriesParameters: [
       "end_date",
@@ -216,6 +259,7 @@ export const FALLBACK_EXPLORER_SOURCES: ExplorerSource[] = [
     supportsReleasePin: false,
     supportsNewestPerGeography: false,
     supportsSettledHistory: false,
+    publishesAlignedReduction: false,
     // Claiming a published value state with discovery unavailable would be
     // this client inventing a contract; claiming none is the conservative
     // reading, and the note it produces is true of the fallback source.
@@ -310,6 +354,8 @@ export function buildExplorerSources(
       publishedDimensions: [...(capability.observation_dimensions || [])],
       servesDistribution: declaredPaths.has(`${API_BASE}${DISTRIBUTION_PATH}`),
       servesComparison: declaredPaths.has(`${API_BASE}${COMPARISON_PREFLIGHT_PATH}`),
+      servesCorrelation: declaredPaths.has(`${API_BASE}${COMPARISON_CORRELATION_PATH}`),
+      servesMatrix: declaredPaths.has(`${API_BASE}${COMPARISON_MATRIX_PATH}`),
       latestParameters,
       timeseriesParameters,
       neutralFilters,
@@ -317,12 +363,13 @@ export function buildExplorerSources(
       servesReleases: declaredPaths.has(`${API_BASE}${RELEASES_PATH}`),
       supportsAsReleased: neutralParameters.includes("scope"),
       supportsReleasePin: neutralParameters.includes("release"),
-      supportsNewestPerGeography: neutralParameters.includes(
-        "newest_per_geography",
-      ),
-      supportsSettledHistory: neutralParameters.includes(
-        "newest_release_per_period",
-      ),
+      supportsNewestPerGeography:
+        neutralParameters.includes("newest_per_geography") &&
+        Boolean(capability.publishes_aligned_reduction),
+      supportsSettledHistory:
+        neutralParameters.includes("newest_release_per_period") &&
+        Boolean(capability.publishes_aligned_reduction),
+      publishesAlignedReduction: Boolean(capability.publishes_aligned_reduction),
       publishesValueStatus: Boolean(capability.publishes_value_status),
     });
   }

@@ -137,6 +137,7 @@ const capabilities = {
       display_name: "Census American Community Survey",
       route_segment: "census",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: true,
       datasets: [],
       observation_filters: ["county_fips", "geo_id", "geo_level", "state_fips"],
       observation_routes: capabilityRoutes("census"),
@@ -146,6 +147,7 @@ const capabilities = {
       display_name: "Census Population Estimates Program",
       route_segment: "pep",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: true,
       datasets: [],
       observation_filters: ["geo_id", "geo_level"],
       observation_routes: capabilityRoutes("pep"),
@@ -155,6 +157,7 @@ const capabilities = {
       display_name: "USDA National Agricultural Statistics Service",
       route_segment: "usda-nass",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: false,
       datasets: ["nass_crops_county"],
       observation_filters: ["domain_desc", "geo_id"],
       observation_routes: [
@@ -167,6 +170,7 @@ const capabilities = {
       display_name: "Bureau of Labor Statistics",
       route_segment: "bls",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: true,
       datasets: [],
       observation_filters: ["county_fips", "geo_id", "geo_level", "state_fips"],
       observation_routes: capabilityRoutes("bls"),
@@ -176,6 +180,7 @@ const capabilities = {
       display_name: "Centers for Disease Control and Prevention",
       route_segment: "cdc",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: false,
       datasets: ["cdc_places_county"],
       // No state_fips and no distribution route: the explorer must send
       // neither, and must not present a failed bins request as a fallback.
@@ -206,6 +211,7 @@ const capabilities = {
       // No route segment: its observation surface is the neutral resource.
       route_segment: null,
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: false,
       datasets: ["summarized"],
       observation_filters: ["geo_id", "geo_level", "subject_code", "subject_type"],
       observation_routes: neutralRoutes,

@@ -1092,12 +1092,26 @@ export const CORRELATION_IS_ACROSS_GEOGRAPHIES =
 export function correlationEligibility({
   series,
   analysisRefusals = {},
+  declaredRoutes = {},
   preflightBlocking = [],
   preflightRead = true,
 }: {
   series: readonly WorkbenchSeries[];
   /** Per source code, the reason the analysis routes decline it. */
   analysisRefusals?: Record<string, string>;
+  /**
+   * Per source code, which correlation route the capability entry declares.
+   *
+   * Read from the contract rather than inferred from the refusal above. The
+   * two used to be one question — a source either declared the whole aligned
+   * analysis surface or none of it — so the panel asked about
+   * `/comparison/preflight` and sent a request to `/comparison/correlation`.
+   * They are separate declarations now (API-138), and a source declaring one
+   * without the other must be refused on the route it lacks rather than on
+   * the route it has. A source missing from this map declares neither: an
+   * unknown capability is not a capability.
+   */
+  declaredRoutes?: Record<string, { correlation?: boolean; matrix?: boolean }>;
   /** The failed preflight rules, for a pair. Empty when comparable. */
   preflightBlocking?: readonly { rule: string; reason: string }[];
   /** False while the verdict for a pair has not come back yet. */
@@ -1143,6 +1157,25 @@ export function correlationEligibility({
   }
 
   const route = measures.length === 2 ? "correlation" : "matrix";
+
+  const undeclared = [
+    ...new Set(
+      (series || [])
+        .filter((entry) => !declaredRoutes[entry.sourceCode]?.[route])
+        .map((entry) => entry.sourceCode),
+    ),
+  ];
+  if (undeclared.length > 0) {
+    return {
+      eligible: false,
+      route: null,
+      reason:
+        `The API declares no ${
+          route === "correlation" ? "/comparison/correlation" : "/comparison/matrix"
+        } route for ${undeclared.join(", ")}, so a coefficient over ` +
+        `${measures.length} measures cannot be asked for here.`,
+    };
+  }
 
   if (route === "correlation") {
     if (!preflightRead) {
