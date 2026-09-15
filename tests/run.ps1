@@ -195,6 +195,16 @@ switch ($Tier) {
         $env:SMOKE_BASE_URL = "http://127.0.0.1:33001"
         # Refuse to pass by skipping: this tier is required wherever it runs.
         $env:SMOKE_REQUIRED = "1"
+        # The same two bounds `.github/workflows/frontend-smoke.yml` sets. This
+        # block claims to compose the tier exactly as CI composes it, and for a
+        # while it did not: the workflow graded the stack against every
+        # registered source and against drift, and this runner did not, so
+        # reproducing a CI failure locally meant knowing to set them by hand.
+        # The seed publishes one current measure per source, so both are free
+        # here -- which is the point. A violation can only mean the seed, the
+        # rule, or the report broke.
+        $env:SMOKE_REQUIRE_ALL_SOURCES = "1"
+        $env:SMOKE_REQUIRE_FRESH_SOURCES = "1"
         $compose = @(
             "compose",
             "-f", "infra/docker/docker-compose.test.yml",
@@ -222,8 +232,10 @@ switch ($Tier) {
             if ($LASTEXITCODE -ne 0) {
                 Write-Warning "Compose teardown exited $LASTEXITCODE; check for leftover population-testing containers."
             }
-            @("SMOKE_BASE_URL", "SMOKE_REQUIRED") |
-                ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+            @(
+                "SMOKE_BASE_URL", "SMOKE_REQUIRED",
+                "SMOKE_REQUIRE_ALL_SOURCES", "SMOKE_REQUIRE_FRESH_SOURCES"
+            ) | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
         }
     }
     "web-build" {

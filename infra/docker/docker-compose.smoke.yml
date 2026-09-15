@@ -8,16 +8,33 @@
 # registry dispatch, and the real generated SQL, reached over the same nginx
 # rewrites a browser uses. Compose merges the two files field by field, not
 # service by service: a scalar declared here replaces the base file's, but a
-# sequence declared here is appended to it. So this overlay reshapes only the
-# `api` service and states nothing the base file already states; Postgres,
-# Martin, and the proxy stay exactly as the deployment tier composes them,
-# which is the point — the smoke tier must not get a stack of its own to be
-# right about.
+# sequence declared here is appended to it. So this overlay reshapes the `api`
+# service and adds exactly one volume to `postgres`, and states nothing else
+# the base file already states; Martin and the proxy stay exactly as the
+# deployment tier composes them, which is the point — the smoke tier must not
+# get a stack of its own to be right about.
 #
 #   docker compose -f docker-compose.test.yml -f docker-compose.smoke.yml \
 #     up --detach --wait postgres martin api proxy
 
 services:
+  postgres:
+    # This tier's seed, mounted by the only stack that wants it.
+    #
+    # It lived in the base file until the seed grew from one ACS measure to
+    # one per registered source, at which point it started colliding with the
+    # pytest integration fixtures that share that database -- see the comment
+    # where it used to sit in `docker-compose.test.yml`. Content this tier
+    # needs and the integration tier must not see belongs here.
+    #
+    # `volumes` is a sequence, so Compose appends this to the base file's
+    # list rather than replacing it; every migration and DDL mount there
+    # still applies. The `051_` prefix keeps it ordered after
+    # `050_martin_seed.sql`, whose Dane County geography and `martin_test`
+    # role this seed and the base healthcheck both depend on.
+    volumes:
+      - ../../tests/sql/frontend_smoke_seed.sql:/docker-entrypoint-initdb.d/051_frontend_smoke_seed.sql:ro
+
   api:
     # `image` names the build output rather than selecting a registry image;
     # the base file's pinned nginx digest is a scalar and is replaced here.

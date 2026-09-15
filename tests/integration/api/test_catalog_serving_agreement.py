@@ -1359,12 +1359,23 @@ def published_pep_metrics(
                     observation_end_year, geography_basis_date, schema_version,
                     status, media_type, created_at, updated_at, series_kind
                 ) VALUES (
-                    %s, %s, 'alldata',
+                    %s, %s, 'agreement_test_alldata',
                     'https://www2.census.gov/grain-sweep/data.csv',
                     'https://www2.census.gov/grain-sweep/layout.txt',
                     %s, %s, %s, %s, '1', 'published', 'text/csv',
                     NOW(), NOW(), 'postcensal'
-                ) ON CONFLICT DO NOTHING
+                )
+                -- The conflict target is named, and naming it is the point.
+                -- A bare `ON CONFLICT DO NOTHING` absorbs *any* unique
+                -- violation, including ones that say nothing about this row's
+                -- identity: `silver_pep.pep_release` also carries a global
+                -- `UNIQUE (product_code)` (migration 009), so when a
+                -- neighbouring seed took `alldata` this insert did nothing,
+                -- raised nothing, and failed as a foreign key violation on
+                -- `release_load` one statement later -- ten tests erroring at
+                -- setup for a reason no message named. Re-running this
+                -- fixture is the only conflict it should tolerate.
+                ON CONFLICT (dataset_code, vintage_year, product_code) DO NOTHING
                 """,
                 (
                     PEP_DATASET,
@@ -1381,7 +1392,7 @@ def published_pep_metrics(
                     capture_id, dataset_code, release_vintage, product_code,
                     source_record_count, observation_count, completeness_status,
                     validated_at
-                ) VALUES (%s, %s, %s, 'alldata', 1, 1, 'complete', NOW())
+                ) VALUES (%s, %s, %s, 'agreement_test_alldata', 1, 1, 'complete', NOW())
                 """,
                 (capture_id, PEP_DATASET, PEP_VINTAGE),
             )
@@ -1402,7 +1413,7 @@ def published_pep_metrics(
                             place_fips_source, name_source, value_source, value,
                             value_status, parser_version, parsed_at
                         ) VALUES (
-                            %s, %s, 1, %s, %s, %s, 'alldata', %s, %s, 'persons',
+                            %s, %s, 1, %s, %s, %s, 'agreement_test_alldata', %s, %s, 'persons',
                             %s, %s, %s, %s, %s, %s, %s,
                             'valid', '1', NOW()
                         )
@@ -1435,7 +1446,7 @@ def published_pep_metrics(
                             source_name, value_source, value, unit,
                             transformed_at
                         ) VALUES (
-                            %s, %s, 1, %s, %s, 'alldata', %s, %s, %s,
+                            %s, %s, 1, %s, %s, 'agreement_test_alldata', %s, %s, %s,
                             %s, %s, %s, %s, 'resolved', %s, %s, %s,
                             %s, %s, 'persons', NOW()
                         )

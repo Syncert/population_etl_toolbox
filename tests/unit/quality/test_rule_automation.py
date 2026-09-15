@@ -357,7 +357,7 @@ def test_only_the_gold_bootstrap_writes_the_schema_migration_state() -> None:
     to the note.
     """
     writers = sorted(
-        str(path.relative_to(REPOSITORY_ROOT))
+        path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
         if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
     )
@@ -367,7 +367,7 @@ def test_only_the_gold_bootstrap_writes_the_schema_migration_state() -> None:
     )
 
     sql_writers = sorted(
-        str(path.relative_to(REPOSITORY_ROOT))
+        path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "sql").rglob("*.sql")
         if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
     )
@@ -388,7 +388,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     plan is exactly the kind of thing that drifts".
     """
     literals = sorted(
-        str(path.relative_to(REPOSITORY_ROOT))
+        path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
         if '"gold_ddl_' in path.read_text(encoding="utf-8")
     )

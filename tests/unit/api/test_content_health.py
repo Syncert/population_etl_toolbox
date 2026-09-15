@@ -13,6 +13,8 @@ without a database because a grading rule is a statement about counts.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
@@ -66,6 +68,44 @@ def test_only_a_current_measure_makes_a_source_serving() -> None:
     # it is not publishing one a client can ask for now.
     stale_only = grade_source(_row("CDC", metrics_total=4, metrics_stale=4))
     assert stale_only["status"] == EMPTY
+
+
+def test_a_publication_time_is_reported_as_the_guide_documents_it() -> None:
+    """Covers: API-137 — the field carries the ISO-8601 the guide promises.
+
+    ``API_CONSUMER_GUIDE.md`` documents this field as
+    ``"2026-09-01T04:11:22+00:00"``. The statement used to cast the column
+    with ``::TEXT``, so what a client actually received was Postgres's own
+    rendering -- ``2026-09-10 20:27:49.130325+00``, a space where the ``T``
+    belongs. `Date.parse` accepts that in V8 and rejects it under a strict
+    ISO-8601 parser, which is the worst shape for a mismatch to take: it works
+    in the browser someone tries it in and fails in the consumer that reads
+    the guide.
+
+    Nothing pinned the format -- the OpenAPI contract records only
+    ``string | null`` -- so this is the assertion that keeps the promise and
+    the answer together.
+    """
+    published = datetime(2026, 9, 1, 4, 11, 22, tzinfo=timezone.utc)
+    graded = grade_source(
+        _row(
+            "FRED", metrics_total=1, metrics_current=1, last_publication_time=published
+        )
+    )
+
+    assert graded["last_publication_time"] == "2026-09-01T04:11:22+00:00"
+    # Round-trips, rather than merely looking right: a parser gets the instant
+    # the warehouse stored, offset included.
+    assert datetime.fromisoformat(graded["last_publication_time"]) == published
+
+    # A source the catalog holds no publication row for reports nothing rather
+    # than an epoch, and a value already spelled as text is left alone.
+    assert grade_source(_row("BLS"))["last_publication_time"] is None
+    already_text = _row("CDC", last_publication_time="2026-09-01T04:11:22+00:00")
+    assert (
+        grade_source(already_text)["last_publication_time"]
+        == "2026-09-01T04:11:22+00:00"
+    )
 
 
 def test_a_tally_that_does_not_account_for_the_catalog_says_so() -> None:

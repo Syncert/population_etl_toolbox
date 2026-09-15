@@ -173,10 +173,13 @@ describe.skipIf(!BASE_URL)("deployed content health", () => {
   });
 
   test.skipIf(!REQUIRE_ALL_SOURCES)("every registered source publishes a measure", () => {
-    // Only where the deployment claims to be fully loaded. Against the
-    // Compose stack, which seeds one ACS measure, six sources are silent for
-    // a reason that is not a defect -- so this is opt-in rather than a bound
-    // the tier would have to weaken to stay green.
+    // Opt-in, because it asks the deployment to claim it is fully loaded.
+    // Both stacks this tier runs against now set it: the Compose seed
+    // publishes one measure per registered source, and a deployment that has
+    // loaded its warehouse has no excuse either. It was opt-in for a
+    // different reason once -- the seed published a single ACS measure, so
+    // six of seven sources were legitimately silent here and this bound
+    // could only have been satisfied by weakening it.
     expect(
       report.silent_sources,
       "SMOKE_REQUIRE_ALL_SOURCES=1 but these sources publish no current measure, " +

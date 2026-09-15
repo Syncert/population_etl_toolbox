@@ -56,7 +56,25 @@ services:
       - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/041_semantic_policy.sql:ro
       - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/042_gold_contract.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/050_martin_seed.sql:ro
-      - ../../tests/sql/frontend_smoke_seed.sql:/docker-entrypoint-initdb.d/051_frontend_smoke_seed.sql:ro
+      # `tests/sql/frontend_smoke_seed.sql` is deliberately NOT mounted here.
+      # It belongs to the frontend smoke tier and is mounted by
+      # `docker-compose.smoke.yml`, which is the only stack that needs it.
+      #
+      # It used to be mounted here, and this database is also the one the
+      # pytest integration tier uses. That was harmless while the seed
+      # published one ACS measure; once it grew to one measure per registered
+      # source it started colliding with fixtures that assume they are the
+      # only writer of their own lineage -- `silver_pep.pep_release` carries a
+      # global `UNIQUE (product_code)`, so the seed's row took `alldata` and
+      # the PEP fixture's insert was silently swallowed by its own
+      # `ON CONFLICT DO NOTHING`, failing a foreign key one statement later.
+      # Ten tests errored at setup and CI never saw it, because the
+      # `api-integration` job uses a bare service container and lets the
+      # fixtures apply the warehouse manifest themselves.
+      #
+      # Keep the two tiers' content apart. The smoke tier wants a
+      # deployment-shaped warehouse; the integration tier wants an empty one
+      # its fixtures fill and tear down.
     healthcheck:
       test:
         - CMD-SHELL

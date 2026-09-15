@@ -17,6 +17,7 @@ empty deployment. A report that failed to read the warehouse and answered
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -167,6 +168,103 @@ def test_the_report_counts_the_warehouses_own_freshness_vocabulary(
     assert (
         fred["metrics_current"] + fred["metrics_stale"] + fred["metrics_retired"]
         == fred["metrics_total"]
+    )
+
+    # This fixture writes catalog rows directly rather than running a harvest,
+    # so the source has no `publisher_harvest_state` row and its publication
+    # time is legitimately null -- which is the documented answer for a source
+    # the catalog holds no publication row for. The field's *shape* is asserted
+    # by the test below, which writes one.
+    assert fred["last_publication_time"] is None
+
+
+@pytest.fixture
+def a_recorded_publication_time(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[datetime]:
+    """Record one publication time for the fixture source, and restore what was there.
+
+    This tier may run against a warehouse a real harvest has already written,
+    so the teardown puts the previous value back rather than deleting the row:
+    a fixture that removed a publication state it did not create would leave
+    the next reader's source looking as though it had never published.
+    """
+    published = datetime(2026, 9, 1, 4, 11, 22, tzinfo=timezone.utc)
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "SELECT last_publication_time FROM "
+                "gold_glossary.publisher_harvest_state WHERE source_code = %s",
+                (FIXTURE_SOURCE,),
+            )
+            existing = cursor.fetchone()
+            cursor.execute(
+                """
+                INSERT INTO gold_glossary.publisher_harvest_state (
+                    source_code, publisher_contract_version,
+                    last_publication_time, status
+                ) VALUES (%s, '1.0', %s, 'success')
+                ON CONFLICT (source_code) DO UPDATE
+                    SET last_publication_time = EXCLUDED.last_publication_time
+                """,
+                (FIXTURE_SOURCE, published),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+    try:
+        yield published
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                if existing is None:
+                    cleanup_sql = (
+                        "DELETE FROM gold_glossary.publisher_harvest_state "
+                        "WHERE source_code = %s"
+                    )
+                    cursor.execute(cleanup_sql, (FIXTURE_SOURCE,))
+                else:
+                    cursor.execute(
+                        "UPDATE gold_glossary.publisher_harvest_state "
+                        "SET last_publication_time = %s WHERE source_code = %s",
+                        (existing[0], FIXTURE_SOURCE),
+                    )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_publication_time_is_served_as_the_guide_documents_it(
+    one_measure_per_state: list[str],
+    a_recorded_publication_time: datetime,
+    settings: PostgresTestConfig,
+) -> None:
+    """Covers: API-137 — the served field is the ISO-8601 the guide promises.
+
+    The unit tier proves the conversion from a datetime a test constructed.
+    Only a warehouse can prove the value reaching it *is* a datetime: the
+    statement used to cast the column with ``::TEXT``, so by the time any
+    Python saw it the value was already a string in Postgres's own rendering
+    -- ``2026-09-10 20:27:49.130325+00``, a space where the ``T`` belongs --
+    and every layer above passed it through unchanged. A test that built its
+    own datetime would have gone on passing throughout.
+
+    So this reads back a real ``TIMESTAMPTZ`` through the whole stack and
+    checks it against the instant written, offset included.
+    """
+    payload = _read_report(settings)
+    served = _source(payload, FIXTURE_SOURCE)["last_publication_time"]
+
+    assert served is not None, (
+        "a publication time was recorded for this source and the report served "
+        "none, so the resource is not reading the relation it documents"
+    )
+    assert datetime.fromisoformat(served) == a_recorded_publication_time, (
+        f"last_publication_time is {served!r}, which is not the offset-aware "
+        "ISO-8601 API_CONSUMER_GUIDE.md documents"
     )
 
 

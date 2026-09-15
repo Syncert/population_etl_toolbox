@@ -28,6 +28,7 @@ need ``control.publisher_ready_event``.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -66,7 +67,7 @@ CONTENT_QUERY = text(
            published.metrics_current,
            published.metrics_stale,
            published.metrics_retired,
-           state.last_publication_time::TEXT AS last_publication_time
+           state.last_publication_time AS last_publication_time
     FROM (
         SELECT source_code,
                COUNT(*) AS metrics_total,
@@ -138,7 +139,23 @@ def grade_source(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _text_or_none(value: Any) -> str | None:
-    return None if value is None else str(value)
+    """A publication time as ISO-8601 text, or ``None``.
+
+    The statement selects the ``TIMESTAMPTZ`` rather than casting it to text in
+    SQL, because Postgres's own text form separates the date from the time with
+    a space (``2026-09-10 20:27:49.130325+00``). That is not ISO-8601, it is
+    not what ``API_CONSUMER_GUIDE.md`` documents this field as, and a strict
+    parser answers ``Invalid Date`` for it -- while a lenient one accepts it,
+    which is how the mismatch survived being read by a browser.
+
+    ``datetime.isoformat`` gives the shape the guide promises. A value that is
+    already text is passed through: the unit tier builds rows by hand, and a
+    fixture spelling its own timestamp should not have it reformatted out from
+    under the assertion.
+    """
+    if value is None:
+        return None
+    return value.isoformat() if isinstance(value, datetime) else str(value)
 
 
 def grade_content(

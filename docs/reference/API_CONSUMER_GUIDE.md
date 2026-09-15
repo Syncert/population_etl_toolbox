@@ -68,6 +68,9 @@ This resource reports on content, per source:
 - `counts_are_complete` is false when the three counted freshness states do
   not account for `metrics_total` — a warehouse state this API has not been
   taught, and a signal that the counts are a partial tally.
+- `last_publication_time` is offset-aware ISO-8601, as the example above
+  shows, or `null` for a source the catalog holds no publication row for. It
+  is the publisher's own harvest time, not this request's clock.
 - `silent_sources` lists the registered sources publishing nothing. It is the
   field to page on: every chart over those sources draws nothing.
 - `stale_sources` lists the registered sources carrying at least one measure
