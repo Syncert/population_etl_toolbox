@@ -18,8 +18,8 @@ verify:
 
 - **Status:** Ready for review. The guard is implemented, four fixtures are
   widened to their sources' full range, two teardown defects found on the way
-  are fixed, and the behavioral catalog is updated. The changes are
-  **uncommitted** on `claude/web-viz-metrics-checks-qttkzz`.
+  are fixed, and the behavioral catalog is updated. Delivered as `e500d40` on
+  `claude/web-viz-metrics-checks-qttkzz`.
 - **Last updated:** 2026-09-14
 - **Current milestone:** delivered.
 
@@ -255,14 +255,19 @@ Two entries need their asterisks stated rather than hidden:
 ### Environment
 
 The database-backed tiers here were run against a **bare** pinned PostGIS
-container, matching `.github/workflows/api-integration.yml:53`, not against
-`infra/docker/docker-compose.test.yml`. Running them against the compose stack
-fails on collisions with `tests/sql/frontend_smoke_seed.sql`, which that file
-mounts into initdb. That divergence is separately filed and is **not** caused by
-or addressed here — see
-[`../to_do/THE_SEED_AND_THE_FIXTURES_DO_NOT_SHARE_A_WAREHOUSE_PLAN.md`](../to_do/THE_SEED_AND_THE_FIXTURES_DO_NOT_SHARE_A_WAREHOUSE_PLAN.md),
-which reproduces it independently. A reviewer verifying this plan on the compose
-path will see those failures and should not read them as this change's.
+container, matching `.github/workflows/api-integration.yml:53`, rather than
+against `infra/docker/docker-compose.test.yml`. At the time of measurement the
+compose stack mounted `tests/sql/frontend_smoke_seed.sql` into the initdb of the
+database the integration tier uses, and the tier collided with those rows; the
+bare container was the only path on which this change could be measured at all.
+
+**That divergence has since been fixed** by `ed33276`, which moved the seed to
+`docker-compose.smoke.yml` and added DB-045 to guard the separation in both
+directions. It was found and closed independently of this work — see
+[`../completed/THE_SEED_AND_THE_FIXTURES_DO_NOT_SHARE_A_WAREHOUSE_PLAN.md`](../completed/THE_SEED_AND_THE_FIXTURES_DO_NOT_SHARE_A_WAREHOUSE_PLAN.md).
+A reviewer verifying this plan on either path should now see the results in the
+table above. The note is kept because it explains why the recorded runs took the
+shape they did, not because anything here still depends on it.
 
 ## Known limitation
 
