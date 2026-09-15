@@ -16,12 +16,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. The guard is implemented, four fixtures are
-  widened to their sources' full range, two teardown defects found on the way
-  are fixed, and the behavioral catalog is updated. Delivered as `e500d40` on
-  `claude/branch-merge-audit-119eof`.
-- **Last updated:** 2026-09-14
-- **Current milestone:** delivered.
+- **Status:** Accepted. The guard is implemented, four fixtures are widened to
+  their sources' full range, two teardown defects found on the way are fixed,
+  and the behavioral catalog is updated. Delivered as `e500d40` on
+  `claude/branch-merge-audit-119eof` and merged to `main` in `6fc28b7`
+  (PR #58); accepted by the repository owner on 2026-09-15.
+- **Last updated:** 2026-09-15
+- **Current milestone:** complete.
 
 ## Why
 
