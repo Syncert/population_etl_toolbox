@@ -153,7 +153,16 @@ ORDER BY source_code, chunk_start;
 
 ### Python Environment and Install
 
-Standard local development install path for API, tests, and shared package work:
+On Linux and macOS, one command installs everything the checks in this repository are graded by — the `local` Python extra and the frontend's locked dependency tree:
+
+```bash
+make bootstrap
+source .venv/bin/activate    # bootstrap prints this line when it creates .venv
+```
+
+`make bootstrap` is idempotent and safe to re-run, which is how to pick up a dependency change after a pull. It installs into an already-active virtual environment, creates `.venv` when none is active, and installs the web tree from `apps/web/package-lock.json` with `npm ci` so a local checkout resolves the same tree CI grades. It deliberately never installs into a bare system interpreter: on Ubuntu 24.04 `/usr/lib/python3/dist-packages` sits on the supported Python 3.11 interpreter's `sys.path` carrying C extensions built for 3.12, and importing one of those aborts collection with a panic instead of the `ImportError` that callers guard for.
+
+Windows PowerShell has no `make`; install the same set directly:
 
 ```bash
 python -m venv .venv
@@ -164,6 +173,7 @@ python -m venv .venv
 
 python -m pip install --upgrade pip
 pip install -e .[local]
+npm ci --prefix apps/web
 ```
 
 This installs runtime dependencies plus API and dev tooling. Airflow is intentionally not included in `local` because Airflow pins a large dependency set and should run in Docker, WSL2, or a dedicated isolated environment.
@@ -770,7 +780,7 @@ setup, tier commands, disposable services, credentials, and result handling.
 #### API + ETL unit tests (Python 3.11, `.[api,dev]`)
 
 ```bash
-# Install
+# Install (see Setup & Configuration; `make bootstrap` installs the superset)
 pip install -e ".[api,dev]"
 
 # Run all deterministic unit tests

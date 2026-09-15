@@ -6,15 +6,36 @@ results, markers, and CI ownership are in
 
 ## Quick Start
 
-Use Python 3.11 for supported local and CI-compatible results:
+Use Python 3.11 for supported local and CI-compatible results. On Linux and
+macOS one command installs both environments the deterministic tiers need --
+the `local` extra and the frontend's locked dependency tree:
 
 ```bash
-python -m venv .venv-test
-# Linux/macOS: source .venv-test/bin/activate
-# Windows PowerShell: .\.venv-test\Scripts\Activate.ps1
+make bootstrap
+source .venv/bin/activate    # bootstrap prints this line when it creates .venv
+python -m pytest
+npm --prefix apps/web run test:unit
+```
+
+`make bootstrap` is idempotent, so re-running it after a pull is how to pick up
+a dependency change; the web half reinstalls only when `package-lock.json`
+changed. It installs into the virtual environment that is already active and
+creates `.venv` when none is, and it never installs into a bare system
+interpreter. That last part is not a preference: on Ubuntu 24.04
+`/usr/lib/python3/dist-packages` is on the supported 3.11 interpreter's
+`sys.path` carrying extensions built for 3.12, and importing one of them aborts
+collection with a panic rather than the `ImportError` that callers guard for.
+
+Windows PowerShell has no `make`. Install the same two sets directly, then use
+`tests\run.ps1` for the tiers below:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[api,dev]"
+python -m pip install -e ".[local]"
 python -m pip check
+npm ci --prefix apps/web
 python -m pytest
 ```
 
