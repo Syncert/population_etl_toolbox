@@ -1,4 +1,80 @@
-.PHONY: test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
+.PHONY: bootstrap bootstrap-python bootstrap-web test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
+
+# The one command that turns a fresh clone into a checkout that can run the
+# checks it is graded by. `pyproject.toml`'s `local` extra is already exactly
+# the right Python set and `apps/web/package-lock.json` is already exactly the
+# right web set; bootstrap's only job is to make both reachable without
+# rediscovering them from the manifests.
+#
+# `npm ci` rather than `npm install`, because the lockfile is the committed
+# definition of the web environment and CI installs from it. A lockfile that
+# no longer matches `package.json` is a defect to fix, not a reason to resolve
+# a different tree locally than the one CI grades.
+#
+# Re-running is cheap on purpose: a SessionStart hook calls this on every
+# session start, and `npm ci` deletes and rebuilds `node_modules` every time
+# it is invoked. The stamp records the lockfile the installed tree was built
+# from, and lives inside `node_modules` so that removing the tree also removes
+# the claim that the tree is current. Hashing runs through Python because
+# `sha256sum` and `shasum` are not the same command on Linux and macOS.
+BOOTSTRAP_WEB_STAMP = apps/web/node_modules/.bootstrap-lockfile-sha256
+
+bootstrap: bootstrap-python bootstrap-web
+
+# Bootstrap installs into a virtual environment and never into a bare system
+# interpreter, and that is not a style preference. The web container's
+# `python` is 3.11 while `/usr/lib/python3/dist-packages` holds Ubuntu 24.04's
+# packages built for 3.12 -- every C extension there is wrong-ABI for the
+# running interpreter, and the directory is still on its `sys.path`. On
+# 2026-09-15 that one condition produced two unrelated-looking failures on the
+# same clone: pip could not replace Debian's PyYAML 6.0.1 with `dev`'s 6.0.3,
+# because the distro installed it with no RECORD file to uninstall from, and
+# importing `apps.api.main` aborted collection of 25 API test modules with a
+# `pyo3_runtime.PanicException` out of Debian's `cryptography`, whose bindings
+# want a `_cffi_backend` compiled for 3.12. PyJWT guards that import with
+# `except ImportError`, and a panic is not one.
+#
+# A venv built without `--system-site-packages` drops
+# `/usr/lib/python3/dist-packages` from `sys.path` altogether, which retires
+# the class rather than the two instances of it that happened to surface.
+#
+# `--timeout`/`--retries` because a bootstrap that dies on one slow read from
+# files.pythonhosted.org reads as a broken repository rather than a slow
+# network, and pip's default single retry does not separate those.
+BOOTSTRAP_VENV = .venv
+PIP_BOOTSTRAP = -m pip install --timeout 60 --retries 5
+
+bootstrap-python:
+	@set -e; \
+	  if python -c 'import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)'; then \
+	    bootstrap_python=python; \
+	    echo "bootstrap: installing into the active virtual environment."; \
+	  else \
+	    if [ -x '$(BOOTSTRAP_VENV)/bin/python' ]; then \
+	      echo "bootstrap: no active virtual environment; reusing $(BOOTSTRAP_VENV)."; \
+	    else \
+	      echo "bootstrap: no active virtual environment; creating $(BOOTSTRAP_VENV)."; \
+	      python -m venv '$(BOOTSTRAP_VENV)'; \
+	    fi; \
+	    bootstrap_python='$(BOOTSTRAP_VENV)/bin/python'; \
+	  fi; \
+	  $$bootstrap_python $(PIP_BOOTSTRAP) --upgrade pip; \
+	  $$bootstrap_python $(PIP_BOOTSTRAP) -e ".[local]"; \
+	  if [ "$$bootstrap_python" != python ]; then \
+	    echo ""; \
+	    echo "bootstrap: activate it before running the checks:"; \
+	    echo "    source $(BOOTSTRAP_VENV)/bin/activate"; \
+	  fi
+
+bootstrap-web:
+	@set -e; \
+	  lockfile_sha="$$(python -c "import hashlib, pathlib; print(hashlib.sha256(pathlib.Path('apps/web/package-lock.json').read_bytes()).hexdigest())")"; \
+	  if [ -f '$(BOOTSTRAP_WEB_STAMP)' ] && [ "$$(cat '$(BOOTSTRAP_WEB_STAMP)')" = "$$lockfile_sha" ]; then \
+	    echo "apps/web/node_modules already matches package-lock.json; skipping npm ci"; \
+	  else \
+	    npm ci --prefix apps/web; \
+	    printf '%s\n' "$$lockfile_sha" > '$(BOOTSTRAP_WEB_STAMP)'; \
+	  fi
 
 test-unit:
 	pytest tests/unit
