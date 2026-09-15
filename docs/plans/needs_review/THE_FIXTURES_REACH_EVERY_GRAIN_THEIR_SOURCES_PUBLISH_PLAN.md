@@ -1,6 +1,6 @@
 ---
 id: the-fixtures-reach-every-grain-their-sources-publish
-branch: claude/web-viz-metrics-checks-qttkzz
+branch: claude/branch-merge-audit-119eof
 depends_on:
   - deployment-observability
 parallel_safe: true
@@ -19,7 +19,7 @@ verify:
 - **Status:** Ready for review. The guard is implemented, four fixtures are
   widened to their sources' full range, two teardown defects found on the way
   are fixed, and the behavioral catalog is updated. Delivered as `e500d40` on
-  `claude/web-viz-metrics-checks-qttkzz`.
+  `claude/branch-merge-audit-119eof`.
 - **Last updated:** 2026-09-14
 - **Current milestone:** delivered.
 

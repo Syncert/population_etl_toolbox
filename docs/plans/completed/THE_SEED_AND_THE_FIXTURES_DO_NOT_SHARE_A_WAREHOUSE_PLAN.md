@@ -19,7 +19,7 @@ verify:
 - **Status:** Accepted. All four deliverables are implemented and verified
   against running stacks, and the three findings originally scoped out are
   fixed too. Delivered as `ed33276` on
-  `claude/web-viz-metrics-checks-qttkzz`, on top of `e500d40`; accepted by the
+  `claude/branch-merge-audit-119eof`, on top of `e500d40`; accepted by the
   repository owner on 2026-09-14.
 - **Last updated:** 2026-09-14
 - **Current milestone:** complete.
@@ -61,7 +61,7 @@ Measured on 2026-09-14, same host, database recreated from scratch for each run:
 | Tree | Tier | Result |
 | --- | --- | --- |
 | `origin/main` (762519a) | `tests/integration/api/test_catalog_serving_agreement.py` | **20 passed** |
-| branch `claude/web-viz-metrics-checks-qttkzz` (d86f9b0) | same | **1 failed, 9 errors**, 10 passed |
+| branch `claude/branch-merge-audit-119eof` (d86f9b0) | same | **1 failed, 9 errors**, 10 passed |
 | same branch, CI's bare-Postgres path | `tests/integration/api -m "integration and database and not slow"` | **76 passed** |
 
 The bisect is the seed, not the test file: checking out `origin/main`'s
