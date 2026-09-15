@@ -1,6 +1,9 @@
 # ADR-0005: Self-service accounts and the identity contract
 
-- **Status:** Proposed
+- **Status:** Proposed (revised 2026-09-15 after reviewer feedback: the
+  credential is a third-party OIDC provider rather than an emailed sign-in
+  link, and the browser holds a short-lived access token in memory beside an
+  `HttpOnly` refresh cookie rather than a token in `sessionStorage`)
 - **Date:** 2026-09-15
 - **Accepted:** not yet — `docs/plans/gates/SELF_SERVICE_IDENTITY_GATE.md` is
   the human review this document exists to be judged by
@@ -123,75 +126,108 @@ usually implies — see *What an account is allowed to be*.
 
 ## Decision
 
-### 1. Registration and credential: an emailed one-time link, and no password
+### 1. Registration and credential: a third-party OIDC provider, and no secret of our own
 
-**A visitor registers and signs in with an email address and nothing else.**
-The platform emails a single-use sign-in link; following it proves control of
-the mailbox and mints a session credential. There is no password, and
-therefore no password to store, leak, reuse, phish at scale, or reset.
+**A visitor signs in with an existing account at a single third-party OIDC
+provider.** The platform runs no password, sends no mail to authenticate, and
+holds no credential a leak of its database could present anywhere.
 
 What the database stores for identity:
 
-- the email address, case-folded, unique — the only personal datum the
-  platform holds;
-- for each outstanding sign-in attempt, `sha256(link_token)`, an expiry, and a
-  single-use marker — never the token itself;
-- nothing else. No password hash, no security questions, no recovery codes.
+- `(issuer, subject)` — the provider's stable identifier for that person,
+  unique together. This is the account's identity and the only thing sign-in
+  matches on.
+- the provider's email claim, **stored only when the provider marks it
+  verified**, for security-incident contact and for future notifications. An
+  unverified claim is discarded rather than stored, because an unverified
+  address is an assertion about someone else's mailbox.
+- nothing else. No password hash, no recovery codes, no profile fields
+  harvested from the provider.
 
-The link token is 256 bits of `secrets.token_urlsafe` entropy, valid **15
-minutes**, usable **once**, and invalidated when a newer one is requested for
-the same address. It is delivered only in the email body and is submitted to
-the API in a request body — never as a query parameter, because a token in a
-query string reaches server logs, `Referer` headers, and shared links. That is
-the same discipline `apps/web/lib/apiToken.ts` already states for the bearer
-token:
+The flow is the authorization-code flow with PKCE. The specifics are named
+because each is a way to get this wrong: a `state` parameter bound to the
+caller's session, a `nonce` echoed in the ID token, an exact-match redirect-URI
+allowlist, ID-token signature verification against the provider's JWKS with
+issuer, audience and expiry all checked, and a bounded clock skew. A library
+does this; the implementing plan uses one and tests the refusals rather than
+writing the protocol by hand.
+
+**Recovery is the provider's, and that is the point.** Account recovery is a
+hard problem with real support costs and real takeover risk, and a provider
+that does it for millions of accounts does it better than this project would.
+There is no recovery path here to build weaker than the front door, because
+there is no path here at all.
+
+**One provider at launch, and accounts are never auto-linked by email.** If a
+second provider is added later, a visitor who signs in with a new provider gets
+a new account, and connecting it to an existing one requires signing in with
+the original first. Merging on a matching email claim is the standard shape of
+this bug: a provider that asserts an address it never verified would take over
+the account that owns it. `(issuer, subject)` is the identity; the email is
+contact information, never a key.
+
+**Recognised, deliberate costs.** Signing in to a public-data site becomes
+conditional on holding an account with a particular company, which excludes
+some visitors outright and tells that company which of its users read this
+site. The front door also inherits the provider's availability — though a
+signed-in reader with a live session is unaffected by an outage, which is what
+§2's session lifetime buys. These are the reasons this was a close call
+against an emailed sign-in link; see *Rejected alternatives*.
+
+### 2. Session versus token: one boundary, a short-lived token in memory, and a refresh cookie scoped to one path
+
+**ADR-0003's `Authorization: Bearer` boundary is preserved for every resource
+route.** No route accepts a cookie as proof of identity. What changes from
+ADR-0003 is only where the browser keeps the credential between requests.
+
+A completed sign-in mints two things:
+
+- an **access token**, opaque and short-lived (15 minutes), returned in the
+  response body and held **only in JavaScript memory**. It is never written to
+  `sessionStorage`, `localStorage`, or anywhere else that survives the page.
+  Every authenticated request presents it as `Authorization: Bearer <token>`,
+  so `apps/api/auth.py::require_account` keeps hashing what was presented and
+  comparing digests in constant time.
+- a **refresh token**, in a cookie marked `HttpOnly`, `Secure`,
+  `SameSite=Strict`, and `Path=/api/v1/auth/refresh`. It is not readable by
+  script and is not sent to any other path.
+
+This is chosen over keeping the credential in `sessionStorage`, which is what
+the operator token does today. `HttpOnly` does not stop script injected on this
+origin from *acting* as the reader — the cookie rides along on requests that
+script makes. What it stops is **exfiltration**: the attacker cannot lift the
+credential and reuse it later from somewhere else. That downgrades a
+successful XSS from a permanent account compromise to abuse bounded by the
+page's lifetime, and the access token in memory dies with the tab and expires
+in fifteen minutes regardless. `apps/web/lib/apiToken.ts` already states the
+discipline this extends:
 
 > Never into a URL, a link, a referrer, or history. A token in a query string
 > travels into server logs and shared links; it reaches the API only as an
 > `Authorization` header.
 
-**The recovery path is the sign-in path.** This is the whole argument for the
-shape. There is no separate "forgot" flow to build, to test, or to leave
-subtly weaker than the front door, and there is no second secret whose loss
-strands a user's saved work. A reader who still controls the mailbox can
-always get back in; a reader who has lost the mailbox has lost the account,
-which is stated plainly to them at registration rather than discovered later.
+**What stops a cross-site request from spending the refresh cookie.** It is an
+ambient credential, so this must be answered rather than assumed, and four
+things answer it together:
 
-That last sentence is the honest cost, so it is written into the consequences
-rather than buried: **the mailbox is the single factor.** Whoever controls it
-controls the account and everything it owns. Mitigations that do not require
-inventing a second secret: sessions are revocable individually and in bulk
-(§2), a sign-in to an account with an active session notifies the address, and
-account deletion is not reachable from a link-only session without a fresh
-sign-in inside the last 10 minutes (§5).
+1. `SameSite=Strict` — the browser does not attach it to any request initiated
+   from another site, including top-level navigations.
+2. `Path=/api/v1/auth/refresh` — it is not attached to any other route, so the
+   entire CSRF surface is one endpoint rather than every mutating route. This
+   is the property that makes a cookie acceptable here at all.
+3. An `Origin` / `Sec-Fetch-Site` check on that one endpoint, refusing anything
+   not same-origin. `infra/web/nginx.conf` serves the application at `/` and
+   proxies `/api/` to the API on the same origin, so same-site is the real
+   deployment topology and not an assumption.
+4. Refresh **rotation with reuse detection**: each refresh returns a new
+   refresh token and invalidates the old one. A second use of an already-spent
+   token means it was captured, so the whole session family is revoked
+   immediately.
 
-**Recognised, deliberate cost: outbound email becomes a required deployment
-dependency.** The platform has none today. Sign-in cannot work without a
-deliverable path to a stranger's inbox, which means a mail provider, a
-credential for it, SPF/DKIM alignment, and bounce handling. An address that
-hard-bounces is marked undeliverable and stops being mailed, because a service
-that keeps mailing a dead address is how a sending reputation dies. This is
-new operational surface and the reviewer should weigh it against §*Rejected
-alternatives*, where OIDC trades it for a third-party dependency instead.
-
-### 2. Session versus token: sessions issue the same credential, they are not a second one
-
-**ADR-0003's single `Authorization: Bearer` boundary is preserved exactly. No
-cookie authenticates anything.**
-
-A successful sign-in returns an opaque **session token** in the response body.
-The web application holds it precisely where it holds the operator token
-today — in memory, and in `sessionStorage` only when the reader asked this
-browser to remember it — so `apps/web/lib/apiToken.ts` keeps its contract and
-its comment. Every authenticated request still presents
-`Authorization: Bearer <token>`, and `apps/api/auth.py::require_account` keeps
-hashing what was presented and comparing digests in constant time.
-
-Storage-wise a session is a credential row beside the operator ones, not a new
-mechanism: same `sha256` at rest, same revocation by stamping `revoked_at`,
-same refusal text. The existing `app_api.user_account` grows a credential
-child table so one account can hold several live sessions — a phone and a
-laptop — where an operator account holds exactly one long-lived token.
+A session lasts 30 days of inactivity with an absolute ceiling of 90 days
+since sign-in. Revocation is stamping `revoked_at`, exactly as today, and
+"sign out everywhere" revokes every credential for the account in one
+statement.
 
 ```sql
 -- illustrative; the implementing plan owns the real DDL
@@ -199,7 +235,8 @@ CREATE TABLE IF NOT EXISTS app_api.account_credential (
     credential_id   BIGSERIAL PRIMARY KEY,
     user_account_id BIGINT NOT NULL
         REFERENCES app_api.user_account (user_account_id) ON DELETE CASCADE,
-    kind            TEXT NOT NULL CHECK (kind IN ('operator', 'session')),
+    kind            TEXT NOT NULL CHECK (kind IN ('operator', 'access', 'refresh')),
+    session_family  UUID,                 -- NULL for 'operator'; shared by a session's tokens
     token_sha256    TEXT NOT NULL UNIQUE,
     issued_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at    TIMESTAMPTZ,
@@ -208,37 +245,26 @@ CREATE TABLE IF NOT EXISTS app_api.account_credential (
 );
 ```
 
-A session expires **30 days** after last use, with an absolute ceiling of
-**90 days** since issue, after which a fresh sign-in is required. An operator
-token has no expiry, which is what `kind` exists to distinguish.
-
-**On cookies, and what would stop a cross-site request from spending one:**
-nothing needs to, because there is no ambient credential. A cookie is attached
-by the browser to any request the browser is tricked into making, which is why
-a cookie session must be answered with `SameSite`, an anti-forgery token, or
-both. A credential the application must read out of storage and place into a
-header itself cannot be spent by a cross-origin form post or an `<img>` tag at
-all. Choosing the header is choosing not to have the CSRF class.
-
-The residual risk this leaves is **XSS**, and it is not hidden: script running
-on the application's own origin can read `sessionStorage` and mint requests.
-That risk exists identically today for the operator token, the application
-already serves a CSP with a nonce (`apps/web/scripts/check-csp-nonce.mjs`
-enforces it), and the honest comparison is that cookie sessions would trade
-this exposure for the CSRF one rather than eliminating it. `HttpOnly` cookies
-would genuinely beat `sessionStorage` on XSS — that is the one real argument
-against this choice, and it is recorded in *Rejected alternatives*.
+Only the digest is ever stored, for every kind, which is ADR-0003's rule
+unchanged. `session_family` is what makes reuse detection able to revoke a
+compromised session without touching the reader's other devices.
 
 **Failure text does not change.** `apps/api/auth.py`:
 
 > The failure text never distinguishes "no such token" from "revoked token" --
 > either would let a holder of a cancelled credential probe account state.
 
-Registration and sign-in inherit the same discipline one level up: requesting
-a sign-in link answers **`202 Accepted` whether or not the address has an
-account**. A response that distinguishes the two turns the endpoint into an
-oracle for "does this person use this site", which is a privacy leak about
-someone who never consented to be looked up.
+The same discipline applies one level up: the sign-in callback never reveals
+whether an account already existed for the identity it just authenticated. A
+response that distinguishes "welcome back" from "welcome" at the API layer
+would be an oracle for whether a given person uses this site.
+
+**Cost, stated plainly.** This is more machinery than a token in
+`sessionStorage`: rotation, reuse detection, and the race where two tabs
+refresh at once and one presents a token the other just spent. That race is
+why reuse detection must key on the family and tolerate a short grace window
+on the immediately-previous token, rather than treating every double-use as an
+attack and logging people out for using two tabs.
 
 ### 3. What an account is allowed to be: private by default, named only on publishing
 
@@ -250,13 +276,14 @@ them here would be the overreach ADR-0003 refused.
 
 Two identities, deliberately separate:
 
-- **Private identity** — the email address and `user_account_id`. Never
-  rendered to any other account, ever, under any feature in this ADR. It is
-  the login handle and nothing else.
+- **Private identity** — `(issuer, subject)`, the verified email if the
+  provider gave one, and `user_account_id`. Never rendered to any other
+  account, ever, under any feature in this ADR.
 - **Public display name** — nullable, absent until the account first publishes
-  something, and chosen at that moment rather than at registration. Asking a
-  stranger to pick a public name before they have anything public is how an
-  email address ends up as a default display name.
+  something, and chosen at that moment rather than at registration. Nothing
+  from the provider is used as a default: a provider's display name or
+  username is that company's identifier for a person, not a name they chose to
+  publish under here.
 
 `app_api.user_account.display_label` is `NOT NULL` today and is an **operator
 label**, not a public name — `provision_app_api.py --issue-token LABEL` sets
@@ -275,10 +302,11 @@ when that artifact was published**, snapshotted onto the published row rather
 than joined live from the account. Two reasons. A live join means renaming an
 account silently rewrites the attribution on everything it ever published,
 including things other people have cited. And a live join makes deletion a
-dangling reference, where a snapshot lets the published row stand or fall on
-its own terms (§5). Publishing itself — approval, visibility, unpublishing —
-is `publishing-approval-path`'s decision, not this one; this ADR fixes only
-*what identity is attached* when that plan attaches one.
+dangling reference, where a snapshot lets the published row be destroyed
+outright with nothing left pointing at a person (§5). Publishing itself —
+approval, visibility, unpublishing — is `publishing-approval-path`'s decision,
+not this one; this ADR fixes only *what identity is attached* when that plan
+attaches one.
 
 **ADR-0003's sharing rule is not superseded.** It says:
 
@@ -288,13 +316,22 @@ is `publishing-approval-path`'s decision, not this one; this ADR fixes only
 That remains true after this ADR. Accounts alone publish nothing. The rule
 changes in `publishing-approval-path` or not at all.
 
-### 4. Abuse and cost: registration is the first unauthenticated write
+### 4. Abuse and cost
 
 Everything unauthenticated the platform accepts today is a read over a
-read-only role. Requesting a sign-in link is a write (a row, plus an email the
-platform pays to send), triggerable by anyone, and directs traffic at a third
-party's inbox — so it is simultaneously a database-cost problem, a money
-problem, and a way to use this service to bother someone else.
+read-only role. The sign-in start and callback routes are the first
+unauthenticated writes, and account creation on first successful callback is
+the first row a stranger can cause to exist.
+
+**Delegating the credential also delegates most of the abuse problem.**
+Creating an account here requires completing a real authorization flow with a
+real provider account, and providers run their own abuse prevention at a scale
+this project never will. There is no mail to send, so this service cannot be
+turned into a way to bother a third party's inbox — the vector an emailed
+sign-in link would have introduced, and a reason this shape is cheaper to
+defend as well as cheaper to operate.
+
+What remains is bounded explicitly:
 
 **A third rate-limit bucket, `identity`.** `apps/api/ratelimit.py` has two:
 
@@ -305,21 +342,19 @@ problem, and a way to use this service to bother someone else.
 > and vice versa.
 
 The same argument gives identity its own bucket: a reader signing in must not
-be throttled by their own chart browsing, and a registration flood must not be
-payable out of the analysis budget. It is set far tighter than either — single
-digits per hour per client — because a human signs in rarely and a script does
-not.
+be throttled by their own chart browsing, and a callback flood must not be
+payable out of the analysis budget. It is set far tighter than either, because
+a human signs in rarely and a script does not.
 
-Per-client limiting alone is insufficient here, so two bounds sit beside it,
-keyed by the thing being attacked rather than by the attacker:
+Beside it:
 
-- **Per address:** at most a few outstanding sign-in links per address per
-  hour, regardless of who asked. This is the one that stops the service being
-  used to mail-bomb a stranger, and a per-IP bucket cannot do it.
-- **Per account creation:** a global ceiling per hour across the deployment,
-  so a distributed signup flood degrades into a queue rather than an unbounded
-  row count and an unbounded mail bill. Exceeding it answers the same stable
-  `429` shape with `Retry-After` that the limiter already answers.
+- **A global ceiling on account creation per hour** across the deployment, so
+  an attacker with many provider accounts degrades into a queue rather than an
+  unbounded row count. Exceeding it answers the same stable `429` shape with
+  `Retry-After` the limiter already answers.
+- **Per-account storage quotas** on saved analyses and evidence packets, so a
+  single account cannot consume the database. ADR-0004 already bounds a single
+  packet; this bounds how many.
 
 Two properties of the existing limiter are inherited and must be stated, not
 rediscovered:
@@ -338,24 +373,19 @@ and
 > client could mint a fresh budget per request by varying a header it
 > controls.
 
-For catalog reads a multiplied budget is a tuning error. For registration it
-is the difference between a bound and no bound, so **the identity routes
-require `API_TRUSTED_PROXY_IPS` to be configured**; unconfigured, per-client
-identity limiting is one budget for the entire internet and the deployment
-should be treated as having none.
-
-**An unverified address holds nothing.** An account exists only once a link is
-followed. A requested-but-never-completed sign-in is a short-lived row that
-expires, not an account — so a signup flood costs rows that reap themselves
-rather than permanent accounts.
+For catalog reads a multiplied budget is a tuning error. For the identity
+routes it is the difference between a bound and no bound, so **the identity
+routes require `API_TRUSTED_PROXY_IPS` to be configured**; unconfigured,
+per-client identity limiting is one budget for the entire internet and the
+deployment should be treated as having none.
 
 **What an operator can do.** Everything they can do today, unchanged: stamp
 `revoked_at` on a credential and it stops working immediately. Added at the
-account level: block an address from obtaining new links, and revoke every
-live session for an account in one statement. Both are `app_api` writes
-available to `provision_app_api.py`, which keeps being the reviewed, manual,
-privileged path — this ADR does not propose an admin UI, and an operator
-action remains a deliberate act rather than a button.
+account level: block an identity from signing in again, and revoke every live
+session for an account in one statement. Both are `app_api` writes available
+to `provision_app_api.py`, which keeps being the reviewed, manual, privileged
+path — this ADR does not propose an admin UI, and an operator action remains a
+deliberate act rather than a button.
 
 ### 5. Privacy, retention, deletion, and export
 
@@ -368,54 +398,62 @@ ADR-0003's answers are extended to the account itself rather than replaced:
 > account deletes its configurations in the same transaction. No analytics or
 > derived retention of user content.
 
-Extended:
+**Everything the platform holds about a person**, exhaustively: the
+`(issuer, subject)` pair, a verified email if the provider supplied one, the
+timestamps on their credentials, and the content they created. No IP log, no
+device fingerprint, no analytics profile, no third-party tracker, and nothing
+harvested from the provider beyond the two items named. The telemetry rule
+quoted in *Context* already forbids the request-level half of that, and this
+ADR adds no exception to it.
 
-- **Data held about a person** is the email address, the timestamps on their
-  credentials, and the content they created. No IP log, no device
-  fingerprint, no analytics profile, no third-party tracker. The telemetry
-  rule quoted above already forbids the request-level half of that.
-- **Deletion is a hard `DELETE` of the account row**, immediate and
-  idempotent, cascading to credentials, saved analyses, and evidence packets.
-  The cascade is already in the schema — `ON DELETE CASCADE` on both
-  `saved_analysis_configuration.owner_user_id` and
-  `evidence_packet.owner_user_id` — so this is the existing mechanism reaching
-  one level up, not a new one.
-- **Deletion requires a fresh proof of the mailbox**: a sign-in completed
-  within the last 10 minutes. A 30-day session is a convenience for saving
-  charts; it is not sufficient authority to destroy everything the account
-  owns from an unattended laptop.
-- **Account-level export, because per-resource `GET` is not one.** ADR-0003's
-  "`GET` is its own export" is true per configuration and useless to someone
-  who wants their work back and does not know their own ids. A single
-  authenticated `GET` returns one document containing the account's email,
-  creation date, every saved configuration, and every evidence packet,
-  verbatim. It is `private, no-store` like every other account route, and it
-  is the answer to "let me leave" that makes hard deletion defensible.
+**Deletion is a hard `DELETE` of the account row**, immediate and idempotent,
+cascading to credentials, saved analyses, evidence packets, and published
+artifacts. The cascade is already in the schema — `ON DELETE CASCADE` on both
+`saved_analysis_configuration.owner_user_id` and
+`evidence_packet.owner_user_id` — so this is the existing mechanism reaching
+one level up, not a new one.
 
-**What deletion does to content someone else is already reading.** This is the
-question the gate singles out, and the answer is a choice with a real cost
-either way.
+**Deletion removes published artifacts, and this is deliberate.** An artifact
+published by a deleted account stops being served and answers the `404` any
+unknown id answers, even where people were reading it. The alternative —
+keeping the artifact with its author redacted to "deleted account" — was
+rejected because it leaves a person who asked to be forgotten as the author of
+content the platform keeps serving. A platform that cannot honour "delete my
+account" without an asterisk should not offer the button. Because the display
+name is snapshotted onto the published row (§3) rather than joined, deleting
+the account destroys the name with the row and leaves nothing to redact.
 
-**Decision: deleting an account unpublishes and deletes its published
-artifacts.** A reader's link to a published artifact by a deleted account stops
-resolving, and answers the same `404` that any unknown id answers. The
-alternative — keeping the artifact and redacting its author to "deleted
-account" — was rejected because it means a person who asked to be deleted
-remains the author of content the platform keeps serving, and because the
-published row would reference an `owner_user_id` that no longer exists,
-turning the cascade above into a special case with a dangling pointer. A
-platform that cannot honour "delete my account" without an asterisk should not
-offer the button.
+**Deletion propagates to backups within their retention window.** A hard
+`DELETE` clears the live database, but point-in-time-recovery snapshots still
+contain the row, and a deletion promise that quietly expires at the backup
+boundary is not one. The contract: the deployment declares a backup retention
+window, deleted data is gone from production immediately and from every
+retained backup once that window has passed, and a restore performed inside
+the window re-applies the deletion log before the database serves traffic. The
+implementing plan owns the mechanism; this ADR fixes that the promise covers
+backups and that the window is a published number rather than an accident of
+configuration.
 
-The limit of that promise is stated rather than implied: **the platform can
-stop serving an artifact; it cannot recall a copy.** Anyone who already
-exported, screenshotted, or cited the artifact keeps what they have, and a
-search engine may hold a cached copy for some time. Deletion is a promise
-about this platform's future behaviour, not about the past.
+**What deletion cannot promise.** The platform can stop serving an artifact;
+it cannot recall a copy. Anyone who exported, screenshotted, or cited it keeps
+what they have, and a search engine may hold a cached copy for a while.
+Deletion is a promise about this platform's future behaviour, not about the
+past, and it is worded that way to a reader rather than implied.
 
-Because a snapshot name (§3) lives on the published row rather than being
-joined from the account, deleting the account removes the name with the row
-and leaves nothing to redact.
+**Deletion requires a fresh proof of identity** — a sign-in completed within
+the last 10 minutes. A 30-day session is a convenience for saving charts; it
+is not sufficient authority to destroy everything an account owns from an
+unattended laptop. It is immediate once confirmed, with no grace period and no
+soft-delete state: a "deleted" row awaiting a purge is exactly the residue
+this section exists to refuse.
+
+**Account-level export, because per-resource `GET` is not one.** ADR-0003's
+"`GET` is its own export" is true per configuration and useless to someone who
+wants their work back and does not know their own ids. A single authenticated
+`GET` returns one document containing everything the first paragraph of this
+section lists, verbatim. It is `private, no-store` like every other account
+route, and it is the answer to "let me leave" that makes immediate hard
+deletion defensible rather than punitive.
 
 ### 6. Migration: existing tokens keep working, and are not invalidated
 
@@ -427,10 +465,10 @@ expiry and no forced migration.** Concretely:
   `kind = 'operator'` credential carrying its current `token_sha256`,
   `created_at`, and `revoked_at`. The digest is copied, not regenerated — the
   tokens in circulation are the same tokens.
-- `email` and `public_display_name` are nullable, so an operator account has
-  neither and is valid without them. An operator account cannot sign in by
-  email until somebody attaches an address to it, which is an operator action
-  and is never automatic.
+- `issuer`, `subject`, `email` and `public_display_name` are all nullable, so
+  an operator account has none of them and is valid without them. An operator
+  account cannot sign in through a provider until somebody links an identity
+  to it, which is an operator action and never automatic.
 - `scripts/provision_app_api.py --issue-token` and `--revoke-token-label`
   keep working and keep meaning what they mean. Re-running
   `sql/bootstrap/002_app_api.sql` remains the migration mechanic, as it was
@@ -452,93 +490,108 @@ warehouse grant, no new role, and no new engine: `api_app_writer` already owns
 
 ## Rejected alternatives
 
-- **Email plus password.** The credential every visitor expects, and the
-  reason to reject it is that it does not remove the mailbox as the single
-  factor — it adds a secret *on top of* a mailbox-based reset path. The
-  platform would then store a password hash it did not need, inherit
-  credential-stuffing from reuse elsewhere, and still send exactly as much
-  email. Recovery would be a second flow with its own tokens and its own
-  chances to be weaker than the front door. Strictly more surface for no
-  additional security property, given that the reset path exists.
+- **An emailed single-use sign-in link.** The strongest alternative, and the
+  one this ADR originally proposed. It keeps identity first-party, needs no
+  third party, and makes recovery identical to sign-in. Rejected on failure
+  modes rather than on design: it makes outbound mail a hard dependency of the
+  front door, and mail is the least reliable channel available. A new sending
+  domain has no reputation, spam placement is silent to the operator and
+  indistinguishable from an outage to the reader, delivery latency races a
+  short link expiry, and the failure lands on first sign-in — the worst
+  possible moment. It also introduces a mail-bomb vector that needs its own
+  per-address bound, and trains readers to click sign-in links in email.
+  **This remains the substitution to make if the third-party dependency is
+  judged worse than the mail one; §2 onward is unaffected by the swap.**
 
-- **Third-party OIDC (sign in with GitHub/Google) now.** Genuinely
-  attractive, and the closest call here: it needs no outbound mail, and its
-  recovery is better than anything this project would build. Rejected for
-  first delivery because it makes signing in to a public-data site conditional
-  on holding an account with a particular company, tells that company which
-  of its users read this site, and couples the platform's front door to a
-  third party's availability and terms. ADR-0003's own sentence applies
-  unchanged — it "can be added behind the same `Authorization` boundary later
-  without moving stored data" — and §2 is designed so that adding it later is
-  one more way to mint a session credential, not a second authentication
-  mechanism. **If the reviewer prefers to trade the mail dependency for the
-  third-party one, this is the substitution to make, and only §1 changes.**
+- **Email plus password.** Does not remove the mailbox as the single factor —
+  it adds a secret *on top of* a mailbox-based reset path. The platform would
+  store a password hash it did not need, inherit credential-stuffing from
+  reuse elsewhere, and still send exactly as much email. Strictly more surface
+  for no additional security property.
 
-- **Cookie sessions with `HttpOnly`, `Secure`, `SameSite=Strict`.** The
-  strongest counter-proposal, because `HttpOnly` genuinely beats
-  `sessionStorage` against XSS, which is the residual risk §2 accepts.
-  Rejected because it introduces a second authentication mechanism beside
-  ADR-0003's `Authorization` boundary — every route would need to accept
-  either, and "either" is where authorization bugs live — and because an
-  ambient credential brings the CSRF class with it, requiring `SameSite` plus
-  an anti-forgery token on every mutating route. One boundary with a known,
-  already-present XSS exposure was judged simpler to keep correct than two
-  boundaries with a new class of failure between them.
+- **The credential in `sessionStorage`**, as the operator token is held today.
+  Simplest, with no cookie and therefore no CSRF surface at all, and it was
+  this ADR's original proposal. Rejected because script running on this origin
+  can read it and exfiltrate it, turning a successful XSS into a permanent
+  account compromise rather than a bounded one. The hybrid in §2 keeps the
+  single `Authorization` boundary for every resource route while putting the
+  long-lived credential out of script's reach, and confines the CSRF surface
+  it takes on to one path.
+
+- **A plain `HttpOnly` session cookie** with no access token. Simpler than the
+  hybrid and still unreadable by script, but the cookie becomes an ambient
+  credential on *every* route, so `SameSite` and an origin check would have to
+  be correct on every mutating endpoint rather than on one. It would also sit
+  beside ADR-0003's `Authorization` boundary rather than inside it, and every
+  route would have to accept either — which is where authorization bugs live.
 
 - **Signed stateless session tokens (JWT).** Rejected for the reason ADR-0003
-  already gave about bearer tokens, which applies with more force to sessions
-  that must be revocable from a "sign out everywhere" button: "revocation
-  would need a denylist table anyway; opaque hashed tokens are simpler and
-  strictly easier to revoke."
+  already gave, which applies with more force to sessions that must be
+  revocable from a "sign out everywhere" button and from reuse detection:
+  "revocation would need a denylist table anyway; opaque hashed tokens are
+  simpler and strictly easier to revoke."
 
-- **Anonymous accounts with no contact address at all** (a credential printed
-  once, like today's operator flow, but self-service). Maximally private, and
-  rejected because it makes saved work disposable by construction: losing the
-  printed credential loses the account with no path back, which is exactly
-  what the gate's checklist forbids.
+- **Anonymous accounts with no external identity at all** (a credential
+  printed once, like today's operator flow, but self-service). Maximally
+  private, and rejected because it makes saved work disposable by
+  construction: losing the printed credential loses the account with no path
+  back.
+
+- **Keeping published artifacts with the author redacted on deletion.**
+  Rejected in §5: it leaves a person who asked to be forgotten as the author
+  of content the platform keeps serving.
 
 - **A profile, a directory, or a display name at registration.** Rejected as
   the overreach ADR-0003 named. An account that only its owner can observe is
-  the smallest thing that unblocks saved analyses and evidence packets, and
-  the social surface can be justified separately when a plan needs it.
+  the smallest thing that unblocks saved analyses and evidence packets.
 
 ## Consequences
 
-**For `self-service-accounts`** (the implementing plan): registration and
-sign-in routes, the credential table and the migration of existing rows into
-it, session expiry, the `identity` rate-limit bucket plus the per-address and
-global bounds, account export, account deletion with a freshness requirement,
-and a mail-sending integration with bounce handling. Denial-path tests are the
-point of the plan, not a garnish: unverified sign-in, expired link, reused
-link, expired session, revoked session, cross-account access, the `202`
-non-oracle on both a known and an unknown address, and proof that no
-credential, code, or address reaches a log line, a cache key, or an error body.
+**For `self-service-accounts`** (the implementing plan): the OIDC client and
+its callback, the credential table and the migration of existing rows into it,
+access/refresh issuance with rotation and reuse detection, the `identity`
+rate-limit bucket and the account-creation ceiling, per-account storage
+quotas, account export, account deletion with a freshness requirement, and the
+backup-purge mechanism §5 commits to. Denial-path tests are the point of the
+plan, not a garnish: a tampered `state`, a replayed `nonce`, an unregistered
+redirect URI, an ID token with a bad signature or a wrong audience or an
+expired `exp`, an expired access token, a revoked session, a reused refresh
+token revoking its family, two tabs refreshing concurrently *not* revoking
+anything, cross-account access, and proof that no token, code, or address
+reaches a log line, a cache key, or an error body.
 
 **For `publishing-approval-path`:** it inherits `public_display_name`, the
-snapshot-at-publish rule, and the unpublish-on-delete rule, and it owns
+snapshot-at-publish rule, and the delete-on-account-deletion rule, and it owns
 everything else about publishing.
 
-**For the deployment:** one new required dependency (outbound email with a
-credential), one configuration value that stops being optional
-(`API_TRUSTED_PROXY_IPS`, per §4), and no new role, schema, engine, or
-warehouse object. `BETA_RESET_REINGESTION.md` gains the re-run of
-`002_app_api.sql`, which it already describes as the migration mechanic.
+**For the deployment:** an OIDC client registration and its secret; one
+configuration value that stops being optional (`API_TRUSTED_PROXY_IPS`, §4); a
+declared backup retention window (§5); and **no mail dependency** — the stored
+email is contact-of-last-resort, and sending to it is a future need rather
+than a precondition for sign-in. No new role, schema, engine, or warehouse
+object. `BETA_RESET_REINGESTION.md` gains the re-run of `002_app_api.sql`,
+which it already describes as the migration mechanic.
 
-**For readers:** a visitor can hold an account, keep their own work, get it
-all back in one request, and destroy it in one request. What the platform
-knows about them is an email address and what they chose to create.
+**For readers:** a visitor can hold an account without inventing another
+password, keep their own work, get all of it back in one request, and destroy
+all of it in one request. What the platform knows about them is a provider
+identifier, possibly an email address, and what they chose to create — and
+what it keeps after deletion is nothing.
 
 **Superseded:** ADR-0003's sentence "No self-service signup, no passwords, no
-OAuth in this iteration" — self-service signup is now in scope, by the
-mechanism ADR-0003 itself pointed at. Nothing else in ADR-0003 or ADR-0004 is
-superseded; ownership scoping, optimistic concurrency, the `private, no-store`
-answer, hard deletion, the read-only warehouse boundary, and the sharing
-non-goal all survive this ADR intact.
+OAuth in this iteration" — self-service signup through OIDC is now in scope,
+by the mechanism ADR-0003 itself pointed at. ADR-0003's implicit assumption
+that the browser credential lives in `sessionStorage` is narrowed by §2: the
+`Authorization` boundary is unchanged, but a self-service session keeps its
+long-lived half in an `HttpOnly` cookie. Nothing else in ADR-0003 or ADR-0004
+is superseded; ownership scoping, optimistic concurrency, the
+`private, no-store` answer, hard deletion, the read-only warehouse boundary,
+and the sharing non-goal all survive this ADR intact.
 
 **Corrected in passing:** ADR-0003 says "revocation is deleting the token
-row", but `apps/api/auth.py` and `app_api.user_account` implement revocation
-as stamping `revoked_at`, and `provision_app_api.py --revoke-token-label` says
-so: "Stamps ``revoked_at``. The credential stops working immediately; the
+row", but `apps/api/auth.py`, `app_api.user_account`, and
+`provision_app_api.py --revoke-token-label` all stamp `revoked_at` instead:
+"Stamps ``revoked_at``. The credential stops working immediately; the
 account's configurations are left intact until the account is deleted."
 Stamping is the better behaviour — it keeps an audit trail and prevents a
 digest being reissued — and this ADR records it as the contract. Deleting the

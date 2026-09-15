@@ -101,34 +101,74 @@ supposed to put to a human.
 546 lines at `docs/decisions/0005-self-service-accounts.md`, in `Proposed`
 status. The six answers, in the order Scope asks them:
 
-1. **Credential.** An emailed single-use sign-in link; no password. The
-   database holds a case-folded unique email and `sha256(link_token)` with a
-   15-minute expiry, and never a presentable secret. **Recovery is the sign-in
-   path** — there is no second flow to build weaker than the front door and no
-   second secret whose loss strands saved work.
-2. **Session versus token.** ADR-0003's single `Authorization: Bearer`
-   boundary is preserved exactly; a session *issues* that credential rather
-   than being a second mechanism. No cookie authenticates anything, so the
-   gate's cross-site question is answered by construction: there is no ambient
-   credential for a cross-site request to spend.
+1. **Credential.** A third-party OIDC provider, one at launch; no password
+   and no mail. The database holds `(issuer, subject)` and the provider's
+   email claim only when the provider marks it verified. **Recovery is the
+   provider's**, so there is no recovery path here to build weaker than the
+   front door. Accounts are never auto-linked by a matching email claim.
+2. **Session versus token.** ADR-0003's `Authorization: Bearer` boundary is
+   preserved for every resource route. The browser holds a 15-minute access
+   token in JavaScript memory only, beside a refresh token in an `HttpOnly`,
+   `Secure`, `SameSite=Strict` cookie scoped to one path, with rotation and
+   reuse detection. The gate's cross-site question is answered by four things
+   together: `SameSite=Strict`, the path scope, an origin check on that one
+   endpoint, and family revocation on reuse.
 3. **What an account may be.** Private by default — no directory, no profile,
    no way for one account to learn another exists. A public display name is
    nullable and chosen at first publish, kept separate from the existing
    operator `display_label`, and snapshotted onto the published row.
 4. **Abuse and cost.** A third `identity` rate-limit bucket beside `catalog`
-   and `analysis`, plus a per-address bound (the one that stops the service
-   being used to mail-bomb a stranger, which a per-IP bucket cannot do) and a
-   global per-hour ceiling on account creation.
+   and `analysis`, a global per-hour ceiling on account creation, and
+   per-account storage quotas. Delegating the credential delegates most of the
+   abuse problem: creating an account requires completing a real flow with a
+   real provider account, and there is no mail to send, so the service cannot
+   be turned into a way to bother a third party's inbox.
 5. **Privacy, retention, deletion, export.** ADR-0003's answers extended to
    the account: hard delete, immediate, cascading; an account-level export,
-   because per-resource `GET` is not one; and deletion unpublishes and deletes
-   published artifacts, with the limit of that promise stated — the platform
-   can stop serving a copy, not recall one.
+   because per-resource `GET` is not one; deletion removes published
+   artifacts even where people were reading them; **deletion propagates to
+   backups within a declared retention window**; and the limit of the promise
+   is stated — the platform can stop serving a copy, not recall one.
 6. **Migration.** Existing operator tokens keep working unchanged, with no
    expiry and no forced migration; the digest is copied, not regenerated, so
    the tokens in circulation stay the same tokens.
 
-## The decision the reviewer should weigh first
+## Reviewer decisions taken (2026-09-15)
+
+The ADR was revised after review. Three questions were put to the reviewer and
+answered; the document now records the answers rather than the original
+recommendations.
+
+- **OIDC over an emailed sign-in link.** The reviewer judged OIDC cleaner and
+  less failure-prone, and that is right on failure modes rather than on
+  design: a provider outage is rare, loud, and someone else's to fix, while a
+  sign-in mail silently spam-foldered by a reputation-less new sending domain
+  is invisible to the operator, indistinguishable from an outage to the
+  reader, and lands on first sign-in. The emailed link is retained in
+  *Rejected alternatives* as the substitution to make if the third-party
+  dependency is later judged worse than the mail one.
+- **Hybrid token storage over `sessionStorage`.** `HttpOnly` does not stop an
+  XSS attacker from acting as the reader — the cookie rides along — but it
+  stops exfiltration, downgrading a permanent compromise to one bounded by the
+  page's lifetime. The access token in memory dies with the tab. The path
+  scope is what makes the cookie acceptable: the CSRF surface is one endpoint
+  rather than every mutating route. Confirmed against `infra/web/nginx.conf`,
+  which serves the app at `/` and proxies `/api/` on the same origin, so
+  `SameSite=Strict` needs no cross-site exemption.
+- **Honour deletion fully, and cover backups.** The reviewer was explicit that
+  no user data should remain, even at the cost of articles people visit. The
+  original §5 already deleted published artifacts but said nothing about
+  point-in-time-recovery snapshots, which would have made the promise true for
+  about a day and quietly false afterwards. §5 now commits to a declared
+  backup retention window and to re-applying the deletion log on a restore
+  inside it.
+- **Store the provider's email claim, verified only.** Kept for
+  security-incident contact and future notifications; an unverified claim is
+  discarded, because it is an assertion about someone else's mailbox. The
+  consequence is accepted explicitly: it is an identifying datum, so §5's
+  backup-purge promise has to cover it.
+
+## The original recommendation, superseded
 
 **Email-link versus third-party OIDC.** This was the closest call, and the ADR
 recommends the email link while recording OIDC as the substitution to make if
