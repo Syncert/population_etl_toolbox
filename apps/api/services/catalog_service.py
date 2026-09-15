@@ -182,6 +182,19 @@ def _publishes_value_status(source_code: str) -> bool:
     return dispatch is not None and dispatch.value_status_column is not None
 
 
+def _publishes_aligned_reduction(source_code: str) -> bool:
+    """Whether the per-geography reductions answer for this source.
+
+    ``analysis_ready`` decides both the analysis routes and
+    ``reduction_refusal``, so reading it here publishes the fact a client
+    needs before sending ``newest_per_geography`` or
+    ``newest_release_per_period`` -- parameters the route declares for every
+    source and the resource refuses for the stratified ones.
+    """
+    dispatch = OBSERVATION_DISPATCH.get(source_code)
+    return dispatch is not None and dispatch.analysis_ready
+
+
 def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListResponse:
     """Every completed source's reviewed capability entry, ordered by code."""
     operations = _versioned_get_operations(openapi_paths)
@@ -196,6 +209,9 @@ def list_source_capabilities(openapi_paths: dict[str, Any]) -> CapabilityListRes
             observation_filters=_observation_filters_for(discovery.source_code),
             observation_dimensions=_observation_dimensions_for(discovery.source_code),
             publishes_value_status=_publishes_value_status(discovery.source_code),
+            publishes_aligned_reduction=_publishes_aligned_reduction(
+                discovery.source_code
+            ),
         )
         for discovery in sorted(
             SOURCE_DISCOVERY.values(), key=lambda entry: entry.source_code
@@ -239,6 +255,12 @@ def get_metric_capability(
     # reason the dimensions are here: it describes the rows the warehouse
     # published, so it stays true of a retired measure's history as well.
     capability.publishes_value_status = _publishes_value_status(discovery.source_code)
+    # And whether its reads may ask for the aligned reduction. Like the two
+    # above this describes the source's published rows, so it stays true of a
+    # retired measure whose history a client still reads.
+    capability.publishes_aligned_reduction = _publishes_aligned_reduction(
+        discovery.source_code
+    )
     if is_retired(capability.freshness_state):
         # A retired measure keeps its catalog entry and its history; no route
         # answers its observations. Copying the source's routes and

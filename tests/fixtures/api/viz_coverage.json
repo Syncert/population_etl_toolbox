@@ -1,0 +1,1451 @@
+{
+  "advertised_geo_grains": {
+    "BLS": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "CDC": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "CENSUS_ACS": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "CENSUS_PEP": [
+      "COUNTY",
+      "NATIONAL",
+      "PLACE",
+      "STATE"
+    ],
+    "FBI_UCR": [
+      "AGENCY",
+      "NATIONAL",
+      "STATE"
+    ],
+    "FRED": [
+      "NATIONAL"
+    ],
+    "USDA_NASS": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ]
+  },
+  "capabilities": [
+    {
+      "datasets": [],
+      "display_name": "Bureau of Labor Statistics",
+      "observation_dimensions": [
+        "seasonal_adjustment_status",
+        "series_id"
+      ],
+      "observation_filters": [
+        "county_fips",
+        "geo_id",
+        "geo_level",
+        "state_fips",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/bls/observations/latest"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/bls/observations/timeseries"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/observations/timeseries"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": false,
+      "route_segment": "bls",
+      "served_by_neutral_routes": true,
+      "source_code": "BLS"
+    },
+    {
+      "datasets": [
+        "cdi",
+        "places_county"
+      ],
+      "display_name": "Centers for Disease Control and Prevention",
+      "observation_dimensions": [
+        "adjustment_status",
+        "asset_id",
+        "dataset_title",
+        "estimate_method",
+        "footnote_code",
+        "footnote_text",
+        "measure_label",
+        "population_18_plus",
+        "population_basis",
+        "strata",
+        "stratum_id",
+        "topic",
+        "total_population",
+        "value_type_label"
+      ],
+      "observation_filters": [
+        "adjustment_status",
+        "geo_id",
+        "geo_level",
+        "stratum_id",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment",
+            "dataset",
+            "geo_id",
+            "geo_type",
+            "limit",
+            "measure_id",
+            "offset",
+            "release",
+            "stratum_id",
+            "value_type_id",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/cdc/observations"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": "cdc",
+      "served_by_neutral_routes": true,
+      "source_code": "CDC"
+    },
+    {
+      "datasets": [],
+      "display_name": "Census American Community Survey",
+      "observation_dimensions": [
+        "dataset_code",
+        "variable_code"
+      ],
+      "observation_filters": [
+        "county_fips",
+        "geo_id",
+        "geo_level",
+        "state_fips",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/census/observations/latest"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/census/observations/timeseries"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/observations/timeseries"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": false,
+      "route_segment": "census",
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_ACS"
+    },
+    {
+      "datasets": [],
+      "display_name": "Census Population Estimates Program",
+      "observation_dimensions": [
+        "dataset_code",
+        "product_code",
+        "summary_level",
+        "value_source"
+      ],
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/pep/observations/latest"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/pep/observations/timeseries"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": false,
+      "route_segment": "pep",
+      "served_by_neutral_routes": true,
+      "source_code": "CENSUS_PEP"
+    },
+    {
+      "datasets": [
+        "summarized_violent_crime"
+      ],
+      "display_name": "Federal Bureau of Investigation Uniform Crime Reporting Program",
+      "observation_dimensions": [
+        "counted_entity_basis",
+        "geography_basis",
+        "max_data_month",
+        "measure_form",
+        "offense_code",
+        "offense_label",
+        "period",
+        "product_id",
+        "subject_code",
+        "subject_label",
+        "subject_type",
+        "ucr_program"
+      ],
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "subject_code",
+        "subject_type",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "FBI_UCR"
+    },
+    {
+      "datasets": [],
+      "display_name": "Federal Reserve Economic Data",
+      "observation_dimensions": [
+        "seasonal_adjustment_status",
+        "series_id"
+      ],
+      "observation_filters": [
+        "county_fips",
+        "geo_id",
+        "geo_level",
+        "state_fips",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/fred/observations/latest"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/fred/observations/timeseries"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/observations/latest"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        },
+        {
+          "parameters": [
+            "end_date",
+            "geo_id",
+            "limit",
+            "metric_code",
+            "offset",
+            "start_date"
+          ],
+          "path": "/api/v1/observations/timeseries"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": false,
+      "route_segment": "fred",
+      "served_by_neutral_routes": true,
+      "source_code": "FRED"
+    },
+    {
+      "datasets": [
+        "corn_survey_annual",
+        "soybeans_survey_annual",
+        "wheat_survey_annual",
+        "hay_survey_annual",
+        "corn_census_county"
+      ],
+      "display_name": "USDA National Agricultural Statistics Service",
+      "observation_dimensions": [
+        "class_desc",
+        "commodity_desc",
+        "county_fips",
+        "domain_desc",
+        "domaincat_desc",
+        "freq_desc",
+        "prodn_practice_desc",
+        "product_id",
+        "reference_period_desc",
+        "short_desc",
+        "state_fips",
+        "suppression_code",
+        "util_practice_desc",
+        "week_ending"
+      ],
+      "observation_filters": [
+        "county_fips",
+        "domain_desc",
+        "domaincat_desc",
+        "geo_id",
+        "geo_level",
+        "state_fips",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        },
+        {
+          "parameters": [],
+          "path": "/api/v1/usda-nass/measures"
+        },
+        {
+          "parameters": [
+            "agg_level_desc",
+            "class_desc",
+            "commodity_desc",
+            "domain_desc",
+            "domaincat_desc",
+            "freq_desc",
+            "geo_id",
+            "latest",
+            "limit",
+            "offset",
+            "product_id",
+            "release_watermark",
+            "short_desc",
+            "source_desc",
+            "state_fips",
+            "statisticcat_desc",
+            "unit_desc",
+            "value_status",
+            "year_end",
+            "year_start"
+          ],
+          "path": "/api/v1/usda-nass/observations"
+        },
+        {
+          "parameters": [
+            "agg_level_desc",
+            "commodity_desc",
+            "domain_desc",
+            "freq_desc",
+            "geo_id",
+            "limit",
+            "offset",
+            "product_id",
+            "source_desc",
+            "statisticcat_desc",
+            "unit_desc"
+          ],
+          "path": "/api/v1/usda-nass/series"
+        },
+        {
+          "parameters": [],
+          "path": "/api/v1/usda-nass/source-notes"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": "usda-nass",
+      "served_by_neutral_routes": true,
+      "source_code": "USDA_NASS"
+    }
+  ],
+  "drawable_tile_grains": [
+    "STATE",
+    "COUNTY"
+  ],
+  "surfaces": [
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {
+        "FRED": "source 'FRED' publishes NATIONAL, and the tile boundary draws only COUNTY, STATE: it has no spatial presentation"
+      },
+      "page": "/explore",
+      "required_filters": [
+        "geo_level"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_level",
+          "limit"
+        ]
+      },
+      "requires_drawable_grain": true,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.map",
+      "title": "the explorer's choropleth map",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/viewModes.ts",
+        "apps/web/components/ChoroplethMap.tsx"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/explore",
+      "required_filters": [
+        "geo_id"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_id",
+          "limit"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.trend",
+      "title": "the explorer's trend line",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/observationAccess.ts",
+        "apps/web/components/LineChart.tsx"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/explore",
+      "required_filters": [],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "limit",
+          "offset"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.table",
+      "title": "the explorer's observation table",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/explore",
+      "required_filters": [],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "limit",
+          "offset"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": true,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.export",
+      "title": "the explorer's CSV export",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/observationExport.ts"
+      ]
+    },
+    {
+      "application_paths": [
+        "/catalog/freshness",
+        "/catalog/metrics/{metric_code}"
+      ],
+      "capability_paths": [],
+      "declined_sources": {},
+      "page": "/explore, /quality",
+      "required_filters": [],
+      "required_parameters": {
+        "/catalog/freshness": []
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.quality",
+      "title": "the measure's freshness and provenance panel",
+      "web_modules": [
+        "apps/web/components/DataQualityExplorer.tsx",
+        "apps/web/lib/catalog.ts",
+        "apps/web/lib/dataQuality.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/distribution/bins"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)"
+      },
+      "page": "/explore",
+      "required_filters": [],
+      "required_parameters": {
+        "/distribution/bins": [
+          "metric_code",
+          "geo_level",
+          "bin_count"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "explorer.distribution",
+      "title": "the explorer's distribution histogram and legend bins",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/components/ChoroplethLegend.tsx"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations",
+          "/observations/releases"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/explore",
+      "required_filters": [],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "scope",
+          "release"
+        ],
+        "/observations/releases": [
+          "metric_code",
+          "limit",
+          "offset"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "explorer.as_released",
+      "title": "the explorer's as-released reading and release pin",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata"
+      },
+      "page": "/explore",
+      "required_filters": [
+        "geo_id"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "scope",
+          "newest_release_per_period"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "explorer.settled_history",
+      "title": "the explorer's settled trend",
+      "web_modules": [
+        "apps/web/components/SourceExplorerPage.tsx",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/comparison",
+          "/comparison/preflight"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)"
+      },
+      "page": "/compare",
+      "required_filters": [],
+      "required_parameters": {
+        "/comparison": [
+          "metric_code_a",
+          "metric_code_b",
+          "geo_level"
+        ],
+        "/comparison/preflight": [
+          "metric_code_a",
+          "metric_code_b"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "comparison.workspace",
+      "title": "the comparison workspace's scatter, table, map and export",
+      "web_modules": [
+        "apps/web/components/ComparisonWorkspace.tsx",
+        "apps/web/lib/comparison.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/workbench",
+      "required_filters": [
+        "geo_id"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_id",
+          "limit"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "workbench.series",
+      "title": "the workbench's multi-series line and bar chart",
+      "web_modules": [
+        "apps/web/components/WorkbenchPage.tsx",
+        "apps/web/lib/workbench.ts",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata"
+      },
+      "page": "/workbench",
+      "required_filters": [
+        "geo_level"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_level",
+          "newest_per_geography"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "workbench.cross_section",
+      "title": "the workbench's cross-sectional scatter",
+      "web_modules": [
+        "apps/web/components/WorkbenchPage.tsx",
+        "apps/web/lib/workbench.ts",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata"
+      },
+      "page": "/workbench",
+      "required_filters": [
+        "geo_level"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_level",
+          "scope",
+          "newest_release_per_period"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "workbench.heatmap",
+      "title": "the workbench's geography-by-period heatmap",
+      "web_modules": [
+        "apps/web/components/WorkbenchPage.tsx",
+        "apps/web/lib/workbench.ts",
+        "apps/web/lib/observationAccess.ts"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/comparison/correlation",
+          "/comparison/preflight"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)"
+      },
+      "page": "/workbench",
+      "required_filters": [],
+      "required_parameters": {
+        "/comparison/correlation": [
+          "metric_code_a",
+          "metric_code_b",
+          "geo_level"
+        ],
+        "/comparison/preflight": [
+          "metric_code_a",
+          "metric_code_b"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "workbench.correlation",
+      "title": "the workbench's correlation panel",
+      "web_modules": [
+        "apps/web/components/WorkbenchPage.tsx",
+        "apps/web/lib/workbench.ts",
+        "apps/web/components/CorrelationPanel.tsx"
+      ]
+    },
+    {
+      "application_paths": [],
+      "capability_paths": [
+        [
+          "/comparison/matrix"
+        ]
+      ],
+      "declined_sources": {
+        "CDC": "source 'CDC' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)"
+      },
+      "page": "/workbench",
+      "required_filters": [],
+      "required_parameters": {
+        "/comparison/matrix": [
+          "metric_codes",
+          "geo_level"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FRED"
+      ],
+      "surface_id": "workbench.matrix",
+      "title": "the workbench's correlation matrix",
+      "web_modules": [
+        "apps/web/components/WorkbenchPage.tsx",
+        "apps/web/lib/workbench.ts",
+        "apps/web/components/CorrelationMatrixChart.tsx"
+      ]
+    },
+    {
+      "application_paths": [
+        "/catalog/metrics/{metric_code}"
+      ],
+      "capability_paths": [
+        [
+          "/observations"
+        ]
+      ],
+      "declined_sources": {},
+      "page": "/profiles",
+      "required_filters": [
+        "geo_id"
+      ],
+      "required_parameters": {
+        "/observations": [
+          "metric_code",
+          "geo_id",
+          "limit"
+        ]
+      },
+      "requires_drawable_grain": false,
+      "requires_published_dimensions": false,
+      "served_sources": [
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS"
+      ],
+      "surface_id": "profiles.product",
+      "title": "the composed geography profile",
+      "web_modules": [
+        "apps/web/components/ProfileProduct.tsx",
+        "apps/web/lib/productTemplates.ts"
+      ]
+    }
+  ]
+}

@@ -5,6 +5,10 @@ import { describe, expect, test } from "vitest";
 
 // Covers: WEB-043 — a frontend fixture cannot describe a contract the API
 // does not serve.
+// Covers: WEB-103 — and that holds for a source's own declarations, not only
+// for its routes' parameters. A fixture that says a source reduces to one
+// value per geography when the API says it does not lets a suite watch a
+// screen send a request the resource answers with a 422.
 //
 // The suites' fake `/catalog/capabilities` responses decide what every
 // frontend test can observe, because the client sends only declared
@@ -91,6 +95,69 @@ describe("frontend capability fixtures describe the served contract", () => {
     expect(unserved).toEqual([
       "unit/explorer-sources.test.js: /api/v1/future/measures",
     ]);
+  });
+
+  test("no fixture claims a source reduces when the API says it does not", () => {
+    // `publishes_aligned_reduction` is a per-source fact the route's
+    // parameter list cannot express, and three screens read it before
+    // sending `newest_per_geography` or `newest_release_per_period`. A
+    // fixture that spells it wrong models a source the API does not serve:
+    // `true` where the API says false watches a screen send a request that
+    // 422s, and `false` where it says true hides a working presentation.
+    const reduces = new Map(
+      JSON.parse(
+        readFileSync(
+          join(FRONTEND_ROOT, "..", "fixtures", "api", "viz_coverage.json"),
+          "utf8",
+        ),
+      ).capabilities.map((entry) => [
+        entry.source_code,
+        entry.publishes_aligned_reduction,
+      ]),
+    );
+
+    const claims = [];
+    const walk = (directory) => {
+      for (const entry of readdirSync(directory)) {
+        const candidate = join(directory, entry);
+        if (statSync(candidate).isDirectory()) {
+          walk(candidate);
+          continue;
+        }
+        if (![".js", ".jsx"].includes(extname(candidate))) {
+          continue;
+        }
+        const source = readFileSync(candidate, "utf8");
+        const literal =
+          /source_code:\s*["`']([A-Z_]+)["`'],[\s\S]{0,400}?publishes_aligned_reduction:\s*(true|false)/g;
+        for (const match of source.matchAll(literal)) {
+          claims.push({
+            file: candidate.slice(FRONTEND_ROOT.length + 1),
+            sourceCode: match[1],
+            claimed: match[2] === "true",
+          });
+        }
+      }
+    };
+    walk(FRONTEND_ROOT);
+
+    // The guard must have read something: a fixture shape change that stopped
+    // matching would make the assertion below pass over an empty list.
+    expect(claims.length).toBeGreaterThanOrEqual(15);
+
+    const wrong = claims
+      .filter(
+        (claim) =>
+          reduces.has(claim.sourceCode) &&
+          reduces.get(claim.sourceCode) !== claim.claimed,
+      )
+      .map(
+        (claim) =>
+          `${claim.file}: ${claim.sourceCode} claims ` +
+          `publishes_aligned_reduction: ${claim.claimed}, the API serves ` +
+          `${reduces.get(claim.sourceCode)}`,
+      );
+    expect(wrong).toEqual([]);
   });
 });
 

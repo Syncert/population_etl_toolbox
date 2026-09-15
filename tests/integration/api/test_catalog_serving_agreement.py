@@ -40,6 +40,9 @@ from tests.support.capture_seed import (
     seed_geography,
 )
 from tests.support.postgres import PostgresHookStub, PostgresTestConfig
+from tests.support.source_grains import (
+    ADVERTISED_GEO_GRAINS as SOURCE_ADVERTISED_GEO_GRAINS,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -1044,40 +1047,14 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
 # DB-044 — the fixture corpus reaches every grain each source can publish
 # ---------------------------------------------------------------------------
 
-#: What each registered source's pipeline can put in ``valid_geo_grains``, and
-#: the reviewed declaration that says so.
+#: What each registered source's pipeline can put in ``valid_geo_grains``.
 #:
-#: Held here rather than read back from the warehouse, for the reason the
-#: dispatch registry is a reviewed constant: a set discovered from the catalog
-#: at test time is the set the fixtures just produced, so it agrees with any
-#: corpus and proves nothing about the one it was given.
-#:
-#: * ``BLS`` — ``bls/geography.py`` parses a LAUS area code to ``state`` or
-#:   ``county`` and to nothing else ("LAUS has no national series"); the
-#:   national CPS/CES series carry ``us:1``, which
-#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``.
-#: * ``CDC`` — ``cdc/registry.py`` declares ``geography_levels`` per asset:
-#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
-#: * ``CENSUS_ACS`` — ``census_acs/config.py`` declares
-#:   ``geo_levels = ["us", "state", "county"]``.
-#: * ``CENSUS_PEP`` — ``silver_pep/transform.py`` maps summary levels 010,
-#:   040, 050 and 162 to nation, state, county and place, and every other
-#:   level to ``unsupported``, which reaches no served row.
-#: * ``FBI_UCR`` — ``fbi_ucr/registry.py`` closes ``subject_type`` to
-#:   ``national``, ``state`` and ``agency``.
-#: * ``FRED`` — ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
-#:   ``'NATIONAL'`` as literals. FRED is national by construction.
-#: * ``USDA_NASS`` — migration 012 closes ``geo_type`` to ``nation``,
-#:   ``state``, ``county`` and ``unsupported``.
-ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
-    "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
-    "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
-    "FRED": frozenset({"NATIONAL"}),
-    "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-}
+#: Declared in ``tests/support/source_grains``, which carries the per-source
+#: evidence for every entry. Two tiers read it now -- this one, and the web
+#: visualization coverage matrix, which asks whether any grain a source
+#: publishes is one the tile boundary can draw -- and a second copy would be a
+#: second answer to the same question.
+ADVERTISED_GEO_GRAINS = SOURCE_ADVERTISED_GEO_GRAINS
 
 
 def _published_grains(client: TestClient, source_code: str) -> dict[str, list[str]]:

@@ -963,8 +963,21 @@ DISPATCH_NEUTRAL_PATHS: tuple[str, ...] = (
 #: Version-relative paths of the aligned analysis routes (API-005). They
 #: answer only for ``analysis_ready`` dispatch entries; a stratified source
 #: gets a preflight explanation instead of a silently collapsed number.
+#:
+#: ``/comparison/correlation`` and ``/comparison/matrix`` belong here for the
+#: same reason the two routes beside them do: both refuse an incomparable
+#: pair with the rules ``/comparison`` refuses it by, and both reduce each
+#: side to one value per geography, which is the reduction ``analysis_ready``
+#: governs. They were served and declared for nobody, so a client discovering
+#: the API could not learn they exist -- and the workbench, which calls both,
+#: inferred them from ``/comparison/preflight`` being declared instead. An
+#: inference is not a contract: restricting either route for one source would
+#: have left the workbench offering it, and the empty answer would have
+#: reached the reader as a blank panel (API-138).
 ANALYSIS_NEUTRAL_PATHS: tuple[str, ...] = (
     "/comparison",
+    "/comparison/correlation",
+    "/comparison/matrix",
     "/comparison/preflight",
     "/distribution/bins",
 )

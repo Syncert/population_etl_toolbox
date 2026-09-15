@@ -29,6 +29,7 @@ const capabilities = {
       display_name: "Census American Community Survey",
       route_segment: "census",
       served_by_neutral_routes: true,
+      publishes_aligned_reduction: true,
       observation_filters: ["geo_id", "geo_level", "state_fips"],
       observation_routes: [
         {

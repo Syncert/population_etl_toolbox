@@ -25,6 +25,7 @@ import {
   buildLatestObservationRequest,
   buildNewestValueRequest,
   buildSettledHistoryRequest,
+  buildSettledSurfaceRequest,
   buildReleaseListRequest,
   collapseToNewestRelease,
   describeHistoryLoad,
@@ -763,6 +764,10 @@ describe("newest per geography", () => {
       served_by_neutral_routes: true,
       datasets: [],
       observation_filters: ["geo_id", "geo_level", "year_from", "year_to"],
+      // Census PEP is analysis-ready, so the resource answers the reduction
+      // it declares. Both halves are the contract: the route's parameter and
+      // the source's own `publishes_aligned_reduction` (API-139).
+      publishes_aligned_reduction: true,
       observation_routes: [
         {
           path: "/api/v1/observations",
@@ -858,6 +863,59 @@ describe("newest per geography", () => {
     });
     expect(request.params.newest_per_geography).toBeUndefined();
   });
+
+  // Covers: WEB-103 — a route parameter is not a source capability. The
+  // route declares `newest_per_geography` for all seven sources, because a
+  // route declares one parameter set; the resource refuses it for the three
+  // whose rows carry strata, naming what a reduction would collapse. Reading
+  // only the parameter is how the workbench's cross-section and the
+  // explorer's settled trend each sent a request the API had already said it
+  // would not answer, and drew nothing.
+  test("a stratified source declares the parameter and is still not sent it", () => {
+    const stratified = buildExplorerSources([
+      {
+        source_code: "CDC",
+        display_name: "Centers for Disease Control and Prevention",
+        route_segment: "cdc",
+        served_by_neutral_routes: true,
+        datasets: [],
+        observation_filters: ["geo_id", "geo_level", "stratum_id"],
+        // The whole served parameter set, exactly as the route declares it
+        // for every source — and no aligned reduction, exactly as CDC's
+        // dispatch entry declares it.
+        publishes_aligned_reduction: false,
+        observation_routes: [
+          {
+            path: "/api/v1/observations",
+            parameters: servedParameters("/api/v1/observations"),
+          },
+        ],
+      },
+    ])[0];
+
+    expect(stratified.publishesAlignedReduction).toBe(false);
+    expect(stratified.supportsNewestPerGeography).toBe(false);
+    expect(stratified.supportsSettledHistory).toBe(false);
+
+    const request = buildLatestObservationRequest(stratified, {
+      metricCode: "CDC:cdi:ALC1_1",
+      geoLevel: "COUNTY",
+      newestPerGeography: true,
+    });
+    expect(request.params.newest_per_geography).toBeUndefined();
+    expect(
+      buildSettledHistoryRequest(stratified, {
+        metricCode: "CDC:cdi:ALC1_1",
+        geoId: "state:55|county:025",
+      }),
+    ).toBeNull();
+    expect(
+      buildSettledSurfaceRequest(stratified, {
+        metricCode: "CDC:cdi:ALC1_1",
+        geoLevel: "COUNTY",
+      }),
+    ).toBeNull();
+  });
 });
 
 // Covers: WEB-036 — a bounded read is never presented as a whole answer. A
@@ -875,6 +933,7 @@ describe("the newest published value for one geography", () => {
       served_by_neutral_routes: true,
       datasets: [],
       observation_filters: ["geo_id", "geo_level", "year_from", "year_to"],
+      publishes_aligned_reduction: true,
       observation_routes: [
         {
           path: "/api/v1/observations",
@@ -904,6 +963,7 @@ describe("the newest published value for one geography", () => {
       served_by_neutral_routes: true,
       datasets: [],
       observation_filters: ["geo_id"],
+      publishes_aligned_reduction: true,
       observation_routes: [
         {
           path: "/api/v1/observations",
@@ -1001,6 +1061,7 @@ describe("a settled history is the resource's answer", () => {
       served_by_neutral_routes: true,
       datasets: [],
       observation_filters: ["geo_id", "geo_level"],
+      publishes_aligned_reduction: true,
       observation_routes: [
         {
           path: "/api/v1/observations",
@@ -1018,6 +1079,7 @@ describe("a settled history is the resource's answer", () => {
       served_by_neutral_routes: true,
       datasets: [],
       observation_filters: ["geo_id", "geo_level"],
+      publishes_aligned_reduction: true,
       observation_routes: [
         {
           path: "/api/v1/observations",

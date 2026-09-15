@@ -87,6 +87,16 @@ export interface SourceCapability {
    * absent from the series rather than present and marked.
    */
   publishes_value_status?: boolean | null;
+  /**
+   * Whether a read of this source may ask for the aligned per-geography
+   * reduction — `newest_per_geography`, `newest_release_per_period`
+   * (API-139). Declared here for WEB-057's reason and read for a concrete
+   * one: the route declares both parameters for every source, and the
+   * resource refuses them for the sources whose rows carry strata, so a
+   * client reading only the route's parameters sends a request it is told,
+   * in a 422, that it should never have sent.
+   */
+  publishes_aligned_reduction?: boolean | null;
   observation_routes?: ObservationRouteCapability[] | null;
   [key: string]: unknown;
 }

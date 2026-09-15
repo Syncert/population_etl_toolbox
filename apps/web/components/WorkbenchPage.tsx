@@ -989,15 +989,43 @@ export default function WorkbenchPage() {
     return refusals;
   }, [sources]);
 
+  /**
+   * Which correlation route each source's capability entry declares.
+   *
+   * Separate from `analysisRefusals` above because they are separate
+   * declarations: the refusal says the aligned analysis surface declines the
+   * source, and this says which of the two correlation routes it publishes
+   * for the ones it does not decline. Inferring the second from the first is
+   * what API-138 ended.
+   */
+  const declaredCorrelationRoutes = useMemo(() => {
+    const declared: Record<string, { correlation: boolean; matrix: boolean }> = {};
+    for (const source of sources) {
+      declared[source.sourceCode] = {
+        correlation: source.servesCorrelation,
+        matrix: source.servesMatrix,
+      };
+    }
+    return declared;
+  }, [sources]);
+
   const correlationOffer = useMemo(
     () =>
       correlationEligibility({
         series,
         analysisRefusals,
+        declaredRoutes: declaredCorrelationRoutes,
         preflightBlocking: preflightModel.blocking,
         preflightRead: Boolean(preflight) || !pair,
       }),
-    [series, analysisRefusals, preflightModel, preflight, pair],
+    [
+      series,
+      analysisRefusals,
+      declaredCorrelationRoutes,
+      preflightModel,
+      preflight,
+      pair,
+    ],
   );
 
   /**

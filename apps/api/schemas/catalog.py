@@ -136,6 +136,23 @@ class SourceCapability(BaseModel):
     #: charting a monthly history has to know before it draws a line across
     #: the gap (API-127).
     publishes_value_status: bool = False
+    #: Whether a read of this source may ask for the aligned per-geography
+    #: reduction -- ``newest_per_geography`` and ``newest_release_per_period``
+    #: on ``/observations``.
+    #:
+    #: Both parameters are declared by the route for every source, because a
+    #: route declares one parameter set; whether a *source* reduces to one
+    #: value per geography is a different fact, and it is the one
+    #: ``reduction_refusal`` answers with a 422. A client reading only the
+    #: route's parameters therefore learned that CDC, FBI UCR and USDA NASS
+    #: accept a reduction they refuse -- and the explorer's settled trend, the
+    #: workbench's cross-section and its geography-by-period heatmap each sent
+    #: one and drew nothing (API-139).
+    #:
+    #: Derived from the dispatch entry's ``analysis_ready``, which is the same
+    #: declaration the refusal is read from, so the published capability and
+    #: the served behaviour cannot disagree.
+    publishes_aligned_reduction: bool = False
 
 
 class CapabilityListResponse(BaseModel):
@@ -163,6 +180,12 @@ class MetricCapability(MetricCatalog):
     #: the same declaration the source resource publishes and on both for the
     #: reason API-119 records.
     publishes_value_status: bool = False
+    #: Whether a read of this metric may ask for the aligned per-geography
+    #: reduction, the same declaration the source resource publishes and on
+    #: both for the reason API-119 records. A client that discovered a metric
+    #: and sent ``newest_per_geography`` on the strength of the route's
+    #: declared parameters met a 422 it had no way to predict (API-139).
+    publishes_aligned_reduction: bool = False
 
 
 class SourceFreshness(BaseModel):
