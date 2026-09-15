@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from uuid import UUID, uuid4
 
+from psycopg2.errors import ForeignKeyViolation
 from psycopg2.extensions import cursor
 
 from data_ingestion_toolbox.silver_ref.geography_contract import canonical_geo_id
@@ -105,6 +107,44 @@ def seed_geography(
         (resolved_geo_sk, vintage, capture_id, name, checksum),
     )
     return resolved_geo_sk
+
+
+def preexisting_geographies(db_cursor: cursor, geo_ids: Sequence[str]) -> set[str]:
+    """Which of these geographies the warehouse already holds.
+
+    A fixture that seeds a grain seeds a geography to hang it on, and the
+    national one is ``us:1`` for every source that publishes a national row.
+    The first fixture to want it creates it and the rest find it; whichever
+    runs last must not delete what it did not create. Pair this with
+    ``delete_shared_geographies`` at teardown.
+    """
+    db_cursor.execute(
+        "SELECT geo_id FROM silver_ref.dim_geo_entity WHERE geo_id = ANY(%s)",
+        (list(geo_ids),),
+    )
+    return {row[0] for row in db_cursor.fetchall()}
+
+
+def delete_shared_geographies(
+    db_cursor: cursor, geo_ids: Sequence[str], preexisting: set[str]
+) -> None:
+    """Delete the geographies this fixture created, and only those.
+
+    A geography another source still references stays in place rather than
+    aborting the caller's cleanup transaction, which is why each delete gets
+    its own savepoint.
+    """
+    for index, geo_id in enumerate(geo_ids):
+        if geo_id in preexisting:
+            continue
+        savepoint = f"shared_geo_{index}"
+        db_cursor.execute(f"SAVEPOINT {savepoint}")
+        try:
+            delete_geography(db_cursor, geo_id)
+        except ForeignKeyViolation:
+            db_cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        else:
+            db_cursor.execute(f"RELEASE SAVEPOINT {savepoint}")
 
 
 def delete_geography(db_cursor: cursor, geo_id: str) -> None:

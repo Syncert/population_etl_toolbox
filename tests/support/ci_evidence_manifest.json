@@ -93,6 +93,11 @@
       "workflow": "e2e-performance.yml",
       "job": "e2e-performance",
       "name": "Bounded E2E and performance evidence"
+    },
+    {
+      "workflow": "live-deployment-smoke.yml",
+      "job": "live-deployment",
+      "name": "Live deployment smoke"
     }
   ],
   "architecture_path_owners": {

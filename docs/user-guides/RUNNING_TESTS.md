@@ -199,6 +199,18 @@ Safety guards reject a non-loopback Redis URL, Redis credentials, the default
 Redis database, incomplete PostgreSQL settings, or a database name that does
 not end in `_test`.
 
+This compose database is **not** the database CI grades against. The
+`api-integration` workflow uses a bare Postgres service container and lets the
+fixtures apply `sql/bootstrap/warehouse_manifest.json` themselves, while the
+compose stack applies the same manifest through initdb mounts and additionally
+seeds `tests/sql/martin_seed.sql` for the Martin and deployment tiers. The
+schemas agree — DB-002 checks the mount list against the manifest — but the
+content does not, so a local red that CI does not show is worth reading as a
+real difference rather than a flake. DB-045 keeps that difference to the one
+seed the base stack's own healthcheck needs: a tier that wants its own content
+mounts it in its own overlay, the way `docker-compose.smoke.yml` mounts
+`tests/sql/frontend_smoke_seed.sql`.
+
 ### Without a container runtime
 
 Compose is one way to supply those services, not a requirement of the tier.

@@ -152,7 +152,7 @@ def test_the_warehouse_database_is_read_from_the_environment_in_one_place() -> N
     error when it is -- just a connection to a database that does not exist.
     """
     readers = sorted(
-        str(path.relative_to(ROOT))
+        path.relative_to(ROOT).as_posix()
         for path in (ROOT / "src").rglob("*.py")
         if f'"{WAREHOUSE_DATABASE_VARIABLE}"' in path.read_text(encoding="utf-8")
     )

@@ -5,9 +5,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from apps.api.dependencies import get_db_session_dep
-from apps.api.schemas import HealthResponse, ReadinessResponse
+from apps.api.dependencies import db_service_unavailable, get_db_session_dep
+from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.schemas import ContentHealthResponse, HealthResponse, ReadinessResponse
 from apps.api.schemas.errors import ErrorDetail
+from apps.api.services.content_health import grade_content, read_source_content
 from data_ingestion_toolbox.config import get_settings
 
 #: Mounted under the versioned prefix, so ``/api/v1/health`` answers as an
@@ -18,6 +20,16 @@ from data_ingestion_toolbox.config import get_settings
 router = APIRouter(tags=["health"])
 
 probe_router = APIRouter(tags=["health"])
+
+#: The content report, deliberately a router of its own rather than another
+#: route on ``router`` above. ``apps/api/ratelimit.py`` derives its exempt
+#: paths from *every* route the health routers serve -- the web application
+#: calls health on each page load, and a tight budget made the health check
+#: the thing that failed first (API-101). This resource reads the warehouse,
+#: so inheriting that exemption would publish an unauthenticated, unmetered
+#: grouped scan. It is a warehouse read, and it is metered and declared as
+#: one.
+content_router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -76,3 +88,29 @@ def readiness_probe(
         database=database_state,
         cache=cache_state,
     )
+
+
+@content_router.get("/health/content", response_model=ContentHealthResponse)
+def content_health(
+    db: Session = Depends(get_db_session_dep),
+) -> ContentHealthResponse:
+    """What this deployment can actually serve, per source.
+
+    Readiness answers whether the process can reach its database. This
+    answers the question a blank dashboard asks: of the sources this API
+    declares observation routes for, which ones publish a measure a client
+    could ask for right now.
+
+    Always ``200`` while the warehouse is reachable, ``empty`` and
+    ``degraded`` included. The states are the report, not a refusal: a caller
+    cannot read a body the resource declined to send, and content is not a
+    reason to take the process out of the load balancer -- see the module
+    docstring in ``apps/api/services/content_health.py``. An unreachable
+    warehouse is the one case this cannot report on, and it answers the same
+    sanitized 503 every other warehouse read does.
+    """
+    try:
+        rows = read_source_content(db)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    return ContentHealthResponse(**grade_content(OBSERVATION_DISPATCH, rows))

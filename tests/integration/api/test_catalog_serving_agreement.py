@@ -30,7 +30,15 @@ from apps.api.main import app
 from apps.api.registry import OBSERVATION_DISPATCH
 from data_ingestion_toolbox.fred.gold_fred import transform as fred_gold_transform
 from data_ingestion_toolbox.glossary.harvest import Publisher, harvest_publisher
-from tests.support.capture_seed import delete_geography, seed_geography
+from data_ingestion_toolbox.usda_nass.registry import get_product as get_nass_product
+from tests.support import fbi_release
+from tests.support import usda_nass as nass_support
+from tests.support.capture_seed import (
+    delete_geography,
+    delete_shared_geographies,
+    preexisting_geographies,
+    seed_geography,
+)
 from tests.support.postgres import PostgresHookStub, PostgresTestConfig
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
@@ -41,10 +49,79 @@ pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 #: ``metric_code``, so it is deterministic rather than lucky.
 SWEEP_SAMPLE = 15
 
-ACS_TABLE = "B99997"
 ACS_DATASET = "acs5"
+
+#: The narrow measure: one state row, for DB-028's derived-not-declared proof.
+ACS_TABLE = "B99997"
 ACS_VINTAGE = 2093
 ACS_PERIOD = "2093-01-01"
+ACS_PERIOD_END = "2093-12-31"
+ACS_TIME_SK = 20930101
+
+#: The wide measure: one row at every grain Census ACS ingests (DB-044). Its
+#: own table, vintage and time row, because it runs beside the narrow one and
+#: two fixtures sharing either would make the first teardown the second's
+#: foreign-key violation.
+ACS_GRAIN_TABLE = "B99996"
+ACS_GRAIN_VINTAGE = 2092
+ACS_GRAIN_PERIOD = "2092-01-01"
+ACS_GRAIN_PERIOD_END = "2092-12-31"
+ACS_GRAIN_TIME_SK = 20920101
+
+#: Each row's ``geo_level`` is the source's own spelling -- ``census_acs``
+#: requests ``us``, ``state`` and ``county`` and stores what it requested.
+#: ``gold_glossary.geo_grain`` is what turns those into the vocabulary words
+#: the catalog publishes, so writing NATIONAL here instead would test this
+#: fixture rather than that function.
+ACS_STATE_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "state:95",
+        "geo_level": "state",
+        "geography": {
+            "geo_type": "state",
+            "state_fips": "95",
+            "name": "Catalog agreement state",
+        },
+        "state_fips": "95",
+        "county_fips": None,
+        "estimate_value": 1234,
+    },
+)
+ACS_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "us:1",
+        "geo_level": "us",
+        "geography": {"geo_type": "nation", "name": "Catalog agreement nation"},
+        "state_fips": None,
+        "county_fips": None,
+        "estimate_value": 331449281,
+    },
+    {
+        "geo_id": "state:93",
+        "geo_level": "state",
+        "geography": {
+            "geo_type": "state",
+            "state_fips": "93",
+            "name": "Catalog agreement grain state",
+        },
+        "state_fips": "93",
+        "county_fips": None,
+        "estimate_value": 4321,
+    },
+    {
+        "geo_id": "state:93|county:001",
+        "geo_level": "county",
+        "geography": {
+            "geo_type": "county",
+            "state_fips": "93",
+            "county_fips": "001",
+            "name": "Catalog agreement grain county",
+        },
+        "state_fips": "93",
+        "county_fips": "001",
+        "estimate_value": 567,
+    },
+)
 
 FRED_VINTAGE = 2094
 FRED_PERIOD = "2094-01-01"
@@ -150,33 +227,46 @@ def api_client(
         engine.dispose()
 
 
-@pytest.fixture
-def published_acs_metric(
+def _publish_acs_variable(
     postgres_connection_factory: Callable[[], connection],
+    *,
+    table_id: str,
+    vintage: int,
+    period_start: str,
+    period_end: str,
+    time_sk: int,
+    grain_rows: tuple[dict[str, object], ...],
 ) -> Iterator[str]:
-    """Publish one ACS metric the way production does, end to end.
+    """Publish one ACS variable at the given grains, the way production does.
 
     Silver rows go through the real gold refresh procedures, and the real
     glossary harvest reads ``gold_census.metric_publisher`` into the catalog.
     Neither side is told what the other spelled, which is the whole point: the
-    code this fixture yields is the catalog's own, and the serving rows are
-    whatever the refresh procedure composed.
+    code this yields is the catalog's own, and the serving rows are whatever
+    the refresh procedure composed.
+
+    Every value that identifies state is a parameter rather than a constant,
+    because two of these run in the same test: sharing a table, a vintage or a
+    time row would make one fixture's teardown the other's foreign-key
+    violation.
     """
     token = uuid4().hex[:8].upper()
-    variable_code = f"{ACS_TABLE}_{token}E"
-    geo_id = "state:95"
+    variable_code = f"{table_id}_{token}E"
+    geo_ids = tuple(str(row["geo_id"]) for row in grain_rows)
 
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as database_cursor:
-            _seed_time(database_cursor, 20930101, ACS_PERIOD)
-            geo_sk = seed_geography(
-                database_cursor,
-                geo_type="state",
-                state_fips="95",
-                vintage=ACS_VINTAGE,
-                name="Catalog agreement state",
-            )
+            _seed_time(database_cursor, time_sk, period_start)
+            preexisting_geo = preexisting_geographies(database_cursor, geo_ids)
+            geo_sk_by_id = {
+                str(row["geo_id"]): seed_geography(
+                    database_cursor,
+                    vintage=vintage,
+                    **row["geography"],  # type: ignore[arg-type]
+                )
+                for row in grain_rows
+            }
             database_cursor.execute(
                 """
                 INSERT INTO gold_census.dim_acs_table (
@@ -188,7 +278,7 @@ def published_acs_metric(
                 ON CONFLICT (dataset_code, vintage_year, table_id) DO NOTHING
                 RETURNING acs_table_sk
                 """,
-                (ACS_DATASET, ACS_VINTAGE, ACS_TABLE),
+                (ACS_DATASET, vintage, table_id),
             )
             row = database_cursor.fetchone()
             if row is None:
@@ -197,7 +287,7 @@ def published_acs_metric(
                     SELECT acs_table_sk FROM gold_census.dim_acs_table
                     WHERE dataset_code = %s AND vintage_year = %s AND table_id = %s
                     """,
-                    (ACS_DATASET, ACS_VINTAGE, ACS_TABLE),
+                    (ACS_DATASET, vintage, table_id),
                 )
                 row = database_cursor.fetchone()
             acs_table_sk = row[0]
@@ -209,32 +299,40 @@ def published_acs_metric(
                 ) VALUES (%s, %s, %s, %s, 'Total population',
                           'Total population', 'Total population', 'ESTIMATE')
                 """,
-                (acs_table_sk, ACS_DATASET, ACS_VINTAGE, variable_code),
+                (acs_table_sk, ACS_DATASET, vintage, variable_code),
             )
-            database_cursor.execute(
-                """
-                INSERT INTO silver_census.fact_demographics (
-                    time_sk, geo_sk, duration_start, duration_end,
-                    estimate_year, dataset, table_id, variable_code,
-                    geo_level, geo_id, state_fips, estimate_value,
-                    margin_of_error, variable_label, load_batch_id
-                ) VALUES (20930101, %s, %s, '2093-12-31', %s, %s, %s, %s,
-                          'state', %s, '95', 1234, 12,
-                          'Total population', gen_random_uuid())
-                """,
-                (
-                    geo_sk,
-                    ACS_PERIOD,
-                    ACS_VINTAGE,
-                    ACS_DATASET,
-                    ACS_TABLE,
-                    variable_code,
-                    geo_id,
-                ),
-            )
+            for grain_row in grain_rows:
+                database_cursor.execute(
+                    """
+                    INSERT INTO silver_census.fact_demographics (
+                        time_sk, geo_sk, duration_start, duration_end,
+                        estimate_year, dataset, table_id, variable_code,
+                        geo_level, geo_id, state_fips, county_fips,
+                        estimate_value, margin_of_error, variable_label,
+                        load_batch_id
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                              %s, %s, %s, %s, %s, 12,
+                              'Total population', gen_random_uuid())
+                    """,
+                    (
+                        time_sk,
+                        geo_sk_by_id[str(grain_row["geo_id"])],
+                        period_start,
+                        period_end,
+                        vintage,
+                        ACS_DATASET,
+                        table_id,
+                        variable_code,
+                        grain_row["geo_level"],
+                        grain_row["geo_id"],
+                        grain_row["state_fips"],
+                        grain_row["county_fips"],
+                        grain_row["estimate_value"],
+                    ),
+                )
             database_cursor.execute(
                 "CALL gold_census.refresh_dashboard_serving_layer_acs(%s, %s, TRUE)",
-                (ACS_PERIOD, "2093-12-31"),
+                (period_start, period_end),
             )
         writer.commit()
     finally:
@@ -294,16 +392,56 @@ def published_acs_metric(
                 )
                 database_cursor.execute(
                     "DELETE FROM gold_census.dim_acs_table WHERE table_id = %s",
-                    (ACS_TABLE,),
+                    (table_id,),
                 )
-                delete_geography(database_cursor, geo_id)
+                delete_shared_geographies(database_cursor, geo_ids, preexisting_geo)
                 database_cursor.execute(
-                    "DELETE FROM silver_ref.dim_time WHERE time_sk = 20930101"
+                    "DELETE FROM silver_ref.dim_time WHERE time_sk = %s", (time_sk,)
                 )
                 _remove_registration(database_cursor, registered_before)
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+@pytest.fixture
+def published_acs_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one ACS metric from a single state row.
+
+    Deliberately narrower than the source: ACS ingests us, state and county,
+    and this seeds one state. That is what lets DB-028 tell a derived
+    ``valid_geo_grains`` from a declared one -- a view declaring its grains
+    from the dataset code would advertise NATIONAL and COUNTY here, and the
+    catalog would carry two grains nothing serves. The fixture that covers the
+    source's whole range is ``published_acs_grain_metric``.
+    """
+    yield from _publish_acs_variable(
+        postgres_connection_factory,
+        table_id=ACS_TABLE,
+        vintage=ACS_VINTAGE,
+        period_start=ACS_PERIOD,
+        period_end=ACS_PERIOD_END,
+        time_sk=ACS_TIME_SK,
+        grain_rows=ACS_STATE_ROWS,
+    )
+
+
+@pytest.fixture
+def published_acs_grain_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one ACS metric at every grain the source ingests (DB-044)."""
+    yield from _publish_acs_variable(
+        postgres_connection_factory,
+        table_id=ACS_GRAIN_TABLE,
+        vintage=ACS_GRAIN_VINTAGE,
+        period_start=ACS_GRAIN_PERIOD,
+        period_end=ACS_GRAIN_PERIOD_END,
+        time_sk=ACS_GRAIN_TIME_SK,
+        grain_rows=ACS_GRAIN_ROWS,
+    )
 
 
 @pytest.fixture
@@ -511,31 +649,264 @@ def test_no_acs_serving_row_survives_under_the_abandoned_spelling(
         database_connection.close()
 
 
+# ---------------------------------------------------------------------------
+# The three sources the sweep below could not reach (DB-043)
+#
+# `test_every_registered_source_answers_each_current_catalog_code` walked the
+# reviewed dispatch registry and skipped every source whose catalog held no
+# current code. On the warehouse CI builds that was BLS, FBI UCR and USDA
+# NASS -- three of seven, and between them two of the three identity
+# strategies' widest cases: FBI's `identity_columns` pair over a participation
+# basis, and NASS's five-column tuple. The sweep read green having exercised
+# neither, and the skip was silent, so nothing said which sources it had not
+# checked.
+#
+# These publish one current code each, so the sweep can require every
+# registered source rather than accepting whichever happened to be seeded.
+# FBI UCR and USDA NASS run their real pipelines from reviewed captures --
+# both already have support modules that replay, transform, publish, and
+# remove all of their own state -- because a fixture that hand-wrote gold
+# rows for them would be asserting agreement between two things this file
+# wrote. BLS has no such module, so its rows are seeded here, through the
+# publisher's series arm (the branch that publishes a series whose program no
+# measure identity claims).
+# ---------------------------------------------------------------------------
+
+
+#: One served row at each grain BLS publishes (DB-044). ``bls/geography.py``
+#: parses a LAUS area code to ``state`` or ``county`` and to nothing else --
+#: "LAUS has no national series" -- while the national CPS/CES series carry
+#: ``us:1``, which ``gold_bls.fact_bls_observation`` reads as NATIONAL. These
+#: rows go into the serving relations already carrying the vocabulary word,
+#: which is what the gold view puts there in production; the publisher still
+#: derives the catalog's grains from them rather than being told.
+BLS_GRAIN_ROWS: tuple[tuple[str, str, int], ...] = (
+    ("us:1", "NATIONAL", 1234),
+    ("state:93", "STATE", 567),
+    ("state:93|county:001", "COUNTY", 89),
+)
+
+
+@pytest.fixture
+def published_bls_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one BLS metric, and serve one row under the code it publishes."""
+    token = uuid4().hex[:8].upper()
+    program_code = f"S{token[:2]}"
+    series_id = f"SWEEP{token}"
+    metric_code = f"BLS:{series_id}"
+    registered_before = _registration_state(postgres_connection_factory, "BLS")
+
+    writer = postgres_connection_factory()
+    try:
+        with writer.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_survey (
+                    program_code, survey_name, observation_basis
+                ) VALUES (%s, 'Catalog agreement survey', 'JOBS')
+                """,
+                (program_code,),
+            )
+            database_cursor.execute(
+                """
+                INSERT INTO gold_bls.dim_bls_series (
+                    bls_survey_sk, program_code, series_id, series_title,
+                    measure_category, value_type, unit_of_measure,
+                    seasonal_adjustment_status
+                )
+                SELECT bls_survey_sk, %s, %s, 'Catalog agreement series',
+                       'EMPLOYMENT', 'LEVEL', 'persons', 'Seasonally Adjusted'
+                FROM gold_bls.dim_bls_survey WHERE program_code = %s
+                """,
+                (program_code, series_id, program_code),
+            )
+            # The reporting table and the latest projection carry the same
+            # rows: the publisher reads the latest projection for the grains it
+            # advertises, and the sweep reads whichever the dispatch selects.
+            for relation in ("rpt_bls_observations", "mv_bls_latest"):
+                for geo_id, geo_level, value in BLS_GRAIN_ROWS:
+                    database_cursor.execute(
+                        f"""
+                        INSERT INTO gold_bls.{relation} (
+                            source_code, observation_date, duration_start,
+                            duration_end, time_sk, as_of_date, updated_at,
+                            geo_id, geo_level, series_id, program_code,
+                            series_title, value, units,
+                            seasonal_adjustment_status, metric_code,
+                            metric_display_name
+                        ) VALUES (
+                            'BLS', %s, %s, %s, 20970101, %s, %s, %s,
+                            %s, %s, %s, 'Catalog agreement series', %s,
+                            'persons', 'Seasonally Adjusted', %s,
+                            'Catalog agreement series'
+                        )
+                        """,
+                        (
+                            BLS_PERIOD_START,
+                            BLS_PERIOD_START,
+                            BLS_PERIOD_END,
+                            BLS_PERIOD_END,
+                            f"{BLS_PERIOD_END} 00:00:00+00",
+                            geo_id,
+                            geo_level,
+                            series_id,
+                            program_code,
+                            value,
+                            metric_code,
+                        ),
+                    )
+        writer.commit()
+    finally:
+        writer.close()
+
+    harvest_publisher(postgres_connection_factory, Publisher("gold_bls"))
+    _assert_catalog_published(postgres_connection_factory, "BLS", series_id)
+
+    try:
+        yield metric_code
+    finally:
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as database_cursor:
+                database_cursor.execute(
+                    "DELETE FROM gold_glossary.dim_metric_catalog "
+                    "WHERE source_code = 'BLS' AND source_object_key = %s",
+                    (series_id,),
+                )
+                for relation in ("mv_bls_latest", "rpt_bls_observations"):
+                    database_cursor.execute(
+                        f"DELETE FROM gold_bls.{relation} WHERE series_id = %s",
+                        (series_id,),
+                    )
+                database_cursor.execute(
+                    "DELETE FROM gold_bls.dim_bls_series WHERE series_id = %s",
+                    (series_id,),
+                )
+                database_cursor.execute(
+                    "DELETE FROM gold_bls.dim_bls_survey WHERE program_code = %s",
+                    (program_code,),
+                )
+                _remove_registration(database_cursor, registered_before, "BLS")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+@pytest.fixture
+def published_fbi_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one FBI UCR metric by running its real release pipeline."""
+    for factory in fbi_release.reviewed_warehouse(postgres_connection_factory):
+        captured = fbi_release.persist_fixture_release(factory)
+        fbi_release.run_pipeline(factory, captured)
+        harvest_publisher(factory, Publisher("gold_fbi"))
+        yield _one_published_code(factory, "FBI_UCR")
+
+
+@pytest.fixture
+def published_nass_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish one USDA NASS metric by running its real release pipeline."""
+    factory = nass_support.reviewed_warehouse(postgres_connection_factory, request)
+    product = get_nass_product("corn_survey_annual")
+    nass_support.run_to_gold(
+        factory, product, nass_support.load_product_fixture(product.product_id)
+    )
+    harvest_publisher(factory, Publisher("gold_nass"))
+    return _one_published_code(factory, "USDA_NASS")
+
+
+def _assert_catalog_published(
+    factory: Callable[[], connection], source_code: str, source_object_key: str
+) -> None:
+    """Fail loudly when a harvest published nothing for a seeded measure."""
+    reader = factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = %s AND source_object_key = %s
+                """,
+                (source_code, source_object_key),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, (
+        f"the harvest published no {source_code} catalog row for "
+        f"{source_object_key!r}; the fixture proves nothing about the sweep"
+    )
+
+
+def _one_published_code(factory: Callable[[], connection], source_code: str) -> str:
+    """The first current catalog code the harvest published for a source."""
+    reader = factory()
+    try:
+        with reader.cursor() as database_cursor:
+            database_cursor.execute(
+                """
+                SELECT metric_code FROM gold_glossary.dim_metric_catalog
+                WHERE source_code = %s AND freshness_state = 'current'
+                ORDER BY metric_code LIMIT 1
+                """,
+                (source_code,),
+            )
+            published = database_cursor.fetchone()
+    finally:
+        reader.close()
+    assert published is not None, (
+        f"the harvest published no current {source_code} catalog row, so the "
+        "sweep would skip that source exactly as it used to"
+    )
+    return str(published[0])
+
+
 def test_every_registered_source_answers_each_current_catalog_code(
-    api_client: TestClient, published_acs_metric: str, published_cdc_metric: str
+    api_client: TestClient,
+    published_acs_metric: str,
+    published_cdc_metric: str,
+    published_fred_metric: str,
+    published_pep_metric: str,
+    published_bls_metric: str,
+    published_fbi_metric: str,
+    published_nass_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
     Source-agnostic by construction: the sources come from the reviewed
     observation-dispatch registry, never from a list written here.
 
-    A source whose catalog holds no ``current`` code contributes nothing, not
-    because an unresolvable code is tolerable but because an unpopulated
-    warehouse publishes no codes at all -- that is a warehouse with no content
-    for the source, not a source advertising something it cannot serve. The
-    final assertion is what stops that from becoming a vacuous pass: at least
-    one registered source must actually have been exercised, and the fixture
-    above guarantees Census ACS is one of them on any warehouse.
+    Covers: DB-043 -- and every registered source is exercised, not whichever
+    the warehouse happened to carry.
+
+    This sweep used to `continue` past a source whose catalog held no current
+    code, on the reasoning that an unpopulated warehouse is not a source
+    advertising what it cannot serve. That reasoning is sound and the
+    behaviour was not: the skip was silent, so a sweep that checked three of
+    seven sources reported the same green as one that checked all seven, and
+    nothing named the four it had not looked at. On the warehouse CI builds,
+    BLS, FBI UCR and USDA NASS were skipped every run -- including FBI's
+    `identity_columns` pair over a participation basis and NASS's five-column
+    tuple, the two widest cases of the strategy DB-032 had already caught once.
+
+    Every registered source now has a fixture that publishes one current code,
+    so a source contributing nothing is a failure that names it rather than a
+    silent pass.
     """
     unresolvable: list[str] = []
-    exercised: list[str] = []
+    exercised: dict[str, list[str]] = {}
 
     for source_code in sorted(OBSERVATION_DISPATCH):
-        codes = _current_catalog_codes(api_client, source_code)
-        if not codes:
-            continue
-        for metric_code in codes[:SWEEP_SAMPLE]:
-            exercised.append(f"{source_code}:{metric_code}")
+        for metric_code in _current_catalog_codes(api_client, source_code)[
+            :SWEEP_SAMPLE
+        ]:
+            exercised.setdefault(source_code, []).append(metric_code)
             if _answers(api_client, metric_code) < 1:
                 unresolvable.append(
                     f"{source_code} publishes current catalog code "
@@ -544,15 +915,33 @@ def test_every_registered_source_answers_each_current_catalog_code(
                 )
 
     assert not unresolvable, "\n".join(unresolvable)
-    assert exercised, (
-        "no registered source published a current catalog code, so this guard "
-        "proved nothing; the warehouse under test carries no catalog content"
+
+    # The registry is the list, so a source added to the dispatch without a
+    # fixture fails here rather than quietly joining the ones nobody checks.
+    unexercised = sorted(set(OBSERVATION_DISPATCH) - set(exercised))
+    assert not unexercised, (
+        f"these registered sources published no current catalog code, so the "
+        f"sweep proved nothing about them: {unexercised}. Every source needs a "
+        "fixture that publishes one; a source that cannot get one is a source "
+        "this guard does not cover."
     )
-    # Census ACS is identified by a metric-code column. CDC is identified by
-    # `identity_columns` -- three lineage keys composed into a row predicate --
-    # and no fixture published one, so on a warehouse with no CDC content this
-    # sweep skipped that whole strategy while reading green (DB-032).
-    assert f"CDC:{published_cdc_metric}" in exercised, exercised
+
+    # And the codes the fixtures published are among the codes swept: a source
+    # whose catalog carried thousands of other rows could otherwise satisfy
+    # the check above without the identity strategy under test being read.
+    for source_code, metric_code in (
+        ("CENSUS_ACS", published_acs_metric),
+        ("CDC", published_cdc_metric),
+        ("FRED", published_fred_metric),
+        ("CENSUS_PEP", published_pep_metric),
+        ("BLS", published_bls_metric),
+        ("FBI_UCR", published_fbi_metric),
+        ("USDA_NASS", published_nass_metric),
+    ):
+        assert _answers(api_client, metric_code) >= 1, (
+            f"{source_code}'s fixture published '{metric_code}', which "
+            "/api/v1/observations answers with no rows"
+        )
 
 
 def _current_catalog_grains(
@@ -652,6 +1041,146 @@ def test_every_published_grain_of_a_current_code_answers_in_the_vocabulary(
 
 
 # ---------------------------------------------------------------------------
+# DB-044 — the fixture corpus reaches every grain each source can publish
+# ---------------------------------------------------------------------------
+
+#: What each registered source's pipeline can put in ``valid_geo_grains``, and
+#: the reviewed declaration that says so.
+#:
+#: Held here rather than read back from the warehouse, for the reason the
+#: dispatch registry is a reviewed constant: a set discovered from the catalog
+#: at test time is the set the fixtures just produced, so it agrees with any
+#: corpus and proves nothing about the one it was given.
+#:
+#: * ``BLS`` — ``bls/geography.py`` parses a LAUS area code to ``state`` or
+#:   ``county`` and to nothing else ("LAUS has no national series"); the
+#:   national CPS/CES series carry ``us:1``, which
+#:   ``gold_bls.fact_bls_observation`` reads as ``NATIONAL``.
+#: * ``CDC`` — ``cdc/registry.py`` declares ``geography_levels`` per asset:
+#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
+#: * ``CENSUS_ACS`` — ``census_acs/config.py`` declares
+#:   ``geo_levels = ["us", "state", "county"]``.
+#: * ``CENSUS_PEP`` — ``silver_pep/transform.py`` maps summary levels 010,
+#:   040, 050 and 162 to nation, state, county and place, and every other
+#:   level to ``unsupported``, which reaches no served row.
+#: * ``FBI_UCR`` — ``fbi_ucr/registry.py`` closes ``subject_type`` to
+#:   ``national``, ``state`` and ``agency``.
+#: * ``FRED`` — ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
+#:   ``'NATIONAL'`` as literals. FRED is national by construction.
+#: * ``USDA_NASS`` — migration 012 closes ``geo_type`` to ``nation``,
+#:   ``state``, ``county`` and ``unsupported``.
+ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
+    "BLS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
+    "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
+    "FRED": frozenset({"NATIONAL"}),
+    "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+}
+
+
+def _published_grains(client: TestClient, source_code: str) -> dict[str, list[str]]:
+    """Every grain the source's current catalog publishes, and a code for each.
+
+    Unlike ``_current_catalog_grains`` this does not sample: a grain seeded by
+    one fixture among many would fall outside the first ``SWEEP_SAMPLE`` codes
+    and the coverage question would answer itself wrongly.
+    """
+    codes_by_grain: dict[str, list[str]] = {}
+    for metric_code, grains in _current_catalog_grains(client, source_code).items():
+        for grain in grains:
+            codes_by_grain.setdefault(grain, []).append(metric_code)
+    return codes_by_grain
+
+
+def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
+    api_client: TestClient,
+    published_acs_grain_metric: str,
+    published_cdc_metric: str,
+    published_cdc_county_metric: str,
+    published_fred_metric: str,
+    published_pep_metrics: list[str],
+    published_bls_metric: str,
+    published_fbi_metric: str,
+    published_nass_metric: str,
+) -> None:
+    """Covers: DB-044 — every grain a source can publish has a fixture row.
+
+    ``valid_geo_grains`` is derived, not declared: every publisher aggregates
+    it out of the rows that exist (migration 018 and the six views that call
+    ``gold_glossary.geo_grain``). That is the right design and it makes the
+    grain sweeps self-limiting. A fixture that seeds one county publishes a
+    catalog whose only grain is COUNTY, so DB-028's "every published grain
+    answers" passes over a single word, and DB-030's route sweep asks every
+    route about that one word. Both report the same green they would report
+    for a corpus covering all five. Nothing in the stack could tell the two
+    apart, which is how the smoke seed ran a seventh of the surface its own
+    summary line named until 2026-09-14.
+
+    So the fixture corpus is measured against what each source's own reviewed
+    declaration says it can publish, and a grain no fixture reaches fails
+    naming the source and the word. This is the one check that must not read
+    its expectation from the warehouse.
+    """
+    from apps.api.registry import GEO_GRAINS
+
+    # A source added to the dispatch without declaring its grains would
+    # otherwise join the set nobody measures -- DB-043's defect, one level up.
+    assert set(ADVERTISED_GEO_GRAINS) == set(OBSERVATION_DISPATCH), (
+        "every registered source must declare the grains its pipeline can "
+        f"publish; declared {sorted(ADVERTISED_GEO_GRAINS)}, registered "
+        f"{sorted(OBSERVATION_DISPATCH)}"
+    )
+    for source_code, advertised in sorted(ADVERTISED_GEO_GRAINS.items()):
+        assert advertised, f"{source_code} declares no grain at all"
+        off_vocabulary = sorted(advertised - set(GEO_GRAINS))
+        assert not off_vocabulary, (
+            f"{source_code} declares {off_vocabulary}, which the vocabulary "
+            f"{GEO_GRAINS} does not contain"
+        )
+
+    # And every word in the vocabulary is some source's to publish. A grain
+    # the API accepts that no source owns is a filter that can only ever
+    # answer empty.
+    ownerless = sorted(set(GEO_GRAINS) - set().union(*ADVERTISED_GEO_GRAINS.values()))
+    assert not ownerless, (
+        f"the vocabulary carries {ownerless}, which no registered source "
+        "declares; a grain with no publisher answers every request empty"
+    )
+
+    unreached: list[str] = []
+    unanswered: list[str] = []
+    for source_code, advertised in sorted(ADVERTISED_GEO_GRAINS.items()):
+        codes_by_grain = _published_grains(api_client, source_code)
+        missing = sorted(advertised - set(codes_by_grain))
+        if missing:
+            unreached.append(
+                f"{source_code} can publish {sorted(advertised)} but its "
+                f"fixtures publish only {sorted(codes_by_grain)}; nothing "
+                f"exercises {missing}"
+            )
+        for grain in sorted(advertised & set(codes_by_grain)):
+            metric_code = sorted(codes_by_grain[grain])[0]
+            response = api_client.get(
+                "/api/v1/observations",
+                params={"metric_code": metric_code, "geo_level": grain, "limit": 5},
+            )
+            assert response.status_code == 200, (
+                f"{metric_code}@{grain}: {response.text}"
+            )
+            if int(response.json()["total"]) < 1:
+                unanswered.append(
+                    f"{source_code} publishes grain '{grain}' for "
+                    f"'{metric_code}', which /api/v1/observations answers with "
+                    "no rows"
+                )
+
+    assert not unreached, "\n".join(unreached)
+    assert not unanswered, "\n".join(unanswered)
+
+
+# ---------------------------------------------------------------------------
 # DB-030 — the published-grain sweep reaches every route that accepts a grain
 # ---------------------------------------------------------------------------
 
@@ -659,6 +1188,87 @@ PEP_VINTAGE = 2095
 PEP_YEAR = 2095
 PEP_ESTIMATE_DATE = "2095-07-01"  # make_date(year, 7, 1), per the fact's own check
 PEP_DATASET = "pep_agreement_test"
+
+#: One row at each grain Census PEP publishes (DB-044).
+#: ``census_pep/silver_pep/transform.py`` maps summary levels 010, 040, 050
+#: and 162 to nation, state, county and place, and every other level to
+#: ``unsupported`` -- which resolves to no geography and reaches no served
+#: row. The summary level is the source's own code and ``geo_type`` is what
+#: the transform derives from it; both are written here because this fixture
+#: seeds silver directly, and the publisher still derives the catalog's grains
+#: from the rows through ``gold_glossary.geo_grain``.
+PEP_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "summary_level": "010",
+        "geo_type": "nation",
+        "geo_id": "us:1",  # PEP_NATION_GEO_ID, defined below these rows
+        "source_geo_code": "1",
+        "name": "United States",
+        "geography": {"geo_type": "nation", "name": "Grain sweep nation"},
+        "state_fips_source": None,
+        "county_fips_source": None,
+        "place_fips_source": None,
+        "value": 331000000,
+    },
+    {
+        "summary_level": "040",
+        "geo_type": "state",
+        "geo_id": "state:92",
+        "source_geo_code": "92",
+        "name": "Grain sweep state",
+        "geography": {
+            "geo_type": "state",
+            "state_fips": "92",
+            "name": "Grain sweep state",
+        },
+        "state_fips_source": "92",
+        "county_fips_source": None,
+        "place_fips_source": None,
+        "value": 5200000,
+    },
+    {
+        "summary_level": "050",
+        "geo_type": "county",
+        "geo_id": "state:92|county:001",
+        "source_geo_code": "92001",
+        "name": "Grain sweep County",
+        "geography": {
+            "geo_type": "county",
+            "state_fips": "92",
+            "county_fips": "001",
+            "name": "Grain sweep County",
+        },
+        "state_fips_source": "92",
+        "county_fips_source": "001",
+        "place_fips_source": None,
+        "value": 61000,
+    },
+    {
+        "summary_level": "162",
+        "geo_type": "place",
+        "geo_id": "state:92|place:00100",
+        "source_geo_code": "9200100",
+        "name": "Grain sweep city",
+        "geography": {
+            "geo_type": "place",
+            "state_fips": "92",
+            "place_fips": "00100",
+            "name": "Grain sweep city",
+        },
+        "state_fips_source": "92",
+        "county_fips_source": None,
+        "place_fips_source": "00100",
+        "value": 2700,
+    },
+)
+PEP_GEO_IDS: tuple[str, ...] = tuple(str(row["geo_id"]) for row in PEP_GRAIN_ROWS)
+#: The canonical national identity, which is what ``canonical_geo_id``
+#: composes and what ``seed_geography`` therefore writes. The fixture used to
+#: seed that geography and then label its fact row ``nation:us`` -- a spelling
+#: nothing else in the warehouse uses -- and the route test below filtered on
+#: the same invented string, so the pair agreed with each other and with
+#: nothing.
+PEP_NATION_GEO_ID = "us:1"
 
 
 @pytest.fixture
@@ -704,12 +1314,15 @@ def published_pep_metrics(
     try:
         with writer.cursor() as database_cursor:
             capture_id = seed_capture(database_cursor, "CENSUS_PEP")
-            geo_sk = seed_geography(
-                database_cursor,
-                geo_type="nation",
-                vintage=PEP_VINTAGE,
-                name="Grain sweep nation",
-            )
+            preexisting_geo = preexisting_geographies(database_cursor, PEP_GEO_IDS)
+            geo_sk_by_id = {
+                str(row["geo_id"]): seed_geography(
+                    database_cursor,
+                    vintage=PEP_VINTAGE,
+                    **row["geography"],  # type: ignore[arg-type]
+                )
+                for row in PEP_GRAIN_ROWS
+            }
             database_cursor.execute(
                 """
                 INSERT INTO silver_pep.pep_dataset (
@@ -718,8 +1331,9 @@ def published_pep_metrics(
                     text_encoding, release_page_url, decennial_base, is_active,
                     created_at, updated_at, series_kind, era, native_grain
                 ) VALUES (
-                    %s, 'Grain sweep dataset', 'bulk_csv', ARRAY['nation'],
-                    ARRAY['010'], ARRAY['POP'], '1', 'utf-8',
+                    %s, 'Grain sweep dataset', 'bulk_csv',
+                    ARRAY['nation', 'state', 'county', 'place'],
+                    ARRAY['010', '040', '050', '162'], ARRAY['POP'], '1', 'utf-8',
                     'https://www.census.gov/grain-sweep', 2090, TRUE, NOW(), NOW(),
                     'postcensal', 'test', '010'
                 ) ON CONFLICT (dataset_code) DO NOTHING
@@ -745,12 +1359,23 @@ def published_pep_metrics(
                     observation_end_year, geography_basis_date, schema_version,
                     status, media_type, created_at, updated_at, series_kind
                 ) VALUES (
-                    %s, %s, 'alldata',
+                    %s, %s, 'agreement_test_alldata',
                     'https://www2.census.gov/grain-sweep/data.csv',
                     'https://www2.census.gov/grain-sweep/layout.txt',
                     %s, %s, %s, %s, '1', 'published', 'text/csv',
                     NOW(), NOW(), 'postcensal'
-                ) ON CONFLICT DO NOTHING
+                )
+                -- The conflict target is named, and naming it is the point.
+                -- A bare `ON CONFLICT DO NOTHING` absorbs *any* unique
+                -- violation, including ones that say nothing about this row's
+                -- identity: `silver_pep.pep_release` also carries a global
+                -- `UNIQUE (product_code)` (migration 009), so when a
+                -- neighbouring seed took `alldata` this insert did nothing,
+                -- raised nothing, and failed as a foreign key violation on
+                -- `release_load` one statement later -- ten tests erroring at
+                -- setup for a reason no message named. Re-running this
+                -- fixture is the only conflict it should tolerate.
+                ON CONFLICT (dataset_code, vintage_year, product_code) DO NOTHING
                 """,
                 (
                     PEP_DATASET,
@@ -767,65 +1392,84 @@ def published_pep_metrics(
                     capture_id, dataset_code, release_vintage, product_code,
                     source_record_count, observation_count, completeness_status,
                     validated_at
-                ) VALUES (%s, %s, %s, 'alldata', 1, 1, 'complete', NOW())
+                ) VALUES (%s, %s, %s, 'agreement_test_alldata', 1, 1, 'complete', NOW())
                 """,
                 (capture_id, PEP_DATASET, PEP_VINTAGE),
             )
-            for row_index, measure_code in enumerate(measure_codes, start=1):
-                # The fact keys back to the revision it was parsed from, so the
-                # parsed row exists first -- the same order the loader writes in.
-                database_cursor.execute(
-                    """
-                    INSERT INTO silver_pep.observation_revision (
-                        capture_id, source_row_index, source_column_index,
-                        source_header, dataset_code, release_vintage, product_code,
-                        observation_year, metric_code, unit, summary_level,
-                        state_fips_source, name_source, value_source, value,
-                        value_status, parser_version, parsed_at
-                    ) VALUES (
-                        %s, %s, 1, %s, %s, %s, 'alldata', %s, %s, 'persons', '010',
-                        NULL, 'United States', '331000000', 331000000,
-                        'valid', '1', NOW()
+            row_index = 0
+            for measure_code in measure_codes:
+                for grain_row in PEP_GRAIN_ROWS:
+                    row_index += 1
+                    # The fact keys back to the revision it was parsed from, so
+                    # the parsed row exists first -- the same order the loader
+                    # writes in.
+                    database_cursor.execute(
+                        """
+                        INSERT INTO silver_pep.observation_revision (
+                            capture_id, source_row_index, source_column_index,
+                            source_header, dataset_code, release_vintage,
+                            product_code, observation_year, metric_code, unit,
+                            summary_level, state_fips_source, county_fips_source,
+                            place_fips_source, name_source, value_source, value,
+                            value_status, parser_version, parsed_at
+                        ) VALUES (
+                            %s, %s, 1, %s, %s, %s, 'agreement_test_alldata', %s, %s, 'persons',
+                            %s, %s, %s, %s, %s, %s, %s,
+                            'valid', '1', NOW()
+                        )
+                        """,
+                        (
+                            capture_id,
+                            row_index,
+                            measure_code,
+                            PEP_DATASET,
+                            PEP_VINTAGE,
+                            PEP_YEAR,
+                            measure_code,
+                            grain_row["summary_level"],
+                            grain_row["state_fips_source"],
+                            grain_row["county_fips_source"],
+                            grain_row["place_fips_source"],
+                            grain_row["name"],
+                            str(grain_row["value"]),
+                            grain_row["value"],
+                        ),
                     )
-                    """,
-                    (
-                        capture_id,
-                        row_index,
-                        measure_code,
-                        PEP_DATASET,
-                        PEP_VINTAGE,
-                        PEP_YEAR,
-                        measure_code,
-                    ),
-                )
-                database_cursor.execute(
-                    """
-                    INSERT INTO silver_pep.fact_population_estimate (
-                        capture_id, source_row_index, source_column_index,
-                        dataset_code, release_vintage, product_code, metric_code,
-                        observation_year, estimate_date, geo_id, geo_sk, geo_type,
-                        geography_basis_date, resolution_status, summary_level,
-                        source_geo_code, source_name, value_source, value, unit,
-                        transformed_at
-                    ) VALUES (
-                        %s, %s, 1, %s, %s, 'alldata', %s, %s, %s,
-                        'nation:us', %s,
-                        'nation', %s, 'resolved', '010', '1', 'United States',
-                        '331000000', 331000000, 'persons', NOW()
+                    database_cursor.execute(
+                        """
+                        INSERT INTO silver_pep.fact_population_estimate (
+                            capture_id, source_row_index, source_column_index,
+                            dataset_code, release_vintage, product_code,
+                            metric_code, observation_year, estimate_date, geo_id,
+                            geo_sk, geo_type, geography_basis_date,
+                            resolution_status, summary_level, source_geo_code,
+                            source_name, value_source, value, unit,
+                            transformed_at
+                        ) VALUES (
+                            %s, %s, 1, %s, %s, 'agreement_test_alldata', %s, %s, %s,
+                            %s, %s, %s, %s, 'resolved', %s, %s, %s,
+                            %s, %s, 'persons', NOW()
+                        )
+                        """,
+                        (
+                            capture_id,
+                            row_index,
+                            PEP_DATASET,
+                            PEP_VINTAGE,
+                            measure_code,
+                            PEP_YEAR,
+                            PEP_ESTIMATE_DATE,
+                            grain_row["geo_id"],
+                            geo_sk_by_id[str(grain_row["geo_id"])],
+                            grain_row["geo_type"],
+                            PEP_ESTIMATE_DATE,
+                            grain_row["summary_level"],
+                            grain_row["source_geo_code"],
+                            grain_row["name"],
+                            str(grain_row["value"]),
+                            grain_row["value"],
+                        ),
                     )
-                    """,
-                    (
-                        capture_id,
-                        row_index,
-                        PEP_DATASET,
-                        PEP_VINTAGE,
-                        measure_code,
-                        PEP_YEAR,
-                        PEP_ESTIMATE_DATE,
-                        geo_sk,
-                        PEP_ESTIMATE_DATE,
-                    ),
-                )
         writer.commit()
     finally:
         writer.close()
@@ -884,15 +1528,16 @@ def published_pep_metrics(
                     "DELETE FROM silver_pep.pep_release WHERE dataset_code = %s",
                     (PEP_DATASET,),
                 )
-                database_cursor.execute(
-                    "DELETE FROM silver_pep.dim_measure WHERE metric_code = %s",
-                    (measure_code,),
-                )
+                for measure_code in measure_codes:
+                    database_cursor.execute(
+                        "DELETE FROM silver_pep.dim_measure WHERE metric_code = %s",
+                        (measure_code,),
+                    )
                 database_cursor.execute(
                     "DELETE FROM silver_pep.pep_dataset WHERE dataset_code = %s",
                     (PEP_DATASET,),
                 )
-                delete_geography(database_cursor, "nation:us")
+                delete_shared_geographies(database_cursor, PEP_GEO_IDS, preexisting_geo)
                 _remove_registration(database_cursor, registered_before, "CENSUS_PEP")
             cleanup.commit()
         finally:
@@ -1041,6 +1686,54 @@ CDC_ASSET = "cdi"
 CDC_WATERMARK = "3975004800"
 #: CDC periods are years, not dates: the fact table stores them as integers.
 CDC_PERIOD = 2096
+#: The PLACES county asset, and its own watermark: the two releases are keyed
+#: by ``(asset_id, release_watermark)`` and the latest surface orders on the
+#: watermark within an asset, so each fixture's release stays the newest of its
+#: own.
+CDC_COUNTY_ASSET = "places_county"
+CDC_COUNTY_WATERMARK = "3975004801"
+
+#: The grains each CDC asset declares in ``cdc/registry.py``: CDI publishes
+#: ``("us", "state")`` and PLACES county publishes ``("us", "county")``. The
+#: ``geo_type`` each row carries is the source's own word -- the publisher
+#: sends it through ``gold_glossary.geo_grain`` to get the catalog's (DB-044).
+CDC_CDI_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "us:1",
+        "geo_type": "nation",
+        "geography": {"geo_type": "nation", "name": "Sweep nation"},
+        "value": 11.5,
+    },
+    {
+        "geo_id": "state:94",
+        "geo_type": "state",
+        "geography": {
+            "geo_type": "state",
+            "state_fips": "94",
+            "name": "Sweep state",
+        },
+        "value": 12.5,
+    },
+)
+CDC_PLACES_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "us:1",
+        "geo_type": "nation",
+        "geography": {"geo_type": "nation", "name": "Sweep nation"},
+        "value": 13.5,
+    },
+    {
+        "geo_id": "state:94|county:001",
+        "geo_type": "county",
+        "geography": {
+            "geo_type": "county",
+            "state_fips": "94",
+            "county_fips": "001",
+            "name": "Sweep county",
+        },
+        "value": 14.5,
+    },
+)
 
 
 def _digest_token() -> str:
@@ -1061,19 +1754,20 @@ def published_pep_metric(published_pep_metrics: list[str]) -> str:
     return published_pep_metrics[0]
 
 
-@pytest.fixture
-def published_cdc_metric(
+def _publish_cdc_measure(
     postgres_connection_factory: Callable[[], connection],
+    *,
+    asset_id: str,
+    release_watermark: str,
+    socrata_id: str,
+    grain_rows: tuple[dict[str, object], ...],
 ) -> Iterator[str]:
-    """Publish one CDC metric end to end, for the third identity strategy.
+    """Publish one CDC measure end to end, at the grains its asset declares.
 
-    The registry identifies a metric's serving rows three ways, and
-    ``identity_columns`` -- where the service binds ``lineage.get(field)`` for
-    each declared column and refuses the metric if the lineage publishes no
-    such key -- had never been asked to answer a code the catalog published.
-    CDC is the smallest source that uses it, and its rows carry a stratum and
-    an adjustment status, so the sweeps exercise more of the envelope than a
-    single-series source does.
+    The asset is a parameter because CDC's two registered assets publish
+    different geographies -- ``cdi`` at ``("us", "state")`` and
+    ``places_county`` at ``("us", "county")`` -- and a fixture that gave one
+    asset the other's grain would be publishing a row the source never does.
     """
     from tests.support.capture_seed import seed_capture
 
@@ -1081,7 +1775,7 @@ def published_cdc_metric(
     measure_id = f"SWEEP_{token}"
     value_type_id = "crude"
     stratum_id = _digest_token()
-    source_record_id = _digest_token()
+    geo_ids = tuple(str(row["geo_id"]) for row in grain_rows)
 
     writer = postgres_connection_factory()
     try:
@@ -1095,13 +1789,15 @@ def published_cdc_metric(
                 (capture_id,),
             )
             run_id = database_cursor.fetchone()[0]
-            geo_sk = seed_geography(
-                database_cursor,
-                geo_type="state",
-                state_fips="94",
-                vintage=CDC_PERIOD,
-                name="Sweep state",
-            )
+            preexisting_geo = preexisting_geographies(database_cursor, geo_ids)
+            geo_sk_by_id = {
+                str(row["geo_id"]): seed_geography(
+                    database_cursor,
+                    vintage=CDC_PERIOD,
+                    **row["geography"],  # type: ignore[arg-type]
+                )
+                for row in grain_rows
+            }
             database_cursor.execute(
                 """
                 INSERT INTO silver_cdc.dim_dataset_release (
@@ -1111,13 +1807,20 @@ def published_cdc_metric(
                     source_run_id, source_record_count, quarantine_count,
                     status, reconciled_at, published_at, created_at, updated_at
                 ) VALUES (
-                    %s, %s, 'abcd-1234', 'Sweep dataset',
+                    %s, %s, %s, 'Sweep dataset',
                     'https://www.cdc.gov/sweep', 'state', '1',
-                    'model-based', 'adults', %s, %s, 1, 0,
+                    'model-based', 'adults', %s, %s, %s, 0,
                     'published', NOW(), NOW(), NOW(), NOW()
                 )
                 """,
-                (CDC_ASSET, CDC_WATERMARK, capture_id, run_id),
+                (
+                    asset_id,
+                    release_watermark,
+                    socrata_id,
+                    capture_id,
+                    run_id,
+                    len(grain_rows),
+                ),
             )
             database_cursor.execute(
                 """
@@ -1131,7 +1834,7 @@ def published_cdc_metric(
                     'adults', NOW(), NOW()
                 )
                 """,
-                (CDC_ASSET, measure_id, value_type_id),
+                (asset_id, measure_id, value_type_id),
             )
             database_cursor.execute(
                 """
@@ -1144,36 +1847,43 @@ def published_cdc_metric(
                 """,
                 (stratum_id,),
             )
-            database_cursor.execute(
-                """
-                INSERT INTO silver_cdc.fact_health_observation (
-                    asset_id, release_watermark, source_record_id, source_run_id,
-                    capture_id, source_row_index, measure_id, value_type_id,
-                    stratum_id, period_start, period_end, geo_id, geo_sk,
-                    geo_type, geography_status, value_source, value,
-                    value_status, unit, adjustment_status, estimate_method,
-                    population_basis, transformation_version
-                ) VALUES (
-                    %s, %s, %s, %s, %s, 0, %s, %s, %s,
-                    %s, %s, 'state:94', %s, 'state', 'resolved',
-                    '12.5', 12.5, 'valid', 'percent', 'crude', 'model-based',
-                    'adults', '1'
+            for row_index, grain_row in enumerate(grain_rows):
+                database_cursor.execute(
+                    """
+                    INSERT INTO silver_cdc.fact_health_observation (
+                        asset_id, release_watermark, source_record_id,
+                        source_run_id, capture_id, source_row_index, measure_id,
+                        value_type_id, stratum_id, period_start, period_end,
+                        geo_id, geo_sk, geo_type, geography_status,
+                        value_source, value, value_status, unit,
+                        adjustment_status, estimate_method, population_basis,
+                        transformation_version
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, 'resolved',
+                        %s, %s, 'valid', 'percent', 'crude', 'model-based',
+                        'adults', '1'
+                    )
+                    """,
+                    (
+                        asset_id,
+                        release_watermark,
+                        _digest_token(),
+                        run_id,
+                        capture_id,
+                        row_index,
+                        measure_id,
+                        value_type_id,
+                        stratum_id,
+                        CDC_PERIOD,
+                        CDC_PERIOD,
+                        grain_row["geo_id"],
+                        geo_sk_by_id[str(grain_row["geo_id"])],
+                        grain_row["geo_type"],
+                        str(grain_row["value"]),
+                        grain_row["value"],
+                    ),
                 )
-                """,
-                (
-                    CDC_ASSET,
-                    CDC_WATERMARK,
-                    source_record_id,
-                    run_id,
-                    capture_id,
-                    measure_id,
-                    value_type_id,
-                    stratum_id,
-                    CDC_PERIOD,
-                    CDC_PERIOD,
-                    geo_sk,
-                ),
-            )
         writer.commit()
     finally:
         writer.close()
@@ -1181,7 +1891,7 @@ def published_cdc_metric(
     registered_before = _registration_state(postgres_connection_factory, "CDC")
     harvest_publisher(postgres_connection_factory, Publisher("gold_cdc"))
 
-    source_object_key = f"{CDC_ASSET}:{measure_id}:{value_type_id}"
+    source_object_key = f"{asset_id}:{measure_id}:{value_type_id}"
     reader = postgres_connection_factory()
     try:
         with reader.cursor() as database_cursor:
@@ -1215,27 +1925,68 @@ def published_cdc_metric(
                 database_cursor.execute(
                     "DELETE FROM silver_cdc.fact_health_observation "
                     "WHERE asset_id = %s AND release_watermark = %s",
-                    (CDC_ASSET, CDC_WATERMARK),
+                    (asset_id, release_watermark),
                 )
                 database_cursor.execute(
                     "DELETE FROM silver_cdc.dim_measure "
                     "WHERE asset_id = %s AND measure_id = %s",
-                    (CDC_ASSET, measure_id),
+                    (asset_id, measure_id),
                 )
                 database_cursor.execute(
                     "DELETE FROM silver_cdc.dim_dataset_release "
                     "WHERE asset_id = %s AND release_watermark = %s",
-                    (CDC_ASSET, CDC_WATERMARK),
+                    (asset_id, release_watermark),
                 )
                 database_cursor.execute(
                     "DELETE FROM silver_cdc.dim_stratum WHERE stratum_id = %s",
                     (stratum_id,),
                 )
-                delete_geography(database_cursor, "state:94")
+                delete_shared_geographies(database_cursor, geo_ids, preexisting_geo)
                 _remove_registration(database_cursor, registered_before, "CDC")
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+@pytest.fixture
+def published_cdc_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one CDC metric end to end, for the third identity strategy.
+
+    The registry identifies a metric's serving rows three ways, and
+    ``identity_columns`` -- where the service binds ``lineage.get(field)`` for
+    each declared column and refuses the metric if the lineage publishes no
+    such key -- had never been asked to answer a code the catalog published.
+    CDC is the smallest source that uses it, and its rows carry a stratum and
+    an adjustment status, so the sweeps exercise more of the envelope than a
+    single-series source does.
+
+    The rows cover ``us`` and ``state``, which is what ``CDI_ASSET`` declares
+    it publishes. CDC's county grain belongs to the other asset, and
+    ``published_cdc_county_metric`` is where it is seeded (DB-044).
+    """
+    yield from _publish_cdc_measure(
+        postgres_connection_factory,
+        asset_id=CDC_ASSET,
+        release_watermark=CDC_WATERMARK,
+        socrata_id="abcd-1234",
+        grain_rows=CDC_CDI_GRAIN_ROWS,
+    )
+
+
+@pytest.fixture
+def published_cdc_county_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one PLACES county metric, the only CDC asset with that grain."""
+    yield from _publish_cdc_measure(
+        postgres_connection_factory,
+        asset_id=CDC_COUNTY_ASSET,
+        release_watermark=CDC_COUNTY_WATERMARK,
+        socrata_id="swc5-untb",
+        grain_rows=CDC_PLACES_GRAIN_ROWS,
+    )
 
 
 def test_a_source_identified_by_its_lineage_columns_answers_its_catalog_code(
@@ -1339,7 +2090,11 @@ def test_the_stratum_the_warehouse_accepts_is_the_stratum_the_api_serves(
 
 
 def test_every_route_answers_the_metric_code_it_published(
-    api_client: TestClient, published_pep_metric: str
+    api_client: TestClient,
+    published_pep_metric: str,
+    published_acs_metric: str,
+    published_fred_metric: str,
+    published_bls_metric: str,
 ) -> None:
     """Covers: DB-034 — a route's own answer is a request it accepts.
 
@@ -1351,11 +2106,14 @@ def test_every_route_answers_the_metric_code_it_published(
     used to be an empty 200. A route refusing an identity it published in its
     own response is the route disagreeing with itself.
 
+    Covers: DB-043 -- and every source-scoped contract is exercised.
+
     Source-agnostic: the contracts come from the reviewed registry and the
     codes from the served catalog, so a contract added later is covered
-    without an edit here. A source with no catalog content contributes
-    nothing, and the PEP assertion below is what stops that from passing
-    vacuously -- PEP is the source whose two identities differ at all.
+    without an edit here. It used to be possible for a contract to contribute
+    nothing and say so to nobody -- one PEP assertion stood in for all four --
+    so every segment the registry declares now has a fixture publishing a
+    code, and a segment that reaches no row fails naming itself.
     """
     from apps.api.registry import SERVING_CONTRACTS
 
@@ -1397,11 +2155,22 @@ def test_every_route_answers_the_metric_code_it_published(
                     )
 
     assert not disagreements, "\n".join(disagreements)
+
     # Census PEP is the source whose published identity and catalog identity
     # differ at all. If it was not exercised the sweep proved nothing.
     assert any(
         entry.startswith(f"pep:{published_pep_metric}->") for entry in exercised
     ), exercised
+
+    # And every other source-scoped contract too: a segment whose catalog code
+    # reached no row was skipped silently, so three of the four could have
+    # stopped answering with this sweep green on PEP alone.
+    reached = {entry.split(":", 1)[0] for entry in exercised}
+    unreached = sorted(set(SERVING_CONTRACTS) - reached)
+    assert not unreached, (
+        f"these source-scoped contracts answered no row for any current "
+        f"catalog code, so the sweep proved nothing about them: {unreached}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1639,7 +2408,7 @@ def test_a_source_scoped_row_names_the_catalogs_code(
     ):
         params = {"metric_code": published_pep_metric, "limit": 5}
         if route.endswith("timeseries"):
-            params["geo_id"] = "nation:us"
+            params["geo_id"] = PEP_NATION_GEO_ID
         answer = api_client.get(route, params=params)
         assert answer.status_code == 200, answer.text
         items = answer.json()["items"]

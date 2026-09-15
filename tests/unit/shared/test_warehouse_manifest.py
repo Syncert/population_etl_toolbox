@@ -39,20 +39,87 @@ def test_warehouse_manifest_has_unique_existing_assets() -> None:
     assert len(migration_numbers) == len(set(migration_numbers))
 
 
-def test_docker_bootstrap_matches_authoritative_manifest_order() -> None:
-    """Covers: DB-002 — Docker uses the authoritative rerunnable DDL order."""
-    compose = COMPOSE_PATH.read_text(encoding="utf-8")
-    mounted_sources = [
+def _initdb_mounts(compose: str) -> list[str]:
+    """Every repository file a Compose document mounts into initdb, in order."""
+    return [
         match.replace("../../", "")
         for match in re.findall(
             r"- (\.\./\.\./[^:]+):/docker-entrypoint-initdb\.d/", compose
         )
     ]
+
+
+def test_docker_bootstrap_matches_authoritative_manifest_order() -> None:
+    """Covers: DB-002 — Docker uses the authoritative rerunnable DDL order."""
+    mounted_sources = _initdb_mounts(COMPOSE_PATH.read_text(encoding="utf-8"))
     warehouse_sources = [
         path for path in mounted_sources if not path.startswith("tests/")
     ]
 
     assert warehouse_sources == [asset["path"] for asset in _assets()]
+
+
+SMOKE_COMPOSE_PATH = REPOSITORY_ROOT / "infra/docker/docker-compose.smoke.yml"
+
+#: The one seed the base stack may mount. `martin_seed.sql` creates the
+#: `martin_test` role and the single county in `gold_glossary.dim_geo_latest`
+#: that the base file's own healthcheck selects, so the deployment and Martin
+#: tiers cannot start without it.
+BASE_STACK_SEED = "tests/sql/martin_seed.sql"
+
+#: The frontend smoke tier's seed, which belongs to that tier alone.
+SMOKE_TIER_SEED = "tests/sql/frontend_smoke_seed.sql"
+
+
+def test_no_tier_seeds_the_database_another_tier_fills_itself() -> None:
+    """Covers: DB-045 — a tier's own seed is not mounted into the shared database.
+
+    `docker-compose.test.yml` is two things at once: the disposable warehouse
+    the deployment and Martin tiers grade, and the database
+    `RUNNING_TESTS.md` tells a developer to point the pytest integration tier
+    at. Content mounted for the first is content the second's fixtures did not
+    put there and do not expect.
+
+    That is not hypothetical. The frontend smoke seed was mounted here while
+    it published one Census ACS measure, which collided with nothing. When it
+    grew to one measure per registered source it started writing rows into
+    seven source schemas, and `silver_pep.pep_release` carries a *global*
+    `UNIQUE (product_code)` -- so the seed took `alldata`, the PEP fixture's
+    own insert was absorbed by its bare `ON CONFLICT DO NOTHING`, and the next
+    statement failed a foreign key. Ten tests errored at setup.
+
+    The reason it survived is the reason this guard is a unit test rather than
+    a note: CI never saw it. `api-integration` runs against a bare service
+    container and lets the fixtures apply the warehouse manifest, so the tier
+    was green there and red on the documented local path. Nothing that only
+    runs in CI could have caught it, and the sibling guard above cannot --
+    it filters `tests/` mounts out before comparing.
+
+    Both directions. The base file must mount no tier's seed, and the smoke
+    overlay must mount its own: separating them by deleting the seed would
+    satisfy half of this and quietly return the smoke tier to grading a
+    warehouse with nothing in it.
+    """
+    base_seeds = [
+        path
+        for path in _initdb_mounts(COMPOSE_PATH.read_text(encoding="utf-8"))
+        if path.startswith("tests/")
+    ]
+    assert base_seeds == [BASE_STACK_SEED], (
+        f"{COMPOSE_PATH.name} mounts {base_seeds} into initdb. Only "
+        f"{BASE_STACK_SEED} belongs there -- the base stack's healthcheck "
+        "selects from it. Every other seed is some tier's own content, and "
+        "this database is also the one the pytest integration tier fills with "
+        "its own fixtures; mount it in that tier's overlay instead."
+    )
+
+    smoke_seeds = _initdb_mounts(SMOKE_COMPOSE_PATH.read_text(encoding="utf-8"))
+    assert SMOKE_TIER_SEED in smoke_seeds, (
+        f"{SMOKE_COMPOSE_PATH.name} mounts {smoke_seeds}, which does not "
+        f"include {SMOKE_TIER_SEED}. The smoke tier grades a deployment-shaped "
+        "warehouse; without its seed it grades an empty one and every "
+        "content bound it declares passes vacuously."
+    )
 
 
 MIGRATIONS_README = REPOSITORY_ROOT / "sql/migrations/README.md"

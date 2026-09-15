@@ -23,6 +23,74 @@ between two of them.
 probes. They sit outside the version policy: they carry no data contract, and
 versioning them would put a data-contract promise on infrastructure.
 
+## Is this deployment serving anything?
+
+`GET /api/v1/health/content` answers the question the probes cannot. They
+report on the process: `/health/ready` runs `SELECT 1`, so an API whose
+warehouse holds no published measure reports itself ready, answers `total: 0`
+for every metric you ask for, and gives a client no way to tell that apart
+from a geography that publishes nothing.
+
+This resource reports on content, per source:
+
+```json
+{
+  "status": "degraded",
+  "sources": [
+    {
+      "source_code": "CENSUS_ACS",
+      "status": "serving",
+      "registered": true,
+      "metrics_total": 4447,
+      "metrics_current": 4447,
+      "metrics_stale": 0,
+      "metrics_retired": 0,
+      "counts_are_complete": true,
+      "last_publication_time": "2026-09-01T04:11:22+00:00"
+    }
+  ],
+  "silent_sources": ["FBI_UCR"],
+  "stale_sources": ["BLS"]
+}
+```
+
+- A source's `status` is `serving` only when `metrics_current` is above zero.
+  A catalog of retired measures answers no observation request, so a large
+  `metrics_total` is not health. `metrics_current` counts exactly what
+  `/api/v1/catalog/metrics?active_only=true` returns for that source.
+- `registered` is true for a source this API declares observation routes for.
+  A registered source appears whether or not the catalog holds any row for
+  it — a source the warehouse has never published is the state most worth
+  seeing, and it is the one a per-source tally would otherwise omit.
+- The deployment's own `status` is `serving` when every registered source
+  serves, `degraded` when some do, and `empty` when none do. The two failures
+  differ in what an operator does about them.
+- `counts_are_complete` is false when the three counted freshness states do
+  not account for `metrics_total` — a warehouse state this API has not been
+  taught, and a signal that the counts are a partial tally.
+- `last_publication_time` is offset-aware ISO-8601, as the example above
+  shows, or `null` for a source the catalog holds no publication row for. It
+  is the publisher's own harvest time, not this request's clock.
+- `silent_sources` lists the registered sources publishing nothing. It is the
+  field to page on: every chart over those sources draws nothing.
+- `stale_sources` lists the registered sources carrying at least one measure
+  the warehouse has marked `stale` — the publisher stopped emitting it and it
+  has not been retired. Those measures still serve their last values, so
+  nothing about the answer looks wrong; this is the early warning, and a
+  source can be in both lists once the drift finishes. Watch it, but a
+  provider discontinuing one series lands here legitimately, so it is a lower
+  grade of alarm than `silent_sources`.
+
+It answers `200` in every content state, `empty` included: a report you
+cannot read in the state you need it is not a report. A `503` here means the
+warehouse is unreachable, which is the one thing it cannot describe. It reads
+the glossary catalog rather than the fact tables, so it is cheap enough to
+poll; it is rate limited like any other warehouse read, and never cached.
+
+Readiness deliberately does **not** consider content. An empty warehouse is
+not an unservable process, and failing readiness on it would take the API out
+of the load balancer for a condition no restart can fix.
+
 A `v1` change that would break a client belongs in `v2`; additive changes —
 a new optional parameter, a new response field, a new operation, a relaxed
 bound — land in `v1`. Deterministic ordering is part of the contract, because

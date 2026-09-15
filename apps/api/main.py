@@ -78,10 +78,17 @@ PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     evidence_packets.router,
 )
 
+#: The content report (API-137). A warehouse read, so it is deliberately not
+#: in ``CACHEABLE_ROUTERS`` -- an observability resource must describe now,
+#: not the last five minutes -- and deliberately its own router rather than a
+#: route on ``health.router``, which the rate limiter exempts wholesale.
+CONTENT_ROUTERS: tuple[APIRouter, ...] = (health.content_router,)
+
 PUBLIC_ROUTERS: tuple[APIRouter, ...] = (
     # The versioned health resource. Never cached: a probe answer must
     # describe now, not the last five minutes.
     health.router,
+    *CONTENT_ROUTERS,
     *CACHEABLE_ROUTERS,
     *PRIVATE_ROUTERS,
 )
@@ -167,7 +174,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         elif router is health.router:
             # The versioned health resource reads nothing and is exempt from
             # the rate limiter, so the application-wide 422 is all it can
-            # answer.
+            # answer. Its content sibling is not in this branch: that one
+            # reads the warehouse and is metered, so it declares the 429 and
+            # 503 every other warehouse read declares.
             group = EVERY_ROUTE_FAILURES
         else:
             group = WAREHOUSE_READ_FAILURES

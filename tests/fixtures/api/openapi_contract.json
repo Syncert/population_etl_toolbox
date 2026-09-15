@@ -1177,6 +1177,18 @@
         "health"
       ]
     },
+    "GET /api/v1/health/content": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:ContentHealthResponse",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "health"
+      ]
+    },
     "GET /api/v1/observations": {
       "parameters": [
         {
@@ -2387,6 +2399,20 @@
         "valid"
       ]
     },
+    "ContentHealthResponse": {
+      "properties": {
+        "silent_sources": "array<string>",
+        "sources": "array<SourceContent>",
+        "stale_sources": "array<string>",
+        "status": "string"
+      },
+      "required": [
+        "silent_sources",
+        "sources",
+        "stale_sources",
+        "status"
+      ]
+    },
     "CorrelationStatistic": {
       "properties": {
         "contemporaneous_pairs": "integer",
@@ -3274,6 +3300,29 @@
         "observation_routes",
         "served_by_neutral_routes",
         "source_code"
+      ]
+    },
+    "SourceContent": {
+      "properties": {
+        "counts_are_complete": "boolean",
+        "last_publication_time": "string | null",
+        "metrics_current": "integer",
+        "metrics_retired": "integer",
+        "metrics_stale": "integer",
+        "metrics_total": "integer",
+        "registered": "boolean",
+        "source_code": "string",
+        "status": "string"
+      },
+      "required": [
+        "counts_are_complete",
+        "metrics_current",
+        "metrics_retired",
+        "metrics_stale",
+        "metrics_total",
+        "registered",
+        "source_code",
+        "status"
       ]
     },
     "SourceFreshness": {

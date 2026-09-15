@@ -1,0 +1,133 @@
+name: live-deployment-smoke
+
+# The one job that looks at the deployment rather than at a change.
+#
+# Every other tier grades a stack CI built seconds earlier from seeded
+# fixtures, and all of them pass against an API whose warehouse is empty:
+# `/health/ready` answers `SELECT 1`, so a deployment serving zero rows for
+# every metric reports itself healthy and draws a blank chart on every screen
+# with no error anywhere in the stack. `frontend-smoke` runs the same tier
+# this job runs, but against a Compose stack whose seed it also owns -- it
+# proves the client reads the API correctly, and can say nothing about
+# whether the deployment has content.
+#
+# So this job points the existing live-stack tier at the real origin, on a
+# schedule, and grades it against every registered source (ENV-019, WEB-102,
+# API-137). Nothing here is new test code: the tier already walks the live
+# catalog, asks each active metric through the access shape the explorer
+# picks, and checks that observed geographies intersect the tile layer.
+#
+# Configuration, once, as repository variables:
+#
+#   DEPLOYMENT_SMOKE_BASE_URL   the origin serving /api/v1 and /tiles through
+#                               the same proxy a browser uses
+#   DEPLOYMENT_SMOKE_RUNNER     optional; a self-hosted runner label, when the
+#                               deployment is not reachable from a
+#                               GitHub-hosted runner. This repository's own
+#                               deployment path (scripts/deploy_stack.ps1 over
+#                               infra/docker/docker-compose.yml) usually is not.
+#   DEPLOYMENT_SMOKE_REQUIRE_ALL_SOURCES
+#                               optional; "0" to accept a deployment that has
+#                               loaded only some sources. Defaults to "1".
+#   DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES
+#                               optional; "1" to fail when any source carries a
+#                               measure its publisher has stopped emitting.
+#                               Defaults to "0" -- the drifting sources are
+#                               reported either way.
+#
+# Until DEPLOYMENT_SMOKE_BASE_URL is set this job fails, deliberately and
+# with instructions. A scheduled observer that skips when it is not
+# configured reports the same green as one that checked a healthy
+# deployment, which is the failure mode `SMOKE_REQUIRED` was added to the
+# tier to end. If there is no deployment to watch yet, disable this workflow
+# rather than leaving it unconfigured.
+
+on:
+  schedule:
+    # Daily, offset from the external-contract run at 09:23 so the two do not
+    # compete for a runner.
+    - cron: "47 7 * * *"
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: >-
+          Origin to check instead of DEPLOYMENT_SMOKE_BASE_URL, e.g. a staging
+          deployment. Must be an origin and carry no path.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  live-deployment:
+    name: Live deployment smoke
+    # Hosted by default; a deployment on a private network needs a runner that
+    # can reach it, and a job hard-wired to `ubuntu-latest` would be
+    # permanently red for the deployment shape this repository ships.
+    runs-on: ${{ vars.DEPLOYMENT_SMOKE_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    env:
+      # The dispatch input wins when a human named an origin; otherwise the
+      # repository variable. Neither is a secret -- an origin is not a
+      # credential, and a masked value would render every failure message as
+      # `***`.
+      SMOKE_BASE_URL: ${{ inputs.base_url || vars.DEPLOYMENT_SMOKE_BASE_URL }}
+      # Refuse to pass by skipping.
+      SMOKE_REQUIRED: "1"
+      # Grade against every registered source, the way the end-to-end tier
+      # grades against its product inventory. Without this a deployment that
+      # quietly lost six of its seven sources still passes.
+      SMOKE_REQUIRE_ALL_SOURCES: >-
+        ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_ALL_SOURCES == '0' && '0' || '1' }}
+      # Opt-in, unlike the bound above. A source carrying a stale measure is
+      # one whose publisher stopped emitting it and has not retired it: real,
+      # worth seeing, and often just a provider discontinuing one series --
+      # not a reason to fail a nightly job. The content report names the
+      # drifting sources on every run either way (the step below prints it),
+      # so an operator who wants drift to be an error sets this and one who
+      # wants it to be a reading does not.
+      SMOKE_REQUIRE_FRESH_SOURCES: >-
+        ${{ vars.DEPLOYMENT_SMOKE_REQUIRE_FRESH_SOURCES == '1' && '1' || '0' }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # Before anything installs: a misconfigured origin should fail saying
+      # so, not as a connection error inside vitest that reads exactly like
+      # the outage this job exists to report.
+      - name: Validate the deployment target
+        run: python -m tests.support.deployment_smoke
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run the live-stack smoke tier against the deployment
+        working-directory: apps/web
+        run: npm run test:smoke
+
+      - name: Report the deployment's content
+        # Always, because the content report is the most useful thing to read
+        # when the tier above has just gone red -- and the cheapest thing to
+        # have in the log when it has not.
+        if: always()
+        run: >-
+          curl --silent --show-error --fail --max-time 30
+          "$SMOKE_BASE_URL/api/v1/health/content"
+          || echo "the content resource did not answer"

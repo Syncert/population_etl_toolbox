@@ -23,7 +23,16 @@ pytestmark = [pytest.mark.unit, pytest.mark.api]
 
 #: Served paths that are deliberately never cached and are not private user
 #: storage: a probe answer must describe now, not the last five minutes.
-UNCACHED_BY_DESIGN = frozenset({f"{VERSIONED_ROOT}/health"}) | UNVERSIONED_PATHS
+#:
+#: ``/health/content`` (API-137) is the one entry here that reads the
+#: warehouse, and it is the entry most worth stating: a monitor asking which
+#: sources currently publish a measure must not be answered a picture of the
+#: last five minutes, which is precisely the interval an empty warehouse
+#: would stay invisible for.
+UNCACHED_BY_DESIGN = (
+    frozenset({f"{VERSIONED_ROOT}/health", f"{VERSIONED_ROOT}/health/content"})
+    | UNVERSIONED_PATHS
+)
 
 
 def _private_paths() -> set[str]:
