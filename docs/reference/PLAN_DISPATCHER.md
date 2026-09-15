@@ -144,8 +144,13 @@ asking a question.
 
 After approving, rerun `-Action run` to continue the same run.
 
-This repository currently declares no gate. The one it had,
-[`four-source-review`](../plans/completed/FOUR_SOURCE_REVIEW_GATE.md), guarded
+This repository declares one gate,
+[`self-service-identity`](../plans/gates/SELF_SERVICE_IDENTITY_GATE.md), which
+holds `self-service-accounts` and `publishing-approval-path` until a person
+accepts the identity contract drafted by `self-service-identity-adr`. The
+worked example is the gate it had before that,
+[`four-source-review`](../plans/completed/FOUR_SOURCE_REVIEW_GATE.md), which
+guarded
 the CDC, FBI Crime, USDA NASS Crop, and Census PEP pipelines and held back the
 warehouse-quality, end-to-end coverage, and API platform plans until a human
 confirmed the four sources were coherent together. Those questions — shared
