@@ -14,11 +14,12 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Every acceptance criterion has inspectable
-  evidence. The live `up`/`down` could not run in the authoring container,
-  which has no Docker daemon, so it is graded by `deployment-smoke` on a
-  runner that has one — the entrypoint an operator runs is now the entrypoint
-  CI runs.
+- **Status:** Accepted 2026-09-16 (Ready for review. Authored 2026-09-15,
+  claimed and delivered 2026-09-16; merged to `main` in `ebbb7ce`.) Every
+  acceptance criterion has inspectable evidence. The live `up`/`down` could
+  not run in the authoring container, which has no Docker daemon, so it is
+  graded by `deployment-smoke` on a runner that has one — the entrypoint an
+  operator runs is now the entrypoint CI runs.
 - **Last updated:** 2026-09-16
 - **Current milestone:** complete.
 - **Dependencies:** none declared; none required.
