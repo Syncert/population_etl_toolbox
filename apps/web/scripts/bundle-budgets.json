@@ -3,6 +3,7 @@
   "/articles/page": 431104,
   "/bls/page": 403456,
   "/builder/page": 440320,
+  "/catalog/layout": 403456,
   "/catalog/page": 435200,
   "/census/page": 403456,
   "/compare/page": 1674240,
@@ -15,6 +16,8 @@
   "/page": 430080,
   "/profiles/page": 460800,
   "/quality/page": 438272,
+  "/robots.txt/route": 403456,
   "/saved/page": 440320,
+  "/sitemap.xml/route": 403456,
   "/workbench/page": 559104
 }

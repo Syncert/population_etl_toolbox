@@ -52,11 +52,14 @@ describe("the route segment's shell", () => {
     // status surface reports the wait -- or a redirect that renders nothing.
     // Neither can show a loading state, so none is added.
     //
-    // The rule is "nothing awaits on the server", not "nothing is server
-    // rendered": a server wrapper that only renders a client component (which
-    // is what exporting per-route `metadata` would turn these into) still
-    // awaits nothing and still needs no loading state. What would need one is
-    // a page that awaits, and that is what this fails on.
+    // The rule is "nothing awaits *data* on the server", not "nothing is
+    // server rendered" and not "nothing awaits at all". The per-route
+    // metadata work turned these wrappers into server components so they
+    // could export `generateMetadata`, and in Next 15 that means
+    // `await searchParams` -- which Next already holds. It resolves at once,
+    // suspends nothing, and can produce no loading state. Awaiting a fetch or
+    // a query is a different thing entirely, and that is what fails here.
+    const ALREADY_HELD = /\bawait\s+(searchParams|params)\b/g;
     const awaiting = [];
     let pages = 0;
     for (const entry of readdirSync(APP)) {
@@ -65,7 +68,11 @@ describe("the route segment's shell", () => {
       pages += 1;
       const source = readFileSync(page, "utf8");
       if (source.startsWith('"use client"')) continue;
-      if (/\bawait\b/.test(source) || /export default async/.test(source)) {
+      const beyondTheRequest = source.replace(ALREADY_HELD, "");
+      if (
+        /\bawait\b/.test(beyondTheRequest) ||
+        /export default async/.test(beyondTheRequest)
+      ) {
         awaiting.push(entry);
       }
     }
