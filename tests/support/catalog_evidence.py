@@ -18,7 +18,7 @@ AUDITED_COUNTS = {
     "DAG": 18,
     "ETL": 51,
     "DB": 45,
-    "API": 140,
+    "API": 142,
     "WEB": 104,
     "DEPLOY": 8,
     "MARTIN": 10,

@@ -18,7 +18,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
-from apps.api.registry import OBSERVATION_DISPATCH
+from apps.api.registry import OBSERVATION_DISPATCH, SERVING_CONTRACTS
+from apps.api.schemas.observations import (
+    DASHBOARD_DUPLICATE_FIELDS,
+    ObservationDashboard,
+)
 from apps.api.services.neutral_observations_service import (
     PER_GEOGRAPHY_REDUCTIONS,
     reduction_refusal,
@@ -635,3 +639,167 @@ def test_every_parameter_that_carries_a_grain_takes_the_vocabulary() -> None:
                 )
     finally:
         app.dependency_overrides.pop(get_db_session_dep, None)
+
+
+#: Retirement vocabulary, in any form a sentence about a route would use it.
+_RETIREMENT_WORDS = re.compile(
+    r"\b(retire[sd]?|retiring|retirement|deprecate[sd]?|deprecating|"
+    r"deprecation|sunsets?|sunsetting)\b",
+    re.IGNORECASE,
+)
+#: The things in this system that genuinely do retire, and which a retirement
+#: word must therefore be *attached to*. Measures and catalog rows retire
+#: (`freshness_state: "retired"`), and a geography retires when a boundary
+#: vintage stops listing it. Served routes do not -- that is the claim this
+#: guards.
+_THINGS_THAT_RETIRE = re.compile(
+    r"\b(metric|metrics|measure|measures|catalog|rows?|geography|geographies)\b",
+    re.IGNORECASE,
+)
+#: How close the noun has to be. Two words, because the defect this catches --
+#: "`/observations/timeseries` retire with the unversioned aliases" -- names a
+#: thing that really did retire (the aliases) four words downstream, so any
+#: rule that merely looks for one somewhere in the sentence passes it. What
+#: makes "a retired geography" legitimate and that sentence wrong is what the
+#: verb is applied *to*.
+_ATTACHMENT_WINDOW = 2
+
+
+def _attached_to_something_that_retires(sentence: str, match: re.Match) -> bool:
+    before = re.findall(r"[A-Za-z_]+", sentence[: match.start()])[-_ATTACHMENT_WINDOW:]
+    after = re.findall(r"[A-Za-z_]+", sentence[match.end() :])[:_ATTACHMENT_WINDOW]
+    return bool(_THINGS_THAT_RETIRE.search(" ".join(before + after)))
+
+
+def _code_spans(sentence: str) -> list[tuple[int, int]]:
+    """Backticked ranges. `freshness_state: "retired"` is a value, not a claim."""
+    return [(m.start(), m.end()) for m in re.finditer(r"`[^`]*`", sentence)]
+
+
+def _guide_prose_sentences() -> list[str]:
+    """The guide's sentences, with fenced code blocks removed.
+
+    A fenced block holds example responses, and `"metrics_retired": 0` in one
+    of them is a field name rather than a claim about a route.
+    """
+    text = GUIDE.read_text(encoding="utf-8")
+    prose = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    # Sentence-ish: a period followed by whitespace, or a blank line. Table
+    # rows and list items are their own units, which is what we want -- the
+    # claim and the path it is about are on one line in both.
+    return [
+        fragment.strip()
+        for fragment in re.split(r"(?<=\.)\s+|\n{2,}|\n(?=[|\-*])", prose)
+        if fragment.strip()
+    ]
+
+
+def test_no_served_route_is_described_as_retiring() -> None:
+    """Covers: API-141 — the guide cannot say a permanent resource is going away.
+
+    Three places described `/observations/{latest,timeseries}` and the
+    source-scoped pair three different ways. The guide said "They retire with
+    the unversioned aliases", and those aliases were retired in API-008, so by
+    that sentence the routes were already gone. They were not, `apps/web`
+    consumes them, and ADR-0002's 2026-09-16 amendment records that they are
+    permanent `v1` resources.
+
+    The rule this asserts is the amendment's: retirement in this API applies
+    to measures, catalog rows, geographies and the unversioned aliases, never
+    to a served route. So a sentence that names a served path may use the
+    vocabulary only when it also names one of those. It is not a ban on the
+    words -- the guide has to describe a retired measure, and does.
+    """
+    prefix = f"/api/{CURRENT_VERSION}"
+    served = sorted(
+        {
+            path[len(prefix) :]
+            for path in app.openapi()["paths"]
+            if path.startswith(f"{prefix}/")
+        },
+        key=len,
+        reverse=True,
+    )
+    assert served, "no served path was discovered, so this test proves nothing"
+
+    offences = []
+    for sentence in _guide_prose_sentences():
+        named = [path for path in served if path in sentence]
+        if not named:
+            continue
+        spans = _code_spans(sentence)
+        for match in _RETIREMENT_WORDS.finditer(sentence):
+            if any(start <= match.start() < end for start, end in spans):
+                continue
+            if _attached_to_something_that_retires(sentence, match):
+                continue
+            offences.append(f"{named[0]}: ...{match.group(0)}... in {sentence}")
+
+    assert offences == [], (
+        "the guide describes a served route as retiring, deprecated or "
+        "sunsetting; these resources are permanent under ADR-0002:\n"
+        + "\n".join(offences)
+    )
+
+
+def test_guide_documents_the_dashboard_row_the_registry_serves() -> None:
+    """Covers: API-142 — the MVP row's duplicates and typed nulls, derived not typed.
+
+    `ObservationDashboard` is 32 all-optional fields carrying four values
+    twice, and a field a source does not publish is a typed `null` rather than
+    an absent key. Both are properties the serving registry already knows --
+    the pairs from the projection, the nulls from `ServingContract.publishes_*`
+    -- so the guide's table is checked against the registry rather than being
+    a second, hand-maintained copy of it that can drift.
+    """
+    text = GUIDE.read_text(encoding="utf-8")
+    section = text.split("### Reading an MVP-shaped row", 1)
+    assert len(section) == 2, "the guide no longer documents the MVP-shaped row"
+    section = section[1].split("\n### ", 1)[0]
+
+    for canonical, duplicate in DASHBOARD_DUPLICATE_FIELDS.items():
+        assert f"`{canonical}`" in section and f"`{duplicate}`" in section, (
+            f"the guide does not name the {canonical}/{duplicate} pair"
+        )
+        field = ObservationDashboard.model_fields[duplicate]
+        assert field.deprecated is True, (
+            f"{duplicate} is documented as the spelling not to read, but the "
+            "schema does not mark it deprecated, so a generated client cannot know"
+        )
+        assert ObservationDashboard.model_fields[canonical].deprecated is not True
+
+    # The fields a source leaves typed null, derived from the contract's own
+    # capability flags exactly as `_source_select_sql` derives the projection.
+    for contract in SERVING_CONTRACTS.values():
+        expected = set()
+        if not contract.publishes_seasonal_adjustment:
+            expected.add("seasonal_adjustment_status")
+        if not contract.publishes_vintage_and_error:
+            expected |= {
+                "dataset",
+                "dataset_code",
+                "margin_of_error",
+                "margin_of_error_pct",
+                "vintage",
+                "vintage_year",
+            }
+        assert expected, (
+            f"{contract.source_code} nulls nothing; the table would be empty"
+        )
+
+        row = next(
+            (
+                line
+                for line in section.splitlines()
+                if line.startswith("|") and contract.display_name in line
+            ),
+            None,
+        )
+        assert row is not None, (
+            f"the guide's typed-null table has no row for {contract.display_name}"
+        )
+        documented = set(re.findall(r"`([a-z_]+)`", row.rsplit("|", 2)[-2]))
+        assert documented == expected, (
+            f"{contract.display_name}: the guide documents {sorted(documented)} "
+            f"as always null, the registry's flags say {sorted(expected)}"
+        )

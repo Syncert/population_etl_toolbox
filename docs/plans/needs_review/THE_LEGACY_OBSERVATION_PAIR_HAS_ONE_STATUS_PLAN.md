@@ -13,13 +13,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit.
+- **Status:** Ready for review. Authored 2026-09-16 from the codebase audit.
   **Decision taken 2026-09-16 by the repository owner: promote the pair
   and the source-scoped routes to permanent v1 resources.** The retire
   option is recorded below as the path not taken, so a later reader knows
   it was considered.
 - **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Current milestone:** complete.
 
 ## Why
 
@@ -100,16 +100,96 @@ consumer asking for it.
 
 ## Acceptance criteria
 
-- [ ] ADR-0002 carries the amendment.
-- [ ] The guide, the registry comment and the service docstring describe
+- [x] ADR-0002 carries the amendment (`## Amendment (2026-09-16): the
+      MVP-shaped observation routes are permanent`), including the note that
+      the RFC 8594 mechanism is not implemented and is reinstated by whichever
+      plan first retires a route.
+- [x] The guide, the registry comment and the service docstring describe
       the routes the same way, and the guide test forbids "retire",
-      "deprecated" and "sunset" as descriptions of any served route.
-- [ ] The guide documents `ObservationDashboard`'s duplicate pairs and the
+      "deprecated" and "sunset" as descriptions of any served route
+      (`test_no_served_route_is_described_as_retiring`, API-141).
+- [x] The guide documents `ObservationDashboard`'s duplicate pairs and the
       per-source null-typed fields, and a unit test derives the per-source
-      table from `ServingContract.publishes_*` so it cannot drift.
-- [ ] The OpenAPI snapshot is regenerated once with the `deprecated`
+      table from `ServingContract.publishes_*` so it cannot drift
+      (`test_guide_documents_the_dashboard_row_the_registry_serves`, API-142).
+- [x] The OpenAPI snapshot is regenerated once with the `deprecated`
       markers and the digest test passes.
-- [ ] `TESTING_CONTRACT.md` gains an `API-` row for each of the two tests.
+- [x] `TESTING_CONTRACT.md` gains an `API-` row for each of the two tests:
+      API-141 and API-142.
+
+## Implementation evidence
+
+### What changed
+
+- `docs/decisions/0002-api-versioning-and-deprecation.md`: the 2026-09-16
+  amendment. It records the permanence decision and its reason (the dependant
+  already exists and is served correctly, which is the opposite of the
+  situation that justified retiring the aliases), states that the RFC 8594
+  headers are deliberately not implemented while nothing is retiring, and
+  separates documentation from retirement: a `deprecated` marker removes
+  nothing and starts no clock.
+- The three descriptions now agree. The guide's section is retitled "The
+  MVP-shaped observation routes" and says they are permanent; the comment
+  above `UNION_NEUTRAL_PATHS` in `apps/api/registry.py` and the
+  `CROSS_SOURCE_*_RELATION` docstring in `observations_service.py` both point
+  at the amendment and say the same thing.
+- `docs/reference/API_CONSUMER_GUIDE.md` gains "Reading an MVP-shaped row"
+  beside "Reading a row honestly": the four duplicate pairs with which member
+  to read and why, the fifth repetition (`release_date` is `as_of_date`, left
+  unmarked because neither spelling is the odd one out), and the per-source
+  always-null table.
+- `apps/api/schemas/observations.py`: `DASHBOARD_DUPLICATE_FIELDS` states the
+  four pairs once, and `source`, `unit`, `dataset` and `vintage` carry
+  `deprecated=True` with a description naming the field to read instead.
+- `tests/support/openapi_contract.py`: the reviewed digest now carries a
+  schema's deprecated property names. Without it, "regenerate the snapshot
+  with the markers" was a no-op — the digest reduced a schema to its required
+  set and property types, so a marker added or withdrawn would never appear in
+  a reviewed diff. The key is emitted only when a schema has one, so the
+  regenerated snapshot's diff is six lines, all of them `ObservationDashboard`.
+
+### The two tests
+
+`test_no_served_route_is_described_as_retiring` checks every guide sentence
+that names a path the application serves. The first rule tried — the sentence
+must also name something that genuinely retires — **passed the original
+defective sentence**, because "They retire with the unversioned aliases" names
+the aliases, which really did retire. Verified by restoring the sentence and
+watching the test stay green. The rule that ships asks what the verb is
+attached to: a retirement word must have a retiring noun within two words,
+outside a code span. That fails the restored sentence
+(`...retire... in \`GET /api/v1/observations/latest\` and
+\`/observations/timeseries\` retire with the unversioned aliases`) and passes
+the guide's three legitimate uses — a retired geography, retired catalog rows,
+and `freshness_state: "retired"` as a value.
+
+`test_guide_documents_the_dashboard_row_the_registry_serves` rebuilds the
+always-null set per source from `publishes_seasonal_adjustment` and
+`publishes_vintage_and_error` — the same two flags `_source_select_sql`
+projects the typed `NULL`s from — and compares it against the guide's table
+rows, and asserts each duplicate member is `deprecated` in the schema and each
+canonical member is not.
+
+### Commands
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit/api -q` | 609 passed |
+| `python -m pytest tests/unit -q` | 1802 passed |
+| `python -m tests.support.regenerate_openapi_contract` | 42 operations, 69 schemas; six-line diff, all `ObservationDashboard` |
+| `npm --prefix apps/web run test:unit` | 557 passed, 35 files |
+| `ruff format --check . ; ruff check .` | 477 files formatted; all checks passed |
+
+### Scope notes
+
+- The guide's table is scoped to the source-scoped routes, and the one place
+  the cross-source pair differs is stated beside it: its union views give a BLS
+  row the program code and a FRED row the literal `fred` for
+  `dataset_code`/`dataset` rather than `null`
+  (`sql/gold_contract/001_gold_contract_views.sql`). That is a fact the
+  `publishes_*` flags do not carry, so it is prose rather than a derived row.
+- No response body changed, and `apps/web` was not migrated off either
+  spelling; its suite passes unchanged.
 
 ## Definition of done
 

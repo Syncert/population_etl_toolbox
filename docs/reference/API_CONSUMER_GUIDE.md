@@ -363,6 +363,53 @@ source-scoped routes serve it; that is what they are for.
   providers differ, and the table below says so per source rather than
   leaving you to infer it.
 
+### Reading an MVP-shaped row
+
+The ten MVP-shaped operations answer `ObservationDashboard`: a flat row of 32
+fields, **all of them optional**. It predates the neutral envelope above and
+is kept as the shape `apps/web` consumes. Two things about it will mislead a
+client that reads it as though it were `NeutralObservation`.
+
+**Four fields are duplicates of four other fields.** They are the same value
+under two names, projected by the same `SELECT`. Read the left column; the
+right column is the MVP spelling, kept so nothing breaks, and marked
+`deprecated: true` in the OpenAPI document so a generated client says so too.
+
+| Read this | Not this | Why |
+| --- | --- | --- |
+| `source_code` | `source` | Same value. `source_code` is the glossary identity every other resource uses |
+| `units` | `unit` | Same value |
+| `dataset_code` | `dataset` | Same value |
+| `vintage_year` | `vintage` | Same value, and `vintage_year` is an **integer** while `vintage` is that integer rendered as text |
+
+`release_date` is a fifth repetition — it is `as_of_date` under another name —
+and is not marked, because unlike the four above neither spelling is the
+odd one out: `as_of` is what the neutral envelope calls it, and `release_date`
+is what the MVP called it.
+
+**A field this source does not publish is a typed `null`, not an absent key.**
+Every row carries every column, so `margin_of_error: null` on a BLS row means
+"BLS publishes no margin of error", never "this observation happens to have
+none". Which fields that applies to is a property of the source, not of the
+row:
+
+| Source | Source-scoped route | Always `null` on that route |
+| --- | --- | --- |
+| Bureau of Labor Statistics | `/bls/observations/{latest,timeseries}` | `dataset`, `dataset_code`, `margin_of_error`, `margin_of_error_pct`, `vintage`, `vintage_year` |
+| Census American Community Survey | `/census/observations/{latest,timeseries}` | `seasonal_adjustment_status` |
+| Federal Reserve Economic Data | `/fred/observations/{latest,timeseries}` | `dataset`, `dataset_code`, `margin_of_error`, `margin_of_error_pct`, `vintage`, `vintage_year` |
+| Census Population Estimates Program | `/pep/observations/{latest,timeseries}` | `seasonal_adjustment_status` |
+
+That table is derived from the serving registry's own capability flags, not
+maintained by hand, so a source whose published surface changes moves this
+table with it.
+
+The cross-source pair `/observations/{latest,timeseries}` reads union views
+rather than the per-source relations, and they differ on one point: there,
+a BLS row's `dataset_code` and `dataset` carry the BLS program code and a
+FRED row's carry the literal `fred`, instead of being `null`. Everything else
+in the table holds on both.
+
 ### What a release identifies, per source
 
 A release identity is only as strong as what the provider publishes. Three
@@ -471,16 +518,26 @@ which the publisher views and the serving routes both go through; a grain
 in the catalog is derived from the rows a source actually serves, never
 declared from configuration.
 
-### Legacy observation routes
+### The MVP-shaped observation routes
 
 `GET /api/v1/observations/latest` and `/observations/timeseries` are the
 original MVP shapes and answer for **only** Census ACS, BLS, and FRED (the
-three sources in the cross-source union views). They retire with the
-unversioned aliases. New work should use `/observations`.
+three sources in the cross-source union views).
 
-Source-scoped routes remain for source-specific exploration:
-`/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
-`/api/v1/cdc/observations`, `/api/v1/usda-nass/{observations,series,measures,source-notes}`.
+They are **permanent `v1` resources**, and nothing about them is scheduled
+to be withdrawn. `/observations` is not a successor they are migrating
+toward — it is an additive resource serving the same rows in a typed,
+structured envelope. ADR-0002's 2026-09-16 amendment records that decision.
+Prefer `/observations` for new work because its row is easier to read
+correctly, not because these are going away.
+
+Source-scoped routes are permanent on the same terms, and remain the way to
+explore one source: `/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
+`/api/v1/cdc/observations`,
+`/api/v1/usda-nass/{observations,series,measures,source-notes}`.
+
+All ten of those operations answer the same row shape, `ObservationDashboard`,
+which is described under [Reading an MVP-shaped row](#reading-an-mvp-shaped-row).
 
 ### Which release you get, and what you get if you do not ask
 

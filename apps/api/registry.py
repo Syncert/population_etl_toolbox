@@ -988,9 +988,11 @@ DISPATCH_ANALYSIS_PATHS: tuple[str, ...] = (
     DISPATCH_NEUTRAL_PATHS + ANALYSIS_NEUTRAL_PATHS
 )
 
-#: Paths answered for the three sources also published into the legacy
-#: cross-source ``gold.*`` union views, which still back the legacy
-#: latest/timeseries pair until API-008 retires it.
+#: Paths answered for the three sources also published into the cross-source
+#: ``gold.*`` union views, which back the MVP-shaped latest/timeseries pair.
+#: That pair is a permanent ``v1`` resource (ADR-0002, 2026-09-16 amendment):
+#: API-008 retired the unversioned prefix aliases, not these routes, and
+#: nothing here is waiting to be retired.
 UNION_NEUTRAL_PATHS: tuple[str, ...] = DISPATCH_ANALYSIS_PATHS + (
     "/observations/latest",
     "/observations/timeseries",

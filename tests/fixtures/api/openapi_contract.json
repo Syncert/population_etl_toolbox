@@ -3061,6 +3061,12 @@
       "required": []
     },
     "ObservationDashboard": {
+      "deprecated": [
+        "dataset",
+        "source",
+        "unit",
+        "vintage"
+      ],
       "properties": {
         "as_of_date": "any | null",
         "county_fips": "string | null",

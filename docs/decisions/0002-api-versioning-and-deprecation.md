@@ -3,7 +3,8 @@
 - **Status:** Accepted; the compatibility window closed early (see *Amendment*)
 - **Date:** 2026-08-31
 - **Accepted:** 2026-08-31
-- **Amended:** 2026-09-01 — aliases retired ahead of the published sunset
+- **Amended:** 2026-09-01 — aliases retired ahead of the published sunset;
+  2026-09-16 — the MVP-shaped observation routes are permanent v1 resources
 - **Decision owners:** API platform maintainers
 - **Related work:** API-002 and API-008 in the [API development plan](../plans/completed/API_DEVELOPMENT_PLAN.md)
 
@@ -136,3 +137,49 @@ the same rules: additive changes land in `v1`, breaking changes require `v2`,
 and a future `v2` introduction would reinstate a dual-surface window under
 exactly the policy above — now with real consumers to notify, which is when
 that machinery earns its keep.
+
+
+## Amendment (2026-09-16): the MVP-shaped observation routes are permanent
+
+`GET /api/v1/observations/{latest,timeseries}` and the source-scoped
+`/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}` are
+**permanent `v1` resources**. Nothing about them retires, and nothing retired
+with the aliases.
+
+Three places described them three different ways, and all three were written
+before this decision existed. The consumer guide said "They retire with the
+unversioned aliases", which by the amendment above means they are already
+gone; `apps/api/registry.py` said the union views back them "until API-008
+retires it", which API-008 did not do; and
+`apps/api/services/observations_service.py` said the opposite of both —
+"API-008 retired the unversioned prefix aliases, not these resources" — which
+was the only accurate one. The owner's decision, recorded here because it is
+the reason those three now agree:
+
+- These ten operations are the shape `apps/web` consumes. The neutral
+  `/api/v1/observations` resource is **additive beside them**, not a successor
+  they are migrating toward: it serves the same rows with a typed, structured
+  envelope for clients that want one.
+- Retiring them would mean a client migration and a fixture regeneration with
+  no consumer asking for either. The window that made the aliases worth
+  retiring — no dependants, and a next plan about to create some — does not
+  apply here: the dependant already exists and is served correctly.
+
+**The RFC 8594 mechanism is not currently implemented.** `Deprecation`,
+`Sunset` and `Link: ...; rel="successor-version"` were removed from
+`apps/api` with the aliases, and the guide test forbids those words, so the
+API has no way today to announce a retirement from a response. That is
+consistent, because nothing is retiring. Whichever plan first retires a served
+route reinstates the headers as part of its own work — as a router-level
+dependency keyed on a constant naming the retiring paths — and amends this ADR
+then. Reinstating them before there is a route to retire would publish a
+signal with nothing to signal about.
+
+**Documentation is not retirement.** `ObservationDashboard` carries four
+duplicate field pairs from the MVP (`source`/`source_code`, `unit`/`units`,
+`dataset`/`dataset_code`, `vintage`/`vintage_year`). The secondary member of
+each is marked `deprecated: true` in the schema so the OpenAPI document tells
+a client which one to read. That marker is guidance in a document; it removes
+nothing, changes no response body, and starts no clock. Removing one of those
+fields would be a breaking change under the table above, and would therefore
+belong in `v2`.
