@@ -15,6 +15,7 @@
 // because both values are published and real (WEB-049).
 
 import type { ScatterModel } from "../lib/comparison";
+import { formatNumber } from "../lib/format";
 
 const WIDTH = 620;
 const HEIGHT = 320;
@@ -29,7 +30,7 @@ function scale(value: number, min: number, max: number, from: number, to: number
 }
 
 function axisLabel(value: number): string {
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatNumber(value, { maximumFractionDigits: 2 });
 }
 
 export default function ScatterChart({

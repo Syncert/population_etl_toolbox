@@ -23,6 +23,7 @@ import type {
 import { metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
+import { formatNumber } from "./format";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -250,7 +251,7 @@ export function comparisonValueText(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return "Not published";
   }
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return formatNumber(value, { maximumFractionDigits: 4 });
 }
 
 /** True when the API named this field as one it derived. */
@@ -635,9 +636,9 @@ export function describeComparisonCoverage(
   const codeA = response?.metric_code_a || "measure A";
   const codeB = response?.metric_code_b || "measure B";
   return (
-    `${total.toLocaleString()} geographies are paired here. ` +
-    `${codeA} publishes ${countA.toLocaleString()} and ${codeB} publishes ` +
-    `${countB.toLocaleString()} under these filters; a geography only one of ` +
+    `${formatNumber(total)} geographies are paired here. ` +
+    `${codeA} publishes ${formatNumber(countA)} and ${codeB} publishes ` +
+    `${formatNumber(countB)} under these filters; a geography only one of ` +
     "the two publishes is not in this comparison."
   );
 }

@@ -18,12 +18,15 @@ import { describe, expect, test } from "vitest";
 import {
   CORRELATION_IS_ACROSS_GEOGRAPHIES,
   MAX_MATRIX_METRICS,
+  PAIRED_GEOGRAPHIES_NOT_PUBLISHED,
   correlationEligibility,
   correlationMatrixModel,
   correlationReadings,
   crossSectionalPair,
   crossSectionalRefusal,
   formatCoefficient,
+  pairedGeographies,
+  pairedGeographiesText,
   selectablePairs,
 } from "../../../apps/web/lib/workbench";
 import {
@@ -230,7 +233,90 @@ describe("the correlation panel's readings", () => {
       geographiesB: 3016,
     });
     expect(readings[0].label).toBe("Paired geographies");
-    expect(readings[0].value).toBe((3016).toLocaleString());
+    // The one locale this application formats in, not the runner's.
+    expect(readings[0].value).toBe("3,016");
+  });
+
+  test("an unpublished pair count reads as not published, never as zero", () => {
+    // `n` is optional in the contract, and the client read it as
+    // `Number(statistic.n ?? 0)`. That rendered a count the API never sent as
+    // "0 paired geographies" -- indistinguishable from a genuine zero, and a
+    // claim the API did not make. Every reading that depends on the count
+    // refuses together.
+    const readings = correlationReadings(
+      { pearson_r: 0.4123, spearman_rho: -0.377 },
+      { geographiesA: 3143, geographiesB: 3016 },
+    );
+
+    const byLabel = Object.fromEntries(
+      readings.map((reading) => [reading.label, reading.value]),
+    );
+    expect(byLabel["Paired geographies"]).toBe(PAIRED_GEOGRAPHIES_NOT_PUBLISHED);
+    expect(byLabel["Contemporaneous pairs"]).toBe(PAIRED_GEOGRAPHIES_NOT_PUBLISHED);
+    expect(byLabel["Coverage"]).toBe(
+      `${PAIRED_GEOGRAPHIES_NOT_PUBLISHED}, of 3,143 and 3,016 published`,
+    );
+    // The coefficients are unaffected: only the readings that count pairs
+    // refuse, and none of them shows a zero.
+    for (const label of ["Paired geographies", "Contemporaneous pairs", "Coverage"]) {
+      expect(String(byLabel[label])).not.toMatch(/\b0\b/);
+    }
+    expect(byLabel["Pearson r"]).toBe("0.412");
+
+    expect(pairedGeographies({ pearson_r: 0.4 })).toBeNull();
+    expect(pairedGeographies({ n: 0 })).toBe(0);
+    expect(pairedGeographiesText({ pearson_r: 0.4 })).toBe(
+      "Paired geographies not published.",
+    );
+    expect(pairedGeographiesText({ n: 3016 })).toBe("3,016 paired geographies.");
+  });
+
+  test("a matrix cell with no published count carries null, not zero", () => {
+    // The diagonal, a pair the matrix carried no answer for, and a declined
+    // pair are all cells the API published no count for. `n: 0` said it
+    // measured zero pairs.
+    const { cells } = correlationMatrixModel({
+      codes: ["FRED:A", "FRED:B", "FRED:C"],
+      pairs: [
+        {
+          metric_code_a: "FRED:A",
+          metric_code_b: "FRED:B",
+          comparable: true,
+          // Comparable, measured, and the API published no count.
+          statistic: { pearson_r: 0.5, spearman_rho: 0.4 },
+        },
+        {
+          metric_code_a: "FRED:A",
+          metric_code_b: "FRED:C",
+          comparable: false,
+          rules: [{ rule: "grain", status: "fail", reason: "Different grains." }],
+        },
+      ],
+    });
+
+    // The diagonal, the declined pair, the pair with no answer at all, and
+    // the measured pair whose statistic carried no `n`: four kinds of cell,
+    // none of which the API published a count for.
+    for (const cell of cells) {
+      expect(cell.n, `${cell.metricCodeA} x ${cell.metricCodeB}`).toBeNull();
+    }
+    expect(cells.some((cell) => cell.identity)).toBe(true);
+    expect(cells.some((cell) => cell.declined)).toBe(true);
+
+    const counted = correlationMatrixModel({
+      codes: ["FRED:A", "FRED:B"],
+      pairs: [
+        {
+          metric_code_a: "FRED:A",
+          metric_code_b: "FRED:B",
+          comparable: true,
+          statistic: { pearson_r: 0.5, spearman_rho: 0.4, n: 3016 },
+        },
+      ],
+    });
+    expect(
+      counted.cells.filter((cell) => !cell.identity).map((cell) => cell.n),
+    ).toEqual([3016, 3016]);
   });
 
   test("label every coefficient API-derived, and nothing else", () => {

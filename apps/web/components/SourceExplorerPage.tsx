@@ -117,7 +117,7 @@ import {
   supportedViewModes,
   unsupportedViewModes,
 } from "../lib/viewModes";
-import { displayMetricName } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 import {
   GEO_GRAIN_LABELS,
   GEO_GRAIN_ORDER,
@@ -2141,7 +2141,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             ) : null}
 
             <div className="control-group span-controls">
-              <label htmlFor="metric-select">Metric ({options.length.toLocaleString()} available)</label>
+              <label htmlFor="metric-select">Metric ({formatNumber(options.length)} available)</label>
               <select
                 id="metric-select"
                 className="select"
@@ -2197,7 +2197,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                           {`As released: ${release.release}`}
                           {release.as_of ? ` (as of ${release.as_of})` : ""}
                           {typeof release.observation_count === "number"
-                            ? ` — ${release.observation_count.toLocaleString()} observations`
+                            ? ` — ${formatNumber(release.observation_count)} observations`
                             : ""}
                         </option>
                       ))
@@ -2370,7 +2370,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             <p className="metric-meta">
               Source: {selectedMetricMeta.source_code}
               {selectedDataset ? ` | Dataset: ${selectedDataset.toUpperCase()}` : ""}
-              {` | Loaded catalog: ${metrics.length.toLocaleString()} metrics`}
+              {` | Loaded catalog: ${formatNumber(metrics.length)} metrics`}
             </p>
           ) : null}
           {selectedDataset === "acs1" || selectedDataset === "acs5" ? (

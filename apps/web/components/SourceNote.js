@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react";
+import { formatDate } from "../lib/format";
 
 export default function SourceNote({
   source,
@@ -20,7 +21,7 @@ export default function SourceNote({
         <div><dt>Geography</dt><dd>{geography || "Not selected"}</dd></div>
         <div><dt>Coverage</dt><dd>{period || "Latest available"}</dd></div>
         <div><dt>Transformation</dt><dd>{transformation}</dd></div>
-        <div><dt>Catalog updated</dt><dd>{updatedAt ? new Date(updatedAt).toLocaleDateString() : "Not reported"}</dd></div>
+        <div><dt>Catalog updated</dt><dd>{updatedAt ? formatDate(updatedAt) : "Not reported"}</dd></div>
       </dl>
       {caveats ? <p className="method-note">{caveats}</p> : null}
       <a className="text-link" href="https://www.census.gov/programs-surveys/acs/guidance/estimates.html" target="_blank" rel="noreferrer">

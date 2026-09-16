@@ -6,6 +6,7 @@ import type { DistributionResponse, MetricSummary } from "./api/types";
 import { isDrawableTileGrain } from "./tileGrains";
 import { normalizeGeoLevel } from "./urlState";
 import type { ValueScale } from "./urlState";
+import { DISPLAY_LOCALE } from "./format";
 
 // Re-exported: the grain vocabulary and its aliases are declared beside
 // `GEO_LEVELS`, and this module's callers have always reached the
@@ -669,7 +670,7 @@ export function formatLegendValue(value: number | null): string {
     return "-";
   }
 
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(DISPLAY_LOCALE, {
     notation: Math.abs(value) >= 10000 ? "compact" : "standard",
     maximumFractionDigits: Math.abs(value) >= 10000 ? 1 : 0,
   }).format(value);
@@ -684,7 +685,7 @@ export function formatObservationValue(
     return "-";
   }
 
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(DISPLAY_LOCALE, {
     maximumFractionDigits,
   }).format(numericValue);
 }

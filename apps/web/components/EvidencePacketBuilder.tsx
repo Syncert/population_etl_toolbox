@@ -54,6 +54,7 @@ import {
   packetToDocument,
 } from "../lib/evidencePackets";
 import type { EvidencePacket, PacketBlock } from "../lib/evidencePackets";
+import { formatTime } from "../lib/format";
 
 function newId(prefix: string): string {
   return `${prefix}:${Math.random().toString(36).slice(2, 10)}`;
@@ -230,7 +231,9 @@ export default function EvidencePacketBuilder() {
 
   function persistLocally() {
     window.localStorage.setItem(BUILDER_DRAFT_KEY, JSON.stringify(packet));
-    setSaveState(`Saved ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+    setSaveState(
+      `Saved ${formatTime(new Date(), { hour: "numeric", minute: "2-digit" })}`,
+    );
   }
 
   async function persist() {

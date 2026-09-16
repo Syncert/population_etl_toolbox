@@ -19,6 +19,7 @@
 
 import type { AxisAssignment, PlottedSeries } from "../lib/workbench";
 import { describeChart, describeSeries } from "../lib/workbench";
+import { formatNumber } from "../lib/format";
 
 const WIDTH = 680;
 const HEIGHT = 320;
@@ -55,7 +56,7 @@ export function seriesDashed(index: number): boolean {
 }
 
 function formatValue(value: number): string {
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return formatNumber(value, { maximumFractionDigits: 3 });
 }
 
 interface AxisScale {

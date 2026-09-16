@@ -76,6 +76,7 @@ import {
   serializeComparisonState,
 } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
+import { formatNumber } from "../lib/format";
 
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const CATALOG_PAGE_SIZE = 1000;
@@ -735,7 +736,7 @@ export default function ComparisonWorkspace() {
                   ))}
                 </select>
                 <label htmlFor={`metric-${side}`}>
-                  {SIDE_LABEL[side]} ({options[side].length.toLocaleString()} available)
+                  {SIDE_LABEL[side]} ({formatNumber(options[side].length)} available)
                 </label>
                 <select
                   id={`metric-${side}`}

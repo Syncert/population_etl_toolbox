@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
 import { getSources, searchMetrics } from "../lib/api/client";
-import { displayMetricName } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 import { connectedSourcesBand } from "../lib/catalog";
 import { explorerHref } from "../lib/urlState";
 
@@ -53,7 +53,7 @@ export default function HomePage() {
 
       <section className="signal-strip" aria-label="Platform signals">
         <div><strong>{status === "ready" ? sources.length : "-"}</strong><span>connected sources</span></div>
-        <div><strong>{status === "ready" ? metrics.total.toLocaleString() : "-"}</strong><span>population matches</span></div>
+        <div><strong>{status === "ready" ? formatNumber(metrics.total) : "-"}</strong><span>population matches</span></div>
         <div><strong>County</strong><span>national map coverage</span></div>
         <div><strong>Live</strong><span>API-backed observations</span></div>
       </section>

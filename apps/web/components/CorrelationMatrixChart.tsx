@@ -27,6 +27,7 @@ import { CHOROPLETH_WITHHELD_COLOR } from "../lib/explorerViewModel";
 import type { LegendItem } from "../lib/explorerViewModel";
 import { formatCoefficient } from "../lib/workbench";
 import type { CorrelationMatrixModel } from "../lib/workbench";
+import { formatNumber } from "../lib/format";
 
 const CELL = 44;
 const GAP = 2;
@@ -203,7 +204,11 @@ export default function CorrelationMatrixChart({
                           cell.metricCodeB,
                         )}: ${coefficient} ${formatCoefficient(
                           cell.value,
-                        )} over ${cell.n.toLocaleString()} paired geographies. API-derived.`
+                        )} over ${
+                          cell.n === null
+                            ? "a pair count the API did not publish"
+                            : `${formatNumber(cell.n)} paired geographies`
+                        }. API-derived.`
                       : `${labelFor(cell.metricCodeA)} against ${labelFor(
                           cell.metricCodeB,
                         )}: ${cell.reason}`}
