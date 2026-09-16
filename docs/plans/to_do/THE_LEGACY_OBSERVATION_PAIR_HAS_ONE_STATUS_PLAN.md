@@ -2,21 +2,22 @@
 id: legacy-observation-pair-status
 branch: claude/legacy-observation-pair-status
 depends_on: []
-parallel_safe: false
-complexity: medium
+parallel_safe: true
+complexity: low
 verify:
   - python -m pytest tests/unit/api -q
-  - npm --prefix apps/web run test:unit
-  - npm --prefix apps/web run lint ; npm --prefix apps/web run typecheck
   - ruff format --check . ; ruff check .
 ---
 
-# The legacy observation pair has one status, and the API can retire a route
+# The legacy observation pair is a permanent v1 resource
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit. The
-  first deliverable is a decision; the rest depends on which way it goes.
+- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit.
+  **Decision taken 2026-09-16 by the repository owner: promote the pair
+  and the source-scoped routes to permanent v1 resources.** The retire
+  option is recorded below as the path not taken, so a later reader knows
+  it was considered.
 - **Last updated:** 2026-09-16
 - **Current milestone:** not started.
 
@@ -55,57 +56,71 @@ dashboard row gets one line.
 
 ## Deliverables
 
-### 1. The decision
+### 1. The decision, recorded
 
-Choose one, record it in ADR-0002 as an amendment, and in this plan:
+An amendment to ADR-0002 stating that `/observations/{latest,timeseries}`
+and the source-scoped `/{bls,census,fred,pep}/observations/{latest,timeseries}`
+routes are permanent v1 resources: they are the routes the web consumes,
+the neutral resource is additive beside them, and nothing retires with the
+aliases. The amendment also notes that the RFC 8594 header mechanism is
+not currently implemented and is to be reinstated by whichever plan first
+retires a route, not before.
 
-- **(a) Promote.** The pair and the source-scoped routes are permanent v1
-  resources. Rewrite the guide section, the registry comment and the
-  service docstring to say so; document `ObservationDashboard`'s duplicate
-  pairs and which fields are typed null per source (the registry already
-  knows through `ServingContract.publishes_*`); mark the duplicate members
-  `deprecated: true` in the schema so the OpenAPI document says which name
-  to read.
-- **(b) Retire.** Reinstate the RFC 8594 mechanism as a small router-level
-  dependency keyed on a `DEPRECATED_PATHS` constant in `versioning.py`,
-  emit the three headers on exactly those routes outside the response
-  cache (per ADR-0002), publish the sunset date, and migrate `apps/web` to
-  `/observations` with `newest_per_geography` and `scope=as_released`,
-  which the neutral resource already answers.
+### 2. One description
 
-### 2. Under either: one description
+Rewrite the guide's "Legacy observation routes" section (drop "They retire
+with the unversioned aliases"; call them the MVP-shaped routes and say what
+they answer), the registry comment near the cross-source union views, and
+the `observations_service.py` docstring, so all three say the same thing. A
+guide test asserts no route is described as retiring, deprecated or
+sunsetting anywhere in the guide, so the contradiction cannot return
+without a reviewed change to the test.
 
-A guide test asserts that no route is described as retiring unless it is
-in `DEPRECATED_PATHS`, and that every path in `DEPRECATED_PATHS` carries the
-headers (so the guide, the constant and the response cannot disagree).
+### 3. The dashboard row is documented
 
-### 3. Under (b): the web reads the successor
+Document `ObservationDashboard` in the guide beside "Reading a row
+honestly": its four duplicate pairs (`source`/`source_code`, `units`/`unit`,
+`dataset`/`dataset_code`, `vintage`/`vintage_year`), which member of each
+pair a client should read, and which fields are typed null per source (the
+registry already knows through `ServingContract.publishes_*`, so derive the
+table from it in a test rather than typing it). Mark the secondary member
+of each pair `deprecated: true` in the Pydantic schema so the OpenAPI
+document carries the same guidance; regenerate the reviewed snapshot once
+for those markers.
 
-`client.ts` loses the four legacy helpers, `observationAccess.ts` builds its
-requests against the neutral resource, and the served-contract fixtures
-under `tests/fixtures/api` are regenerated from the neutral shape.
+### The path not taken
+
+Retiring the pair would reinstate the RFC 8594 headers per ADR-0002 as a
+router-level dependency keyed on a `DEPRECATED_PATHS` constant, publish a
+sunset date, and migrate `apps/web` to `/observations` with
+`newest_per_geography` and `scope=as_released`. It was not chosen because
+the web is the only consumer and the neutral resource serves the same
+rows; the cost was a client migration and fixture regeneration with no
+consumer asking for it.
 
 ## Acceptance criteria
 
-- [ ] ADR-0002 records the decision.
-- [ ] The three descriptions agree with each other and with the response
-      headers, and a test proves it.
-- [ ] Under (a): the OpenAPI snapshot is regenerated once with the
-      `deprecated` field markers and the guide documents the dashboard row.
-- [ ] Under (b): the pair answers with `Deprecation`, `Sunset` and `Link`
-      headers, no other route does, the headers are absent from the cache
-      digest, and the web browser suite passes on the successor resource.
-- [ ] `TESTING_CONTRACT.md` gains the `API-` rows the choice needs.
+- [ ] ADR-0002 carries the amendment.
+- [ ] The guide, the registry comment and the service docstring describe
+      the routes the same way, and the guide test forbids "retire",
+      "deprecated" and "sunset" as descriptions of any served route.
+- [ ] The guide documents `ObservationDashboard`'s duplicate pairs and the
+      per-source null-typed fields, and a unit test derives the per-source
+      table from `ServingContract.publishes_*` so it cannot drift.
+- [ ] The OpenAPI snapshot is regenerated once with the `deprecated`
+      markers and the digest test passes.
+- [ ] `TESTING_CONTRACT.md` gains an `API-` row for each of the two tests.
 
 ## Definition of done
 
-A client reading the guide, the OpenAPI document or a response gets the
-same answer about whether the legacy pair will still exist next year, and
-the API has a working way to say so about any route.
+A client reading the guide or the OpenAPI document learns that the pair is
+permanent, which field of each duplicate pair to read, and which fields a
+given source leaves null, and none of the three places that describe the
+routes can disagree again.
 
 ## What this plan deliberately does not do
 
-- It does not change the neutral `/observations` resource.
-- It does not remove the source-scoped routes under (b) in the same change;
-  they get the same headers and the same sunset, and their removal is the
-  follow-on the sunset date names.
+- It does not change the neutral `/observations` resource or any response
+  body; the `deprecated` markers are documentation in the schema, not a
+  removal.
+- It does not reinstate the RFC 8594 headers; nothing is retiring.

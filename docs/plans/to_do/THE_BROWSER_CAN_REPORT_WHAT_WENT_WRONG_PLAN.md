@@ -15,9 +15,9 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit. The
-  first deliverable is a choice of sink; the recommended one needs no API
-  change.
+- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit.
+  **Decision taken 2026-09-16 by the repository owner: the sink is a Next
+  route handler in the web app.** No API change is needed by this plan.
 - **Last updated:** 2026-09-16
 - **Current milestone:** not started.
 
@@ -42,12 +42,13 @@ elsewhere.
 
 ### 1. The sink
 
-Recommended: a Next route handler at a path outside the rewritten prefixes
-(for example `/_report`) that validates a small, closed report shape, writes
-one structured line to the web container's stdout, and answers `204`. It
-holds no state. If the reviewer prefers the API as the sink, that is an
-upstream contract addition with its own route, catalog row and snapshot
-change, and it lands first.
+A Next route handler at a path outside the rewritten prefixes (for example
+`/_report`) that validates a small, closed report shape, writes one
+structured line to the web container's stdout, and answers `204`. It holds
+no state, accepts only `POST` with a bounded body, and answers `204` to an
+invalid report as well (a reporter must never retry into a sink). The
+handler is same-origin, so `connect-src 'self'` admits it without any CSP
+change.
 
 ### 2. Three reporters, one payload discipline
 

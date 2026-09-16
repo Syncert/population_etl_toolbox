@@ -16,7 +16,9 @@ verify:
 ## Plan status
 
 - **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
+  implementation has started. **Decision taken 2026-09-16 by the
+  repository owner: the ACS coverage sentences are deleted, not moved
+  upstream.** No API change is needed by this plan.
 - **Last updated:** 2026-09-16
 - **Current milestone:** not started.
 
@@ -72,15 +74,21 @@ The featured metric is the first metric the catalog answers (the fallback
 `/catalog/capabilities` (a source that publishes a drawable grain; a source
 that is `serving`) or removed.
 
-### 4. The ACS coverage sentences go upstream or go away
+### 4. The ACS coverage sentences go away
 
-Decide with the reviewer: either (a) delete the sentences and the facet
-labels and let the uncoloured-geography reason (WEB-079) and the catalog's
-dataset list carry the meaning, or (b) add an optional per-dataset `note`
-to `SourceCapability` on the API, harvested from the source's own metadata,
-and render it. Under (b) the API change lands first, in its own commit with
-a regenerated OpenAPI snapshot and an `API-` catalog row, before the client
-reads it. Do not keep the sentence in the client under either.
+Delete the two coverage sentences, the "Not published in ACS1" label and
+`DATASET_FACET_LABELS`. The uncoloured-geography reason (WEB-079) already
+tells a reader why a county has no colour, and the catalog's dataset list
+names the datasets a source publishes. The dataset selector shows the
+dataset code the catalog answers, with the catalog's own label if it has
+one, and nothing else. `preferredDatasetFacet` may keep preferring `acs5`
+as a serving default, expressed as a preference in a comment, not as a
+statement about coverage.
+
+If a later plan wants a per-dataset note, it adds one to
+`SourceCapability` on the API first, harvested from the source's own
+metadata, and the client renders exactly what is published; that is not
+this plan.
 
 ## Acceptance criteria
 
@@ -94,9 +102,9 @@ reads it. Do not keep the sentence in the client under either.
 - [ ] `tests/frontend/browser/accessibility-operations.spec.js` and
       `tests/frontend/unit/explorer-sources.test.js` no longer assert the
       hard-coded sentence.
-- [ ] Under (b): the API publishes the note, the snapshot is regenerated, and
-      the client renders exactly what is published.
-- [ ] `TESTING_CONTRACT.md` gains `WEB-` rows (and an `API-` row under (b)).
+- [ ] `DATASET_FACET_LABELS` is gone and the dataset selector renders only
+      what the catalog answers, asserted in `explorer-sources.test.js`.
+- [ ] `TESTING_CONTRACT.md` gains `WEB-` rows.
 
 ## Definition of done
 

@@ -14,9 +14,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit. The
-  first deliverable is a decision recorded as an ADR amendment; the rest
-  follows the decision.
+- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit.
+  **Decision taken 2026-09-16 by the repository owner: capture history
+  survives a reset.** The ADR amendment records that decision; it is not
+  reopened by the implementer.
 - **Last updated:** 2026-09-16
 - **Current milestone:** not started.
 
@@ -42,43 +43,52 @@ volume (`infra/docker/docker-compose.yml`, `analytics_postgres_data`), and
 
 ## Deliverables
 
-### 1. The decision
+### 1. The decision, recorded
 
-An amendment to ADR-0001 (or a new ADR-0006) choosing one of:
+An amendment to ADR-0001 (or a new ADR-0006) stating that capture history
+survives a beta reset: a reset destroys silver and gold, which are
+reproducible, and never the captures and the `control` rows that identify
+them. Record the date and the decision owner; the reasoning is the one in
+*Why* above.
 
-- **(a) Capture history survives a reset.** An export path (a DAG or
-  script that copies `raw_capture.*` and the `control` rows it references
-  per run, or a `pg_dump -t 'raw_capture.*' -t 'control.*'`) to a location
-  outside the database volume, and a documented restore step in
-  `BETA_RESET_REINGESTION.md` §2 that reloads it before re-ingestion, so
-  replay runs against the original responses.
-- **(b) Capture history is disposable during beta.** An explicit statement,
-  with the consequence named (revision history restarts at the reset), and
-  the invariant text in `AGENTS.md`/ADR-0001 qualified accordingly.
+### 2. The export
 
-Record which was chosen, by whom, and why, in the ADR and in this plan.
+An export path that copies `raw_capture.*` and the `control` rows it
+references (requests, runs, attempts and slices the captures point at) to a
+location outside the database volume, configured by the deployment as a
+path or connection string. The recommended shape is a maintenance DAG under
+`dags/` with the same operator notes the other maintenance DAGs carry,
+writing one export per run with a manifest naming the capture id range and
+checksums; a `pg_dump -t 'raw_capture.*' -t 'control.*'` wrapper is
+acceptable if the reviewer prefers one file per export.
 
-### 2. Under (a): the export and restore
+### 3. The restore
 
-Implement the export as a DAG under `dags/` with the same operator notes the
-other maintenance DAGs carry; a restore procedure in §2; and a round-trip
-test that exports the fixture captures, drops the schema, restores, and runs
-`DQ-SHARED-001` (checksum verification) green.
+A restore step in `BETA_RESET_REINGESTION.md` §2 that reloads the export
+before re-ingestion, so replay runs against the original responses and the
+first ingestion after a reset extends the history rather than restarting
+it. The append-only triggers from migration 001 must be honoured by the
+restore (load with the triggers in place, never disabled).
 
-### 3. Under (b): the documentation
+### 4. The round trip is a test
 
-`BETA_RESET_REINGESTION.md` §2 states plainly that captures are lost at
-reset and that any vintage a later analysis needs must be re-captured while
-the provider still serves it.
+An integration test that exports the fixture captures, drops and
+re-bootstraps the warehouse, restores, and runs `DQ-SHARED-001` (checksum
+verification) green over every restored capture.
 
 ## Acceptance criteria
 
-- [ ] The ADR amendment exists with a recorded decision.
-- [ ] Under (a): the round-trip test passes and the DAG parses in `tests/dags`;
-      under (b): the reference document carries the statement and this plan
-      records that no code changed.
-- [ ] `docs/reference/BETA_RESET_REINGESTION.md` §2 and §5 agree with the
-      decision.
+- [ ] The ADR amendment exists and records the decision, its date and its
+      owner.
+- [ ] The export DAG parses in `tests/dags` and its callable is unit-tested
+      against a fixture export directory.
+- [ ] The round-trip test passes: restored captures verify under
+      `DQ-SHARED-001`, and the append-only triggers are still present after
+      the restore.
+- [ ] `docs/reference/BETA_RESET_REINGESTION.md` §2 carries the restore
+      step and §5 no longer describes re-ingestion as the only path back.
+- [ ] `TESTING_CONTRACT.md` gains `DAG-` and `DB-` rows; `CI_EVIDENCE_MAP.md`
+      names the DAG and the test.
 
 ## Definition of done
 
@@ -88,6 +98,6 @@ that makes it so is tested.
 
 ## What this plan deliberately does not do
 
-- It does not choose object storage or a cloud provider; under (a) the
-  export target is a path the deployment configures.
+- It does not choose object storage or a cloud provider; the export target
+  is a path or connection the deployment configures.
 - It does not back up silver or gold; those are reproducible by design.
