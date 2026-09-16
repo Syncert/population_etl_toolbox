@@ -59,6 +59,29 @@ whose acceptance criterion needs a check still stays in `in_progress/` until
 that check runs. Only *residual* verification belongs in `human_testing/` —
 what no criterion required, or what a criterion already satisfied another way.
 
+## Where a plan can be finished
+
+A plan is only finishable where its own `verify` commands can run, and this
+repository has two tiers that need services an agent container does not have:
+the database integration tiers need the pinned disposable PostGIS 16
+container, and the Compose and live-stack smoke tiers need a Docker daemon.
+Everything else -- the Python and web unit tiers, Ruff, the Next build and its
+bundle and CSP checks, the Playwright browser tier, and the Airflow DAG tier --
+runs in a cloud session.
+
+[`EXECUTION_ENVIRONMENTS.md`](EXECUTION_ENVIRONMENTS.md) splits the active
+queue three ways on that basis: finishable in a cloud session, buildable in a
+cloud session but finished on a machine, and needing a machine with the
+warehouse up. Its tables are **derived from the plans' own `verify` blocks**
+and checked by `tests/unit/tooling/test_plan_environments.py`, so a plan that
+changes its verification moves itself between the columns; regenerate with
+`python -m tests.support.plan_environments --write`.
+
+Read it before claiming a plan. It changes nothing about the workflow states
+or the completion gate below -- in particular, a plan whose acceptance
+criterion needs a check the session cannot run stays in `in_progress/`, and
+that is exactly what the middle column is for.
+
 ## Workflow states
 
 The folder containing a plan is its authoritative state:

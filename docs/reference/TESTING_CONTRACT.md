@@ -284,7 +284,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 |---|---|---|
 | Environment, collection, and package | ENV-001–ENV-021 | None |
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
-| Plan dispatcher | PLAN-001–PLAN-007 | None |
+| Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-017 | None |
 | Airflow DAGs | DAG-001–DAG-018 | None |
 | ETL and shared units | ETL-001–ETL-051 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-107 | None |
 | Deployment | DEPLOY-001–DEPLOY-008 | None |
-| **Total** | **478 of 478** | **0 of 478** |
+| **Total** | **479 of 479** | **0 of 479** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 478-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 479-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -379,6 +379,7 @@ verified here rather than only observed during a live run.
 | PLAN-005 | P1 | Isolation / `unit` | Dispatcher run-state durability | Run state round-trips through disk, is replaced atomically, counts one attempt per worker start, and rejects corrupt or unversioned state | State is lost, partially written, miscounts attempts against the retry ceiling, or silently resets |
 | PLAN-006 | P1 | Contract / `unit` | Worker prompt and planner CLI contract | The `/goal` prompt carries verification commands, the `needs_review/` handoff, and the no-progress stand-down ceiling; CLI subcommands emit documented JSON and exit non-zero on unknown plans, live runs, and cycles | An unbounded or unverifiable prompt is issued, or the shell dispatcher cannot detect a planner failure |
 | PLAN-007 | P1 | Contract / `unit` | Human review gate checkpoint | A gate parses only from `gates/` with dependencies and no scheduling keys; it stays shut until everything it guards is satisfied, then opens for review and pauses the run rather than stalling; only a recorded human approval releases dependents, rejection blocks them, and the decision names who and when | A gate is dispatched as work, cleared without a human decision, pre-approved before its dependencies finish, silently reopened, or its dependents proceed past an undecided or rejected checkpoint |
+| PLAN-008 | P1 | Static / `unit` | The queue says where each plan can be finished | `docs/plans/EXECUTION_ENVIRONMENTS.md` is rendered from each plan's own `verify` block and compared here, so a plan that adds a database or Compose command moves itself to the machine column with no edit to the document. Every dispatchable plan lands in exactly one of the three columns; a plan verifying against a service is never called cloud-finishable, and a plan verifying against neither is never sent to a machine without a declared reason. The one hand-written half -- a criterion whose prose names an environment its `verify` block does not -- carries that criterion as its reason and fails when it names a plan that has left the queue | A cloud agent container has no Docker daemon and no PostgreSQL, so the database and Compose tiers cannot run there at all. Nothing said so: an agent discovered it one plan at a time, and the only alternative to a derived table is a hand-maintained one that sends a cloud session at work it cannot finish the first time a plan's verification changes |
 
 ### Warehouse Data-Quality Tests
 
