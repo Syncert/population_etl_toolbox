@@ -1,0 +1,128 @@
+---
+id: acs-bls-fact-lineage-and-value-status
+branch: claude/acs-bls-fact-lineage-and-value-status
+depends_on:
+  - serving-table-vacuum-hygiene
+parallel_safe: false
+complexity: high
+verify:
+  - python -m pytest tests/unit/census tests/unit/bls tests/unit/shared tests/unit/quality tests/unit/api -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -o addopts='' tests/integration/api -m "integration and not external" -q
+  - npm --prefix apps/web run test:unit
+  - ruff format --check . ; ruff check .
+---
+
+# The two largest sources can serve a withheld value and trace a served row
+
+## Plan status
+
+- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
+  implementation has started. Claim after `serving-table-vacuum-hygiene`,
+  because delivering this requires a forced full re-serve of ACS and BLS.
+- **Last updated:** 2026-09-16
+- **Current milestone:** not started.
+
+## Why
+
+Five sources carry capture lineage and a value status on the silver fact.
+FRED gained both in the ARC-007 cutover (`src/data_ingestion_toolbox/fred/DDL/silver_fred.sql`,
+migration 004, and `docs/plans/completed/FRED_REVISION_IDENTITY_REACHES_GOLD_PLAN.md`);
+PEP keys its fact on the capture grain; CDC, FBI and NASS carry
+`capture_id NOT NULL` and a two-directional `value`/`value_status` `CHECK`
+(migrations 010, 011, 012).
+
+The two largest sources carry neither:
+
+- `silver_bls.fact_labor_statistics`
+  (`src/data_ingestion_toolbox/bls/DDL/silver_bls.sql:29-53`): no
+  `capture_id`, no `value_status`, `value NUMERIC` nullable.
+- `silver_census.fact_demographics`
+  (`src/data_ingestion_toolbox/census_acs/DDL/silver_census.sql:32-56`): the
+  same. `silver_census.observation_revision` *does* distinguish
+  `absent/blank/sentinel/invalid` (`silver_census.sql:19-24`), but the fact
+  aggregation in `silver_census/transform.py:520-545` keeps only a numeric
+  estimate.
+
+Downstream, `gold_acs.sql:87` selects `WHERE s.estimate_value IS NOT NULL`
+and `:117` declares the served `value NUMERIC NOT NULL`; `gold_bls.sql:128`
+selects `WHERE s.value IS NOT NULL`. A Census-published suppressed cell is
+therefore absent from serving rather than published as withheld, and the API
+states the consequence as a contract: `publishes_value_status` is false for
+these sources (`apps/api/services/catalog_service.py:172`), so
+`docs/reference/API_CONSUMER_GUIDE.md` tells a client that `value_status` is
+always null for them, while CDC, NASS and FBI serve `value: null` beside a
+status.
+
+`AGENTS.md` forbids silently converting suppressed or missing values to
+zero. Omitting them is not zeroing, but a consumer cannot tell an omitted
+cell from one the provider never published, which is the same loss of
+meaning. The BLOCK rules `DQ-ACS-007` and `DQ-BLS-007` ("serving contract
+views preserve the published fact's identity, values ...") are unimplemented
+for exactly this reason; the FRED analogue `DQ-FRED-007` became
+implementable only when the FRED fact carried `capture_id` (DQ-017).
+
+## Deliverables
+
+### 1. The facts carry lineage and status
+
+Add `capture_id UUID REFERENCES raw_capture.response_capture(capture_id)`,
+`value_status` (the same closed set the source's `observation_revision`
+uses) and `source_value TEXT` to both facts, in the DDL under `src/` and in a
+new migration `027_acs_bls_fact_lineage.sql` (`ADD COLUMN IF NOT EXISTS`, and
+a `CHECK (value_status <> 'valid' OR value IS NOT NULL)`) for populated
+warehouses. Populate them from `observation_revision` in both transforms,
+following the FRED transform.
+
+### 2. The status reaches serving
+
+Carry `value_status` and `capture_id` through `fact_*_observation` and
+`rpt_*` for ACS and BLS; relax the served `value NOT NULL` to the same
+check. A withheld cell is served as a row with `value: null` and its status.
+
+### 3. The API says so
+
+Flip `publishes_value_status` for `CENSUS_ACS` and `BLS`; regenerate the
+reviewed OpenAPI snapshot only if a schema changes (it should not; the field
+exists); update the guide's per-source value-status table and the served
+contract fixtures under `tests/fixtures/api`.
+
+### 4. The block rules run
+
+Implement `DQ-ACS-007` and `DQ-BLS-007` modelled on `DQ-FRED-007`; update
+`UNIMPLEMENTED_RULES` and the counts in
+`docs/reference/DATA_QUALITY_OPERATIONS.md`.
+
+### 5. The re-serve is run and recorded
+
+Run the forced full re-serve per `BETA_RESET_REINGESTION.md` §7 on the
+disposable stack at fixture scale in CI, and on the shared beta warehouse by
+an operator; record the runtime and any `human_testing/` residue.
+
+## Acceptance criteria
+
+- [ ] An ACS fixture with a suppressed cell (the sentinel already recognised
+      by `observation_revision`) produces a served row with `value` null and
+      `value_status` naming it, and a BLS fixture with a footnoted missing
+      value does the same.
+- [ ] Every served ACS/BLS row's `capture_id` resolves to a
+      `raw_capture.response_capture` row whose checksum verifies
+      (`DQ-SHARED-001`).
+- [ ] No test asserts a withheld value as `0`, and the web unit suite passes
+      unchanged (the client already renders `value ?? "-"` with the status).
+- [ ] `DQ-ACS-007` and `DQ-BLS-007` are `automated` and pass on the fixture
+      warehouse.
+- [ ] `TESTING_CONTRACT.md` gains `DB-`/`DQ-`/`API-` rows for the new
+      behaviour and `CI_EVIDENCE_MAP.md` names the migration.
+
+## Definition of done
+
+A value Census or BLS withheld is served as withheld, a served row can be
+traced to the response it came from, and the two block rules that need both
+facts run.
+
+## What this plan deliberately does not do
+
+- It does not change how a suppressed value is interpreted; the status set is
+  the one `observation_revision` already records.
+- It does not change the row shape for the other five sources.
