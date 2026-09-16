@@ -952,6 +952,13 @@ status code on the one class of error the API can explain.
   hit or miss to report. So a shared cache in front of this API cannot serve
   one client's refusal to another, and `Retry-After` on a `429` means what it
   says.
+- **The headers do not depend on the deployment having a cache.** A shared
+  response cache is an optimisation this API runs without, and a deployment
+  configured with no Redis answers the same `Cache-Control` on the same paths:
+  `public, max-age=<ttl>` on a `200`, `no-store` on every other status. Its
+  successes are labelled `x-cache: BYPASS` rather than `MISS` — there was no
+  store to look in, so no later request can turn that answer into a `HIT`.
+  Treat `BYPASS` as a `MISS` you should not expect to stop seeing.
 - Rate limits, when enabled, are per client and split by cost class: catalog
   reads and analytical reads spend independent budgets. Cache hits cost no
   budget. "Per client" means the address the request arrived from — or, when

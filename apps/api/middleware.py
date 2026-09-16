@@ -258,13 +258,78 @@ class RedisResponseCacheMiddleware:
         self.targets = targets or CacheTargets(frozenset(), ())
         self._client: Redis | None = None
 
-    def _is_cacheable(self, scope: dict[str, Any]) -> bool:
+    def _is_cache_target(self, scope: dict[str, Any]) -> bool:
+        """Whether the request addresses a resource the cache-control contract covers.
+
+        Deliberately says nothing about Redis. What a client reads in
+        `Cache-Control` describes the *response* -- whether a shared cache may
+        keep it -- and that is a property of the route and the status, not of
+        whether this deployment happens to have a store behind it. Folding
+        `bool(self.redis_url)` in here meant a Redis-less API passed every
+        request straight through undecorated, so the failure contract
+        (API-115) held only when Redis was configured, while RFC 9111 lets a
+        shared cache treat an undecorated 404 as heuristically cacheable --
+        exactly the case API-115 closed. A Redis-less deployment is supported:
+        `docker-compose.smoke.yml` leaves `REDIS_URL` unset on purpose and
+        readiness never gates on it.
+        """
         return (
-            bool(self.redis_url)
-            and scope.get("type") == "http"
+            scope.get("type") == "http"
             and scope.get("method") == "GET"
             and self.targets.covers(str(scope.get("path", "")))
         )
+
+    def _has_store(self) -> bool:
+        """Whether a response may be *stored*, as opposed to labelled."""
+        return bool(self.redis_url)
+
+    def _decorate(self, message: Message, label: bytes) -> Message:
+        """Label a served response, and never label a failure cacheable.
+
+        The store below keeps only a 200, and this ran on every status:
+        the rate limiter sits inside the cache in the middleware stack,
+        so its 429 was decorated `public, max-age=<ttl>`, and so were the
+        404, the 422 and the sanitized 503. A shared cache that honours
+        the header serves one client's 429 to every client for the TTL
+        and pins an outage -- the opposite of what `Retry-After` asks a
+        client to do, and the guide scopes the header to successful
+        public analytical GETs (API-115).
+
+        An `x-cache` label belongs to a response the cache could have
+        answered. A failure was never a candidate, so it carries none:
+        `MISS` on a 503 says the cache looked and did not have it, which
+        invites a client to retry for a hit that can never arrive.
+
+        `label` is what a 200 reports: `MISS` when a store was consulted and
+        did not have this response, `BYPASS` when the deployment has no store
+        to consult. They are distinct because they tell a client different
+        things -- a `MISS` may become a `HIT`, a `BYPASS` never will -- and a
+        `MISS` from a deployment with no cache would be a false promise.
+        """
+        if message.get("type") != "http.response.start":
+            return message
+        status = int(message.get("status", 500))
+        # Replaced rather than appended: two `cache-control` headers on
+        # one response is a contradiction a proxy resolves for itself.
+        headers = [
+            (name, value)
+            for name, value in message.get("headers", [])
+            if name.lower() not in {b"cache-control", b"x-cache"}
+        ]
+        if status == 200:
+            headers.extend(
+                [
+                    (
+                        b"cache-control",
+                        f"public, max-age={self.ttl_seconds}".encode(),
+                    ),
+                    (b"x-cache", label),
+                ]
+            )
+        else:
+            headers.append((b"cache-control", b"no-store"))
+        message["headers"] = headers
+        return message
 
     async def _cache_key(self, scope: dict[str, Any]) -> str:
         query = scope.get("query_string", b"").decode("latin-1")
@@ -306,8 +371,18 @@ class RedisResponseCacheMiddleware:
             await self.app(scope, receive, close_client_on_shutdown)
             return
 
-        if not self._is_cacheable(scope):
+        if not self._is_cache_target(scope):
             await self.app(scope, receive, send)
+            return
+
+        if not self._has_store():
+            # No store to read, write, or buffer for -- but the response is
+            # still one the contract describes, so it is decorated on the way
+            # out and otherwise streams through untouched.
+            async def decorate_without_storing(message: Message) -> None:
+                await send(self._decorate(message, b"BYPASS"))
+
+            await self.app(scope, receive, decorate_without_storing)
             return
 
         key = await self._cache_key(scope)
@@ -339,48 +414,6 @@ class RedisResponseCacheMiddleware:
             await send({"type": "http.response.body", "body": cached})
             return
 
-        def _decorate_miss(message: Message) -> Message:
-            """Label a served response, and never label a failure cacheable.
-
-            The store below keeps only a 200, and this ran on every status:
-            the rate limiter sits inside the cache in the middleware stack,
-            so its 429 was decorated `public, max-age=<ttl>`, and so were the
-            404, the 422 and the sanitized 503. A shared cache that honours
-            the header serves one client's 429 to every client for the TTL
-            and pins an outage -- the opposite of what `Retry-After` asks a
-            client to do, and the guide scopes the header to successful
-            public analytical GETs (API-115).
-
-            An `x-cache` label belongs to a response the cache could have
-            answered. A failure was never a candidate, so it carries none:
-            `MISS` on a 503 says the cache looked and did not have it, which
-            invites a client to retry for a hit that can never arrive.
-            """
-            if message.get("type") != "http.response.start":
-                return message
-            status = int(message.get("status", 500))
-            # Replaced rather than appended: two `cache-control` headers on
-            # one response is a contradiction a proxy resolves for itself.
-            headers = [
-                (name, value)
-                for name, value in message.get("headers", [])
-                if name.lower() not in {b"cache-control", b"x-cache"}
-            ]
-            if status == 200:
-                headers.extend(
-                    [
-                        (
-                            b"cache-control",
-                            f"public, max-age={self.ttl_seconds}".encode(),
-                        ),
-                        (b"x-cache", b"MISS"),
-                    ]
-                )
-            else:
-                headers.append((b"cache-control", b"no-store"))
-            message["headers"] = headers
-            return message
-
         # Buffer the response only up to the cacheable bound. A body that
         # exceeds it streams through decorated as a MISS instead of being
         # held in memory whole -- the response-size bound applies to the
@@ -400,7 +433,7 @@ class RedisResponseCacheMiddleware:
                 if buffered_bytes > MAX_CACHE_BODY_BYTES:
                     streaming = True
                     for buffered in messages:
-                        await send(_decorate_miss(buffered))
+                        await send(self._decorate(buffered, b"MISS"))
                     messages.clear()
 
         await self.app(scope, receive, capture)
@@ -428,4 +461,4 @@ class RedisResponseCacheMiddleware:
                 logger.warning("response cache write failed; response served")
 
         for message in messages:
-            await send(_decorate_miss(message))
+            await send(self._decorate(message, b"MISS"))

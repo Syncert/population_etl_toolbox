@@ -134,3 +134,74 @@ def test_no_failure_on_a_cacheable_path_is_publicly_cacheable(status: int) -> No
     assert result.headers["cache-control"] == "no-store"
     assert "x-cache" not in result.headers
     assert fake_redis.sets == []
+
+
+def _storeless_middleware_for(response: Response) -> RedisResponseCacheMiddleware:
+    """The middleware as a Redis-less deployment configures it: no URL at all.
+
+    `docker-compose.smoke.yml` and the external stack both leave `REDIS_URL`
+    unset on purpose, and readiness never gates on it, so this is a supported
+    deployment shape rather than a misconfiguration.
+    """
+
+    async def endpoint(_request: Request) -> Response:
+        return response
+
+    application = Starlette(
+        routes=[
+            Route("/api/v1/catalog/metrics", endpoint, methods=["GET", "POST"]),
+            Route("/health", endpoint),
+        ]
+    )
+    return RedisResponseCacheMiddleware(
+        application,
+        redis_url="",
+        ttl_seconds=30,
+        targets=PUBLIC_CACHE_TARGETS,
+    )
+
+
+@pytest.mark.parametrize("status", [404, 422, 429, 500, 503])
+def test_no_failure_is_publicly_cacheable_without_a_store(status: int) -> None:
+    """Covers: API-115 — the failure contract does not depend on Redis."""
+    middleware = _storeless_middleware_for(
+        Response(b'{"detail": "refused"}', status_code=status)
+    )
+
+    with TestClient(middleware) as client:
+        result = client.get("/api/v1/catalog/metrics")
+
+    assert result.status_code == status
+    assert result.headers["cache-control"] == "no-store"
+    assert "x-cache" not in result.headers
+
+
+def test_success_without_a_store_is_cacheable_and_labelled_bypass() -> None:
+    """Covers: API-115 — a 200 stays publicly cacheable, and says no store answered."""
+    middleware = _storeless_middleware_for(Response(b'{"ok": true}'))
+
+    with TestClient(middleware) as client:
+        result = client.get("/api/v1/catalog/metrics")
+
+    assert result.status_code == 200
+    assert result.headers["cache-control"] == "public, max-age=30"
+    assert result.headers["x-cache"] == "BYPASS"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("POST", "/api/v1/catalog/metrics"), ("GET", "/health")],
+    ids=("non-get", "non-cacheable-route"),
+)
+def test_non_target_without_a_store_carries_no_cache_headers(
+    method: str, path: str
+) -> None:
+    """Covers: API-022 — decoration follows the path, so a non-target gets none."""
+    middleware = _storeless_middleware_for(Response(b"eligible body"))
+
+    with TestClient(middleware) as client:
+        result = client.request(method, path)
+
+    assert result.status_code == 200
+    assert "cache-control" not in result.headers
+    assert "x-cache" not in result.headers
