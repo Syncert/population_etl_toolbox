@@ -51,7 +51,8 @@ import {
   templateMetricCodes,
 } from "../lib/productTemplates";
 import type { MeasureAnswer, ResolvedMeasure } from "../lib/productTemplates";
-import { saveChart } from "../lib/savedCharts";
+import { describeLocalSave } from "../lib/savedAnalysis";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { explorerHref, parseProfileState, serializeProfileState } from "../lib/urlState";
 
 const CATALOG_PAGE_SIZE = 1000;
@@ -345,7 +346,7 @@ export default function ProfileProduct() {
   }
 
   function handleSave() {
-    saveChart({
+    const localSave = saveChart({
       id: `profile:${template.id}:${geoId || "none"}`,
       version: 1,
       title: `${template.title} — ${placeName || geoId}`,
@@ -363,8 +364,12 @@ export default function ProfileProduct() {
       ),
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus("Saved for Builder");
-    window.setTimeout(() => setSaveStatus(""), 2400);
+    // The same two facts the other three surfaces report, in this one's
+    // plainer toast: a refusal says so, and an eviction is not silent.
+    setSaveStatus(
+      describeLocalSave(localSave, template.title, SAVED_CHART_LIMIT).message,
+    );
+    window.setTimeout(() => setSaveStatus(""), 4000);
   }
 
   return (

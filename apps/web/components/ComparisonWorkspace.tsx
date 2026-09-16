@@ -54,10 +54,11 @@ import type {
   ComparisonSelection,
   ComparisonSide,
 } from "../lib/comparison";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
   comparisonDocument,
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   saveDestination,
@@ -598,7 +599,7 @@ export default function ComparisonWorkspace() {
       return;
     }
 
-    saveChart({
+    const localSave = saveChart({
       id: `comparison:${selection.a.metricCode}:${selection.b.metricCode}:${selection.geoLevel}:${selection.stateFips || "US"}`,
       version: 1,
       title,
@@ -615,7 +616,7 @@ export default function ComparisonWorkspace() {
       apiQuery,
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus(describeSaveSuccess("browser", title));
+    setSaveStatus(describeLocalSave(localSave, title, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }
 

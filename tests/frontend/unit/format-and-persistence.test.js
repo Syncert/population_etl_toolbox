@@ -1,12 +1,16 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 // Covers: WEB-001 — formatting and saved-chart persistence are deterministic.
 // Covers: WEB-105 — every number, date and time is formatted in one locale,
 // chosen once in `lib/format`, and no module reaches past it to the viewer's
 // own locale.
+// Covers: WEB-106 — a write to browser storage cannot throw into a click
+// handler: it returns an outcome, a refusal is reported in words, an
+// eviction at the cap is reported rather than silent, and what is already
+// stored survives a refused write.
 
 import {
   DISPLAY_LOCALE,
@@ -15,9 +19,13 @@ import {
   formatNumber,
   formatTime,
 } from "../../../apps/web/lib/format";
+import { describeLocalSave } from "../../../apps/web/lib/savedAnalysis";
 import {
+  BUILDER_DRAFT_KEY,
   SAVED_CHARTS_KEY,
+  SAVED_CHART_LIMIT,
   readSavedCharts,
+  saveBuilderDraft,
   saveChart,
 } from "../../../apps/web/lib/savedCharts";
 
@@ -117,5 +125,114 @@ describe("frontend formatting and saved-chart persistence", () => {
 
     window.localStorage.setItem(SAVED_CHARTS_KEY, "not-json");
     expect(readSavedCharts()).toEqual([]);
+  });
+});
+
+
+describe("a refused browser save is reported, never thrown", () => {
+  const realStorage = window.localStorage;
+
+  function withStorage(replacement) {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: replacement,
+    });
+  }
+
+  afterEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => realStorage,
+    });
+    realStorage.clear();
+  });
+
+  test("a full store refuses the save and says so, keeping what is stored", () => {
+    realStorage.clear();
+    saveChart({ id: "first", title: "The analysis on screen" });
+    const before = readSavedCharts();
+    expect(before).toHaveLength(1);
+
+    // What a browser actually does when the origin's allowance is spent. It
+    // throws; it does not return null, and an unwrapped `setItem` in a click
+    // handler threw straight out of the handler.
+    // Delegating explicitly rather than inheriting: `Storage` reads through
+    // internal slots, so a prototype-based stand-in answers nothing.
+    const full = {
+      getItem: (key) => realStorage.getItem(key),
+      removeItem: (key) => realStorage.removeItem(key),
+      clear: () => realStorage.clear(),
+      setItem: () => {
+        const error = new Error("quota");
+        error.name = "QuotaExceededError";
+        throw error;
+      },
+    };
+    withStorage(() => full);
+
+    const result = saveChart({ id: "second", title: "Refused" });
+    expect(result.outcome).toBe("refused");
+    expect(result.evicted).toBe(0);
+    expect(result.reason).toMatch(/no room left/);
+    // The store is reported as it actually is, not as the write intended.
+    expect(result.charts).toEqual(before);
+
+    const outcome = describeLocalSave(result, "Refused", SAVED_CHART_LIMIT);
+    expect(outcome.state).toBe("bad");
+    expect(outcome.destination).toBeNull();
+    expect(outcome.message).toMatch(/Not saved/);
+    // The reader is told what is still true, which is the thing they care
+    // about: the work they are looking at did not go anywhere.
+    expect(outcome.message).toMatch(/analysis on screen is unchanged/);
+  });
+
+  test("a browser with storage turned off refuses from the accessor itself", () => {
+    // In a private window several browsers throw from `window.localStorage`
+    // before any method is reached, so the guard cannot be on `setItem` alone.
+    withStorage(() => {
+      const error = new Error("denied");
+      error.name = "SecurityError";
+      throw error;
+    });
+
+    const result = saveChart({ id: "third", title: "Refused" });
+    expect(result.outcome).toBe("refused");
+    expect(result.reason).toMatch(/site storage turned off/);
+    expect(result.charts).toEqual([]);
+    expect(saveBuilderDraft({ title: "draft" }).outcome).toBe("refused");
+    expect(
+      describeLocalSave(result, "Refused", SAVED_CHART_LIMIT).message,
+    ).toMatch(/storage turned off/);
+  });
+
+  test("the fifty-first view is saved, and the eviction is reported", () => {
+    realStorage.clear();
+    for (let index = 0; index < SAVED_CHART_LIMIT; index += 1) {
+      expect(saveChart({ id: `chart-${index}` }).evicted).toBe(0);
+    }
+
+    const result = saveChart({ id: "one-too-many" });
+    expect(result.outcome).toBe("saved");
+    expect(result.evicted).toBe(1);
+    expect(result.charts).toHaveLength(SAVED_CHART_LIMIT);
+    // The cap dropped the oldest, which it always did. What is new is that
+    // the reader is told.
+    expect(result.charts.some((chart) => chart.id === "chart-0")).toBe(false);
+
+    const outcome = describeLocalSave(result, "one-too-many", SAVED_CHART_LIMIT);
+    expect(outcome.state).toBe("warn");
+    expect(outcome.destination).toBe("browser");
+    expect(outcome.message).toMatch(/keeps 50 saved views/);
+    expect(outcome.message).toMatch(/1 oldest view made way/);
+  });
+
+  test("the builder draft reports its own write", () => {
+    realStorage.clear();
+    expect(saveBuilderDraft({ title: "draft" })).toEqual({
+      outcome: "saved",
+      evicted: 0,
+      reason: "",
+    });
+    expect(JSON.parse(realStorage.getItem(BUILDER_DRAFT_KEY)).title).toBe("draft");
   });
 });

@@ -124,10 +124,11 @@ import {
   GRAINS_WITHIN_A_STATE,
   geographyPickerState,
 } from "../lib/geographyPicker";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
   describeLibraryLoad,
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   explorerDocument,
@@ -1905,8 +1906,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       apiQuery,
       savedAt: new Date().toISOString(),
     };
-    saveChart(chart);
-    setSaveStatus(describeSaveSuccess("browser", title));
+    setSaveStatus(describeLocalSave(saveChart(chart), title, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }
 

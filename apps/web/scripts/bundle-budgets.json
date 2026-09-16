@@ -6,12 +6,15 @@
   "/catalog/page": 435200,
   "/census/page": 403456,
   "/compare/page": 1674240,
+  "/error": 414720,
   "/explore/page": 1687552,
   "/fred/page": 403456,
+  "/global-error": 404480,
   "/layout": 519168,
+  "/not-found": 413696,
   "/page": 430080,
   "/profiles/page": 460800,
   "/quality/page": 438272,
   "/saved/page": 440320,
-  "/workbench/page": 485376
+  "/workbench/page": 559104
 }

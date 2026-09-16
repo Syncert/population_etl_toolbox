@@ -110,9 +110,10 @@ import {
   workbenchExport,
   workbenchExportFilename,
 } from "../lib/observationExport";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   saveDestination,
@@ -1356,7 +1357,7 @@ export default function WorkbenchPage() {
       return;
     }
 
-    saveChart({
+    const localSave = saveChart({
       id: `workbench:${series.map((entry) => seriesKey(entry)).join("~")}`,
       version: 1,
       title: saveTitle,
@@ -1392,7 +1393,7 @@ export default function WorkbenchPage() {
       document,
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus(describeSaveSuccess("browser", saveTitle));
+    setSaveStatus(describeLocalSave(localSave, saveTitle, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }, [
     series,
