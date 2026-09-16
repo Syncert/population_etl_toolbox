@@ -162,8 +162,22 @@ def resolve_compose_context(
     *,
     use_host_env: bool = False,
     root: Path | None = None,
+    compose_file_override: str = "",
 ) -> ComposeContext:
-    """Pick the compose and env files, refusing an env file that is not there."""
+    """Pick the compose and env files, refusing an env file that is not there.
+
+    ``compose_file_override`` points the entrypoint at a compose file other
+    than the mode's own. It exists so CI can drive the real entrypoint against
+    the disposable stack in `docker-compose.test.yml` -- the execution loop is
+    otherwise the one part of this path no test reaches, because it is the
+    only part that needs a Docker daemon.
+
+    It deliberately does **not** change which defaults the guard resolves
+    against: those are the mode's, because the mode is what says whether a
+    `${VAR:-default}` exists to fall back to. An override that quietly
+    switched defaults would let a test pass under rules the deployment does
+    not use.
+    """
     root = root or REPOSITORY_ROOT
     effective = (env_file or "").strip() or default_env_file(mode)
 
@@ -174,7 +188,7 @@ def resolve_compose_context(
         )
 
     return ComposeContext(
-        compose_file=compose_file(mode),
+        compose_file=(compose_file_override or "").strip() or compose_file(mode),
         env_file=effective,
         use_host_env=use_host_env,
     )

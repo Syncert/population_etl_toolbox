@@ -51,6 +51,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--action", choices=ACTIONS, default="all")
     parser.add_argument("--env-file", default="")
     parser.add_argument(
+        "--compose-file",
+        default="",
+        help=(
+            "drive a compose file other than the mode's own; used by CI to run "
+            "this entrypoint against the disposable test stack"
+        ),
+    )
+    parser.add_argument(
         "--use-host-env",
         action="store_true",
         help="read configuration from the host environment instead of an env file",
@@ -117,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             arguments.env_file,
             use_host_env=arguments.use_host_env,
             root=REPOSITORY_ROOT,
+            compose_file_override=arguments.compose_file,
         )
     except DeploymentError as error:
         # `--emit-plan` always answers JSON, including when it answers a

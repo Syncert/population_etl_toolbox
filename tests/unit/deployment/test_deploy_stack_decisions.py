@@ -134,6 +134,55 @@ def test_an_env_file_is_passed_before_the_compose_file(tmp_path: Path) -> None:
     ]
 
 
+def test_a_compose_file_override_replaces_only_the_file(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- the override changes the file and nothing else.
+
+    CI drives this entrypoint against `docker-compose.test.yml` so the
+    execution loop is exercised for real. The override must not become a
+    second mode: the env file, and the defaults the guard resolves against,
+    stay the ones the mode declares.
+    """
+    context = resolve_compose_context(
+        "internal",
+        use_host_env=True,
+        root=tmp_path,
+        compose_file_override="infra/docker/docker-compose.test.yml",
+    )
+
+    assert context.compose_file == "infra/docker/docker-compose.test.yml"
+    assert context.env_file == default_env_file("internal")
+    assert (ROOT / context.compose_file).is_file()
+
+
+def test_an_empty_override_keeps_the_modes_own_compose_file(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- the default path is untouched by the affordance."""
+    for mode in ("internal", "external"):
+        context = resolve_compose_context(
+            mode, use_host_env=True, root=tmp_path, compose_file_override="   "
+        )
+        assert context.compose_file == compose_file(mode)
+
+
+def test_an_override_does_not_move_the_guard_onto_another_modes_defaults() -> None:
+    """Covers: DEPLOY-008 -- defaults follow the mode, never the file.
+
+    External declares no `${VAR:-default}` for the guarded keys, so an
+    external run with nothing set has nothing to compare and defers to
+    Compose. Pointing it at the internal compose file must not import that
+    file's defaults and manufacture a verdict.
+    """
+    verdict = airflow_metadata_isolation(
+        "external",
+        resolve_compose_context(
+            "external",
+            use_host_env=True,
+            compose_file_override="infra/docker/docker-compose.yml",
+        ),
+        environ={},
+    )
+    assert verdict.status == "skipped"
+
+
 # --------------------------------------------------------------------------
 # Reading an env file, and resolving a value the way Compose will
 # --------------------------------------------------------------------------

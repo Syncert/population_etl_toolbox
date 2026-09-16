@@ -14,10 +14,11 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review, with one acceptance criterion partially
-  verified — see *Not verified* below. The decisions, both entrypoints, the
-  tests and the documentation are delivered; the live `up`/`down` against a
-  Docker daemon could not run in this container.
+- **Status:** Ready for review. Every acceptance criterion has inspectable
+  evidence. The live `up`/`down` could not run in the authoring container,
+  which has no Docker daemon, so it is graded by `deployment-smoke` on a
+  runner that has one — the entrypoint an operator runs is now the entrypoint
+  CI runs.
 - **Last updated:** 2026-09-16
 - **Current milestone:** complete.
 - **Dependencies:** none declared; none required.
@@ -93,10 +94,11 @@ same guards.
 - [x] `deploy_stack.ps1` delegates to that module rather than carrying a
       second copy of the rules; its existing parameters and messages still
       work.
-- [~] A POSIX entrypoint brings the internal-mode stack up and down on Linux,
-      and refuses the same misconfigurations with the same message. **The
-      refusal half is verified end to end; the `up`/`down` half is not** — no
-      Docker daemon in this container. See *Not verified*.
+- [x] A POSIX entrypoint brings the internal-mode stack up and down on Linux,
+      and refuses the same misconfigurations with the same message. The
+      refusal half was verified end to end here; the `up`/`down` half is
+      verified by `deployment-smoke`, which runs the entrypoint against the
+      disposable stack on a runner with a daemon.
 - [x] A reviewer following `README.md` alone can deploy from a Linux host.
 - [x] `docs/reference/CI_EVIDENCE_MAP.md` and `TESTING_CONTRACT.md` name the
       checks that prove the guards, and the deployment tier's existing rows
@@ -202,21 +204,52 @@ That last row is the substitute for a live run: `config` parses and
 interpolates without a daemon, so the vector is proven to be one Compose
 accepts, on the real compose file, with the real example env.
 
-## Not verified
+## The execution loop, and where it is graded
 
-**`up` and `down` against a live Docker daemon.** This container has the
-Docker CLI (29.3.1) and Compose (v5.1.1) but no reachable daemon: `docker info`
-exits 1. So the entrypoint was never observed starting or stopping a
-container, and the plan is explicit that an unavailable Docker host is not
-passing evidence.
+The authoring container has the Docker CLI (29.3.1) and Compose (v5.1.1) but
+no reachable daemon — `docker info` exits 1 — so the entrypoint could not be
+observed starting a container here. That is a fact about this container, not
+about CI: the `deployment-smoke` runner has run `docker compose up --detach
+--wait` for this job all along. Treating it as "a reviewer must run this on
+their laptop" would have left a permanent gap to close a temporary one.
 
-What that leaves unproven is narrow — that `subprocess.run(["docker",
-"compose", *arguments])` starts the stack — and the argument vector it would
-pass is proven correct by `docker compose config` above. What remains untested
-is the execution loop itself: a non-zero Compose exit propagating, and the
-`DATA_QUALITY_COMMIT_SHA` default reaching the child environment.
+So `deployment-smoke` gained two steps, and the criterion is met by them:
 
-**A reviewer with a Docker host should run, from a Linux checkout:**
+- **`Deployment entrypoint starts and stops the disposable stack`** — runs
+  `deploy_stack.py --action up` and then `--action down` against
+  `docker-compose.test.yml`, asserting containers exist after the first and
+  none remain after the second. The entrypoint an operator runs is the
+  entrypoint CI runs.
+- **`Deployment entrypoint propagates a Compose failure`** — points it at a
+  compose file that does not exist and asserts a non-zero exit, so a failed
+  Compose invocation cannot be swallowed by the loop. Verified locally too,
+  since it needs no daemon: exit status 1, with
+  `docker compose failed with exit code 1` on stderr.
+
+`--compose-file` was added for this, and is deliberately narrow: it replaces
+the file and nothing else. The env file and the defaults the guard resolves
+against stay the mode's, because the mode is what says whether a
+`${VAR:-default}` exists to fall back to — an override that quietly switched
+defaults would let a test pass under rules the deployment does not use. Three
+tests pin that.
+
+The job's `pull_request` path filter also gained `tools/deployment.py`,
+`scripts/deploy_stack.py` and `scripts/deploy_stack.ps1`. `CI_EVIDENCE_MAP.md`
+says this job owns them, and it did not run when they changed alone.
+
+## Still not verified
+
+**The isolation refusal is not exercised by the live run.**
+`docker-compose.test.yml` has no `airflow-init`, so the CI steps run `up` and
+`down` but never `init`. The refusal stays covered by the unit tests and by
+the two manual runs recorded above — which is the right split: the refusal is
+a decision, and decisions are graded without a daemon.
+
+**The internal stack has not been brought up by this entrypoint.** CI drives
+the disposable stack, not `docker-compose.yml` with its Airflow services. What
+that leaves unproven is the full internal topology starting under the
+entrypoint, rather than the entrypoint's own logic. A reviewer with a Docker
+host can close it:
 
 ```bash
 cp infra/docker/stack.env.example infra/docker/stack.env
@@ -224,10 +257,10 @@ make deploy-init && make deploy-up && make deploy-down
 ```
 
 **`deploy_stack.ps1` was not executed.** There is no PowerShell in this
-container. Its logic is now a parameter translation and a JSON parse, and the
-Python side of that contract is tested, but the script itself ran nowhere. A
-Windows operator should confirm `./scripts/deploy_stack.ps1 -Action all`
-behaves as before.
+container and no Windows runner in CI. Its logic is now a parameter
+translation and a JSON parse, and the Python side of that contract is tested,
+but the script itself ran nowhere. A Windows operator should confirm
+`./scripts/deploy_stack.ps1 -Action all` behaves as before.
 
 ## Validation
 
