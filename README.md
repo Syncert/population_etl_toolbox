@@ -1,49 +1,105 @@
 # data_ingestion_toolbox
 
-A production-grade ETL system for ingesting, transforming, and serving economic and demographic data from authoritative US government sources. Built with Airflow, PostgreSQL, and Polars for access to Census ACS, Census PEP, BLS, and FRED data in a structured dimensional warehouse.
+An analytics platform over seven public-data sources, built on a dimensional
+warehouse it also owns. Census ACS, Census PEP, BLS, FRED, CDC, FBI UCR, and
+USDA NASS are captured losslessly, conformed in silver, published as
+deterministic gold products, served by a versioned FastAPI contract, and
+explored through a Next.js application with catalog, map, chart, comparison,
+workbench, and evidence-composition surfaces.
 
-Active architecture changes are tracked in
-[`docs/plans/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md`](docs/plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md).
-The implemented test contract and longer-term product design live under
-[`docs/reference`](docs/reference/TESTING_CONTRACT.md) and
-[`docs/product`](docs/product/ECONOMIC_DATA_STUDIO_MANIFESTO.md), respectively.
+The warehouse is the foundation, not the product. What it exists to support is
+described in
+[`docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md`](docs/product/TOP_20_DATA_PRODUCT_USE_CASES.md),
+which also states the guardrails every packaged product inherits — among them
+that cross-source association is never presented as causation, and that unlike
+measures are never collapsed into an unexplained score.
+
+The implemented test contract is
+[`docs/reference/TESTING_CONTRACT.md`](docs/reference/TESTING_CONTRACT.md).
+The data-layer migration that produced the current boundaries is recorded in
+[`docs/plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md`](docs/plans/completed/DATA_LAYER_DESIGN_REMEDIATION_TICKETS.md).
 
 ## Project Vision
 
-**Goal:** Build a self-service data warehouse that provides reliable, current economic and demographic statistics to support analysis, dashboards, and reporting without requiring manual data collection or API expertise.
+**Goal:** Give analysts, journalists, planners, and residents reliable current
+public-data statistics — and the tools to compose an argument from them —
+without manual data collection, API expertise, or a spreadsheet that nobody
+else can reproduce.
 
-**Scope:**
-- **Census Bureau ACS** (American Community Survey): detailed demographic tables (1-year and 5-year) by geography (US, state, county)
+**Sources:**
+- **Census Bureau ACS** (American Community Survey): detailed demographic tables (1-year and 5-year) by geography (US, state, county, place)
 - **Census Bureau PEP** (Population Estimates Program): annual national, state, county, and incorporated-place estimates with immutable release vintages
 - **BLS** (Bureau of Labor Statistics): labor statistics including employment, unemployment, and wage data
 - **FRED** (Federal Reserve Economic Data): macroeconomic time series (employment, inflation, interest rates, etc.)
+- **CDC**: disease and illness surveillance, with suppression, provisional status, and case definitions preserved
+- **FBI UCR**: reported offense and arrest data by agency, with reporting participation preserved
+- **USDA NASS**: agricultural production and operations from the Quick Stats program
 
-**Target architecture:** The layer contract is defined by
-[`ADR-0001`](docs/decisions/0001-data-layer-boundaries.md): immutable lossless raw
-captures, separate mutable control state, conformed silver data, deterministic
-data-derived gold products, and independently owned semantic/serving policy.
-The current source pipelines predate that decision and are being migrated under
-the linked remediation tickets.
+**Architecture order.** `AGENTS.md` sets the dependency order this repository
+builds in, and the README does not restate it differently:
 
-## Current State (August 2026)
+```text
+stable warehouse objects -> stable API contracts -> frontend analytics/social features
+```
 
-### ✅ Completed
-- **Raw Layer Ingestion:** Census ACS, Census PEP bulk releases, BLS, and FRED through immutable response capture
-- **Geographic Master Data:** capture-first, versioned Census nation/state/county/place identities, attributes, boundaries, and relationships
-- **Silver Transformations:** Dimension-matched fact tables with comprehensive metrics logging
-- **Data Quality Monitoring:** TransformMetrics instrumentation logs pre/per-chunk/upsert/summary statistics
-- **Idempotent Updates:** All ingestion and transforms support safe re-runs via unique constraints and ON CONFLICT logic
-- **API Rate Limiting:** Airflow pools enforce safe concurrency (Census API, BLS API, FRED API)
+Warehouse first, API only on stable warehouse contracts, web only on stable API
+contracts. When a downstream requirement exposes a missing upstream foundation,
+the upstream contract is fixed or planned first.
 
-### 🔄 In Progress
-- Analytical layer queries and performance optimization
-- Data quality SLA monitoring and alerting
+**Layer contract.** Defined by
+[`ADR-0001`](docs/decisions/0001-data-layer-boundaries.md): immutable lossless
+raw captures, separate mutable control state, conformed silver data,
+deterministic data-derived gold products, and independently owned
+semantic/serving policy. Subsequent decisions are recorded beside it in
+[`docs/decisions/`](docs/decisions/0002-api-versioning-and-deprecation.md).
 
-### 📋 Roadmap
-- Fact table aggregations (monthly/quarterly/annual by geography)
-- Public API for warehouse access
-- Historical trend analysis and anomaly detection
-- Data lineage and audit trail enhancements
+## Current State (as of 2026-09-16)
+
+This section is dated because it goes stale. If the date is old, trust
+`docs/plans/` and `docs/reference/` over this list.
+
+### Delivered
+
+- **Seven source pipelines**, each with an Airflow DAG, capture-first raw
+  ingestion, silver conformance, gold publication, operator documentation, and
+  end-to-end coverage.
+- **Geographic master data:** capture-first, versioned Census
+  nation/state/county/place identities, attributes, boundaries, and
+  relationships.
+- **Warehouse quality controls:** transform metrics, declared data-quality
+  rules run against the warehouse, and idempotent re-runnable ingestion and
+  transforms.
+- **A versioned public API** (FastAPI) serving catalog, observations,
+  distribution, comparison, and evidence-packet resources, with response
+  caching, per-client rate limiting by cost class, request telemetry, and a
+  content-aware health resource.
+- **Vector tiles** through Martin, joined to API-served measures.
+- **A web application** (Next.js, ~21,000 lines of TypeScript) with catalog,
+  per-source explorers, map and chart surfaces, a comparison workspace, a
+  multi-series workbench, saved analyses, an evidence-packet builder, and a
+  composed-article reader.
+- **Account-owned storage** for saved analyses and evidence packets, behind an
+  operator-provisioned bearer credential (ADR-0003, ADR-0004).
+- **CI across every tier:** units, integration against disposable PostGIS and
+  Redis, Martin contracts, DAG parsing, frontend lint/typecheck/unit/browser,
+  a live-stack smoke tier, package build, and coverage gates.
+
+### Not yet delivered
+
+Tracked as plans in [`docs/plans/to_do/`](docs/plans/README.md):
+
+- **Self-service accounts.** Every write path still requires an
+  operator-minted credential, so a visitor cannot own saved work. The identity
+  contract is proposed in
+  [`ADR-0005`](docs/decisions/0005-self-service-accounts.md) and held at a
+  human review gate.
+- **Publishing.** An evidence packet can be composed but not made public;
+  there is no approval path from private to published.
+- **The second wave of packaged products.** Twenty use cases are described;
+  the first wave of surfaces is built, the rest are not.
+- **A portable deployment path.** The only deployment entrypoint is a
+  PowerShell script, and no deployment origin is configured for the
+  live-deployment smoke job to grade.
 
 ---
 
@@ -320,7 +376,7 @@ cannot silently resolve to something the caller did not name.
 
 ### Next.js Web App (Local Iteration)
 
-Run the new web app scaffold:
+Run the web application locally:
 
 ```bash
 cd apps/web
