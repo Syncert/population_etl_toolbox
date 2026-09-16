@@ -40,6 +40,25 @@ dependents forever, and a deleted gate whose id is still named in a dependent's
 frontmatter when archiving it, and remove its id from every dependent in the
 same change.
 
+`human_testing/` holds the other kind of non-plan file: checks and one-off
+actions only a person can perform, because they need a machine, an operating
+system, or a credential that neither an agent's container nor CI has — a
+Windows shell, a Docker daemon, an OIDC client registration. It is documented
+by [`human_testing/README.md`](human_testing/README.md).
+
+It is deliberately **not** a workflow state and **not** a gate. Every file in
+it is written without frontmatter, so `parse_plan` skips it as readable
+guidance and it never reaches the graph; nothing there blocks a dispatch, and
+a plan may be delivered, accepted, and merged with items filed there. That is
+the point — an item lands there so it stops blocking the next plan, and a
+failure found later reopens work rather than un-accepting it.
+
+What filing there does **not** do is excuse evidence. See the completion gate
+below: an unavailable environment is still not passing evidence, and a plan
+whose acceptance criterion needs a check still stays in `in_progress/` until
+that check runs. Only *residual* verification belongs in `human_testing/` —
+what no criterion required, or what a criterion already satisfied another way.
+
 ## Workflow states
 
 The folder containing a plan is its authoritative state:
@@ -53,8 +72,8 @@ to_do/ -> in_progress/ -> needs_review/ -> completed/
 - `needs_review/`: implementation-complete plans awaiting human review.
 - `completed/`: plans accepted by a human reviewer.
 
-Each of those folders, and `gates/`, carries a `.gitkeep`. Git does not track
-empty directories, so a folder whose last plan moves on vanishes from the next
+Each of those folders, and `gates/` and `human_testing/`, carries a
+`.gitkeep`. Git does not track empty directories, so a folder whose last plan moves on vanishes from the next
 clone and takes a workflow state with it: an agent inventorying the queue finds
 no `in_progress/` to resume from and no `needs_review/` to hand off to, and the
 dispatcher's own folder-is-the-state contract silently loses a state. Keep the
@@ -162,6 +181,13 @@ migration, ingestion-order, and replay work must follow
 An unavailable environment is not passing evidence. Record the exact command,
 why it could not run, and which conclusion remains unverified. If that evidence
 is required by an acceptance criterion, keep the plan in `in_progress/`.
+
+When the unverified conclusion is *not* required by any acceptance criterion —
+the wider check nobody ran, on a platform or with a credential the run did not
+have — file it in `human_testing/` rather than carrying it as a footnote
+nobody acts on. Filing it there is never a substitute for a criterion's
+evidence, and a plan that needs the check to satisfy a criterion is not ready
+for review.
 
 ## Blocked work
 
