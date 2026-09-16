@@ -12,9 +12,17 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. The ADR is written and every acceptance
-  criterion has inspectable evidence. The decision itself is the reviewer's,
-  and `gates/SELF_SERVICE_IDENTITY_GATE.md` is where it gets recorded.
+- **Status:** Accepted 2026-09-16 (Ready for review. Authored, claimed and
+  delivered 2026-09-15; revised the same day to carry the reviewer's answers
+  on the credential, on browser token storage, and on deletion. Merged to
+  `main` in `6ae7585`.)
+
+  Accepting this plan accepts that the decision was *put* — not that it is
+  ratified. ADR-0005 stays `Proposed` on purpose: acceptance criterion 1 asks
+  for exactly that, and `gates/SELF_SERVICE_IDENTITY_GATE.md` is still shut.
+  The gate records its decision through the dispatcher, by a named person, and
+  that act — not this folder move — is what flips the ADR to `Accepted` and
+  unblocks `self-service-accounts`.
 - **Last updated:** 2026-09-15
 - **Current milestone:** complete.
 - **Dependencies:** none declared; none required.
