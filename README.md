@@ -526,7 +526,29 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
 ```
 
-Optional helper script for internal/external stack lifecycle:
+The stack lifecycle has one set of rules and two entrypoints over it. Which
+compose and env file a mode uses, which services it starts, and the refusal to
+run `airflow db migrate` against the warehouse all live in
+[`tools/deployment.py`](tools/deployment.py); neither entrypoint carries a rule
+of its own, so neither can drift from the other (DEPLOY-008).
+
+On Linux or macOS:
+
+```bash
+# Defaults: --mode internal --action all
+make deploy-up                                          # or: python scripts/deploy_stack.py --action up
+make deploy-init
+make deploy-down
+
+# External mode
+make deploy-up MODE=external
+make deploy-init MODE=external DEPLOY_ARGS=--with-local-airflow
+
+# Print the resolved compose invocation and the guard's verdict, run nothing
+make deploy-plan MODE=external
+```
+
+On Windows PowerShell, unchanged:
 
 ```powershell
 # Defaults: -Mode internal -Action all
@@ -541,6 +563,13 @@ Optional helper script for internal/external stack lifecycle:
 ./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action init
 ./scripts/deploy_stack.ps1 -Mode external -WithLocalAirflow -Action up
 ```
+
+Both refuse to start when `AIRFLOW_METADATA_DB_*` and the warehouse resolve to
+the same database: `airflow-init` runs `airflow db migrate`, which would create
+Airflow's metadata schema inside the warehouse and then reset the `public_data`
+connection and every API pool. The refusal names both targets and how to fix
+it, and `--allow-airflow-metadata-in-warehouse` (PowerShell:
+`-AllowAirflowMetadataInWarehouse`) permits it deliberately.
 
 Deployment verification is owned by the cataloged test suite; run
 `./tests/run.ps1 compose-smoke` rather than embedding assertions in the
