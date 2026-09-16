@@ -14,6 +14,22 @@ Containerization artifacts and runtime definitions.
 
 ## Modes
 
+Every mode below can be driven by the lifecycle entrypoints instead of the raw
+Compose commands, which additionally refuse to run `airflow-init` when
+Airflow's metadata database and the warehouse are the same database
+(DEPLOY-008). The rules live once in
+[`tools/deployment.py`](../../tools/deployment.py):
+
+```bash
+make deploy-up                 # internal, this directory's docker-compose.yml
+make deploy-up MODE=external   # external, docker-compose.external.yml
+make deploy-plan MODE=external # print the resolved invocation, run nothing
+```
+
+```powershell
+./scripts/deploy_stack.ps1 -Mode external -Action up
+```
+
 ### Internal Mode (Self-Contained)
 
 ```bash

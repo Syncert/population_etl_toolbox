@@ -1,4 +1,4 @@
-.PHONY: bootstrap bootstrap-python bootstrap-web test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
+.PHONY: bootstrap bootstrap-python bootstrap-web deploy-init deploy-up deploy-down deploy-plan test-unit test-etl test-api test-dags test-dag-pipeline test-integration test-external test-e2e test-martin-unit test-martin-integration test-performance test-resilience test-web-unit test-web-browser test-web-build test-web-smoke test-compose-smoke test-linux test-linux-build
 
 # The one command that turns a fresh clone into a checkout that can run the
 # checks it is graded by. `pyproject.toml`'s `local` extra is already exactly
@@ -75,6 +75,36 @@ bootstrap-web:
 	    npm ci --prefix apps/web; \
 	    printf '%s\n' "$$lockfile_sha" > '$(BOOTSTRAP_WEB_STAMP)'; \
 	  fi
+
+# The deployment lifecycle, on the host a deployment will actually run on.
+# Every rule these share -- which compose and env file a mode uses, which
+# services it starts, and the refusal to run `airflow db migrate` against the
+# warehouse -- lives in `tools/deployment.py`, which `deploy_stack.ps1` reads
+# too. See DEPLOY-008.
+#
+# MODE selects internal (default) or external; DEPLOY_ARGS passes anything
+# else through, so the escape hatches stay available without a target each:
+#   make deploy-up
+#   make deploy-up MODE=external
+#   make deploy-init MODE=external DEPLOY_ARGS=--with-local-airflow
+#
+# deploy-plan executes nothing. It prints the resolved compose invocation and
+# the guard's verdict as JSON, which is the honest way to see what a mode
+# would do before doing it.
+MODE ?= internal
+DEPLOY = python scripts/deploy_stack.py --mode $(MODE) $(DEPLOY_ARGS)
+
+deploy-init:
+	$(DEPLOY) --action init
+
+deploy-up:
+	$(DEPLOY) --action up
+
+deploy-down:
+	$(DEPLOY) --action down
+
+deploy-plan:
+	$(DEPLOY) --action all --emit-plan
 
 test-unit:
 	pytest tests/unit

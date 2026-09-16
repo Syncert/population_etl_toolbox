@@ -137,10 +137,15 @@ The root `tests/` directory is the single authoritative home for all automated t
 Test entry points and gates are centralized with their owned assets:
 `tests/run.ps1` is the Windows tier runner and
 `tests/support/changed_coverage.py` is the changed-line coverage gate. The
-`scripts/` directory is restricted to three operational utilities:
-`deploy_stack.ps1`, `provision_api_readonly.py`, and
-`diagnose_geo_missing.py`. These perform lifecycle, provisioning, or incident
-diagnostics and contain no automated test assertions.
+`scripts/` directory is restricted to operational utilities that perform
+lifecycle, provisioning, or incident diagnostics and contain no automated test
+assertions: the two deployment entrypoints (`deploy_stack.py` and
+`deploy_stack.ps1`, both thin callers over `tools/deployment.py`),
+`provision_api_readonly.py`, `provision_app_api.py`, and
+`diagnose_geo_missing.py`. The allowlist that enforces this is
+`OPERATIONAL_SCRIPTS` in `tests/unit/shared/test_repository_hygiene.py`
+(ENV-007); this paragraph previously named three of the four scripts that
+existed, which is what happens when a list is restated instead of pointed at.
 
 The target layout is:
 
@@ -291,8 +296,8 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-104 | None |
-| Deployment | DEPLOY-001–DEPLOY-007 | None |
-| **Total** | **471 of 471** | **0 of 471** |
+| Deployment | DEPLOY-001–DEPLOY-008 | None |
+| **Total** | **472 of 472** | **0 of 472** |
 
 Awaiting implementation IDs: None.
 
@@ -300,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 471-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 472-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -823,6 +828,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | DEPLOY-005 | P0 | Static / `unit deployment` | Runtime hardening | Application services are read-only with no-new-privileges and every published port binds loopback by default | Writable runtime, privilege escalation, or unbounded host port |
 | DEPLOY-006 | P1 | Static / `unit deployment` | Stack configuration is complete and read | Each deployment stack's env example declares every value the stack needs and nothing it ignores, both stacks pass the same environment to the same DAGs, and a stack that serves the API either configures application storage or states in a comment that it is unset | An operator env example that omits a required credential or asks for one no stack reads, one stack's DAGs credentialled differently from the other's, or account routes dead with nothing saying that was the intent |
 | DEPLOY-007 | P0 | Static / `unit deployment` | Ingestion targets a warehouse, not Airflow's database | The `public_data` connection never resolves to the database `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN` names, each stack's connection schema and `PUBLIC_DATA_DB_NAME` agree, the variable is read in one module, and every pool a DAG asks for is created by every stack | A warehouse written into Airflow's metadata database, a hook write and a psycopg write landing in different databases, a half-retargeted deployment, or a DAG whose pool does not exist |
+| DEPLOY-008 | P0 | Static / `unit deployment` | The deployment entrypoint's decisions are one testable module | Mode selects its own compose and env file; a missing env file is refused with the example to copy; values resolve host environment first, then `--env-file`, then the compose `${VAR:-default}` for that mode, with a blank treated as unset and a fallback chain mirroring a nested expression; two targets compare with the Postgres default port on either side and case-insensitive host and name; the isolation refusal fires for both the `ANALYTICS_DB_*` warehouse and the `PUBLIC_DATA_DB_*` connection, announces its escape hatch rather than bypassing silently, defers to Compose when `AIRFLOW_METADATA_DB_*` is unresolved, names the env file it read, and suggests the flag spelling of the entrypoint that called it; the guard runs on exactly the actions that can reach `airflow db migrate`; and the defaults map is asserted against the `${VAR:-default}` values the compose files declare. The execution loop is graded too, on a runner with a daemon: `deployment-smoke` runs the entrypoint itself against the disposable stack, asserting containers exist after `up`, none remain after `down`, and a Compose failure propagates as a non-zero exit rather than being swallowed | The only deployment entrypoint was `scripts/deploy_stack.ps1`, 355 lines of PowerShell, which `README.md` and this contract both named. The compose files it drives are portable and the entrypoint was not, so the documented path assumed an operator's Windows workstation rather than a host that can serve an origin -- `live-deployment-smoke.yml` predicted exactly that in its own header. Worse, the refusal that stands between `airflow db migrate` and production lived only there, so nothing graded it on any platform: a second entrypoint re-implementing it would be a second place for it to drift, and one without it would be a way to write Airflow's metadata schema into the warehouse and reset every API pool. A hardcoded defaults map is itself a drift risk, so it is compared against the compose files rather than trusted. The execution loop was briefly the one part no check reached, because it is the only part that needs a Docker daemon -- which is a fact about the container the work was done in, not about CI, whose runner has run `docker compose up` for this job all along |
 
 ### Martin Vector-Tile Tests
 

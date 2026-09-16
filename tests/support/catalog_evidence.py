@@ -20,7 +20,7 @@ AUDITED_COUNTS = {
     "DB": 45,
     "API": 139,
     "WEB": 104,
-    "DEPLOY": 7,
+    "DEPLOY": 8,
     "MARTIN": 10,
     "EXT": 14,
     "E2E": 14,

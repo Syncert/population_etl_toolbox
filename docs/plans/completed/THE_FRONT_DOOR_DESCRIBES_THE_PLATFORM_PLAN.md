@@ -13,9 +13,10 @@ verify:
 
 ## Plan status
 
-- **Status:** Ready for review. Every acceptance criterion has inspectable
-  evidence, and the two defects the plan names are now caught by a test rather
-  than by a reader.
+- **Status:** Accepted 2026-09-16 (Ready for review. Authored 2026-09-15,
+  claimed and delivered 2026-09-16; merged to `main` in `985b093`.) Every
+  acceptance criterion has inspectable evidence, and the two defects the plan
+  names are now caught by a test rather than by a reader.
 - **Last updated:** 2026-09-16
 - **Current milestone:** complete.
 - **Dependencies:** none declared; none required.

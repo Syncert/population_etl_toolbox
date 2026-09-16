@@ -26,6 +26,10 @@ GENERATED_PROBES = (
 )
 OPERATIONAL_SCRIPTS = {
     "deploy_stack.ps1",
+    # The POSIX half of the same entrypoint. Both are thin callers over
+    # tools/deployment.py, so the deployment path runs on the host a
+    # deployment will actually run on rather than only on a workstation.
+    "deploy_stack.py",
     "diagnose_geo_missing.py",
     "provision_api_readonly.py",
     # Provisions API-owned application storage and issues/revokes the

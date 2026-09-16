@@ -12,6 +12,9 @@ on:
       - "infra/martin/**"
       - "tests/integration/deployment/**"
       - "tests/unit/deployment/**"
+      - "tools/deployment.py"
+      - "scripts/deploy_stack.py"
+      - "scripts/deploy_stack.ps1"
       - ".github/workflows/deployment-smoke.yml"
   push:
     # Every branch prefix the plan inventory declares, so a plan's work
@@ -55,6 +58,39 @@ jobs:
       - run: python -m pip check
       - name: Validate static deployment contracts
         run: pytest -o addopts='' tests/unit/deployment --tb=short -q
+      # The decisions above are graded without Docker. The execution loop is
+      # the one part of the deployment path that needs a daemon, so it is
+      # exercised here against the disposable stack rather than left to a
+      # reviewer's workstation: the entrypoint an operator runs is the
+      # entrypoint CI runs (DEPLOY-008).
+      #
+      # `--compose-file` points it at the test stack. That stack has no
+      # `airflow-init`, so `init` is not run here and the isolation refusal
+      # stays covered by the unit tests above; what this proves is that the
+      # loop invokes Compose, starts containers, stops them, and propagates a
+      # failure instead of swallowing it.
+      - name: Deployment entrypoint starts and stops the disposable stack
+        run: |
+          set -euo pipefail
+          python scripts/deploy_stack.py --use-host-env --action up \
+            --compose-file infra/docker/docker-compose.test.yml
+          started="$(docker compose -f infra/docker/docker-compose.test.yml ps -q | wc -l)"
+          echo "containers after up: ${started}"
+          test "${started}" -gt 0
+          python scripts/deploy_stack.py --use-host-env --action down \
+            --compose-file infra/docker/docker-compose.test.yml
+          remaining="$(docker compose -f infra/docker/docker-compose.test.yml ps -q | wc -l)"
+          echo "containers after down: ${remaining}"
+          test "${remaining}" -eq 0
+      - name: Deployment entrypoint propagates a Compose failure
+        run: |
+          set +e
+          python scripts/deploy_stack.py --use-host-env --action down \
+            --compose-file infra/docker/docker-compose.does-not-exist.yml
+          status=$?
+          set -e
+          echo "exit status on a missing compose file: ${status}"
+          test "${status}" -ne 0
       - name: Start disposable application dependencies
         run: >-
           docker compose -f infra/docker/docker-compose.test.yml
