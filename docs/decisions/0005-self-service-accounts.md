@@ -1,12 +1,13 @@
 # ADR-0005: Self-service accounts and the identity contract
 
-- **Status:** Proposed (revised 2026-09-15 after reviewer feedback: the
-  credential is a third-party OIDC provider rather than an emailed sign-in
-  link, and the browser holds a short-lived access token in memory beside an
-  `HttpOnly` refresh cookie rather than a token in `sessionStorage`)
+- **Status:** Accepted
 - **Date:** 2026-09-15
-- **Accepted:** not yet — `docs/plans/gates/SELF_SERVICE_IDENTITY_GATE.md` is
-  the human review this document exists to be judged by
+- **Accepted:** 2026-09-16 (human review, at
+  [`docs/plans/gates/SELF_SERVICE_IDENTITY_GATE.md`](../plans/gates/SELF_SERVICE_IDENTITY_GATE.md)).
+  Revised before acceptance after reviewer feedback: the credential is a
+  third-party OIDC provider rather than an emailed sign-in link, and the
+  browser holds a short-lived access token in memory beside an `HttpOnly`
+  refresh cookie scoped to one path, rather than a token in `sessionStorage`.
 - **Decision owners:** API platform maintainers
 - **Related work:** `self-service-accounts` and, behind it,
   `publishing-approval-path` in [`docs/plans/to_do/`](../plans/to_do/);
