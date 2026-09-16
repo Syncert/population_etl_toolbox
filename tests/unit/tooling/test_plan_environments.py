@@ -11,6 +11,7 @@ from tests.support.plan_environments import (
     POSTGRES,
     classify_plans,
     render_document,
+    unreviewed_criterion_hints,
 )
 
 pytestmark = pytest.mark.unit
@@ -80,3 +81,28 @@ def test_a_plan_that_verifies_against_the_database_needs_a_machine() -> None:
             assert not row.buildable_in_cloud
         elif row.criterion_blocker is None:
             assert not row.needs_machine, f"{row.plan_id} was sent to a machine"
+
+
+def test_a_criterion_hinting_at_a_service_has_a_recorded_decision() -> None:
+    """Covers: PLAN-008 — the prose half is read, not grepped.
+
+    The first version of this module classified the criteria by grepping them
+    for a keyword list, and put two plans in the cloud column that cannot be
+    finished there: `served-document-describes-the-platform` asks for
+    readiness to report `ok` "on the integration stack", and
+    `raw-capture-retention-decision` asks for a warehouse round-trip. Neither
+    phrase carries a word the grep was looking for.
+
+    A parser cannot read prose, so it does not try. It flags a plan whose
+    criteria mention anything service-shaped and refuses to classify it until
+    a person has either declared the blocker or written down why there is
+    none. Being wrong is still possible; being silent is not.
+    """
+    pending = unreviewed_criterion_hints()
+    assert pending == [], (
+        "these plans' acceptance criteria mention something service-shaped and "
+        "carry no recorded decision. Read the criteria, then add the plan to "
+        "CRITERION_BLOCKERS (if a criterion needs a machine) or to "
+        "CRITERION_HINTS_REVIEWED (with why it does not): "
+        + ", ".join(f"{plan_id} ({phrase!r})" for plan_id, phrase in pending)
+    )

@@ -37,7 +37,16 @@ plans disagree, so a stale table cannot merge.
 Every acceptance criterion these declare can be met and verified in an agent
 container. This is the "blast through it" column.
 
-**8 plans.**
+A wrong entry here is the expensive one -- it sends a session at work it
+cannot finish -- so the column is established two ways. The `verify` block is
+parsed. The acceptance criteria are *read*, because prose is not a parser's
+business, and any plan whose criteria mention something service-shaped is
+flagged until someone records what they concluded. The first version of this
+document grepped the criteria instead and put two plans here wrongly: "`ok` on
+the integration stack" and "the round-trip test passes" name no keyword a
+grep was looking for.
+
+**6 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -46,8 +55,6 @@ container. This is the "blast through it" column.
 | [`map-bundle-and-browser-cache`](to_do/THE_MAP_LOADS_WHEN_IT_IS_DRAWN_AND_THE_BROWSER_CACHE_IS_USED_PLAN.md) | medium | `browser` | -- |
 | [`no-client-authored-provider-facts`](to_do/A_PROVIDER_FACT_IS_NOT_AUTHORED_IN_THE_CLIENT_PLAN.md) | medium | `browser` | -- |
 | [`per-route-metadata`](to_do/EVERY_ROUTE_HAS_ITS_OWN_TITLE_PLAN.md) | low | `browser` | -- |
-| [`raw-capture-retention-decision`](to_do/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md) | medium | `airflow` | -- |
-| [`served-document-describes-the-platform`](to_do/THE_SERVED_DOCUMENT_DESCRIBES_THE_PLATFORM_IT_SERVES_PLAN.md) | low | none | -- |
 | [`transport-boundary-hygiene`](to_do/THE_TRANSPORT_BOUNDARY_CARRIES_NO_DEAD_OR_UNTYPED_CODE_PLAN.md) | medium | none | -- |
 
 
@@ -62,7 +69,7 @@ passing evidence.
 A cloud session should still take these: it leaves the machine session with one
 check to run rather than a plan to write.
 
-**4 plans.**
+**6 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
@@ -70,6 +77,8 @@ check to run rather than a plan to write.
 | [`api-request-log-is-emitted`](to_do/THE_REQUEST_LINE_REACHES_THE_PROCESS_LOG_PLAN.md) | low | The deployment smoke job fails if the completion line is absent from the container log, proved failing-first. |
 | [`client-error-and-vitals-reporting`](to_do/THE_BROWSER_CAN_REPORT_WHAT_WENT_WRONG_PLAN.md) | medium | The Compose smoke job sees the vitals line in the web container log. |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
+| [`raw-capture-retention-decision`](to_do/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md) | medium | The round-trip test passes: restored captures verify under `DQ-SHARED-001` and the append-only triggers are still present after the restore -- a warehouse round-trip. |
+| [`served-document-describes-the-platform`](to_do/THE_SERVED_DOCUMENT_DESCRIBES_THE_PLATFORM_IT_SERVES_PLAN.md) | low | `/health/ready` reports `storage` from a real probe: `ok` on the integration stack. The `unavailable` and `unconfigured` cases are unit-testable; the `ok` case needs a reachable application database. |
 
 
 ## 3. Needs a machine with the warehouse up

@@ -24,6 +24,7 @@ not something a parser should be guessing at.
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,18 @@ BROWSER = "browser"
 #: reader can find it, and the environment it needs. These are declared rather
 #: than derived because they are prose.
 CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
+    "served-document-describes-the-platform": (
+        POSTGRES,
+        "`/health/ready` reports `storage` from a real probe: `ok` on the "
+        "integration stack. The `unavailable` and `unconfigured` cases are "
+        "unit-testable; the `ok` case needs a reachable application database.",
+    ),
+    "raw-capture-retention-decision": (
+        POSTGRES,
+        "The round-trip test passes: restored captures verify under "
+        "`DQ-SHARED-001` and the append-only triggers are still present after "
+        "the restore -- a warehouse round-trip.",
+    ),
     "deployment-smoke-target": (
         COMPOSE,
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "
@@ -64,6 +77,50 @@ CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
         COMPOSE,
         "The deployment smoke job fails if the completion line is absent from "
         "the container log, proved failing-first.",
+    ),
+}
+
+
+#: Phrases in an acceptance criterion that suggest it needs a service the
+#: base toolchain does not provide. This does not classify anything on its
+#: own -- prose is not a parser's business -- it forces a decision: a plan
+#: whose criteria match one of these is either declared in
+#: ``CRITERION_BLOCKERS`` or recorded in ``CRITERION_HINTS_REVIEWED`` with the
+#: reason it is fine. The first version of this module skipped that step and
+#: grepped the criteria for a keyword list instead, which put two plans in the
+#: cloud column that cannot be finished there: "`ok` on the integration stack"
+#: and "the round-trip test passes" name no keyword the grep carried.
+CRITERION_HINT_PATTERN = re.compile(
+    r"integration (stack|tier)|compose|docker|smoke job|smoke tier|"
+    r"round-trip|container log|deployment origin|warehouse|postgres|"
+    r"restored|real probe",
+    re.IGNORECASE,
+)
+
+#: Plans whose criteria match a hint above and were read anyway, with what the
+#: reader concluded. An entry here is a claim that a person looked.
+CRITERION_HINTS_REVIEWED: dict[str, str] = {
+    "map-bundle-and-browser-cache": (
+        "Names the served-request log and the bundle budget, both of which are "
+        "the browser tier and the Next build. No service."
+    ),
+    "no-client-authored-provider-facts": (
+        "Names the capabilities payload, which the browser tier stubs. No service."
+    ),
+    "transport-boundary-hygiene": (
+        "Names the reviewed OpenAPI snapshot, which is a checked-in fixture. "
+        "No service."
+    ),
+    "bounded-render-honesty": (
+        "Names a reload from the URL, which is the browser tier. No service."
+    ),
+    "accessibility-axe-gate": (
+        "Names every route under `apps/web/app`, audited in the browser tier. "
+        "No service."
+    ),
+    "per-route-metadata": (
+        "Names `/robots.txt`, `/sitemap.xml` and `check:csp`, all of which are "
+        "the Next build and the browser tier. No service."
     ),
 }
 
@@ -117,6 +174,47 @@ def _verify_needs(command: str) -> set[str]:
     if "test:browser" in command:
         needs.add(BROWSER)
     return needs
+
+
+def acceptance_criteria(path: Path) -> str:
+    """The plan's acceptance-criteria section, or an empty string."""
+    text = path.read_text(encoding="utf-8")
+    if "## Acceptance criteria" not in text:
+        return ""
+    section = text.split("## Acceptance criteria", 1)[1]
+    return section.split("\n## ", 1)[0]
+
+
+def unreviewed_criterion_hints(
+    states: tuple[str, ...] = ("to_do", "in_progress"),
+) -> list[tuple[str, str]]:
+    """Plans whose criteria hint at a service and carry no recorded decision.
+
+    Returns ``(plan_id, matched phrase)`` for each. A plan appears here until
+    it is either declared in ``CRITERION_BLOCKERS`` or recorded in
+    ``CRITERION_HINTS_REVIEWED``.
+    """
+    pending: list[tuple[str, str]] = []
+    for state in states:
+        for path in sorted((PLANS_ROOT / state).glob("*.md")):
+            meta = parse_plan(path, PLANS_ROOT)
+            if meta is None or meta.is_gate:
+                continue
+            if meta.plan_id in CRITERION_BLOCKERS:
+                continue
+            if meta.plan_id in CRITERION_HINTS_REVIEWED:
+                continue
+            # A plan already bound to a machine by its own verify block needs
+            # no prose review: it is in the right column whatever it says.
+            needs: set[str] = set()
+            for command in meta.verify:
+                needs |= _verify_needs(command)
+            if {POSTGRES, COMPOSE} & needs:
+                continue
+            match = CRITERION_HINT_PATTERN.search(acceptance_criteria(path))
+            if match:
+                pending.append((meta.plan_id, match.group(0)))
+    return pending
 
 
 def classify_plans(
@@ -189,6 +287,15 @@ _CLOUD_PROSE = """
 
 Every acceptance criterion these declare can be met and verified in an agent
 container. This is the "blast through it" column.
+
+A wrong entry here is the expensive one -- it sends a session at work it
+cannot finish -- so the column is established two ways. The `verify` block is
+parsed. The acceptance criteria are *read*, because prose is not a parser's
+business, and any plan whose criteria mention something service-shaped is
+flagged until someone records what they concluded. The first version of this
+document grepped the criteria instead and put two plans here wrongly: "`ok` on
+the integration stack" and "the round-trip test passes" name no keyword a
+grep was looking for.
 """
 
 _HYBRID_PROSE = """
