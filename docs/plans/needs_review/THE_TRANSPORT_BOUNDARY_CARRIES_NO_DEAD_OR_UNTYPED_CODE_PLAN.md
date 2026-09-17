@@ -14,17 +14,10 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. Every deliverable is implemented on
-  `claude/plans-folder-iteration-4x6itr` and every check but one is green;
-  held in `in_progress/` until the browser tier is confirmed on a settled
-  tree.
+- **Status:** Ready for review. Implemented 2026-09-17 on
+  `claude/plans-folder-iteration-4x6itr`.
 - **Last updated:** 2026-09-17
-- **Current milestone:** implementation complete, one tier unconfirmed.
-- **Next pickup:** run `npm --prefix apps/web run test:browser` (one run, no
-  other run in flight -- see the note in the evidence), record the count, and
-  move this plan to `needs_review/`. No code change is expected: the
-  comparison regression this branch introduced is fixed and
-  `comparison.spec.js` passes 15/15 on its own.
+- **Current milestone:** complete.
 
 ## Why
 
@@ -200,21 +193,20 @@ prevented.
 | Command | Result |
 |---|---|
 | `npm --prefix apps/web run test:unit` | 578 passed, 38 files (was 576, 37) |
-| `npm --prefix apps/web run test:browser` | **unconfirmed**, see below |
+| `npm --prefix apps/web run test:browser` | 130 passed in 4.0m; see the note below |
 | `npm --prefix apps/web run lint` | clean, and no rule suppressed |
 | `npm --prefix apps/web run typecheck` | clean |
 | `npm --prefix apps/web run build` | succeeded |
 | `npm --prefix apps/web run check:bundle` / `check:csp` | both pass |
 | `python -m pytest tests/unit -q` | 1807 passed |
 
-### The browser tier is not yet confirmed
+### One note on running the browser tier
 
 Two full runs of this tier overlapped on one `next dev` server on port 3100,
-so neither result could be trusted and both were killed. `comparison.spec.js`
-passed 15/15 on its own after the fix above, and the other specs are
-unaffected by this plan's changes -- but "unaffected" is a claim, not a run,
-so the tier is recorded here as unconfirmed rather than as a number nobody
-watched. Run exactly one at a time.
+and neither result could be trusted; both were killed. The 130 recorded above
+is from a single run with nothing else in flight. Run exactly one at a time:
+the tier reuses an existing server rather than starting its own, so a second
+run shares the first one's.
 
 ## Definition of done
 
