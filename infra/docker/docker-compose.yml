@@ -35,6 +35,12 @@ services:
       -c max_parallel_maintenance_workers=${ANALYTICS_PG_MAX_PARALLEL_MAINTENANCE:-4}
       -c random_page_cost=${ANALYTICS_PG_RANDOM_PAGE_COST:-1.1}
       -c effective_io_concurrency=${ANALYTICS_PG_EFFECTIVE_IO_CONCURRENCY:-200}
+    # Docker gives a container 64 MB of /dev/shm, and PostgreSQL's parallel
+    # workers pass their tuples through it. That is why the re-serve procedure
+    # records that a parallel VACUUM "fails inside Compose": it is not a
+    # PostgreSQL limit, it is this default. The `max_parallel_*` settings above
+    # are the ones asking for the space (DB-048).
+    shm_size: ${ANALYTICS_PG_SHM_SIZE:-1gb}
     environment:
       POSTGRES_USER: analytics
       POSTGRES_PASSWORD: analytics

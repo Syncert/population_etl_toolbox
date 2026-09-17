@@ -533,21 +533,55 @@ VACUUM (ANALYZE, PARALLEL 0) gold_census.mv_acs_latest;
 VACUUM (ANALYZE, PARALLEL 0) gold_census.rpt_acs_observations;
 ```
 
-`PARALLEL 0` is not optional on this stack: the compose file sets no
-`shm_size`, so the container has Docker's default 64 MB `/dev/shm`, and a
-parallel index vacuum at the configured 8 GB `maintenance_work_mem` fails at
-once with "could not resize shared memory segment ... No space left on
-device". The re-serve itself never hit that error.
+`PARALLEL 0` **was** not optional on this stack, and that is no longer true.
+The compose file set no `shm_size`, so the container had Docker's default
+64 MB `/dev/shm`, and a parallel index vacuum at the configured 8 GB
+`maintenance_work_mem` failed at once with "could not resize shared memory
+segment ... No space left on device". The re-serve itself never hit that
+error. `docker-compose.yml` now sets `shm_size` (`ANALYTICS_PG_SHM_SIZE`,
+1 GB by default, DB-048), so a parallel vacuum has the space the configured
+parallel workers were always asking for. `PARALLEL 0` is still the safe thing
+to type on a stack you have not checked; `SHOW shm_size` is not a thing, so
+confirm it from the host with `docker inspect` or by simply trying one.
+
+### What changed since that run
+
+Two things, and neither removes the rules below -- they lower how often you
+have to reach for them:
+
+- **The serving tables set their own autovacuum thresholds.** Every `rpt_*`
+  and `mv_*` table in the ACS, BLS and FRED gold DDL now carries
+  `autovacuum_vacuum_scale_factor = 0.02`, `autovacuum_analyze_scale_factor =
+  0.01` and `autovacuum_vacuum_cost_limit = 2000`. At PostgreSQL's 20%
+  default, a table this size reaches its threshold only after millions of dead
+  tuples -- which is how 54.7 million accumulated above. `ensure_*` re-applies
+  the DDL, so an existing warehouse picks the settings up on its next run with
+  no migration. The PEP gold relations are views and have no storage
+  parameters to set.
+- **The chunk driver analyses after each chunk commits.** The refresh is
+  delete-then-reinsert per year, which leaves the planner describing rows that
+  are gone; by the second chunk of a twenty-year re-serve every plan was built
+  from stale statistics. `ANALYZE` runs on its own connection after the
+  chunk's checkpoint is durable, and a failure there is logged and ignored:
+  the chunk is complete and correct, and stale statistics are a slower plan
+  rather than a wrong answer.
+
+Manual `VACUUM` remains available and is still the right tool for the case in
+rule 1 below -- a long-open snapshot blocks autovacuum exactly as it blocks a
+manual one, and ending the session is what fixes that. It is no longer the
+first resort for ordinary re-serve churn.
 
 Three operator rules follow:
 
 1. Before a long re-serve, look for old snapshots
    (`SELECT pid, now() - query_start FROM pg_stat_activity WHERE state <> 'idle'`)
    and end anything that will outlive a year. One nine-hour reader cost more
-   than six hours here.
+   than six hours here. **This one is unchanged by the settings above**:
+   nothing can reclaim a row an open snapshot may still need to see.
 2. If per-year time is climbing rather than flat, check `n_dead_tup` on the
-   two serving relations in `pg_stat_user_tables` and vacuum manually; do not
-   wait for autovacuum, which yields to everything else on the box.
+   two serving relations in `pg_stat_user_tables`. With the thresholds above,
+   a climbing `n_dead_tup` now means autovacuum is being held off -- look for
+   rule 1's snapshot before vacuuming by hand.
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.

@@ -44,6 +44,13 @@ class ServingRefreshChunkConfig:
     #: Statement timeout for a forced chunk, which rewrites every row in the
     #: year rather than the changed subset.
     full_statement_timeout: str = ""
+    #: The relation ``latest_procedure`` writes. Named here only so the chunk
+    #: driver can ``ANALYZE`` it beside the report table: the refresh is a
+    #: delete-and-reinsert per year, which leaves the planner's statistics
+    #: describing the rows that used to be there (DB-048). Empty means "do not
+    #: analyse a latest relation", which is what a source serving a view
+    #: rather than a table wants.
+    latest_table: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -246,6 +253,52 @@ def _full_reserve_is_finished(
         (source_code, run_started_at),
     )
     return int(cursor.fetchone()[0]) == 0
+
+
+def _analyze_after_chunk(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    statement_timeout: str,
+    log: logging.Logger,
+) -> None:
+    """Refresh the planner's statistics for the relations the chunk rewrote.
+
+    A chunk is `DELETE ... WHERE observation_date BETWEEN` followed by a
+    re-insert. Nothing in that moves the planner's idea of the table, so by the
+    second chunk of a twenty-year re-serve every plan is built from statistics
+    describing rows that no longer exist -- on relations the procedure then
+    joins and filters. `VACUUM` is the operator's (and now autovacuum's);
+    `ANALYZE` is cheap, is safe inside a transaction, and is what the next
+    chunk needs.
+
+    It runs **after** the chunk commits and on its own connection, so the
+    chunk's checkpoint is durable before this starts. A failure here is logged
+    and swallowed on purpose: the chunk is complete, the data is correct, and
+    stale statistics are a slower plan rather than a wrong answer. Failing the
+    chunk over them would turn an optimisation into an outage, and the retry
+    would redo work that was already done.
+    """
+    relations = [config.report_table]
+    if config.latest_table:
+        relations.append(config.latest_table)
+    try:
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
+            for relation in relations:
+                cur.execute(f"ANALYZE {relation}")
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        log.warning(
+            "[%s SERVING REFRESH] ANALYZE after chunk failed, continuing: %s",
+            config.log_label,
+            str(exc)[:500],
+        )
+    else:
+        log.info(
+            "[%s SERVING REFRESH] analyzed %s",
+            config.log_label,
+            ", ".join(relations),
+        )
 
 
 def refresh_serving_layer_in_year_chunks(
@@ -549,6 +602,7 @@ def refresh_serving_layer_in_year_chunks(
                     ),
                 )
                 conn.commit()
+            _analyze_after_chunk(hook, config, statement_timeout, log)
         except Exception as exc:
             error_text = str(exc)[:4000]
             with hook.get_conn() as conn, conn.cursor() as cur:

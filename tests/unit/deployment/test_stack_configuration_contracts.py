@@ -180,3 +180,53 @@ def test_both_deployment_stacks_pass_the_same_environment_to_airflow() -> None:
         f"the two stacks read different Airflow env files, so a default in "
         f"one is absent from the other: {files}"
     )
+
+
+def test_the_database_container_has_shared_memory_for_parallel_work() -> None:
+    """Covers: DEPLOY-010 — the parallel workers have somewhere to exchange.
+
+    `BETA_RESET_REINGESTION.md` §7 recorded that a parallel `VACUUM` "fails
+    inside Compose". That is not a PostgreSQL limit: Docker gives a container
+    64 MB of `/dev/shm`, and parallel workers pass their tuples through it.
+    The stack asks for up to four parallel maintenance workers and eight
+    parallel workers in the same service definition, so the two settings have
+    to agree or the ones asking for parallelism are a request the container
+    cannot honour (DB-048).
+    """
+    compose = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.yml").read_text(encoding="utf-8")
+    )
+    database = compose["services"]["analytics_postgres"]
+
+    assert "shm_size" in database, (
+        "the composed warehouse sets no shm_size, so it keeps Docker's 64 MB "
+        "default and a parallel VACUUM fails the way §7 records"
+    )
+    # A documented override with a working default, like the tuning knobs
+    # beside it: an operator raises it on a warehouse host without editing the
+    # compose file.
+    assert str(database["shm_size"]).startswith("${ANALYTICS_PG_SHM_SIZE:-")
+
+    # And the setting is only meaningful beside the ones asking for parallel
+    # work, so this fails if those are ever removed and this is left behind.
+    command = " ".join(str(database["command"]).split())
+    assert "max_parallel_maintenance_workers" in command
+    assert "max_parallel_workers" in command
+
+
+def test_the_external_stack_composes_no_database_to_size() -> None:
+    """Covers: DEPLOY-010 — the external stack points at someone else's.
+
+    The plan that added `shm_size` asked for it in both compose files "where
+    the database is local". It is not local in the external stack: that stack
+    has no Postgres service at all, and sizing a container it does not run
+    would be a setting with nothing to apply to.
+    """
+    compose = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.external.yml").read_text(encoding="utf-8")
+    )
+    services = compose.get("services", {})
+    assert "analytics_postgres" not in services
+    for name, service in services.items():
+        image = str(service.get("image", ""))
+        assert "postgis" not in image and "postgres:" not in image, name

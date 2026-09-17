@@ -63,6 +63,7 @@ BLS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     """,
     report_procedure="gold_bls.refresh_rpt_bls_observations",
     latest_procedure="gold_bls.refresh_mv_bls_latest",
+    latest_table="gold_bls.mv_bls_latest",
     statement_timeout="60min",
     full_statement_timeout="90min",
 )
@@ -118,6 +119,7 @@ ACS_CHUNK_CONFIG = ServingRefreshChunkConfig(
     """,
     report_procedure="gold_census.refresh_rpt_acs_observations",
     latest_procedure="gold_census.refresh_mv_acs_latest",
+    latest_table="gold_census.mv_acs_latest",
     statement_timeout="90min",
     full_statement_timeout="120min",
 )
@@ -175,6 +177,7 @@ FRED_CHUNK_CONFIG = ServingRefreshChunkConfig(
     """,
     report_procedure="gold_fred.refresh_rpt_fred_observations",
     latest_procedure="gold_fred.refresh_mv_fred_latest",
+    latest_table="gold_fred.mv_fred_latest",
     statement_timeout="30min",
     full_statement_timeout="60min",
 )
