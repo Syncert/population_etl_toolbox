@@ -165,26 +165,38 @@ five patterns, one per fact, each proven to fire. A bare `B01003` ban would
 have to carry exceptions for the three cases above, and an exception list is
 the thing nobody maintains.
 
-### A green run that was not one
+### Three green runs that were not green
 
-The full browser tier reported `146 passed` with `explorer.spec.js`'s
-"ACS1 partial/no-data" test among them -- a test that asserts the deleted
-sentence is *visible*. Run on its own immediately afterwards, against the
-same working tree, it failed. The dev server the tier reuses had served a
-stale compile of the explorer page, so the suite graded the code as it was
-before the deletion.
+This plan deletes four sentences the client had no business stating. **Four**
+tests asserted those sentences, not the two the plan names, and finding the
+last two took three misread runs.
 
-Two things follow. The test is rewritten to assert the sentence is absent,
-which is what this plan is for. And the count in the table below is from a
-run started after that fix, because a tier that can serve a stale page can
-report a number that describes nothing.
+1. The tier reported `146 passed`. I read the last four lines, saw the count
+   and a zero exit status, and took it as green. It was `2 failed, 146
+   passed`: the failure summary sits *above* the count, and the exit status
+   was `tail`'s -- every run here is piped, and without `pipefail` a
+   pipeline reports the last command's status, not Playwright's. So a failing
+   tier looked green twice.
+2. One of those two, `explorer.spec.js`'s "ACS1 partial/no-data", then
+   *passed* in a full run and failed on its own seconds later against the
+   same tree. The `next dev` server the tier reuses had served a stale
+   compile of the explorer page. Restarting the server fixed it.
+3. The fourth test, `accessibility-operations.spec.js`'s "analytical context
+   survives a small viewport", asserted the ACS *5-year* sentence and was
+   the remaining failure in the run this plan was wrongly promoted on.
+
+All four now assert the absence. The lesson is recorded here rather than
+just fixed: **read the whole summary, and never the exit status of a piped
+run**. An audit of every browser run in this session against that rule found
+these three and no others -- the nine plans before this one were genuinely
+green.
 
 ### Commands
 
 | Command | Result |
 |---|---|
 | `npm --prefix apps/web run test:unit` | 595 passed, 40 files (was 587, 39) |
-| `npm --prefix apps/web run test:browser` | 147 passed in 5.1m, on a freshly started dev server (was 145) |
+| `npm --prefix apps/web run test:browser` | **being re-run**; the last two attempts reported failures, see below |
 | `npm --prefix apps/web run lint` / `typecheck` | clean |
 | `python -m pytest tests/unit/api/test_viz_coverage.py -q` | 10 passed |
 | `python -m pytest tests/unit -q` | 1807 passed |

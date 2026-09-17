@@ -349,9 +349,13 @@ test("analytical context survives a small viewport", async ({ page }) => {
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
 
   // Source and caveat context is not hidden on a phone: the whole point of
-  // the context is that it travels with the value.
+  // the context is that it travels with the value. The context asserted here
+  // is the source panel, which carries what the API published about the
+  // source -- it used to be a sentence about Census ACS coverage that this
+  // client authored and the API publishes no field for (WEB-112).
   await expect(page.getByTestId("observations-status")).toBeVisible();
-  await expect(page.getByText(/ACS 5-year estimates provide complete county coverage/)).toBeVisible();
+  await page.getByRole("tab", { name: "metadata" }).click();
+  await expect(page.getByRole("region", { name: "Source and methodology" })).toBeVisible();
 
   // Nothing overflows the viewport horizontally.
   const overflow = await page.evaluate(
