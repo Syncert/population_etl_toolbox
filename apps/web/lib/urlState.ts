@@ -60,6 +60,8 @@ export function normalizeGeoLevel(value: unknown): string {
 export interface ExplorerState {
   /** Published identity of the explored source, from capability discovery. */
   source?: string;
+  /** Zero-based page of the observation table, so a link reopens the page. */
+  tablePage?: number;
   metric?: string;
   geoLevel?: GeoLevel;
   mapMode?: MapMode;
@@ -126,6 +128,31 @@ export type ExplorerStateDefaults = Pick<
 >;
 
 const STATE_FIPS_PATTERN = /^\d{2}$/;
+
+/**
+ * The table's page, as a link carries it.
+ *
+ * One-based in the URL because that is what the caption shows a reader, and
+ * zero-based everywhere in the code. A page number is a small non-negative
+ * integer and nothing else: anything that is not one is dropped rather than
+ * coerced, so a hand-edited link opens the first page instead of an empty
+ * table. Page 1 is the default and is never written, so an ordinary link is
+ * unchanged by this.
+ */
+const TABLE_PAGE_PATTERN = /^[1-9]\d{0,5}$/;
+
+function parseTablePage(raw: string | null): number | undefined {
+  if (!raw || !TABLE_PAGE_PATTERN.test(raw)) {
+    return undefined;
+  }
+  return Number(raw) - 1;
+}
+
+function serializeTablePage(params: URLSearchParams, page: number | undefined): void {
+  if (typeof page === "number" && Number.isInteger(page) && page > 0) {
+    params.set("rows", String(page + 1));
+  }
+}
 // Published source identities as the API spells them: a route segment
 // ("census", "usda-nass") or, for a source that publishes none, its
 // glossary source code ("FBI_UCR").
@@ -164,6 +191,11 @@ export function parseExplorerState(search: string | null | undefined): ExplorerS
   const geoLevel = normalizeGeoLevel(params.get("geo_level"));
   if (isGeoLevel(geoLevel)) {
     state.geoLevel = geoLevel;
+  }
+
+  const tablePage = parseTablePage(params.get("rows"));
+  if (tablePage !== undefined) {
+    state.tablePage = tablePage;
   }
 
   const mapMode = params.get("map_mode");
@@ -271,6 +303,7 @@ export function serializeExplorerState(
       params.set(name, value);
     }
   }
+  serializeTablePage(params, state.tablePage);
 
   return params.toString();
 }
@@ -298,6 +331,8 @@ export interface ComparisonUrlState {
   sourceB?: string;
   geoLevel?: GeoLevel;
   stateFips?: string;
+  /** Zero-based page of the aligned table, so a link reopens the page. */
+  tablePage?: number;
 }
 
 export type ComparisonUrlDefaults = Pick<ComparisonUrlState, "geoLevel">;
@@ -336,6 +371,11 @@ export function parseComparisonState(
     state.stateFips = stateFips;
   }
 
+  const tablePage = parseTablePage(params.get("rows"));
+  if (tablePage !== undefined) {
+    state.tablePage = tablePage;
+  }
+
   return state;
 }
 
@@ -367,6 +407,7 @@ export function serializeComparisonState(
   if (state.stateFips && STATE_FIPS_PATTERN.test(state.stateFips)) {
     params.set("state", state.stateFips);
   }
+  serializeTablePage(params, state.tablePage);
 
   return params.toString();
 }

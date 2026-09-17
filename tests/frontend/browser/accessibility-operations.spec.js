@@ -270,6 +270,13 @@ test("the map and the trend both have a table alternative to the same values", a
   await page.getByRole("tab", { name: "table" }).click();
   await expect(page.getByRole("cell", { name: "561504" })).toBeVisible();
 
+  // An alternative that shows an unstated subset is not one: the caption says
+  // how many rows there are and which of them this is, so a reader who cannot
+  // use the map knows whether they have seen everything (WEB-110).
+  await expect(page.getByTestId("observation-table-caption")).toContainText(
+    "Showing all 1 loaded row,",
+  );
+
   // The legend states its bins in text, so colour is not the only carrier.
   await page.getByRole("tab", { name: "map" }).click();
   await expect(page.getByLabel("Choropleth value legend")).toContainText("API distribution");

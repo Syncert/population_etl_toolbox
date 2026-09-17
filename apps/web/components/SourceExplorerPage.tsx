@@ -144,6 +144,7 @@ import {
   syncLayerFilter,
   syncLayerPaint,
 } from "../lib/mapWiring";
+import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
 import type { ExplorerState, ValueScale } from "../lib/urlState";
 
@@ -327,6 +328,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     message: "selecting metric",
   });
   const [observations, setObservations] = useState<ObservationRow[]>([]);
+  // The observation table's page. Client-side over rows already loaded: the
+  // read is bounded upstream and says so, this pages what arrived.
+  const [tablePage, setTablePage] = useState(0);
   // What the last observation read was, beyond its rows: the loader computed
   // `complete` and the API's `total` for the status line and then dropped
   // them, so an export of a prefix could not say it was one (WEB-059).
@@ -667,6 +671,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     initialStateRef.current = requested;
     if (requested.source) {
       setActiveSourceKey(requested.source);
+    }
+    if (typeof requested.tablePage === "number") {
+      setTablePage(requested.tablePage);
     }
 
     async function bootstrap() {
@@ -1759,6 +1766,46 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // the same reason the reduction above is.
   const viewedStateFips = String(latestRequest?.params.state_fips || "");
 
+  // A new selection starts at the table's first page -- but the *first*
+  // selection does not, because it is the one the link named.
+  //
+  // The measure arrives asynchronously: at mount `selectedMetric` is empty and
+  // the link's page has already been applied, so a reset keyed on "the
+  // selection changed" fires as soon as the catalog answers and throws that
+  // page away. Recording the first settled selection without resetting is
+  // what makes "the page survives a reload" true for exactly the links that
+  // carry a page. The model clamps an out-of-range page anyway, so this is
+  // about where a reader lands, not about safety.
+  const selectionForTable = `${selectedMetric}|${selectedGeoLevel}|${selectedStateFips}|${observationScope}|${dimensionKey}`;
+  const lastTableSelection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedMetric) {
+      return;
+    }
+    if (lastTableSelection.current === null) {
+      lastTableSelection.current = selectionForTable;
+      return;
+    }
+    if (lastTableSelection.current === selectionForTable) {
+      return;
+    }
+    lastTableSelection.current = selectionForTable;
+    setTablePage(0);
+  }, [selectionForTable, selectedMetric]);
+
+  // The observation table's page, and what the table says about itself.
+  //
+  // `/observations` and the source-scoped routes each page a total order the
+  // API declares (the guide's "Paging a history, and what orders it"), so the
+  // caption names it rather than leaving a reader to guess which fifty rows
+  // these are.
+  const observationTableModel = tablePageModel(observations.length, tablePage);
+  const observationTableRows = tablePageRows(observations, tablePage);
+  const observationTableCaption = tableCaption(observationTableModel, {
+    noun: { one: "loaded row", many: "loaded rows" },
+    order: "in the order this resource declares",
+  });
+
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
@@ -1779,6 +1826,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         // Under the source's own declared filter names, which is what the
         // saved document records too, so the two records of one view agree.
         dimensions: dimensionSelections,
+        tablePage,
       },
       {
         source: sourceKey,
@@ -1809,6 +1857,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // change when the narrowing does, or it reproduces a different view.
     dimensionKey,
     dimensionSelections,
+    tablePage,
   ]);
 
   function handleSourceChange(key: string) {
@@ -2561,9 +2610,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         ) : null}
 
         <article className="card workspace-panel" data-active={effectiveTab === "table"}>
-          <h2>Observation Sample</h2>
+          <h2>Observation table</h2>
           <div className="table-wrap">
             <table>
+              {/* The map's accessible alternative says how many rows there
+                  are, which of them this page is, and what decides the order
+                  -- without the last, "rows 51 to 100" names no particular
+                  rows (WEB-110). */}
+              <caption data-testid="observation-table-caption">
+                {observationTableCaption}{" "}
+                <span className="subtle">The CSV export carries every loaded row.</span>
+              </caption>
               <thead>
                 <tr>
                   <th>Geo</th>
@@ -2586,7 +2643,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 </tr>
               </thead>
               <tbody>
-                {observations.slice(0, 12).map((item, index) => (
+                {observationTableRows.map((item, index) => (
                   <tr
                     key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${String(item.release ?? "")}-${index}`}
                   >
@@ -2645,6 +2702,31 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </tbody>
             </table>
           </div>
+          {observationTableModel.pageCount > 1 ? (
+            <nav className="catalog-pagination" aria-label="Observation table pages">
+              <button
+                className="button secondary"
+                type="button"
+                data-testid="observation-table-previous"
+                disabled={!observationTableModel.hasPrevious}
+                onClick={() => setTablePage((current) => Math.max(0, current - 1))}
+              >
+                Previous
+              </button>
+              <span aria-live="polite" data-testid="observation-table-page">
+                {`Page ${observationTableModel.pageIndex + 1} of ${observationTableModel.pageCount}`}
+              </span>
+              <button
+                className="button secondary"
+                type="button"
+                data-testid="observation-table-next"
+                disabled={!observationTableModel.hasNext}
+                onClick={() => setTablePage((current) => current + 1)}
+              >
+                Next
+              </button>
+            </nav>
+          ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
           <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />

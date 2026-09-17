@@ -78,6 +78,7 @@ import {
 } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
 import { formatNumber } from "../lib/format";
+import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const CATALOG_PAGE_SIZE = 1000;
@@ -121,6 +122,7 @@ export default function ComparisonWorkspace() {
   // title arrived would be a request nothing asked for. Naming it a ref says
   // that out loud, where suppressing the dependency rule said nothing.
   const sourcesRef = useRef<ExplorerSource[]>([]);
+  const [tablePage, setTablePage] = useState(0);
 
   const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [sourcesError, setSourcesError] = useState("");
@@ -171,6 +173,9 @@ export default function ComparisonWorkspace() {
   useEffect(() => {
     const request = capabilitiesTracker.begin();
     requestedRef.current = parseComparisonState(window.location.search);
+    if (typeof requestedRef.current.tablePage === "number") {
+      setTablePage(requestedRef.current.tablePage);
+    }
 
     async function loadCapabilities() {
       try {
@@ -477,6 +482,7 @@ export default function ComparisonWorkspace() {
         sourceB: selection.b.sourceCode,
         geoLevel: selection.geoLevel as GeoLevel,
         stateFips: selection.stateFips,
+        tablePage,
       },
       { geoLevel: DEFAULT_GEO_LEVEL as GeoLevel },
     );
@@ -484,7 +490,7 @@ export default function ComparisonWorkspace() {
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [complete, selection]);
+  }, [complete, selection, tablePage]);
 
   const model = useMemo(() => describePreflight(preflight), [preflight]);
   const alternatives = useMemo(() => incompatibleAlternatives(preflight), [preflight]);
@@ -493,6 +499,15 @@ export default function ComparisonWorkspace() {
     () => (Array.isArray(comparison?.items) ? comparison.items : []),
     [comparison],
   );
+  // The aligned table's page. Client-side over rows already fetched: the read
+  // is paged upstream and says when it was cut short, this pages what arrived.
+  const tableModel = tablePageModel(rows.length, tablePage);
+  const tableRows = tablePageRows(rows, tablePage);
+  const tableCaptionText = tableCaption(tableModel, {
+    noun: { one: "aligned geography", many: "aligned geographies" },
+    order: "in the order `/comparison` declares",
+  });
+
   const scatter = useMemo(() => comparisonScatterModel(comparison), [comparison]);
   const derivedField = useMemo(() => defaultDerivedField(comparison), [comparison]);
   const mapRows = useMemo(
@@ -1028,8 +1043,12 @@ export default function ComparisonWorkspace() {
                     <th>Period basis</th>
                   </tr>
                 </thead>
+                <caption data-testid="comparison-table-caption">
+                  {tableCaptionText}{" "}
+                  <span className="subtle">The CSV export carries every loaded row.</span>
+                </caption>
                 <tbody>
-                  {rows.slice(0, 25).map((row, index) => {
+                  {tableRows.map((row, index) => {
                     const cells = comparisonCells(comparison, row);
                     return (
                       <tr key={`${row.geo_id}-${index}`}>
@@ -1052,6 +1071,31 @@ export default function ComparisonWorkspace() {
                 </tbody>
               </table>
             </div>
+            {tableModel.pageCount > 1 ? (
+              <nav className="catalog-pagination" aria-label="Aligned comparison pages">
+                <button
+                  className="button secondary"
+                  type="button"
+                  data-testid="comparison-table-previous"
+                  disabled={!tableModel.hasPrevious}
+                  onClick={() => setTablePage((current) => Math.max(0, current - 1))}
+                >
+                  Previous
+                </button>
+                <span aria-live="polite" data-testid="comparison-table-page">
+                  {`Page ${tableModel.pageIndex + 1} of ${tableModel.pageCount}`}
+                </span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  data-testid="comparison-table-next"
+                  disabled={!tableModel.hasNext}
+                  onClick={() => setTablePage((current) => current + 1)}
+                >
+                  Next
+                </button>
+              </nav>
+            ) : null}
           </article>
         ) : null}
 
