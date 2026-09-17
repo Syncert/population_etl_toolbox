@@ -11,16 +11,32 @@ export const BUILDER_DRAFT_KEY = "economic-data-studio:builder-draft:v1";
  */
 export const SAVED_CHART_LIMIT = 50;
 
-export function readSavedCharts() {
+export function readSavedCharts(): SavedChart[] {
   if (typeof window === "undefined") {
     return [];
   }
   try {
-    const value = JSON.parse(window.localStorage.getItem(SAVED_CHARTS_KEY) || "[]");
-    return Array.isArray(value) ? value : [];
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem(SAVED_CHARTS_KEY) || "[]",
+    );
+    // Anything in this store was written by an earlier version of this
+    // application, so it is read as data rather than trusted as a shape: an
+    // entry without an id cannot be replaced or removed and is dropped.
+    return Array.isArray(value)
+      ? value.filter(
+          (entry): entry is SavedChart =>
+            Boolean(entry) && typeof (entry as SavedChart).id === "string",
+        )
+      : [];
   } catch {
     return [];
   }
+}
+
+/** A saved view: an addressable id, and whatever the screen chose to keep. */
+export interface SavedChart {
+  id: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -34,13 +50,12 @@ export function readSavedCharts() {
  * unwrapped `setItem` in a click handler therefore throws out of the handler,
  * and there was nowhere for it to land.
  *
- * @param {unknown} error
- * @returns {string}
  */
-export function storageRefusalReason(error) {
-  const name = (error && typeof error === "object" && "name" in error
-    ? String(/** @type {{ name?: unknown }} */ (error).name)
-    : "") || "";
+export function storageRefusalReason(error: unknown): string {
+  const name =
+    (error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name)
+      : "") || "";
   if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
     return "this browser has no room left for saved views";
   }
@@ -50,12 +65,13 @@ export function storageRefusalReason(error) {
   return "this browser refused to store it";
 }
 
-/**
- * @typedef {object} LocalWriteResult
- * @property {"saved" | "refused"} outcome
- * @property {number} evicted How many entries the cap dropped. Always 0 on a refusal.
- * @property {string} reason Why the browser refused. Empty on a save.
- */
+export interface LocalWriteResult {
+  outcome: "saved" | "refused";
+  /** How many entries the cap dropped. Always 0 on a refusal. */
+  evicted: number;
+  /** Why the browser refused. Empty on a save. */
+  reason: string;
+}
 
 /**
  * Write a value to browser storage, reporting what happened.
@@ -64,12 +80,8 @@ export function storageRefusalReason(error) {
  * it, not an exception in a click handler, and the analysis on screen has to
  * survive it.
  *
- * @param {string} key
- * @param {unknown} value
- * @param {number} [evicted]
- * @returns {LocalWriteResult}
  */
-function write(key, value, evicted = 0) {
+function write(key: string, value: unknown, evicted = 0): LocalWriteResult {
   if (typeof window === "undefined") {
     return { outcome: "refused", evicted: 0, reason: "there is no browser to save in" };
   }
@@ -84,10 +96,10 @@ function write(key, value, evicted = 0) {
 /**
  * Save a view in this browser, reporting the outcome.
  *
- * @param {{ id: string } & Record<string, unknown>} chart
- * @returns {LocalWriteResult & { charts: unknown[] }}
  */
-export function saveChart(chart) {
+export function saveChart(
+  chart: SavedChart,
+): LocalWriteResult & { charts: SavedChart[] } {
   const charts = readSavedCharts();
   const merged = [chart, ...charts.filter((item) => item.id !== chart.id)];
   const next = merged.slice(0, SAVED_CHART_LIMIT);
@@ -100,9 +112,7 @@ export function saveChart(chart) {
 /**
  * Save the evidence-packet draft in this browser, reporting the outcome.
  *
- * @param {unknown} packet
- * @returns {LocalWriteResult}
  */
-export function saveBuilderDraft(packet) {
+export function saveBuilderDraft(packet: unknown): LocalWriteResult {
   return write(BUILDER_DRAFT_KEY, packet);
 }

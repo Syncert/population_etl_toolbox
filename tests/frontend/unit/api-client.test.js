@@ -13,7 +13,6 @@ import {
   fetchCollectionPages,
   fetchComparisonPages,
   getDistributionBins,
-  getSourceLatestObservations,
   searchMetrics,
 } from "../../../apps/web/lib/api/client";
 import {
@@ -258,11 +257,17 @@ describe("versioned API client", () => {
   });
 
   test("constructs source-scoped and analysis routes from the contract", async () => {
+    // The source-scoped routes are addressed through `observationAccess.ts`,
+    // which picks the access shape a source declares and hands back the
+    // resource and params; `apiFetch` is what sends it. The four wrappers
+    // that addressed those routes a second way had no caller and are gone.
     const latest = recordingFetch([jsonResponse({ items: [] })]);
-    await getSourceLatestObservations(
-      "census",
-      { metric_code: "CENSUS_ACS:acs5:B01003_001", geo_level: "COUNTY" },
-      { fetchImpl: latest.fetchImpl },
+    await apiFetch(
+      "/census/observations/latest",
+      {
+        params: { metric_code: "CENSUS_ACS:acs5:B01003_001", geo_level: "COUNTY" },
+        fetchImpl: latest.fetchImpl,
+      },
     );
     expect(latest.calls[0].path).toBe(
       "/api/v1/census/observations/latest?metric_code=CENSUS_ACS%3Aacs5%3AB01003_001&geo_level=COUNTY",

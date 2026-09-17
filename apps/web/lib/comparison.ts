@@ -201,11 +201,26 @@ export function incompatibleAlternatives(
   return alternatives;
 }
 
+/**
+ * The measures a request names, and nothing else.
+ *
+ * Both builders below took a whole `ComparisonSelection` while reading two or
+ * four of its fields. A `ComparisonSelection` still satisfies these, so every
+ * caller is unchanged -- but the over-declaration had a cost: the effects that
+ * call them had to spread the whole object, which made `selection` a
+ * dependency of an effect that must not re-run when an unrelated part of it
+ * changes, and all three suppressed the rule instead.
+ */
+export interface ComparisonPair {
+  a: Pick<ComparisonSide, "metricCode">;
+  b: Pick<ComparisonSide, "metricCode">;
+}
+
 /** Parameters `/comparison/preflight` declares. */
-export function preflightRequestParams(selection: ComparisonSelection): Record<string, string> {
+export function preflightRequestParams(pair: ComparisonPair): Record<string, string> {
   return {
-    metric_code_a: selection.a.metricCode,
-    metric_code_b: selection.b.metricCode,
+    metric_code_a: pair.a.metricCode,
+    metric_code_b: pair.b.metricCode,
   };
 }
 
@@ -215,7 +230,7 @@ export function preflightRequestParams(selection: ComparisonSelection): Record<s
  * than narrow it.
  */
 export function comparisonRequestParams(
-  selection: ComparisonSelection,
+  selection: ComparisonPair & Pick<ComparisonSelection, "geoLevel" | "stateFips">,
   limit: number | string = 1000,
 ): Record<string, string> {
   const params: Record<string, string> = {

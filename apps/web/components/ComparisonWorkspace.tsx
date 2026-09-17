@@ -98,10 +98,16 @@ const SIDE_LABEL: Record<SideKey, string> = { a: "Measure A", b: "Measure B" };
 
 export default function ComparisonWorkspace() {
   const capabilitiesTracker = useRef(createRequestTracker()).current;
-  const metricsTrackers = {
-    a: useRef(createRequestTracker()).current,
-    b: useRef(createRequestTracker()).current,
-  };
+  const metricsTrackerA = useRef(createRequestTracker()).current;
+  const metricsTrackerB = useRef(createRequestTracker()).current;
+  // Each tracker is stable; the object holding them was not, so an effect
+  // depending on it re-ran every render and the dependency had to be
+  // suppressed. Memoised, it can be a real dependency.
+  const metricsTrackers: Record<SideKey, ReturnType<typeof createRequestTracker>> =
+    useMemo(
+      () => ({ a: metricsTrackerA, b: metricsTrackerB }),
+      [metricsTrackerA, metricsTrackerB],
+    );
   const preflightTracker = useRef(createRequestTracker()).current;
   const comparisonTracker = useRef(createRequestTracker()).current;
   const geographyTracker = useRef(createRequestTracker()).current;
@@ -109,6 +115,12 @@ export default function ComparisonWorkspace() {
   // The requested link state, applied once each side's catalog arrives so a
   // shared link reopens the same pair rather than a default one.
   const requestedRef = useRef<ReturnType<typeof parseComparisonState> | null>(null);
+  // The discovered sources, mirrored for the one place that needs the current
+  // list without wanting to re-run when it changes: the catalog effect below
+  // names a source in a notice, and re-fetching both catalogs because a source
+  // title arrived would be a request nothing asked for. Naming it a ref says
+  // that out loud, where suppressing the dependency rule said nothing.
+  const sourcesRef = useRef<ExplorerSource[]>([]);
 
   const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [sourcesError, setSourcesError] = useState("");
@@ -168,6 +180,7 @@ export default function ComparisonWorkspace() {
           return;
         }
         setSources(discovered);
+        sourcesRef.current = discovered;
         const requested = requestedRef.current;
         const first = discovered[0]?.key || "";
         const second = discovered[1]?.key || first;
@@ -230,7 +243,7 @@ export default function ComparisonWorkspace() {
           const resolved = requestedMetricState({
             requested: wanted,
             items,
-            sourceTitle: findExplorerSource(sources, sourceCode)?.title,
+            sourceTitle: findExplorerSource(sourcesRef.current, sourceCode)?.title,
           });
           setRequestedMetricNotice((current) => ({
             ...current,
@@ -264,8 +277,7 @@ export default function ComparisonWorkspace() {
         }
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceCodes.a, sourceCodes.b]);
+  }, [metricsTrackers, sourceCodes]);
 
   useEffect(() => {
     const request = geographyTracker.begin();
@@ -313,8 +325,13 @@ export default function ComparisonWorkspace() {
   }, [tileTracker]);
 
   const complete = selectionIsComplete(selection);
+  // The four fields a comparison request is built from, named individually so
+  // the effects below depend on the values they actually send rather than on
+  // the whole selection object.
   const metricCodeA = selection.a.metricCode;
   const metricCodeB = selection.b.metricCode;
+  const selectionGeoLevel = selection.geoLevel;
+  const selectionStateFips = selection.stateFips;
 
   // Preflight first, always. The verdict decides whether any comparison data
   // may be requested at all, so it is asked before the pair is queried and
@@ -334,9 +351,8 @@ export default function ComparisonWorkspace() {
       try {
         const payload = await getComparisonPreflight(
           preflightRequestParams({
-            ...selection,
-            a: { ...selection.a, metricCode: metricCodeA },
-            b: { ...selection.b, metricCode: metricCodeB },
+            a: { metricCode: metricCodeA },
+            b: { metricCode: metricCodeB },
           }),
         );
         if (!request.isCurrent()) {
@@ -355,13 +371,21 @@ export default function ComparisonWorkspace() {
     return () => {
       preflightTracker.invalidate();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preflightTracker, metricCodeA, metricCodeB]);
 
   const comparable = mayRequestComparison(preflight);
 
   useEffect(() => {
     setComparison(null);
+    // The pair this effect would send, not the pair the verdict was given
+    // for. Both measures are now dependencies -- the request is built from
+    // them -- so the effect runs on the intermediate state where one side has
+    // been cleared and the previous pair's `comparable` verdict is still
+    // held. Requesting there sends a comparison naming one measure.
+    if (!metricCodeA || !metricCodeB) {
+      setComparisonStatus({ state: "idle", message: "select two measures" });
+      return;
+    }
     if (!preflight) {
       setComparisonStatus({
         state: "idle",
@@ -389,7 +413,15 @@ export default function ComparisonWorkspace() {
         // scatter, the map, and the export from the first thousand rows by
         // geo_id (WEB-039).
         const pages = await fetchComparisonPages(
-          comparisonRequestParams(selection, COMPARISON_PAGE_SIZE),
+          comparisonRequestParams(
+            {
+              a: { metricCode: metricCodeA },
+              b: { metricCode: metricCodeB },
+              geoLevel: selectionGeoLevel,
+              stateFips: selectionStateFips,
+            },
+            COMPARISON_PAGE_SIZE,
+          ),
           { pageSize: COMPARISON_PAGE_SIZE, maxPages: COMPARISON_PAGE_LIMIT },
         );
         if (!request.isCurrent()) {
@@ -422,8 +454,15 @@ export default function ComparisonWorkspace() {
     return () => {
       comparisonTracker.invalidate();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comparisonTracker, preflight, comparable, selection.geoLevel, selection.stateFips]);
+  }, [
+    comparisonTracker,
+    preflight,
+    comparable,
+    metricCodeA,
+    metricCodeB,
+    selectionGeoLevel,
+    selectionStateFips,
+  ]);
 
   // The link reproduces the selection, never the verdict.
   useEffect(() => {

@@ -54,7 +54,7 @@ grep was looking for.
 | [`bounded-render-honesty`](to_do/THE_TABLE_ALTERNATIVE_SHOWS_MORE_THAN_TWELVE_ROWS_PLAN.md) | medium | `browser` | -- |
 | [`map-bundle-and-browser-cache`](to_do/THE_MAP_LOADS_WHEN_IT_IS_DRAWN_AND_THE_BROWSER_CACHE_IS_USED_PLAN.md) | medium | `browser` | -- |
 | [`no-client-authored-provider-facts`](to_do/A_PROVIDER_FACT_IS_NOT_AUTHORED_IN_THE_CLIENT_PLAN.md) | medium | `browser` | -- |
-| [`transport-boundary-hygiene`](to_do/THE_TRANSPORT_BOUNDARY_CARRIES_NO_DEAD_OR_UNTYPED_CODE_PLAN.md) | medium | none | -- |
+| [`transport-boundary-hygiene`](in_progress/THE_TRANSPORT_BOUNDARY_CARRIES_NO_DEAD_OR_UNTYPED_CODE_PLAN.md) | medium | none | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

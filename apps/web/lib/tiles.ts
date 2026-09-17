@@ -3,8 +3,68 @@
 // preview features from a real decoded MVT sample.
 
 import { VectorTile } from "@mapbox/vector-tile";
+import type { VectorTileLayer } from "@mapbox/vector-tile";
+import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from "geojson";
 import Protobuf from "pbf";
 import { isDrawableTileGrain } from "./tileGrains";
+
+/**
+ * What a Martin catalog and a TileJSON document carry, as far as this module
+ * reads them.
+ *
+ * Declared as the shapes they are rather than inferred from use: these are
+ * the other half of a contract -- `tests/fixtures/martin` holds the documents
+ * a real Martin answers -- and this module read them as `any` while every
+ * other contract boundary in `lib/` is strict TypeScript. Each field is
+ * optional and each is re-checked at the point of use, because a deployment's
+ * Martin is free to answer a shape this client has never seen.
+ */
+export interface TileCatalogEntry {
+  id?: unknown;
+}
+
+export interface TileCatalogPayload {
+  collections?: unknown;
+  [section: string]: unknown;
+}
+
+export interface TileJsonVectorLayer {
+  id?: unknown;
+  fields?: Record<string, unknown> | string[];
+}
+
+export interface TileJsonDocument {
+  name?: unknown;
+  tiles?: unknown;
+  vector_layers?: unknown;
+}
+
+/** What discovery resolved a deployment's boundary layer to. */
+export interface TileMetadata {
+  layerId: string;
+  sourceLayer: string;
+  sourceLayerCandidates: string[];
+  joinKey: string;
+  /**
+   * The field names the layer publishes. They are what says which geography
+   * grains this boundary can actually draw; a grain it publishes nothing to
+   * identify has no spatial presentation.
+   */
+  fields: string[];
+  tileJsonUrl: string;
+  tileTemplate: string;
+}
+
+/**
+ * The decoded-tile shapes this module hands to the map.
+ *
+ * GeoJSON's own types, not an approximation of them: the collection goes
+ * straight to MapLibre's `geojson` source, which is typed as GeoJSON, and a
+ * near-miss shape here would only move the cast rather than remove it.
+ */
+export type TileFeature = Feature<Geometry, GeoJsonProperties>;
+export type TileFeatureCollection = FeatureCollection<Geometry, GeoJsonProperties>;
+export type DecodedTileLayer = VectorTileLayer;
 
 /**
  * Catalog keys that name a section of the catalog rather than a source.
@@ -21,22 +81,23 @@ const CATALOG_SECTIONS = new Set(["tiles", "sprites", "fonts", "styles", "settin
 /** The catalog sections whose entries are vector-tile sources. */
 const TILE_SECTIONS = ["tiles"];
 
-export function collectTileCandidates(catalogPayload) {
+export function collectTileCandidates(catalogPayload: unknown): string[] {
   const candidates = [];
 
   if (Array.isArray(catalogPayload)) {
     for (const entry of catalogPayload) {
       if (typeof entry === "string") {
         candidates.push(entry);
-      } else if (entry && typeof entry.id === "string") {
-        candidates.push(entry.id);
+      } else if (entry && typeof (entry as TileCatalogEntry).id === "string") {
+        candidates.push((entry as TileCatalogEntry).id as string);
       }
     }
   } else if (catalogPayload && typeof catalogPayload === "object") {
-    if (Array.isArray(catalogPayload.collections)) {
-      for (const entry of catalogPayload.collections) {
-        if (entry && typeof entry.id === "string") {
-          candidates.push(entry.id);
+    const payload = catalogPayload as TileCatalogPayload;
+    if (Array.isArray(payload.collections)) {
+      for (const entry of payload.collections) {
+        if (entry && typeof (entry as TileCatalogEntry).id === "string") {
+          candidates.push((entry as TileCatalogEntry).id as string);
         }
       }
     }
@@ -44,7 +105,7 @@ export function collectTileCandidates(catalogPayload) {
     // Section-keyed catalogs: only the tile sections hold something the map
     // can join observations to. A font or sprite id is not a vector layer.
     for (const section of TILE_SECTIONS) {
-      const entries = catalogPayload[section];
+      const entries = payload[section];
       if (entries && typeof entries === "object" && !Array.isArray(entries)) {
         candidates.push(...Object.keys(entries));
       }
@@ -52,7 +113,7 @@ export function collectTileCandidates(catalogPayload) {
 
     // Flat catalogs list their layer ids at the top level. A section name is
     // never one of them, so it is excluded here rather than probed.
-    for (const key of Object.keys(catalogPayload)) {
+    for (const key of Object.keys(payload)) {
       if (key !== "collections" && !CATALOG_SECTIONS.has(key)) {
         candidates.push(key);
       }
@@ -62,7 +123,7 @@ export function collectTileCandidates(catalogPayload) {
   return [...new Set(candidates)].filter(Boolean);
 }
 
-export function prioritizeTileCandidates(candidates) {
+export function prioritizeTileCandidates(candidates: unknown): string[] {
   const preferredOrder = ["dim_geo", "dim_geo_latest", "counties"];
   const remaining = [];
   const seen = new Set();
@@ -91,7 +152,9 @@ export function prioritizeTileCandidates(candidates) {
   return prioritized;
 }
 
-export function pickJoinKey(fields = {}) {
+export function pickJoinKey(
+  fields: Record<string, unknown> | string[] = {},
+): string {
   const fieldKeys = Array.isArray(fields)
     ? fields
     : Object.keys(fields || {});
@@ -109,15 +172,15 @@ export function pickJoinKey(fields = {}) {
   return "geo_id";
 }
 
-export function normalizeTileTemplate(layerId) {
+export function normalizeTileTemplate(layerId: string): string {
   return `/tiles/${layerId}/{z}/{x}/{y}`;
 }
 
-export function normalizeTileJsonUrl(layerId) {
+export function normalizeTileJsonUrl(layerId: string): string {
   return `/tiles/${layerId}`;
 }
 
-export function isVectorTileContentType(contentType) {
+export function isVectorTileContentType(contentType: string | null | undefined): boolean {
   const normalized = (contentType || "").toLowerCase();
   return (
     normalized.includes("application/x-protobuf") ||
@@ -126,7 +189,7 @@ export function isVectorTileContentType(contentType) {
   );
 }
 
-export function normalizeTileTemplateFromTileJson(rawTemplate) {
+export function normalizeTileTemplateFromTileJson(rawTemplate: unknown): string {
   if (typeof rawTemplate !== "string" || !rawTemplate) {
     return "";
   }
@@ -159,7 +222,7 @@ export function normalizeTileTemplateFromTileJson(rawTemplate) {
   return `/tiles${path}`;
 }
 
-export function buildSampleUrlFromTemplate(tileTemplate) {
+export function buildSampleUrlFromTemplate(tileTemplate: string): string {
   return tileTemplate
     .replaceAll("{z}", "0")
     .replaceAll("{x}", "0")
@@ -184,17 +247,17 @@ export function buildSampleUrlFromTemplate(tileTemplate) {
  * cancelled, or absent (a 304, a HEAD) is nothing to report, and a discovery
  * probe must not fail over how its own discarded response was disposed of.
  */
-function releaseBody(response) {
+function releaseBody(response: Response | null | undefined): void {
   try {
-    return response?.body?.cancel?.()?.catch?.(() => {});
+    void response?.body?.cancel?.()?.catch?.(() => {});
   } catch {
-    return undefined;
+    // Nothing to report; see above.
   }
 }
 
-export async function discoverTileMetadata() {
+export async function discoverTileMetadata(): Promise<TileMetadata> {
   const discoveryPaths = ["/tiles/catalog", "/tiles/"];
-  let prioritizedCandidates = [];
+  let prioritizedCandidates: string[] = [];
 
   for (const path of discoveryPaths) {
     try {
@@ -330,7 +393,7 @@ export async function discoverTileMetadata() {
 }
 
 /** Whether a grain is drawable, with the empty grain meaning "every one". */
-function grainCanBeDrawn(geoLevel) {
+function grainCanBeDrawn(geoLevel: string | null | undefined): boolean {
   const wanted = String(geoLevel || "").toUpperCase();
   return !wanted || isDrawableTileGrain(wanted);
 }
@@ -351,7 +414,10 @@ function grainCanBeDrawn(geoLevel) {
  * of its own, so it is spelled as one instead of borrowing a selectable
  * grain the boundary cannot draw.
  */
-export function featuresAtGrain(layer, geoLevel) {
+export function featuresAtGrain(
+  layer: DecodedTileLayer,
+  geoLevel: string | null | undefined,
+): TileFeature[] {
   if (!grainCanBeDrawn(geoLevel)) {
     return [];
   }
@@ -371,7 +437,11 @@ export function featuresAtGrain(layer, geoLevel) {
  * One sample tile decoded to the GeoJSON the choropleth source is given,
  * carrying the grain `featuresAtGrain` selects and nothing else.
  */
-export async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLevel) {
+export async function loadPreviewTileFeatures(
+  tileTemplate: string,
+  sourceLayer: string,
+  geoLevel: string | null | undefined,
+): Promise<TileFeatureCollection> {
   if (!grainCanBeDrawn(geoLevel)) {
     // No map is drawn at this grain, so there is no tile worth a request.
     return { type: "FeatureCollection", features: [] };
@@ -386,7 +456,13 @@ export async function loadPreviewTileFeatures(tileTemplate, sourceLayer, geoLeve
   }
 
   const tile = new VectorTile(new Protobuf(new Uint8Array(await response.arrayBuffer())));
-  const layer = tile.layers[sourceLayer] || tile.layers[Object.keys(tile.layers)[0]];
+  // The named layer, else whichever one the tile carries. `noUncheckedIndexedAccess`
+  // is what turns "a tile with no layers at all" from an index into undefined
+  // here rather than a property access on it two lines later.
+  const [firstLayerName] = Object.keys(tile.layers);
+  const layer =
+    tile.layers[sourceLayer] ||
+    (firstLayerName === undefined ? undefined : tile.layers[firstLayerName]);
 
   if (!layer) {
     throw new Error("tile sample contained no vector layers");

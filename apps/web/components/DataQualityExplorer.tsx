@@ -15,7 +15,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import StatusPill from "./StatusPill";
-import { apiErrorMessage, apiFetch, fetchAllPages } from "../lib/api/client";
+import {
+  apiErrorMessage,
+  apiFetch,
+  fetchAllPages,
+  getFreshness,
+} from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
 import type { CollectionResponse, MetricSummary } from "../lib/api/types";
 import {
@@ -57,7 +62,7 @@ export default function DataQualityExplorer() {
     const request = freshnessTracker.begin();
     setFreshnessStatus({ state: "loading", message: "loading published freshness" });
     try {
-      const payload = await apiFetch<CollectionResponse<SourceFreshness>>("/catalog/freshness");
+      const payload = await getFreshness();
       if (!request.isCurrent()) {
         return;
       }

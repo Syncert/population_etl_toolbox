@@ -12,19 +12,12 @@
 // quality resource for a kind of evidence, this module says where that
 // evidence actually lives rather than inventing a surface for it.
 
-import type { MetricSummary } from "./api/types";
+import type { MetricSummary, SourceFreshness } from "./api/types";
 
-/** Per-source publication state, exactly as `/catalog/freshness` rolls it up. */
-export interface SourceFreshness {
-  source_code: string;
-  metric_count: number;
-  current_count: number;
-  stale_count: number;
-  retired_count: number;
-  latest_publication_time?: string | null;
-  latest_harvested_at?: string | null;
-  [key: string]: unknown;
-}
+// The route's own shape lives with the transport's other shapes, and is
+// re-exported here because this module's readers think of it as part of the
+// data-quality vocabulary.
+export type { SourceFreshness };
 
 export interface FreshnessRow {
   sourceCode: string;

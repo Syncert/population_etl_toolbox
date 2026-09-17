@@ -65,6 +65,24 @@ export interface ObservationRouteCapability {
  * contract for per-source filtering: a filter a source does not declare is
  * rejected with a 422, never silently ignored.
  */
+/**
+ * Per-source publication state, exactly as `/catalog/freshness` rolls it up.
+ *
+ * Declared here with the rest of the transport's shapes rather than beside
+ * the view model that reads it: it is what a route answers, and the walker
+ * over this file grades it against the reviewed snapshot's `SourceFreshness`.
+ */
+export interface SourceFreshness {
+  source_code: string;
+  metric_count: number;
+  current_count: number;
+  stale_count: number;
+  retired_count: number;
+  latest_publication_time?: string | null;
+  latest_harvested_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface SourceCapability {
   source_code: string;
   display_name: string;

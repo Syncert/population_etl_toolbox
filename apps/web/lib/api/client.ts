@@ -24,6 +24,7 @@ import type {
   SavedAnalysisConfiguration,
   SavedAnalysisListResponse,
   SourceCapability,
+  SourceFreshness,
   SourceSummary,
 } from "./types";
 
@@ -390,8 +391,19 @@ export function getCapabilities(
   return apiFetch<CollectionResponse<SourceCapability>>("/catalog/capabilities", options);
 }
 
-export function getFreshness(options?: RequestOptions): Promise<unknown> {
-  return apiFetch<unknown>("/catalog/freshness", options);
+/**
+ * Per-source publication state, as `/catalog/freshness` rolls it up.
+ *
+ * This returned an untyped promise while the reviewed snapshot declared
+ * `FreshnessListResponse` for the route, so the one module that reads it
+ * bypassed this function and sent its own literal with its own type
+ * argument. A transport boundary that cannot say what a route answers is not
+ * one.
+ */
+export function getFreshness(
+  options?: RequestOptions,
+): Promise<CollectionResponse<SourceFreshness>> {
+  return apiFetch<CollectionResponse<SourceFreshness>>("/catalog/freshness", options);
 }
 
 // --- Observations ---
@@ -403,51 +415,14 @@ export function getObservations(
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
 }
 
-// Legacy MVP shapes (Census ACS, BLS, FRED only); retained consumers should
-// migrate to getObservations.
-export function getLatestObservations(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>("/observations/latest", { ...options, params });
-}
-
-export function getTimeseries(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>("/observations/timeseries", {
-    ...options,
-    params,
-  });
-}
-
-// Source-scoped exploration routes, e.g. sourceSegment "census" | "bls" |
-// "fred" | "pep". The segment must come from capability discovery, not a
-// client-side enumeration.
-export function getSourceLatestObservations(
-  sourceSegment: string,
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>(`/${sourceSegment}/observations/latest`, {
-    ...options,
-    params,
-  });
-}
-
-export function getSourceTimeseries(
-  sourceSegment: string,
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>(`/${sourceSegment}/observations/timeseries`, {
-    ...options,
-    params,
-  });
-}
-
-// --- Analysis ---
+// The MVP-shaped observation routes are reached through
+// `lib/observationAccess.ts`, which picks the access shape a source's
+// capability entry declares and returns the resource and params for it. Four
+// wrappers for those routes lived here with no caller outside this file:
+// `getLatestObservations`, `getTimeseries`, `getSourceLatestObservations` and
+// `getSourceTimeseries`. Two ways to address one route is one more than the
+// handoff's "single transport boundary" allows, and the unused one is the one
+// that drifts.
 
 export function getDistributionBins(
   params: QueryParams,
