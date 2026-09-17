@@ -46,12 +46,11 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**4 plans.**
+**3 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`accessibility-axe-gate`](to_do/THE_ACCESSIBILITY_GATE_COVERS_EVERY_ROUTE_WITH_AN_AUDITOR_PLAN.md) | medium | `browser` | -- |
-| [`bounded-render-honesty`](in_progress/THE_TABLE_ALTERNATIVE_SHOWS_MORE_THAN_TWELVE_ROWS_PLAN.md) | medium | `browser` | -- |
 | [`map-bundle-and-browser-cache`](to_do/THE_MAP_LOADS_WHEN_IT_IS_DRAWN_AND_THE_BROWSER_CACHE_IS_USED_PLAN.md) | medium | `browser` | -- |
 | [`no-client-authored-provider-facts`](to_do/A_PROVIDER_FACT_IS_NOT_AUTHORED_IN_THE_CLIENT_PLAN.md) | medium | `browser` | -- |
 

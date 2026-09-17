@@ -14,15 +14,10 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. Every deliverable is implemented on
-  `claude/plans-folder-iteration-4x6itr`; held in `in_progress/` until the
-  full browser tier is confirmed.
+- **Status:** Ready for review. Implemented 2026-09-17 on
+  `claude/plans-folder-iteration-4x6itr`.
 - **Last updated:** 2026-09-17
-- **Current milestone:** implementation complete, one tier in flight.
-- **Next pickup:** read the full `npm --prefix apps/web run test:browser`
-  result, record the count, and move this plan to `needs_review/`. No code
-  change is expected: `bounded-render.spec.js` passes 3/3 and the extended
-  accessibility assertion passes on its own.
+- **Current milestone:** complete.
 
 ## Why
 
@@ -133,7 +128,7 @@ shared model is covered at the unit tier for both nouns.
 | Command | Result |
 |---|---|
 | `npm --prefix apps/web run test:unit` | 587 passed, 39 files (was 578, 38) |
-| `npm --prefix apps/web run test:browser` | **in flight**; `bounded-render.spec.js` 3/3 and the extended accessibility assertion pass on their own |
+| `npm --prefix apps/web run test:browser` | 133 passed in 4.4m (was 130) |
 | `npm --prefix apps/web run lint` / `typecheck` | clean |
 | `npm --prefix apps/web run build` / `check:bundle` | succeeded; every route within budget |
 | `python -m pytest tests/unit -q` | 1807 passed |
