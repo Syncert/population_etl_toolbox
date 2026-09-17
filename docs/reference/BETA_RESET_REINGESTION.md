@@ -23,6 +23,41 @@ Pause `silver_ref`, `acs_ingest`, `census_pep_ingest`, `bls_ingest`,
 `usda_nass_crop_ingest`. Preserve environment configuration and API keys; the
 reset does not recreate Airflow connections, variables, pools, or secrets.
 
+### Export the captures first. This step is not optional.
+
+Per [ADR-0006](../decisions/0006-capture-history-survives-a-reset.md), capture
+history survives a reset. **Providers do not serve their past**: a FRED vintage,
+a CDC release since superseded, a NASS revision or an FBI refresh captured
+before this reset cannot be captured again after it. Section 5 below re-ingests
+*current* provider data, so without this step the reset destroys evidence that
+no later run can reproduce.
+
+Run the export and read what it reports before dropping anything:
+
+```bash
+# CAPTURE_EXPORT_ROOT must already point at a writable path OUTSIDE the
+# database volume. An export sharing a volume with the database it protects
+# does not survive this procedure.
+airflow dags trigger raw_capture_export
+```
+
+Then confirm the export exists, covers the captures you expect, and verifies:
+
+```bash
+ls "${CAPTURE_EXPORT_ROOT}"                       # one directory per run
+cat "${CAPTURE_EXPORT_ROOT}"/capture-export-*/manifest.json
+python -c "from data_ingestion_toolbox.capture_export import verify_export; \
+           print(verify_export('<the directory you just listed>'), 'payloads verified')"
+```
+
+`verify_export` recomputes each payload's sha256 and compares it to the name
+the file is under, and fails if the manifest's count and the directory's
+contents disagree. A failure here is a reason to stop the reset, not a reason
+to proceed carefully: an export that cannot be verified cannot be restored,
+and step 4 below has nothing to put back.
+
+Note the directory's name. Step 4 restores from it.
+
 **The database this section drops is the one your deployment names, not a
 literal.** `public_data` is the id of the Airflow *connection* every DAG
 resolves; the database it points at is that connection's `--conn-schema`,
@@ -101,7 +136,48 @@ the migration** whenever a table is added to it (as `app_api.evidence_packet`
 was under ADR-0004). Every statement in it is idempotent; nothing in it is
 warehouse content and no ETL process touches it.
 
-## 4. Validate bootstrap before downloading data
+## 4. Restore the captures, then validate bootstrap before downloading data
+
+### Restore
+
+With the schema in place and before any ingestion, load the export from
+section 2 back:
+
+```bash
+python -c "import psycopg2; \
+from data_ingestion_toolbox.capture_export import restore_captures; \
+connection = psycopg2.connect('<the public_data connection>'); \
+print(restore_captures(connection, '<the export directory>')); \
+connection.commit()"
+```
+
+The restore verifies every payload against its own checksum before it runs a
+single statement, then inserts in foreign-key order: runs, requests, payloads,
+captures. **The append-only triggers stay in place.** Every statement is an
+`INSERT ... ON CONFLICT DO NOTHING`, which those triggers permit; a restore
+that had to disable them would be a restore that could rewrite history, which
+is the property being restored. If a step here tells you to disable a trigger,
+it is not this procedure.
+
+Confirm the triggers survived and the captures are back:
+
+```sql
+SELECT COUNT(*) AS captures FROM raw_capture.response_capture;
+SELECT COUNT(*) AS payloads FROM raw_capture.payload_blob;
+
+-- Both triggers must still be there. This is the invariant the restore is
+-- for; a restored warehouse without them is not the warehouse ADR-0001
+-- describes.
+SELECT tgrelid::regclass AS relation, tgname
+FROM pg_trigger
+WHERE NOT tgisinternal
+  AND tgrelid::regclass::text IN (
+      'raw_capture.payload_blob', 'raw_capture.response_capture'
+  )
+ORDER BY 1, 2;
+```
+
+### Validate bootstrap before downloading data
 
 ```bash
 docker exec -i "$POSTGRES_CONTAINER" \
@@ -118,6 +194,14 @@ All four relation values must be non-null. Reapplying the complete manifest is
 supported and should exit successfully.
 
 ## 5. Re-ingest in dependency order
+
+Re-ingestion rebuilds silver and gold, and it **extends** the capture history
+restored in section 4 rather than restarting it: a request whose fingerprint
+and checksum match a restored capture shares that content identity, and one
+whose checksum differs is a distinct source response recorded beside the older
+one. That is the whole point of restoring first. Re-ingestion is not the path
+back to what was captured before the reset -- nothing is, because providers do
+not serve their past. It is the path forward from it.
 
 Restart the Airflow scheduler and workers, verify `airflow dags list-import-errors`
 is empty, then run:
