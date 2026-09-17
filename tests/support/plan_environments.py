@@ -335,7 +335,7 @@ make test-web-smoke        # the live-stack frontend smoke
 """
 
 _NOTES = """
-## Two notes on the cloud container
+## Notes on the cloud container
 
 **Playwright.** The browser tier runs, but the pinned `@playwright/test` looks
 for a Chromium revision the image does not carry. Point it at the one that is
@@ -351,10 +351,39 @@ own browsers and needs nothing.
 
 **Airflow.** `make bootstrap` does not install the DAG tier's dependency, so
 `RUN_DAG_TESTS=1 pytest -m dag tests/dags` reports "Airflow is required for the
-DAG tier". `pip install -e '.[airflow-dev]'` fixes it and the tier then runs.
-Do not install Airflow with CI's constraints file into the project venv: it
-downgrades `protobuf`, `PyJWT`, `greenlet` and `requests` under the other
-tiers, and the venv has to be rebuilt.
+DAG tier". The tier does run here; two things have to be right first, and both
+cost a session time before they were written down.
+
+*Install it beside the project venv, not into it.* The `airflow-dev` extra
+pins SQLAlchemy 1.4 against the API's 2.x, and installing it into `.venv`
+downgrades `protobuf`, `PyJWT`, `greenlet` and `requests` under every other
+tier -- the venv then has to be rebuilt. A throwaway venv costs a few minutes
+and nothing else:
+
+```bash
+python -m venv /tmp/airflow-venv
+/tmp/airflow-venv/bin/python -m pip install -e '.[airflow-dev]'
+```
+
+*Initialise the metadata database.* On a fresh Airflow install three tests
+fail with `sqlite3.OperationalError: no such table: connection`. They are not
+failures; nothing has created the tables. Two commands make the tier green:
+
+```bash
+export AIRFLOW_HOME=/tmp/airflow-home AIRFLOW__CORE__LOAD_EXAMPLES=False
+/tmp/airflow-venv/bin/airflow db init
+/tmp/airflow-venv/bin/airflow connections add public_data \
+  --conn-type postgres --conn-host localhost --conn-schema population_etl \
+  --conn-login airflow_admin --conn-password x --conn-port 5432
+RUN_DAG_TESTS=1 /tmp/airflow-venv/bin/python -m pytest -m dag tests/dags -q
+```
+
+The connection does not have to reach a database: these tests resolve it and
+read its settings, they do not connect. `tests/dags/test_dag_pipeline_execution.py`
+does connect, and it is `postgres`-marked, so it is not in this tier.
+
+CI's `dag-parse` job does neither of these explicitly, which is why a local
+run and CI can disagree on exactly those three tests.
 """
 
 
