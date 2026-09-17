@@ -326,7 +326,17 @@ export default function DataQualityExplorer() {
             </p>
           </div>
         </div>
-        <div className="table-wrap">
+        {/* A region that scrolls must be reachable by the keyboard that has
+            to scroll it: this table is wider than its column, and a reader
+            with no pointer could not move it. `tabIndex={0}` gives it a tab
+            stop, and the label says what they have landed on rather than
+            announcing an unnamed group. */}
+        <div
+          className="table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label="Where quality evidence is published"
+        >
           <table>
             <thead>
               <tr>

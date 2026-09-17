@@ -27,8 +27,22 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        {/* The first focusable element on every page. Ten navigation links
+            stand between the top of the document and the analysis on it, and
+            a keyboard reader met all ten on every route. `.sr-only` already
+            existed in the stylesheet; nothing used it. */}
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <SiteHeader />
-        {children}
+        {/* The skip link's target lives here rather than on each route's own
+            `<main>`: there are fifteen of those across thirteen files, and
+            "someone adds a route and forgets the id" is the failure this
+            whole gate exists to prevent. `tabIndex={-1}` makes it focusable
+            by the link without putting it in the tab order. */}
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
         <footer className="site-footer">
           <span>Economic Data Studio</span>
           <span>Public data, source-visible by design.</span>

@@ -32,7 +32,14 @@ export default function SiteHeader() {
         {navigation.map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? pathname === href : pathname.startsWith(href);
           return (
-            <Link className={active ? "nav-link active" : "nav-link"} href={href} key={href}>
+            <Link
+              className={active ? "nav-link active" : "nav-link"}
+              href={href}
+              key={href}
+              // The active link was marked by a class alone, which says
+              // nothing to anyone who is not looking at the colour.
+              aria-current={active ? "page" : undefined}
+            >
               {Icon ? <Icon aria-hidden="true" size={15} /> : null}
               <span>{label}</span>
             </Link>
