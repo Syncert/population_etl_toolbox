@@ -109,9 +109,12 @@ this plan.
       used to build a link to a metric nobody published.
 - [x] `tests/frontend/browser/accessibility-operations.spec.js` and
       `tests/frontend/unit/explorer-sources.test.js` no longer assert the
-      hard-coded sentence. The accessibility spec never did; the two that did
-      were `explorer-sources.test.js` and `format-and-persistence.test.js`,
-      and both now assert the opposite.
+      hard-coded sentence. The accessibility spec never did. **Three** tests
+      did, not the two the plan names: `explorer-sources.test.js`,
+      `format-and-persistence.test.js`, and
+      `tests/frontend/browser/explorer.spec.js` -- which the plan does not
+      mention and which a stale run nearly let through; see below. All three
+      now assert the opposite.
 - [x] `DATASET_FACET_LABELS` is gone and the dataset selector renders only
       what the catalog answers, asserted in `explorer-sources.test.js`.
 - [x] `TESTING_CONTRACT.md` gains a `WEB-` row: WEB-112.
@@ -161,6 +164,20 @@ So `provider-facts.test.js` forbids the **claims** rather than the strings:
 five patterns, one per fact, each proven to fire. A bare `B01003` ban would
 have to carry exceptions for the three cases above, and an exception list is
 the thing nobody maintains.
+
+### A green run that was not one
+
+The full browser tier reported `146 passed` with `explorer.spec.js`'s
+"ACS1 partial/no-data" test among them -- a test that asserts the deleted
+sentence is *visible*. Run on its own immediately afterwards, against the
+same working tree, it failed. The dev server the tier reuses had served a
+stale compile of the explorer page, so the suite graded the code as it was
+before the deletion.
+
+Two things follow. The test is rewritten to assert the sentence is absent,
+which is what this plan is for. And the count in the table below is from a
+run started after that fix, because a tier that can serve a stale page can
+report a number that describes nothing.
 
 ### Commands
 
