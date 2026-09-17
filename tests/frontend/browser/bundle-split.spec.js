@@ -288,7 +288,11 @@ test("a selection with no map downloads no map", async ({ page }) => {
   // The page is fully settled before the reading is taken, or an absent
   // chunk would only mean the test was early.
   await expect(page.getByTestId("observation-table-caption")).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  // Not an idle-network wait: the application reports its own Web Vitals
+  // and errors to a same-origin sink (WEB-114), so the network has
+  // periodic traffic by design and goes quiet on no particular schedule.
+  // What this waits on is the state the reading is about, then a moment.
+  await page.waitForTimeout(500);
 
   const withoutMap = chunks.snapshot();
 
@@ -296,7 +300,10 @@ test("a selection with no map downloads no map", async ({ page }) => {
   await page.getByTestId("metric-select").selectOption(COUNTY_METRIC);
   await expect(dashboard).toHaveAttribute("data-map-supported", "true");
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-map-ready", "true");
-  await page.waitForLoadState("networkidle");
+  // `data-map-ready` is set from MapLibre's own `load` event, so by here
+  // the library's chunk has been fetched, parsed and run: the reading
+  // below is about a request that has already happened.
+  await page.waitForTimeout(500);
 
   const withMap = chunks.snapshot();
   const arrivedWithTheMap = [...withMap].filter((path) => !withoutMap.has(path));
@@ -351,7 +358,8 @@ test("a public catalog read is sent with the browser's cache rules, and once", a
   await page.goto(`/explore?metric=${encodeURIComponent(COUNTY_METRIC)}`);
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-map-supported", "true");
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-map-ready", "true");
-  await page.waitForLoadState("networkidle");
+  // See the note above: the reporting sink means the network never idles.
+  await page.waitForTimeout(500);
 
   const modes = await page.evaluate(() => window.__fetchModes);
   const catalogModes = modes.filter((entry) => entry.url.includes("/api/v1/catalog/"));

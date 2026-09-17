@@ -1,4 +1,5 @@
 import "./globals.css";
+import ClientReporters from "../components/ClientReporters";
 import SiteHeader from "../components/SiteHeader";
 
 // Every route renders per request. The Content-Security-Policy carries a
@@ -43,6 +44,10 @@ export default function RootLayout({ children }) {
         <div id="main-content" tabIndex={-1}>
           {children}
         </div>
+        {/* Registered once, for every route. It renders nothing; what it
+            does is give the browser a way to say what went wrong, which
+            until now it had none of (WEB-114). */}
+        <ClientReporters />
         <footer className="site-footer">
           <span>Economic Data Studio</span>
           <span>Public data, source-visible by design.</span>

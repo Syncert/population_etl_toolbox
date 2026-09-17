@@ -6,6 +6,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Which build is speaking, for the reports the browser sends back
+  // (WEB-114). Inlined at build time: a client bundle cannot read the
+  // server's environment, and a report that cannot say which build produced
+  // it sends an operator to read the wrong source.
+  env: {
+    NEXT_PUBLIC_BUILD_ID:
+      process.env.NEXT_PUBLIC_BUILD_ID || process.env.GITHUB_SHA || "development",
+  },
   distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   async headers() {
     return [
