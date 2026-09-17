@@ -309,6 +309,16 @@ passing evidence.
 
 A cloud session should still take these: it leaves the machine session with one
 check to run rather than a plan to write.
+
+**One exception, and it is not a check.** `deployment-smoke-target` appears in
+this table because its `verify` block names a Compose command, but it is not
+buildable here in any sense: it changes no test and no application code, and
+its own "Do not start this plan until" section says it waits on a fact about
+the world -- that a deployment exists, at a known origin, reachable from a
+runner. A cloud session takes nothing off a machine session's plate by
+claiming it, so it stays in `to_do/` until an operator can answer those three
+questions. The classification derives from the `verify` block and cannot see
+that distinction; this paragraph is where it is recorded.
 """
 
 _MACHINE_PROSE = """

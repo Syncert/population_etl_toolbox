@@ -1,0 +1,74 @@
+name: api-lock-refresh
+
+# Is `requirements/api.lock.txt` still what today's index resolves to?
+#
+# The lock is what makes the API image reproducible: everything else about it
+# was pinned by digest, and the Python was not, so two builds of one commit a
+# week apart could differ in every runtime package (ENV-022). A lock has the
+# opposite failure mode -- it is reproducible and can be reproducibly old --
+# so this asks the question on a schedule rather than waiting for someone to
+# wonder.
+#
+# It proposes and never merges. A refreshed lock changes what the deployment
+# ships, which is a reviewed change by definition; this job re-resolves, shows
+# the diff, and uploads the proposal as an artifact for a person to apply with
+# `make lock-api` and read. It is **release-freshness evidence, not a required
+# check**: a red run here means the world moved, not that the repository is
+# broken, and nothing is blocked by it.
+#
+# There is no pull-request-opening step because this repository uses
+# first-party actions only, and adding a third-party one to save a `git apply`
+# is not a trade this job is worth.
+
+on:
+  schedule:
+    # Mondays, early enough that a week's drift is waiting rather than found.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    name: Re-resolve the API dependency lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install the resolver
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # uv is the resolver the lock's header names, so the refresh a
+          # person runs and the refresh this job runs are the same one.
+          python -m pip install uv==0.9.29
+      - name: The committed lock still covers what pyproject declares
+        run: pytest -o addopts='' tests/unit/tooling/test_api_lock.py -q
+      - name: Re-resolve and show what changed
+        id: resolve
+        run: |
+          set -euo pipefail
+          if python tools/lock/refresh_api_lock.py --check; then
+            echo "current=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "current=false" >> "${GITHUB_OUTPUT}"
+          python tools/lock/refresh_api_lock.py
+          git --no-pager diff -- requirements/api.lock.txt
+      - name: Upload the proposed lock
+        if: steps.resolve.outputs.current == 'false'
+        uses: actions/upload-artifact@v6
+        with:
+          name: proposed-api-lock
+          path: requirements/api.lock.txt
+      - name: Say what a reviewer should do
+        if: steps.resolve.outputs.current == 'false'
+        run: |
+          echo "The index resolves the declared ranges differently than the"
+          echo "committed lock. Run 'make lock-api' locally, read the diff,"
+          echo "and open a pull request if the change is one to take."
+          exit 1

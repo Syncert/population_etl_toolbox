@@ -216,7 +216,18 @@ make bootstrap
 source .venv/bin/activate    # bootstrap prints this line when it creates .venv
 ```
 
-`make bootstrap` is idempotent and safe to re-run, which is how to pick up a dependency change after a pull. It installs into an already-active virtual environment, creates `.venv` when none is active, and installs the web tree from `apps/web/package-lock.json` with `npm ci` so a local checkout resolves the same tree CI grades. It deliberately never installs into a bare system interpreter: on Ubuntu 24.04 `/usr/lib/python3/dist-packages` sits on the supported Python 3.11 interpreter's `sys.path` carrying C extensions built for 3.12, and importing one of those aborts collection with a panic instead of the `ImportError` that callers guard for.
+
+The Python runtime set is locked. `pyproject.toml` declares the ranges the API
+must satisfy; `requirements/api.lock.txt` records one hashed resolution of
+them, and it is what `infra/docker/Dockerfile.api` and the `package-api` job
+install. Regenerate it with `make lock-api` (which needs
+[`uv`](https://docs.astral.sh/uv/)) and review the diff: it is the file that
+decides what a deployed image contains. `api-lock-refresh` re-resolves it
+weekly and proposes a diff; it never merges one, and it is not a required
+check. The Airflow extra is deliberately outside this lock -- it pins
+SQLAlchemy 1.4 against the API's 2.x, and one resolution cannot hold both.
+
+`make bootstrap` is idempotent and safe to re-run, which is how to pick up a dependency change after a pull. It installs into an already-active virtual environment, creates `.venv` when none is active, installs the API's runtime packages from `requirements/api.lock.txt` by hash so a local checkout holds the versions the deployed image holds, and installs the web tree from `apps/web/package-lock.json` with `npm ci` so a local checkout resolves the same tree CI grades. It deliberately never installs into a bare system interpreter: on Ubuntu 24.04 `/usr/lib/python3/dist-packages` sits on the supported Python 3.11 interpreter's `sys.path` carrying C extensions built for 3.12, and importing one of those aborts collection with a panic instead of the `ImportError` that callers guard for.
 
 Windows PowerShell has no `make`; install the same set directly:
 

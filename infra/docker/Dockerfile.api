@@ -4,7 +4,15 @@ WORKDIR /opt/data_ingestion_toolbox
 
 COPY . /opt/data_ingestion_toolbox
 
-RUN pip install --no-cache-dir -e .[api]
+# The dependency set first, from the reviewed lock and by hash, so two builds
+# of this commit contain the same packages (ENV-022). `--require-hashes`
+# makes pip refuse any distribution whose artifact does not match, and it
+# forbids an unpinned requirement in the same run -- which is why the project
+# itself is installed in a second step, without dependencies: its `-e .` has
+# no hash, and by then everything it declares is already present at the
+# locked version.
+RUN pip install --no-cache-dir --require-hashes -r requirements/api.lock.txt \
+    && pip install --no-cache-dir --no-deps -e .
 
 RUN groupadd --system --gid 10001 api \
     && useradd --system --uid 10001 --gid api --home-dir /nonexistent api \
