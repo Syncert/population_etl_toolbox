@@ -15,10 +15,11 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** In progress. Claimed 2026-09-17 on
+  `claude/plans-folder-iteration-4x6itr`.
+- **Last updated:** 2026-09-17
+- **Current milestone:** the dynamic map import.
+- **Next pickup:** deliverable 1, then the request cache modes.
 
 ## Why
 

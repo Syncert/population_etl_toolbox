@@ -184,7 +184,7 @@ report a number that describes nothing.
 | Command | Result |
 |---|---|
 | `npm --prefix apps/web run test:unit` | 595 passed, 40 files (was 587, 39) |
-| `npm --prefix apps/web run test:browser` | **in flight**; `home-page.spec.js` 3/3 on its own |
+| `npm --prefix apps/web run test:browser` | 147 passed in 5.1m, on a freshly started dev server (was 145) |
 | `npm --prefix apps/web run lint` / `typecheck` | clean |
 | `python -m pytest tests/unit/api/test_viz_coverage.py -q` | 10 passed |
 | `python -m pytest tests/unit -q` | 1807 passed |
