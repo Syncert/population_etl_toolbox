@@ -99,10 +99,13 @@ export function metricVariable(metricCode: unknown): string {
 // Presentation vocabulary for published dataset facets the application
 // documents coverage for; unlisted facets fall back to their published
 // spelling. This labels known facets — it does not decide which exist.
-const DATASET_FACET_LABELS: Record<string, string> = {
-  acs5: "ACS 5-year — complete county coverage",
-  acs1: "ACS 1-year — partial county coverage",
-};
+// A per-dataset label lived here, describing ACS 5-year as "complete county
+// coverage" and ACS 1-year as "partial". Coverage is a Census publication
+// rule, not something this client can read anywhere, and the label said it as
+// a fact beside a selector. The selector now shows the dataset code the
+// catalog answers. A later plan that wants a note adds one to
+// `SourceCapability` on the API first, harvested from the source's own
+// metadata; this client renders exactly what is published.
 
 /**
  * Distinct dataset facets carried by the loaded metrics' own published
@@ -122,11 +125,18 @@ export function datasetFacetOptions(
   }
   return [...facets].sort().map((facet) => ({
     value: facet,
-    label: DATASET_FACET_LABELS[facet] || facet.toUpperCase(),
+    label: facet.toUpperCase(),
   }));
 }
 
-/** The default facet: the complete-coverage ACS facet when published, else the first. */
+/**
+ * The facet a view opens on: `acs5` where it is published, else the first.
+ *
+ * A serving *preference*, not a statement about coverage. It says which
+ * dataset this application opens on, which is a choice it is entitled to
+ * make; it said "the complete-coverage ACS facet", which is a claim about
+ * what Census publishes that this client cannot check.
+ */
 export function preferredDatasetFacet(
   metrics: MetricSummary[] | null | undefined,
 ): string {

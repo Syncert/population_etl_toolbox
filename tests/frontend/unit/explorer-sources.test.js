@@ -339,11 +339,19 @@ describe("dataset facets derived from published metric identity", () => {
     { metric_code: "CENSUS_ACS:acs5:B19013_001", metric_display_name: "Income" },
   ];
 
-  test("facet options come from metric codes with published coverage labels", () => {
+  test("facet options are the dataset codes the catalog answers, and nothing else", () => {
+    // Covers: WEB-112 — these carried a hand-written label per dataset, one
+    // of which called ACS 5-year "complete county coverage" and the other
+    // ACS 1-year "partial". Coverage is a Census publication rule that this
+    // client cannot read anywhere, and the labels stated it as fact beside a
+    // selector.
     expect(datasetFacetOptions(acsMetrics)).toEqual([
-      { value: "acs1", label: "ACS 1-year — partial county coverage" },
-      { value: "acs5", label: "ACS 5-year — complete county coverage" },
+      { value: "acs1", label: "ACS1" },
+      { value: "acs5", label: "ACS5" },
     ]);
+    // The `acs5` default stays: which dataset this application opens on is a
+    // serving preference it is entitled to make, and says nothing about what
+    // Census publishes.
     expect(preferredDatasetFacet(acsMetrics)).toBe("acs5");
   });
 

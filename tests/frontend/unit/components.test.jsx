@@ -124,4 +124,41 @@ describe("frontend history and source-state components", () => {
     expect(screen.getByRole("region", { name: "Source and methodology" })).toHaveTextContent("ACS1");
     expect(screen.getByText(/Partial coverage/)).toBeInTheDocument();
   });
+
+  test("links to the source's own reference, for whichever source it is", () => {
+    // Covers: WEB-112 — this panel ended with a fixed link to Census ACS
+    // estimate guidance on *every* source, so a reader looking at BLS
+    // unemployment was pointed at the Census Bureau's guidance for a survey
+    // they were not reading. `/catalog/sources` publishes `reference_url`
+    // per source and nothing under `apps/web` read it.
+    render(
+      <SourceNote
+        source="BLS"
+        sourceName="Bureau of Labor Statistics"
+        referenceUrl="https://www.bls.gov/lau/"
+        dataset="LAUS"
+        metric="Unemployment rate"
+        geography="Dane County"
+      />,
+    );
+    const link = screen.getByRole("link", { name: /Bureau of Labor Statistics reference/ });
+    expect(link).toHaveAttribute("href", "https://www.bls.gov/lau/");
+  });
+
+  test("a source that publishes no reference gets no link, not someone else's", () => {
+    render(
+      <SourceNote
+        source="FBI_UCR"
+        sourceName="Federal Bureau of Investigation"
+        referenceUrl=""
+        dataset="SRS"
+        metric="Violent crime"
+        geography="Wisconsin"
+      />,
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      screen.getByRole("region", { name: "Source and methodology" }),
+    ).toHaveTextContent("Federal Bureau of Investigation");
+  });
 });

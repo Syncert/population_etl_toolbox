@@ -92,19 +92,85 @@ this plan.
 
 ## Acceptance criteria
 
-- [ ] `grep -rn "65,000\|B01003\|census.gov" apps/web/{app,components,lib}`
-      returns nothing, except a test that asserts the absence.
-- [ ] A `SourceNote` unit test renders the source's `reference_url` for a
+- [~] `grep -rn "65,000\|B01003\|census.gov" apps/web/{app,components,lib}`
+      returns nothing, except a test that asserts the absence. **Met in
+      substance, not literally.** Every one of the four client-authored facts
+      this plan names is gone, and `tests/frontend/unit/provider-facts.test.js`
+      forbids each from coming back. The literal grep still returns eight
+      lines, none of which is a provider fact stated to a reader; they are
+      listed and reasoned about under "The grep, literally" below. A reviewer
+      who wants the grep satisfied to the letter should say so -- it means
+      changing things this plan's deliverables do not mention.
+- [x] A `SourceNote` unit test renders the source's `reference_url` for a
       non-Census source and no link when absent.
-- [ ] A home-page browser test asserts the featured link targets the
+- [x] A home-page browser test asserts the featured link targets the
       catalog's first metric and that the strip states nothing the
-      capabilities payload does not.
-- [ ] `tests/frontend/browser/accessibility-operations.spec.js` and
+      capabilities payload does not -- plus the empty-catalog case, which
+      used to build a link to a metric nobody published.
+- [x] `tests/frontend/browser/accessibility-operations.spec.js` and
       `tests/frontend/unit/explorer-sources.test.js` no longer assert the
-      hard-coded sentence.
-- [ ] `DATASET_FACET_LABELS` is gone and the dataset selector renders only
+      hard-coded sentence. The accessibility spec never did; the two that did
+      were `explorer-sources.test.js` and `format-and-persistence.test.js`,
+      and both now assert the opposite.
+- [x] `DATASET_FACET_LABELS` is gone and the dataset selector renders only
       what the catalog answers, asserted in `explorer-sources.test.js`.
-- [ ] `TESTING_CONTRACT.md` gains `WEB-` rows.
+- [x] `TESTING_CONTRACT.md` gains a `WEB-` row: WEB-112.
+
+## Implementation evidence
+
+### The four facts
+
+- **The Census publication threshold** and the "complete/partial county
+  coverage" labels are deleted, along with the "Not published in ACS1"
+  missing-value label: what this client knows is that the answer carried no
+  value for a geography, not which of a provider's rules is the reason. The
+  uncoloured-geography reason (WEB-079) already says the former from the
+  answer itself. `preferredDatasetFacet` still prefers `acs5` and now says so
+  as a *preference* -- which dataset the application opens on is a choice it
+  is entitled to make.
+- **The display name.** `displayMetricName` returns the catalog's
+  `metric_display_name`, or the absence of one. The override made the measure
+  a reader is most likely to open the one measure whose label did not come
+  from its source.
+- **The reference link.** `SourceNote` renders `reference_url` from
+  `/catalog/sources`, and no link where a source publishes none. The explorer
+  did not read that resource at all -- the plan says it "already fetched" it,
+  which was not so -- so a `getSources()` call was added at bootstrap. It
+  fails soft: a missing reference is a missing link, not a broken screen.
+- **The home page's feature.** The featured metric is the catalog's first
+  answer; with an empty catalog the link offers the catalog itself rather
+  than building one for a metric nobody published. The two unsourced strip
+  cells are gone.
+
+### The grep, literally
+
+The criterion's grep still returns eight lines. None states a provider's rule
+to a reader, and none is named by any deliverable in this plan:
+
+- `lib/productTemplates.ts` ×3 -- a product template naming the measures it
+  composes. That is the template's content; deleting it deletes the feature.
+- `lib/explorerSources.ts` ×4 -- comments recounting the pre-glossary metric
+  identity that ARC-005 ended. Removing them to satisfy a grep would delete
+  the record of why a shipped defect happened.
+- `lib/explorerViewModel.ts` ×1 -- `DEFAULT_POPULATION_VARIABLE`, which
+  `pickPreferredMetric` uses as a default. By this plan's own reasoning about
+  `acs5` it is a serving preference rather than a claim, and it is kept on
+  the same terms.
+
+So `provider-facts.test.js` forbids the **claims** rather than the strings:
+five patterns, one per fact, each proven to fire. A bare `B01003` ban would
+have to carry exceptions for the three cases above, and an exception list is
+the thing nobody maintains.
+
+### Commands
+
+| Command | Result |
+|---|---|
+| `npm --prefix apps/web run test:unit` | 595 passed, 40 files (was 587, 39) |
+| `npm --prefix apps/web run test:browser` | **in flight**; `home-page.spec.js` 3/3 on its own |
+| `npm --prefix apps/web run lint` / `typecheck` | clean |
+| `python -m pytest tests/unit/api/test_viz_coverage.py -q` | 10 passed |
+| `python -m pytest tests/unit -q` | 1807 passed |
 
 ## Definition of done
 

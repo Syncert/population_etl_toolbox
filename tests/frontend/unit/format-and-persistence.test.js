@@ -32,8 +32,21 @@ import {
 describe("frontend formatting and saved-chart persistence", () => {
   beforeEach(() => window.localStorage.clear());
 
-  test("formats Census metric labels and safe empty values", () => {
-    expect(displayMetricName({ metric_code: "CENSUS_ACS:acs5:B01003_001" })).toBe("Total population");
+  test("a metric's name is the catalog's, never this client's", () => {
+    // Covers: WEB-112 — this returned "Total population" for any metric code
+    // ending in one Census variable, whatever `metric_display_name` the
+    // catalog answered. A name only this client can change is a name
+    // republishing the catalog cannot fix.
+    expect(
+      displayMetricName({
+        metric_code: "CENSUS_ACS:acs5:B01003_001",
+        metric_display_name: "Estimate!!Total:",
+      }),
+    ).toBe("Total:");
+    // With no published name there is nothing to show but the absence.
+    expect(displayMetricName({ metric_code: "CENSUS_ACS:acs5:B01003_001" })).toBe(
+      "Untitled metric",
+    );
     expect(displayMetricName({ metric_display_name: "Estimate!!Population!Total" })).toBe("Population - Total");
     expect(displayMetricName(null)).toBe("Untitled metric");
   });

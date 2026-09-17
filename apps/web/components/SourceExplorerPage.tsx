@@ -23,6 +23,7 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
+  getSources,
   getDistributionBins,
   getHealth,
 } from "../lib/api/client";
@@ -36,6 +37,7 @@ import type {
   MetricRelease,
   MetricSummary,
   Observation,
+  SourceSummary,
 } from "../lib/api/types";
 import {
   CHOROPLETH_PALETTE,
@@ -331,6 +333,11 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // The observation table's page. Client-side over rows already loaded: the
   // read is bounded upstream and says so, this pages what arrived.
   const [tablePage, setTablePage] = useState(0);
+  // What `/catalog/sources` publishes about each source, keyed by code. The
+  // capability resource carries a display name but no `reference_url`, and a
+  // reference is the source's own to publish -- this panel used to link every
+  // source to the Census Bureau's ACS guidance.
+  const [sourceSystems, setSourceSystems] = useState<Record<string, SourceSummary>>({});
   // What the last observation read was, beyond its rows: the loader computed
   // `complete` and the API's `total` for the status line and then dropped
   // them, so an export of a prefix could not say it was one (WEB-059).
@@ -564,9 +571,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => new Map(allGeographies.map((item) => [String(item.geo_id), item])),
     [allGeographies],
   );
-  const missingValueLabel = selectedDataset === "acs1"
-    ? "Not published in ACS1"
-    : "No observation";
+  // One label for every source and dataset: what this client knows is that
+  // the answer carried no value for this geography, not which of a
+  // provider's publication rules is the reason.
+  const missingValueLabel = "No observation";
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
 
@@ -686,6 +694,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (!cancelled) {
           setApiHealth({ state: "bad", message: apiErrorMessage(error) });
         }
+      }
+
+      try {
+        const published = await getSources();
+        if (!cancelled) {
+          setSourceSystems(
+            Object.fromEntries(
+              (Array.isArray(published) ? published : []).map((entry) => [
+                String(entry.source_code),
+                entry,
+              ]),
+            ),
+          );
+        }
+      } catch {
+        // The panel falls back to the code it already has; a missing
+        // reference is a missing link, not a broken screen.
       }
 
       try {
@@ -2422,13 +2447,13 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               {` | Loaded catalog: ${formatNumber(metrics.length)} metrics`}
             </p>
           ) : null}
-          {selectedDataset === "acs1" || selectedDataset === "acs5" ? (
-            <p className={`coverage-note ${selectedDataset === "acs1" ? "partial" : "complete"}`}>
-              {selectedDataset === "acs1"
-                ? "ACS 1-year county coverage is partial: Census publishes counties with populations of 65,000 or more. Uncolored counties are not published in ACS1."
-                : "ACS 5-year estimates provide complete county coverage and are the default for nationwide county maps."}
-            </p>
-          ) : null}
+          {/* Two sentences about Census ACS coverage stood here, naming a
+              a population threshold. That is a Census publication rule
+              this client cannot know is still true -- the API publishes no
+              field for it -- and it was stated to a reader as a fact. The
+              uncoloured-geography reason below (WEB-079) already says why a
+              county carries no colour, from the answer rather than from a
+              rule someone typed. */}
 
           <section className="county-panel" aria-live="polite">
             <div className="county-panel-header">
@@ -2729,7 +2754,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
+          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
         </article>
         {viewModes.quality.supported ? (
           <article className="card workspace-panel" data-active={effectiveTab === "quality"}>

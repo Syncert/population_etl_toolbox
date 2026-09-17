@@ -67,10 +67,17 @@ export function formatTime(value, options) {
   return date.toLocaleTimeString(DISPLAY_LOCALE, options);
 }
 
+/**
+ * A metric's name, as the catalog publishes it.
+ *
+ * This used to return "Total population" for any metric code ending in one
+ * particular Census variable, overriding whatever `metric_display_name` the
+ * catalog answered. A client-authored name for one provider's variable is a name
+ * nobody can change by republishing the catalog, and it made the one measure
+ * a reader is most likely to open the one measure whose label did not come
+ * from the source.
+ */
 export function displayMetricName(metric) {
-  if (typeof metric === "object" && metric?.metric_code?.endsWith("B01003_001")) {
-    return "Total population";
-  }
   const value = typeof metric === "string" ? metric : metric?.metric_display_name;
   if (!value) return "Untitled metric";
   return value
