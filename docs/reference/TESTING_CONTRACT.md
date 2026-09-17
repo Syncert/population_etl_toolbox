@@ -286,7 +286,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Data-layer architecture boundaries | ARC-001–ARC-007 | None |
 | Plan dispatcher | PLAN-001–PLAN-008 | None |
 | Warehouse data quality | DQ-001–DQ-017 | None |
-| Airflow DAGs | DAG-001–DAG-019 | None |
+| Airflow DAGs | DAG-001–DAG-020 | None |
 | ETL and shared units | ETL-001–ETL-051 | None |
 | Database integration | DB-001–DB-048 | None |
 | API | API-001–API-146 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-114 | None |
 | Deployment | DEPLOY-001–DEPLOY-010 | None |
-| **Total** | **497 of 497** | **0 of 497** |
+| **Total** | **498 of 498** | **0 of 498** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 497-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 498-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -455,6 +455,7 @@ All DAG tests run with Python 3.11, Airflow 2.9.3, `LOAD_EXAMPLES=False`, a temp
 | DAG-017 | P1 | Configuration / `dag` | Warehouse connection resolution | Resolving the warehouse connection from Airflow uses only non-deprecated hook arguments and honors the database override | A provider deprecation warning escalates to a task failure under strict filters, or the override is ignored |
 | DAG-018 | P1 | Configuration / `dag`, Unit / `unit` | The history sweep day is one the schedule reaches | `usda_nass_crop_ingest` is scheduled `0 10 1 * 1-5` — weekdays *and* the first of the month, because POSIX cron takes the union of day-of-month and day-of-week when both are restricted — so the monthly full-history sweep the DAG's docstring and `BETA_RESET_REINGESTION.md` both promise always has a logical date to land on. The DAG tier derives the dates from `croniter`, which is what Airflow's own cron timetable uses, and asserts exactly one `full` run per month over the DAG's two-year window; the unit tier reasons about the same cadence from the declared cron without croniter, so the wiring is proved in the cheap tier and the cron semantics in the tier that has the library | The schedule was `0 10 * * 1-5` with `catchup=False`. `resolve_slice_mode` decides the sweep from `logical_date.day <= full_reconciliation_day_of_month` (default 1), and weekdays-only means a first falling on a weekend produced no logical date at all — with no catch-up the interval was never backfilled. In the DAG's own window six months of twenty-four therefore ran every slice in `recent` mode and never re-requested prior crop years: 2026-02, 2026-03, 2026-08, 2026-11, 2027-05 and 2027-08. Nothing reported it: DQ-NASS-002 measures ledger and preflight agreement, not sweep cadence, and the cadence test hand-picked 2026-04-01, a Wednesday, without asking whether the cron could produce the date |
 | DAG-019 | P1 | Structure / `dag`, Unit / `unit` | The capture export runs on a schedule and writes where it is told | `raw_capture_export` is scheduled nightly, catches up on nothing, runs one at a time, and is one task that only reads. Its destination comes from `CAPTURE_EXPORT_ROOT` through `capture_export.resolve_export_root`, which has **no default**: an unset path fails the task with the reason rather than exporting somewhere. The restore is deliberately not a task here, asserted by its absence from the DAG file | A backup an operator has to remember is not a backup; and a default path would put the export inside the container volume the reset destroys, which is the failure this DAG exists to prevent wearing the appearance of success |
+| DAG-020 | P0 | Structure / `dag`, Unit / `unit shared`, Integration / `integration database` | Every source DAG waits on a loaded geography, not an existing table | All six ingestion DAGs' guard task calls `silver_ref.geography_guard.require_shared_geography_loaded`, proven by patching the callable's own globals and running it; Census PEP is the one source that adds a grain (`place >= 18000`) and adds it rather than restating the shared three. No DAG file carries a geography predicate of its own, swept over tokenized code so the three docstrings recording the old defect survive. The helper counts active rows in `dim_geo_current`, names every grain it asked about including the ones that answered zero, and a caller may raise a threshold but never lower the shared one. The integration tier asserts the refusal on a bootstrapped-but-unloaded warehouse -- where `dim_geo_entity` does exist | Three sources asked `to_regclass('silver_ref.dim_geo_entity')`, and the bootstrap manifest creates that table empty before any source runs. So the guard passed on exactly the warehouse the ordering rule protects: every row resolved `unmapped`, the release was still marked `published`, the resolved-geography serving views excluded all of it, and nothing re-resolves a published release -- a source reporting `published` and serving nothing, which the live smoke tier notices afterwards rather than preventing |
 
 ### ETL and Shared Unit Tests
 

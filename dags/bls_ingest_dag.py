@@ -39,6 +39,9 @@ from zoneinfo import ZoneInfo
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from data_ingestion_toolbox.silver_ref.geography_guard import (
+    require_shared_geography_loaded,
+)
 from data_ingestion_toolbox import bls as bls_package
 from data_ingestion_toolbox.bls.config import CONFIG, LAUS_COUNTY_PARENT_FIPS
 from data_ingestion_toolbox.bls.metadata import (
@@ -494,23 +497,15 @@ def bls_ingest():
     # -----------------------------
     @task
     def require_shared_geography() -> None:
+        """Refuse until the shared geography reference carries rows.
+
+        The thresholds live in
+        `data_ingestion_toolbox.silver_ref.geography_guard`, which is the one
+        copy every source DAG now asks (DAG-020).
+        """
         hook = _get_postgres_hook()
-        with hook.get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*) FILTER (WHERE geo_type = 'nation'),
-                       COUNT(*) FILTER (WHERE geo_type = 'state'),
-                       COUNT(*) FILTER (WHERE geo_type = 'county')
-                FROM silver_ref.dim_geo_current
-                WHERE is_active
-                """
-            )
-            nation, states, counties = cur.fetchone()
-        if nation != 1 or states < 50 or counties < 3000:
-            raise RuntimeError(
-                "shared geography is incomplete; run silver_ref successfully first "
-                f"(nation={nation}, states={states}, counties={counties})"
-            )
+        with hook.get_conn() as conn:
+            require_shared_geography_loaded(conn)
 
     @task
     def sync_datasets() -> int:

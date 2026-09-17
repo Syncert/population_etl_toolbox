@@ -210,8 +210,24 @@ is empty, then run:
 airflow dags trigger silver_ref
 ```
 
-Wait for `silver_ref` to succeed before running observation DAGs. Validate the
-reference snapshot:
+Wait for `silver_ref` to succeed before running observation DAGs. **Every
+source DAG now refuses to start until it has**: the first task of all six
+ingestion DAGs calls
+`data_ingestion_toolbox.silver_ref.geography_guard.require_shared_geography_loaded`,
+which counts active rows in `silver_ref.dim_geo_current` and raises with the
+counts it saw -- naming every grain it asked about, including the ones that
+answered zero. The thresholds are `SHARED_GEOGRAPHY_MINIMUMS` in that module
+and are deliberately not restated here; Census PEP adds a place-level minimum
+of its own at its call site because it serves place estimates.
+
+Three of those DAGs used to ask `to_regclass('silver_ref.dim_geo_entity')`
+instead -- whether the table *exists*. The bootstrap manifest creates it,
+empty, in its `reference` phase, so that guard passed on exactly the warehouse
+this ordering rule protects: CDC, FBI and NASS rows resolved `unmapped`, the
+release was still marked `published`, and the resolved-geography serving views
+excluded all of it (DAG-020).
+
+Validate the reference snapshot:
 
 ```sql
 SELECT geo_type, count(*)

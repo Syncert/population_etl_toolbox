@@ -112,7 +112,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`second-wave-product-templates`](to_do/SECOND_WAVE_PRODUCT_TEMPLATES_PLAN.md) | medium | `browser`, `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`serving-table-vacuum-hygiene`](in_progress/THE_SERVING_TABLES_ARE_VACUUMED_AND_ANALYSED_ON_PURPOSE_PLAN.md) | low | `postgres` | -- |
-| [`shared-geography-guard`](to_do/THE_THREE_NEWER_SOURCES_WAIT_FOR_A_LOADED_GEOGRAPHY_PLAN.md) | low | `airflow`, `postgres` | -- |
+| [`shared-geography-guard`](in_progress/THE_THREE_NEWER_SOURCES_WAIT_FOR_A_LOADED_GEOGRAPHY_PLAN.md) | low | `airflow`, `postgres` | -- |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |
 | [`tile-layer-and-grain-filter-reads`](to_do/THE_TILE_LAYER_AND_THE_GRAIN_FILTERS_ARE_MEASURED_PLAN.md) | low | `postgres` | -- |
 | [`warehouse-manifest-ledger`](to_do/THE_WAREHOUSE_KNOWS_WHICH_STEPS_IT_CARRIES_PLAN.md) | medium | `postgres` | -- |
