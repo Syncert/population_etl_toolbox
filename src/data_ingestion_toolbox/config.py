@@ -31,10 +31,12 @@ class Settings:
     def __init__(self) -> None:
         self.api_title: str = os.environ.get("API_TITLE", "Population ETL Toolbox API")
         self.api_version: str = os.environ.get("API_VERSION", "0.1.0")
-        self.api_description: str = os.environ.get(
-            "API_DESCRIPTION",
-            "REST API for Census ACS, BLS, and FRED population data.",
-        )
+        #: An operator's override for the served ``info.description``. Empty
+        #: by default, and empty is the normal case: the application builds
+        #: the description from its own source registry, so the front door
+        #: cannot fall behind the platform the way a typed default did
+        #: (API-144). Set this only to say something the registry cannot.
+        self.api_description: str = os.environ.get("API_DESCRIPTION", "")
         self.redis_url: str = os.environ.get("REDIS_URL", "")
         self.api_cache_ttl_seconds: int = int(
             os.environ.get("API_CACHE_TTL_SECONDS", "300")

@@ -24,6 +24,7 @@ from apps.api.middleware import (
     build_cache_targets,
 )
 from apps.api.ratelimit import RateLimitMiddleware
+from apps.api.registry import platform_description
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
     catalog,
@@ -134,7 +135,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(
         title=configured.api_title,
         version=configured.api_version,
-        description=configured.api_description,
+        # The registry's own account of what is served, unless an operator
+        # has deliberately said otherwise (API-144).
+        description=configured.api_description or platform_description(),
         lifespan=_lifespan,
         # Applied to every route the application serves, including the health
         # resource and the private ones, and solved before any route's own

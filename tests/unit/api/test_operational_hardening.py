@@ -25,6 +25,7 @@ import importlib.util
 import io
 import logging
 import re
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1177,3 +1178,121 @@ def test_building_the_application_twice_does_not_log_every_line_twice(
 
     logging.getLogger("apps.api.request").info("api_request once")
     assert stream.getvalue().count("api_request once") == 1
+
+
+# -- API-145: readiness reports application storage, and never gates on it ---
+
+
+def test_readiness_reports_storage_without_gating_on_it(monkeypatch) -> None:
+    """Covers: API-145 — three storage states, one unchanged readiness."""
+    from apps.api.routers import health as health_router
+
+    # Unconfigured: no APP_API_DATABASE_URL. ADR-0003 makes storage optional,
+    # and a deployment that configures none is completely ready.
+    monkeypatch.setattr(health_router, "app_storage_configured", lambda: False)
+    try:
+        answer = _probe(_ReadySession()).get("/health/ready")
+    finally:
+        app.dependency_overrides.clear()
+    assert answer.status_code == 200
+    assert answer.json()["status"] == "ready"
+    assert answer.json()["storage"] == "unconfigured"
+
+    # Configured and unreachable -- a URL pointing at a closed port. This is
+    # the state that answered `ready` while every private route answered 503.
+    class _ClosedPort:
+        def connect(self):
+            raise SQLAlchemyError("connection refused")
+
+    monkeypatch.setattr(health_router, "app_storage_configured", lambda: True)
+    monkeypatch.setattr(health_router, "get_app_engine", lambda: _ClosedPort())
+    try:
+        answer = _probe(_ReadySession()).get("/health/ready")
+    finally:
+        app.dependency_overrides.clear()
+    assert answer.json()["storage"] == "unavailable"
+    # Reported, never gating: an optional feature being down is not the
+    # process being unable to serve.
+    assert answer.status_code == 200
+    assert answer.json()["status"] == "ready"
+
+    # Reachable.
+    class _OpenConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def execute(self, _query):
+            return None
+
+    class _ReachableEngine:
+        def connect(self):
+            return _OpenConnection()
+
+    monkeypatch.setattr(health_router, "get_app_engine", lambda: _ReachableEngine())
+    try:
+        answer = _probe(_ReadySession()).get("/health/ready")
+    finally:
+        app.dependency_overrides.clear()
+    assert answer.json()["storage"] == "ok"
+    assert answer.json()["status"] == "ready"
+
+
+def test_storage_is_probed_rather_than_read_from_the_settings(monkeypatch) -> None:
+    """Covers: API-145 — a configured URL is not evidence of a reachable one."""
+    from apps.api.routers import health as health_router
+
+    opened: list[str] = []
+
+    class _Engine:
+        def connect(self):
+            opened.append("connect")
+            raise SQLAlchemyError("connection refused")
+
+    monkeypatch.setattr(health_router, "app_storage_configured", lambda: True)
+    monkeypatch.setattr(health_router, "get_app_engine", lambda: _Engine())
+    assert health_router.app_storage_state() == "unavailable"
+    # The point of the plan: a connection was actually attempted.
+    assert opened == ["connect"]
+
+
+# -- API-144: the served description is the registry's -----------------------
+
+
+def test_the_served_description_names_every_registered_source() -> None:
+    """Covers: API-144 — the front door cannot fall behind the registry."""
+    from apps.api.registry import SOURCE_DISCOVERY
+
+    description = create_app(Settings()).openapi()["info"]["description"]
+    for entry in SOURCE_DISCOVERY.values():
+        assert entry.display_name in description, entry.display_name
+    assert str(len(SOURCE_DISCOVERY)) in description
+
+
+def test_the_description_follows_a_source_being_registered(monkeypatch) -> None:
+    """Covers: API-144 — derived, so adding a source updates it by itself."""
+    from apps.api import registry
+
+    added = dict(registry.SOURCE_DISCOVERY)
+    first = next(iter(registry.SOURCE_DISCOVERY.values()))
+    added["PRETEND"] = replace(
+        first, source_code="PRETEND", display_name="Pretend Statistical Service"
+    )
+    monkeypatch.setattr(registry, "SOURCE_DISCOVERY", added)
+
+    described = registry.platform_description()
+    assert "Pretend Statistical Service" in described
+    assert str(len(added)) in described
+
+
+def test_an_operator_can_still_override_the_description(monkeypatch) -> None:
+    """Covers: API-144 — the setting is an override, not a stale default."""
+    monkeypatch.setenv("API_DESCRIPTION", "A deployment's own words.")
+    application = create_app(Settings())
+    assert application.openapi()["info"]["description"] == "A deployment's own words."
+
+    monkeypatch.delenv("API_DESCRIPTION")
+    # And the default is empty, so nothing is typed twice.
+    assert Settings().api_description == ""

@@ -22,6 +22,18 @@ between two of them.
 `GET /health` and `GET /health/ready` (no `/api` prefix) are deployment
 probes. They sit outside the version policy: they carry no data contract, and
 versioning them would put a data-contract promise on infrastructure.
+`GET /api/v1/health` answers the same liveness shape inside the versioned
+surface, for a client that reads everything through one prefix; it reads
+nothing and is exempt from the rate limiter.
+
+`GET /health/ready` reports three things and gates on one. `database` decides
+readiness -- an unready answer is a `503` so orchestration stops routing here.
+`cache` and `storage` are reported and never gate: Redis is an optimization
+the API is proven to survive without, and application storage is optional, so
+a deployment that configures none serves every public route. `storage` is
+`ok`, `unavailable` or `unconfigured`, from an actual connection rather than
+from the presence of a setting -- with storage configured but unreachable,
+the private routes answer `503` and this is the field that says why.
 
 ## Is this deployment serving anything?
 
@@ -520,8 +532,8 @@ declared from configuration.
 
 ### The MVP-shaped observation routes
 
-`GET /api/v1/observations/latest` and `/observations/timeseries` are the
-original MVP shapes and answer for **only** Census ACS, BLS, and FRED (the
+`GET /api/v1/observations/latest` and `GET /api/v1/observations/timeseries`
+are the original MVP shapes and answer for **only** Census ACS, BLS, and FRED (the
 three sources in the cross-source union views).
 
 They are **permanent `v1` resources**, and nothing about them is scheduled

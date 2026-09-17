@@ -3177,7 +3177,8 @@
       "properties": {
         "cache": "string",
         "database": "string",
-        "status": "string"
+        "status": "string",
+        "storage": "string"
       },
       "required": [
         "cache",

@@ -79,6 +79,32 @@ def test_every_documented_route_is_actually_served() -> None:
     assert not missing, f"the consumer guide names unserved routes: {missing}"
 
 
+def test_every_served_route_is_actually_documented() -> None:
+    """Covers: API-146 — a route cannot ship without a document naming it."""
+    # The other direction. `test_every_documented_route_is_actually_served`
+    # asserts documented is a subset of served, which catches a retired route
+    # still named in a document and nothing else: a router added without a
+    # line in either document failed no test. The plan that asked for this
+    # expected it to pass on arrival -- "today all 42 operations are
+    # documented" -- and it did not: `/api/v1/health` was named nowhere, and
+    # `/api/v1/observations/timeseries` was written without its prefix, so no
+    # reader searching for the path would find it either. Both are documented
+    # now, and the assertion is what will catch the next one.
+    served = {
+        path
+        for path in app.openapi()["paths"]
+        if path.startswith(f"/api/{CURRENT_VERSION}/")
+    }
+    documented = _documented_paths()
+    assert served, "the application serves no versioned routes; the read is broken"
+
+    undocumented = sorted(path for path in served if path not in documented)
+    assert not undocumented, (
+        "these routes are served and named in neither the consumer guide nor "
+        f"the frontend handoff: {undocumented}"
+    )
+
+
 def test_guide_describes_one_versioned_surface() -> None:
     """Covers: API-065 — the guide cannot promise a surface that is gone."""
     text = GUIDE.read_text(encoding="utf-8")

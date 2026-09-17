@@ -1126,6 +1126,28 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
 }
 
 
+def platform_description() -> str:
+    """What this API serves, named from the registry rather than typed.
+
+    The served ``info.description`` said "Census ACS, BLS, and FRED" long
+    after four more sources were registered, and no test could catch it: the
+    reviewed OpenAPI digest drops descriptions on purpose, so the one string
+    every consumer reads first was the one string nothing checked. Deriving it
+    from ``SOURCE_DISCOVERY`` means a source cannot be added to the API
+    without being added to its front door.
+    """
+    names = [entry.display_name for entry in SOURCE_DISCOVERY.values()]
+    if not names:
+        return "REST API for federal statistical data."
+    listed = (
+        names[0] if len(names) == 1 else f"{', '.join(names[:-1])}, and {names[-1]}"
+    )
+    return (
+        f"REST API serving {len(names)} federal statistical "
+        f"{'source' if len(names) == 1 else 'sources'}: {listed}."
+    )
+
+
 # ---------------------------------------------------------------------------
 # What a saved analysis document's own route can send
 # ---------------------------------------------------------------------------

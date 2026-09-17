@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "data-ingestion-toolbox"
 version = "0.1.0"
-description = "ETL toolbox for Census ACS, BLS, and FRED data pipelines"
+description = "ETL toolbox and API for federal statistical data pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "data_ingestion_toolbox contributors" }]

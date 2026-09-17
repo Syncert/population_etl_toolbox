@@ -14,13 +14,20 @@ class HealthResponse(BaseModel):
 class ReadinessResponse(BaseModel):
     """Whether the process can actually serve, not merely that it is up.
 
-    ``database`` is required for readiness; ``cache`` is reported but never
-    gates it, because Redis is an optimization the API must survive without.
+    ``database`` is required for readiness; ``cache`` and ``storage`` are
+    reported but never gate it. Redis is an optimization the API must survive
+    without, and application storage is optional by ADR-0003: a deployment
+    that configures none serves every public route.
     """
 
     status: str
     database: str
     cache: str
+    #: ``ok``, ``unavailable`` or ``unconfigured``, from an actual connection
+    #: rather than from the settings. With storage unreachable the private
+    #: routes answered 503 while this resource said ``ready`` and named
+    #: nothing that could explain it (API-145).
+    storage: str = "unconfigured"
 
 
 class SourceContent(BaseModel):
