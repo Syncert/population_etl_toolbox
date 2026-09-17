@@ -15,12 +15,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started. **Decision taken 2026-09-16 by the
-  repository owner: the ACS coverage sentences are deleted, not moved
-  upstream.** No API change is needed by this plan.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Complete on `claude/plans-folder-iteration-4x6itr`, awaiting
+  review. **Decision taken 2026-09-16 by the repository owner: the ACS
+  coverage sentences are deleted, not moved upstream.** No API change is
+  needed by this plan. The browser tier was re-run in full after the fourth
+  test was fixed and reports 148 passed and nothing else; see "Three green
+  runs that were not green" for why that sentence is phrased so carefully.
+- **Last updated:** 2026-09-17
+- **Current milestone:** all four deliverables landed; tiers green.
 
 ## Why
 
@@ -191,12 +193,17 @@ run**. An audit of every browser run in this session against that rule found
 these three and no others -- the nine plans before this one were genuinely
 green.
 
+The confirming run was made to be readable: output redirected to a file
+rather than piped, so the reported status is Playwright's own, and the whole
+file searched for the words `failed` and `flaky` rather than its last lines
+read. It contains neither, and ends `148 passed (4.8m)`.
+
 ### Commands
 
 | Command | Result |
 |---|---|
 | `npm --prefix apps/web run test:unit` | 595 passed, 40 files (was 587, 39) |
-| `npm --prefix apps/web run test:browser` | **being re-run**; the last two attempts reported failures, see below |
+| `npm --prefix apps/web run test:browser` | 148 passed, 0 failed (4.8m), run unpiped so the status is Playwright's |
 | `npm --prefix apps/web run lint` / `typecheck` | clean |
 | `python -m pytest tests/unit/api/test_viz_coverage.py -q` | 10 passed |
 | `python -m pytest tests/unit -q` | 1807 passed |
