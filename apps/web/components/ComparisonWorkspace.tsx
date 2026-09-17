@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Download, Save } from "lucide-react";
-import ChoroplethMap from "./ChoroplethMap";
 import ScatterChart from "./ScatterChart";
 import StatusPill from "./StatusPill";
 import {
@@ -16,6 +16,22 @@ import {
   getComparisonPreflight,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
+
+// The map arrives in its own chunk, requested when the map panel is rendered.
+//
+// `ssr: false` because MapLibre needs a DOM and a WebGL context, and this
+// panel renders only where `viewModes.map.supported` already holds. The
+// loading element states what is happening and says where the values are,
+// so the wait is never an unexplained gap: the aligned table below carries
+// every value the map would colour.
+const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), {
+  ssr: false,
+  loading: () => (
+    <p className="status-line" role="status" data-testid="comparison-map-loading">
+      Loading the map. Every value it colours is in the aligned table below.
+    </p>
+  ),
+});
 import type {
   ComparisonPreflight,
   ComparisonResponse,

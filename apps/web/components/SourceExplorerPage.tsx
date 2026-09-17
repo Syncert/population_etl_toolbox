@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Download, Save } from "lucide-react";
-import * as maplibregl from "maplibre-gl";
+// Types only: MapLibre itself is fetched by `useMapLibre` when a map is
+// drawn, and a value import here would pull it back into this route's
+// static graph, which is the whole point of the split.
 import type {
   ExpressionSpecification,
   FilterSpecification,
+  GeoJSONSource,
   MapLayerMouseEvent,
 } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
@@ -1352,7 +1355,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // The canvas exists only while the boundary can draw the selection, so the
   // map is removed rather than hidden when that changes. The observation
   // points are this screen's own layer, added once the style has loaded.
-  const { mapRef, ready: mapReady } = useMapLibre(mapContainerRef, mapSupported, (map) => {
+  const { mapRef, ready: mapReady, loadFailed: mapLoadFailed } = useMapLibre(mapContainerRef, mapSupported, (map) => {
     map.addSource("obs", {
       type: "geojson",
       data: {
@@ -1609,7 +1612,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       return;
     }
 
-    const source = map.getSource("obs") as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource("obs") as GeoJSONSource | undefined;
     if (!source) {
       return;
     }
@@ -1648,12 +1651,27 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     if (features.length > 0 && selectedStateFips) {
-      const bounds = new maplibregl.LngLatBounds();
+      // The extent is accumulated as a plain corner pair rather than through
+      // `LngLatBounds`, which would be a value import of the library this
+      // route no longer carries statically. `fitBounds` accepts the pair.
+      let west = Infinity;
+      let south = Infinity;
+      let east = -Infinity;
+      let north = -Infinity;
       for (const feature of features) {
         const [lng, lat] = feature.geometry.coordinates;
-        bounds.extend([lng, lat]);
+        west = Math.min(west, lng);
+        south = Math.min(south, lat);
+        east = Math.max(east, lng);
+        north = Math.max(north, lat);
       }
-      map.fitBounds(bounds, { padding: 30, maxZoom: 7, duration: 800 });
+      map.fitBounds(
+        [
+          [west, south],
+          [east, north],
+        ],
+        { padding: 30, maxZoom: 7, duration: 800 },
+      );
     } else if (!selectedStateFips) {
       map.easeTo({ ...US_OVERVIEW_VIEW, duration: 800 });
     }
@@ -2447,7 +2465,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               {` | Loaded catalog: ${formatNumber(metrics.length)} metrics`}
             </p>
           ) : null}
-          {/* Two sentences about Census ACS coverage stood here, naming a
+          {/* Two sentences about Census ACS coverage stood here, naming
               a population threshold. That is a Census publication rule
               this client cannot know is still true -- the API publishes no
               field for it -- and it was stated to a reader as a fact. The
@@ -2564,6 +2582,15 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               ? ` The publication spans ${countObservationPeriods(observations)} periods; each geography is coloured by its newest one.`
               : ""}
           </p>
+          {/* A chunk that never arrives would otherwise be an empty grey
+              rectangle labelled as a map. The table tab holds every value
+              the map colours, so the sentence points at it. */}
+          {mapLoadFailed ? (
+            <p className="status-line" role="status" data-testid="map-load-failed">
+              The map could not be loaded. Every value it would colour is in the
+              observation table.
+            </p>
+          ) : null}
           <div className="map-shell">
             <div
               className="map-canvas"
@@ -2609,11 +2636,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ) : (
                   <>
                     <span>{missingValueLabel}</span>
-                    <small>
-                      {selectedDataset === "acs1"
-                        ? "ACS1 publishes county estimates only for areas meeting its population threshold."
-                        : "No value was returned for the selected metric and vintage."}
-                    </small>
+                    <small>No value was returned for the selected metric and vintage.</small>
                   </>
                 )}
               </div>

@@ -13,6 +13,9 @@ import { describe, expect, test } from "vitest";
 // that overrode the catalog's, a Census guidance link rendered under every
 // source including BLS and FBI, and a hard-coded featured metric on the home
 // page.
+//
+// A fifth site of the first fact was found later, in a map tooltip, stated
+// without the number that the others used -- see the last pattern below.
 
 function webRoot() {
   let directory = process.cwd();
@@ -77,6 +80,15 @@ const FORBIDDEN = [
   {
     what: "a client-authored coverage label for a dataset",
     pattern: /(complete|partial)\s+county\s+coverage/i,
+  },
+  {
+    what: "a rule about which geographies a provider publishes",
+    // The same threshold rule as the first pattern, worded without the
+    // number: a map tooltip told a reader that "ACS1 publishes county
+    // estimates only for areas meeting its population threshold". A grep
+    // for `65,000` walked straight past it, which is why this file matches
+    // claims rather than literals.
+    pattern: /\bpublishes\b[^.]*\bonly\s+for\b|\bACS\s?1\b[^.]*\bpublishes\b/i,
   },
 ];
 

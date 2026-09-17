@@ -22,7 +22,8 @@ verify:
   test was fixed and reports 148 passed and nothing else; see "Three green
   runs that were not green" for why that sentence is phrased so carefully.
 - **Last updated:** 2026-09-17
-- **Current milestone:** all four deliverables landed; tiers green.
+- **Current milestone:** all four deliverables landed; tiers green. A fifth
+  site of the first fact was found afterwards and fixed; see below.
 
 ## Why
 
@@ -166,6 +167,23 @@ So `provider-facts.test.js` forbids the **claims** rather than the strings:
 five patterns, one per fact, each proven to fire. A bare `B01003` ban would
 have to carry exceptions for the three cases above, and an exception list is
 the thing nobody maintains.
+
+### A fifth site, found after this plan was promoted
+
+The map tooltip rendered "ACS1 publishes county estimates only for areas
+meeting its population threshold" for a geography with no value. That is the
+same Census publication rule as the first fact -- stated without the number,
+so the plan's grep and this plan's own first forbidding pattern both walked
+past it. It was found while working the next plan, not by any check here.
+
+It is deleted (the tooltip now says only what the answer says: no value was
+returned for the selected metric and vintage), and `provider-facts.test.js`
+gains a fifth pattern matching the claim rather than the number. The pattern
+was verified by putting the sentence back and watching the test name it.
+
+The lesson is the file's own: a grep for a literal only finds the wording
+someone happened to use. Five patterns now, and the two that cover this fact
+are worded differently on purpose.
 
 ### Three green runs that were not green
 
