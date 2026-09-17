@@ -46,13 +46,12 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**3 plans.**
+**2 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`accessibility-axe-gate`](in_progress/THE_ACCESSIBILITY_GATE_COVERS_EVERY_ROUTE_WITH_AN_AUDITOR_PLAN.md) | medium | `browser` | -- |
 | [`map-bundle-and-browser-cache`](to_do/THE_MAP_LOADS_WHEN_IT_IS_DRAWN_AND_THE_BROWSER_CACHE_IS_USED_PLAN.md) | medium | `browser` | -- |
-| [`no-client-authored-provider-facts`](to_do/A_PROVIDER_FACT_IS_NOT_AUTHORED_IN_THE_CLIENT_PLAN.md) | medium | `browser` | -- |
+| [`no-client-authored-provider-facts`](in_progress/A_PROVIDER_FACT_IS_NOT_AUTHORED_IN_THE_CLIENT_PLAN.md) | medium | `browser` | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine

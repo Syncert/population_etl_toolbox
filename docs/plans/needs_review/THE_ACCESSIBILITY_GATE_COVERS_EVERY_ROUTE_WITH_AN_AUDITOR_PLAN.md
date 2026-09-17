@@ -14,15 +14,10 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. Every deliverable is implemented on
-  `claude/plans-folder-iteration-4x6itr`; held in `in_progress/` until the
-  full browser tier is confirmed.
+- **Status:** Ready for review. Implemented 2026-09-17 on
+  `claude/plans-folder-iteration-4x6itr`.
 - **Last updated:** 2026-09-17
-- **Current milestone:** implementation complete, one tier in flight.
-- **Next pickup:** read the full `npm --prefix apps/web run test:browser`
-  result, record the count, and move this plan to `needs_review/`. No code
-  change is expected: `accessibility-audit.spec.js` passes 11/11 and
-  `accessibility-operations.spec.js` 11/11 on their own.
+- **Current milestone:** complete.
 
 ## Why
 
@@ -134,7 +129,7 @@ covers every route in it and reaches buttons and links rather than only
 |---|---|
 | `npm --prefix apps/web run test:browser -- accessibility-audit` | 11 passed |
 | `npm --prefix apps/web run test:browser -- accessibility-operations` | 11 passed |
-| `npm --prefix apps/web run test:browser` | **in flight** |
+| `npm --prefix apps/web run test:browser` | 145 passed in 4.9m (was 133) |
 | `npm --prefix apps/web run test:unit` | 587 passed |
 | `npm --prefix apps/web run lint` / `typecheck` | clean |
 | `npm --prefix apps/web audit --omit=dev --audit-level=high` | 0 vulnerabilities |
