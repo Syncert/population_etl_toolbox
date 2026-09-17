@@ -150,7 +150,20 @@ class _MatrixSession:
         self.statements.append(rendered)
         self.parameters.append(dict(params or {}))
         if "gold_glossary.dim_metric" in rendered:
-            row = self._metric_rows.get((params or {}).get("metric_code"))
+            # The matrix resolves its whole composition in one statement now
+            # (API-147). A single-code read is still answered, because other
+            # routes make one.
+            asked = params or {}
+            if "metric_codes" in asked:
+                found = [
+                    self._metric_rows[code]
+                    for code in asked["metric_codes"]
+                    if code in self._metric_rows
+                ]
+                return _FakeResult(
+                    rows=sorted(found, key=lambda row: row["metric_code"])
+                )
+            row = self._metric_rows.get(asked.get("metric_code"))
             return _FakeResult(rows=[row] if row else [])
         if "'total'" in rendered:
             return _FakeResult(rows=list(self._facts or []))

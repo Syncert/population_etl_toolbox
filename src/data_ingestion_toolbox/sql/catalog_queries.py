@@ -20,6 +20,7 @@ unit suite pins.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Optional
 
 from sqlalchemy import text
@@ -150,6 +151,25 @@ def build_metric_detail_query(metric_code: str) -> tuple[TextClause, dict]:
         "WHERE metric_code = :metric_code"
     )
     return detail_q, {"metric_code": metric_code}
+
+
+def build_metric_details_query(metric_codes: Sequence[str]) -> tuple[TextClause, dict]:
+    """The same rows for several codes, in one statement (API-147).
+
+    Same columns and same predicate as the single form -- `= ANY(:codes)`
+    rather than `= :metric_code` -- so a caller reading a composition gets
+    exactly what it would have got code by code. A composition may name eight
+    measures (`/comparison/matrix`) or fifty blocks (an evidence packet), and
+    resolving them one at a time was one round trip each.
+
+    The order is `metric_code`, which is the relation's own unique key, so the
+    answer is stable; callers index it by code rather than by position.
+    """
+    details_q = text(
+        f"SELECT {_METRIC_COLUMNS} FROM {METRIC_RELATION} "
+        "WHERE metric_code = ANY(:metric_codes) ORDER BY metric_code"
+    )
+    return details_q, {"metric_codes": list(metric_codes)}
 
 
 # ---------------------------------------------------------------------------

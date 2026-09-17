@@ -108,7 +108,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`manifest-reapply-populated-warehouse`](to_do/REAPPLYING_THE_MANIFEST_TO_A_POPULATED_WAREHOUSE_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`name-collision-race-is-a-conflict`](to_do/A_NAME_TAKEN_IN_A_RACE_IS_STILL_A_CONFLICT_PLAN.md) | low | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
-| [`relation-probe-once-per-request`](to_do/A_RELATION_IS_PROBED_ONCE_PER_REQUEST_PLAN.md) | medium | `postgres` | -- |
+| [`relation-probe-once-per-request`](in_progress/A_RELATION_IS_PROBED_ONCE_PER_REQUEST_PLAN.md) | medium | `postgres` | -- |
 | [`second-wave-product-templates`](to_do/SECOND_WAVE_PRODUCT_TEMPLATES_PLAN.md) | medium | `browser`, `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`serving-table-vacuum-hygiene`](in_progress/THE_SERVING_TABLES_ARE_VACUUMED_AND_ANALYSED_ON_PURPOSE_PLAN.md) | low | `postgres` | -- |

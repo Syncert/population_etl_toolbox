@@ -36,6 +36,7 @@ from apps.api.schemas.evidence_packet import (
     PacketBlock,
     PacketValidation,
 )
+from apps.api.services.neutral_observations_service import resolve_metrics
 from apps.api.services.saved_analysis_service import (
     ConfigurationInvalid,
     validate_document,
@@ -359,6 +360,35 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
     return _recorded_request_contradiction(block)
 
 
+def _metric_codes_in(packet: EvidencePacketDocument) -> list[str]:
+    """Every metric code any block's query names, in the order they appear.
+
+    Read from the dumped documents rather than from a list of field names:
+    the analysis documents carry `metric_code`, `metric_code_a`,
+    `metric_code_b` and a `series` list that carries more, and a field added
+    later would otherwise quietly fall out of the batch and back into a round
+    trip per block.
+    """
+
+    def _walk(value: object, into: list[str]) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str) and key.startswith("metric_code"):
+                    if isinstance(item, str) and item:
+                        into.append(item)
+                else:
+                    _walk(item, into)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item, into)
+
+    codes: list[str] = []
+    for block in packet.blocks:
+        if block.document is not None:
+            _walk(block.document.model_dump(), codes)
+    return list(dict.fromkeys(codes))
+
+
 def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
     """Raise ``PacketInvalid`` for anything the ADR's contradiction table refuses.
 
@@ -385,6 +415,12 @@ def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
     # API accepts". Codes repeat across a packet -- a needs assessment reuses
     # three or four measures over a dozen blocks -- so each distinct document
     # is checked once and its verdict reused.
+    # Every measure the packet names, resolved in one statement before any
+    # block is validated (API-147). `validate_document` still asks for each
+    # code it needs; the session memo answers from this read. A packet at the
+    # declared cap used to issue a round trip per code per distinct block.
+    resolve_metrics(warehouse, _metric_codes_in(packet))
+
     verdicts: dict[str, Optional[str]] = {}
     sources: dict[str, frozenset[str]] = {}
     for block in packet.blocks:
