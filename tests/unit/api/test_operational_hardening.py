@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import io
 import logging
 import re
 
@@ -34,6 +35,7 @@ from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 
 from apps.api.dependencies import get_db_session_dep
+from apps.api.logging import APPLICATION_LOGGER_NAME, HANDLER_NAME, configure_logging
 from apps.api.freshness import (
     NEVER_PUBLISHED,
     UNKNOWN_EPOCH,
@@ -1037,3 +1039,141 @@ def test_the_middleware_order_keeps_the_promises_it_claims() -> None:
     # "…and still spends budget": the bound is checked inside the limiter, so
     # an over-bound body is metered before it is refused.
     assert position[RateLimitMiddleware] < position[RequestBodyLimitMiddleware]
+
+
+# -- API-143: the completion line reaches the process log ---------------------
+#
+# Every assertion below is deliberately written *without* `caplog`. That
+# fixture installs its own handler and sets its own level, which is exactly
+# what hid this defect: the completion line was asserted for years by tests
+# that supplied the configuration the deployed process did not have.
+
+
+def _reachable_handlers(logger: logging.Logger) -> list[logging.Handler]:
+    """Every handler a record from ``logger`` would actually reach."""
+    found: list[logging.Handler] = []
+    current: logging.Logger | None = logger
+    while current is not None:
+        found.extend(current.handlers)
+        current = current.parent if current.propagate else None
+    return found
+
+
+@pytest.fixture
+def restore_application_logging():
+    """Put the ``apps.api`` logger back exactly as it was."""
+    logger = logging.getLogger(APPLICATION_LOGGER_NAME)
+    before_level = logger.level
+    before_handlers = list(logger.handlers)
+    try:
+        yield logger
+    finally:
+        logger.setLevel(before_level)
+        logger.handlers = before_handlers
+
+
+def test_building_the_application_configures_its_own_logging(
+    restore_application_logging,
+):
+    """Covers: API-143 — the request logger is reachable in a built app."""
+    create_app(Settings())
+
+    request_logger = logging.getLogger("apps.api.request")
+    assert request_logger.getEffectiveLevel() <= logging.INFO
+
+    handlers = _reachable_handlers(request_logger)
+    assert handlers, "a record from the request logger would reach no handler"
+    # `logging.lastResort` writes the bare message to stderr with no
+    # timestamp, no level and no logger name. Reaching only that is the
+    # defect, not the fix.
+    assert logging.lastResort not in handlers
+    assert any(handler.name == HANDLER_NAME for handler in handlers), handlers
+
+    configured = next(h for h in handlers if h.name == HANDLER_NAME)
+    assert configured.formatter is not None
+    formatted = configured.formatter.format(
+        logging.LogRecord(
+            name="apps.api.request",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg="api_request method=GET path=/api/v1/health status=200",
+            args=(),
+            exc_info=None,
+        )
+    )
+    # When, how bad, from where, and what happened.
+    assert "INFO" in formatted
+    assert "apps.api.request" in formatted
+    assert "api_request method=GET" in formatted
+    assert formatted.startswith("20"), formatted
+
+
+def test_a_request_writes_its_completion_line_with_the_id_it_answered_with(
+    restore_application_logging,
+):
+    """Covers: API-143 — the line an operator greps carries the client's id."""
+    application = create_app(Settings())
+    # After building, not before: `create_app` installs the real handler, and
+    # this re-points that same one at a readable stream. Configuring first
+    # would only prove that `create_app` overwrites it.
+    stream = io.StringIO()
+    configure_logging("INFO", stream=stream)
+
+    with TestClient(application) as client:
+        response = client.get("/health")
+
+    request_id = response.headers["X-Request-ID"]
+    written = stream.getvalue()
+    assert "api_request" in written, written
+    # The promise the consumer guide makes: this id, quoted back, finds the
+    # server's own record of that request.
+    assert f"request_id={request_id}" in written, written
+    assert "status=200" in written, written
+
+
+def test_the_level_is_a_setting_and_a_raised_one_keeps_the_failures(
+    monkeypatch, restore_application_logging
+):
+    """Covers: API-143 — WARNING silences the line and keeps the traceback."""
+    stream = io.StringIO()
+    configure_logging("WARNING", stream=stream)
+
+    logging.getLogger("apps.api.request").info("api_request method=GET status=200")
+    assert stream.getvalue() == ""
+
+    # API-088's unhandled-failure record is written at ERROR and survives a
+    # raised level: an operator who turns the volume down still hears the
+    # thing that broke.
+    logging.getLogger("apps.api.request").error("unhandled failure")
+    assert "unhandled failure" in stream.getvalue()
+
+
+def test_the_configured_level_comes_from_the_environment(monkeypatch):
+    """Covers: API-143 — API_LOG_LEVEL is read, normalised, and validated."""
+    monkeypatch.setenv("API_LOG_LEVEL", "warning")
+    assert Settings().api_log_level == "WARNING"
+
+    monkeypatch.delenv("API_LOG_LEVEL")
+    assert Settings().api_log_level == "INFO"
+
+    # A typo fails the process at startup rather than silently logging
+    # nothing, which is the failure mode this whole plan is about.
+    monkeypatch.setenv("API_LOG_LEVEL", "INFORMATIONAL")
+    with pytest.raises(ValueError, match="API_LOG_LEVEL"):
+        Settings()
+
+
+def test_building_the_application_twice_does_not_log_every_line_twice(
+    restore_application_logging,
+):
+    """Covers: API-143 — the configuration replaces its handler, never stacks."""
+    stream = io.StringIO()
+    for _ in range(3):
+        configure_logging("INFO", stream=stream)
+
+    logger = logging.getLogger(APPLICATION_LOGGER_NAME)
+    assert [h for h in logger.handlers if h.name == HANDLER_NAME].__len__() == 1
+
+    logging.getLogger("apps.api.request").info("api_request once")
+    assert stream.getvalue().count("api_request once") == 1

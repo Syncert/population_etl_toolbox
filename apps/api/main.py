@@ -16,6 +16,7 @@ from apps.api.failures import (
     WAREHOUSE_READ_FAILURES,
 )
 from apps.api.freshness import PublicationEpochProvider
+from apps.api.logging import configure_logging
 from apps.api.middleware import (
     RedisResponseCacheMiddleware,
     RequestBodyLimitMiddleware,
@@ -125,6 +126,11 @@ async def _lifespan(application: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the production application with one explicit runtime configuration."""
     configured = settings or get_settings()
+    # Before anything else logs: uvicorn configures its own loggers and no
+    # others, so without this every `INFO` record this application writes --
+    # including the one request completion line that is the whole of its
+    # request observability -- is dropped by a deployed process (API-143).
+    configure_logging(configured.api_log_level)
     application = FastAPI(
         title=configured.api_title,
         version=configured.api_version,

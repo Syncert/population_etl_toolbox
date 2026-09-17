@@ -68,7 +68,7 @@ check to run rather than a plan to write.
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
 | [`api-dependency-lock`](to_do/THE_API_IMAGE_INSTALLS_A_LOCKED_DEPENDENCY_SET_PLAN.md) | medium | The API image builds from the lock in `deployment-smoke`. |
-| [`api-request-log-is-emitted`](to_do/THE_REQUEST_LINE_REACHES_THE_PROCESS_LOG_PLAN.md) | low | The deployment smoke job fails if the completion line is absent from the container log, proved failing-first. |
+| [`api-request-log-is-emitted`](in_progress/THE_REQUEST_LINE_REACHES_THE_PROCESS_LOG_PLAN.md) | low | The deployment smoke job fails if the completion line is absent from the container log, proved failing-first. |
 | [`client-error-and-vitals-reporting`](to_do/THE_BROWSER_CAN_REPORT_WHAT_WENT_WRONG_PLAN.md) | medium | The Compose smoke job sees the vitals line in the web container log. |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
 | [`raw-capture-retention-decision`](to_do/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md) | medium | The round-trip test passes: restored captures verify under `DQ-SHARED-001` and the append-only triggers are still present after the restore -- a warehouse round-trip. |

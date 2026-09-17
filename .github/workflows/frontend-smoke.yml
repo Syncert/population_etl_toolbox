@@ -94,6 +94,28 @@ jobs:
       - name: Run the live-stack smoke tier
         working-directory: apps/web
         run: npm run test:smoke
+      # The API's only request-level operational signal is the completion
+      # line `apps.api.telemetry` writes at INFO, and nothing configured
+      # logging for the deployed process, so every one of those lines was
+      # dropped by a real container while the unit tests -- which install
+      # their own handler -- stayed green (API-143). This is the only job
+      # that runs the real API image, so it is the only place that can see
+      # whether the line survives the process it actually runs in (DEPLOY-009).
+      - name: The deployed API logs its request completion lines
+        run: |
+          set -euo pipefail
+          probe_id="smoke-$(date +%s)-$$"
+          curl --fail --silent --show-error \
+            --header "X-Request-ID: ${probe_id}" \
+            "http://127.0.0.1:${TEST_API_HOST_PORT:-38000}/health" > /dev/null
+          # The line is written after the response is sent.
+          sleep 2
+          logs="$(docker compose -f infra/docker/docker-compose.test.yml \
+            -f infra/docker/docker-compose.smoke.yml logs --no-color api)"
+          echo "${logs}" | tail -20
+          # The id the client sent, in the server's own record of that
+          # request -- which is the promise the consumer guide makes.
+          echo "${logs}" | grep -F "api_request" | grep -F "request_id=${probe_id}"
       - name: Capture service logs
         if: failure()
         run: >-

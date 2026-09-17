@@ -1025,6 +1025,18 @@ status code on the one class of error the API can explain.
   deployment trusts, so it can never be used to claim a second budget.
 - Every response carries `X-Request-ID`. Send your own (`[A-Za-z0-9._-]`, ≤64
   chars) to correlate your logs with the server's; anything else is replaced.
+  The server's side of that correlation is one line per request, written to
+  the process log at `INFO` by `apps.api.request`, so an operator holding your
+  id knows what to grep for:
+
+  ```
+  2026-09-17T12:00:00+0000 INFO apps.api.request api_request method=GET path=/api/v1/catalog/metrics status=200 duration_ms=12.4 cache=MISS request_id=your-id-here
+  ```
+
+  `path` is the route shape, with each path parameter replaced by its name:
+  query-string values are user input and are never logged. A deployment that
+  raises `API_LOG_LEVEL` above `INFO` silences this line; the unhandled-failure
+  record is written at `ERROR` and survives.
 - Pagination is `limit`/`offset` with documented deterministic ordering per
   resource. `offset` is bounded; page with filters rather than deep offsets.
   The observation reads' orders are in [Paging a history, and what orders

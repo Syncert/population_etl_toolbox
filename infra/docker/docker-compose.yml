@@ -86,6 +86,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-api_reader}:${ANALYTICS_API_DB_PASSWORD:-api_reader}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
       REDIS_URL: redis://redis:6379/0
       API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+      # Without this the process drops every INFO record it writes,
+      # including the one request completion line (API-143).
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-INFO}
       # Staleness bound after a warehouse publication (API-006): the response
       # cache re-keys on the published harvest state within this window.
       API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
