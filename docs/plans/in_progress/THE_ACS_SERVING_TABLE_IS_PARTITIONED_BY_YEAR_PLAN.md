@@ -234,3 +234,38 @@ Worth recording for the remote warehouse's eventual catch-up: migration 027
 has been scanning `silver_census.fact_demographics` (99.8M rows) for half an
 hour. A step that adds a column, rewrites a subset, and validates two check
 constraints costs several full passes at this scale.
+
+### One risk to measure during the run, not to guess at
+
+The chunk driver runs `ANALYZE` on the report table after every chunk
+(`utility/gold_schema.py`, DB-048) because a delete-and-refill leaves the
+planner describing rows that are gone. `ANALYZE` on a *partitioned* parent
+recurses: it samples for the parent's own statistics and then analyses each
+partition. So where the old shape analysed one relation per chunk, this
+analyses thirty-eight.
+
+Most of those partitions are empty, and the twenty that are not are the
+twenty the re-serve is filling anyway, so the cost is bounded by data rather
+than by partition count. But it is a per-chunk cost multiplied by twenty
+chunks, and nothing here has measured it.
+
+**Measured before the run rather than worried about during it.** On the
+disposable warehouse:
+
+```text
+ANALYZE gold_census.rpt_acs_observations   (37 partitions, empty)   26.7 ms
+ANALYZE gold_bls.rpt_bls_observations      (1 relation, fixture)  2,584.9 ms
+```
+
+Roughly 0.7 ms of overhead per empty partition, against 2.6 seconds for a
+single unpartitioned relation holding rows. The cost is dominated by the data
+sampled, not by the number of partitions: PostgreSQL samples a bounded number
+of rows per relation, so twenty populated partitions add twenty bounded
+samples, not twenty scans. Against chunk durations section 7 records in
+thousands of seconds, that is noise.
+
+Still worth watching the first two or three chunk durations against section
+7's year-by-year table -- it is the only real comparison, and that section
+already warns against extrapolating from one number. The driver commits per
+year and resumes where it stopped, so a surprise costs one chunk rather than
+the run.
