@@ -73,11 +73,6 @@ CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
         COMPOSE,
         "The Compose smoke job sees the vitals line in the web container log.",
     ),
-    "api-request-log-is-emitted": (
-        COMPOSE,
-        "The deployment smoke job fails if the completion line is absent from "
-        "the container log, proved failing-first.",
-    ),
 }
 
 

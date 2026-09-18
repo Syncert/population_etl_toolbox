@@ -13,14 +13,12 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented on `claude/plans-folder-iteration-4x6itr`. All four
-  deliverables are written and every tier a cloud session can run is green.
-  **It stays in `in_progress/` for one reason:** the CI assertion in
-  deliverable 3 has never been *run*, because it needs a Docker daemon. A
-  machine session has one thing to do here; see "What a machine session must
-  still do".
-- **Last updated:** 2026-09-17
-- **Current milestone:** the smoke assertion, on a machine.
+- **Status:** Ready for review. All four deliverables are written, every tier
+  a cloud session can run is green, and the smoke assertion in deliverable 3
+  was run for real against the built API image on a machine session on
+  2026-09-18 -- both passing and, with the level at `WARNING`, failing.
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -91,10 +89,10 @@ like, so an operator correlating a client report knows what to grep.
       actually answered with, not a fixture's.
 - [x] `API_LOG_LEVEL=WARNING` suppresses the completion line and keeps the
       unhandled-failure record (API-088 stays green).
-- [ ] The deployment smoke job fails if the completion line is absent from
-      the container log (prove failing-first by running it once with the
-      level at `WARNING`). **Written, never run.** It needs a Docker daemon.
-      It is also not in `deployment-smoke.yml`; see below.
+- [x] The deployment smoke job fails if the completion line is absent from
+      the container log, proved failing-first with the level at `WARNING`.
+      Run 2026-09-18; see "The machine run". The assertion lives in
+      `frontend-smoke.yml`, not `deployment-smoke.yml`; see below.
 - [x] `TESTING_CONTRACT.md` gains API-143 and DEPLOY-009;
       `CI_EVIDENCE_MAP.md` names the new files.
 
@@ -149,25 +147,39 @@ instead, which is the only job that builds and runs `Dockerfile.api`. It
 probes `/health` with an `X-Request-ID` it chose and greps the container's own
 log for that id, which is exactly the promise the consumer guide makes.
 
-### What a machine session must still do
+### The machine run
 
-One thing, and it needs a Docker daemon:
+Run on 2026-09-18 on a Windows 11 machine with a Docker daemon. The stack is
+the one `frontend-smoke.yml` composes -- the only job that builds and runs
+`Dockerfile.api` -- brought up with `--build` so the assertion saw the real
+image rather than a cached one:
 
 ```bash
-# The assertion, run for real. It is the step named
-# "The deployed API logs its request completion lines" in
-# .github/workflows/frontend-smoke.yml.
 docker compose -f infra/docker/docker-compose.test.yml \
-  -f infra/docker/docker-compose.smoke.yml up --detach --wait postgres martin api proxy
-curl -fsS -H "X-Request-ID: probe-1" http://127.0.0.1:38000/health
-docker compose -f infra/docker/docker-compose.test.yml \
-  -f infra/docker/docker-compose.smoke.yml logs --no-color api | grep -F "request_id=probe-1"
+  -f infra/docker/docker-compose.smoke.yml up --detach --wait --build postgres martin api proxy
+curl -fsS -H "X-Request-ID: ${probe_id}" http://127.0.0.1:38000/health
+docker compose ... logs --no-color api | grep -F api_request | grep -F "request_id=${probe_id}"
 ```
 
-Then prove it failing-first, which is the half no cloud session can fake:
-re-run the stack with `API_LOG_LEVEL=WARNING` in the environment and confirm
-the grep finds nothing and the step fails. Record both results here and move
-the plan to `needs_review/`.
+The line is there, in the container's own log, carrying the id the client
+chose:
+
+```text
+2026-09-18T14:33:05+0000 INFO apps.api.request api_request method=GET \
+  path=/health status=200 duration_ms=1.3 cache=- request_id=smoke-1789741985-499
+```
+
+**Failing-first, which is the half no cloud session can fake.** The `api`
+service was restarted with `API_LOG_LEVEL=WARNING` through a throwaway
+override file, and the same probe repeated. No `api_request` line appears at
+all, the grep finds nothing, and the step exits non-zero -- so the assertion
+is load-bearing rather than decorative.
+
+That run also confirms, from outside the test suite, the "uvicorn's loggers
+are untouched" decision recorded above: at `WARNING` the container still logs
+`INFO:     172.20.0.1:40706 - "GET /health HTTP/1.1" 200 OK` from uvicorn's
+own access logger, and only the application's line goes quiet. The two
+configurations are genuinely independent.
 
 ### Commands
 
@@ -181,6 +193,16 @@ The configuration was verified to be load-bearing: with the
 `configure_logging` call removed from `create_app`, the request logger's
 effective level reads `WARNING` and the first test fails -- which is precisely
 the state a deployed container was in.
+
+Re-run on the machine session of 2026-09-18, on the branch as it now stands:
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit/api/test_operational_hardening.py tests/unit/deployment -q` | 114 passed |
+| `ruff format --check .` / `ruff check .` | clean, 493 files |
+
+The counts are higher than the cloud session's because the branch gained tests
+afterwards; none of the difference is this plan's.
 
 ## Definition of done
 
