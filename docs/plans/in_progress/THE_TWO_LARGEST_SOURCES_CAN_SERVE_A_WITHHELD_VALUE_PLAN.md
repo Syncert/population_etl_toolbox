@@ -236,3 +236,36 @@ facts run.
 - It does not change how a suppressed value is interpreted; the status set is
   the one `observation_revision` already records.
 - It does not change the row shape for the other five sources.
+
+
+## How much is being dropped, measured
+
+Applying `027_acs_bls_fact_lineage.sql` to the internal stack on 2026-09-18
+put a number on this plan's premise. The step marks every ACS fact row with no
+estimate as `absent`, and it marked **31,481,530 of 99,783,997** -- just under
+a third of the table.
+
+```text
+silver_census.fact_demographics            99,783,997 rows
+  ... of which value_status = 'absent'     31,481,530
+gold_census.rpt_acs_observations (before)  68,302,467 rows
+```
+
+The two differences agree exactly: 99,783,997 - 31,481,530 = 68,302,467. So
+the serving boundary's `WHERE s.estimate_value IS NOT NULL` is the *only*
+reason those rows are not served, and there are 31.5 million of them. A
+consumer asking for a county's value in a year Census suppressed it gets the
+same answer as for a county that does not exist.
+
+That is the plan's justification, now sized. It also sizes deliverable 2: the
+served relation grows by roughly 46% when withheld rows are published as rows
+with a null value, which is a number worth having before the re-serve rather
+than after. `rpt_acs_observations` is partitioned by year now
+(`acs-serving-partitioning`), so that growth lands per partition rather than
+on one heap.
+
+**And it sizes deliverable 5.** The step took about thirty-five minutes on
+this warehouse: several sequential passes over 99.8M rows to rewrite 31.5M of
+them and validate two check constraints, followed by an autovacuum of the
+bloat the rewrite created. The operator half of deliverable 5 should budget
+for that before the re-serve it precedes, not in addition to it.
