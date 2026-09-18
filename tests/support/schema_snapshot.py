@@ -56,13 +56,31 @@ EXCLUDED_SCHEMAS = (
     "app_api",
 )
 
+#: `relispartition` is excluded, and the reason is that a partition's shape is
+#: not its own. PostgreSQL requires every partition to carry the parent's
+#: columns in the parent's order, and an index created on the parent is created
+#: on each partition; so rendering 37 ACS year partitions in full added 1,933
+#: lines saying the same thing 37 times, which is how a reviewable diff stops
+#: being read. What *is* reviewable -- the strategy, the key, and which ranges
+#: exist -- is rendered on the parent below, and
+#: `test_every_partition_carries_its_parents_columns` checks the guarantee this
+#: omission rests on rather than trusting it.
 _RELATIONS = """
 SELECT n.nspname, c.relname, c.relkind
   FROM pg_class AS c
   JOIN pg_namespace AS n ON n.oid = c.relnamespace
  WHERE c.relkind IN ('r', 'p', 'v', 'm')
+   AND NOT c.relispartition
    AND n.nspname <> ALL(%s)
  ORDER BY n.nspname, c.relname
+"""
+
+_PARTITIONS = """
+SELECT c.relname, pg_get_expr(c.relpartbound, c.oid)
+  FROM pg_inherits AS i
+  JOIN pg_class AS c ON c.oid = i.inhrelid
+ WHERE i.inhparent = %s
+ ORDER BY c.relname
 """
 
 _COLUMNS = """
@@ -127,6 +145,13 @@ def render(connection: Any) -> str:
                 cursor.execute(_INDEXES, (schema, name))
                 for index, definition in cursor.fetchall():
                     lines.append(f"    index {index} {definition}")
+
+            if kind == "p":
+                cursor.execute("SELECT pg_get_partkeydef(%s)", (oid,))
+                lines.append(f"    partitioned by {cursor.fetchone()[0]}")
+                cursor.execute(_PARTITIONS, (oid,))
+                for partition, bound in cursor.fetchall():
+                    lines.append(f"    partition {partition} {bound}")
 
             if kind in ("v", "m"):
                 cursor.execute("SELECT pg_get_viewdef(%s, true)", (oid,))

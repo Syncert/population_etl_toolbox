@@ -2161,7 +2161,7 @@ r gold_census.mv_acs_latest
     index ix_mv_acs_latest_vintage CREATE INDEX ix_mv_acs_latest_vintage ON gold_census.mv_acs_latest USING btree (dataset_code, vintage_year)
     index uq_mv_acs_latest CREATE UNIQUE INDEX uq_mv_acs_latest ON gold_census.mv_acs_latest USING btree (geo_id, dataset_code, vintage_year, variable_code, COALESCE(metric_code, ''::text))
 
-r gold_census.rpt_acs_observations
+p gold_census.rpt_acs_observations
     column source_code text NOT NULL DEFAULT 'CENSUS_ACS'::text
     column observation_date date NOT NULL
     column duration_start date
@@ -2199,19 +2199,57 @@ r gold_census.rpt_acs_observations
     column metric_code text
     column metric_display_name text
     constraint rpt_acs_observations_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
-    index ix_rpt_acs_latest_selection CREATE INDEX ix_rpt_acs_latest_selection ON gold_census.rpt_acs_observations USING btree (geo_id, variable_code, metric_code, observation_date DESC, updated_at DESC, (
+    index ix_rpt_acs_latest_selection CREATE INDEX ix_rpt_acs_latest_selection ON ONLY gold_census.rpt_acs_observations USING btree (geo_id, variable_code, metric_code, observation_date DESC, updated_at DESC, (
 CASE dataset_code
     WHEN 'acs1'::text THEN 1
     WHEN 'acs5'::text THEN 2
     ELSE 9
 END), vintage_year DESC)
-    index ix_rpt_acs_observations_dataset_vintage CREATE INDEX ix_rpt_acs_observations_dataset_vintage ON gold_census.rpt_acs_observations USING btree (dataset_code, vintage_year)
-    index ix_rpt_acs_observations_metric_date CREATE INDEX ix_rpt_acs_observations_metric_date ON gold_census.rpt_acs_observations USING btree (metric_code, observation_date)
-    index ix_rpt_acs_observations_metric_geo_date CREATE INDEX ix_rpt_acs_observations_metric_geo_date ON gold_census.rpt_acs_observations USING btree (metric_code, geo_id, observation_date)
-    index ix_rpt_acs_observations_metric_vintage CREATE INDEX ix_rpt_acs_observations_metric_vintage ON gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date)
-    index ix_rpt_acs_observations_source_geo_date CREATE INDEX ix_rpt_acs_observations_source_geo_date ON gold_census.rpt_acs_observations USING btree (source_code, geo_id, observation_date)
-    index ix_rpt_acs_observations_updated_at CREATE INDEX ix_rpt_acs_observations_updated_at ON gold_census.rpt_acs_observations USING btree (updated_at DESC)
-    index uq_rpt_acs_observations_nk CREATE UNIQUE INDEX uq_rpt_acs_observations_nk ON gold_census.rpt_acs_observations USING btree (geo_id, observation_date, dataset_code, vintage_year, variable_code, COALESCE(metric_code, ''::text))
+    index ix_rpt_acs_observations_dataset_vintage CREATE INDEX ix_rpt_acs_observations_dataset_vintage ON ONLY gold_census.rpt_acs_observations USING btree (dataset_code, vintage_year)
+    index ix_rpt_acs_observations_metric_date CREATE INDEX ix_rpt_acs_observations_metric_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, observation_date)
+    index ix_rpt_acs_observations_metric_geo_date CREATE INDEX ix_rpt_acs_observations_metric_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, geo_id, observation_date)
+    index ix_rpt_acs_observations_metric_vintage CREATE INDEX ix_rpt_acs_observations_metric_vintage ON ONLY gold_census.rpt_acs_observations USING btree (metric_code, vintage_year, as_of_date)
+    index ix_rpt_acs_observations_source_geo_date CREATE INDEX ix_rpt_acs_observations_source_geo_date ON ONLY gold_census.rpt_acs_observations USING btree (source_code, geo_id, observation_date)
+    index ix_rpt_acs_observations_updated_at CREATE INDEX ix_rpt_acs_observations_updated_at ON ONLY gold_census.rpt_acs_observations USING btree (updated_at DESC)
+    index uq_rpt_acs_observations_nk CREATE UNIQUE INDEX uq_rpt_acs_observations_nk ON ONLY gold_census.rpt_acs_observations USING btree (geo_id, observation_date, dataset_code, vintage_year, variable_code, COALESCE(metric_code, ''::text))
+    partitioned by RANGE (observation_date)
+    partition rpt_acs_observations_2000 FOR VALUES FROM ('2000-01-01') TO ('2001-01-01')
+    partition rpt_acs_observations_2001 FOR VALUES FROM ('2001-01-01') TO ('2002-01-01')
+    partition rpt_acs_observations_2002 FOR VALUES FROM ('2002-01-01') TO ('2003-01-01')
+    partition rpt_acs_observations_2003 FOR VALUES FROM ('2003-01-01') TO ('2004-01-01')
+    partition rpt_acs_observations_2004 FOR VALUES FROM ('2004-01-01') TO ('2005-01-01')
+    partition rpt_acs_observations_2005 FOR VALUES FROM ('2005-01-01') TO ('2006-01-01')
+    partition rpt_acs_observations_2006 FOR VALUES FROM ('2006-01-01') TO ('2007-01-01')
+    partition rpt_acs_observations_2007 FOR VALUES FROM ('2007-01-01') TO ('2008-01-01')
+    partition rpt_acs_observations_2008 FOR VALUES FROM ('2008-01-01') TO ('2009-01-01')
+    partition rpt_acs_observations_2009 FOR VALUES FROM ('2009-01-01') TO ('2010-01-01')
+    partition rpt_acs_observations_2010 FOR VALUES FROM ('2010-01-01') TO ('2011-01-01')
+    partition rpt_acs_observations_2011 FOR VALUES FROM ('2011-01-01') TO ('2012-01-01')
+    partition rpt_acs_observations_2012 FOR VALUES FROM ('2012-01-01') TO ('2013-01-01')
+    partition rpt_acs_observations_2013 FOR VALUES FROM ('2013-01-01') TO ('2014-01-01')
+    partition rpt_acs_observations_2014 FOR VALUES FROM ('2014-01-01') TO ('2015-01-01')
+    partition rpt_acs_observations_2015 FOR VALUES FROM ('2015-01-01') TO ('2016-01-01')
+    partition rpt_acs_observations_2016 FOR VALUES FROM ('2016-01-01') TO ('2017-01-01')
+    partition rpt_acs_observations_2017 FOR VALUES FROM ('2017-01-01') TO ('2018-01-01')
+    partition rpt_acs_observations_2018 FOR VALUES FROM ('2018-01-01') TO ('2019-01-01')
+    partition rpt_acs_observations_2019 FOR VALUES FROM ('2019-01-01') TO ('2020-01-01')
+    partition rpt_acs_observations_2020 FOR VALUES FROM ('2020-01-01') TO ('2021-01-01')
+    partition rpt_acs_observations_2021 FOR VALUES FROM ('2021-01-01') TO ('2022-01-01')
+    partition rpt_acs_observations_2022 FOR VALUES FROM ('2022-01-01') TO ('2023-01-01')
+    partition rpt_acs_observations_2023 FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+    partition rpt_acs_observations_2024 FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')
+    partition rpt_acs_observations_2025 FOR VALUES FROM ('2025-01-01') TO ('2026-01-01')
+    partition rpt_acs_observations_2026 FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')
+    partition rpt_acs_observations_2027 FOR VALUES FROM ('2027-01-01') TO ('2028-01-01')
+    partition rpt_acs_observations_2028 FOR VALUES FROM ('2028-01-01') TO ('2029-01-01')
+    partition rpt_acs_observations_2029 FOR VALUES FROM ('2029-01-01') TO ('2030-01-01')
+    partition rpt_acs_observations_2030 FOR VALUES FROM ('2030-01-01') TO ('2031-01-01')
+    partition rpt_acs_observations_2031 FOR VALUES FROM ('2031-01-01') TO ('2032-01-01')
+    partition rpt_acs_observations_2032 FOR VALUES FROM ('2032-01-01') TO ('2033-01-01')
+    partition rpt_acs_observations_2033 FOR VALUES FROM ('2033-01-01') TO ('2034-01-01')
+    partition rpt_acs_observations_2034 FOR VALUES FROM ('2034-01-01') TO ('2035-01-01')
+    partition rpt_acs_observations_2035 FOR VALUES FROM ('2035-01-01') TO ('2036-01-01')
+    partition rpt_acs_observations_unranged DEFAULT
 
 v gold_census.v_metric_latest_by_geo
     column source_code text

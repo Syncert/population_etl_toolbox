@@ -400,6 +400,123 @@ hours, arrived at by extrapolating the BLS rate, and it was wrong by roughly
 six times. ACS's reporting relation is twelve times larger than BLS's and
 carries eight indexes that every chunk's delete and re-insert must maintain.
 
+### Rebuilding the ACS serving table as a partitioned relation
+
+`gold_census.rpt_acs_observations` is `PARTITION BY RANGE (observation_date)`,
+one partition per vintage year. Every ACS row's `observation_date` is
+`MAKE_DATE(estimate_year, 1, 1)` and the serving driver's chunk is exactly one
+calendar year, so the year chunk and the partition are the same thing:
+`refresh_rpt_acs_observations` truncates the year's partition and refills it,
+instead of deleting from the whole heap and re-inserting. A truncate leaves no
+dead tuples and no index entries to clean up, which is what the figures below
+are about — and what operator rule 2, "vacuum manually; do not wait for
+autovacuum", existed to work around.
+
+**An existing warehouse does not convert itself.** `CREATE TABLE IF NOT
+EXISTS` is a no-op against a table that already exists, so a warehouse built
+before this change still holds a plain heap, and both the DDL and the refresh
+procedure say so out loud:
+
+```text
+WARNING:  [ACS DDL] rpt_acs_observations is not partitioned; the year refresh
+          will delete rather than truncate. Rebuild it per
+          BETA_RESET_REINGESTION.md section 7.
+```
+
+That warehouse is still **correct**; it is only still slow. The refresh falls
+back to the delete path, and the chunk log reports `cleared_partitions=0` so a
+reader watching a re-serve can tell which path a chunk took.
+
+**The rebuild is a drop and a re-serve.** There is no in-place conversion: a
+partitioned table cannot be made from a heap by `ALTER`, and the beta contract
+makes rebuild the cutover. Budget the full re-serve window below — this is the
+same work as a forced full re-serve, plus the drop.
+
+1. **Pause `acs_ingest`.** Re-serving against a live ingest starves both; the
+   measurement above is 1,500 rows/s contended against 7,700 idle.
+
+2. **Record the "before" figures**, so the change has a baseline that is this
+   warehouse's rather than this document's:
+
+   ```sql
+   SELECT c.relname,
+          pg_size_pretty(pg_table_size(c.oid))   AS heap,
+          pg_size_pretty(pg_indexes_size(c.oid)) AS indexes,
+          c.reltuples::BIGINT                    AS rows
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'gold_census'
+     AND c.relname IN ('rpt_acs_observations', 'mv_acs_latest');
+   ```
+
+3. **Drop the relation.** `mv_acs_latest` is declared `LIKE
+   rpt_acs_observations`, so it is rebuilt from the new definition too and has
+   to go with it. Nothing else depends on either: both are serving relations
+   the API reads and the refresh writes.
+
+   ```sql
+   DROP TABLE IF EXISTS gold_census.mv_acs_latest;
+   DROP TABLE IF EXISTS gold_census.rpt_acs_observations;
+   ```
+
+   Neither holds anything a re-serve cannot rebuild. Silver is the source of
+   truth and is untouched; if that is not true of your warehouse, stop here.
+
+4. **Apply the DDL.** Either trigger `acs_ingest` (its `ensure_*` task applies
+   the phase file) or run the bootstrap manifest:
+
+   ```bash
+   python scripts/apply_warehouse_manifest.py --dsn "$WAREHOUSE_DSN"
+   ```
+
+   Then confirm the shape before spending hours filling it:
+
+   ```sql
+   SELECT c.relkind, pg_get_partkeydef(c.oid),
+          (SELECT count(*) FROM pg_inherits WHERE inhparent = c.oid) AS partitions
+   FROM pg_class c WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
+   -- expect: p | RANGE (observation_date) | 37
+   ```
+
+5. **Forced full re-serve.** Trigger `serving_full_reserve` with
+   `{"source_code": "CENSUS_ACS"}`. It commits per calendar year and resumes at
+   the year it stopped on, so an interrupted rebuild is not a restart.
+
+6. **Record the "after" figures** with the same query, and the run's duration
+   from the chunk log. Add both to the table below.
+
+7. **Unpause `acs_ingest`.**
+
+**What to watch during the run.** Each chunk logs
+`cleared_partitions=1`; a `0` means that chunk deleted rather than truncated
+and the rebuild did not take. `-1` means the whole relation was truncated,
+which is what a `NULL, NULL` range does.
+
+**One behaviour changes.** Truncating takes `ACCESS EXCLUSIVE` on the
+partition where the delete took `ROW EXCLUSIVE`, so a reader of *that year*
+waits for the chunk rather than seeing the pre-chunk rows. Other years are
+unaffected. A re-serve is a maintenance window in either shape, but a query
+that used to return stale rows now blocks instead.
+
+**The declared range is 2000–2035**, fixed rather than derived from
+`CURRENT_DATE` so the checked-in schema snapshot does not change when the year
+rolls over. `test_the_declared_partition_range_still_has_room` fails while
+there are years left to add, not on the first year there are none. A row
+outside the range lands in `rpt_acs_observations_unranged`, the default
+partition, which the repository's `2099` fixture rows use and nothing the
+pipeline produces reaches.
+
+| Measurement | Before (heap) | Before (indexes) | After (heap) | After (indexes) |
+| --- | --- | --- | --- | --- |
+| `rpt_acs_observations` | 45 GB | 48 GB | _pending first rebuild_ | _pending_ |
+| `mv_acs_latest` | 30 GB | 7,077 MB | _pending_ | _pending_ |
+
+Measured 2026-09-18 on the internal stack, 68,741,704 rows across 20 vintage
+years. Note that the "before" indexes are larger than the "before" heap, and
+that both are well past the 37 GB/25 GB this section recorded at the previous
+re-serve — a heap that grows as it is re-served is the cost this change
+removes.
+
 ### ACS throughput is bound by `shared_buffers`, not by CPU
 
 The single biggest factor is whether the relation fits in the buffer cache.

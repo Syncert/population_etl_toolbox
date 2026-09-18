@@ -39,10 +39,18 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 ROOT = Path(__file__).resolve().parents[3]
 
 #: Relation kinds a served relation may be. `r` is an ordinary table -- what
-#: every rebuilt serving relation is -- and `v` a view, which is what a source
-#: whose latest read is a live projection serves (`gold_pep.mv_pep_latest`,
-#: `gold_cdc.latest_release_observation`).
-_SERVED_KINDS = {"r", "v"}
+#: most rebuilt serving relations are -- `p` a partitioned one, which
+#: `gold_census.rpt_acs_observations` became so a year chunk could truncate a
+#: partition instead of deleting from a 45 GB heap (DB-056), and `v` a view,
+#: which is what a source whose latest read is a live projection serves
+#: (`gold_pep.mv_pep_latest`, `gold_cdc.latest_release_observation`).
+#:
+#: What this rule is actually about is `m`: DB-041 exists because the API tells
+#: a client every request reads one consistent snapshot, and a materialized
+#: view can serve a snapshot taken at a refresh nobody can date. A partitioned
+#: table is a table -- the same rows, the same transaction semantics, the same
+#: `SELECT` -- so it changes nothing the stated reason depends on.
+_SERVED_KINDS = {"r", "p", "v"}
 
 
 def _kind_of(cursor, relation: str) -> str | None:
@@ -151,10 +159,16 @@ def test_every_reserved_latest_relation_has_the_procedure_that_rebuilds_it(
                         f"the relation the API serves"
                     )
                 kind = _kind_of(cursor, reserve.report_table)
-                assert kind == "r", (
+                # `p` as well as `r`: a partitioned table supports the chunked
+                # rebuild the same way an ordinary one does, and ACS's does it
+                # better -- the year chunk truncates a partition rather than
+                # deleting a date range (DB-056). What the reserve cannot
+                # drive is a view or a materialized view, which is what this
+                # excludes.
+                assert kind in {"r", "p"}, (
                     f"{reserve.report_table} is a {kind}, and the reserve "
                     f"rebuilds it in year chunks with a commit per year, which "
-                    f"only an ordinary table supports"
+                    f"only a table supports"
                 )
     finally:
         database_connection.close()

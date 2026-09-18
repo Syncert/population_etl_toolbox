@@ -11,7 +11,7 @@ from collections.abc import Callable
 import pytest
 from psycopg2.extensions import connection
 
-from tests.support.schema_snapshot import SNAPSHOT_PATH, render
+from tests.support.schema_snapshot import EXCLUDED_SCHEMAS, SNAPSHOT_PATH, render
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -96,3 +96,80 @@ def test_every_contract_view_has_exactly_one_body() -> None:
             "last in manifest order wins, and the other body is a copy that "
             "drifts"
         )
+
+
+def test_every_partition_carries_its_parents_columns(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-051, DB-056 — the snapshot's omission rests on a checked fact.
+
+    `schema_snapshot` renders a partitioned parent and skips its partitions,
+    because a partition's columns and indexes are the parent's by construction
+    and rendering 37 ACS year partitions in full added 1,933 lines that said
+    the same thing 37 times. That is only safe while the construction holds, so
+    it is checked here rather than assumed: every partition's column names,
+    types, nullability and order must equal its parent's, and it must carry an
+    index for each of the parent's.
+
+    PostgreSQL enforces both today. A future `ALTER TABLE ... DETACH` leaving a
+    diverged table attached, or an index created on one partition alone, would
+    be invisible in the snapshot -- which is exactly the kind of silent schema
+    change the snapshot exists to surface.
+    """
+    database = postgres_connection_factory()
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT i.inhparent::regclass::TEXT, i.inhrelid::regclass::TEXT
+                FROM pg_inherits AS i
+                JOIN pg_class AS c ON c.oid = i.inhparent
+                JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'p'
+                  AND n.nspname <> ALL(%s)
+                ORDER BY 1, 2
+                """,
+                (list(EXCLUDED_SCHEMAS),),
+            )
+            pairs = cursor.fetchall()
+            assert pairs, (
+                "the warehouse holds no partitioned relation, so this guard "
+                "proved nothing -- and the snapshot's partition summary "
+                "describes nothing either"
+            )
+
+            def columns(relation: str) -> list[tuple]:
+                cursor.execute(
+                    """
+                    SELECT a.attnum, a.attname,
+                           pg_catalog.format_type(a.atttypid, a.atttypmod),
+                           a.attnotnull
+                    FROM pg_attribute AS a
+                    WHERE a.attrelid = %s::regclass
+                      AND a.attnum > 0 AND NOT a.attisdropped
+                    ORDER BY a.attnum
+                    """,
+                    (relation,),
+                )
+                return cursor.fetchall()
+
+            def index_count(relation: str) -> int:
+                cursor.execute(
+                    "SELECT count(*) FROM pg_index WHERE indrelid = %s::regclass",
+                    (relation,),
+                )
+                return int(cursor.fetchone()[0])
+
+            for parent, partition in pairs:
+                assert columns(partition) == columns(parent), (
+                    f"{partition} does not carry {parent}'s columns, so the "
+                    f"snapshot -- which renders only the parent -- describes a "
+                    f"shape this partition does not have"
+                )
+                assert index_count(partition) == index_count(parent), (
+                    f"{partition} carries {index_count(partition)} indexes "
+                    f"where {parent} declares {index_count(parent)}, so an "
+                    f"index exists that the snapshot cannot show"
+                )
+    finally:
+        database.close()

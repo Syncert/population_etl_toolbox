@@ -335,6 +335,11 @@ def test_every_serving_table_carries_its_autovacuum_settings(
     `BETA_RESET_REINGESTION.md` §7 came to record 54.7 million dead rows
     against 8.9 million live. The DDL sets the thresholds and `ensure_*`
     re-applies it, so a warehouse picks them up without a migration.
+
+    Read on whatever actually stores rows. `gold_census.rpt_acs_observations`
+    is partitioned, and a partitioned parent has no storage -- `reloptions`
+    set on it is read by nothing. Checking the parent alone would have passed
+    on a relation whose thirty-seven partitions carried no settings at all.
     """
     expected = {
         "autovacuum_vacuum_scale_factor=0.02",
@@ -354,14 +359,30 @@ def test_every_serving_table_carries_its_autovacuum_settings(
     try:
         with database.cursor() as cursor:
             for relation in relations:
+                # A partitioned parent holds no storage, so `reloptions` on it
+                # sets nothing the autovacuum daemon reads. The settings have
+                # to be on the relations that have rows, and on every one of
+                # them -- including the default partition, which a year chunk
+                # never truncates (DB-056).
                 cursor.execute(
-                    "SELECT reloptions FROM pg_class WHERE oid = %s::regclass",
-                    (relation,),
+                    """
+                    SELECT c.oid::regclass::TEXT, c.reloptions
+                    FROM pg_class c
+                    WHERE c.oid = %s::regclass AND c.relkind <> 'p'
+                    UNION ALL
+                    SELECT c.oid::regclass::TEXT, c.reloptions
+                    FROM pg_inherits i
+                    JOIN pg_class c ON c.oid = i.inhrelid
+                    WHERE i.inhparent = %s::regclass
+                    ORDER BY 1
+                    """,
+                    (relation, relation),
                 )
-                row = cursor.fetchone()
-                assert row is not None, f"{relation} does not exist"
-                options = set(row[0] or [])
-                assert expected <= options, f"{relation} carries {sorted(options)}"
+                carriers = cursor.fetchall()
+                assert carriers, f"{relation} does not exist"
+                for name, reloptions in carriers:
+                    options = set(reloptions or [])
+                    assert expected <= options, f"{name} carries {sorted(options)}"
     finally:
         database.close()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -319,3 +320,42 @@ def test_the_smoke_seed_runs_after_the_warehouse_it_seeds() -> None:
             f"{path} is mounted as {name}, which initdb runs at or before "
             f"{warehouse} -- the warehouse DDL it seeds has not been applied"
         )
+
+
+ACS_GOLD_DDL = (
+    REPOSITORY_ROOT
+    / "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
+)
+
+
+def test_the_declared_partition_range_still_has_room() -> None:
+    """Covers: DB-056 — the fixed partition range is extended before it bites.
+
+    `rpt_acs_observations` declares its year partitions over a fixed range
+    rather than deriving one from `CURRENT_DATE`, because the schema snapshot
+    (DB-051) is compared as a diff and a definition that changes when the year
+    rolls over would turn every January into a failed build nobody changed
+    anything to cause.
+
+    The cost of a fixed range is that it runs out. This fails with five years
+    still in hand, so the fix is a one-line edit made calmly rather than an
+    ACS vintage landing in the default partition, where the year refresh
+    cannot clear it.
+    """
+    ddl = ACS_GOLD_DDL.read_text(encoding="utf-8")
+    declared = re.search(r"v_last\s+CONSTANT INTEGER := (\d{4})", ddl)
+    assert declared, (
+        "the ACS partition DDL no longer declares `v_last`, so nothing here "
+        "knows which years it covers"
+    )
+
+    last_year = int(declared.group(1))
+    # The pipeline can ingest next year's vintage: `control.acs_ingestion_slices`
+    # allows `year <= EXTRACT(year FROM CURRENT_DATE) + 1`.
+    needed = date.today().year + 1
+    assert last_year >= needed + 5, (
+        f"the declared partition range ends at {last_year} and the pipeline "
+        f"can already ingest {needed}. Extend `v_last` in gold_acs.sql; a "
+        f"vintage past the range lands in the default partition, which the "
+        f"year refresh never truncates"
+    )

@@ -64,7 +64,12 @@ REQUIRED_RELATIONS = {
     ("silver_fred", "fact_economic_indicators", "r"),
     ("silver_cdc", "fact_health_observation", "r"),
     ("gold_glossary", "dim_metric_catalog", "r"),
-    ("gold_census", "rpt_acs_observations", "r"),
+    # `p`, not `r`: this one is partitioned by vintage year so a serving
+    # chunk truncates a partition rather than deleting a date range
+    # (DB-056). The kind is asserted rather than ignored, because a
+    # bootstrap that produced an ordinary table here would mean the
+    # partition DDL silently did nothing.
+    ("gold_census", "rpt_acs_observations", "p"),
     ("gold_bls", "rpt_bls_observations", "r"),
     ("gold_fred", "rpt_fred_observations", "r"),
     ("gold_cdc", "health_observation", "v"),
@@ -124,7 +129,11 @@ def _warehouse_relations(database_connection: connection) -> set[tuple[str, str,
             JOIN pg_namespace AS namespace
               ON namespace.oid = class.relnamespace
             WHERE namespace.nspname = ANY(%s)
-              AND class.relkind IN ('r', 'v', 'm', 'S')
+              -- `p` is a partitioned table. Without it
+              -- `gold_census.rpt_acs_observations` vanished from the
+              -- inventory entirely, and a layer the bootstrap failed
+              -- to create would have read the same way.
+              AND class.relkind IN ('r', 'p', 'v', 'm', 'S')
             """,
             (list(WAREHOUSE_SCHEMAS),),
         )
