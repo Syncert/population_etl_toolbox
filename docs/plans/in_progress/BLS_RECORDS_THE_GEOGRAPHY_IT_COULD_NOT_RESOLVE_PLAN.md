@@ -15,10 +15,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Claimed 2026-09-18 by a machine session with the disposable
+  PostGIS 16 container available.
+- **Last updated:** 2026-09-18
+- **Current milestone:** deliverable 1, the ledger write.
+- **Next pickup:** read the five sources that already write
+  `silver_ref.geography_resolution` before writing a sixth -- the ledger's
+  unique key decides what `ON CONFLICT` can be, and the existing `reason_code`
+  vocabulary is what a BLS row has to join rather than extend.
 
 ## Why
 
