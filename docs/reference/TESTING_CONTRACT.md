@@ -288,7 +288,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-017 | None |
 | Airflow DAGs | DAG-001–DAG-020 | None |
 | ETL and shared units | ETL-001–ETL-051 | None |
-| Database integration | DB-001–DB-052 | None |
+| Database integration | DB-001–DB-053 | None |
 | API | API-001–API-148 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-114 | None |
 | Deployment | DEPLOY-001–DEPLOY-012 | None |
-| **Total** | **506 of 506** | **0 of 506** |
+| **Total** | **507 of 507** | **0 of 507** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 506-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 507-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -573,6 +573,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-050 | P0 | Integration / `integration database` | The public serving role reads what the API serves and nothing else | `sql/bootstrap/001_api_readonly.sql` is applied to the disposable warehouse and `api_reader` is then checked both ways: `has_table_privilege` for SELECT on every relation in `registry.ALLOWED_OBSERVATION_RELATIONS` and for the absence of INSERT, UPDATE and DELETE on each; and the absence of every privilege on every `raw_*`, `silver_*`, `control` and `app_api` relation the warehouse holds, read from `information_schema` so a schema a later migration adds is covered the day it exists. `api_app_writer` is held to `app_api` the same way. A session then connects *as* the role, because a privilege catalog says what was granted and a session says what the database will do: a served relation answers, a silver relation raises `insufficient_privilege`, and a write raises `read_only_sql_transaction` | A grant that widens without anyone noticing. The policy existed in two drifting copies and was asserted nowhere -- `api_reader`, `001_api_readonly` and `has_table_privilege` appeared in no test, and every other integration test connects as the owner, for whom no privilege is ever refused |
 | DB-051 | P0 | Integration / `integration database` | The schema a bootstrap produces is reviewed, not discovered | `tests/support/schema_snapshot.py` renders relations, columns with types and nullability, constraints, indexes and view bodies from `pg_catalog` into `tests/sql/warehouse_schema_snapshot.txt`, and the test fails on any difference with a bounded diff and the regeneration command. Read from the catalog rather than the DDL text, because the DDL is the input and the question is what the database ended up holding. A second guard reads the gold contract files and fails if a contract view is defined twice | A DDL edit under `src/` that a later manifest phase silently overwrites, and its mirror image: three files each defining `gold_glossary.dim_metric`, whichever ran last deciding what the warehouse held, and nothing failing. The bodies happened to be identical, which is the only reason it had cost nothing yet |
 | DB-052 | P0 | Integration / `integration database` | Re-running the manifest against a warehouse with rows in it changes none of them | Rows are seeded through the real transforms, every served relation is digested by an order-independent hash of its rows, the whole manifest is reapplied through `apply_manifest` -- the same path the reset procedure runs -- and the digests must be identical. A second test rewrites one value and asserts the digest moves, because the assertion is worthless if it can only see a row count | The documented upgrade path was never exercised against data: the fixtures apply the manifest to an empty database and the idempotency test re-ran it on an empty one. `024` and `026` each run six `UPDATE`s over the serving tables and `019` and `015` revalidate every existing row, none of which an empty warehouse can demonstrate |
+| DB-053 | P1 | Unit / `unit martin`, Integration / `integration martin` | The tile layer carries the grains the boundary draws | `gold.tile_boundary` filters `dim_geo_latest` to STATE and COUNTY, current and with geometry, and Martin publishes that rather than the catalog relation. The unit tier pins the relation, the property list and the agreement between `martin.yml`, both compose files, the proxy and the READMEs; the disposable stack's healthcheck gates on the same relation, so a tile layer that cannot be read stops the stack rather than serving empty tiles | A layer named `counties` serving 32,629 places the map refuses to draw. `tileGrains.ts` already declared STATE and COUNTY as the drawable grains and named PLACE as one the boundary cannot draw, so every place polygon was serialised, sent, decoded and hidden by the client's own filter -- measured at 90% of a 2 MB tile at zoom 4 |
 
 ### API and Redis Tests
 

@@ -28,7 +28,14 @@ def _martin_config() -> dict:
 
 
 def test_martin_counties_layer_maps_the_authoritative_geography_contract() -> None:
-    """Covers: MARTIN-001 — Martin publishes the exact county layer contract."""
+    """Covers: MARTIN-001, DB-053 — Martin publishes the exact county layer contract.
+
+    The relation is `gold.tile_boundary`, not the geography catalog. The
+    catalog carries every level the reference loads; the boundary draws STATE
+    and COUNTY, so publishing the catalog serialised 32,629 place polygons
+    that the client's own filter then hid -- measured at 90% of a 2 MB tile
+    at zoom 4, and 75% smaller once filtered.
+    """
     config = _martin_config()
     postgres = config["postgres"]
     tables = postgres["tables"]
@@ -43,7 +50,7 @@ def test_martin_counties_layer_maps_the_authoritative_geography_contract() -> No
     assert counties == {
         "layer_id": "counties",
         "schema": "gold",
-        "table": "dim_geo_latest",
+        "table": "tile_boundary",
         "geometry_column": "geo_geom",
         "id_column": None,
         "srid": 4326,
@@ -55,11 +62,11 @@ def test_martin_counties_layer_maps_the_authoritative_geography_contract() -> No
 
 
 def test_martin_paths_and_relation_are_consistent_across_runtime_surfaces() -> None:
-    """Covers: MARTIN-002 — runtime, proxy, and documentation surfaces agree."""
+    """Covers: MARTIN-002, DB-053 — runtime, proxy, and documentation surfaces agree."""
     config = _martin_config()
     counties = config["postgres"]["tables"]["counties"]
     relation = f"{counties['schema']}.{counties['table']}"
-    assert relation == "gold.dim_geo_latest"
+    assert relation == "gold.tile_boundary"
 
     internal_compose = (REPOSITORY_ROOT / "infra/docker/docker-compose.yml").read_text(
         encoding="utf-8"
@@ -91,8 +98,8 @@ def test_martin_paths_and_relation_are_consistent_across_runtime_surfaces() -> N
     assert "destination: `${tilesOrigin}/:path*`" in next_config
     assert "location /tiles/" in nginx_config
     assert "proxy_pass http://martin:3000/" in nginx_config
-    assert "gold.dim_geo_latest" in martin_readme
-    assert "gold.dim_geo_latest.geo_geom" in docker_readme
+    assert "gold.tile_boundary" in martin_readme
+    assert "gold.tile_boundary.geo_geom" in docker_readme
     assert "`counties`" in docker_readme
     assert "gold_glossary.dim_geo_latest" not in martin_readme
 
@@ -117,4 +124,4 @@ def test_disposable_postgres_healthcheck_waits_for_martin_contract() -> None:
     readiness_command = healthcheck[1]
     assert "-h 127.0.0.1" in readiness_command
     assert "-U martin_test" in readiness_command
-    assert "SELECT 1 FROM gold.dim_geo_latest LIMIT 1" in readiness_command
+    assert "SELECT 1 FROM gold.tile_boundary LIMIT 1" in readiness_command

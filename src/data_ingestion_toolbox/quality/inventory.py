@@ -676,6 +676,15 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
         ),
         ("dim_metric", "metric_code (projection)", "gold_glossary.dim_metric"),
         ("dim_geo_latest", "geo_id (projection)", "gold_glossary.dim_geo_latest"),
+        # Not a projection of the catalog: the tile layer's own relation,
+        # filtered to the grains the boundary can draw (DB-053). It is here
+        # because every relation the manifest creates must be an inventoried
+        # object, and its lineage says which part of the catalog it carries.
+        (
+            "tile_boundary",
+            "geo_id (STATE and COUNTY, current, with geometry)",
+            "gold_glossary.dim_geo_latest",
+        ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (
             "fact_observation",

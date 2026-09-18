@@ -81,7 +81,7 @@ services:
         - >-
           PGPASSWORD=martin-test-readonly psql -h 127.0.0.1
           -U martin_test -d population_etl_test -tAc
-          'SELECT 1 FROM gold.dim_geo_latest LIMIT 1' | grep -qx 1
+          'SELECT 1 FROM gold.tile_boundary LIMIT 1' | grep -qx 1
       interval: 2s
       timeout: 5s
       retries: 30

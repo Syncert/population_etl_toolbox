@@ -258,6 +258,40 @@ SELECT * FROM gold_glossary.dim_metric_catalog;
 CREATE OR REPLACE VIEW gold.dim_geo_latest AS
 SELECT * FROM gold_glossary.dim_geo_latest;
 
+-- What the tile server publishes, which is not the same as what the geography
+-- catalog holds (DB-053).
+--
+-- `dim_geo_latest` carries every level the reference loads. Measured on a
+-- loaded warehouse that is 32,629 places against 3,235 counties and 56 states,
+-- and the boundary cannot draw a place: `apps/web/lib/tileGrains.ts` declares
+-- STATE and COUNTY as the drawable grains and names PLACE as one it refuses
+-- before any observation is read. So every place polygon was serialised into
+-- the tile, sent, decoded, and hidden by the client's own layer filter -- 90%
+-- of a 2 MB tile at zoom 4.
+--
+-- This filters to the grains the boundary draws, so the payload is what the
+-- map uses. It is a view rather than a `WHERE` in `martin.yml` because Martin
+-- table sources do not take one, and keeping the filter in SQL puts it beside
+-- the relation it filters.
+--
+-- Retired rows are excluded for the same reason: a boundary that no longer
+-- exists is not one a reader can select.
+CREATE OR REPLACE VIEW gold.tile_boundary AS
+SELECT geo_id, geo_level, state_fips, county_fips, state_name, county_name,
+       latitude, longitude, geo_geom, boundary_vintage
+FROM gold_glossary.dim_geo_latest
+--
+-- The two grains are named through `gold_glossary.geo_grain` rather than by
+-- their published spellings. The vocabulary has one source (DB-037), and a
+-- literal here would be a second copy of its output that a change to the
+-- function would not reach.
+WHERE geo_level IN (
+        gold_glossary.geo_grain('state'),
+        gold_glossary.geo_grain('county')
+      )
+  AND geography_state = 'current'
+  AND geo_geom IS NOT NULL;
+
 CREATE OR REPLACE VIEW gold.dim_metric AS
 SELECT * FROM gold_glossary.dim_metric;
 

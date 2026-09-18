@@ -6,10 +6,13 @@ postgres:
   connection_string: ${MARTIN_DATABASE_URL}
   auto_publish: false
   tables:
+    # The layer keeps its name: the web selects it by id and the grains it
+    # draws are unchanged. What changed is that the relation behind it no
+    # longer carries the 32k place polygons the boundary cannot draw (DB-053).
     counties:
       layer_id: counties
       schema: gold
-      table: dim_geo_latest
+      table: tile_boundary
       geometry_column: geo_geom
       id_column: ~
       srid: 4326

@@ -91,7 +91,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**7 plans.**
+**6 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -101,7 +101,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |
-| [`tile-layer-and-grain-filter-reads`](to_do/THE_TILE_LAYER_AND_THE_GRAIN_FILTERS_ARE_MEASURED_PLAN.md) | low | `postgres` | -- |
 
 
 ## Notes on the cloud container

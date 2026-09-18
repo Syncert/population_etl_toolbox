@@ -878,6 +878,30 @@ v gold.rpt_observation_dashboard
     body     margin_of_error_pct
     body    FROM gold.v_metric_timeseries_by_geo;
 
+v gold.tile_boundary
+    column geo_id text
+    column geo_level text
+    column state_fips text
+    column county_fips text
+    column state_name text
+    column county_name text
+    column latitude double precision
+    column longitude double precision
+    column geo_geom geometry(MultiPolygon,4326)
+    column boundary_vintage integer
+    body SELECT geo_id,
+    body     geo_level,
+    body     state_fips,
+    body     county_fips,
+    body     state_name,
+    body     county_name,
+    body     latitude,
+    body     longitude,
+    body     geo_geom,
+    body     boundary_vintage
+    body    FROM gold_glossary.dim_geo_latest
+    body   WHERE (geo_level = ANY (ARRAY[gold_glossary.geo_grain('state'::text), gold_glossary.geo_grain('county'::text)])) AND geography_state = 'current'::text AND geo_geom IS NOT NULL;
+
 v gold.v_metric_latest_by_geo
     column source_code text
     column source text
