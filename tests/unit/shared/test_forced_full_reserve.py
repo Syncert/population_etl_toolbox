@@ -134,6 +134,12 @@ class _Cursor:
 class _Conn:
     def __init__(self, recorder: list[str]) -> None:
         self.recorder = recorder
+        #: What psycopg2 puts every `RAISE NOTICE` into. The chunk driver reads
+        #: and clears it per chunk so the procedures' own reporting -- row
+        #: counts, and the `cleared_partitions=` marker (DB-056, DB-058) --
+        #: reaches the run's log instead of a list nobody reads. A stub without
+        #: it is a stub that does not stand in for the thing.
+        self.notices: list[str] = []
 
     def __enter__(self) -> "_Conn":
         return self

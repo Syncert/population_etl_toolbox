@@ -487,10 +487,21 @@ same work as a forced full re-serve, plus the drop.
 
 7. **Unpause `acs_ingest`.**
 
-**What to watch during the run.** Each chunk logs
-`cleared_partitions=1`; a `0` means that chunk deleted rather than truncated
-and the rebuild did not take. `-1` means the whole relation was truncated,
-which is what a `NULL, NULL` range does.
+**What to watch during the run.** Each chunk logs `cleared_partitions=1`; a
+`0` means that chunk deleted rather than truncated and the rebuild did not
+take, and `-1` means the whole relation was truncated, which is what a `NULL,
+NULL` range does. The refresh also raises a `WARNING` when the relation is not
+partitioned at all, and the chunk driver logs that at warning level so it does
+not scroll past as another status line in a twenty-chunk run.
+
+That marker reaches the Airflow log only from the change that added
+`_forward_procedure_notices` (DB-058). Before it, every `RAISE NOTICE` these
+procedures emit went into psycopg2's `connection.notices` -- a list nothing
+read -- so this instruction was written, a real re-serve was run, and the log
+contained zero occurrences of the thing it told the operator to look for. On a
+run started from an older revision, read the row counts from the
+`[ACS SERVING REFRESH] chunk=N/20 status=COMPLETE report_rows=` lines the
+driver logs itself, and confirm the shape from `pg_class.relkind` instead.
 
 **One behaviour changes.** Truncating takes `ACCESS EXCLUSIVE` on the
 partition where the delete took `ROW EXCLUSIVE`, so a reader of *that year*

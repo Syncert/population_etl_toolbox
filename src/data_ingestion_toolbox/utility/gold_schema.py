@@ -264,6 +264,36 @@ def _full_reserve_is_finished(
     return int(cursor.fetchone()[0]) == 0
 
 
+def _forward_procedure_notices(conn: Any, log: Any) -> None:
+    """Put what the refresh procedures said into the run's log.
+
+    They say a lot, and none of it was reaching anyone. `RAISE NOTICE` lands in
+    psycopg2's `connection.notices`, which is a list nobody read, so the
+    per-chunk row counts the procedures report and the
+    `cleared_partitions=` marker that says whether a chunk truncated its
+    partition or fell back to deleting (DB-056) were visible only to someone
+    running the `CALL` by hand.
+
+    That was found by writing an operator instruction to watch for the marker
+    during a re-serve and then running one: the Airflow log contained zero
+    occurrences of it.
+
+    Warnings are logged as warnings. The procedures raise exactly one --
+    "this relation is not partitioned; the year refresh will delete rather
+    than truncate" -- and it is the one line in a twenty-chunk run that most
+    needs to not look like progress.
+    """
+    for notice in conn.notices:
+        text = notice.strip()
+        if not text:
+            continue
+        if text.startswith("WARNING:"):
+            log.warning("%s", text)
+        else:
+            log.info("%s", text)
+    del conn.notices[:]
+
+
 def _analyze_after_chunk(
     hook: PostgresHook,
     config: ServingRefreshChunkConfig,
@@ -573,6 +603,7 @@ def refresh_serving_layer_in_year_chunks(
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
                 cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
+                del conn.notices[:]
                 cur.execute(
                     f"CALL {config.report_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),
@@ -581,6 +612,7 @@ def refresh_serving_layer_in_year_chunks(
                     f"CALL {config.latest_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),
                 )
+                _forward_procedure_notices(conn, log)
                 cur.execute(
                     f"""
                     SELECT COUNT(*)
