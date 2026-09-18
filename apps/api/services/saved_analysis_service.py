@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.registry import (
@@ -542,19 +543,29 @@ def create_configuration(
     if taken is not None:
         raise ConfigurationNameTaken(name)
 
-    row = (
-        storage.execute(
-            _INSERT,
-            {
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-            },
+    try:
+        row = (
+            storage.execute(
+                _INSERT,
+                {
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                },
+            )
+            .mappings()
+            .one()
         )
-        .mappings()
-        .one()
-    )
-    storage.commit()
+        storage.commit()
+    except IntegrityError as conflict:
+        # The pre-check above is the friendly path and cannot be the whole
+        # answer: two creates with the same name both pass it and one insert
+        # meets `UNIQUE (owner_user_id, name)`. Without this the router sees a
+        # `SQLAlchemyError`, logs it at ERROR and answers the sanitized 503 --
+        # telling a client that wrote a legitimate conflict the database is
+        # down, which it retries (API-148).
+        storage.rollback()
+        raise ConfigurationNameTaken(name) from conflict
     return SavedAnalysisConfiguration(
         configuration_id=int(row["configuration_id"]),
         name=str(row["name"]),
@@ -640,20 +651,25 @@ def update_configuration(
     if taken is not None:
         raise ConfigurationNameTaken(name)
 
-    row = (
-        storage.execute(
-            _UPDATE,
-            {
-                "configuration_id": configuration_id,
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-                "expected_version": expected_version,
-            },
+    try:
+        row = (
+            storage.execute(
+                _UPDATE,
+                {
+                    "configuration_id": configuration_id,
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                    "expected_version": expected_version,
+                },
+            )
+            .mappings()
+            .first()
         )
-        .mappings()
-        .first()
-    )
+    except IntegrityError as conflict:
+        # A rename racing a create takes the same name by the same route.
+        storage.rollback()
+        raise ConfigurationNameTaken(name) from conflict
     if row is None:
         storage.rollback()
         current = storage.execute(

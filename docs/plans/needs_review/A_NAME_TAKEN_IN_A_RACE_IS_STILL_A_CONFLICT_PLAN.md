@@ -14,10 +14,11 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Ready for review. Both deliverables are implemented and every
+  acceptance criterion ran on a machine session on 2026-09-18, including the
+  failing-first proof and a real two-connection race.
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -63,12 +64,56 @@ row.
 
 ## Acceptance criteria
 
-- [ ] `IntegrityError` on create or rename answers `409` naming the taken
+- [x] `IntegrityError` on create or rename answers `409` naming the taken
       name, for both resources, and writes no `ERROR` record.
-- [ ] Every other `SQLAlchemyError` still answers the sanitized `503`.
-- [ ] The integration race test passes and leaves one row.
-- [ ] `TESTING_CONTRACT.md` API-071 (packets) and the saved-analysis row are
-      extended, or a new `API-` row is added, with `Covers:` labels.
+- [x] Every other `SQLAlchemyError` still answers the sanitized `503`,
+      asserted separately.
+- [x] The integration race test passes and leaves one row.
+- [x] `TESTING_CONTRACT.md` gains API-148 covering both resources.
+
+## Implementation evidence
+
+### The catch, in both services
+
+`create_configuration`, `update_configuration`, `create_packet` and
+`update_packet` now catch `IntegrityError` around the write, roll back, and
+raise the same `ConfigurationNameTaken` / `PacketNameTaken` the pre-check
+raises. The pre-check stays: it is the friendly path and answers without a
+failed write. The catch is for the window the pre-check cannot close.
+
+### The risk of the fix is the opposite of the bug
+
+`IntegrityError` is a subclass of `SQLAlchemyError`, so catching it narrows an
+existing handler, and the way to get this wrong is to make every storage
+failure read as a conflict. `test_a_storage_failure_that_is_not_a_conflict_still_answers_503`
+raises an `OperationalError` from the same insert and asserts the sanitized
+`503` survives.
+
+### Two tiers, because they prove different things
+
+The unit tier proves the service turns an `IntegrityError` into a `409` with no
+`ERROR` record -- the log assertion matters as much as the status, because the
+old behaviour filled an operator's error log with a handled condition.
+
+It cannot prove PostgreSQL raises one. The integration test races two real
+connections held at a barrier until both are inside a transaction, so neither
+wins by arriving first, and asserts exactly one create, one `unique_violation`
+whose `constraint_name` names the owner/name key, and one surviving row. The
+constraint name is checked because a race that collided on some other key would
+otherwise look like a pass.
+
+**Failing-first.** With the `except IntegrityError` narrowed so it no longer
+matches, the unit test fails and the `503` test still passes -- which is the
+right shape, since removing the catch cannot affect the non-conflict path.
+
+### Commands
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit/api -q` | 635 passed |
+| `RUN_INTEGRATION_TESTS=1 python -m pytest -o addopts='' -m "integration and not external" tests/integration/api -q` | 87 passed, 0 skipped |
+| `python -m pytest tests/unit -q` | 1874 passed |
+| `ruff format --check .` / `ruff check .` | clean, 500 files |
 
 ## Definition of done
 

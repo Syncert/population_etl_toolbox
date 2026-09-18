@@ -21,6 +21,7 @@ from typing import Optional
 from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.registry import grain_refusal, normalize_geo_level
@@ -665,19 +666,28 @@ def create_packet(
 ) -> EvidencePacket:
     validate_packet(warehouse, document)
     _refuse_taken_name(storage, owner_user_id, name, packet_id=-1)
-    row = (
-        storage.execute(
-            _INSERT,
-            {
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-            },
+    try:
+        row = (
+            storage.execute(
+                _INSERT,
+                {
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                },
+            )
+            .mappings()
+            .one()
         )
-        .mappings()
-        .one()
-    )
-    storage.commit()
+        storage.commit()
+    except IntegrityError as conflict:
+        # `_refuse_taken_name` is the friendly path and cannot be the whole
+        # answer: two creates with the same name both pass it and one insert
+        # meets `UNIQUE (owner_user_id, name)`. Uncaught, the router logs an
+        # ERROR and answers the sanitized 503, telling a client that wrote a
+        # legitimate conflict that the database is down (API-148).
+        storage.rollback()
+        raise PacketNameTaken(name) from conflict
     return _detail(row, document, _validation_state(warehouse, document))
 
 
@@ -729,20 +739,25 @@ def update_packet(
 ) -> EvidencePacket:
     validate_packet(warehouse, document)
     _refuse_taken_name(storage, owner_user_id, name, packet_id=packet_id)
-    row = (
-        storage.execute(
-            _UPDATE,
-            {
-                "packet_id": packet_id,
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-                "expected_version": expected_version,
-            },
+    try:
+        row = (
+            storage.execute(
+                _UPDATE,
+                {
+                    "packet_id": packet_id,
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                    "expected_version": expected_version,
+                },
+            )
+            .mappings()
+            .first()
         )
-        .mappings()
-        .first()
-    )
+    except IntegrityError as conflict:
+        # A rename racing a create takes the same name by the same route.
+        storage.rollback()
+        raise PacketNameTaken(name) from conflict
     if row is None:
         storage.rollback()
         current = storage.execute(
