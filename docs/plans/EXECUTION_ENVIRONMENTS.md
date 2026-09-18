@@ -91,13 +91,12 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**12 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-bls-fact-lineage-and-value-status`](to_do/THE_TWO_LARGEST_SOURCES_CAN_SERVE_A_WITHHELD_VALUE_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
 | [`acs-serving-partitioning`](to_do/THE_ACS_SERVING_TABLE_IS_PARTITIONED_BY_YEAR_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
-| [`api-reader-privileges`](in_progress/ONE_LEAST_PRIVILEGE_BOOTSTRAP_THAT_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`bls-unresolved-geography-ledger`](to_do/BLS_RECORDS_THE_GEOGRAPHY_IT_COULD_NOT_RESOLVE_PLAN.md) | medium | `postgres` | -- |
 | [`enforced-constraint-kinds`](to_do/A_CONSTRAINT_THE_WAREHOUSE_ENFORCES_IS_NOT_A_GAP_PLAN.md) | medium | `postgres` | -- |
 | [`manifest-reapply-populated-warehouse`](to_do/REAPPLYING_THE_MANIFEST_TO_A_POPULATED_WAREHOUSE_IS_TESTED_PLAN.md) | medium | `postgres` | -- |

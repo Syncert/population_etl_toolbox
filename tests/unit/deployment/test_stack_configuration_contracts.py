@@ -272,3 +272,44 @@ def test_the_smoke_stack_runs_the_web_container_and_reads_its_reports() -> None:
         "the job would still be green"
     )
     assert (ROOT / "apps/web/scripts/report-a-vital.mjs").exists()
+
+
+def test_the_external_stack_refuses_to_run_the_api_as_the_warehouse_owner() -> None:
+    """Covers: DEPLOY-012 — the serving role is required, not defaulted.
+
+    `docker-compose.external.yml` used to resolve the API's and Martin's
+    credentials as `${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}`. A
+    deployment that set every other variable and forgot that one ran its
+    public API and tile server as the ETL owner, with write access to every
+    schema -- and came up cleanly, which is what makes it worth refusing
+    rather than documenting.
+
+    The `:?` form is what refuses it. Compose fails the render and names the
+    variable, so the failure arrives before anything is listening.
+    """
+    source = _read("docker-compose.external.yml")
+
+    assert "${ANALYTICS_API_DB_USER:-" not in source, (
+        "the API credentials fall back to another variable, so an unset "
+        "serving role silently becomes the warehouse owner"
+    )
+    assert "${ANALYTICS_API_DB_PASSWORD:-" not in source
+
+    # Required for both services that read the warehouse, not just one: they
+    # are configured in different places in this file and only one of them
+    # used to carry any guard at all.
+    required = source.count("${ANALYTICS_API_DB_USER:?")
+    assert required >= 3, (
+        "the serving role is not required everywhere the external stack "
+        f"connects with it; found {required} guarded references"
+    )
+    assert "${ANALYTICS_API_DB_PASSWORD:?" in source
+
+    compose = yaml.safe_load(source)
+    api = compose["services"]["api"]["environment"]
+    martin = compose["services"]["martin"]["environment"]
+    assert "ANALYTICS_API_DB_USER:?" in str(api)
+    assert "ANALYTICS_API_DB_USER:?" in str(martin), (
+        "Martin reads the warehouse too, and an unguarded tile server is the "
+        "same exposure as an unguarded API"
+    )

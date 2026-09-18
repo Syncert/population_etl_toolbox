@@ -1,4 +1,10 @@
 services:
+  # The API and Martin connect as the read-only serving role and never as the
+  # warehouse owner. These used to fall back to `ANALYTICS_DB_USER`, so a
+  # deployment that set every other variable and forgot this one ran its public
+  # API with write access to every schema -- and came up cleanly, which is the
+  # part that makes it worth refusing. `provision_api_readonly.py` creates the
+  # role (DEPLOY-012).
   redis:
     image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
@@ -11,11 +17,11 @@ services:
     environment:
       DB_HOST: ${ANALYTICS_DB_HOST}
       DB_PORT: ${ANALYTICS_DB_PORT}
-      DB_USER: ${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}
-      DB_PASSWORD: ${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}}
+      DB_USER: ${ANALYTICS_API_DB_USER:?Set ANALYTICS_API_DB_USER to the read-only serving role; it must not fall back to the warehouse owner}
+      DB_PASSWORD: ${ANALYTICS_API_DB_PASSWORD:?Set ANALYTICS_API_DB_PASSWORD for the read-only serving role}
       DB_NAME: ${ANALYTICS_DB_NAME}
       # apps.api reads a single SQLAlchemy URL; keep it in lockstep with DB_*.
-      DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}
+      DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:?Set ANALYTICS_API_DB_USER to the read-only serving role; it must not fall back to the warehouse owner}:${ANALYTICS_API_DB_PASSWORD:?Set ANALYTICS_API_DB_PASSWORD for the read-only serving role}@${ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME}
       # API-owned application storage (ADR-0003): a separate role from the
       # read-only warehouse connection above, on the same external warehouse.
       # Provision it there with `scripts/provision_app_api.py --apply-schema`
@@ -57,7 +63,7 @@ services:
     image: ghcr.io/maplibre/martin:1.11.0@sha256:0650e9025f5fcffdc686358114679421b5e6b0ca37b374ad8a66f14709d59d2b
     command: --config /etc/martin/martin.yml
     environment:
-      MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER:?Set ANALYTICS_DB_USER}}:${ANALYTICS_API_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD:?Set ANALYTICS_DB_PASSWORD}}@${ANALYTICS_DB_HOST:?Set ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT:?Set ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME:?Set ANALYTICS_DB_NAME}
+      MARTIN_DATABASE_URL: postgres://${ANALYTICS_API_DB_USER:?Set ANALYTICS_API_DB_USER to the read-only serving role; it must not fall back to the warehouse owner}:${ANALYTICS_API_DB_PASSWORD:?Set ANALYTICS_API_DB_PASSWORD for the read-only serving role}@${ANALYTICS_DB_HOST:?Set ANALYTICS_DB_HOST}:${ANALYTICS_DB_PORT:?Set ANALYTICS_DB_PORT}/${ANALYTICS_DB_NAME:?Set ANALYTICS_DB_NAME}
     ports:
       - "127.0.0.1:${MARTIN_HOST_PORT:-3000}:3000"
     volumes:
