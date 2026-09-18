@@ -89,12 +89,33 @@ class ComposeContext:
     compose_file: str
     env_file: str
     use_host_env: bool
+    #: `infra/docker/.env` when the deployment has one, empty when it does not.
+    #: Resolved against the caller's root by `resolve_compose_context`, so a
+    #: test driving a temporary tree gets that tree's answer rather than this
+    #: checkout's.
+    base_env_file: str = ""
 
     def compose_arguments(self, *arguments: str) -> list[str]:
-        """The `docker compose` argument vector, env-file first as it must be."""
+        """The `docker compose` argument vector, env-file first as it must be.
+
+        `--env-file` *replaces* the automatic `.env` rather than adding to it,
+        and that cost a warehouse its tuning without anything reporting it:
+        `infra/docker/.env` asked for `ANALYTICS_PG_SHARED_BUFFERS=48GB`,
+        `stack.env` carries credentials and no tuning, and the stack ran on
+        the compose defaults -- 4 GB of shared buffers on a 101 GB host -- for
+        as long as nobody ran `SHOW shared_buffers`. Section 7 of
+        `BETA_RESET_REINGESTION.md` measures that difference at six to eight
+        times the re-serve throughput.
+
+        So both are passed, base first. A missing `.env` is normal -- it is
+        gitignored and a deployment may set everything in its mode file -- so
+        it is included only when it exists rather than turned into a refusal.
+        """
         prefix: list[str] = []
         if not self.use_host_env:
-            prefix = ["--env-file", self.env_file]
+            if self.base_env_file:
+                prefix = ["--env-file", self.base_env_file]
+            prefix = [*prefix, "--env-file", self.env_file]
         return [*prefix, "-f", self.compose_file, *arguments]
 
 
@@ -128,6 +149,11 @@ POWERSHELL_FLAGS = FlagNames(
     with_local_airflow="-WithLocalAirflow",
     allow_metadata_in_warehouse="-AllowAirflowMetadataInWarehouse",
 )
+
+
+#: The file `docker compose` reads on its own, and stops reading the moment
+#: `--env-file` is passed.
+BASE_ENV_FILE = "infra/docker/.env"
 
 
 def default_env_file(mode: str) -> str:
@@ -190,6 +216,7 @@ def resolve_compose_context(
     return ComposeContext(
         compose_file=(compose_file_override or "").strip() or compose_file(mode),
         env_file=effective,
+        base_env_file=(BASE_ENV_FILE if (root / BASE_ENV_FILE).is_file() else ""),
         use_host_env=use_host_env,
     )
 

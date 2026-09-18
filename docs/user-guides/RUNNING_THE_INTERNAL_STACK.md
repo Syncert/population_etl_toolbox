@@ -73,6 +73,46 @@ docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.
 Empty output means the stack was started without `stack.env`. Bring it down and
 start it again with the deploy script.
 
+## The same flag lost the warehouse its tuning, for weeks
+
+The sentence above -- "Compose auto-loads `infra/docker/.env`, which holds
+PostgreSQL tuning" -- stopped being true the moment `--env-file` was passed.
+`--env-file` **replaces** the automatic `.env`; it does not add to it. So the
+deploy script, which exists to make sure `stack.env` is read, was the reason
+`.env` was not.
+
+Nothing failed. `.env` asked for `ANALYTICS_PG_SHARED_BUFFERS=48GB`,
+`stack.env` carries credentials and no tuning, and every
+`${ANALYTICS_PG_*:-default}` in `docker-compose.yml` fell back to its
+development-laptop default. The warehouse ran on **4 GB of shared buffers on a
+101 GB host** until someone asked it:
+
+```console
+$ docker exec docker-analytics_postgres-1 psql -U analytics -d population_etl     -tAc "SHOW shared_buffers"
+4GB
+```
+
+Section 7 of [`BETA_RESET_REINGESTION.md`](../reference/BETA_RESET_REINGESTION.md)
+measures that difference at six to eight times the re-serve throughput -- the
+gap between a five-hour ACS re-serve and one that runs overnight and into the
+next day.
+
+`tools/deployment.py` passes both files now, base first, so `.env` is a layer
+the mode's file overrides rather than one it erases
+(`test_the_base_env_file_is_passed_under_the_mode_file`). A deployment with no
+`.env` is still fine: it is included only when it exists.
+
+**Check the value, not the file.** Compose warns about neither a setting that
+fell back nor a file it never read, so the only reliable test is to ask the
+server what it is using:
+
+```bash
+docker exec docker-analytics_postgres-1 psql -U analytics -d population_etl   -tAc "SHOW shared_buffers; SHOW maintenance_work_mem; SHOW work_mem"
+```
+
+The same applies to a setting applied by hand: a `command:` block in Compose
+overrides `ALTER SYSTEM`, so hand-tuning is discarded on the next recreate.
+
 ## What `airflow-init` sets up
 
 The deploy runs it before starting the stack, and it is not optional:
