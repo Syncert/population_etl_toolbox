@@ -119,23 +119,48 @@ def persist_exact_resolution_outcomes(
     provider_dataset: str,
     rows: Iterable[Mapping[str, object]],
 ) -> None:
-    """Persist resolved and unmapped exact-code outcomes without dropping evidence."""
+    """Persist resolved and unmapped exact-code outcomes without dropping evidence.
+
+    A row may carry `evidence_capture_id`: the capture that published the
+    geography. It is optional because the two callers differ -- the four
+    sources that write this ledger with their own SQL all record it, and the
+    two that came through this helper recorded it for no row, so an unmapped
+    BLS or ACS geography could say it did not resolve and not say which
+    response said so. A caller that has a capture passes it; one that does not
+    is unchanged.
+    """
     connection = hook.get_conn()  # type: ignore[attr-defined]
     try:
         with connection.cursor() as cursor:
             for row in rows:
-                geo_id = str(row["geo_id"])
+                raw_geo_id = row.get("geo_id")
+                if raw_geo_id is None or not str(raw_geo_id).strip():
+                    # A geography the provider's own identifier could not be
+                    # parsed into. `str(None)` is `'None'`, and a ledger row
+                    # keyed on that is worse than no row: it is a false record
+                    # that `BETA_RESET_REINGESTION.md` §5's
+                    # `GROUP BY provider_source` query counts as a real miss.
+                    #
+                    # It is skipped rather than recorded because recording it
+                    # honestly needs the provider's raw area code, which this
+                    # helper is not given -- BLS's parser returns only a
+                    # canonical id or nothing. Recording the unsupported case
+                    # is a real gap and belongs with the parser that knows the
+                    # code; this guard only keeps the ledger true.
+                    continue
+                geo_id = str(raw_geo_id)
                 cursor.execute(
                     """
                     INSERT INTO silver_ref.geography_resolution (
                         provider_source, provider_dataset, source_geo_type,
                         source_code, source_vintage, geo_sk, resolution_method,
-                        status, reason_code
+                        status, reason_code, evidence_capture_id
                     )
                     SELECT %s, %s, %s, %s, %s, entity.geo_sk,
                            CASE WHEN entity.geo_sk IS NULL THEN NULL ELSE 'exact_code' END,
                            CASE WHEN entity.geo_sk IS NULL THEN 'unmapped' ELSE 'resolved' END,
-                           CASE WHEN entity.geo_sk IS NULL THEN 'canonical_id_not_loaded' ELSE NULL END
+                           CASE WHEN entity.geo_sk IS NULL THEN 'canonical_id_not_loaded' ELSE NULL END,
+                           %s
                     FROM (SELECT 1) AS input
                     LEFT JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = %s
                     ON CONFLICT (
@@ -146,6 +171,13 @@ def persist_exact_resolution_outcomes(
                         resolution_method = EXCLUDED.resolution_method,
                         status = EXCLUDED.status,
                         reason_code = EXCLUDED.reason_code,
+                        -- Kept when a replay supplies none, so re-running a
+                        -- transform that does not carry captures cannot erase
+                        -- the evidence an earlier run recorded.
+                        evidence_capture_id = COALESCE(
+                            EXCLUDED.evidence_capture_id,
+                            silver_ref.geography_resolution.evidence_capture_id
+                        ),
                         resolved_at = NOW()
                     """,
                     (
@@ -154,6 +186,7 @@ def persist_exact_resolution_outcomes(
                         str(row["geo_level"]),
                         geo_id,
                         row.get("source_vintage"),
+                        row.get("evidence_capture_id"),
                         geo_id,
                     ),
                 )

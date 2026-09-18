@@ -184,8 +184,8 @@ returns a promotability verdict with rule totals by severity and result.
 ### What a certification actually runs, and what it does not
 
 "The deterministic suite" is every registered executor, and the registered
-executors are **22 of the 64 rules the inventory declares**. Each of the other
-42 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
+executors are **23 of the 64 rules the inventory declares**. Each of the other
+41 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
 covers it instead, under one of two states:
 
 - **7 are `enforced`.** The warehouse itself refuses the violation — each one
@@ -196,13 +196,16 @@ covers it instead, under one of two states:
   certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
   holds each declared grain against the bootstrapped warehouse, so a migration
   that drops or widens one fails there.
-- **35 are `unimplemented`** — no executor runs them, and 23 of those are
+- **34 are `unimplemented`** — no executor runs them, and 22 of those are
   BLOCK severity. `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the
   applier wrote those rows the applied side did not exist. A warehouse that
   predates the ledger answers `not_applicable` rather than passing, because a
-  rule that read nothing must not certify a publication. The note says what running each one would have to read,
+  rule that read nothing must not certify a publication. `DQ-BLS-004` left it
+  the same way: it compares the geographies BLS published against the union of
+  the fact table and the resolution ledger, which was only possible once an
+  unresolved BLS row was recorded rather than dropped. The note says what running each one would have to read,
   and where part of a rule *is* refused by the warehouse it says which part
   and names the constraint: `DQ-SHARED-006`'s terminal-finish CHECK and its
   result-uniqueness key are both checked against the warehouse, and only its

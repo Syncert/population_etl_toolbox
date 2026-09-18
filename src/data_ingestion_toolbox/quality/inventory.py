@@ -2350,13 +2350,33 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.dim_bls_series",
             "gold_bls.dim_bls_survey",
             "gold_bls.dim_bls_measure",
+            # The two the geography half actually reads. A rule may only
+            # report against a relation it declares, and this half compares
+            # the conformed facts with the resolution ledger rather than the
+            # served projection: gold cannot hold a geography silver dropped,
+            # so silver is where the drop is visible.
+            "silver_bls.fact_labor_statistics",
+            "silver_ref.geography_resolution",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the serving refresh joins series, survey and "
-            "geography, so an unresolved row is dropped rather than reported, "
-            "and measure identity resolution is proved by DB-036's test rather "
-            "than by a rule."
+            "`quality.sources.bls_geography_accountability` compares the "
+            "geographies the provider published, taken from "
+            "`silver_bls.observation_revision` before any join, against the "
+            "union of `silver_bls.fact_labor_statistics` and "
+            "`silver_ref.geography_resolution`, and reports any that are in "
+            "neither. It was unimplementable while an unresolved row was "
+            "dropped rather than recorded: the comparison had only one side. "
+            "Measure identity resolution stays proved by DB-036's test rather "
+            "than by this rule. "
+            "BLS does not block on a partly loaded reference the way Census "
+            "ACS does, and the difference is deliberate: its DAG already "
+            "refuses to run at all until the shared thresholds in "
+            "`silver_ref.geography_guard` are met (DAG-020), and past that "
+            "point a single missing county should be recorded and served "
+            "around rather than used to withhold the other three thousand. "
+            "ACS blocks because its transform rebuilds full history, where a "
+            "missing geography means the reference backfill has not run."
         ),
     ),
     _rule(

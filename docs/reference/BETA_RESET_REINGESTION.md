@@ -284,6 +284,20 @@ GROUP BY provider_source, provider_dataset, source_geo_type, status, reason_code
 ORDER BY provider_source, provider_dataset, source_geo_type, status;
 ```
 
+Every source that resolves a provider geography writes this ledger, BLS
+included. It used to be the exception: an unresolved BLS row was counted in one
+log line and filtered out, and `silver_bls.fact_labor_statistics.geo_sk` is
+`NOT NULL`, so the observation left no queryable trace and this query could not
+see BLS at all. A miss now arrives here as an `unmapped` row naming the
+geography, the program, and the capture that published it -- which is what
+makes `DQ-BLS-004` answerable.
+
+A BLS row here means one geography the reference does not carry, not a
+reference that was never loaded: the BLS DAG asks
+`silver_ref.geography_guard` before it ingests anything, as every source DAG
+does (DAG-020), so a grossly unsynced reference stops the run rather than
+filling this table.
+
 Do not manually insert guessed geography rows. Correct an exact-code contract or
 add an evidence-backed crosswalk, then replay the affected captured observations.
 
