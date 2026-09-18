@@ -188,15 +188,22 @@ executors are **23 of the 64 rules the inventory declares**. Each of the other
 41 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
 covers it instead, under one of two states:
 
-- **7 are `enforced`.** The warehouse itself refuses the violation — each one
-  is a uniqueness rule whose grain is a unique constraint or unique index, and
-  the rule declares which relation and which columns. A duplicate is rejected
+- **11 are `enforced`.** The warehouse itself refuses the violation, and the
+  rule declares which constraint does it. That used to mean a unique
+  constraint or unique index and nothing else, which left four rules counted
+  as gaps although shipped DDL refuses them outright: a foreign key refuses an
+  unresolvable row, and a CHECK refuses a malformed one, as completely as a
+  unique index refuses a duplicate. `DQ-REF-002`, `DQ-CDC-005`, `DQ-NASS-004`
+  and `DQ-GLOSSARY-002` moved here when the grain model learned to say which
+  kind. A duplicate is rejected
   at write time, which is stronger than measuring it afterwards, with one
   consequence to be clear about: a constraint produces no evidence row, so a
   certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
-  holds each declared grain against the bootstrapped warehouse, so a migration
-  that drops or widens one fails there.
-- **34 are `unimplemented`** — no executor runs them, and 22 of those are
+  holds each declared grain against the bootstrapped warehouse -- a unique key
+  by its resolved columns, a foreign key by its columns *and* its target, and a
+  CHECK by name and then against its own definition -- so a migration that
+  drops, renames or repoints one fails there.
+- **30 are `unimplemented`** — no executor runs them, and 18 of those are
   BLOCK severity. `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the

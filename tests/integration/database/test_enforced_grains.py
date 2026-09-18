@@ -70,6 +70,17 @@ def _enforced_grains() -> list[tuple[str, str, tuple[str, ...]]]:
         (rule.rule_id, grain.relation, grain.columns)
         for rule in ALL_RULES
         for grain in rule.enforced_grains
+        if grain.kind == "unique"
+    ]
+
+
+def _constraint_grains(kind: str) -> list[tuple[str, object]]:
+    """Every declared grain of one non-unique kind, with the grain itself."""
+    return [
+        (rule.rule_id, grain)
+        for rule in ALL_RULES
+        for grain in rule.enforced_grains
+        if grain.kind == kind
     ]
 
 
@@ -337,3 +348,158 @@ def test_the_bounds_dq_ref_004_names_are_the_bounds_the_warehouse_holds(
     assert ">= (0)::numeric" in weight and "<= (1)::numeric" in weight, weight
     area = definitions.get("bridge_geo_relationship_version_overlap_area_m2_check", "")
     assert ">= (0)::numeric" in area, area
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "grain"),
+    _constraint_grains("foreign_key") or [("none-declared", None)],
+    ids=[
+        f"{rule_id}:{getattr(grain, 'relation', '-')}"
+        for rule_id, grain in (_constraint_grains("foreign_key") or [("none", None)])
+    ],
+)
+def test_a_declared_foreign_key_grain_is_a_foreign_key_in_the_warehouse(
+    postgres_connection_factory: Callable[[], connection],
+    rule_id: str,
+    grain: object,
+) -> None:
+    """Covers: DQ-013 — a rule citing a foreign key cites one that exists.
+
+    A foreign key is the strongest thing a rule can point at for referential
+    integrity: the row is refused at write time rather than found afterwards.
+    That is only true if the key is on the declared columns *and* points at
+    the declared relation. A key on the same columns into somewhere else
+    refuses a different violation.
+    """
+    if grain is None:
+        pytest.skip("no foreign-key grain is declared yet")
+
+    schema, relation = grain.relation.split(".", 1)
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT constraint_.conname,
+                       ARRAY(
+                           SELECT attribute.attname
+                             FROM unnest(constraint_.conkey)
+                                  WITH ORDINALITY AS k(attnum, ord)
+                             JOIN pg_attribute AS attribute
+                               ON attribute.attrelid = constraint_.conrelid
+                              AND attribute.attnum = k.attnum
+                            ORDER BY k.ord
+                       ) AS source_columns,
+                       target_namespace.nspname || '.' || target.relname,
+                       ARRAY(
+                           SELECT attribute.attname
+                             FROM unnest(constraint_.confkey)
+                                  WITH ORDINALITY AS k(attnum, ord)
+                             JOIN pg_attribute AS attribute
+                               ON attribute.attrelid = constraint_.confrelid
+                              AND attribute.attnum = k.attnum
+                            ORDER BY k.ord
+                       ) AS target_columns
+                  FROM pg_constraint AS constraint_
+                  JOIN pg_class AS source ON source.oid = constraint_.conrelid
+                  JOIN pg_namespace AS source_namespace
+                    ON source_namespace.oid = source.relnamespace
+                  JOIN pg_class AS target ON target.oid = constraint_.confrelid
+                  JOIN pg_namespace AS target_namespace
+                    ON target_namespace.oid = target.relnamespace
+                 WHERE constraint_.contype = 'f'
+                   AND source_namespace.nspname = %s
+                   AND source.relname = %s
+                """,
+                (schema, relation),
+            )
+            keys = cursor.fetchall()
+    finally:
+        database_connection.close()
+
+    assert keys, (
+        f"{rule_id} declares {grain.relation} enforced by a foreign key on "
+        f"{list(grain.columns)} and the relation carries no foreign key at all"
+    )
+    declared_columns = set(grain.columns)
+    matches = [
+        name
+        for name, source_columns, references_, target_columns in keys
+        if set(source_columns) == declared_columns
+        and references_ == grain.references
+        and (
+            not grain.referenced_columns
+            or set(target_columns) == set(grain.referenced_columns)
+        )
+        and (not grain.constraint_name or name == grain.constraint_name)
+    ]
+    assert matches, (
+        f"{rule_id} declares {grain.relation} enforced by a foreign key on "
+        f"{sorted(declared_columns)} referencing {grain.references}; its "
+        "foreign keys are "
+        + ", ".join(
+            f"{name}={sorted(source_columns)}->{references_}"
+            for name, source_columns, references_, _ in keys
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "grain"),
+    _constraint_grains("check") or [("none-declared", None)],
+    ids=[
+        f"{rule_id}:{getattr(grain, 'constraint_name', '-')}"
+        for rule_id, grain in (_constraint_grains("check") or [("none", None)])
+    ],
+)
+def test_a_declared_check_grain_is_a_check_in_the_warehouse(
+    postgres_connection_factory: Callable[[], connection],
+    rule_id: str,
+    grain: object,
+) -> None:
+    """Covers: DQ-013 — a rule citing a CHECK cites one the database holds.
+
+    Matched by name, not by expression. A check's condition is prose to the
+    inventory, and comparing normalised SQL text would fail on a formatting
+    change and pass on a weakened predicate, which is the wrong way round. The
+    name is the stable handle; the declared columns are then held against the
+    definition, so a grain cannot name a real check that is about something
+    else.
+    """
+    if grain is None:
+        pytest.skip("no check grain is declared yet")
+
+    schema, relation = grain.relation.split(".", 1)
+    database_connection = postgres_connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT constraint_.conname,
+                       pg_get_constraintdef(constraint_.oid)
+                  FROM pg_constraint AS constraint_
+                  JOIN pg_class AS source ON source.oid = constraint_.conrelid
+                  JOIN pg_namespace AS source_namespace
+                    ON source_namespace.oid = source.relnamespace
+                 WHERE constraint_.contype = 'c'
+                   AND source_namespace.nspname = %s
+                   AND source.relname = %s
+                """,
+                (schema, relation),
+            )
+            checks = dict(cursor.fetchall())
+    finally:
+        database_connection.close()
+
+    assert grain.constraint_name in checks, (
+        f"{rule_id} declares {grain.relation} enforced by CHECK "
+        f"'{grain.constraint_name}', which the warehouse does not carry. Its "
+        f"checks are: {sorted(checks) or 'none'}"
+    )
+    definition = checks[grain.constraint_name]
+    missing = [column for column in grain.columns if column not in definition]
+    assert not missing, (
+        f"{rule_id} declares CHECK '{grain.constraint_name}' as covering "
+        f"{list(grain.columns)}, and its definition mentions none of "
+        f"{missing}: {definition}"
+    )

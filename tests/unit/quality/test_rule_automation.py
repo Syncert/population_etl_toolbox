@@ -74,11 +74,9 @@ UNIMPLEMENTED_RULES = frozenset(
     {
         "DQ-SHARED-005",
         "DQ-SHARED-006",
-        "DQ-REF-002",
         "DQ-REF-004",
         "DQ-REF-005",
         "DQ-REF-006",
-        "DQ-GLOSSARY-002",
         "DQ-GLOSSARY-003",
         "DQ-GLOSSARY-004",
         "DQ-ACS-003",
@@ -97,13 +95,11 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-PEP-005",
         "DQ-PEP-006",
         "DQ-PEP-007",
-        "DQ-CDC-005",
         "DQ-CDC-006",
         "DQ-CDC-007",
         "DQ-FBI-005",
         "DQ-FBI-006",
         "DQ-FBI-007",
-        "DQ-NASS-004",
         "DQ-NASS-005",
         "DQ-NASS-006",
     }
@@ -201,14 +197,17 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 22, unbuilt
-    # The other seven BLOCK rules that no executor runs are `enforced`: the
+    assert len(unbuilt) == 18, unbuilt
+    # The other eleven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
-    # declared grains rather than taking the note's word for it.
+    # declared grains rather than taking the note's word for it. Four joined
+    # that set when `enforced` stopped meaning "unique constraint" and started
+    # meaning any constraint that refuses the violation outright -- a foreign
+    # key and a CHECK refuse a row as completely as a unique index does.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 7, enforced
+    assert len(enforced) == 11, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
