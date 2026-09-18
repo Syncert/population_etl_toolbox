@@ -183,6 +183,8 @@ services:
       args:
         API_ORIGIN: http://api:8000
         TILES_ORIGIN: http://martin:3000
+        # Empty falls back to `development` in `next.config.mjs`.
+        NEXT_PUBLIC_BUILD_ID: ${WEB_BUILD_ID:-}
     depends_on:
       - api
       - martin
