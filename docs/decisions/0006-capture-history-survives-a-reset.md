@@ -4,7 +4,7 @@
 - **Date:** 2026-09-16
 - **Accepted:** 2026-09-16
 - **Decision owners:** Repository owner (recorded in the
-  [raw-capture retention plan](../plans/needs_review/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md))
+  [raw-capture retention plan](../plans/completed/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md))
 - **Amends:** [ADR-0001](0001-data-layer-boundaries.md), the "Legacy transition" paragraph on beta resets
 
 ## Context
