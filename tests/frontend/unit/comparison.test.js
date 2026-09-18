@@ -38,7 +38,7 @@ import {
 // Shaped exactly like the served ComparisonPreflightResponse.
 const comparablePreflight = {
   metric_code_a: "CENSUS_ACS:acs5:B01003_001",
-  metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  metric_code_b: "CENSUS_PEP:POPESTIMATE",
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   comparable: true,
@@ -61,7 +61,7 @@ const comparablePreflight = {
 };
 
 const blockedPreflight = {
-  metric_code_a: "CDC:cdc_places_county:OBESITY",
+  metric_code_a: "CDC:cdi:ALC06:AGEADJPREV",
   metric_code_b: "CENSUS_ACS:acs5:B01003_001",
   source_code_a: "CDC",
   source_code_b: "CENSUS_ACS",
@@ -83,7 +83,7 @@ const blockedPreflight = {
 // Shaped exactly like the served ComparisonResponse.
 const comparison = {
   metric_code_a: "CENSUS_ACS:acs5:B01003_001",
-  metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  metric_code_b: "CENSUS_PEP:POPESTIMATE",
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   units_a: null,
@@ -100,7 +100,7 @@ const comparison = {
       state_name: "Wisconsin",
       county_name: "Dane County",
       metric_code_a: "CENSUS_ACS:acs5:B01003_001",
-      metric_code_b: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      metric_code_b: "CENSUS_PEP:POPESTIMATE",
       period_a: "2023",
       period_b: "2024",
       value_a: 561504,
@@ -257,7 +257,7 @@ describe("published inputs and derived values stay distinct", () => {
     // Each side's column is headed by its own metric code, so the two
     // published inputs can never be read as one measure.
     expect(columns[1].label).toBe("CENSUS_ACS:acs5:B01003_001");
-    expect(columns[3].label).toBe("CENSUS_PEP:pep_cty_alldata:POPESTIMATE");
+    expect(columns[3].label).toBe("CENSUS_PEP:POPESTIMATE");
     expect(columns.filter((column) => column.derived).map((column) => column.key)).toEqual([
       "difference",
       "ratio",
@@ -325,7 +325,7 @@ describe("the export carries its own interpretation envelope", () => {
     // The name a complete read keeps. An export handed no load at all is
     // read as complete, which is what every caller before WEB-067 did.
     expect(exported.filename).toBe(
-      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-POPESTIMATE.csv",
     );
 
     const [first, second] = exported.rows;
@@ -353,7 +353,7 @@ describe("the export carries its own interpretation envelope", () => {
       complete: false,
     });
     expect(exported.filename).toBe(
-      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE" +
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-POPESTIMATE" +
         "-partial-8000-of-12400.csv",
     );
     // A bounded read is the first thing a reader needs, so it leads the
@@ -389,7 +389,7 @@ describe("the export carries its own interpretation envelope", () => {
       complete: true,
     });
     expect(exported.filename).toBe(
-      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-pep_cty_alldata-POPESTIMATE.csv",
+      "comparison-CENSUS_ACS-acs5-B01003_001-vs-CENSUS_PEP-POPESTIMATE.csv",
     );
     expect(exported.rows[0].at(-1)).not.toContain("incomplete");
   });
