@@ -2,6 +2,20 @@
 
 Apply these checked-in SQL files in **manifest order**, which is the order `sql/bootstrap/warehouse_manifest.json` declares and `scripts/apply_warehouse_manifest.py` applies. It is not numeric order, and numeric order does not work: `004` alters a relation `src/data_ingestion_toolbox/fred/DDL/silver_fred.sql` creates, `024` alters one created by `gold_acs.sql`, `021` and `023` run directly after `002`, `013` runs before the reference phase, `015` runs in the silver phase, and `003` runs second to last. The list below is numbered for reading; the manifest decides when each step runs, and each entry names the phase it runs in. During the beta prototype, rebuilding the database and re-ingesting source history is the default rollback/cutover strategy; production-style compatibility migrations are not required.
 
+The schema these steps produce is checked in at
+`tests/sql/warehouse_schema_snapshot.txt` and compared on every push
+(DB-051). After a deliberate DDL change, regenerate it and review the diff as
+part of the change:
+
+```bash
+RUN_INTEGRATION_TESTS=1 TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432   TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test   TEST_POSTGRES_DATABASE=population_etl_test   python -m tests.support.schema_snapshot --write
+```
+
+An unmirrored change is a red job rather than a surprise on a shared
+warehouse, and that is the point: a step here and a phase file later in the
+manifest can define the same view, and before the snapshot whichever ran last
+simply won.
+
 Files must remain safe to rerun during bootstrap and must carry the constraints needed by the active design. Do not edit a step after other shared environments depend on it; add the next sequence instead.
 
 Current sequence:

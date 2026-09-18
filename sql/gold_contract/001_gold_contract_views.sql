@@ -8,55 +8,19 @@ CREATE SCHEMA IF NOT EXISTS gold_census;
 CREATE SCHEMA IF NOT EXISTS gold_fred;
 
 -- Shared catalog contracts.
-CREATE OR REPLACE VIEW gold_glossary.dim_metric AS
-SELECT
-    metric_code,
-    metric_display_name,
-    source_code,
-    source_object_type,
-    source_object_key,
-    units,
-    measure_kind,
-    valid_geo_grains,
-    valid_time_grains,
-    aggregation_characteristic,
-    physical_lineage,
-    publisher_contract_version,
-    source_watermark,
-    source_run_id,
-    publication_time,
-    harvested_at,
-    freshness_state,
-    freshness_state = 'current' AS is_active
-FROM gold_glossary.dim_metric_catalog;
 
-CREATE OR REPLACE VIEW gold_glossary.dim_geography AS
-SELECT
-    geo_id,
-    geo_level,
-    state_fips,
-    county_fips,
-    place_fips,
-    state_name,
-    county_name,
-    place_name,
-    latitude,
-    longitude,
-    latitude AS geo_latitude,
-    longitude AS geo_longitude,
-    boundary_vintage,
-    refreshed_at,
-    gold_glossary.geo_name(place_name, county_name, state_name, geo_id) AS geo_name,
-    -- Published for the same reason `dim_metric` publishes `freshness_state`:
-    -- a retired geography stays resolvable, and the consumer decides whether
-    -- to show it (DB-038). Its observations are still served, so a catalog
-    -- that hid it would leave rows nothing could name.
-    geography_state,
-    retired_at,
-    geography_state = 'current' AS is_active
-FROM gold_glossary.dim_geo_latest;
 
 -- BLS observation contracts.
+-- `gold_glossary.dim_metric` and `gold_glossary.dim_geography` are not
+-- defined here. They were, and this file runs last in manifest order, so its
+-- copies silently won over the ones `002_gold_glossary_schema.sql` and
+-- migration `003` define -- three bodies for one view, and whichever ran last
+-- decided what the warehouse held. The bodies were identical, which is the
+-- only reason nothing broke and the only reason removing them is safe;
+-- `tests/integration/database/test_schema_snapshot.py` is what proves the
+-- surviving definition is unchanged, and `test_every_contract_view_has_exactly_one_body`
+-- is what stops a second copy coming back.
+
 CREATE OR REPLACE VIEW gold_bls.fact_observation AS
 SELECT
     source_code,
