@@ -16,11 +16,66 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed, and **not to be claimed until a beta reset window is
-  agreed**. Authored 2026-09-16 from the codebase audit. The change replaces
-  a 66 GB relation and is delivered as a rebuild, not an in-place migration.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** **Blocked on an operator decision**, at the second of this
+  plan's own two start conditions. Claimed 2026-09-18 and paused before any
+  implementation; nothing in the working tree is changed by it.
+- **Last updated:** 2026-09-18
+- **Current milestone:** not started. The measurement below is the only work
+  done, and it is what the operator needs in order to decide.
+
+### The blocker
+
+Condition 2 of "Do not start this plan until" is unmet: **no operator has
+agreed a reset window.** This plan is delivered as a rebuild -- drop the
+serving relation, ensure the partitioned DDL, forced full re-serve -- and
+acceptance criterion 5 requires before-and-after figures "from a real
+re-serve", so there is no version of this work that does not destroy and
+rewrite the relation. An agent cannot grant itself that window.
+
+**What it would cost, measured on the internal stack on 2026-09-18** rather
+than taken from the plan's authoring note:
+
+| Relation | Heap | Indexes | Rows |
+|---|---|---|---|
+| `gold_census.rpt_acs_observations` | **45 GB** | **48 GB** | 68,741,704 |
+| `gold_census.mv_acs_latest` | 30 GB | 7,077 MB | 4,565,821 |
+| `gold_bls.rpt_bls_observations` | 5,202 MB | 5,144 MB | 5,864,416 |
+
+```sql
+SELECT c.relname, pg_size_pretty(pg_table_size(c.oid)),
+       pg_size_pretty(pg_indexes_size(c.oid)), c.reltuples::BIGINT
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relname IN ('rpt_acs_observations', 'mv_acs_latest',
+                    'rpt_bls_observations');
+```
+
+The relation spans **20 ACS years**, `2005-01-01` to `2024-01-01`, so the
+partitioned definition needs twenty partitions on first build.
+
+Two things this measurement changes about the plan as authored:
+
+1. It says "a 66 GB relation" and cites "a 37 GB heap with 25 GB of indexes"
+   from the re-serve recorded in `BETA_RESET_REINGESTION.md` §7. The relation
+   is **93 GB** now, and its indexes are larger than its heap. The 5-12 hour
+   runtime that section records is a floor, not an estimate.
+2. `pg_stat_user_tables` reports `n_dead_tup = 0` and no recorded vacuum for
+   it, because the statistics were reset (the counters are zero for
+   `n_live_tup` too, against 68.7M real rows). So the bloat half of the case
+   cannot be re-measured from this warehouse's current statistics; it has to
+   come from the §7 record or from a fresh run.
+
+### What is needed to resume
+
+An operator agrees a window in which `gold_census.rpt_acs_observations` and
+`gold_census.mv_acs_latest` can be dropped and re-served, and says whether
+the window is on the internal stack or elsewhere. Budget at least the 5-12
+hours §7 records, and more, since the relation has grown. Then resume at
+deliverable 1.
+
+Note that this is the **development** warehouse under the current working
+agreement -- the remote warehouse at `192.168.50.16` is deliberately behind
+and is not the target -- so the window is a decision about dev availability
+rather than about production.
 
 ## Do not start this plan until
 

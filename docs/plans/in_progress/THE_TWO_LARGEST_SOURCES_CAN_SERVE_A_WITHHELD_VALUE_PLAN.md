@@ -17,11 +17,70 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started. Claim after `serving-table-vacuum-hygiene`,
-  because delivering this requires a forced full re-serve of ACS and BLS.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Claimed and surveyed. No implementation yet; the working tree
+  carries nothing from this plan.
+- **Last updated:** 2026-09-18
+- **Current milestone:** survey complete, deliverable 1 next.
+- **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
+  Satisfied.
+- **Next pickup:** deliverable 1. Write the failing check first -- both facts
+  lack the three columns FRED's carries -- then add them to
+  `silver_census.sql` and `silver_bls.sql`, add
+  `sql/migrations/027_acs_bls_fact_lineage.sql` for populated warehouses, and
+  populate them from `observation_revision` in each transform.
+
+### Survey findings, and one correction to this plan's premise
+
+Read on 2026-09-18 before starting. Recorded here because two of them change
+what the work is.
+
+**FRED is the model for the silver half only, not for serving.** This plan
+says FRED "gained both in the ARC-007 cutover", which is true of
+`silver_fred.fact_economic_indicators`: it carries `capture_id`,
+`source_value`, `value_status` and `is_missing`. But `gold_fred.sql` serves
+`FROM silver_fred.fact_economic_indicators ... WHERE s.is_missing = FALSE`,
+and `value_status` appears in no FRED gold DDL at all. So FRED omits a
+withheld value from serving exactly as ACS and BLS do; it simply records the
+withholding one layer down. Deliverable 2 has no existing implementation to
+copy from among these three, and the sources that do serve a status --
+CDC, FBI, NASS -- reach it a different way (their fact rows are served
+directly rather than through a per-source `rpt_*` serving table).
+
+This is not a reason to change the plan's scope, and it is worth asking
+whether FRED should follow in the same change or in its own. Deliverable 4
+already carries a "follow if the measurement says so" shape for a different
+question; FRED's serving gap is not named anywhere in this plan.
+
+**The two rules are `unimplemented`; the FRED analogue is `automated` by
+default rather than by an executor named here.** `DQ-ACS-007` and
+`DQ-BLS-007` declare `automation="unimplemented"` in
+`quality/inventory.py`; `DQ-FRED-007` passes no `automation` argument at all,
+and `_rule`'s default is `"automated"`. So deliverable 4's "modelled on
+`DQ-FRED-007`" means finding whichever executor in
+`quality/sources.py::SOURCE_EXECUTORS` answers for it, not reading a
+declaration beside the rule.
+
+**The surfaces the change touches**, from the survey:
+
+| Layer | ACS | BLS |
+|---|---|---|
+| Silver fact | `census_acs/DDL/silver_census.sql:32-56` | `bls/DDL/silver_bls.sql:29-53` |
+| Revision (already has the status) | `silver_census.sql:19-24`, five states | `silver_bls.sql:18`, three states |
+| Transform | `silver_census/transform.py` fact aggregation (~500-560) | the BLS analogue |
+| Gold fact view | `gold_acs.sql:87` `WHERE s.estimate_value IS NOT NULL` | `gold_bls.sql:128` `WHERE s.value IS NOT NULL` |
+| Serving table | `gold_census.rpt_acs_observations`: `value NUMERIC NOT NULL` **and** `estimate_value NUMERIC NOT NULL` | `gold_bls.rpt_bls_observations` |
+| API | `catalog_service.py:172` `publishes_value_status` | same |
+
+Note that ACS's serving table declares **two** `NOT NULL` value columns,
+`value` and `estimate_value`, so deliverable 2's "relax the served `value NOT
+NULL`" is two columns for ACS rather than one.
+
+**Scale note.** The internal stack's `rpt_acs_observations` is 45 GB over
+68.7M rows across 20 ACS years (measured 2026-09-18 while assessing
+`acs-serving-partitioning`). Deliverable 5's operator re-serve is therefore a
+multi-hour job on a warehouse that is also the current development target;
+the fixture-scale half is what the acceptance criteria actually require, and
+the operator half belongs in `human_testing/`.
 
 ## Why
 
