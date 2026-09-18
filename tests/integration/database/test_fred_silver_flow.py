@@ -381,6 +381,7 @@ def test_fred_missing_time_dimension_is_counted_and_not_inserted(
 def test_fred_silver_to_gold_refresh_populates_harvested_catalog_and_serving(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
+    harvest_state_cleanup: None,
 ) -> None:
     """Covers: DB-012 — independent harvest links source facts to serving rows.
 
@@ -892,6 +893,7 @@ def test_incremental_gold_refresh_recovers_failed_annual_checkpoint(
 def test_fred_publishes_only_the_grains_its_served_rows_carry(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
+    harvest_state_cleanup: None,
 ) -> None:
     """Covers: ARC-006 — the FRED catalog grain is a fact about served rows.
 

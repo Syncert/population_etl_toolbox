@@ -103,3 +103,90 @@ def revision_cleanup(
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+@pytest.fixture
+def harvest_state_cleanup(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[None]:
+    """Leave `gold_glossary.publisher_harvest_state` as this suite found it.
+
+    A harvest records when a publisher last published. That row is shared
+    glossary state rather than a fixture of the test that caused it: the API
+    tier reads it, and
+    `tests/integration/api/test_content_health_contract.py::test_the_report_counts_the_warehouses_own_freshness_vocabulary`
+    asserts that a source the catalog holds no publication row for serves
+    `null`. A harvest left behind makes that assertion fail on the next run
+    against the same warehouse -- in a different tier, with no relationship to
+    the code under test, which is the same failure shape `revision_cleanup`
+    above exists to prevent.
+
+    It does not fail in CI, because there each tier gets its own container and
+    never sees the other's leftovers. It fails on a developer machine with one
+    warehouse, on the second run.
+
+    `delete_harvested_glossary_rows` does not cover this. Its `preexisting`
+    guard protects a source another suite or the bootstrap registered, and on a
+    bootstrapped warehouse every source in the registry is already there -- so
+    it returns before deleting anything. That guard is right about the
+    registration and wrong about the harvest state: the registration must
+    survive, and the row this node wrote must not.
+
+    The whole (small) table is snapshotted rather than asking the test to
+    declare which sources it harvests, because a harvest is a side effect of
+    calling `harvest_publisher` on a publisher, and the mapping from publisher
+    to source code is the code under test's business, not the test's.
+    """
+
+    def read_state() -> dict[str, tuple]:
+        database = postgres_connection_factory()
+        try:
+            with database.cursor() as cursor:
+                cursor.execute(
+                    "SELECT source_code, publisher_contract_version, "
+                    "last_source_watermark, last_source_run_id, "
+                    "last_publication_time, last_harvest_started_at, "
+                    "last_harvest_completed_at, status, last_error, "
+                    "last_content_fingerprint, last_harvest_forced "
+                    "FROM gold_glossary.publisher_harvest_state"
+                )
+                return {row[0]: row for row in cursor.fetchall()}
+        finally:
+            database.close()
+
+    before = read_state()
+    try:
+        yield
+    finally:
+        after = read_state()
+        added = [code for code in after if code not in before]
+        changed = [
+            code for code, row in before.items() if code in after and after[code] != row
+        ]
+        if not added and not changed:
+            return
+        cleanup = postgres_connection_factory()
+        try:
+            with cleanup.cursor() as cursor:
+                for code in added:
+                    cursor.execute(
+                        "DELETE FROM gold_glossary.publisher_harvest_state "
+                        "WHERE source_code = %s",
+                        (code,),
+                    )
+                for code in changed:
+                    cursor.execute(
+                        "UPDATE gold_glossary.publisher_harvest_state SET "
+                        "publisher_contract_version = %s, "
+                        "last_source_watermark = %s, last_source_run_id = %s, "
+                        "last_publication_time = %s, "
+                        "last_harvest_started_at = %s, "
+                        "last_harvest_completed_at = %s, status = %s, "
+                        "last_error = %s, last_content_fingerprint = %s, "
+                        "last_harvest_forced = %s "
+                        "WHERE source_code = %s",
+                        (*before[code][1:], code),
+                    )
+            cleanup.commit()
+        finally:
+            cleanup.close()
