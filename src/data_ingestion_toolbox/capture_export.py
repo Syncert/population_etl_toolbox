@@ -279,6 +279,29 @@ def verify_export(directory: Path | str) -> int:
     return verified
 
 
+def _parameter_ready(value: Any) -> Any:
+    """A row value in a form a DB-API driver will send.
+
+    `_json_ready` keeps a `jsonb` column as the object it was, which is what
+    the row files should hold: a capture's `request_parameters` is a mapping,
+    and flattening it to a string on the way out would make the export a worse
+    record than the table. Read back, that value is a `dict`, and a DB-API
+    driver has no adapter for one -- psycopg2 raises `can't adapt type 'dict'`
+    and the restore stops on the first capture that carries any.
+
+    Serialising it back to JSON text is enough. The parameter reaches
+    PostgreSQL untyped, so the target column decides what it becomes, and every
+    structured column in the four exported tables is `jsonb`. That is worth
+    stating because it is the reason this is safe: a `text[]` column would also
+    arrive here as a `list` and would need array literal syntax rather than
+    JSON, so if one is ever added to these tables this helper has to learn
+    about it.
+    """
+    if isinstance(value, (Mapping, list)):
+        return json.dumps(value)
+    return value
+
+
 def restore_statements(row: Mapping[str, Any], table: str) -> tuple[str, list[Any]]:
     """The one statement that loads one row, and its parameters.
 
@@ -294,7 +317,7 @@ def restore_statements(row: Mapping[str, Any], table: str) -> tuple[str, list[An
         f"INSERT INTO {table} ({', '.join(columns)}) "
         f"VALUES ({placeholders}) ON CONFLICT DO NOTHING"
     )
-    return statement, [row[column] for column in columns]
+    return statement, [_parameter_ready(row[column]) for column in columns]
 
 
 def restore_captures(connection: Any, directory: Path | str) -> dict[str, int]:

@@ -18,15 +18,14 @@ verify:
   **Decision taken 2026-09-16 by the repository owner: capture history
   survives a reset.** The ADR amendment records that decision; it is not
   reopened by the implementer.
-- **Status:** All four deliverables are implemented on
-  `claude/plans-folder-iteration-4x6itr`. Every tier a cloud session can run
-  is green, including the Airflow DAG tier. **It stays in `in_progress/` for
-  one reason:** the round-trip test in deliverable 4 has never been *run* --
-  it needs PostgreSQL, which this container has no way to provide. It is
-  written, it collects, and a machine session runs one command. See "What a
-  machine session must still do".
-- **Last updated:** 2026-09-17
-- **Current milestone:** the round trip, on a machine.
+- **Status:** Ready for review. All four deliverables are implemented on
+  `claude/plans-folder-iteration-4x6itr` and the round-trip test was run on a
+  machine session on 2026-09-18. **It did not pass on arrival: it found four
+  defects, one of them in `src/`, and the restore path could not have worked
+  on any real export.** All four are fixed and the tier is green. See "The
+  machine run" -- a reviewer should read that section before the rest.
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -93,9 +92,10 @@ verification) green over every restored capture.
       against a fixture export directory -- 16 unit tests over the export,
       the verification and the restore, and four over the DAG's own
       structure.
-- [ ] The round-trip test passes. **Written, never run:** it needs a
-      PostgreSQL instance. The whole file is
-      `tests/integration/database/test_capture_export_round_trip.py`.
+- [x] The round-trip test passes -- after the four defects that running it
+      exposed were fixed. Run 2026-09-18; the whole file is
+      `tests/integration/database/test_capture_export_round_trip.py` and all
+      three of its tests pass. See "The machine run".
 - [x] `BETA_RESET_REINGESTION.md` §2 carries the export step, §4 carries the
       restore, and §5 no longer describes re-ingestion as the path back.
 - [x] `TESTING_CONTRACT.md` gains DAG-019, DB-046 and DB-047;
@@ -187,26 +187,76 @@ runs last in the pipeline order, so it exports a warehouse the DAGs above it
 have just filled rather than an empty one, and the suite supplies an export
 root exactly as a deployment does.
 
-### What a machine session must still do
+### The machine run
 
-Bring up the disposable warehouse and run the round trip:
+Run on 2026-09-18 against the disposable PostGIS 16 container:
 
 ```bash
 docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
-RUN_INTEGRATION_TESTS=1 \
-  TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432 \
-  TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test \
-  TEST_POSTGRES_DATABASE=population_etl_test \
+RUN_INTEGRATION_TESTS=1 TEST_POSTGRES_* ... \
   python -m pytest -m "integration and database" \
   tests/integration/database/test_capture_export_round_trip.py -q
 ```
 
-Three tests: the round trip with DQ-SHARED-001 at `release` cadence over the
-restored captures, a second restore of the same export changing nothing, and a
-corrupted export reaching no statement. Then, if the Docker-backed DAG
-pipeline is being run, `make test-dag-pipeline` now includes
-`raw_capture_export`. Record both results here and move the plan to
-`needs_review/`.
+**It failed.** Two of the three tests errored on the first run, and fixing
+each one exposed the next. Four defects, in the order they surfaced:
+
+1. **`restore_statements` could not send a `jsonb` column.** `src/`, not the
+   test. `_json_ready` keeps such a column as the mapping it was -- correct
+   for the row file -- and the restore handed that `dict` straight to the
+   driver, which raised `can't adapt type 'dict'`. Every real capture carries
+   `request_parameters` and `response_headers`, both `jsonb`, so **the restore
+   would have failed on the first row of any genuine export.** The one thing
+   ADR-0006 exists to guarantee did not work.
+2. **The reset simulation could not run.** The block deleted the requests and
+   rolled back, but the `DELETE` raises `ForeignKeyViolation` before any
+   rollback is reached, because the captures still reference them.
+3. **`outcome.status == "PASS"`** -- `RuleOutcome` has no `status`, and its
+   vocabulary (`runner.RESULTS`) is lower case. The attribute is `result` and
+   the value is `"pass"`.
+4. **`capture_id = ANY(%s)`** asked PostgreSQL for `uuid = text` and was
+   refused; the array needs `::uuid[]`.
+
+Three of those are the test's own, and the pattern is worth naming: a test
+written against a database nobody ran it on is a test written against a
+remembered API. The first is not the test's -- it is a product defect that
+the unit tier structurally could not see, because its stand-in cursor accepts
+whatever it is handed and every fixture row in it was scalar.
+
+**The fix, and its guard.** `_parameter_ready` serialises a `Mapping` or
+`list` back to JSON text on the way to the driver. The parameter reaches
+PostgreSQL untyped, so the target column decides what it becomes, and every
+structured column in the four exported tables is `jsonb` -- which is why text
+is sufficient and why the helper's docstring says a `text[]` column would need
+different treatment if one is ever added.
+
+Two unit tests now cover it, both confirmed failing without the fix:
+`test_a_structured_column_is_handed_over_as_json_text` and
+`test_a_json_array_column_is_handed_over_the_same_way`. They belong in the
+unit tier rather than only in the integration tier because the defect is in a
+pure function, and a `dict` reaching a driver should not need a container to
+catch.
+
+**The reset block now asserts what the schema actually does.** A reset is a
+`DROP`, not a `DELETE`: while the append-only triggers are on, capture history
+cannot be removed from a live warehouse a row at a time. The foreign key
+refuses the request and the trigger refuses the capture with SQLSTATE `55000`,
+and both refusals are asserted -- which is a stronger statement than the
+rolled-back delete that could never run, and it is the reason `restore_captures`
+only ever inserts.
+
+**Result.**
+
+```text
+test_an_exported_capture_restores_and_verifies       PASSED
+test_restoring_the_same_export_twice_changes_nothing PASSED
+test_a_corrupted_export_never_reaches_the_database   PASSED
+```
+
+The criterion's substance holds on a real warehouse: the restored captures
+verify under DQ-SHARED-001, and `_append_only_triggers` reads the same two
+triggers after the restore as before it -- nothing was disabled to let the
+load through.
 
 ### Commands
 
@@ -216,6 +266,21 @@ pipeline is being run, `make test-dag-pipeline` now includes
 | `RUN_DAG_TESTS=1 python -m pytest -m dag tests/dags -q` | 126 passed, 5 skipped (was 122, 5) |
 | `ruff format --check .` / `ruff check .` | clean, 487 files |
 | `python -m pytest tests/unit -q` | 1838 passed (was 1822) |
+
+Re-run on the machine session of 2026-09-18, after the four fixes:
+
+| Command | Result |
+|---|---|
+| `RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database/test_capture_export_round_trip.py -q` | 3 passed (was 2 failed, 1 passed) |
+| `RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -q` | 178 passed, 2 skipped (was 2 failed, 176 passed, 2 skipped) |
+| `python -m pytest tests/unit -q` | 1864 passed |
+| `ruff format --check .` / `ruff check .` | clean, 493 files |
+
+The whole database tier is run above, not just this file: the fix is in a
+function every restore goes through, and the tier is the boundary it sits on.
+Both remaining skips are pre-existing and carry their own reasons -- the
+Airflow import guard, and the geography guard's positive case wanting a loaded
+reference.
 
 ## Definition of done
 

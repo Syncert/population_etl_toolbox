@@ -23,6 +23,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from psycopg2 import errors
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.capture_export import (
@@ -127,15 +128,32 @@ def test_an_exported_capture_restores_and_verifies(
     finally:
         database.close()
 
-    # A reset destroys silver and gold and re-creates the schema. The captures
-    # are gone from the database and present in the export.
+    # A reset is a DROP, not a DELETE. While the append-only triggers are on,
+    # capture history cannot be taken out of a live warehouse a row at a time,
+    # and both refusals are asserted here because together they are the reason
+    # `restore_captures` only ever inserts.
+    #
+    # This block used to delete the requests and roll back, which could not
+    # run: the first statement raises `ForeignKeyViolation` before any rollback
+    # is reached, because the captures still reference them. Asserting the
+    # refusals says what the schema actually does.
     database = postgres_connection_factory()
     try:
         with database.cursor() as cursor:
-            for record in seeded:
+            with pytest.raises(errors.ForeignKeyViolation):
                 cursor.execute(
                     "DELETE FROM control.ingestion_request WHERE request_id = %s",
-                    (record["request_id"],),
+                    (seeded[0]["request_id"],),
+                )
+        database.rollback()
+
+        with database.cursor() as cursor:
+            # And deleting the capture first does not open the door either:
+            # that is the append-only trigger, raising SQLSTATE 55000.
+            with pytest.raises(errors.ObjectNotInPrerequisiteState):
+                cursor.execute(
+                    "DELETE FROM raw_capture.response_capture WHERE capture_id = %s",
+                    (seeded[0]["capture_id"],),
                 )
         database.rollback()
     finally:
@@ -159,10 +177,18 @@ def test_an_exported_capture_restores_and_verifies(
             )
             assert outcomes, "the rule returned no outcome at all"
             for outcome in outcomes:
-                assert outcome.status == "PASS", outcome
+                # `RuleOutcome.result`, and the vocabulary is lower case
+                # (`runner.RESULTS`). This read `outcome.status == "PASS"`,
+                # which is an attribute the dataclass does not have and a
+                # value it would refuse -- invisible until the test ran.
+                assert outcome.result == "pass", outcome
 
             cursor.execute(
-                "SELECT COUNT(*) FROM raw_capture.response_capture WHERE capture_id = ANY(%s)",
+                # `capture_id` is `uuid` and these are Python strings, so the
+                # array needs its type saying: without the cast PostgreSQL is
+                # asked for `uuid = text` and refuses.
+                "SELECT COUNT(*) FROM raw_capture.response_capture "
+                "WHERE capture_id = ANY(%s::uuid[])",
                 ([record["capture_id"] for record in seeded],),
             )
             assert cursor.fetchone()[0] == len(seeded)

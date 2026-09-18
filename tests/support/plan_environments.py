@@ -48,12 +48,6 @@ BROWSER = "browser"
 #: reader can find it, and the environment it needs. These are declared rather
 #: than derived because they are prose.
 CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
-    "raw-capture-retention-decision": (
-        POSTGRES,
-        "The round-trip test passes: restored captures verify under "
-        "`DQ-SHARED-001` and the append-only triggers are still present after "
-        "the restore -- a warehouse round-trip.",
-    ),
     "deployment-smoke-target": (
         COMPOSE,
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "

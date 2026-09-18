@@ -330,6 +330,41 @@ def test_one_row_is_one_statement_naming_its_own_columns() -> None:
     assert parameters == [RUN_ID, "CENSUS_ACS"]
 
 
+def test_a_structured_column_is_handed_over_as_json_text() -> None:
+    """Covers: DB-046 — a `jsonb` column survives the round trip as a parameter.
+
+    `_json_ready` keeps a `jsonb` column as the mapping it was, which is right
+    for the row file. A DB-API driver cannot send that: psycopg2 raises
+    `can't adapt type 'dict'`, and because every real capture carries
+    `request_parameters` and `response_headers`, the restore failed on the
+    first row of any genuine export. It was invisible here because this tier's
+    stand-in cursor accepts whatever it is handed and every fixture row in it
+    was scalar.
+    """
+    parameters_column = {"get": ["B01003_001E"], "for": "county:*"}
+    statement, parameters = restore_statements(
+        {"request_id": REQUEST_ID, "request_parameters": parameters_column},
+        "control.ingestion_request",
+    )
+    assert "VALUES (%s, %s)" in statement
+    assert parameters[0] == REQUEST_ID
+    assert isinstance(parameters[1], str), "a mapping cannot be sent as a parameter"
+    assert json.loads(parameters[1]) == parameters_column
+
+
+def test_a_json_array_column_is_handed_over_the_same_way() -> None:
+    """Covers: DB-046 — a `jsonb` holding an array is still JSON, not an array.
+
+    `source_watermark` is `jsonb` and may hold either shape. A list must not be
+    mistaken for a PostgreSQL array column, which would need `{a,b}` rather
+    than `["a","b"]`; none of the four exported tables has one.
+    """
+    _, parameters = restore_statements(
+        {"source_watermark": [2023, 2024]}, "control.ingestion_run"
+    )
+    assert parameters == ["[2023, 2024]"]
+
+
 def test_a_payload_path_is_refused_for_anything_but_a_sha256() -> None:
     """Covers: DB-046 — the filename is the checksum, so it is checked."""
     for bad in ("../../etc/passwd", "", "ZZ" * 32, CHECKSUM[:-1]):
