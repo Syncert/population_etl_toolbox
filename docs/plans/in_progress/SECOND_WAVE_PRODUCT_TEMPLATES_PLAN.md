@@ -15,10 +15,16 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-15 from the repository assessment;
-  no implementation has started.
-- **Last updated:** 2026-09-15
-- **Current milestone:** not started.
+- **Status:** Claimed 2026-09-18 by a machine session with the deployed
+  analytics warehouse reachable, which is what criterion 3 needs: the candidate
+  codes are to be verified against the live catalog rather than guessed.
+- **Last updated:** 2026-09-18
+- **Current milestone:** read the use-case table and the existing templates,
+  then query `gold_glossary.dim_metric_catalog` on the deployed warehouse to
+  establish which candidates exist before authoring any.
+- **Next pickup:** the catalog query is the first step and its output is
+  evidence the plan requires; do not author a candidate list from the use-case
+  document alone.
 
 ## Why
 
