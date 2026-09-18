@@ -14,16 +14,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Status:** All four deliverables are implemented on
-  `claude/plans-folder-iteration-4x6itr`. **It stays in `in_progress/` for one
-  reason:** two of the four acceptance criteria read `pg_class.reloptions` and
-  `pg_stat_user_tables`, which need PostgreSQL. Both assertions are written
-  and collect; a machine session runs one command. See "What a machine session
-  must still do".
-- **Last updated:** 2026-09-17
-- **Current milestone:** the two database assertions, on a machine.
+- **Status:** Ready for review. All four deliverables are implemented on
+  `claude/plans-folder-iteration-4x6itr`, and the two database assertions that
+  had never been executed were run on a machine session against the pinned
+  disposable PostGIS 16 container on 2026-09-18. Both pass, and both were
+  confirmed failing-first against the change they guard.
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -85,12 +82,13 @@ that manual `VACUUM` remains available but is no longer the first resort.
 
 ## Acceptance criteria
 
-- [ ] `pg_class.reloptions` on every `rpt_*`/`mv_*` table carries the three
-      settings after bootstrap. **Written, never run** -- it needs PostgreSQL.
-- [ ] After two forced chunks over the fixture, `last_analyze` is later than
-      the first chunk's commit. **Written, never run**, same reason. What *is*
-      proven here is the statements, their order against the durable
-      checkpoint, and that a failed `ANALYZE` does not undo a complete chunk.
+- [x] `pg_class.reloptions` on every `rpt_*`/`mv_*` table carries the three
+      settings after bootstrap. Run 2026-09-18 against the disposable PostGIS
+      16 container; see "The machine run".
+- [x] After two forced chunks over the fixture, `last_analyze` is later than
+      the first chunk's commit. Run 2026-09-18, same stack. Also proven here
+      are the statements, their order against the durable checkpoint, and that
+      a failed `ANALYZE` does not undo a complete chunk.
 - [x] Rendering `docker-compose.yml` shows `shm_size` on the database
       service, asserted in `tests/unit/deployment` -- and the assertion also
       fails if the `max_parallel_*` settings it exists for are removed and the
@@ -156,29 +154,61 @@ fails if either side is removed, which it was confirmed to do.
 explicitly unchanged -- nothing reclaims a row an open snapshot may still need
 to see, and no threshold changes that.
 
-### What a machine session must still do
+### The machine run
+
+Run on 2026-09-18 on a Windows 11 machine with a Docker daemon, against the
+pinned disposable PostGIS 16 container from `docker-compose.test.yml`:
 
 ```bash
 docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
-RUN_INTEGRATION_TESTS=1 \
-  TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432 \
-  TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test \
-  TEST_POSTGRES_DATABASE=population_etl_test \
-  python -m pytest -m "integration and database" \
-  tests/integration/database/test_forced_full_reserve.py \
-  tests/integration/database/test_acs_gold_refresh.py -q
+RUN_INTEGRATION_TESTS=1   TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432   TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test   TEST_POSTGRES_DATABASE=population_etl_test   python -m pytest -m "integration and database"   tests/integration/database/test_forced_full_reserve.py   tests/integration/database/test_acs_gold_refresh.py -q
 ```
 
-Two new tests are in that file: the `reloptions` sweep over the six relations,
-and `last_analyze` moving across a forced re-serve. Record both here and move
-the plan to `needs_review/`.
+`7 passed`, including both assertions that had never executed:
+`test_every_serving_table_carries_its_autovacuum_settings` and
+`test_a_chunk_leaves_current_statistics_behind`.
 
-While the stack is up, it is also worth confirming the thing that started
-this: `VACUUM (ANALYZE, PARALLEL 4) gold_fred.rpt_fred_observations` should now
-succeed rather than failing on `/dev/shm`. That is what `shm_size` bought, and
-it is not something any test asserts.
+**Both were confirmed failing-first**, because a criterion first executed
+long after it was written is worth distrusting until it has been seen to fail:
+
+- Removing the `ALTER TABLE gold_fred.mv_fred_latest SET (...)` block from
+  `gold_fred.sql` fails the `reloptions` sweep with
+  `AssertionError: gold_fred.mv_fred_latest carries []`. Restoring it passes.
+- Replacing the `_analyze_after_chunk` call in `gold_schema.py` with `pass`
+  fails the statistics assertion with "the chunk committed and left the
+  planner's statistics where they were" -- `last_analyze` identical before and
+  after. Restoring it passes.
+
+**The bootstrap really does re-apply them.** `ALTER TABLE ... RESET` on
+`mv_fred_latest` followed by the test run left the three settings back in
+`pg_class.reloptions` without a migration, which is deliverable 1's claim about
+`ensure_*` observed rather than asserted.
+
+### The parallel vacuum, which no test asserts
+
+The plan flags this as worth confirming while a stack is up, and it holds:
+
+| Container | `/dev/shm` |
+|---|---|
+| `docker-compose.test.yml` (sets no `shm_size`) | 64 MB -- Docker's default |
+| `docker-compose.yml` (`ANALYTICS_PG_SHM_SIZE`, 1 GB default) | 1.0 GB |
+
+On the sized stack, `VACUUM (ANALYZE, PARALLEL 4)
+gold_fred.rpt_fred_observations` succeeded in 320 ms, and `VERBOSE` confirms
+the workers were real rather than silently declined:
+
+```text
+INFO:  launched 4 parallel vacuum workers for index cleanup (planned: 4)
+```
+
+*What this does not show.* That relation held 51,646 rows in 51 MB. The
+failure §7 recorded was on a 37 GB relation, so this confirms the sizing takes
+effect and parallel index cleanup runs under it -- not a reproduction of the
+original exhaustion.
 
 ### Commands
+
+Recorded by the cloud session that implemented the plan:
 
 | Command | Result |
 |---|---|
@@ -191,6 +221,25 @@ Each new guard was verified to fail without the change it guards: removing the
 `ANALYZE` call (three tests), moving it before the checkpoint (the ordering
 test), and removing `shm_size` from the compose file (two, one of them the
 pre-existing env-example cross-check).
+
+Re-run on the machine session of 2026-09-18, on the branch as it now stands:
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit/shared tests/unit/census tests/unit/bls tests/unit/fred -q` | 500 passed |
+| `RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database/test_forced_full_reserve.py tests/integration/database/test_acs_gold_refresh.py -q` | 7 passed |
+| `ruff format --check .` / `ruff check .` | clean, 493 files |
+
+The unit count is 500 rather than 494 because the branch gained tests after
+this plan's implementation landed; none of the difference is this plan's.
+
+**A note for the next machine session, not a finding about this plan.** That
+unit command first reported `487 passed, 13 errors`, every error a
+`PermissionError` on `C:\Users\<user>\AppData\Local\Temp\pytest-of-<user>`
+raised inside pytest's `tmp_path` setup. The directory's ACL denies the user
+that owns it and it cannot be removed; pointing `TMP`/`TEMP`/`TMPDIR` at a
+writable path clears all 13. It is a property of that machine, not of this
+repository, and nothing in the queue should read it as a failure.
 
 ## Definition of done
 
