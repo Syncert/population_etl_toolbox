@@ -16,14 +16,24 @@ verify:
 
 ## Plan status
 
-- **Status:** **Blocked on an operator decision**, at the second of this
-  plan's own two start conditions. Claimed 2026-09-18 and paused before any
-  implementation; nothing in the working tree is changed by it.
+- **Status:** In progress. The operator agreed the reset window on
+  2026-09-18, which satisfies the second start condition. Deliverables 1-3
+  are implemented and verified at fixture scale; deliverable 4 and the fifth
+  acceptance criterion wait on the re-serve that is running.
 - **Last updated:** 2026-09-18
-- **Current milestone:** not started. The measurement below is the only work
-  done, and it is what the operator needs in order to decide.
+- **Current milestone:** the rebuild on the internal stack.
+- **Next pickup:** when the forced ACS re-serve finishes, record the "after"
+  heap, index and runtime figures in `BETA_RESET_REINGESTION.md` section 7's
+  table (criterion 5), decide deliverable 4 (BLS) from what the run shows, and
+  unpause `acs_ingest`.
 
-### The blocker
+### The blocker, and how it was resolved
+
+**Resolved 2026-09-18**: the operator agreed the window. The measurement below
+is kept because it is what the decision was made on, and because it is the
+"before" half of acceptance criterion 5.
+
+### What the blocker was
 
 Condition 2 of "Do not start this plan until" is unmet: **no operator has
 agreed a reset window.** This plan is delivered as a rebuild -- drop the
@@ -156,3 +166,71 @@ that used to need manual vacuuming completes without it.
 - It does not change the row shape, the unique key, or any served column.
 - It does not migrate an existing warehouse in place; the beta contract
   makes rebuild the cutover.
+
+
+## Progress
+
+### Delivered and verified at fixture scale (committed)
+
+**Deliverable 1.** `rpt_acs_observations` is `PARTITION BY RANGE
+(observation_date)` over a fixed 2000-2035 range -- fixed rather than derived
+from `CURRENT_DATE`, because the schema snapshot is reviewed as a diff and a
+definition that moved with the calendar would turn every January into a failed
+build nobody caused. `test_the_declared_partition_range_still_has_room` fails
+with five years still in hand. A default partition takes rows outside the
+range: the repository uses 2099 as a synthetic-data marker in a dozen
+fixtures, and making that convention an error for one relation would be a
+schema decision dressed up as a partition boundary.
+
+**Deliverable 2.** `refresh_rpt_acs_observations` truncates the year's
+partition. A range that does not cover a year end to end still deletes, and a
+warehouse that has not been rebuilt still deletes and says so
+(`cleared_partitions=0`, plus a `WARNING`). The affected-key scan and the row
+count now come from one pass, because `TRUNCATE` reports no `ROW_COUNT`.
+
+**Deliverable 3.** Section 7 carries the rebuild steps, what to watch, and the
+one behaviour that changes: truncating takes `ACCESS EXCLUSIVE` where the
+delete took `ROW EXCLUSIVE`, so a reader of that year waits for the chunk
+rather than seeing pre-chunk rows.
+
+**Four existing guards** hard-coded `relkind = 'r'` for a serving relation.
+Each was widened with its reason re-examined rather than relaxed. DB-048's
+autovacuum check was the interesting one: `reloptions` on a partitioned parent
+are read by nothing, so checking the parent alone would have passed on
+thirty-seven partitions carrying no settings at all.
+
+**The schema snapshot** renders a partitioned parent as a summary -- strategy,
+key, and each partition's bounds -- rather than rendering every partition in
+full, which added 1,933 near-identical lines.
+`test_every_partition_carries_its_parents_columns` checks the guarantee that
+omission rests on.
+
+### Two defects the rebuild found, both fixed and both outside this plan's scope as authored
+
+1. **`025_county_label_is_not_reviewed.sql` could not run on a populated
+   warehouse** (DB-057). Both `ADD CONSTRAINT`s preceded the `UPDATE` that
+   makes the rows satisfy them. A fresh bootstrap runs it against an empty
+   table, so the order could not matter; the internal stack holds 4,161 of the
+   rows it corrects and it failed outright.
+
+2. **The warehouse was running on 4 GB of `shared_buffers` on a 101 GB host.**
+   `--env-file` replaces Compose's automatic `.env` rather than adding to it,
+   so `deploy_stack.py` -- which exists to make sure `stack.env` is read -- was
+   the reason `.env`'s `ANALYTICS_PG_SHARED_BUFFERS=48GB` was not. Section 7
+   measures that at six to eight times the re-serve throughput, so this plan's
+   own acceptance criterion would have been measured against a misconfigured
+   host. Fixed in `tools/deployment.py` and applied to the running stack.
+
+### What the rebuild is finding about the warehouse itself
+
+The internal stack **had no manifest ledger and had never received migration
+024**, so dropping the ACS serving relations cascaded through nine views --
+including the shared `gold` contract -- that the checked-in contract file
+could not recreate without it. The full manifest is being applied to bring the
+warehouse onto the reviewed schema, which is the documented path and is what
+`apply_warehouse_manifest.py` exists for.
+
+Worth recording for the remote warehouse's eventual catch-up: migration 027
+has been scanning `silver_census.fact_demographics` (99.8M rows) for half an
+hour. A step that adds a column, rewrites a subset, and validates two check
+constraints costs several full passes at this scale.
