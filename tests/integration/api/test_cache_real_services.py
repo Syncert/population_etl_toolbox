@@ -54,6 +54,7 @@ def _publish_fred_metric(
 def configured_cached_api(
     postgres_connection_factory: Callable[[], connection],
     monkeypatch: pytest.MonkeyPatch,
+    harvest_state_cleanup: None,
 ) -> Iterator[tuple[TestClient, Callable[[str], None], str]]:
     """Build the production app once with real database and Redis settings."""
     redis_config = _redis_config()
