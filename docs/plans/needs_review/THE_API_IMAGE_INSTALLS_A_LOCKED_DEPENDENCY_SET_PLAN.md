@@ -14,13 +14,12 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented on `claude/plans-folder-iteration-4x6itr`. The lock
-  exists, installs by hash, and is guarded three ways. **It stays in
-  `in_progress/` for one reason:** the image has never been *built* from it,
-  because that needs a Docker daemon. See "What a machine session must still
-  do".
-- **Last updated:** 2026-09-17
-- **Current milestone:** the image build, on a machine.
+- **Status:** Ready for review. The lock exists, installs by hash, is guarded
+  three ways, and on 2026-09-18 the image was built from it and the wheel
+  installed against it on a machine with a Docker daemon. See "The machine
+  run".
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -81,10 +80,10 @@ contributor's `.venv` matches the image; `README.md` says so.
 
 - [x] `pip install --require-hashes -r requirements/api.lock.txt` succeeds on
       Python 3.11 and `pip check` is clean.
-- [ ] The API image builds from the lock, and `package-api` installs the
-      wheel under the same constraints. **Written, never run:** both need a
-      Docker daemon or a CI runner. The plan named `deployment-smoke`; that
-      job does not build the API image. See below.
+- [x] The API image builds from the lock, and `package-api` installs the
+      wheel under the same constraints. Both run 2026-09-18; see "The machine
+      run". The plan named `deployment-smoke`; that job does not build the API
+      image. See below.
 - [x] Removing a package from the lock fails the unit test naming it -- and
       so does pinning one outside its declared range, and so does stripping
       one pin's hashes. All three proven.
@@ -149,20 +148,42 @@ compile` writes the resolution and nothing else, and the committed lock
 carries a header explaining what it is and why Airflow is not in it -- exactly
 the part a regeneration would silently drop.
 
-### What a machine session must still do
+### The machine run
 
-Build the image and install the wheel, which is one command each:
+Run on 2026-09-18 on a Windows 11 machine with a Docker daemon.
 
-```bash
-docker build -f infra/docker/Dockerfile.api -t population-etl-api:lock-check .
-docker run --rm population-etl-api:lock-check pip check
-docker run --rm population-etl-api:lock-check \
-  python -c "import apps.api.main; print('import ok')"
+**The image half.** The build installs
+`pip install --no-cache-dir --require-hashes -r requirements/api.lock.txt`
+and resolved nothing: every distribution came from the lock and matched its
+recorded hash, or the build would have stopped there.
+
+```text
+docker build -f infra/docker/Dockerfile.api -t population-etl-api:lock-check .   -> built
+docker run --rm population-etl-api:lock-check pip check                          -> No broken requirements found.
+docker run --rm population-etl-api:lock-check python -c "import apps.api.main"   -> import ok
 ```
 
-and, for the packaging half, run `package-api`'s install steps against a
-built wheel in a clean venv. Record both here and move the plan to
-`needs_review/`.
+The same lock also built the `frontend-smoke` API image in this session, which
+then served real requests against a real database -- so the locked set is
+known to start and answer, not merely to install.
+
+**The packaging half.** `package-api`'s install steps were run against a built
+wheel in a clean virtualenv, in `python:3.11-slim` rather than on the Windows
+host: the lock pins manylinux-only distributions (`uvloop`, `polars-runtime-32`,
+`psycopg2-binary`), so a Windows venv cannot install it and a run there would
+have graded a different dependency set than the one CI and the image use.
+
+```text
+python -m build --outdir dist/                                   -> data_ingestion_toolbox-0.1.0-py3-none-any.whl
+python -m tests.support.package_artifacts --wheel ... --sdist ... -> passed
+pip install --require-hashes -r requirements/api.lock.txt         -> installed
+pip install --no-deps <wheel>; pip check                          -> No broken requirements found.
+python -c "import data_ingestion_toolbox; import apps.api.main"   -> import ok
+```
+
+`--no-deps` on the wheel is what makes this a test of the lock: the wheel is
+installed *against* the locked set rather than re-resolving `pyproject.toml`'s
+ranges, which is the distinction the job's own comment records.
 
 ### Commands
 

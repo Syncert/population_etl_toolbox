@@ -73,11 +73,10 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**4 plans.**
+**3 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
-| [`api-dependency-lock`](in_progress/THE_API_IMAGE_INSTALLS_A_LOCKED_DEPENDENCY_SET_PLAN.md) | medium | The API image builds from the lock in `deployment-smoke`. |
 | [`client-error-and-vitals-reporting`](in_progress/THE_BROWSER_CAN_REPORT_WHAT_WENT_WRONG_PLAN.md) | medium | The Compose smoke job sees the vitals line in the web container log. |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
 | [`raw-capture-retention-decision`](in_progress/WHAT_HAPPENS_TO_RAW_CAPTURE_WHEN_THE_WAREHOUSE_IS_RESET_PLAN.md) | medium | The round-trip test passes: restored captures verify under `DQ-SHARED-001` and the append-only triggers are still present after the restore -- a warehouse round-trip. |
@@ -94,7 +93,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**15 plans.**
+**14 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -109,7 +108,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`relation-probe-once-per-request`](in_progress/A_RELATION_IS_PROBED_ONCE_PER_REQUEST_PLAN.md) | medium | `postgres` | -- |
 | [`second-wave-product-templates`](to_do/SECOND_WAVE_PRODUCT_TEMPLATES_PLAN.md) | medium | `browser`, `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
-| [`shared-geography-guard`](in_progress/THE_THREE_NEWER_SOURCES_WAIT_FOR_A_LOADED_GEOGRAPHY_PLAN.md) | low | `airflow`, `postgres` | -- |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |
 | [`tile-layer-and-grain-filter-reads`](to_do/THE_TILE_LAYER_AND_THE_GRAIN_FILTERS_ARE_MEASURED_PLAN.md) | low | `postgres` | -- |
 | [`warehouse-manifest-ledger`](to_do/THE_WAREHOUSE_KNOWS_WHICH_STEPS_IT_CARRIES_PLAN.md) | medium | `postgres` | -- |

@@ -15,14 +15,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Status:** All three deliverables are implemented on
-  `claude/plans-folder-iteration-4x6itr`; the unit and DAG tiers are green.
-  **It stays in `in_progress/` for one reason:** the integration assertion has
-  never been run, because it needs PostgreSQL. It is written and collects.
-- **Last updated:** 2026-09-17
-- **Current milestone:** the refusal, on a machine.
+- **Status:** Ready for review. All three deliverables are implemented on
+  `claude/plans-folder-iteration-4x6itr`, the unit and DAG tiers are green,
+  and the integration refusal was run on a machine session on 2026-09-18
+  against a freshly bootstrapped warehouse -- the state the old guard passed
+  on. See "The machine run".
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -79,9 +78,10 @@ counties, and names the helper.
 - [x] A DAG test asserts that each of the six ingestion DAGs' guard task calls
       the shared helper, and that no DAG file still contains its own
       `to_regclass` or count predicate.
-- [ ] An integration test bootstraps the manifest, does not load the geography
+- [x] An integration test bootstraps the manifest, does not load the geography
       reference, and asserts the helper raises naming `nation=0, states=0,
-      counties=0`. **Written, never run** -- it needs PostgreSQL.
+      counties=0`. Run 2026-09-18 against a freshly bootstrapped disposable
+      PostGIS 16 container; see "The machine run".
 - [x] The thresholds appear once in `src/` and are quoted, not restated, in
       `BETA_RESET_REINGESTION.md`.
 - [x] Every new test carries a `Covers:` label; DAG-020 added, and
@@ -130,22 +130,46 @@ transforming or loading runs before it. It deliberately does **not** assert
 which reads the provider's catalog and resolves nothing. Asserting the
 stronger thing would have failed on a DAG this plan says not to re-topologise.
 
-### What a machine session must still do
+### The machine run
+
+Run on 2026-09-18 against the disposable PostGIS 16 container from
+`docker-compose.test.yml`, brought up fresh so the geography reference really
+was absent:
 
 ```bash
+docker compose -f infra/docker/docker-compose.test.yml down --volumes
 docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
-RUN_INTEGRATION_TESTS=1 \
-  TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432 \
-  TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test \
-  TEST_POSTGRES_DATABASE=population_etl_test \
+RUN_INTEGRATION_TESTS=1 TEST_POSTGRES_* ... \
   python -m pytest -m "integration and database" \
-  tests/integration/database/test_shared_geography_guard.py -q
+  tests/integration/database/test_shared_geography_guard.py -v -rs
 ```
 
-The refusal test skips rather than passes if the database already carries a
-geography reference, so run it against a freshly bootstrapped one -- that is
-the state the old guard passed on and the state this has to fail on. Record
-the result here and move the plan to `needs_review/`.
+```text
+test_a_bootstrapped_but_unloaded_warehouse_is_refused PASSED
+test_a_loaded_reference_satisfies_the_guard           SKIPPED
+1 passed, 1 skipped
+```
+
+The bootstrap was confirmed to be in the exact state the plan is about before
+trusting the pass: `silver_ref.dim_geo_entity` exists, and
+`SELECT count(*) FROM silver_ref.dim_geo_current WHERE is_active` returns `0`.
+That is what the old `to_regclass` guard answered "yes" to, and the new helper
+refuses it naming `nation=0, state=0, county=0`. The test's own skip branch --
+which fires when a database already carries a reference -- did not fire, so
+this is a pass rather than a skip wearing a pass's colours.
+
+**The second test skipped, and that is not this plan's criterion.**
+`test_a_loaded_reference_satisfies_the_guard` needs a nation, 50+ states and
+3000+ counties, which no fixture in the database tier loads; it skips with
+that reason and does so on every tier that runs it, including CI. The
+criterion this plan declares is the refusal, and the positive direction is
+covered by the DAG tier's assertion that each guard task calls the helper.
+Running it for real would need the geography pipeline against the Census API,
+which is the `external` tier's business, not this one's.
+
+It was also run as part of the whole database integration tier
+(`-m "integration and database" tests/integration/database`), where it behaves
+the same way.
 
 ### Commands
 
