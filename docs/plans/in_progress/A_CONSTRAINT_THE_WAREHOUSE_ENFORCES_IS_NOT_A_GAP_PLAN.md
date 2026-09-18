@@ -14,10 +14,14 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Claimed 2026-09-18 by a machine session with the disposable
+  PostGIS 16 container available, which is where a declared constraint can be
+  matched against `pg_constraint`.
+- **Last updated:** 2026-09-18
+- **Current milestone:** deliverable 1, the grain model.
+- **Next pickup:** the plan says "24 BLOCK gaps"; two rules have left that set
+  since it was authored (`DQ-SHARED-004`, `DQ-BLS-004`), so recompute every
+  count from the inventory rather than adjusting the plan's numbers.
 
 ## Why
 
