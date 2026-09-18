@@ -48,12 +48,6 @@ BROWSER = "browser"
 #: reader can find it, and the environment it needs. These are declared rather
 #: than derived because they are prose.
 CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
-    "served-document-describes-the-platform": (
-        POSTGRES,
-        "`/health/ready` reports `storage` from a real probe: `ok` on the "
-        "integration stack. The `unavailable` and `unconfigured` cases are "
-        "unit-testable; the `ok` case needs a reachable application database.",
-    ),
     "raw-capture-retention-decision": (
         POSTGRES,
         "The round-trip test passes: restored captures verify under "

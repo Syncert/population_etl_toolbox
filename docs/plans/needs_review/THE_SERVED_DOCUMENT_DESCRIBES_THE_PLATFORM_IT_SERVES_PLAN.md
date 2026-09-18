@@ -13,15 +13,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented on `claude/plans-folder-iteration-4x6itr`. All three
-  deliverables are done and every tier a cloud session can run is green.
-  **It stays in `in_progress/` for one reason:** the `ok` case of the storage
-  probe has never been run against a real application database. The state
-  machine is proven in the unit tier with a stand-in engine; what is unproven
-  is that a genuine `apps.api.appdb` connection answers `SELECT 1` through
-  this code path. See "What a machine session must still do".
-- **Last updated:** 2026-09-17
-- **Current milestone:** the `ok` case, on the integration stack.
+- **Status:** Ready for review. All three deliverables are done, and the `ok`
+  case was run on 2026-09-18 against a real application database provisioned
+  by `scripts/provision_app_api.py --apply-schema`, reached by the built API
+  image over `apps.api.appdb`. All four storage states were observed on that
+  stack; see "The machine run".
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -83,11 +81,11 @@ A second assertion in `test_consumer_guide.py`: every served path under
 - [x] The served description names all seven sources and updates when a
       source is added to the registry (the test adds a fake registry entry
       and reads the description change).
-- [~] `/health/ready` reports `storage` from a real probe: `unavailable` when
+- [x] `/health/ready` reports `storage` from a real probe: `unavailable` when
       the URL points at a closed port, `unconfigured` when unset, `status`
-      unchanged in all three -- all asserted. **`ok` is asserted against a
-      stand-in engine, not a real one**, because this container has no
-      application database. That one case is the machine session's.
+      unchanged in all three -- all asserted. `ok` was run on 2026-09-18
+      against a real application database rather than a stand-in engine; see
+      "The machine run".
 - [x] Adding an undocumented route to the app fails the guide test naming the
       path (proven failing-first with a throwaway route).
 - [x] `TESTING_CONTRACT.md` gains API-144, API-145 and API-146.
@@ -143,20 +141,45 @@ Both are documented now, and the readiness paragraph the plan asks for names
 `storage` while it is there. The assertion was then proven failing-first with
 a throwaway route, which it names in the failure message.
 
-### What a machine session must still do
+### The machine run
 
-One case, and it needs a reachable application database:
+Run on 2026-09-18 on a Windows 11 machine with a Docker daemon, against the
+stack `frontend-smoke.yml` composes -- the built API image, not the nginx
+stub -- with an application database provisioned into the disposable test
+database, which `sql/bootstrap/002_app_api.sql` explicitly supports:
 
 ```bash
-# With APP_API_DATABASE_URL pointing at a provisioned application database
-# (scripts/provision_app_api.py --apply-schema), against the running API:
-curl -s http://127.0.0.1:8000/health/ready | jq .storage    # expect "ok"
+ANALYTICS_DB_HOST=127.0.0.1 ANALYTICS_DB_PORT=55432 \
+  ANALYTICS_DB_USER=population_test ANALYTICS_DB_PASSWORD=population_test \
+  ANALYTICS_DB_NAME=population_etl_test APP_API_DB_PASSWORD=... \
+  python scripts/provision_app_api.py --apply-schema
 ```
 
-Then confirm the other two against the same stack -- stop the application
-database and expect `"unavailable"` with `status` still `ready`; unset
-`APP_API_DATABASE_URL` and expect `"unconfigured"` -- and record the results
-here before moving the plan to `needs_review/`.
+`APP_API_DATABASE_URL` was then varied on the `api` service through throwaway
+override files, and `/health/ready` read after each recreate. All four states,
+on one running deployment:
+
+| `APP_API_DATABASE_URL` | `storage` | `status` | `database` |
+|---|---|---|---|
+| unset (the smoke file's own default) | `unconfigured` | `ready` | `ok` |
+| the provisioned database | `ok` | `ready` | `ok` |
+| right host, closed port `5599` | `unavailable` | `ready` | `ok` |
+| right host and port, wrong password | `unavailable` | `ready` | `ok` |
+
+The last row is the one worth keeping. A closed port only proves the probe
+attempts a connection; a reachable server that *refuses the credential* proves
+`ok` means an authenticated session that ran its `SELECT 1`, which is the
+claim the unit tier could only make against a stand-in engine. And `status`
+stays `ready` in all four, so storage is reported and never gates -- ADR-0003's
+rule, observed on a deployment rather than asserted in a fixture.
+
+**One deviation from the plan's instructions, deliberate.** It says "stop the
+application database" for the `unavailable` case. On this stack the
+application database and the warehouse are the same container, so stopping it
+would have taken `database` down with it and proved nothing about whether
+`storage` gates `status`. Pointing the URL at a closed port and then at a
+refused credential isolates the two, which is what the criterion is actually
+about.
 
 ### Commands
 
@@ -169,6 +192,13 @@ here before moving the plan to `needs_review/`.
 
 The reviewed OpenAPI snapshot was regenerated once, for one line: `storage`
 added to `ReadinessResponse`'s properties and not to its `required` list.
+
+Re-run on the machine session of 2026-09-18:
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/unit/api/test_consumer_guide.py tests/unit/api/test_operational_hardening.py -q` | 70 passed |
+| `ruff format --check .` / `ruff check .` | clean, 493 files |
 
 ## Definition of done
 
