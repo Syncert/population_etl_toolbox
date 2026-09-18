@@ -4319,6 +4319,8 @@ r silver_bls.fact_labor_statistics
     column state_fips character varying(2)
     column county_fips character varying(3)
     column value numeric
+    column source_value text
+    column value_status text NOT NULL DEFAULT 'valid'::text
     column year integer NOT NULL
     column period character varying(10) NOT NULL
     column period_name character varying(100)
@@ -4326,11 +4328,15 @@ r silver_bls.fact_labor_statistics
     column measure_name text
     column seasonal_adjustment character varying(1) DEFAULT 'U'::character varying
     column source_system character varying(50) DEFAULT 'BLS'::character varying
+    column capture_id uuid
     column load_batch_id uuid NOT NULL
     column ingested_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_labor_statistics_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint fact_labor_statistics_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
     constraint fact_labor_statistics_pkey PRIMARY KEY (labor_stat_sk)
+    constraint fact_labor_statistics_published_value_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_labor_statistics_time_sk_fkey FOREIGN KEY (time_sk) REFERENCES silver_ref.dim_time(time_sk)
+    constraint fact_labor_statistics_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
     constraint fact_labor_stats_uk UNIQUE (series_id, period_date)
     index fact_labor_statistics_pkey CREATE UNIQUE INDEX fact_labor_statistics_pkey ON silver_bls.fact_labor_statistics USING btree (labor_stat_sk)
     index fact_labor_stats_uk CREATE UNIQUE INDEX fact_labor_stats_uk ON silver_bls.fact_labor_statistics USING btree (series_id, period_date)
@@ -4561,18 +4567,24 @@ r silver_census.fact_demographics
     column state_fips character varying(2)
     column county_fips character varying(3)
     column estimate_value numeric
+    column source_value text
+    column value_status text NOT NULL DEFAULT 'valid'::text
     column margin_of_error numeric
     column margin_of_error_pct numeric
     column variable_label text
     column variable_concept text
     column universe text
     column source_system character varying(50) DEFAULT 'CENSUS_ACS'::character varying
+    column capture_id uuid
     column load_batch_id uuid NOT NULL
     column ingested_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint fact_demographics_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint fact_demographics_geo_sk_fkey FOREIGN KEY (geo_sk) REFERENCES silver_ref.dim_geo_entity(geo_sk)
     constraint fact_demographics_pkey PRIMARY KEY (demographic_sk)
+    constraint fact_demographics_published_value_check CHECK (((value_status <> 'valid'::text) OR (estimate_value IS NOT NULL)))
     constraint fact_demographics_time_sk_fkey FOREIGN KEY (time_sk) REFERENCES silver_ref.dim_time(time_sk)
     constraint fact_demographics_uk UNIQUE (dataset, table_id, variable_code, geo_id, estimate_year)
+    constraint fact_demographics_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index fact_demographics_pkey CREATE UNIQUE INDEX fact_demographics_pkey ON silver_census.fact_demographics USING btree (demographic_sk)
     index fact_demographics_uk CREATE UNIQUE INDEX fact_demographics_uk ON silver_census.fact_demographics USING btree (dataset, table_id, variable_code, geo_id, estimate_year)
     index idx_fact_demo_dataset CREATE INDEX idx_fact_demo_dataset ON silver_census.fact_demographics USING btree (dataset)
@@ -5001,6 +5013,7 @@ r silver_fred.fact_economic_indicators
     column ingested_at timestamp with time zone NOT NULL DEFAULT now()
     constraint fact_economic_indicators_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint fact_economic_indicators_pkey PRIMARY KEY (economic_indicator_sk)
+    constraint fact_economic_indicators_published_value_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint fact_economic_indicators_time_sk_fkey FOREIGN KEY (time_sk) REFERENCES silver_ref.dim_time(time_sk)
     constraint fact_economic_indicators_uk UNIQUE (series_id, observation_date)
     constraint fact_economic_indicators_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))

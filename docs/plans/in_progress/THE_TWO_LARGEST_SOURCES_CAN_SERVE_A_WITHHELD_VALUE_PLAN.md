@@ -20,14 +20,65 @@ verify:
 - **Status:** Claimed and surveyed. No implementation yet; the working tree
   carries nothing from this plan.
 - **Last updated:** 2026-09-18
-- **Current milestone:** survey complete, deliverable 1 next.
+- **Current milestone:** deliverable 1, schema half **done**; transform half
+  next.
 - **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
   Satisfied.
-- **Next pickup:** deliverable 1. Write the failing check first -- both facts
-  lack the three columns FRED's carries -- then add them to
-  `silver_census.sql` and `silver_bls.sql`, add
-  `sql/migrations/027_acs_bls_fact_lineage.sql` for populated warehouses, and
-  populate them from `observation_revision` in each transform.
+- **Next pickup:** finish deliverable 1 by populating the three new columns
+  from `observation_revision` in `census_acs/silver_census/transform.py` (the
+  fact aggregation around lines 500-560, which groups the revision's rows and
+  keeps only `estimate_value`/`margin_of_error`) and in the BLS analogue. The
+  aggregation currently drops every row whose `measure_type` is `E` with a
+  null value; it has to carry the revision's `value_status` and `value_source`
+  through the group-by instead, and pick a status for the grouped row. Then
+  deliverable 2.
+
+### Done so far
+
+**The gap is a test.** `tests/unit/shared/test_fact_capture_lineage.py`
+(DB-055) grades all seven facts against their own vocabulary. Before the
+change it failed nine ways: ACS and BLS on every check, and FRED on the
+published-value check -- which is the extra finding below. 26 pass now.
+
+**The two facts carry lineage and status.** `capture_id` (nullable,
+referencing `raw_capture.response_capture`), `source_value`, and a
+`value_status` in the vocabulary each source's own `observation_revision`
+uses, with a named `*_published_value_check` tying the published token to a
+non-null number. Named rather than left to PostgreSQL, because a table-level
+unnamed CHECK is auto-named `<table>_check` and a fresh bootstrap would then
+carry the same predicate under a different name from an upgraded warehouse.
+
+**`sql/migrations/027_acs_bls_fact_lineage.sql`** is the populated-warehouse
+half: `ADD COLUMN IF NOT EXISTS`, a rewrite of the rows the column default
+would otherwise mislabel (`absent` for ACS, `missing` for BLS), then the
+constraints. It runs in the `source-fix` phase, after every silver phase file
+and before gold.
+
+**A third source had the same defect.** The guard found that
+`silver_fred.fact_economic_indicators` carried `value_status` with no
+constraint tying it to the number -- and the column DEFAULTs to `valid`, so a
+writer that set no status at all produced a row asserting a published value it
+did not have. Its revision relation has had the check since ARC-007. This is
+in scope: it is the same defect one source over, and adding a CHECK is not a
+change to FRED's row shape, which is what "this plan does not change the row
+shape for the other five sources" forbids.
+
+**Schema snapshot regenerated and reviewed.** Thirteen added lines, nothing
+removed or renamed:
+
+```text
++ column source_value text
++ column value_status text NOT NULL DEFAULT 'valid'::text
++ column capture_id uuid
++ constraint fact_{labor_statistics,demographics}_capture_id_fkey ...
++ constraint fact_{labor_statistics,demographics,economic_indicators}_published_value_check ...
++ constraint fact_{labor_statistics,demographics}_value_status_check ...
+```
+
+Verified: `python -m pytest tests/unit -q` 1906 passed;
+`RUN_INTEGRATION_TESTS=1 ... tests/integration/database -q` 214 passed, 1
+skipped; `ruff` clean. The database tier passing is itself evidence that no
+existing fixture writes a `valid` row with no value.
 
 ### Survey findings, and one correction to this plan's premise
 

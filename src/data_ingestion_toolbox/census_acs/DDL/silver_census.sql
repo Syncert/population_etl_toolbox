@@ -44,15 +44,31 @@ CREATE TABLE IF NOT EXISTS silver_census.fact_demographics (
     state_fips VARCHAR(2),
     county_fips VARCHAR(3),
     estimate_value NUMERIC,
+    -- The provider's own token, and this pipeline's reading of it. The
+    -- revision above already distinguishes absent/blank/sentinel/invalid; the
+    -- fact used to keep only the number, so a cell Census suppressed reached
+    -- serving as no row at all and a consumer could not tell it from one the
+    -- Bureau never published.
+    source_value TEXT,
+    value_status TEXT NOT NULL DEFAULT 'valid'
+        CHECK (value_status IN ('valid', 'absent', 'blank', 'sentinel', 'invalid')),
     margin_of_error NUMERIC,
     margin_of_error_pct NUMERIC,
     variable_label TEXT,
     variable_concept TEXT,
     universe TEXT,
     source_system VARCHAR(50) DEFAULT 'CENSUS_ACS',
+    -- The response this row was parsed from, so a served value can be traced
+    -- to bytes DQ-SHARED-001 verifies. Nullable because a warehouse that
+    -- predates `sql/migrations/027_acs_bls_fact_lineage.sql` holds rows whose
+    -- capture was never recorded, and inventing one would be worse than
+    -- admitting it is unknown.
+    capture_id UUID REFERENCES raw_capture.response_capture(capture_id),
     load_batch_id UUID NOT NULL,
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fact_demographics_uk UNIQUE (dataset, table_id, variable_code, geo_id, estimate_year)
+    CONSTRAINT fact_demographics_uk UNIQUE (dataset, table_id, variable_code, geo_id, estimate_year),
+    CONSTRAINT fact_demographics_published_value_check
+        CHECK (value_status <> 'valid' OR estimate_value IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fact_demo_time_sk ON silver_census.fact_demographics(time_sk);

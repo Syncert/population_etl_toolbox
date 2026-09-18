@@ -50,7 +50,13 @@ CREATE TABLE IF NOT EXISTS silver_fred.fact_economic_indicators (
     source_system VARCHAR(50) DEFAULT 'FRED',
     load_batch_id UUID NOT NULL,
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fact_economic_indicators_uk UNIQUE (series_id, observation_date)
+    CONSTRAINT fact_economic_indicators_uk UNIQUE (series_id, observation_date),
+    -- The revision relation above has carried this since the ARC-007 cutover
+    -- and the fact did not, so a row could claim `valid` -- which is also the
+    -- column's default, so a writer that set no status at all claimed it --
+    -- while carrying no value. A consumer reading the status believes it.
+    CONSTRAINT fact_economic_indicators_published_value_check
+        CHECK (value_status <> 'valid' OR value IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fact_econ_time_sk ON silver_fred.fact_economic_indicators(time_sk);

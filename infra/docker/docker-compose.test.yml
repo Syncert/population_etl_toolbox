@@ -37,27 +37,28 @@ services:
       - ../../src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql:/docker-entrypoint-initdb.d/110_silver_nass.sql:ro
       - ../../sql/migrations/019_stratum_shape_contract.sql:/docker-entrypoint-initdb.d/115_migration_019.sql:ro
       - ../../sql/migrations/025_county_label_is_not_reviewed.sql:/docker-entrypoint-initdb.d/120_migration_025.sql:ro
-      - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/125_gold_census.sql:ro
-      - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/130_gold_bls.sql:ro
-      - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/135_gold_fred.sql:ro
-      - ../../src/data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql:/docker-entrypoint-initdb.d/140_gold_pep.sql:ro
-      - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/gold_cdc.sql:/docker-entrypoint-initdb.d/145_gold_cdc.sql:ro
-      - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql:/docker-entrypoint-initdb.d/150_gold_fbi.sql:ro
-      - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql:/docker-entrypoint-initdb.d/155_gold_nass.sql:ro
-      - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/160_publisher_census.sql:ro
-      - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/165_publisher_bls.sql:ro
-      - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/170_publisher_fred.sql:ro
-      - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/publisher.sql:/docker-entrypoint-initdb.d/175_publisher_cdc.sql:ro
-      - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql:/docker-entrypoint-initdb.d/180_publisher_fbi.sql:ro
-      - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql:/docker-entrypoint-initdb.d/185_publisher_nass.sql:ro
-      - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/190_glossary_schema.sql:ro
-      - ../../sql/migrations/016_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/195_migration_016.sql:ro
-      - ../../sql/migrations/017_serving_full_reserve_run.sql:/docker-entrypoint-initdb.d/200_migration_017.sql:ro
-      - ../../sql/migrations/018_geo_grain_vocabulary.sql:/docker-entrypoint-initdb.d/205_migration_018.sql:ro
-      - ../../sql/migrations/024_served_place_name.sql:/docker-entrypoint-initdb.d/210_migration_024.sql:ro
-      - ../../sql/migrations/026_released_date_is_not_the_refresh_clock.sql:/docker-entrypoint-initdb.d/215_migration_026.sql:ro
-      - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/220_migration_003.sql:ro
-      - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/225_contract_views.sql:ro
+      - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
+      - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql:/docker-entrypoint-initdb.d/130_gold_census.sql:ro
+      - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql:/docker-entrypoint-initdb.d/135_gold_bls.sql:ro
+      - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql:/docker-entrypoint-initdb.d/140_gold_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql:/docker-entrypoint-initdb.d/145_gold_pep.sql:ro
+      - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/gold_cdc.sql:/docker-entrypoint-initdb.d/150_gold_cdc.sql:ro
+      - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql:/docker-entrypoint-initdb.d/155_gold_fbi.sql:ro
+      - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql:/docker-entrypoint-initdb.d/160_gold_nass.sql:ro
+      - ../../src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql:/docker-entrypoint-initdb.d/165_publisher_census.sql:ro
+      - ../../src/data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql:/docker-entrypoint-initdb.d/170_publisher_bls.sql:ro
+      - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/175_publisher_fred.sql:ro
+      - ../../src/data_ingestion_toolbox/cdc/gold_cdc/DDL/publisher.sql:/docker-entrypoint-initdb.d/180_publisher_cdc.sql:ro
+      - ../../src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql:/docker-entrypoint-initdb.d/185_publisher_fbi.sql:ro
+      - ../../src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql:/docker-entrypoint-initdb.d/190_publisher_nass.sql:ro
+      - ../../sql/gold_contract/002_gold_glossary_schema.sql:/docker-entrypoint-initdb.d/195_glossary_schema.sql:ro
+      - ../../sql/migrations/016_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/200_migration_016.sql:ro
+      - ../../sql/migrations/017_serving_full_reserve_run.sql:/docker-entrypoint-initdb.d/205_migration_017.sql:ro
+      - ../../sql/migrations/018_geo_grain_vocabulary.sql:/docker-entrypoint-initdb.d/210_migration_018.sql:ro
+      - ../../sql/migrations/024_served_place_name.sql:/docker-entrypoint-initdb.d/215_migration_024.sql:ro
+      - ../../sql/migrations/026_released_date_is_not_the_refresh_clock.sql:/docker-entrypoint-initdb.d/220_migration_026.sql:ro
+      - ../../sql/migrations/003_semantic_policy_extraction.sql:/docker-entrypoint-initdb.d/225_migration_003.sql:ro
+      - ../../sql/gold_contract/001_gold_contract_views.sql:/docker-entrypoint-initdb.d/230_contract_views.sql:ro
       - ../../tests/sql/martin_seed.sql:/docker-entrypoint-initdb.d/900_martin_seed.sql:ro
       # `tests/sql/frontend_smoke_seed.sql` is deliberately NOT mounted here.
       # It belongs to the frontend smoke tier and is mounted by
