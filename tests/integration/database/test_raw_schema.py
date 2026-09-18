@@ -7,7 +7,8 @@ from collections.abc import Callable
 import pytest
 from psycopg2.extensions import connection
 
-from tests.support.postgres import apply_sql_files
+from data_ingestion_toolbox.utility.warehouse_manifest import recorded_assets
+from tests.support.postgres import apply_warehouse_manifest
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
@@ -63,12 +64,28 @@ def test_bootstrap_creates_metadata_capture_and_revision_tables(
 def test_warehouse_manifest_is_idempotent(
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: DB-002 — checked-in warehouse DDL can be applied twice safely."""
+    """Covers: DB-002, DB-049 — the applier can be pointed at the same warehouse twice.
+
+    Through the applier rather than a bare `apply_sql_files`, because that is
+    now what every environment builds a warehouse with, and re-running it is
+    the case an operator actually meets: a bootstrap that failed part-way is
+    resumed by running the same command again. The ledger has to come out the
+    same, or the second run has changed what the warehouse claims to carry
+    without changing what it carries.
+    """
     conn = postgres_connection_factory()
     try:
-        apply_sql_files(conn)
-        apply_sql_files(conn)
+        apply_warehouse_manifest(conn)
+        first = recorded_assets(conn)
+        apply_warehouse_manifest(conn)
+        second = recorded_assets(conn)
         conn.commit()
+
+        assert first, "no manifest asset was recorded; the run proved nothing"
+        assert second == first, (
+            "a second identical run changed the ledger, so the hash recorded "
+            "does not depend only on the file that was applied"
+        )
     finally:
         conn.close()
 

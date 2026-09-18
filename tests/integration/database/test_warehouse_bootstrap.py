@@ -6,7 +6,19 @@ import psycopg2
 import pytest
 from psycopg2.extensions import connection
 
-from tests.support.postgres import WAREHOUSE_DDL_FILES, apply_sql_files
+from data_ingestion_toolbox.utility.warehouse_manifest import (
+    ManifestApplicationError,
+    ManifestAsset,
+    apply_manifest,
+    compare_to_manifest,
+    manifest_assets,
+    recorded_assets,
+)
+from tests.support.postgres import (
+    WAREHOUSE_DDL_FILES,
+    apply_sql_files,
+    apply_warehouse_manifest,
+)
 from tests.support.capture_seed import seed_geography
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -270,3 +282,145 @@ def test_silver_fact_foreign_keys_reject_orphans_and_accept_dimensions(
             """
         )
         assert cursor.fetchone() == (100,)
+
+
+def test_the_ledger_records_every_manifest_asset_at_its_content_hash(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DB-049 — the warehouse can say which steps it carries.
+
+    `DQ-SHARED-004` is a BLOCK rule comparing the manifest against what a
+    warehouse applied, and until the applier wrote these rows the applied set
+    did not exist: `control.schema_migration_state` held one hash per source's
+    gold DDL and no manifest asset at all. The comparison is only worth
+    anything if the hash recorded is the hash of the file that was applied, so
+    that is what is checked rather than the row count.
+    """
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        recorded = recorded_assets(database)
+        assets = manifest_assets()
+        assert len(assets) > 30, "the manifest read as nearly empty; nothing was proved"
+
+        missing = sorted({asset.id for asset in assets} - set(recorded))
+        assert not missing, f"applied but not recorded: {missing}"
+
+        wrong = sorted(
+            asset.id for asset in assets if recorded[asset.id] != asset.content_hash()
+        )
+        assert not wrong, f"recorded at a hash that is not the file's: {wrong}"
+
+        assert compare_to_manifest(database) == ((), ())
+    finally:
+        database.close()
+
+
+def test_a_failed_asset_records_nothing_and_names_itself(
+    postgres_connection_factory, tmp_path
+) -> None:
+    """Covers: DB-049 — a half-applied bootstrap does not claim it is whole.
+
+    No file under `sql/` opens a transaction, so before the applier a failure
+    part-way through left a half-applied step and nothing that said so. The
+    guarantee is per asset: the step and the row claiming it commit together,
+    so a failure leaves no row for that asset and the assets before it keep
+    theirs.
+
+    The manifest built here is real SQL applied to a real warehouse, with one
+    asset that does not parse. A mocked cursor would prove the `except` branch
+    is reachable and not that PostgreSQL rolls the row back with the DDL.
+    """
+    (tmp_path / "good.sql").write_text(
+        "CREATE SCHEMA IF NOT EXISTS ledger_probe;", encoding="utf-8"
+    )
+    (tmp_path / "bad.sql").write_text(
+        "CREATE TABLE ledger_probe.broken (id INT,;", encoding="utf-8"
+    )
+    assets = (
+        ManifestAsset("probe-good", "probe", "good.sql", root=tmp_path),
+        ManifestAsset("probe-bad", "probe", "bad.sql", root=tmp_path),
+    )
+
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+
+        with pytest.raises(ManifestApplicationError) as failure:
+            apply_manifest(database, assets)
+        assert failure.value.asset_id == "probe-bad"
+        assert "probe-bad" in str(failure.value), (
+            "the operator is told an asset failed without being told which"
+        )
+
+        with database.cursor() as cursor:
+            cursor.execute(
+                "SELECT component_name FROM control.schema_migration_state "
+                "WHERE component_name = ANY(%s)",
+                (["probe-good", "probe-bad"],),
+            )
+            rows = {name for (name,) in cursor.fetchall()}
+        assert "probe-bad" not in rows, (
+            "the warehouse records a step it rolled back, which is a claim to "
+            "carry DDL it does not have"
+        )
+        assert "probe-good" in rows, (
+            "the asset before the failure was rolled back too, so a resumed "
+            "run cannot tell how far the first one got"
+        )
+    finally:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM control.schema_migration_state "
+                "WHERE component_name LIKE 'probe-%'"
+            )
+            cursor.execute("DROP SCHEMA IF EXISTS ledger_probe CASCADE")
+        database.commit()
+        database.close()
+
+
+def test_a_changed_step_reads_as_drift_rather_than_as_missing(
+    postgres_connection_factory, tmp_path
+) -> None:
+    """Covers: DB-049 — the two faults the rule must not conflate.
+
+    A missing asset never ran here. A drifted one ran and the file has changed
+    since, so the warehouse is at a revision the checkout no longer describes.
+    Reporting the second as the first would send an operator to re-apply a
+    step that is already there.
+    """
+    step = tmp_path / "drifting.sql"
+    step.write_text("CREATE SCHEMA IF NOT EXISTS drift_probe;", encoding="utf-8")
+    asset = ManifestAsset("probe-drift", "probe", "drifting.sql", root=tmp_path)
+
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        apply_manifest(database, (asset,))
+        recorded = recorded_assets(database)
+        assert "probe-drift" not in recorded, (
+            "recorded_assets returned a component the manifest does not name, "
+            "so it cannot tell a manifest row from gold_schema's"
+        )
+
+        with database.cursor() as cursor:
+            cursor.execute(
+                "SELECT ddl_hash FROM control.schema_migration_state "
+                "WHERE component_name = 'probe-drift'"
+            )
+            before = cursor.fetchone()[0]
+        assert before == asset.content_hash()
+
+        step.write_text(
+            "CREATE SCHEMA IF NOT EXISTS drift_probe; -- changed", encoding="utf-8"
+        )
+        assert asset.content_hash() != before, "the fixture did not actually change"
+    finally:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM control.schema_migration_state "
+                "WHERE component_name LIKE 'probe-%'"
+            )
+            cursor.execute("DROP SCHEMA IF EXISTS drift_probe CASCADE")
+        database.commit()
+        database.close()
