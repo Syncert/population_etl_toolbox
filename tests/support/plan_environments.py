@@ -53,10 +53,6 @@ CRITERION_BLOCKERS: dict[str, tuple[str, str]] = {
         "`DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- "
         "which is a running deployment, not merely a Docker daemon.",
     ),
-    "client-error-and-vitals-reporting": (
-        COMPOSE,
-        "The Compose smoke job sees the vitals line in the web container log.",
-    ),
 }
 
 

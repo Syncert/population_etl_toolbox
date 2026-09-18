@@ -73,11 +73,10 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**2 plans.**
+**1 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
-| [`client-error-and-vitals-reporting`](in_progress/THE_BROWSER_CAN_REPORT_WHAT_WENT_WRONG_PLAN.md) | medium | The Compose smoke job sees the vitals line in the web container log. |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
 
 

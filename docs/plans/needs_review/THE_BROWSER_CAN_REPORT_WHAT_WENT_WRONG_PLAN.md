@@ -18,16 +18,13 @@ verify:
 - **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit.
   **Decision taken 2026-09-16 by the repository owner: the sink is a Next
   route handler in the web app.** No API change is needed by this plan.
-- **Status:** Deliverables 1 and 2 are implemented on
-  `claude/plans-folder-iteration-4x6itr` and every tier a cloud session can
-  run is green. **Deliverable 3 is not done, and not merely unverified:**
-  there is no CI job that runs the `web` container at all, so there is no
-  container log to assert against. What that deliverable actually needs is
-  written out below; it is a larger change than "add a grep to a workflow",
-  and inventing it here without a Docker daemon to check it against would be
-  a workflow edit nobody has run.
-- **Last updated:** 2026-09-17
-- **Current milestone:** deliverable 3, on a machine.
+- **Status:** Ready for review. Deliverable 3 was built and run on a machine
+  session on 2026-09-18: the smoke stack now composes the `web` container, one
+  Chromium navigation is driven at it, and the job greps that container's log
+  for `client_report kind=vital`. The whole sequence was executed here, not
+  just written. See "Deliverable 3, built and run".
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -83,11 +80,11 @@ proven on every push.
       wire and no query string in any report.
 - [x] `check:csp` passes with the `report-to` directive present, and the
       budget check passes with the sink's own route budget declared.
-- [ ] The Compose smoke job sees the vitals line in the web container log.
-      **Not done.** No CI job runs the `web` container; see below.
-- [x] `TESTING_CONTRACT.md` gains WEB-114. The `DEPLOY-` row belongs with
-      deliverable 3 and is not written, because a row describing a check that
-      does not run is the thing this catalog exists to prevent.
+- [x] The Compose smoke job sees the vitals line in the web container log.
+      Built and run on 2026-09-18; see "Deliverable 3, built and run".
+- [x] `TESTING_CONTRACT.md` gains WEB-114, and DEPLOY-011 now that the check
+      it describes runs. `CI_EVIDENCE_MAP.md` gains the matching row, and
+      WEB-114's entry there no longer says no tier can see the deployed log.
 
 ## Implementation evidence
 
@@ -170,28 +167,75 @@ reports its own vitals has periodic traffic by design. They wait on the state
 they are about instead, which is what they should have done in the first
 place.
 
-### What deliverable 3 actually needs
+### Deliverable 3, built and run
 
-The plan says "the Compose smoke job asserts that the web container log
-contains one vitals line". Nothing in CI runs the web container:
-`docker-compose.smoke.yml` defines `postgres`, `api` and `proxy` only, and
-`frontend-smoke` starts `postgres martin api proxy`. The `web` service exists
-in `docker-compose.yml`, the deployment stack, which no workflow brings up.
+All three changes the section above called for were made and executed on a
+Windows 11 machine with a Docker daemon on 2026-09-18.
 
-And a vitals line needs a *browser*: `curl` against the web container
-produces none. So the deliverable is really three changes, and they should be
-made where they can be run:
+**1. The smoke stack composes `web`.** It builds from `Dockerfile.web` with
+`API_ORIGIN` and `TILES_ORIGIN` pointing at this stack's own services, and
+carries a healthcheck written in `node` -- the image has no `curl` or `wget`,
+and a healthcheck that shells out to a binary the image does not carry is a
+container that never reports healthy and a `--wait` that times out with
+nothing to read.
 
-1. Add the `web` service to the smoke stack (it already builds from
-   `Dockerfile.web`).
-2. Point a browser at it -- either the Playwright tier with its base URL set
-   to the container, or one scripted navigation.
-3. Grep `docker compose logs web` for `client_report kind=vital`.
+**2. One navigation, in `apps/web/scripts/report-a-vital.mjs`.** It drives
+Chromium at the container, waits until the sink has *answered* a report, and
+leaves.
 
-A machine session can do all three and see them pass. Doing it here would
-mean pushing a workflow nobody has run, against a stack this container cannot
-start, which is the failure mode the execution-environment split exists to
-prevent.
+The response is what it waits for rather than the request, and that is not a
+detail: `sendReport` prefers `navigator.sendBeacon`, and a beacon is
+fire-and-forget, so watching the request leave says nothing about whether the
+container received it. A 204 is the sink's own answer and the sink logs the
+line before answering, so once one has arrived the grep that follows is not
+racing it.
+
+**What it deliberately does not assert is the kind.** The first version
+checked the request body for `"kind":"vital"` and reported "no vitals report
+was sent" while the container's log held two of them. Playwright reports a
+beacon's body as `null` on both `postData()` and `postDataBuffer()` -- the
+body is not available on that side at all. Making it visible would mean
+forcing the `fetch` fallback, which grades a transport production does not
+use. So the script asserts that a report was accepted, and the *kind* is the
+log's business, which is where the job asserts it. The split is worth keeping
+for its own sake: a browser that never reported and a sink that never wrote
+the line are different faults, and only the navigation can see the first.
+
+**3. The job greps the log.** `frontend-smoke.yml` starts `web` with the rest
+of the stack, installs the Chromium the navigation needs, runs it, and greps
+`docker compose logs web` for `client_report kind=vital`. Run here against a
+freshly restarted container:
+
+```text
+2 client report(s) accepted at /client-report
+client_report kind=vital route=/ name=TTFB build=... value=19.7 message="good"
+client_report kind=vital route=/ name=FCP  build=... value=92   message="good"
+```
+
+Next's own hydration and render metrics arrive as soon as the page settles,
+so the navigation does not have to wait for the Core Web Vitals that fire on
+page-hide.
+
+`tests/unit/deployment/test_stack_configuration_contracts.py` guards the three
+together, because each is useless alone: the stack composes the container, the
+job starts it, and the job reads its log.
+
+### A defect this turned up, fixed separately
+
+The first line the deployed container logged read `build=development`.
+
+`NEXT_PUBLIC_BUILD_ID` is inlined by `next build` -- a client bundle cannot
+read the server's environment -- and `Dockerfile.web` never accepted it, so
+**every image the repository builds reports `development`**, a deployment's
+included. `next.config.mjs` states exactly what that costs beside the fallback:
+"a report that cannot say which build produced it sends an operator to read the
+wrong source."
+
+It is fixed in its own commit rather than folded in here: the field is
+WEB-114's, but a build argument and two env examples are not among this plan's
+deliverables, and the completion gate is about the criteria above. It is
+recorded here because this plan is why it was found -- deliverable 3 is the
+first thing that ever read the deployed container's output.
 
 ### Commands
 
@@ -207,6 +251,23 @@ Both guards were verified to fail without what they guard: with
 `<ClientReporters />` removed from the layout, three of the five browser
 tests fail; with `report-uri`/`report-to` removed from the policy, the
 fourth does.
+
+Re-run on the machine session of 2026-09-18, with deliverable 3 built:
+
+| Command | Result |
+|---|---|
+| `npm --prefix apps/web run test:unit` | 639 passed, 43 files |
+| `npm --prefix apps/web run lint` / `typecheck` | clean |
+| `npm --prefix apps/web run build` / `check:csp` / `check:bundle` | pass |
+| `python -m pytest tests/unit/deployment -q` | 60 passed (was 59; DEPLOY-011's guard) |
+| the smoke stack's own sequence: `up --wait ... web`, `npm run report:vital`, `grep client_report kind=vital` | pass |
+
+**The unit tier needed two fixes of its own before it could say that**, both
+the tests' and neither this plan's, committed separately: a fixture label built
+with the platform's path separator, and date assertions that are the UTC
+renderings of their instants with no time zone pinned. Together they failed
+this tier on any developer machine west of UTC running Windows -- which is to
+say, on the machine that first ran it -- while passing on every CI runner.
 
 ## Definition of done
 

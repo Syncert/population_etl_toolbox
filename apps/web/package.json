@@ -19,7 +19,8 @@
     "test:browser": "playwright test",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:bundle:update": "node scripts/check-bundle-budget.mjs --update",
-    "check:csp": "node scripts/check-csp-nonce.mjs"
+    "check:csp": "node scripts/check-csp-nonce.mjs",
+    "report:vital": "node scripts/report-a-vital.mjs"
   },
   "dependencies": {
     "@mapbox/vector-tile": "^1.3.1",

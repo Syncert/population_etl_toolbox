@@ -230,3 +230,45 @@ def test_the_external_stack_composes_no_database_to_size() -> None:
     for name, service in services.items():
         image = str(service.get("image", ""))
         assert "postgis" not in image and "postgres:" not in image, name
+
+
+def test_the_smoke_stack_runs_the_web_container_and_reads_its_reports() -> None:
+    """Covers: DEPLOY-011 — the reporting path is proved where it is deployed.
+
+    The client-report sink is a Next route handler: a report is a POST to
+    `/client-report` in the web process and a line on that container's stdout.
+    Until this stack composed `web`, no CI job ran that container, so the only
+    tier that drove a real browser drove it against `next dev` on the runner --
+    which has no container and therefore no log to read.
+
+    Three things have to hold together, and each is useless alone: the stack
+    composes the container, the job starts it, and the job greps its log. The
+    navigation between them is `report-a-vital.mjs`, which fails on its own if
+    the browser sent nothing, so a green grep cannot come from a silent
+    browser.
+    """
+    smoke = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.smoke.yml").read_text(encoding="utf-8")
+    )
+    web = smoke["services"].get("web")
+    assert web is not None, (
+        "the smoke stack composes no web service, so nothing in CI runs the "
+        "container the client-report sink lives in"
+    )
+    # Built here rather than pulled: the sink is this repository's code.
+    assert web["build"]["dockerfile"] == "infra/docker/Dockerfile.web"
+
+    workflow = (ROOT / ".github/workflows/frontend-smoke.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "up --detach --wait postgres martin api proxy web" in workflow, (
+        "the job does not start the web container, so its log is empty"
+    )
+    assert "npm run report:vital" in workflow, (
+        "nothing drives a browser at the container, and curl produces no vital"
+    )
+    assert 'grep -F "client_report kind=vital"' in workflow, (
+        "the job never reads the line, so the container could log nothing and "
+        "the job would still be green"
+    )
+    assert (ROOT / "apps/web/scripts/report-a-vital.mjs").exists()

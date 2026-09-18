@@ -8,6 +8,7 @@ on:
       - "infra/docker/docker-compose.test.yml"
       - "infra/docker/docker-compose.smoke.yml"
       - "infra/docker/Dockerfile.api"
+      - "infra/docker/Dockerfile.web"
       - "infra/martin/**"
       - "infra/web/**"
       - "sql/**"
@@ -48,6 +49,10 @@ jobs:
       # The proxy origin, which serves /api/v1 and /tiles through the same
       # rewrites a browser uses.
       SMOKE_BASE_URL: http://127.0.0.1:33001
+      # The web container's own origin. The smoke tier above goes through the
+      # proxy; the client-report sink is inside the Next process and is
+      # reached directly, which is also how a reader reaches it.
+      WEB_SMOKE_URL: http://127.0.0.1:33100
       # Refuse to pass by skipping.
       SMOKE_REQUIRED: "1"
       # Grade the stack against every registered source, not just the ones
@@ -90,7 +95,7 @@ jobs:
         run: >-
           docker compose -f infra/docker/docker-compose.test.yml
           -f infra/docker/docker-compose.smoke.yml
-          up --detach --wait postgres martin api proxy
+          up --detach --wait postgres martin api proxy web
       - name: Run the live-stack smoke tier
         working-directory: apps/web
         run: npm run test:smoke
@@ -116,6 +121,27 @@ jobs:
           # The id the client sent, in the server's own record of that
           # request -- which is the promise the consumer guide makes.
           echo "${logs}" | grep -F "api_request" | grep -F "request_id=${probe_id}"
+      # The client-report sink is a Next route handler, so a browser's account
+      # of what went wrong is a POST to `/client-report` in the web process and
+      # a line on that container's stdout. The unit tier builds the payloads
+      # with no browser; the browser tier drives a real Chromium but against
+      # `next dev` on the runner, where there is no container and so no
+      # container log. This is the only job that runs the web image, so it is
+      # the only place the whole path can be seen (WEB-114, DEPLOY-011).
+      - name: Install the browser the vitals navigation needs
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+      - name: A browser visits the deployed web container
+        working-directory: apps/web
+        run: npm run report:vital -- "${WEB_SMOKE_URL}"
+      - name: The deployed web container records the client report
+        run: |
+          set -euo pipefail
+          # The sink writes the line as it answers, and `logs` is read after
+          # the navigation has already been observed on the wire.
+          logs="$(docker compose -f infra/docker/docker-compose.test.yml             -f infra/docker/docker-compose.smoke.yml logs --no-color web)"
+          echo "${logs}" | tail -20
+          echo "${logs}" | grep -F "client_report kind=vital"
       - name: Capture service logs
         if: failure()
         run: >-

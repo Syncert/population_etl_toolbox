@@ -79,6 +79,58 @@ services:
       timeout: 5s
       retries: 40
 
+  web:
+    # The application itself, which the deployment stack composes and no CI
+    # job ran until now.
+    #
+    # It is here because the client-report sink is a Next route handler: a
+    # browser's account of what went wrong is a POST to `/client-report` in
+    # *this* process, written to *this* container's stdout. Nothing outside
+    # this container can be asked whether that path works, so a tier that
+    # never starts it cannot prove the reports arrive -- which is what
+    # WEB-114's browser tests, running against a dev server, do not answer
+    # (DEPLOY-011).
+    #
+    # `APP_API_DATABASE_URL` is unset here for the same reason it is unset on
+    # the API above: this tier does not exercise the saved-analysis routes.
+    image: population-etl-web:smoke
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        # Baked at build time by `next build`, so they name the service
+        # addresses on this stack's network rather than a deployment's.
+        API_ORIGIN: http://api:8000
+        TILES_ORIGIN: http://martin:3000
+        # Empty falls back to `development` in `next.config.mjs`.
+        NEXT_PUBLIC_BUILD_ID: ${GITHUB_SHA:-}
+    depends_on:
+      api:
+        condition: service_healthy
+      martin:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TEST_WEB_HOST_PORT:-33100}:3100"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # `node` is what this image has; there is no curl or wget in it, and a
+      # healthcheck that shells out to a binary the image does not carry is a
+      # container that never reports healthy and a `--wait` that times out
+      # with nothing to read.
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3100/',
+          (r) => process.exit(r.statusCode === 200 ? 0 : 1))
+          .on('error', () => process.exit(1))"
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
   proxy:
     # The base file waits only for the stub to start, which is immediate. The
     # real API has a database to reach first, so the proxy must wait for it to
