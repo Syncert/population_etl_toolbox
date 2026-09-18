@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 import pytest
 from psycopg2.extensions import connection
 
-from tests.support.postgres import PostgresTestConfig, apply_sql_files
+from tests.support.postgres import PostgresTestConfig, apply_warehouse_manifest
 
 
 @pytest.fixture(scope="session")
@@ -25,11 +25,20 @@ def postgres_test_config() -> PostgresTestConfig:
 def bootstrapped_postgres(
     postgres_test_config: PostgresTestConfig,
 ) -> PostgresTestConfig:
-    """Apply the complete warehouse DDL once to the fresh service database."""
+    """Build the warehouse once, the way every other environment builds it.
+
+    Through `apply_warehouse_manifest` rather than a bare `apply_sql_files`, so
+    this tier's warehouse carries the same `control.schema_migration_state`
+    rows a deployment's does and `DQ-SHARED-004` is answered here against a
+    real ledger rather than a fixture's idea of one (DB-049).
+
+    The Compose file's numbered initdb mounts have already applied the same
+    assets by the time this runs; every asset is written to be re-runnable, and
+    this pass is what records them.
+    """
     database_connection = postgres_test_config.connect()
     try:
-        apply_sql_files(database_connection)
-        database_connection.commit()
+        apply_warehouse_manifest(database_connection)
     except BaseException:
         database_connection.rollback()
         raise

@@ -97,32 +97,54 @@ avoids copying local objects or settings from `template1`.
 
 ## 3. Apply the checked-in bootstrap manifest
 
-Run from the staged repository root. If `psql` is installed on the host:
+Run from the staged repository root, against the project virtualenv:
 
 ```bash
 export WAREHOUSE_URL='postgresql://airflow_admin:REDACTED@HOST:5432/public_data'
 
-jq -r '.assets[].path' sql/bootstrap/warehouse_manifest.json |
-while IFS= read -r asset; do
-    echo "Applying $asset"
-    psql "$WAREHOUSE_URL" -X -v ON_ERROR_STOP=1 -f "$asset" || exit 1
-done
+python -m scripts.apply_warehouse_manifest --dsn "$WAREHOUSE_URL"
 ```
 
-If the host has no `psql`, use the existing PostgreSQL container. Set the actual
-container name, then stream each checked-in file to its client:
+One command rather than the `jq | psql -f` loop this section used to carry, and
+the difference is not brevity. The loop applied the right files in the right
+order and **reported nothing back**: afterwards the warehouse could not say
+which steps it carried, so `DQ-SHARED-004` -- a BLOCK rule that compares the
+manifest against the applied set -- had nothing to compare against. The applier
+records each asset in `control.schema_migration_state` as it applies it
+(DB-049).
+
+It also changes what a failure leaves behind. No file under `sql/` opens a
+transaction of its own, so a step that failed part way through left a
+half-applied step and nothing that said so; the loop's `|| exit 1` stopped at
+the right moment and could not undo it. The applier wraps each asset in its own
+transaction together with the row that claims it, so a failure rolls that asset
+back, leaves no row for it, keeps the rows for the assets before it, and names
+the one that broke:
+
+```text
+migration-013 (sql/migrations/013_data_quality_evidence.sql) failed to apply: ...
+```
+
+Fix the cause and run the same command again. Re-running is safe -- every asset
+is written to be re-runnable and the ledger row is an upsert -- so a resumed
+bootstrap is the same command rather than a different one.
+
+Ask a warehouse what it carries at any time, which is also what the
+certification rule asks:
 
 ```bash
-export POSTGRES_CONTAINER='your-postgres-container'
-
-jq -r '.assets[].path' sql/bootstrap/warehouse_manifest.json |
-while IFS= read -r asset; do
-    echo "Applying $asset"
-    docker exec -i "$POSTGRES_CONTAINER" \
-        psql -X -U airflow_admin -d public_data -v ON_ERROR_STOP=1 \
-        < "$asset" || exit 1
-done
+python -m scripts.apply_warehouse_manifest --dsn "$WAREHOUSE_URL" --check
 ```
+
+It exits 0 when every manifest asset is recorded at the checked-in file's hash,
+and otherwise lists each asset as `missing` -- a step that never ran here -- or
+`drifted`, one that ran against a file that has since changed. The two are
+reported apart because re-applying a drifted step and re-applying a missing one
+are different decisions.
+
+If the host cannot reach the database directly, run the same command from a
+host or container that can. It needs the repository and the project's Python;
+the PostgreSQL image carries neither, which is why this is not a `docker exec`.
 
 If the API uses its restricted database role, apply
 `sql/bootstrap/001_api_readonly.sql` afterward using the documented provisioning
