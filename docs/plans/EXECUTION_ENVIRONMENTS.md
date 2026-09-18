@@ -92,7 +92,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**14 plans.**
+**13 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -104,7 +104,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`manifest-reapply-populated-warehouse`](to_do/REAPPLYING_THE_MANIFEST_TO_A_POPULATED_WAREHOUSE_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`name-collision-race-is-a-conflict`](to_do/A_NAME_TAKEN_IN_A_RACE_IS_STILL_A_CONFLICT_PLAN.md) | low | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
-| [`relation-probe-once-per-request`](in_progress/A_RELATION_IS_PROBED_ONCE_PER_REQUEST_PLAN.md) | medium | `postgres` | -- |
 | [`second-wave-product-templates`](to_do/SECOND_WAVE_PRODUCT_TEMPLATES_PLAN.md) | medium | `browser`, `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |

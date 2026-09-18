@@ -14,15 +14,12 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Status:** All three deliverables are implemented on
-  `claude/plans-folder-iteration-4x6itr`; the API unit tier is green and the
-  statement budget is proven there. **It stays in `in_progress/` for one
-  reason:** the integration budget test has never been run, because it needs
-  PostgreSQL. It is written and collects.
-- **Last updated:** 2026-09-17
-- **Current milestone:** the budget against a real session, on a machine.
+- **Status:** Ready for review. All three deliverables are implemented on
+  `claude/plans-folder-iteration-4x6itr`, and the integration budget test was
+  run against a real `Session.info` on a machine session on 2026-09-18 --
+  passing, and failing when either memo is removed. See "The machine run".
+- **Last updated:** 2026-09-18
+- **Next pickup:** none.
 
 ## Why
 
@@ -80,10 +77,12 @@ that no `to_regclass` statement repeats within the request.
       fourteen of them, including every refusal -- now run against the batch
       path; the stub session was taught the batched query and nothing else
       changed.
-- [ ] The statement-count tests fail when the memo is removed, proven
-      failing-first. **Proven in the unit tier** (three tests fail without the
-      probe memo, two without the metric memo). The *integration* budget test
-      is written and has never been run; it needs PostgreSQL.
+- [x] The statement-count tests fail when the memo is removed, proven
+      failing-first, in both tiers. The unit tier: three tests fail without the
+      probe memo, two without the metric memo. The integration budget test was
+      run on 2026-09-18 and fails the same way against a real session -- 12
+      probes against a budget of 1, and 9 metric resolutions against 1. See
+      "The machine run".
 - [x] `TESTING_CONTRACT.md` gains API-147. The `PERF-` baselines are not
       touched: no performance baseline measures these routes, so there was
       nothing to update, and inventing one to satisfy a checklist would be a
@@ -144,24 +143,40 @@ documents carry `metric_code`, `metric_code_a`, `metric_code_b` and a `series`
 list that carries more; a field added later would otherwise quietly fall out
 of the batch and back into a round trip per block.
 
-### What a machine session must still do
+### The machine run
 
-```bash
-docker compose -f infra/docker/docker-compose.test.yml up --detach --wait postgres
-RUN_INTEGRATION_TESTS=1 \
-  TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_PORT=55432 \
-  TEST_POSTGRES_USER=population_test TEST_POSTGRES_PASSWORD=population_test \
-  TEST_POSTGRES_DATABASE=population_etl_test \
-  python -m pytest -o addopts='' -m "integration and not external" \
-  tests/integration/api/test_statement_budget.py \
-  tests/integration/api/test_request_snapshot.py \
-  tests/integration/api/test_evidence_packet_contract.py -q
+Run on 2026-09-18 against the disposable PostGIS 16 container:
+
+```text
+tests/integration/api/test_statement_budget.py
+tests/integration/api/test_request_snapshot.py
+tests/integration/api/test_evidence_packet_contract.py     -> 7 passed
 ```
 
-`test_statement_budget.py` counts what reaches PostgreSQL through SQLAlchemy's
-`before_cursor_execute`, which is the part the unit tier cannot answer: a stub
-with an `info` attribute proves nothing about a real `Session.info`'s
-lifetime. Record the result here and move the plan to `needs_review/`.
+**Both memos were then proven load-bearing against a real session**, which is
+the part the unit tier cannot answer: a stub with an `info` attribute says
+nothing about a real `Session.info`'s lifetime, and the whole design rests on
+the memo dying with the session rather than outliving the snapshot.
+
+| Change | Budget test |
+|---|---|
+| `_probe_memo` returns `None` | `assert 12 == 1` -- twelve `to_regclass` statements for one request |
+| `session_memo(db, _RESOLVED_METRICS_KEY)` returns `None` | `assert 9 == 1` -- nine metric resolutions |
+
+Those two numbers are the plan's claim measured rather than argued: one
+request that probed the same relations twelve times now probes once, and a
+composition that resolved its measures nine times resolves once. Both were
+restored and the tier re-run green.
+
+**The wider tier, and two bugs it surfaced.** The whole API integration tier
+was run as the affected boundary, not just the three files. It found a failure
+with nothing to do with this plan -- `test_content_health_contract` reading a
+publication row another tier's harvest had left behind -- and, once a Redis was
+started so the four cache tests stopped skipping, a second instance of the same
+leak inside this tier. Both are fixed in their own commits and are not this
+plan's; they are noted here only because the tier had to be green to say this
+plan's own result is trustworthy. With a Redis up the tier is 92 passed, 0
+skipped.
 
 ### Commands
 
@@ -173,6 +188,15 @@ lifetime. Record the result here and move the plan to `needs_review/`.
 
 Both memos were verified to be load-bearing: removing the probe memo fails
 three of the new tests, removing the metric memo fails two.
+
+Re-run on the machine session of 2026-09-18:
+
+| Command | Result |
+|---|---|
+| `RUN_INTEGRATION_TESTS=1 python -m pytest -o addopts='' -m "integration and not external" tests/integration/api/test_statement_budget.py tests/integration/api/test_request_snapshot.py tests/integration/api/test_evidence_packet_contract.py -q` | 7 passed |
+| the same, with `TEST_REDIS_URL` set, over all of `tests/integration/api` and `tests/integration/redis` | 92 passed, 0 skipped |
+| `python -m pytest tests/unit -q` | 1864 passed |
+| `ruff format --check .` / `ruff check .` | clean, 493 files |
 
 ## Definition of done
 
