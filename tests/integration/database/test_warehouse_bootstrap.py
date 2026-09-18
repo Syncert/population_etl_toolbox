@@ -6,6 +6,7 @@ import psycopg2
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.quality.reconciliation import verify_manifest_ledger
 from data_ingestion_toolbox.utility.warehouse_manifest import (
     ManifestApplicationError,
     ManifestAsset,
@@ -423,4 +424,91 @@ def test_a_changed_step_reads_as_drift_rather_than_as_missing(
             )
             cursor.execute("DROP SCHEMA IF EXISTS drift_probe CASCADE")
         database.commit()
+        database.close()
+
+
+def test_the_manifest_rule_passes_on_a_recorded_warehouse(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DQ-SHARED-004, DB-049 — the BLOCK rule runs, and answers.
+
+    Declared and unimplementable until the applied set existed. This is the
+    run that makes it a rule rather than a note.
+    """
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        with database.cursor() as cursor:
+            outcomes = verify_manifest_ledger(cursor, {})
+
+        assert outcomes, "the rule returned no outcome at all"
+        assert {outcome.partition_key for outcome in outcomes} == {
+            "missing",
+            "drifted",
+        }, "missing and drifted are reported apart or an operator cannot act"
+        for outcome in outcomes:
+            assert outcome.result == "pass", (outcome.partition_key, outcome.evidence)
+    finally:
+        database.close()
+
+
+def test_the_manifest_rule_reports_a_removed_row_as_missing(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DQ-SHARED-004, DB-049 — a pass means something, because absence fails.
+
+    A rule first run long after it was written is worth distrusting until it
+    has been seen to fail, and a BLOCK rule that cannot fail certifies
+    everything.
+    """
+    removed = manifest_assets()[0].id
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM control.schema_migration_state WHERE component_name = %s",
+                (removed,),
+            )
+            outcomes = {
+                outcome.partition_key: outcome
+                for outcome in verify_manifest_ledger(cursor, {})
+            }
+        assert outcomes["missing"].result == "fail"
+        assert removed in outcomes["missing"].evidence
+        assert outcomes["drifted"].result == "pass", (
+            "a missing asset was also reported as drift, so an operator is "
+            "told to investigate a change that did not happen"
+        )
+    finally:
+        database.rollback()
+        database.close()
+
+
+def test_the_manifest_rule_is_not_applicable_on_a_warehouse_with_no_ledger(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DQ-SHARED-004, DB-049 — a warehouse that predates the ledger is not passed.
+
+    It carries the DDL and no rows to prove it, which is indistinguishable
+    here from never having been built. Passing it would certify a publication
+    against a rule that read nothing; failing it would fail every warehouse
+    older than this plan. The rule says it does not apply, and the note says
+    what makes it apply.
+    """
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        with database.cursor() as cursor:
+            cursor.execute("DELETE FROM control.schema_migration_state")
+            outcomes = verify_manifest_ledger(cursor, {})
+
+        assert len(outcomes) == 1
+        assert outcomes[0].result == "not_applicable"
+        assert outcomes[0].result != "pass"
+        assert "apply_warehouse_manifest" in str(outcomes[0].partition_detail), (
+            "the outcome does not tell the reader what would make the rule apply"
+        )
+    finally:
+        database.rollback()
         database.close()

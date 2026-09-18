@@ -168,7 +168,7 @@ def apply_manifest(
     return tuple(applied)
 
 
-def recorded_assets(database_connection: Any) -> dict[str, str]:
+def read_recorded_assets(cursor: Any) -> dict[str, str]:
     """Every manifest asset this warehouse has recorded, as id -> hash.
 
     Only manifest ids: `gold_schema`'s per-source components share the table
@@ -178,27 +178,35 @@ def recorded_assets(database_connection: Any) -> dict[str, str]:
     those names are spelled, and `test_a_manifest_asset_is_not_a_gold_component`
     holds the two apart -- so filtering by manifest id is exact rather than a
     prefix guess.
+
+    Takes a cursor because a quality rule executor is handed one, and the rule
+    that reads this must not open a connection of its own inside someone
+    else's transaction.
     """
     ids = {asset.id for asset in manifest_assets()}
+    cursor.execute(
+        "SELECT component_name, ddl_hash FROM control.schema_migration_state"
+    )
+    return {name: digest for name, digest in cursor.fetchall() if name in ids}
+
+
+def recorded_assets(database_connection: Any) -> dict[str, str]:
+    """`read_recorded_assets` for a caller that holds a connection."""
     with database_connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT component_name, ddl_hash FROM control.schema_migration_state"
-        )
-        rows = cursor.fetchall()
-    return {name: digest for name, digest in rows if name in ids}
+        return read_recorded_assets(cursor)
 
 
-def compare_to_manifest(
-    database_connection: Any,
+def compare_recorded(
+    recorded: dict[str, str],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """What this warehouse is missing, and what it carries at another hash.
+    """What a ledger is missing, and what it holds at another hash.
 
-    Missing and drifted are returned apart because they are different faults.
-    A missing asset is a step that never ran here. A drifted one ran, and the
-    file has changed since -- the warehouse is at a revision the checkout no
-    longer describes.
+    Missing and drifted are returned apart because they are different faults
+    with different answers. A missing asset is a step that never ran here, and
+    the answer is to apply it. A drifted one ran, and the file has changed
+    since -- the warehouse is at a revision the checkout no longer describes,
+    and re-applying it is a decision rather than a formality.
     """
-    recorded = recorded_assets(database_connection)
     missing: list[str] = []
     drifted: list[str] = []
     for asset in manifest_assets():
@@ -208,6 +216,13 @@ def compare_to_manifest(
         elif digest != asset.content_hash():
             drifted.append(asset.id)
     return tuple(missing), tuple(drifted)
+
+
+def compare_to_manifest(
+    database_connection: Any,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`compare_recorded` for a caller that holds a connection."""
+    return compare_recorded(recorded_assets(database_connection))
 
 
 def asset_paths(assets: Iterable[ManifestAsset] | None = None) -> tuple[Path, ...]:

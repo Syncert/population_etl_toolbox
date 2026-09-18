@@ -1849,20 +1849,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The manifest's schema components are all recorded as applied before "
         "any publication is certified.",
         ("control.schema_migration_state",),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented, and not implementable as written until the applied "
-            "set is recorded. `control.schema_migration_state` holds one row "
-            "per source's gold DDL -- the four components "
-            "`utility.gold_schema.GOLD_SCHEMA_COMPONENTS` names, each a content "
-            "hash written when that source's DDL is applied -- and nothing else "
-            "writes to it. No bootstrap-manifest asset is recorded anywhere, so "
-            "there is no applied set to compare the manifest's 43 assets "
-            "against, and an executor written to compare them today would "
-            "report every one of them missing. Recording them is the "
-            "prerequisite, and it is a deployment decision: the manifest is "
-            "applied by numbered initdb mounts and by the documented reset, "
-            "neither of which reports back."
+            "`quality.reconciliation.verify_manifest_ledger` compares the "
+            "bootstrap manifest's assets against the rows "
+            "`utility.warehouse_manifest.apply_manifest` writes as it applies "
+            "them, reporting missing and drifted assets as separate outcomes -- "
+            "a step that never ran here and a step that ran against a file that "
+            "has since changed are different faults with different answers. A "
+            "warehouse recording no manifest asset answers `not_applicable` "
+            "rather than passing: it predates the ledger, which is "
+            "indistinguishable here from never having been built, and a rule "
+            "that read nothing must not certify a publication."
         ),
     ),
     _rule(

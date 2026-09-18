@@ -164,3 +164,73 @@ def test_migrations_readme_describes_every_migration_the_manifest_applies() -> N
     assert not missing, (
         f"sql/migrations/README.md describes {', '.join(missing)}, which does not exist"
     )
+
+
+def test_the_migrations_readme_does_not_claim_a_numeric_apply_order() -> None:
+    """Covers: DB-029 — the order the README states is an order that works.
+
+    It said "Apply these checked-in SQL files in numeric order", and numeric
+    order fails outright: `004` alters a relation `silver_fred.sql` creates and
+    `024` alters one created by `gold_acs.sql`, so both run after DDL that is
+    not a migration at all. The manifest interleaves them, and it is the only
+    order anything applies.
+
+    The claim is checked rather than the correction, because there are many
+    ways to say "manifest order" and one way to say the wrong thing.
+    """
+    readme = MIGRATIONS_README.read_text(encoding="utf-8")
+    # The instruction, not the phrase. The README has to be able to *say*
+    # "numeric order does not work" in order to explain why, so a bare
+    # substring search would forbid the correction along with the error.
+    instruction = re.compile(r"apply[^.]*?\bin numeric order\b", re.IGNORECASE | re.S)
+    found = instruction.search(readme)
+    assert not found, (
+        "sql/migrations/README.md tells a reader to apply the steps in numeric "
+        f"order, which fails -- the manifest interleaves migrations with the "
+        f"source DDL they alter: {found.group(0)!r}"
+    )
+    assert "warehouse_manifest.json" in readme, (
+        "the README no longer points at the manifest that decides the order"
+    )
+
+
+def test_every_migration_paragraph_names_the_phase_it_runs_in() -> None:
+    """Covers: DB-029 — a reader can place a step without reading the manifest.
+
+    The README is where a reader learns why a step exists. Now that the order
+    is the manifest's rather than the list's, *when* it runs is part of that,
+    and a numbered list read top to bottom says nothing true about it --
+    `003` is item three and runs second to last.
+
+    The phase is matched anywhere in the entry rather than in a fixed form, so
+    an entry that already explains its phase in prose (`023` does) is not made
+    to repeat itself in a template.
+    """
+    readme = MIGRATIONS_README.read_text(encoding="utf-8")
+    phases = {
+        Path(asset["path"]).name: asset["phase"]
+        for asset in _assets()
+        if asset["path"].startswith("sql/migrations/")
+    }
+    assert phases, "the manifest applies no migration; this guard proved nothing"
+
+    unplaced = []
+    for filename, phase in sorted(phases.items()):
+        entry = next(
+            (line for line in readme.splitlines() if f"`{filename}`" in line), ""
+        )
+        if not entry:
+            unplaced.append(f"{filename} (no entry)")
+        elif not any(
+            marker in entry
+            for marker in (f"Manifest phase: `{phase}`", f"`{phase}` phase")
+        ):
+            # The phase has to be named as a phase. A bare substring search
+            # passed `001_raw_capture_control_foundation.sql` on the strength
+            # of its own filename containing "foundation", which is the entry
+            # saying nothing about when it runs.
+            unplaced.append(f"{filename} (runs in {phase}, entry does not say so)")
+    assert not unplaced, (
+        "these steps do not say which manifest phase they run in, so a reader "
+        f"cannot tell when they are applied: {unplaced}"
+    )

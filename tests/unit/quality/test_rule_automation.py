@@ -41,6 +41,7 @@ from data_ingestion_toolbox.quality.inventory import (
 )
 from data_ingestion_toolbox.quality.reconciliation import (
     SHARED_RECONCILIATION_EXECUTORS,
+    verify_manifest_ledger,
 )
 from data_ingestion_toolbox.quality.sources import SOURCE_EXECUTORS
 from data_ingestion_toolbox.utility.gold_schema import GOLD_SCHEMA_COMPONENTS
@@ -71,7 +72,6 @@ REGISTERED = (
 #: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
-        "DQ-SHARED-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
         "DQ-REF-002",
@@ -202,7 +202,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 24, unbuilt
+    assert len(unbuilt) == 23, unbuilt
     # The other seven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it.
@@ -435,10 +435,27 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     )
 
 
-def test_the_note_names_the_manifest_it_cannot_yet_be_compared_against() -> None:
-    """Covers: DQ-014 — the count in the note is the manifest's actual count."""
-    assets = json.loads(MANIFEST.read_text(encoding="utf-8"))["assets"]
+def test_the_manifest_rule_reads_the_manifest_it_is_declared_against() -> None:
+    """Covers: DQ-014, DB-049 — the rule is wired to the manifest, not to a copy.
+
+    This test used to assert that `DQ-SHARED-004`'s note quoted the manifest's
+    asset count, because the rule was unimplemented and the note was all there
+    was to keep honest -- a count that drifted from the manifest was the way
+    that note would have gone stale.
+
+    The rule runs now, so the note is no longer the artefact worth guarding:
+    the executor is. It must be the registered one, and it must read the
+    manifest through the module that owns it, so adding an asset changes what
+    the rule checks without anyone editing the rule.
+    """
     rule = _by_id()["DQ-SHARED-004"]
-    assert f"{len(assets)} assets" in rule.automation_note, (
-        f"the manifest carries {len(assets)} assets and the note says otherwise"
+    assert rule.automation == "automated", rule.automation_note
+    assert SHARED_RECONCILIATION_EXECUTORS["DQ-SHARED-004"] is verify_manifest_ledger
+
+    assets = json.loads(MANIFEST.read_text(encoding="utf-8"))["assets"]
+    assert {asset["id"] for asset in assets} == {
+        asset.id for asset in manifest_assets()
+    }, (
+        "the rule's reader and the checked-in manifest disagree about which "
+        "assets exist, so the rule is grading a second copy of the order"
     )
