@@ -92,7 +92,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**11 plans.**
+**12 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -100,6 +100,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`acs-serving-partitioning`](to_do/THE_ACS_SERVING_TABLE_IS_PARTITIONED_BY_YEAR_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
 | [`api-reader-privileges`](to_do/ONE_LEAST_PRIVILEGE_BOOTSTRAP_THAT_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`bls-unresolved-geography-ledger`](to_do/BLS_RECORDS_THE_GEOGRAPHY_IT_COULD_NOT_RESOLVE_PLAN.md) | medium | `postgres` | -- |
+| [`deployed-warehouse-carries-every-source`](to_do/THE_DEPLOYED_WAREHOUSE_CARRIES_EVERY_REGISTERED_SOURCE_PLAN.md) | high | `postgres` | -- |
 | [`enforced-constraint-kinds`](to_do/A_CONSTRAINT_THE_WAREHOUSE_ENFORCES_IS_NOT_A_GAP_PLAN.md) | medium | `postgres` | -- |
 | [`manifest-reapply-populated-warehouse`](to_do/REAPPLYING_THE_MANIFEST_TO_A_POPULATED_WAREHOUSE_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`name-collision-race-is-a-conflict`](to_do/A_NAME_TAKEN_IN_A_RACE_IS_STILL_A_CONFLICT_PLAN.md) | low | `postgres` | -- |
