@@ -14,10 +14,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Claimed 2026-09-18 by a machine session with a Docker daemon and
+  the disposable PostGIS 16 container available, which is where its
+  integration criteria can be met. Implementation starting.
+- **Last updated:** 2026-09-18
+- **Current milestone:** deliverable 1, the applier that records what it
+  applied.
+- **Next pickup:** read `tests/support/postgres.py`'s manifest reader and
+  `control.schema_migration_state`'s current shape, then establish the gap
+  with a failing check before writing the applier.
 
 ## Why
 

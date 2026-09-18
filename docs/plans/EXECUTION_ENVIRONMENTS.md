@@ -107,7 +107,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |
 | [`tile-layer-and-grain-filter-reads`](to_do/THE_TILE_LAYER_AND_THE_GRAIN_FILTERS_ARE_MEASURED_PLAN.md) | low | `postgres` | -- |
-| [`warehouse-manifest-ledger`](to_do/THE_WAREHOUSE_KNOWS_WHICH_STEPS_IT_CARRIES_PLAN.md) | medium | `postgres` | -- |
+| [`warehouse-manifest-ledger`](in_progress/THE_WAREHOUSE_KNOWS_WHICH_STEPS_IT_CARRIES_PLAN.md) | medium | `postgres` | -- |
 
 
 ## Notes on the cloud container
