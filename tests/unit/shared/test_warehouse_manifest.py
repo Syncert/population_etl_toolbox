@@ -234,3 +234,88 @@ def test_every_migration_paragraph_names_the_phase_it_runs_in() -> None:
         "these steps do not say which manifest phase they run in, so a reader "
         f"cannot tell when they are applied: {unplaced}"
     )
+
+
+#: A source package owns a `gold_<subject>` publication subpackage. That is the
+#: discoverable definition rather than a hand-kept list: a source added without
+#: one publishes nothing, and a source added with one is covered here the day
+#: its package appears.
+def _source_packages() -> list[Path]:
+    toolbox = REPOSITORY_ROOT / "src/data_ingestion_toolbox"
+    return sorted(
+        {
+            gold_package.parent
+            for gold_package in toolbox.glob("*/gold_*")
+            if gold_package.is_dir()
+        }
+    )
+
+
+def test_every_source_owns_its_relation_ddl_under_src() -> None:
+    """Covers: DB-054 — a source's relations are files under its own package.
+
+    `BETA_RESET_REINGESTION.md` §1 says "the runtime DDL used by DAG tasks is
+    packaged below `src/`". For CDC, FBI UCR and USDA NASS it was not: their
+    relations existed only in `sql/migrations/010`, `011` and `012` and the
+    later steps that replaced their views. A migration is applied once by the
+    bootstrap and never again, so those three DAGs had no `ensure_*` task to
+    re-apply their own schema and would write an older vocabulary, or fail at
+    insert time, against a warehouse a step behind them.
+
+    Both halves are required. A source that owns only silver has gold defined
+    somewhere else, which is the same defect one layer up.
+    """
+    manifest_paths = [asset["path"] for asset in _assets()]
+    missing: list[str] = []
+
+    for package in _source_packages():
+        owned = package.relative_to(REPOSITORY_ROOT).as_posix()
+        silver = [path for path in manifest_paths if path.startswith(f"{owned}/DDL/")]
+        gold = [
+            path
+            for path in manifest_paths
+            if path.startswith(f"{owned}/gold_") and "/DDL/" in path
+        ]
+        if not silver:
+            missing.append(f"{owned} has no manifest asset under {owned}/DDL/")
+        if not gold:
+            missing.append(f"{owned} has no manifest asset under {owned}/gold_*/DDL/")
+
+    assert not missing, (
+        "these sources define their relations outside their own package, so "
+        "nothing under `src/` can re-apply them: " + "; ".join(missing)
+    )
+
+
+def _initdb_ordinals(compose: str) -> list[tuple[str, str]]:
+    """Every (mounted filename, repository path) an initdb mount declares."""
+    return [
+        (mounted, source.replace("../../", ""))
+        for source, mounted in re.findall(
+            r"- (\.\./\.\./[^:]+):/docker-entrypoint-initdb\.d/([^:]+):ro", compose
+        )
+    ]
+
+
+def test_the_smoke_seed_runs_after_the_warehouse_it_seeds() -> None:
+    """Covers: DB-045 — a tier seed sorts after every DDL mount, not into them.
+
+    `initdb` runs its directory in filename order, so a mount's numeric prefix
+    is the only thing sequencing it. The base file's prefixes are generated
+    from the manifest and move when the manifest does; the smoke overlay's is
+    hand-written in a different file. It was `051_`, chosen to follow a
+    `050_martin_seed.sql` that a later manifest change renumbered -- which
+    would have dropped the seed into the middle of the silver phase, against
+    relations that did not exist yet, in a tier whose failure reads as a
+    frontend bug.
+    """
+    base = _initdb_ordinals(COMPOSE_PATH.read_text(encoding="utf-8"))
+    overlay = _initdb_ordinals(SMOKE_COMPOSE_PATH.read_text(encoding="utf-8"))
+    assert overlay, "the smoke overlay mounts no seed; this guard proved nothing"
+
+    warehouse = max(name for name, path in base if not path.startswith("tests/"))
+    for name, path in overlay:
+        assert name > warehouse, (
+            f"{path} is mounted as {name}, which initdb runs at or before "
+            f"{warehouse} -- the warehouse DDL it seeds has not been applied"
+        )

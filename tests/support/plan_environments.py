@@ -355,10 +355,31 @@ RUN_DAG_TESTS=1 /tmp/airflow-venv/bin/python -m pytest -m dag tests/dags -q
 
 The connection does not have to reach a database: these tests resolve it and
 read its settings, they do not connect. `tests/dags/test_dag_pipeline_execution.py`
-does connect, and it is `postgres`-marked, so it is not in this tier.
+does connect. It is in this tier -- `pytestmark = pytest.mark.dag`, so `-m dag`
+collects it -- and its three tests carry `integration`, `database` and `slow`
+as well, so without `TEST_POSTGRES_*` they skip rather than being filtered out.
+Set those variables at the disposable warehouse to run them.
 
 CI's `dag-parse` job does neither of these explicitly, which is why a local
 run and CI can disagree on exactly those three tests.
+
+*The metadata database is where a broken install shows.* Those same three are
+the only tests that need `airflow db init` to have succeeded, so a
+site-packages tree holding files from two Airflow releases fails exactly there
+and nowhere else -- 146 of 149 pass and nothing says the install is wrong.
+That is what happened on the Windows dev machine, and
+[`human_testing/ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md`](human_testing/ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md)
+carries the check.
+
+*The tier's metadata URL is not a slash count.* `tests/support/airflow_env.py`
+builds it, and Airflow's check is `os.path.isabs` on what follows
+`sqlite:///` -- three slashes, not four. The helper hard-coded the four-slash
+form, which leaves `/G:/...` on Windows, and since Python 3.13 that is
+drive-relative rather than absolute: Airflow refused it and every DAG test
+errored at `from airflow.models import DagBag`. An import failure aborts
+collection rather than skipping, so the tier reported no result at all rather
+than a wrong one. The URL is graded against Airflow's own predicate in the
+unit tier now (ENV-023).
 """
 
 

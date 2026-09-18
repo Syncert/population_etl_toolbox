@@ -15,7 +15,12 @@ from data_ingestion_toolbox.fbi_ucr.registry import (
 pytestmark = pytest.mark.unit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-MIGRATION = REPOSITORY_ROOT / "sql/migrations/011_fbi_ucr_pipeline.sql"
+GOLD_DDL = (
+    REPOSITORY_ROOT / "src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql"
+)
+PUBLISHER_DDL = (
+    REPOSITORY_ROOT / "src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql"
+)
 PACKAGE = REPOSITORY_ROOT / "src/data_ingestion_toolbox/fbi_ucr"
 DAG = REPOSITORY_ROOT / "dags/fbi_ucr_ingest_dag.py"
 
@@ -24,7 +29,9 @@ FORBIDDEN_LABELS = ("county_total", "city_total", "place_total")
 
 
 def _gold_view_bodies() -> dict[str, str]:
-    sql = MIGRATION.read_text(encoding="utf-8")
+    sql = GOLD_DDL.read_text(encoding="utf-8") + PUBLISHER_DDL.read_text(
+        encoding="utf-8"
+    )
     pattern = re.compile(
         r"CREATE OR REPLACE VIEW gold_fbi\.(?P<name>\w+) AS(?P<body>.*?);\s*\n",
         re.DOTALL,
@@ -84,7 +91,9 @@ def test_area_filter_uses_relationship_effectivity_not_evidence_release() -> Non
 
 def test_no_forbidden_area_total_label_is_published() -> None:
     """Covers: ETL-042 — the banned area-total labels never appear."""
-    sources = [MIGRATION, DAG, *sorted(PACKAGE.rglob("*.py"))]
+    # The relation DDL is inside the package now, so the sweep reaches it
+    # by walking the package rather than by naming a migration file.
+    sources = [DAG, *sorted(PACKAGE.rglob("*.py")), *sorted(PACKAGE.rglob("*.sql"))]
     offenders = [
         f"{path.relative_to(REPOSITORY_ROOT).as_posix()}:{label}"
         for path in sources

@@ -2887,7 +2887,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="enforced",
         automation_note=(
-            "Every clause is refused by `sql/migrations/010_cdc_pipeline.sql` "
+            "Every clause is refused by "
+            "`src/data_ingestion_toolbox/cdc/DDL/silver_cdc.sql` "
             "at write time. Foreign keys resolve the release, the measure "
             "identity and the stratum; a CHECK holds `geography_status` to "
             "the three values it may take; and a CHECK refuses an inverted "
@@ -3157,7 +3158,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="enforced",
         automation_note=(
-            "`sql/migrations/012_usda_nass_crop_pipeline.sql` refuses every "
+            "`src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql` refuses every "
             "clause at write time. NOT NULL foreign keys resolve the release, "
             "commodity, statistic and domain dimensions, and the CHECK "
             "`(geo_type = 'unsupported') = (geo_id IS NULL)` is the 'explicit "

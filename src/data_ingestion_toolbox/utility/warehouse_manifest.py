@@ -174,7 +174,7 @@ def read_recorded_assets(cursor: Any) -> dict[str, str]:
     Only manifest ids: `gold_schema`'s per-source components share the table
     and answer a different question, and a reader that conflated them would
     report drift for a relation the manifest never named. The two sets cannot
-    collide -- `utility.gold_schema.GOLD_SCHEMA_COMPONENTS` is the one place
+    collide -- `utility.gold_schema.SOURCE_SCHEMA_COMPONENTS` is the one place
     those names are spelled, and `test_a_manifest_asset_is_not_a_gold_component`
     holds the two apart -- so filtering by manifest id is exact rather than a
     prefix guess.

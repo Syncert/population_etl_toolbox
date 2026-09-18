@@ -12,7 +12,15 @@ Deploy these paths from the same commit; do not mix revisions:
 - `sql/` on the host from which the warehouse bootstrap is executed.
 
 The root `sql/` directory is required by the bootstrap operator, not by normal
-DAG imports. The runtime DDL used by DAG tasks is packaged below `src/`.
+DAG imports. The runtime DDL used by DAG tasks is packaged below `src/`, for
+all seven sources: each owns its control, silver, gold and publisher
+definitions under its package's `DDL/` directories, the bootstrap manifest
+applies those files, and the source's `ensure_*_schema` task re-applies them at
+the head of every DAG run. A step under `sql/migrations/` carries only what a
+populated warehouse needs and a rerunnable file cannot do -- a data rewrite or
+a constraint swap -- so a warehouse whose migrations are behind is repaired by
+the DAG rather than written to by it.
+
 Restart the scheduler and every worker after replacing Python files. Confirm
 that all of them mount the same staged revision.
 

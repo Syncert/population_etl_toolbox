@@ -102,24 +102,19 @@
       "path": "sql/migrations/015_census_pep_historical_series.sql"
     },
     {
-      "id": "migration-010",
-      "phase": "source",
-      "path": "sql/migrations/010_cdc_pipeline.sql"
+      "id": "silver-cdc",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cdc/DDL/silver_cdc.sql"
     },
     {
-      "id": "migration-011",
-      "phase": "source",
-      "path": "sql/migrations/011_fbi_ucr_pipeline.sql"
+      "id": "silver-fbi",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql"
     },
     {
-      "id": "migration-012",
-      "phase": "source",
-      "path": "sql/migrations/012_usda_nass_crop_pipeline.sql"
-    },
-    {
-      "id": "migration-014",
-      "phase": "source-fix",
-      "path": "sql/migrations/014_release_publisher_measure_identity.sql"
+      "id": "silver-nass",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql"
     },
     {
       "id": "migration-019",
@@ -152,6 +147,21 @@
       "path": "src/data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql"
     },
     {
+      "id": "gold-cdc",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cdc/gold_cdc/DDL/gold_cdc.sql"
+    },
+    {
+      "id": "gold-fbi",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql"
+    },
+    {
+      "id": "gold-nass",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql"
+    },
+    {
       "id": "publisher-census",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql"
@@ -165,6 +175,21 @@
       "id": "publisher-fred",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cdc",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cdc/gold_cdc/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-fbi",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-nass",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
     },
     {
       "id": "glossary-schema",
@@ -185,16 +210,6 @@
       "id": "migration-018",
       "phase": "glossary",
       "path": "sql/migrations/018_geo_grain_vocabulary.sql"
-    },
-    {
-      "id": "migration-020",
-      "phase": "glossary",
-      "path": "sql/migrations/020_resolved_geography_serving.sql"
-    },
-    {
-      "id": "migration-022",
-      "phase": "glossary",
-      "path": "sql/migrations/022_fbi_publisher_geo_grain.sql"
     },
     {
       "id": "migration-024",

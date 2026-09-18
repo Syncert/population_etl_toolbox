@@ -28,6 +28,8 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
 )
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
 
+from data_ingestion_toolbox.fbi_ucr.schema import ensure_fbi_schema
+
 DEFAULT_ARGS = {
     "owner": "data-eng",
     "depends_on_past": False,
@@ -142,6 +144,11 @@ with DAG(
     max_active_runs=1,
     tags=["fbi", "crime", "capture-first"],
 ) as dag:
+    ensure_schema = PythonOperator(
+        task_id="ensure_fbi_schema",
+        python_callable=ensure_fbi_schema,
+    )
+
     require_shared_geography = PythonOperator(
         task_id="require_shared_geography",
         python_callable=_require_shared_geography,
@@ -164,4 +171,4 @@ with DAG(
             python_callable=_publish_registered_product,
             op_kwargs={"replay": replay.output},
         )
-        require_shared_geography >> capture >> replay >> publish
+        ensure_schema >> require_shared_geography >> capture >> replay >> publish

@@ -44,7 +44,7 @@ from data_ingestion_toolbox.quality.reconciliation import (
     verify_manifest_ledger,
 )
 from data_ingestion_toolbox.quality.sources import SOURCE_EXECUTORS
-from data_ingestion_toolbox.utility.gold_schema import GOLD_SCHEMA_COMPONENTS
+from data_ingestion_toolbox.utility.gold_schema import SOURCE_SCHEMA_COMPONENTS
 from data_ingestion_toolbox.utility.warehouse_manifest import manifest_assets
 
 pytestmark = pytest.mark.unit
@@ -357,7 +357,7 @@ def test_the_schema_migration_state_has_exactly_two_writers() -> None:
     restated rather than removed. Two writers, and exactly two:
 
     * `gold_schema.ensure_gold_schema_from_files` records the four components
-      `GOLD_SCHEMA_COMPONENTS` names -- a hash of one source's gold DDL, which
+      `SOURCE_SCHEMA_COMPONENTS` names -- a hash of one source's gold DDL, which
       decides whether that DDL needs re-applying.
     * `warehouse_manifest.apply_manifest` records one row per manifest asset,
       which is what a warehouse answers "which steps do I carry?" with.
@@ -402,7 +402,7 @@ def test_a_manifest_asset_is_not_a_gold_component() -> None:
     adds an asset called `gold_ddl_acs`.
     """
     asset_ids = {asset.id for asset in manifest_assets()}
-    collisions = sorted(asset_ids & set(GOLD_SCHEMA_COMPONENTS.values()))
+    collisions = sorted(asset_ids & set(SOURCE_SCHEMA_COMPONENTS.values()))
     assert not collisions, (
         f"these manifest assets are named like a gold component, so the "
         f"ledger cannot say which writer wrote them: {collisions}"
@@ -426,8 +426,22 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     assert literals == ["src/data_ingestion_toolbox/utility/gold_schema.py"], (
         f"a gold component name is spelled outside the one declaration: {literals}"
     )
-    assert set(GOLD_SCHEMA_COMPONENTS) == {"BLS", "CENSUS_ACS", "CENSUS_PEP", "FRED"}
-    assert len(set(GOLD_SCHEMA_COMPONENTS.values())) == len(GOLD_SCHEMA_COMPONENTS), (
+    assert set(SOURCE_SCHEMA_COMPONENTS) == {
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS",
+    }, (
+        "every source that publishes gold declares the component its DDL is "
+        "recorded under; CDC, FBI and USDA NASS joined the four when their "
+        "relations moved out of migrations and into their own packages"
+    )
+    assert len(set(SOURCE_SCHEMA_COMPONENTS.values())) == len(
+        SOURCE_SCHEMA_COMPONENTS
+    ), (
         "two sources record their gold DDL under one component name, so each "
         "would see the other's hash and re-apply its own DDL every run"
     )

@@ -43,7 +43,10 @@ def test_each_registered_product_follows_the_required_stage_order(dagbag) -> Non
             task.task_id for task in publish.get_flat_relatives(upstream=True)
         }
 
-    assert len(dag.tasks) == 1 + 3 * len(products)
+    # Two shared tasks -- `ensure_nass_schema` and `require_shared_geography`
+    # -- and three per product. The count is asserted so a task added without
+    # a place in the stage order is noticed here rather than at run time.
+    assert len(dag.tasks) == 2 + 3 * len(products)
 
 
 @pytest.mark.dag

@@ -54,6 +54,7 @@ un-accept the plan that filed it.
 | [`DEPLOY_THE_INTERNAL_STACK.md`](DEPLOY_THE_INTERNAL_STACK.md) | `make deploy-*` brings the real internal stack up and down, and the metadata/warehouse refusal fires for real | Linux or macOS with Docker | ~20 min |
 | [`WINDOWS_DEPLOY_SCRIPT.md`](WINDOWS_DEPLOY_SCRIPT.md) | `deploy_stack.ps1` still behaves after being rewritten from 355 lines to 123 | Windows, Docker Desktop, Python | ~15 min |
 | [`RECORD_THE_IDENTITY_GATE_DECISION.md`](RECORD_THE_IDENTITY_GATE_DECISION.md) | Records an approval you already gave, where the dispatcher can see it | The machine your dispatcher runs on | ~2 min |
+| [`ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md`](ORCHESTRATED_DAG_RUNS_ON_A_CLEAN_AIRFLOW.md) | The three real-`DagRun` tests, which need an Airflow metadata database the Windows machine's install cannot create | Any host, Python 3.11, Docker | ~10 min |
 
-The last one is an action rather than a test, and it is here for the same
-reason as the rest: it can only happen on your machine.
+`RECORD_THE_IDENTITY_GATE_DECISION.md` is an action rather than a test, and it
+is here for the same reason as the rest: it can only happen on your machine.

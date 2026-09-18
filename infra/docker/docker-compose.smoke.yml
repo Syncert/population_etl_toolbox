@@ -29,11 +29,17 @@ services:
     #
     # `volumes` is a sequence, so Compose appends this to the base file's
     # list rather than replacing it; every migration and DDL mount there
-    # still applies. The `051_` prefix keeps it ordered after
-    # `050_martin_seed.sql`, whose Dane County geography and `martin_test`
+    # still applies. `initdb` runs its directory in filename order, so the
+    # prefix is the only thing sequencing this seed against the warehouse:
+    # it has to sort after every DDL mount in the base file and after
+    # `900_martin_seed.sql`, whose Dane County geography and `martin_test`
     # role this seed and the base healthcheck both depend on.
+    # `test_the_smoke_seed_runs_after_the_warehouse_it_seeds` checks it,
+    # because the base file's prefixes are generated from the manifest and
+    # a seed pinned to a number in the middle of them is a seed that runs
+    # against relations that do not exist yet.
     volumes:
-      - ../../tests/sql/frontend_smoke_seed.sql:/docker-entrypoint-initdb.d/051_frontend_smoke_seed.sql:ro
+      - ../../tests/sql/frontend_smoke_seed.sql:/docker-entrypoint-initdb.d/901_frontend_smoke_seed.sql:ro
 
   api:
     # `image` names the build output rather than selecting a registry image;

@@ -22,6 +22,7 @@ from data_ingestion_toolbox.cdc.config import CdcConfig
 from data_ingestion_toolbox.cdc.gold_cdc.publisher import publish_release
 from data_ingestion_toolbox.cdc.metadata import load_latest_accepted_metadata
 from data_ingestion_toolbox.cdc.registry import enabled_assets, get_asset
+from data_ingestion_toolbox.cdc.schema import ensure_cdc_schema
 from data_ingestion_toolbox.cdc.silver_cdc.replay import (
     persist_replay_result,
     replay_captured_run,
@@ -141,6 +142,11 @@ with DAG(
     max_active_runs=1,
     tags=["cdc", "health", "capture-first"],
 ) as dag:
+    ensure_schema = PythonOperator(
+        task_id="ensure_cdc_schema",
+        python_callable=ensure_cdc_schema,
+    )
+
     require_shared_geography = PythonOperator(
         task_id="require_shared_geography",
         python_callable=_require_shared_geography,
@@ -163,4 +169,4 @@ with DAG(
             python_callable=_publish_registered_asset,
             op_kwargs={"replay": replay.output},
         )
-        require_shared_geography >> capture >> replay >> publish
+        ensure_schema >> require_shared_geography >> capture >> replay >> publish

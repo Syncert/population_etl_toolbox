@@ -96,9 +96,9 @@ def _absent_if_blank(value: Optional[str]) -> Optional[str]:
 
 
 #: The value states a row can carry, as the warehouse's own CHECK constraint
-#: spells them (``sql/migrations/012_usda_nass_crop_pipeline.sql``), read from
-#: the adapter that writes them rather than re-listed here. Sorted so the
-#: refusal names them in one order.
+#: spells them (``src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql``),
+#: read from the adapter that writes them rather than re-listed here. Sorted
+#: so the refusal names them in one order.
 _VALUE_STATUS_VOCABULARY: tuple[str, ...] = tuple(sorted(VALUE_STATUSES))
 
 
