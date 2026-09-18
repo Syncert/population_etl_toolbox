@@ -114,7 +114,7 @@ describe("slots resolve only to identities the catalog published", () => {
     expect(health.metricCode).toBe("");
     // The reason names the identities, so an operator can see whether the
     // measure is missing or the template is pointing at the wrong code.
-    expect(health.reason).toContain("CDC:cdi:ALC1_1:crude");
+    expect(health.reason).toContain("CDC:cdi:ALC06:AGEADJPREV");
     expect(health.reason).toContain("no published measure");
   });
 
@@ -463,8 +463,12 @@ describe("the second-wave products are curation, not computation", () => {
     const safety = findTemplate("public-safety-trend");
     const sections = safety.sections.map((section) => section.id);
     expect(sections).toContain("reported");
-    expect(sections).toContain("participation");
     expect(sections).toContain("population-base");
+    // The rate this product shows is the program's own, published on its own
+    // denominator. There was a "participation" section here naming a metric
+    // code no publisher emits; reporting participation is not in this catalog,
+    // and inventing an identity for it was the defect, not the gap.
+    expect(sections).toContain("published-rate");
 
     const counts = safety.sections.find((section) => section.id === "reported");
     const base = safety.sections.find(
@@ -482,6 +486,7 @@ describe("the second-wave products are curation, not computation", () => {
       ),
     ).toBe(true);
     expect(safety.limits).toMatch(/not zero crime/i);
+    expect(safety.limits).toMatch(/participation is not published/i);
   });
 
   test("a missing report is never described as zero", () => {
@@ -508,17 +513,31 @@ describe("the second-wave products are curation, not computation", () => {
     }
   });
 
-  test("no second-wave slot names a BLS area series", () => {
-    // BLS publishes `source_object_key = series_id`, and a LAU series
-    // identifies one area: on the deployed warehouse 12,900 distinct LAU
-    // metric codes each serve exactly one geography. A template naming one
-    // would answer for a single county and report a gap everywhere else,
-    // which is why `BLS:LAU:UNEMP_RATE` in the first wave resolves nowhere.
-    // Labor context here comes from ACS tables, which publish one code for
-    // every geography.
-    for (const { template, measure } of everySlot()) {
-      for (const code of measure.candidates) {
-        expect(code, `${template.id}/${measure.id}`).not.toMatch(/^BLS:/);
+  test("no slot names a raw BLS series identity", () => {
+    // BLS publishes two kinds of identity and only one of them can fill a
+    // product slot.
+    //
+    // `gold_bls.measure_export` emits geography-independent measure keys --
+    // `BLS:LAU:UNEMP_RATE`, valid at COUNTY and STATE -- and that is what a
+    // template names, because one code then answers for whatever place the
+    // reader chose. `gold_bls.metric_publisher` also emits one identity per
+    // *series*, `BLS:LAUCN120010000000003`, and a series is an area: naming
+    // one would answer for a single county and gap everywhere else, which
+    // looks like it works.
+    //
+    // The series shape is what is forbidden, not the `BLS:` prefix. An
+    // earlier version of this test banned the prefix outright, on a reading
+    // taken from a deployment whose warehouse was missing
+    // `gold_bls.dim_bls_measure` and therefore published no measure keys at
+    // all.
+    const rawSeries = /^BLS:[A-Z]{2,}\d[A-Z0-9]*$/;
+    for (const template of PRODUCT_TEMPLATES) {
+      for (const section of template.sections) {
+        for (const measure of section.measures) {
+          for (const code of measure.candidates) {
+            expect(code, `${template.id}/${measure.id}`).not.toMatch(rawSeries);
+          }
+        }
       }
     }
   });

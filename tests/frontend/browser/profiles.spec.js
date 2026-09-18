@@ -89,8 +89,8 @@ const publishedMetrics = {
     freshness_state: "fresh",
     valid_geo_grains: ["COUNTY"],
   },
-  "CENSUS_PEP:pep_cty_alldata:POPESTIMATE": {
-    metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  "CENSUS_PEP:POPESTIMATE": {
+    metric_code: "CENSUS_PEP:POPESTIMATE",
     metric_display_name: "Resident population estimate",
     source_code: "CENSUS_PEP",
     units: "people",
@@ -135,9 +135,9 @@ const observationsByMetric = {
       uncertainty: { margin_of_error: "1200" },
     },
   ],
-  "CENSUS_PEP:pep_cty_alldata:POPESTIMATE": [
+  "CENSUS_PEP:POPESTIMATE": [
     {
-      metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      metric_code: "CENSUS_PEP:POPESTIMATE",
       source_code: "CENSUS_PEP",
       geo_id: GEO_ID,
       geo_level: "COUNTY",
@@ -355,7 +355,7 @@ test("the community profile reads a place through published identities", async (
     "false",
   );
   await expect(page.getByTestId("measure-reason-cdc-indicator")).toContainText(
-    "CDC:cdi:ALC1_1:crude",
+    "CDC:cdi:ALC06:AGEADJPREV",
   );
   // Its section is still rendered: an absent measure is not a place with
   // nothing to report.
@@ -447,7 +447,7 @@ test("the products are configuration: switching rebuilds the same screen", async
 // filled one.
 test("a filled CDC slot shows the interval CDC published", async ({ page }) => {
   const cdcMetric = {
-    metric_code: "CDC:cdi:ALC1_1:crude",
+    metric_code: "CDC:cdi:ALC06:AGEADJPREV",
     metric_display_name: "Binge drinking among adults",
     source_code: "CDC",
     units: "percent",
@@ -577,7 +577,7 @@ test("a second-wave product renders, states its gaps, and reaches the explorer",
   ).toHaveAttribute("data-available", "false");
   await expect(
     page.getByTestId("measure-reason-cdc-chronic-indicator"),
-  ).toContainText("CDC:cdi:ALC1_1:crude");
+  ).toContainText("CDC:cdi:ALC06:AGEADJPREV");
 
   // And the filled slot keeps its path into the explorer, naming the
   // identity that answered rather than the slot's label.

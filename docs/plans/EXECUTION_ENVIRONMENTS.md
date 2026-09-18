@@ -46,11 +46,10 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**1 plans.**
+**0 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`bls-area-series-product-identity`](to_do/A_BLS_AREA_SERIES_CANNOT_FILL_A_PRODUCT_SLOT_PLAN.md) | medium | none | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -100,11 +99,11 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`acs-serving-partitioning`](to_do/THE_ACS_SERVING_TABLE_IS_PARTITIONED_BY_YEAR_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
 | [`api-reader-privileges`](to_do/ONE_LEAST_PRIVILEGE_BOOTSTRAP_THAT_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`bls-unresolved-geography-ledger`](to_do/BLS_RECORDS_THE_GEOGRAPHY_IT_COULD_NOT_RESOLVE_PLAN.md) | medium | `postgres` | -- |
-| [`deployed-warehouse-carries-every-source`](to_do/THE_DEPLOYED_WAREHOUSE_CARRIES_EVERY_REGISTERED_SOURCE_PLAN.md) | high | `postgres` | -- |
 | [`enforced-constraint-kinds`](to_do/A_CONSTRAINT_THE_WAREHOUSE_ENFORCES_IS_NOT_A_GAP_PLAN.md) | medium | `postgres` | -- |
 | [`manifest-reapply-populated-warehouse`](to_do/REAPPLYING_THE_MANIFEST_TO_A_POPULATED_WAREHOUSE_IS_TESTED_PLAN.md) | medium | `postgres` | -- |
 | [`name-collision-race-is-a-conflict`](to_do/A_NAME_TAKEN_IN_A_RACE_IS_STILL_A_CONFLICT_PLAN.md) | low | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
+| [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
 | [`source-ddl-under-src`](to_do/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md) | medium | `airflow`, `postgres` | -- |
 | [`tile-layer-and-grain-filter-reads`](to_do/THE_TILE_LAYER_AND_THE_GRAIN_FILTERS_ARE_MEASURED_PLAN.md) | low | `postgres` | -- |

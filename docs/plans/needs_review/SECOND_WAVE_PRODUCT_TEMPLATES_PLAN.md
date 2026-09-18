@@ -120,56 +120,75 @@ this section exists to prevent.
 
 ## Implementation evidence
 
-### The catalog the plan asked for was empty, and the publishers were not
+### The catalog the candidates were checked against
 
-Criterion 3 says the candidates are verified against the live catalog. On the
-deployed warehouse `gold_glossary.dim_metric_catalog` holds **zero rows**, as
-do `publisher_registry` and `publisher_harvest_state`: the glossary harvest has
-never run there. So the catalog could not be read.
+**Read this before the rest: the first version of this evidence was measured
+against the wrong warehouse, and its conclusions were wrong.**
 
-The publishers it is built from could. `gold_census.metric_publisher` carries
-4,447 identities, `gold_bls.metric_publisher` 13,317 and
-`gold_fred.metric_publisher` 24 — **17,788 published identities** — and the
-harvest composes a metric code from exactly those rows as
-`source_code || ':' || source_object_key` (`glossary/harvest.py:300`). Reading
-the publishers is therefore reading what the catalog would contain, and it
-needs no write to a production warehouse to find out.
+The internal stack -- `infra/docker/docker-compose.yml`, started by
+`scripts/deploy_stack.py --mode internal` -- is the development target. Its
+`gold_glossary.dim_metric_catalog` carries **18,198 identities across all seven
+registered sources**:
 
-That is how every candidate below was checked. Two facts about the deployment
-follow from the same queries and are worth recording separately, because
-neither is this plan's to fix:
+| Source | Metrics | | Source | Metrics |
+|---|---|---|---|---|
+| BLS | 13,324 | | CDC | 281 |
+| CENSUS_ACS | 4,447 | | USDA_NASS | 101 |
+| FRED | 24 | | CENSUS_PEP | 17 |
+| FBI_UCR | 4 | | | |
 
-- **The deployed warehouse serves observations from an empty catalog.** 68M ACS
-  observations and 17,788 published identities, and `/catalog/metrics` would
-  answer with nothing until a harvest runs.
-- **It carries three of the seven registered sources.** Its schemas are
-  `gold_census`, `gold_bls` and `gold_fred`; there is no `gold_pep`,
-  `gold_cdc`, `gold_fbi` or `gold_nass`. Slots naming those sources report a
-  gap there, which is the designed behaviour and not a defect in the template.
+Resolved against it, **every slot in all eight products fills: 56 of 56, no
+gaps.** The second wave is 41 of 41.
 
-### What resolves, and what does not
+### What the first measurement got wrong, and what it cost
 
-Every candidate in the five new templates, resolved against those 17,788
-published identities. **32 slots resolve, 8 report a gap**, and every gap is a
-source this deployment does not carry rather than a code that is wrong:
+The first pass was run against a warehouse at `192.168.50.16`, which is a
+separate and much older deployment. It carries three of the seven sources and
+had never had its glossary harvested. Measured there, eight second-wave slots
+gapped, and this section originally recorded them as "a source that deployment
+does not carry rather than a code that is wrong".
 
-| Product | Resolve | Gap | The gaps |
-|---|---|---|---|
-| `housing-affordability` | 12 | 0 | — |
-| `aging-population` | 8 | 2 | `CENSUS_PEP`, `CDC` |
-| `disease-illness-burden` | 5 | 2 | `CDC`, `CENSUS_PEP` |
-| `public-safety-trend` | 1 | 3 | `FBI_UCR` ×2, `CENSUS_PEP` |
-| `rural-agricultural-economy` | 6 | 1 | `USDA_NASS` |
+**That conclusion was false, and it hid a real defect.** The same eight slots
+gapped on the internal stack *with all seven sources present*, because the
+candidate codes themselves were wrong -- inherited from the first wave and
+copied into the second without being resolved against a catalog that could
+have refuted them:
 
-`housing-affordability` resolves completely because it is built from ACS
-tables and FRED series this deployment publishes; `public-safety-trend` is
-almost entirely gapped because FBI UCR is not deployed here at all. Both are
-correct outcomes: a template is not rewritten per deployment, and a slot that
-cannot be filled states what it looked for.
+| Source | The templates named | The publishers emit |
+|---|---|---|
+| CENSUS_PEP | `CENSUS_PEP:pep_cty_alldata:POPESTIMATE` | `CENSUS_PEP:POPESTIMATE` |
+| CDC | `CDC:cdi:ALC1_1:crude` | `CDC:cdi:ALC06:AGEADJPREV` |
+| FBI_UCR | `FBI_UCR:summarized_violent_crime:actual` | `FBI_UCR:summarized_violent_crime:V:offense:absolute_total` |
+| USDA_NASS | `USDA_NASS:corn_survey_annual:41` | `USDA_NASS:corn_survey_annual:<sha256>` |
 
-Each ACS candidate was confirmed present in both `acs5` and `acs1` before
-being written in that preference order, so the fallback is real rather than
-decorative.
+All four are corrected, in the first wave as well as the second, because a
+candidate that resolves nowhere is a slot that reports a gap forever. The first
+wave went from 10 resolving with 5 gaps to 15 resolving with none.
+
+**A retraction.** This plan originally filed
+`bls-area-series-product-identity`, asserting that `BLS:LAU:UNEMP_RATE` could
+resolve on no warehouse because a BLS metric code is always `BLS:<series_id>`.
+That is wrong. `gold_bls.measure_export` publishes seven geography-independent
+measure keys, and `BLS:LAU:UNEMP_RATE` is one of them, valid at COUNTY and
+STATE. The remote warehouse was missing `gold_bls.dim_bls_measure` and
+`gold_bls.measure_export` entirely -- both are in its 68-relation shortfall --
+so it published only raw series and looked like it could publish nothing else.
+The ticket is withdrawn and the test it produced now forbids the *series*
+shape rather than the `BLS:` prefix.
+
+The lesson is the one the plan already stated and this evidence briefly stopped
+obeying: resolve a candidate against a catalog that is in a position to refute
+it. A warehouse missing the source cannot refute anything.
+
+### Where the fabricated identities came from
+
+`tests/frontend/browser/profiles.spec.js` mocks a catalog. It contained the
+same wrong codes the templates did, so every slot resolved in the browser tier
+and gapped against a warehouse -- the mock was written to agree with the
+template rather than with a publisher. It is corrected here, and
+`tests/frontend/unit/comparison.test.js` still carries the old PEP identity as
+an arbitrary string in filename assertions; harmless to that test's subject and
+noted rather than churned.
 
 ### The normalization question, held to
 

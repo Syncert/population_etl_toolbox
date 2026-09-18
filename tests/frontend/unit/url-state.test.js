@@ -59,7 +59,7 @@ describe("explorer URL state", () => {
   // two records of one view that disagreed.
   test("carries the dimension narrowing under the source's own filter names", () => {
     const parsed = parseExplorerState(
-      "?metric=CDC%3Acdi%3AALC1_1%3Acrude&stratum_id=OVR&adjustment_status=crude",
+      "?metric=CDC%3Acdi%3AALC06%3AAGEADJPREV&stratum_id=OVR&adjustment_status=crude",
     );
     expect(parsed.dimensions).toEqual({ stratum_id: "OVR", adjustment_status: "crude" });
 
@@ -67,10 +67,10 @@ describe("explorer URL state", () => {
     // equivalent selections produce the same link.
     expect(
       serializeExplorerState({
-        metric: "CDC:cdi:ALC1_1:crude",
+        metric: "CDC:cdi:ALC06:AGEADJPREV",
         dimensions: { stratum_id: "OVR", adjustment_status: "crude" },
       }),
-    ).toBe("metric=CDC%3Acdi%3AALC1_1%3Acrude&adjustment_status=crude&stratum_id=OVR");
+    ).toBe("metric=CDC%3Acdi%3AALC06%3AAGEADJPREV&adjustment_status=crude&stratum_id=OVR");
 
     // An empty selection is not a narrowing, and a key the explorer's own
     // controls own is never overwritten by one.
