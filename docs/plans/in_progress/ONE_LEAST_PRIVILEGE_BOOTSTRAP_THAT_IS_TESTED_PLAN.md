@@ -14,10 +14,15 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-16 from the codebase audit; no
-  implementation has started.
-- **Last updated:** 2026-09-16
-- **Current milestone:** not started.
+- **Status:** Claimed 2026-09-18 by a machine session with the disposable
+  PostGIS 16 container available, which is where deliverable 3's privilege
+  assertions can run as a second role.
+- **Last updated:** 2026-09-18
+- **Current milestone:** deliverable 1, the deployment-neutral bootstrap.
+- **Next pickup:** read `001_api_readonly.sql` beside `002_app_api.sql` -- the
+  second already derives its database from `current_database()` and is the
+  shape the first is being rewritten into -- then establish the gap by applying
+  `001` to the disposable database under its own name and owner.
 
 ## Why
 
