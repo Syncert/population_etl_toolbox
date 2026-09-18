@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
@@ -24,6 +24,19 @@ import {
 
 const FRONTEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * A fixture's path relative to the frontend root, always with `/`.
+ *
+ * These labels end up in assertion messages and in one expected literal, so
+ * they have to read the same everywhere. `slice` leaves the platform's own
+ * separator behind, which made `unit/explorer-sources.test.js` arrive as
+ * `unit\explorer-sources.test.js` on Windows and failed the exact-match
+ * below on that machine only.
+ */
+function fixtureLabel(candidate) {
+  return candidate.slice(FRONTEND_ROOT.length + 1).split(sep).join("/");
+}
+
 /** Every `{ path: "...", parameters: [...] }` literal in the fixtures. */
 function declaredRoutes() {
   const found = [];
@@ -42,7 +55,7 @@ function declaredRoutes() {
         /path:\s*[`"'](\/api\/v1\/[^`"']*)[`"']\s*,\s*(?:\/\/[^\n]*\n\s*)*parameters:\s*\[([^\]]*)\]/g;
       for (const match of source.matchAll(literal)) {
         found.push({
-          file: candidate.slice(FRONTEND_ROOT.length + 1),
+          file: fixtureLabel(candidate),
           path: match[1],
           parameters: [...match[2].matchAll(/["'`]([^"'`]+)["'`]/g)].map((name) => name[1]),
         });
@@ -132,7 +145,7 @@ describe("frontend capability fixtures describe the served contract", () => {
           /source_code:\s*["`']([A-Z_]+)["`'],[\s\S]{0,400}?publishes_aligned_reduction:\s*(true|false)/g;
         for (const match of source.matchAll(literal)) {
           claims.push({
-            file: candidate.slice(FRONTEND_ROOT.length + 1),
+            file: fixtureLabel(candidate),
             sourceCode: match[1],
             claimed: match[2] === "true",
           });
