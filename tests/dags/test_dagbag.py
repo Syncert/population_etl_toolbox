@@ -81,7 +81,11 @@ EXPECTED_DEFAULT_RETRIES = {
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
     "raw_capture_export": 1,
-    "serving_full_reserve": 1,
+    # Three, not one, because this task runs for hours and resumes: a
+    # restart picks up at the year it stopped on. One retry was
+    # consumed by the same scheduler sweep that killed the task, and a
+    # five-hour ACS re-serve ended at chunk 13 of 20 (DAG-008).
+    "serving_full_reserve": 3,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks

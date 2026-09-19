@@ -77,7 +77,24 @@ def full_reserve_request(conf: object) -> str:
     max_active_runs=1,
     default_args={
         "owner": "data-eng",
-        "retries": 1,
+        # This task runs for hours -- an ACS re-serve is twenty chunks over
+        # four to five -- and it is built to resume: each chunk commits, and
+        # `control.serving_refresh_chunk_state` plus migration 017's
+        # `last_full_reserve_started_at` mean a restart picks up at the year it
+        # stopped on rather than starting over.
+        #
+        # `retries: 1` did not match that. On 2026-09-19 the scheduler adopted
+        # the task as orphaned after a stale heartbeat -- the metadata
+        # connection had already shown Docker DNS flakiness that day -- killed
+        # it at chunk 13 of 20, and the single retry was consumed by the same
+        # sweep, so a five-hour run ended with seven years unserved and its
+        # thirteen completed chunks intact but abandoned.
+        #
+        # Three retries costs nothing when the work resumes and there is no
+        # duplicated effort to redo; it costs an operator most of a day when it
+        # is absent. The retry delay stays long enough that a repeated cause
+        # surfaces as a repeated failure rather than a tight loop.
+        "retries": 3,
         "retry_delay": timedelta(minutes=15),
     },
     tags=["serving", "operator", "full-reserve"],
