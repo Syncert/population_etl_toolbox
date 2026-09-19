@@ -18,8 +18,25 @@ verify:
   satisfy** — see *Do not start this plan until* below. Filed so the
   configuration work is tracked rather than remembered, and so the daily red
   run has a document to point at.
-- **Last updated:** 2026-09-15
+- **Last updated:** 2026-09-18
 - **Current milestone:** waiting on a deployment origin.
+
+**Re-checked 2026-09-18** against the internal stack, which was up and serving
+throughout an ACS rebuild. It does not satisfy the preconditions, and saying
+why is more useful than leaving the question open:
+
+- Condition 1 excludes it by name -- it is a local Compose stack
+  (`infra/docker/docker-compose.yml`, project `docker`), not a deployment.
+- Condition 2: its origin is `127.0.0.1` on a Windows host. There is no
+  origin a runner could be given.
+- Condition 3: a GitHub-hosted runner cannot reach a host on that LAN, and no
+  self-hosted label exists. The plan's own guess -- "assume a self-hosted
+  label is needed until proven otherwise" -- is confirmed rather than
+  displaced.
+
+So this stays in `to_do/`. Having a stack running locally is not the fact this
+waits on; the fact is an origin something other than the developer's machine
+can reach.
 
 ## Why
 
