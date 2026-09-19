@@ -269,3 +269,45 @@ Still worth watching the first two or three chunk durations against section
 already warns against extrapolating from one number. The driver commits per
 year and resumes where it stopped, so a surprise costs one chunk rather than
 the run.
+
+
+## Deliverable 4: what BLS looks like, and how the decision will be made
+
+The deliverable says to apply the same shape to
+`gold_bls.rpt_bls_observations` "only if the ACS run shows the expected
+improvement", and to record the decision either way. What is known so far,
+measured on the internal stack on 2026-09-18:
+
+| | ACS | BLS |
+|---|---|---|
+| Rows | 68.3M | 5,792,636 |
+| Heap + indexes | 45 GB + 48 GB | 5,202 MB + 5,144 MB |
+| Distinct `observation_date` values | 20, one per vintage | **440, monthly** |
+| Span | 20 years | 37 years |
+| Previous full re-serve (section 7) | 4h36m tuned | 16m44s |
+
+**The partition-equals-chunk argument still holds, less tightly.** Every ACS
+row's date is 1 January of its vintage, so a year partition holds exactly one
+date value. BLS is monthly, so a year partition holds twelve. That does not
+break anything -- the serving driver's chunk is still one calendar year, so a
+chunk still truncates exactly one partition -- but it does mean BLS would get
+37 partitions rather than 20, for a relation one ninth the size.
+
+**The dead-tuple evidence is not available right now.** `pg_stat_user_tables`
+reports `dead=0` for all three serving relations, because the manifest apply
+autovacuumed them at 23:09-23:11 and reset the counters. Measuring BLS's churn
+honestly means running a forced BLS re-serve and watching, which section 7
+prices at under twenty minutes.
+
+**So the decision waits on that run, not on this table.** The ACS improvement
+alone is not the whole test: a 1.6x like-for-like gain on a relation that takes
+four and a half hours is worth a schema change, and the same ratio on one that
+takes seventeen minutes buys about six. What would change the answer is
+evidence that BLS accumulates vacuum debt the way ACS did -- which is what
+section 7's operator rule was about, and which no measurement has yet shown for
+BLS.
+
+**Next:** after the ACS run completes, `serving_full_reserve` with
+`{"source_code": "BLS"}`, watching `n_dead_tup` on
+`gold_bls.rpt_bls_observations` before and after. Then record the decision here
+with the numbers, whichever way it goes.
