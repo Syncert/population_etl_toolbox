@@ -42,7 +42,7 @@ one was in this repository and is fixed (ENV-023); the tier collects and runs
 now. This is the interpreter's own package tree.
 
 - Filed by:
-  [`docs/plans/needs_review/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md`](../needs_review/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md)
+  [`docs/plans/completed/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md`](../completed/EVERY_SOURCE_OWNS_ITS_DDL_UNDER_SRC_PLAN.md)
 - Catalog row: **DAG-016** in
   [`docs/reference/TESTING_CONTRACT.md`](../../reference/TESTING_CONTRACT.md)
 - No acceptance criterion of that plan needs these three: the plan's criterion
