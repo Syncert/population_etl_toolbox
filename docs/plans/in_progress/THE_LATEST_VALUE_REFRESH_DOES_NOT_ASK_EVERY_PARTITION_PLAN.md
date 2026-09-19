@@ -15,10 +15,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed. Authored 2026-09-19 from a measurement taken during
-  the ACS rebuild, not from an audit.
+- **Status:** Implemented and verified. Held in `in_progress/` only because
+  its serving change lands in the same window as
+  `acs-bls-fact-lineage-and-value-status` deliverable 2 -- the operator asked
+  for one re-serve covering both, so neither moves to review until that run
+  has happened.
 - **Last updated:** 2026-09-19
-- **Current milestone:** not started.
+- **Current milestone:** done, awaiting the shared re-serve.
 
 ## Why
 
@@ -110,16 +113,27 @@ cannot be improved without a shape this repository does not want.
 
 ## Acceptance criteria
 
-- [ ] A steady-state `refresh_mv_acs_latest` for one ACS year completes in
+- [x] A steady-state `refresh_mv_acs_latest` for one ACS year completes in
       materially less than 1,294 seconds on the internal stack, recorded with
-      the same method as the measurement above.
-- [ ] The planner no longer probes every partition for a single key's latest
-      row, asserted from `EXPLAIN` output in an integration test rather than
-      from a duration.
-- [ ] `test_acs_latest_refresh_recomputes_each_affected_key_across_history`
+      the same method as the measurement above. **410 seconds**, same year,
+      same warehouse, same method: `deleted_rows=4445034
+      inserted_rows=4445034`. The chunk as a whole is now ~894s against the
+      1,151s it took before the table was ever partitioned.
+- [x] The planner no longer probes every partition for a single key's latest
+      row, asserted from `EXPLAIN` output rather than from a duration
+      (DB-060). Three tests: the superseded shape is planned to *show* it
+      scans every partition, so the defect is demonstrated rather than
+      described and the test fails if PostgreSQL ever learns to prune it; the
+      per-partition step is planned to read exactly the one relation it was
+      given with no `Merge Append`; and a key present only in 2003/2004/2006
+      still resolves to 2006.
+- [x] `test_acs_latest_refresh_recomputes_each_affected_key_across_history`
       passes unchanged, and an old-year refresh still leaves a newer year's
-      latest row in place.
-- [ ] Section 7's table is updated with the new figure.
+      latest row in place. Also verified on the real relation rather than a
+      fixture: 4,646,720 latest rows, keys unique, vintages spanning
+      2005-2024, and **zero** rows for which a newer observation exists.
+- [x] Section 7's table is updated with the new figure, as a three-column
+      comparison so the regression and its removal are both visible.
 
 ## Definition of done
 
@@ -133,3 +147,37 @@ appears in, not to the number of partitions the table has.
   truncates.
 - It does not change what `mv_acs_latest` contains, or the rule that decides
   which row is latest.
+
+
+## How it was done
+
+Two facts make a cheap answer exact, and neither is a heuristic:
+
+* one partition is one vintage year, because ACS `observation_date` is
+  `MAKE_DATE(estimate_year, 1, 1)`;
+* within a partition the natural key is unique -- `uq_rpt_acs_observations_nk`
+  is `(geo_id, observation_date, dataset_code, vintage_year, variable_code,
+  metric_code)`, and inside one year `observation_date` and `vintage_year` are
+  fixed while `dataset_code` is carried in `metric_code`.
+
+So the newest partition holding a key holds *exactly one* row for it, and that
+row is the latest. Nothing needs ranking across partitions; the search only has
+to stop. The procedure walks partitions newest-first against a pending-key set,
+deletes the keys it resolves, and exits when the set empties -- so a full
+re-serve resolves almost every key in the first partition it looks at.
+
+The default partition is visited at both ends rather than skipped. It takes
+rows outside the declared 2000-2035 range, which are therefore either newer
+than every year partition or older than all of them, and correctness must not
+depend on it being empty -- the repository's fixtures put a 2099 row there.
+
+**One guard had to be rewritten rather than kept.**
+`test_acs_latest_refresh_uses_bounded_indexed_key_lookups` asserted the
+procedure contained `CROSS JOIN LATERAL ... LIMIT 1` and no `SELECT DISTINCT
+ON`. Its docstring says what it is for -- "avoids a global historical-row
+sort" -- and that property still holds; the construct it used as a proxy
+stopped identifying it the moment the table was partitioned, because a
+per-key `LIMIT 1` over a partitioned parent *is* a scan of every partition. It
+now asserts the property: the lookup is bounded by the key set, it exits when
+that set empties, and the resolve step reads a single partition rather than
+the parent.

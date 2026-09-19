@@ -548,6 +548,8 @@ DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
+    v_resolved_rows BIGINT;
+    v_source RECORD;
 BEGIN
     RAISE NOTICE '[ACS LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
@@ -579,23 +581,96 @@ BEGIN
       AND m.metric_code = k.metric_code;
     GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
-    INSERT INTO gold_census.mv_acs_latest
-    SELECT latest.*
-    FROM gold_acs_affected_keys k
-    CROSS JOIN LATERAL (
-        SELECT d.*
-        FROM gold_census.rpt_acs_observations d
-        WHERE d.geo_id = k.geo_id
-          AND d.variable_code = k.variable_code
-          AND d.metric_code = k.metric_code
-        ORDER BY
-            d.observation_date DESC,
-            d.updated_at DESC,
-            CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
-            d.vintage_year DESC
-        LIMIT 1
-    ) latest;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    -- Resolve each key from the newest partition that holds it, instead of
+    -- asking every partition for its candidate and ranking the answers.
+    --
+    -- The old shape was one `LATERAL ... ORDER BY observation_date DESC LIMIT
+    -- 1` per key over the whole relation. Once the relation was partitioned by
+    -- year that became a `Merge Append` across every partition -- the answer
+    -- can be in any of them, so nothing prunes -- at **126 buffer hits to find
+    -- one key's latest row**, against a single index scan before. Multiplied
+    -- by the 4.4 million keys an ACS year chunk affects, it cost 1,294 seconds
+    -- (DB-060).
+    --
+    -- Two facts make the cheap answer exact:
+    --
+    --   * one partition is one vintage year, because ACS `observation_date` is
+    --     `MAKE_DATE(estimate_year, 1, 1)`;
+    --   * within a partition the natural key is unique --
+    --     `uq_rpt_acs_observations_nk` is `(geo_id, observation_date,
+    --     dataset_code, vintage_year, variable_code, metric_code)`, and
+    --     `observation_date` and `vintage_year` are both fixed inside one
+    --     year, while `dataset_code` is carried in `metric_code`.
+    --
+    -- So the newest partition holding a key holds *exactly one* row for it,
+    -- and that row is the latest. No ranking across partitions is needed; the
+    -- search only has to stop.
+    --
+    -- The default partition is visited at both ends rather than skipped. It
+    -- takes rows outside the declared 2000-2035 range, which are therefore
+    -- either newer than every year partition or older than all of them, and
+    -- correctness must not depend on it being empty -- the repository's
+    -- fixtures put a 2099 row there.
+    CREATE TEMP TABLE gold_acs_pending_keys (
+        geo_id        TEXT NOT NULL,
+        variable_code TEXT NOT NULL,
+        metric_code   TEXT NOT NULL,
+        PRIMARY KEY (geo_id, variable_code, metric_code)
+    ) ON COMMIT DROP;
+    INSERT INTO gold_acs_pending_keys
+    SELECT geo_id, variable_code, metric_code FROM gold_acs_affected_keys;
+    ANALYZE gold_acs_pending_keys;
+
+    v_inserted_rows := 0;
+
+    FOR v_source IN
+        SELECT * FROM (
+            -- Anything past the declared range outranks every year.
+            SELECT 'gold_census.rpt_acs_observations_unranged' AS relation,
+                   'observation_date > DATE ''2035-12-31''' AS predicate,
+                   0 AS visit_order
+            UNION ALL
+            SELECT format('gold_census.rpt_acs_observations_%s', y), 'TRUE',
+                   2036 - y
+            FROM generate_series(2000, 2035) AS y
+            UNION ALL
+            -- Anything before it is outranked by every year.
+            SELECT 'gold_census.rpt_acs_observations_unranged',
+                   'observation_date < DATE ''2000-01-01''', 9999
+        ) ordered
+        ORDER BY visit_order
+    LOOP
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM gold_acs_pending_keys);
+        CONTINUE WHEN to_regclass(v_source.relation) IS NULL;
+
+        EXECUTE format($resolve$
+            WITH resolved AS (
+                INSERT INTO gold_census.mv_acs_latest
+                SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code) d.*
+                FROM %1$s d
+                JOIN gold_acs_pending_keys p
+                  ON p.geo_id = d.geo_id
+                 AND p.variable_code = d.variable_code
+                 AND p.metric_code = d.metric_code
+                WHERE %2$s
+                ORDER BY d.geo_id, d.variable_code, d.metric_code,
+                         d.observation_date DESC,
+                         d.updated_at DESC,
+                         CASE d.dataset_code WHEN 'acs1' THEN 1
+                                             WHEN 'acs5' THEN 2 ELSE 9 END,
+                         d.vintage_year DESC
+                RETURNING geo_id, variable_code, metric_code
+            )
+            DELETE FROM gold_acs_pending_keys p
+            USING resolved r
+            WHERE p.geo_id = r.geo_id
+              AND p.variable_code = r.variable_code
+              AND p.metric_code = r.metric_code
+        $resolve$, v_source.relation, v_source.predicate);
+
+        GET DIAGNOSTICS v_resolved_rows = ROW_COUNT;
+        v_inserted_rows := v_inserted_rows + v_resolved_rows;
+    END LOOP;
 
     RAISE NOTICE
         '[ACS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',

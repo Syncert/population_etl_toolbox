@@ -591,12 +591,39 @@ Limit
 needs a single index scan. Multiplied by 4.4 million affected keys, that is
 the twenty-two minutes.
 
-**What this means for an operator.** A re-serve of ACS is now *slower* overall
-than it was, while using half the disk and leaving no vacuum debt. If re-serve
-wall-clock matters more than footprint on your warehouse, that is a trade you
-should know you are making. Narrowing the latest-value refresh is tracked
-separately; it is not a property of partitioning that cannot be fixed, it is a
-query written for a table shape that changed underneath it.
+### And then the lookup was narrowed
+
+That was fixed rather than lived with (DB-060). Two facts make a cheap answer
+exact: one partition is one vintage year, and within a partition the natural
+key is unique -- `observation_date` and `vintage_year` are fixed inside a year,
+and `dataset_code` is carried in `metric_code`. So the newest partition holding
+a key holds *exactly one* row for it, and that row is the latest. Nothing needs
+ranking across partitions; the search only has to stop.
+
+`refresh_mv_acs_latest` now walks partitions newest-first, deleting resolved
+keys as it goes and exiting when none remain, so a full re-serve resolves
+almost every key in the first partition it looks at. The default partition is
+visited at both ends rather than skipped: it takes rows outside the declared
+range, which are therefore either newer than every year or older than all of
+them.
+
+| 2024, one year, steady state | Before partitioning | Partitioned | Partitioned, narrowed |
+| --- | --- | --- | --- |
+| `refresh_rpt_acs_observations` | -- | 484s | 484s |
+| `refresh_mv_acs_latest` | -- | 1,294s | **410s** |
+| Chunk total | 1,151s | ~1,778s | **~894s** |
+
+**So the trade is gone.** A year chunk is now faster than it was before the
+table was partitioned, on half the disk, with no vacuum debt. Verified on the
+real relation rather than a fixture: 4,646,720 latest rows, keys unique,
+vintages spanning 2005-2024 -- so a key whose newest data is 2011 still reads
+2011 -- and **zero** rows for which a newer observation exists.
+
+**What to watch for.** The gain depends on keys being found early. A warehouse
+whose keys are spread thinly across many old vintages walks more partitions
+before the pending set empties. The chunk log reports what it resolved, and
+`test_the_refresh_finds_the_newest_vintage_not_the_newest_partition` is the
+guard that stopping early never means stopping short.
 
 ### ACS throughput is bound by `shared_buffers`, not by CPU
 
