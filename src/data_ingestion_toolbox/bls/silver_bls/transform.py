@@ -285,6 +285,8 @@ def _fetch_raw_rows(
                 -- published it. Without it the ledger row says a geography did
                 -- not resolve and cannot say which response said so (DQ-BLS-004).
                 observation.capture_id,
+                observation.value_status,
+                observation.value_source,
                 ROW_NUMBER() OVER (
                     PARTITION BY observation.program, observation.series_id,
                                  observation.year, observation.period
@@ -298,13 +300,15 @@ def _fetch_raw_rows(
         ),
         observations AS (
             SELECT series_id, program, year, period, period_name, value,
-                   capture_id
+                   capture_id, value_status, value_source
             FROM captured_ranked
             WHERE revision_rank = 1
         )
         SELECT
             bl.series_id, bl.program, bl.year, bl.period, bl.period_name, bl.value,
             bl.capture_id,
+            bl.value_status,
+            bl.value_source,
             bs.measure AS measure_code,
             bs.seasonal AS seasonal_adjustment,
             bs.title
@@ -356,6 +360,15 @@ def _upsert_silver_rows(
                 r["measure_code"],
                 r.get("measure_name"),
                 r["seasonal_adjustment"] or "U",
+                r["capture_id"],
+                r.get("source_value"),
+                # The revision's `value_status` is NOT NULL by constraint, so a
+                # null here means the row came from somewhere that is not the
+                # revision query -- a fixture, or a caller assembling rows by
+                # hand. `missing` is the honest reading when there is no value,
+                # and the fact's own CHECK refuses `valid` beside a null.
+                r.get("value_status")
+                or ("valid" if r["value"] is not None else "missing"),
                 "BLS",
                 str(load_batch_id),
                 ingested_at,
@@ -369,6 +382,7 @@ def _upsert_silver_rows(
             geo_level, geo_id, state_fips, county_fips,
             value, year, period, period_name,
             measure_code, measure_name, seasonal_adjustment,
+            capture_id, source_value, value_status,
             source_system, load_batch_id, ingested_at
         ) VALUES %s
         ON CONFLICT (series_id, period_date)
@@ -389,6 +403,9 @@ def _upsert_silver_rows(
             measure_code = EXCLUDED.measure_code,
             measure_name = EXCLUDED.measure_name,
             seasonal_adjustment = EXCLUDED.seasonal_adjustment,
+            capture_id = EXCLUDED.capture_id,
+            source_value = EXCLUDED.source_value,
+            value_status = EXCLUDED.value_status,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
             ingested_at = EXCLUDED.ingested_at
@@ -459,6 +476,8 @@ def _transform_rows_to_silver_df(
             "period_name",
             "value",
             "capture_id",
+            "value_status",
+            "source_value",
             "measure_code",
             "seasonal_adjustment",
             "title",

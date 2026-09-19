@@ -269,3 +269,26 @@ this warehouse: several sequential passes over 99.8M rows to rewrite 31.5M of
 them and validate two check constraints, followed by an autovacuum of the
 bloat the rewrite created. The operator half of deliverable 5 should budget
 for that before the re-serve it precedes, not in addition to it.
+
+
+## Deliverable 1 is complete, and its two halves cannot ship apart
+
+The transforms carry the revision's `capture_id`, `value_source` and
+`value_status` into both facts now (DB-059). ACS chooses the E cell's -- the
+fact's number is the estimate, so describing the margin of error's lineage
+instead would be wrong -- and a group with no E cell at all takes `absent`,
+which is the revision relation's own word for a cell the provider published
+nothing in. BLS has no estimate/margin pivot, so its status travels as it is.
+
+**The schema half makes the transform half mandatory, not optional.** The
+fact's `value_status` defaults to `valid` and the new CHECK refuses `valid`
+beside a null value, so a deployment that took
+`027_acs_bls_fact_lineage.sql` *without* these transform changes would fail at
+insert time on the first withheld observation -- a `CheckViolation` on a
+pipeline that had been working. No run was exposed on the internal stack
+(BLS's schedule is monthly and its last run was 2026-09-10, ACS's 2026-09-12,
+both before the migration), but the two halves must be deployed together.
+
+That is worth stating because the ordering is counter-intuitive: the
+constraint is what makes the status trustworthy, and it is also what makes the
+old writer illegal.

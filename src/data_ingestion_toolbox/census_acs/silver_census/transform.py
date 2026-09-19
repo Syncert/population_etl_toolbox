@@ -437,6 +437,13 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
                 observation.variable_name,
                 observation.measure_type,
                 observation.value,
+                -- As text: psycopg2 returns a `uuid.UUID`, and the polars
+                -- frame below declares Utf8. PostgreSQL accepts the canonical
+                -- string back for a UUID column, which is what the upsert
+                -- path already relies on for `load_batch_id`.
+                observation.capture_id::TEXT AS capture_id,
+                observation.value_status,
+                observation.value_source,
                 ROW_NUMBER() OVER (
                     PARTITION BY observation.dataset, observation.year,
                                  observation.geo_level,
@@ -451,7 +458,8 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
         ),
         observations AS (
             SELECT dataset, year, geo_level, state_fips, county_fips,
-                   table_id, variable_name, measure_type, value
+                   table_id, variable_name, measure_type, value,
+                   capture_id, value_status, value_source
             FROM captured_ranked
             WHERE revision_rank = 1
         )
@@ -464,7 +472,10 @@ def _fetch_raw_rows(hook: PostgresHook, year: int | None = None) -> list[tuple]:
             table_id,
             variable_name,
             measure_type,
-            value
+            value,
+            capture_id,
+            value_status,
+            value_source
         FROM observations
     """
     params: list[object] = []
@@ -509,6 +520,9 @@ def _transform_rows_to_silver_df(
             "variable_name": pl.Utf8,
             "measure_type": pl.Utf8,
             "value": pl.Float64,
+            "capture_id": pl.Utf8,
+            "value_status": pl.Utf8,
+            "source_value": pl.Utf8,
         },
     )
 
@@ -538,7 +552,32 @@ def _transform_rows_to_silver_df(
             .then(pl.col("value"))
             .max()
             .alias("margin_of_error"),
+            pl.when(pl.col("measure_type") == "E")
+            .then(pl.col("capture_id"))
+            .max()
+            .alias("capture_id"),
+            pl.when(pl.col("measure_type") == "E")
+            .then(pl.col("value_status"))
+            .max()
+            .alias("value_status"),
+            pl.when(pl.col("measure_type") == "E")
+            .then(pl.col("source_value"))
+            .max()
+            .alias("source_value"),
         ]
+    )
+
+    # A group with no E cell at all -- an M published without its estimate --
+    # has no status to inherit, and the fact's own CHECK refuses `valid` beside
+    # a null estimate. `absent` is the revision relation's word for a cell the
+    # provider published nothing in, and it is what the fact would have been
+    # given by `027_acs_bls_fact_lineage.sql` had the row been written before
+    # this transform learned to carry one.
+    grouped = grouped.with_columns(
+        pl.when(pl.col("estimate_value").is_null())
+        .then(pl.col("value_status").fill_null(pl.lit("absent")))
+        .otherwise(pl.col("value_status").fill_null(pl.lit("valid")))
+        .alias("value_status")
     )
 
     grouped = grouped.with_columns(
@@ -847,6 +886,9 @@ def _direct_insert_silver_rows(
         "variable_label",
         "variable_concept",
         "universe",
+        "capture_id",
+        "source_value",
+        "value_status",
     ]
     suffix = ("CENSUS_ACS", load_batch_id, ingested_at)
     records = [row + suffix for row in df.select(insert_cols).rows()]
@@ -871,6 +913,9 @@ def _direct_insert_silver_rows(
             variable_label TEXT,
             variable_concept TEXT,
             universe TEXT,
+            capture_id UUID,
+            source_value TEXT,
+            value_status TEXT,
             source_system VARCHAR(50),
             load_batch_id UUID,
             ingested_at TIMESTAMPTZ
@@ -884,6 +929,7 @@ def _direct_insert_silver_rows(
             geo_level, geo_id, state_fips, county_fips,
             estimate_value, margin_of_error, margin_of_error_pct,
             variable_label, variable_concept, universe,
+            capture_id, source_value, value_status,
             source_system, load_batch_id, ingested_at
         )
         FROM STDIN WITH (FORMAT CSV, NULL '\\N');
@@ -896,6 +942,7 @@ def _direct_insert_silver_rows(
             geo_level, geo_id, state_fips, county_fips,
             estimate_value, margin_of_error, margin_of_error_pct,
             variable_label, variable_concept, universe,
+            capture_id, source_value, value_status,
             source_system, load_batch_id, ingested_at
         )
         SELECT
@@ -904,6 +951,7 @@ def _direct_insert_silver_rows(
             geo_level, geo_id, state_fips, county_fips,
             estimate_value, margin_of_error, margin_of_error_pct,
             variable_label, variable_concept, universe,
+            capture_id, source_value, value_status,
             source_system, load_batch_id, ingested_at
         FROM temp_census_insert
         ON CONFLICT (dataset, table_id, variable_code, geo_id, estimate_year)
@@ -1053,6 +1101,9 @@ def _upsert_silver_rows(
         "variable_label",
         "variable_concept",
         "universe",
+        "capture_id",
+        "source_value",
+        "value_status",
     ]
     # psycopg2 does not register a UUID adapter in every supported runtime.
     # PostgreSQL accepts the canonical string representation for UUID columns.
@@ -1079,6 +1130,9 @@ def _upsert_silver_rows(
             variable_label TEXT,
             variable_concept TEXT,
             universe TEXT,
+            capture_id UUID,
+            source_value TEXT,
+            value_status TEXT,
             source_system VARCHAR(50),
             load_batch_id UUID,
             ingested_at TIMESTAMPTZ
@@ -1109,6 +1163,9 @@ def _upsert_silver_rows(
             variable_label,
             variable_concept,
             universe,
+            capture_id,
+            source_value,
+            value_status,
             source_system,
             load_batch_id,
             ingested_at
@@ -1132,6 +1189,9 @@ def _upsert_silver_rows(
             variable_label,
             variable_concept,
             universe,
+            capture_id,
+            source_value,
+            value_status,
             source_system,
             load_batch_id,
             ingested_at
@@ -1148,6 +1208,9 @@ def _upsert_silver_rows(
             variable_label = EXCLUDED.variable_label,
             variable_concept = EXCLUDED.variable_concept,
             universe = EXCLUDED.universe,
+            capture_id = EXCLUDED.capture_id,
+            source_value = EXCLUDED.source_value,
+            value_status = EXCLUDED.value_status,
             source_system = EXCLUDED.source_system,
             load_batch_id = EXCLUDED.load_batch_id,
             ingested_at = EXCLUDED.ingested_at
@@ -1162,6 +1225,9 @@ def _upsert_silver_rows(
             silver_census.fact_demographics.variable_label,
             silver_census.fact_demographics.variable_concept,
             silver_census.fact_demographics.universe,
+            silver_census.fact_demographics.capture_id,
+            silver_census.fact_demographics.source_value,
+            silver_census.fact_demographics.value_status,
             silver_census.fact_demographics.source_system
         ) IS DISTINCT FROM (
             EXCLUDED.time_sk,
@@ -1174,6 +1240,9 @@ def _upsert_silver_rows(
             EXCLUDED.variable_label,
             EXCLUDED.variable_concept,
             EXCLUDED.universe,
+            EXCLUDED.capture_id,
+            EXCLUDED.source_value,
+            EXCLUDED.value_status,
             EXCLUDED.source_system
         );
     """

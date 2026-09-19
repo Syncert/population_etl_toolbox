@@ -92,6 +92,12 @@ def test_the_notices_are_cleared_so_a_chunk_does_not_report_the_last_one(
         with database.cursor() as cursor:
             cursor.execute("DO $$ BEGIN RAISE NOTICE 'first chunk'; END $$")
         _forward_procedure_notices(database, log)
+        # `caplog` captures at the handler, so whether the first call's record
+        # is in `caplog.records` depends on the ambient level the rest of the
+        # tier left behind -- this passed alone and failed in a full run.
+        # Clearing makes the assertion below about the second call, which is
+        # what it is for.
+        caplog.clear()
 
         with database.cursor() as cursor:
             cursor.execute("DO $$ BEGIN RAISE NOTICE 'second chunk'; END $$")
