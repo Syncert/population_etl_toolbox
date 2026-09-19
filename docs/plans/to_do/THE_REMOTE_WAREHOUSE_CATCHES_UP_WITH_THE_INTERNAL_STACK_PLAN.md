@@ -115,3 +115,75 @@ migration is two `ADD COLUMN IF NOT EXISTS` against a table holding zero rows.
 It was applied as plain SQL rather than through the recording applier, for the
 reason given above: one ledger row would have turned an honest
 `not_applicable` into a misleading "42 assets missing".
+
+
+## What bringing the internal stack forward on 2026-09-18 established
+
+The internal stack turned out to be behind too, and catching it up was the
+first time this repository's manifest applier ran against a *populated*
+warehouse. Everything below was found doing it, and every item applies to the
+remote one with more force, because it is further behind.
+
+**The applier's own path is now proven on real data.** All 47 assets applied
+and recorded; `--check` answers "all 47 manifest assets recorded and current".
+That is the `verify` command in this plan's frontmatter, and it now has a
+precedent rather than only a design.
+
+**Budget several hours, not minutes, and expect one long step.**
+`027_acs_bls_fact_lineage.sql` took roughly **thirty-five minutes** on
+99.8M ACS rows: it rewrites the third of them that carry no estimate
+(31,481,530) and then validates two check constraints, which is several
+sequential passes, followed by an autovacuum of the bloat the rewrite creates.
+The remote warehouse holds fewer ACS rows but the shape of the cost is the
+same. Nothing else in the manifest came close.
+
+**A migration failed, and it will fail there too.**
+`025_county_label_is_not_reviewed.sql` added its new constraint before the
+`UPDATE` that makes rows satisfy it, so it aborted on the 4,161 rows it exists
+to correct. It only ever worked on an empty table -- a fresh bootstrap. Fixed
+(DB-057), but the lesson generalises: **a step that was only ever exercised by
+a fresh bootstrap has not been exercised at all for this plan's purpose.** The
+remote warehouse is the second populated warehouse this applier will meet, and
+it is worth reading every migration that swaps a constraint with that in mind
+before running it.
+
+**Expect a cascade, and enumerate it first.** Dropping the two ACS serving
+relations cascaded through **nine** views, four of them in the shared `gold`
+contract schema, and the checked-in contract file could not recreate them
+because the warehouse had never received `024_served_place_name.sql`. Check
+what depends on a relation before dropping it:
+
+```sql
+WITH RECURSIVE deps AS (
+  SELECT dep.oid FROM pg_depend d
+    JOIN pg_rewrite r ON r.oid = d.objid
+    JOIN pg_class dep ON dep.oid = r.ev_class
+   WHERE d.refobjid = 'schema.relation'::regclass AND dep.oid <> d.refobjid
+  UNION
+  SELECT dep.oid FROM deps
+    JOIN pg_depend d ON d.refobjid = deps.oid
+    JOIN pg_rewrite r ON r.oid = d.objid
+    JOIN pg_class dep ON dep.oid = r.ev_class
+   WHERE dep.oid <> deps.oid
+)
+SELECT n.nspname || '.' || c.relname
+FROM deps JOIN pg_class c ON c.oid = deps.oid
+JOIN pg_namespace n ON n.oid = c.relnamespace;
+```
+
+**Check the server's memory settings before timing anything.** The internal
+stack was running on 4 GB of `shared_buffers` on a 101 GB host, because
+`--env-file` replaces Compose's automatic `.env` rather than adding to it and
+the tuning lived in the file that was replaced. Fixed in `tools/deployment.py`,
+but a warehouse started any other way can have the same gap, and section 7 of
+`BETA_RESET_REINGESTION.md` measures it at six to eight times the re-serve
+throughput. Ask the server, not the file:
+
+```sql
+SHOW shared_buffers; SHOW maintenance_work_mem; SHOW work_mem;
+```
+
+**A warehouse older than the ledger reports every asset missing.** That is
+`not_applicable` rather than a fault -- it predates the ledger, which is
+indistinguishable from never having been built. Applying the manifest is what
+gives it one. Do not read the first `--check` as a diff.
