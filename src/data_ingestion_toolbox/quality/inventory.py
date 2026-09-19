@@ -2385,11 +2385,21 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.metric_publisher",
             "gold_census.dim_acs_table",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: DB-025 and DB-036 cross the catalog and the served "
-            "relation for metric identity, and no executor confirms the ACS "
-            "contract views preserve the published fact's values."
+            "`quality.sources.acs_contract_conformance` reads the conformance "
+            "direction, which is the one that cannot lag: every row a contract "
+            "view serves must trace to a fact the warehouse published, with "
+            "the metric code derived from that fact's own dataset and "
+            "variable, the same value, and the same value state. The state is "
+            "part of it since ACS began serving a withheld value as a row "
+            "(DB-061): a served row claiming a number the fact does not have "
+            "is exactly as wrong as a served number that differs, and `IS NOT "
+            "DISTINCT FROM` is what compares two absences. Completeness is "
+            "deliberately not measured here -- the serving layer is rebuilt a "
+            "year at a time with a commit per chunk, so a fact published since "
+            "the last refresh is legitimately absent, and DQ-ACS-002 measures "
+            "that ledger."
         ),
     ),
     _rule(
@@ -2542,12 +2552,20 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.measure_export",
             "gold_bls.metric_publisher",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: DB-036 crosses served codes with the catalog, and "
-            "no executor confirms the BLS contract views preserve the published "
-            "fact's values or that the measure export publishes the grains the "
-            "fact rows carry."
+            "`quality.sources.bls_contract_conformance` reads the conformance "
+            "direction: every row a contract view serves must trace to a "
+            "published fact, with the same value and the same value state. A "
+            "BLS metric code is the series except where a measure-identified "
+            "programme publishes one metric across every geography it covers, "
+            "so the match goes through `gold_bls.dim_bls_measure` -- reading "
+            "the mapping the refresh itself uses rather than restating its "
+            "rule. The value state joined the comparison when BLS began "
+            "serving a withheld observation as a row (DB-061). Completeness is "
+            "not measured here, for the reason DQ-ACS-007 gives; DQ-BLS-002 "
+            "measures that ledger. The grains half of this rule's summary is "
+            "DQ-BLS-004's, which is automated separately."
         ),
     ),
     _rule(

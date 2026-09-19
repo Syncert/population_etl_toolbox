@@ -197,6 +197,11 @@
       "path": "src/data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
     },
     {
+      "id": "migration-028",
+      "phase": "publisher",
+      "path": "sql/migrations/028_serving_publishes_a_withheld_value.sql"
+    },
+    {
       "id": "glossary-schema",
       "phase": "glossary",
       "path": "sql/gold_contract/002_gold_glossary_schema.sql"

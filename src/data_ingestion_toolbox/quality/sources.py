@@ -867,10 +867,249 @@ def fred_contract_conformance(
     ]
 
 
+def acs_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ACS-007 — the served views carry the published fact, unaltered.
+
+    Modelled on `fred_contract_conformance`, with one difference that is the
+    whole reason this rule could not be written before: ACS now serves a value
+    the provider withheld, as a row with a null value and a `value_status`
+    saying why (DB-061). So "the served value equals the published value" has
+    to hold for absences too, which is what `IS NOT DISTINCT FROM` says and
+    `=` does not -- a served row is wrong if it carries a number the fact does
+    not have *and* if it carries nothing where the fact has one.
+
+    The status itself is not compared here, and the reason is that it is
+    refused rather than measured: `rpt_acs_observations_published_value_check`
+    will not store a row claiming `valid` beside a null estimate, so the
+    disagreement this comparison would look for cannot reach the view. The
+    contract views also cannot carry the column without FRED's carrying it
+    too -- `gold.v_metric_timeseries_by_geo` is a `SELECT *` union of the
+    three -- and widening FRED's serving contract is a different change than
+    this one.
+
+    The completeness direction is deliberately not measured here, for the
+    reason the FRED rule states: the serving layer is rebuilt a year at a time
+    with a commit per chunk, so a fact published since the last refresh is
+    legitimately absent. A source with no `control.serving_refresh_state` row
+    is read strictly -- `infinity`, so nothing is exempt -- because the
+    chunked driver seeds that row before it refreshes anything.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_census.fact_observation")
+    if total == 0:
+        return [
+            RuleOutcome("gold_census.fact_observation", "not_applicable"),
+            RuleOutcome("gold_census.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_census.metric_publisher", "not_applicable"),
+        ]
+
+    unbacked, unbacked_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code, served.observation_date
+          FROM gold_census.fact_observation AS served
+          LEFT JOIN control.serving_refresh_state AS refreshed
+            ON refreshed.source_code = 'CENSUS_ACS'
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM silver_census.fact_demographics AS published
+                    WHERE 'CENSUS_ACS:' || published.dataset || ':'
+                          || published.variable_code = served.metric_code
+                      AND published.geo_id = served.geo_id
+                      AND MAKE_DATE(published.estimate_year, 1, 1)
+                          = served.observation_date
+                      AND (
+                          published.estimate_value
+                              IS NOT DISTINCT FROM served.value
+                          OR published.ingested_at > COALESCE(
+                              refreshed.last_silver_ingested_at,
+                              'infinity'::TIMESTAMPTZ
+                          )
+                      )
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.observation_date
+          FROM gold_census.v_metric_latest_by_geo AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_census.fact_observation AS released
+                    WHERE released.metric_code = latest.metric_code
+                      AND released.geo_id = latest.geo_id
+                      AND released.observation_date = latest.observation_date
+                      AND released.value IS NOT DISTINCT FROM latest.value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT DISTINCT served.metric_code
+          FROM gold_census.fact_observation AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_census.metric_publisher AS exported
+                    WHERE 'CENSUS_ACS:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_census.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def bls_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BLS-007 — the served views carry the published fact, unaltered.
+
+    The ACS rule's shape, against BLS's identity. A BLS metric code is the
+    series (`BLS:<series_id>`) except where a measure-identified program
+    publishes one metric across every geography it covers, so the served code
+    is matched through `gold_bls.dim_bls_measure` as well as the series --
+    reading the mapping the refresh itself uses rather than restating its
+    rule.
+
+    Withheld observations are served here too, so the value comparison is
+    `IS NOT DISTINCT FROM` rather than `=`. The status is refused at the
+    serving table by `rpt_bls_observations_published_value_check` rather than
+    compared here, for the reason `acs_contract_conformance` states.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_bls.fact_observation")
+    if total == 0:
+        return [
+            RuleOutcome("gold_bls.fact_observation", "not_applicable"),
+            RuleOutcome("gold_bls.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_bls.metric_publisher", "not_applicable"),
+        ]
+
+    unbacked, unbacked_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code, served.observation_date
+          FROM gold_bls.fact_observation AS served
+          LEFT JOIN control.serving_refresh_state AS refreshed
+            ON refreshed.source_code = 'BLS'
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM silver_bls.fact_labor_statistics AS published
+                     LEFT JOIN gold_bls.dim_bls_measure AS measure
+                            ON measure.program_code = UPPER(published.program)
+                           AND measure.measure_code = published.measure_code
+                    WHERE COALESCE(
+                              'BLS:' || measure.metric_key,
+                              'BLS:' || published.series_id
+                          ) = served.metric_code
+                      AND published.period_date = served.observation_date
+                      AND published.geo_id = served.geo_id
+                      AND (
+                          published.value IS NOT DISTINCT FROM served.value
+                          OR published.ingested_at > COALESCE(
+                              refreshed.last_silver_ingested_at,
+                              'infinity'::TIMESTAMPTZ
+                          )
+                      )
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.observation_date
+          FROM gold_bls.v_metric_latest_by_geo AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_bls.fact_observation AS released
+                    WHERE released.metric_code = latest.metric_code
+                      AND released.geo_id = latest.geo_id
+                      AND released.observation_date = latest.observation_date
+                      AND released.value IS NOT DISTINCT FROM latest.value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT DISTINCT served.metric_code
+          FROM gold_bls.fact_observation AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_bls.metric_publisher AS exported
+                    WHERE 'BLS:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_bls.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_bls.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_bls.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
+    "DQ-ACS-007": acs_contract_conformance,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,
+    "DQ-BLS-007": bls_contract_conformance,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,

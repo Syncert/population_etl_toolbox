@@ -2789,7 +2789,7 @@ def test_a_source_that_publishes_no_value_state_serves_only_numbers(
     api_client: TestClient,
     postgres_connection_factory: Callable[[], connection],
 ) -> None:
-    """Covers: API-127 — `publishes_value_status` says which shape a row takes.
+    """Covers: API-127, DB-061 — `publishes_value_status` says which shape a row takes.
 
     Two contracts, and a client has to code for one of them. Where a source
     publishes a value state, an unpublished figure arrives as a row with

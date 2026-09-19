@@ -1249,6 +1249,9 @@ v gold_bls.fact_bls_observation
     column as_of_date date
     column updated_at timestamp with time zone
     column measure_code character varying(10)
+    column value_status text
+    column source_value text
+    column capture_id uuid
     body SELECT s.geo_id,
     body         CASE
     body             WHEN COALESCE(TRIM(BOTH FROM s.geo_level), ''::text) <> ''::text THEN gold_glossary.geo_grain(s.geo_level::text)
@@ -1272,11 +1275,14 @@ v gold_bls.fact_bls_observation
     body     sr.value_type,
     body     s.ingested_at::date AS as_of_date,
     body     s.ingested_at AS updated_at,
-    body     s.measure_code
+    body     s.measure_code,
+    body     s.value_status,
+    body     s.source_value,
+    body     s.capture_id
     body    FROM silver_bls.fact_labor_statistics s
     body      JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id::text
     body      JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
-    body   WHERE s.value IS NOT NULL AND s.series_id IS NOT NULL AND s.series_id::text <> ''::text;
+    body   WHERE s.series_id IS NOT NULL AND s.series_id::text <> ''::text;
 
 v gold_bls.fact_observation
     column source_code text
@@ -1468,7 +1474,10 @@ r gold_bls.mv_bls_latest
     column measure_category text
     column observation_basis text
     column units text
-    column value numeric NOT NULL
+    column value numeric
+    column value_status text NOT NULL DEFAULT 'valid'::text
+    column source_value text
+    column capture_id uuid
     column value_type text
     column seasonal_adjustment_status text
     column gold_metric_name text
@@ -1505,13 +1514,18 @@ r gold_bls.rpt_bls_observations
     column measure_category text
     column observation_basis text
     column units text
-    column value numeric NOT NULL
+    column value numeric
+    column value_status text NOT NULL DEFAULT 'valid'::text
+    column source_value text
+    column capture_id uuid
     column value_type text
     column seasonal_adjustment_status text
     column gold_metric_name text
     column comparison_warning text
     column metric_code text
     column metric_display_name text
+    constraint rpt_bls_observations_published_value_check CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint rpt_bls_observations_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
     index ix_rpt_bls_latest_selection CREATE INDEX ix_rpt_bls_latest_selection ON gold_bls.rpt_bls_observations USING btree (geo_id, series_id, metric_code, observation_date DESC, updated_at DESC)
     index ix_rpt_bls_observations_metric_date CREATE INDEX ix_rpt_bls_observations_metric_date ON gold_bls.rpt_bls_observations USING btree (metric_code, observation_date)
     index ix_rpt_bls_observations_metric_geo_date CREATE INDEX ix_rpt_bls_observations_metric_geo_date ON gold_bls.rpt_bls_observations USING btree (metric_code, geo_id, observation_date)
@@ -1982,6 +1996,9 @@ v gold_census.fact_acs_observation
     column moe_annotation text
     column as_of_date date
     column updated_at timestamp with time zone
+    column value_status text
+    column source_value text
+    column capture_id uuid
     body SELECT s.geo_id,
     body         CASE
     body             WHEN COALESCE(TRIM(BOTH FROM s.geo_level), ''::text) <> ''::text THEN gold_glossary.geo_grain(s.geo_level::text)
@@ -2004,10 +2021,13 @@ v gold_census.fact_acs_observation
     body     NULL::text AS estimate_annotation,
     body     NULL::text AS moe_annotation,
     body     s.ingested_at::date AS as_of_date,
-    body     s.ingested_at AS updated_at
+    body     s.ingested_at AS updated_at,
+    body     s.value_status,
+    body     s.source_value,
+    body     s.capture_id
     body    FROM silver_census.fact_demographics s
     body      JOIN gold_census.dim_acs_variable av ON av.dataset_code = s.dataset::text AND av.vintage_year = s.estimate_year AND av.variable_code = s.variable_code::text
-    body   WHERE s.estimate_value IS NOT NULL AND s.variable_code IS NOT NULL AND s.variable_code::text <> ''::text;
+    body   WHERE s.variable_code IS NOT NULL AND s.variable_code::text <> ''::text;
 
 v gold_census.fact_observation
     column source_code text
@@ -2136,7 +2156,7 @@ r gold_census.mv_acs_latest
     column place_name text
     column geo_latitude double precision
     column geo_longitude double precision
-    column value numeric NOT NULL
+    column value numeric
     column dataset_code text NOT NULL
     column vintage_year integer NOT NULL
     column table_id text NOT NULL
@@ -2147,7 +2167,10 @@ r gold_census.mv_acs_latest
     column universe text
     column denominator_hint text
     column is_publishable_default boolean
-    column estimate_value numeric NOT NULL
+    column estimate_value numeric
+    column value_status text NOT NULL DEFAULT 'valid'::text
+    column source_value text
+    column capture_id uuid
     column margin_of_error numeric
     column margin_of_error_pct numeric
     column estimate_annotation text
@@ -2178,7 +2201,7 @@ p gold_census.rpt_acs_observations
     column place_name text
     column geo_latitude double precision
     column geo_longitude double precision
-    column value numeric NOT NULL
+    column value numeric
     column dataset_code text NOT NULL
     column vintage_year integer NOT NULL
     column table_id text NOT NULL
@@ -2189,7 +2212,10 @@ p gold_census.rpt_acs_observations
     column universe text
     column denominator_hint text
     column is_publishable_default boolean
-    column estimate_value numeric NOT NULL
+    column estimate_value numeric
+    column value_status text NOT NULL DEFAULT 'valid'::text
+    column source_value text
+    column capture_id uuid
     column margin_of_error numeric
     column margin_of_error_pct numeric
     column estimate_annotation text
@@ -2199,6 +2225,8 @@ p gold_census.rpt_acs_observations
     column metric_code text
     column metric_display_name text
     constraint rpt_acs_observations_dataset_code_check CHECK ((dataset_code = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint rpt_acs_observations_published_value_check CHECK (((value_status <> 'valid'::text) OR (estimate_value IS NOT NULL)))
+    constraint rpt_acs_observations_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'absent'::text, 'blank'::text, 'sentinel'::text, 'invalid'::text])))
     index ix_rpt_acs_latest_selection CREATE INDEX ix_rpt_acs_latest_selection ON ONLY gold_census.rpt_acs_observations USING btree (geo_id, variable_code, metric_code, observation_date DESC, updated_at DESC, (
 CASE dataset_code
     WHEN 'acs1'::text THEN 1

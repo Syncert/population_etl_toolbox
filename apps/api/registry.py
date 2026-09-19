@@ -495,6 +495,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             source_code="BLS",
             latest_relation="gold_bls.mv_bls_latest",
             released_relation="gold_bls.rpt_bls_observations",
+            # Declared, so `publishes_value_status` is true for this
+            # source and a client is told to expect `value: null` with a
+            # reason. Both served relations carry the column since
+            # `028_serving_publishes_a_withheld_value.sql`; before it,
+            # the gold view dropped every withheld row and a suppressed
+            # figure was indistinguishable from one never published.
+            value_status_column="value_status",
             lineage_schema="gold_bls",
             lineage_relation="fact_bls_observation",
             metric_code_column="metric_code",
@@ -524,6 +531,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             source_code="CENSUS_ACS",
             latest_relation="gold_census.mv_acs_latest",
             released_relation="gold_census.rpt_acs_observations",
+            # Declared, so `publishes_value_status` is true for this
+            # source and a client is told to expect `value: null` with a
+            # reason. Both served relations carry the column since
+            # `028_serving_publishes_a_withheld_value.sql`; before it,
+            # the gold view dropped every withheld row and a suppressed
+            # figure was indistinguishable from one never published.
+            value_status_column="value_status",
             lineage_schema="gold_census",
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",

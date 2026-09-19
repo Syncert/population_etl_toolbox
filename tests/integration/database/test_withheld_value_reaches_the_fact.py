@@ -37,7 +37,11 @@ def test_a_bls_observation_with_no_value_reaches_the_fact_as_missing(
     turns out to be wrong can be re-derived from the fact rather than only
     from the capture.
     """
-    series_id = "LAUST970000000000003"
+    # State 93, because 97 is already `test_bls_silver_flow.py`'s and 99
+    # and 98 are taken too. Two tests seeding one series id is two tests
+    # sharing a fixture neither knows about: this file picked 97 first,
+    # and the collision surfaced as the *other* file failing.
+    series_id = "LAUST930000000000003"
     writer = postgres_connection_factory()
     try:
         with writer.cursor() as cursor:
@@ -45,7 +49,7 @@ def test_a_bls_observation_with_no_value_reaches_the_fact_as_missing(
             seed_geography(
                 cursor,
                 geo_type="state",
-                state_fips="97",
+                state_fips="93",
                 vintage=2097,
                 name="Withheld State",
             )
@@ -54,7 +58,7 @@ def test_a_bls_observation_with_no_value_reaches_the_fact_as_missing(
                 INSERT INTO raw_bls.bls_series (
                     program, series_id, title, seasonal, measure, area_code
                 ) VALUES ('la', %s, 'Withheld fixture', 'U', '03',
-                          'ST9700000000000')
+                          'ST9300000000000')
                 ON CONFLICT DO NOTHING
                 """,
                 (series_id,),
@@ -145,7 +149,7 @@ def test_a_bls_observation_with_no_value_reaches_the_fact_as_missing(
                 # actually wrote rather than guessed from the series id.
                 cursor.execute(
                     "DELETE FROM silver_ref.geography_resolution "
-                    "WHERE provider_source = 'BLS' AND source_code = 'state:97'"
+                    "WHERE provider_source = 'BLS' AND source_code = 'state:93'"
                 )
                 cursor.execute(
                     "DELETE FROM silver_ref.dim_time WHERE time_sk = 20970101"

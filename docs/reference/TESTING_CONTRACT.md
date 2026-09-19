@@ -288,7 +288,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Warehouse data quality | DQ-001–DQ-017 | None |
 | Airflow DAGs | DAG-001–DAG-021 | None |
 | ETL and shared units | ETL-001–ETL-051 | None |
-| Database integration | DB-001–DB-060 | None |
+| Database integration | DB-001–DB-061 | None |
 | API | API-001–API-148 | None |
 | Martin vector tiles | MARTIN-001–MARTIN-010 | None |
 | External source contracts | EXT-001–EXT-014 | None |
@@ -297,7 +297,7 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | Resilience | RES-001–RES-008 | None |
 | Frontend | WEB-001–WEB-033, WEB-035–WEB-114 | None |
 | Deployment | DEPLOY-001–DEPLOY-012 | None |
-| **Total** | **516 of 516** | **0 of 516** |
+| **Total** | **517 of 517** | **0 of 517** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 516-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 517-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -583,6 +583,7 @@ PostgreSQL integration tests apply repository DDL to clean isolated state in the
 | DB-058 | P1 | Integration / `integration database` | What the refresh procedures say reaches the run's log | `_forward_procedure_notices` turns `connection.notices` into log records after each chunk's `CALL`: notices at info, `WARNING` at warning -- the refresh raises exactly one, that the relation is not partitioned, and it is the line in a twenty-chunk run that most needs not to look like progress. The list is cleared per chunk, asserted directly, because `notices` accumulates for the life of the connection and chunk twenty would otherwise re-log all twenty under the year it is currently serving | The per-chunk row counts and the `cleared_partitions=` marker that says whether a chunk truncated its partition (DB-056) went into a list nothing read. Found by writing the operator instruction "each chunk logs `cleared_partitions=1`" into the reset procedure, then running a real re-serve and grepping its Airflow log for it: zero occurrences. The instruction was unfollowable and the signal had never been visible to anyone |
 | DB-059 | P0 | Integration / `integration database` | A value the provider withheld reaches the fact as withheld | A BLS observation carrying `'-'` and `value_status = 'missing'` transforms into a fact row with a null value, the status intact, the provider's own token beside it, and a `capture_id` resolving to the response it was read from. The refusal is exercised on a row that is otherwise accepted -- the same insert with a value succeeds first -- so the `CHECK` is shown to be about the status and the null together rather than about anything else in the row | The fact aggregation kept only the number, so a cell the provider suppressed and one it never published were the same row. 31,481,530 of 99,783,997 ACS fact rows on the internal stack carry no estimate, and every one was indistinguishable from a geography that does not exist |
 | DB-060 | P1 | Integration / `integration database` | The latest-value lookup stops at a partition instead of asking all of them | `refresh_mv_acs_latest` walks partitions newest-first and exits when every key is resolved. Three tests: the superseded shape is *planned* to show it does scan every partition -- so the defect is demonstrated rather than described, and the test fails if PostgreSQL ever learns to prune it -- the per-partition step is planned to read exactly the one relation it was given with no `Merge Append`, and a key present only in 2003/2004/2006 still resolves to 2006, which is what stopping early could have broken. Duration is not asserted; a timing test on shared hardware measures the hardware | Partitioning the relation made this refresh three times slower: the newest row per key across all history is the one question time-partitioning is worst at, because the answer can be in any partition. 126 buffer hits to find one key's latest row against a single index scan before, and 1,294 seconds for a year's 4.4 million keys. Narrowed to 410, which makes the whole chunk faster than it was before the table was ever partitioned |
+| DB-061 | P0 | Integration / `integration database`, Integration / `integration api` | ACS and BLS serve a value the provider withheld | The two gold fact views no longer filter on a non-null value, the two reporting tables no longer declare theirs `NOT NULL`, and all four served relations carry `value_status`, `source_value` and `capture_id`. A row may not claim `valid` beside a null value, refused by `rpt_{acs,bls}_observations_published_value_check`. `publishes_value_status` flips for both sources because it is *derived* from the dispatch entry's `value_status_column` rather than declared twice, and `test_a_source_that_publishes_no_value_state_serves_only_numbers` holds the warehouse to the claim in both directions -- a source declaring the column must have it on both served relations, and one declaring none on neither | 31,481,530 of 99,783,997 ACS fact rows carry no estimate, and the serving filter removed every one. A cell Census suppressed and a geography that was never published gave a consumer the same answer: nothing. `AGENTS.md` forbids coercing a suppressed value to zero; omitting it is not zeroing, but it loses the same distinction |
 
 ### API and Redis Tests
 

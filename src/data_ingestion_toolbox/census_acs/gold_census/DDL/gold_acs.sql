@@ -78,14 +78,31 @@ SELECT
     -- an ACS row's `as_of` every time a chunk was re-served, on a field the
     -- consumer guide says traces a row back to its publication.
     s.ingested_at::DATE AS as_of_date,
-    s.ingested_at AS updated_at
+    s.ingested_at AS updated_at,
+    -- Why a value is absent, the provider's own token, and the response it was
+    -- read from. The fact has carried these since DB-055; serving dropped the
+    -- rows entirely, so a cell Census suppressed and a geography that does not
+    -- exist gave a consumer the same answer.
+    --
+    -- Appended rather than placed beside `estimate_value`, because
+    -- `CREATE OR REPLACE VIEW` may only add columns at the end: inserting them
+    -- mid-list fails on every warehouse that already has the view, which is
+    -- every warehouse that matters.
+    s.value_status,
+    s.source_value,
+    s.capture_id
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av
     ON av.dataset_code  = s.dataset
    AND av.vintage_year  = s.estimate_year
    AND av.variable_code = s.variable_code
-WHERE s.estimate_value IS NOT NULL
-  AND s.variable_code IS NOT NULL
+-- `estimate_value IS NOT NULL` used to be here. It removed 31,481,530 of
+-- 99,783,997 ACS fact rows from serving -- every cell the provider withheld --
+-- and a consumer could not tell one from a geography that was never
+-- published. They are served now, with a null value and the status that says
+-- why. What is still excluded is a row with no variable to identify it, which
+-- is not a withheld value but an unusable row.
+WHERE s.variable_code IS NOT NULL
   AND s.variable_code <> '';
 
 -- ============================================================
@@ -113,8 +130,14 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
-    -- ACS-specific columns (no NULLs for these)
-    value                      NUMERIC NOT NULL,
+    -- ACS-specific columns
+    --
+    -- `value` and `estimate_value` were `NOT NULL`, which is what made a
+    -- withheld cell unservable: there was nowhere to put it. They are
+    -- nullable now, and `value_status` is what says whether the absence is
+    -- the provider's or this pipeline's -- constrained so a row cannot claim
+    -- a published value and carry none.
+    value                      NUMERIC,
     dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
@@ -125,7 +148,11 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     universe                   TEXT,
     denominator_hint           TEXT,
     is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC NOT NULL,
+    estimate_value             NUMERIC,
+    value_status               TEXT NOT NULL DEFAULT 'valid'
+        CHECK (value_status IN ('valid', 'absent', 'blank', 'sentinel', 'invalid')),
+    source_value               TEXT,
+    capture_id                 UUID,
     margin_of_error            NUMERIC,
     margin_of_error_pct        NUMERIC,
     estimate_annotation        TEXT,
@@ -134,7 +161,9 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     units                      TEXT,
     -- Metric catalog association
     metric_code                TEXT,
-    metric_display_name        TEXT
+    metric_display_name        TEXT,
+    CONSTRAINT rpt_acs_observations_published_value_check
+        CHECK (value_status <> 'valid' OR estimate_value IS NOT NULL)
 ) PARTITION BY RANGE (observation_date);
 
 -- Why this relation is partitioned, when its six siblings are not.
@@ -458,6 +487,9 @@ BEGIN
         denominator_hint,
         is_publishable_default,
         estimate_value,
+        value_status,
+        source_value,
+        capture_id,
         margin_of_error,
         margin_of_error_pct,
         estimate_annotation,
@@ -500,6 +532,9 @@ BEGIN
         v.denominator_hint,
         v.is_publishable_default,
         ao.estimate_value,
+        ao.value_status,
+        ao.source_value,
+        ao.capture_id,
         ao.margin_of_error,
         ao.margin_of_error_pct,
         ao.estimate_annotation,

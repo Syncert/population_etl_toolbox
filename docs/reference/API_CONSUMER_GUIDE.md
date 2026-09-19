@@ -337,20 +337,31 @@ source-scoped routes serve it; that is what they are for.
 - `value` is **text**, to preserve provider precision. Parse it yourself.
 - `value` is **text**, and `null` whenever the source published no usable
   number — never zero. **Nothing is ever coerced to zero.**
-- **Two sources shapes, and `publishes_value_status` on
+- **Two source shapes, and `publishes_value_status` on
   `/catalog/capabilities` tells you which you are reading.** Where it is
-  `true` (CDC, FBI UCR, USDA NASS), an unpublished figure arrives as a row
-  with `value: null` and a `value_status` saying why in the source's own
-  vocabulary — `suppressed`, `withheld`, `not_reported`, each source's own
-  word. Where it is `false` (BLS, FRED, Census ACS, Census PEP), the serving
-  relations carry only published numbers: `value` is never null,
-  `value_status` is always null, and a period the source published **without**
-  a usable number is *absent from the series* rather than present and marked.
-  If you chart a history from one of those sources, a gap is a gap — do not
-  draw across it as though the period were continuous with its neighbours.
-  The flag is on the metric resource too, so a client that searched the
-  catalog does not have to enumerate sources to learn the shape of its own
-  rows.
+  `true` (CDC, FBI UCR, USDA NASS, **Census ACS, BLS**), an unpublished figure
+  arrives as a row with `value: null` and a `value_status` saying why in the
+  source's own vocabulary — `suppressed`, `withheld`, `not_reported`,
+  `absent`, `missing`, each source's own word. Where it is `false` (FRED,
+  Census PEP), the serving relations carry only published numbers: `value` is
+  never null, `value_status` is always null, and a period the source published
+  **without** a usable number is *absent from the series* rather than present
+  and marked. If you chart a history from one of those sources, a gap is a gap
+  — do not draw across it as though the period were continuous with its
+  neighbours. The flag is on the metric resource too, so a client that
+  searched the catalog does not have to enumerate sources to learn the shape
+  of its own rows.
+
+  > **Census ACS and BLS changed shape.** They used to be on the `false` side,
+  > and a cell Census suppressed was simply not in the response. It is a row
+  > now, with `value: null` and a `value_status`. On the internal warehouse
+  > that is **31,481,530 additional ACS rows** — just under a third of the
+  > fact table — so a client that paged an ACS series and assumed every row
+  > carried a number will now see nulls where it saw nothing. That is the
+  > point: a value the Bureau withheld and a geography that was never
+  > published are different facts, and they used to give the same answer.
+  > Read `publishes_value_status` rather than assuming; it is why the flag
+  > exists.
 - `dimensions` carries the source's declared fields under the source's own
   published names — CDC strata and footnotes, FBI subject/offense/program,
   NASS commodity/domain/practice, Census dataset and vintage. The exact set

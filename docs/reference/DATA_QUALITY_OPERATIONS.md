@@ -203,8 +203,13 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **30 are `unimplemented`** — no executor runs them, and 18 of those are
-  BLOCK severity. `DQ-SHARED-004` left this set when
+- **28 are `unimplemented`** — no executor runs them, and 16 of those are
+  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` left this set together when
+  the two sources began serving a value the provider withheld: both rules ask
+  whether the contract views preserve the published fact's values, and until a
+  withheld value *had* a served row there was no way to state the question
+  that did not also assert the absence was correct. `DQ-SHARED-004` left it
+  when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the
   applier wrote those rows the applied side did not exist. A warehouse that
