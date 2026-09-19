@@ -517,16 +517,86 @@ outside the range lands in `rpt_acs_observations_unranged`, the default
 partition, which the repository's `2099` fixture rows use and nothing the
 pipeline produces reaches.
 
-| Measurement | Before (heap) | Before (indexes) | After (heap) | After (indexes) |
-| --- | --- | --- | --- | --- |
-| `rpt_acs_observations` | 45 GB | 48 GB | _pending first rebuild_ | _pending_ |
-| `mv_acs_latest` | 30 GB | 7,077 MB | _pending_ | _pending_ |
+### What the first rebuild measured
 
-Measured 2026-09-18 on the internal stack, 68,741,704 rows across 20 vintage
-years. Note that the "before" indexes are larger than the "before" heap, and
-that both are well past the 37 GB/25 GB this section recorded at the previous
-re-serve — a heap that grows as it is re-served is the cost this change
-removes.
+Run on the internal stack, 2026-09-18 23:08 to 2026-09-19 03:37. It succeeded,
+and it reproduced the row count exactly: **68,302,467 rows before, 68,302,467
+after**.
+
+**Size, which is unambiguous:**
+
+| Relation | Before | After |
+| --- | --- | --- |
+| `rpt_acs_observations` | 45 GB heap + 48 GB indexes = **94 GB** | 32 GB + 26 GB = **58 GB** |
+| `mv_acs_latest` | 30 GB + 7,077 MB = **37 GB** | 4,470 MB + 2,555 MB = **7 GB** |
+| **Serving total** | **131 GB** | **65 GB** |
+| Index / heap ratio | 1.07 | 0.81 |
+
+Half the footprint, and the index/heap ratio back under 1. Most of that is
+bloat a rebuild removes and any `VACUUM FULL` would also have removed. What
+the partitioning adds is that it does not come back: `n_dead_tup` across all
+37 partitions is **0** after the run, and a year chunk truncates rather than
+deleting, so it creates none.
+
+**Time, which is not unambiguous, and the honest reading is mixed.**
+
+The whole run took 15,946 seconds of chunk work against the 46,305 this
+section recorded — 2.90x. **Almost none of that is the partitioning.** The
+biggest gains are on 2009-2012, the years the previous run served with 16 GB
+of `shared_buffers`; this run had 48 GB, because the tuning had been silently
+lost (see `RUNNING_THE_INTERNAL_STACK.md`). On the eleven years where both
+runs had 48 GB, this one is **1.18x** — and 2019, 2023 and 2024 were *slower*.
+
+That comparison is not clean either. This run filled empty partitions, so
+early chunks had no delete to do, while later chunks paid a rising index cost
+as the relation grew under them. The previous run had a full table throughout.
+
+**So the run was repeated for one year in steady state**, truncating and
+refilling a partition that already held its 4,445,034 rows -- which is what a
+scheduled re-serve actually does:
+
+| 2024, one year | This section's previous run | Steady state, partitioned |
+| --- | --- | --- |
+| `refresh_rpt_acs_observations` | (not broken out) | **484s**, `cleared_partitions=1` |
+| `refresh_mv_acs_latest` | (not broken out) | **1,294s** |
+| Chunk total | **1,151s** | **~1,778s** |
+
+**The report refresh is fast and the latest-value refresh is the problem.**
+Truncating and refilling a year's partition takes eight minutes. Recomputing
+`mv_acs_latest` for the same year takes twenty-two, and it did not before.
+
+The cause is in the plan: `refresh_mv_acs_latest` asks, per affected key, for
+the newest row *across all history* --
+
+```sql
+SELECT d.* FROM gold_census.rpt_acs_observations d
+WHERE d.geo_id = k.geo_id AND d.variable_code = k.variable_code
+  AND d.metric_code = k.metric_code
+ORDER BY d.observation_date DESC, ... LIMIT 1
+```
+
+-- and that is the one question time-partitioning is worst at. The answer can
+be in any partition, so there is no global index to satisfy it. Measured:
+
+```text
+Limit
+  Buffers: shared hit=126
+  ->  Merge Append
+        ->  Index Scan ... rpt_acs_observations_2000
+        ->  Index Scan ... rpt_acs_observations_2001
+        ... 37 partitions, one index probe each
+```
+
+**126 buffer hits to find one key's latest row**, where an unpartitioned table
+needs a single index scan. Multiplied by 4.4 million affected keys, that is
+the twenty-two minutes.
+
+**What this means for an operator.** A re-serve of ACS is now *slower* overall
+than it was, while using half the disk and leaving no vacuum debt. If re-serve
+wall-clock matters more than footprint on your warehouse, that is a trade you
+should know you are making. Narrowing the latest-value refresh is tracked
+separately; it is not a property of partitioning that cannot be fixed, it is a
+query written for a table shape that changed underneath it.
 
 ### ACS throughput is bound by `shared_buffers`, not by CPU
 

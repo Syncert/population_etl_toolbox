@@ -16,16 +16,15 @@ verify:
 
 ## Plan status
 
-- **Status:** In progress. The operator agreed the reset window on
-  2026-09-18, which satisfies the second start condition. Deliverables 1-3
-  are implemented and verified at fixture scale; deliverable 4 and the fifth
-  acceptance criterion wait on the re-serve that is running.
-- **Last updated:** 2026-09-18
-- **Current milestone:** the rebuild on the internal stack.
-- **Next pickup:** when the forced ACS re-serve finishes, record the "after"
-  heap, index and runtime figures in `BETA_RESET_REINGESTION.md` section 7's
-  table (criterion 5), decide deliverable 4 (BLS) from what the run shows, and
-  unpause `acs_ingest`.
+- **Status:** Ready for review. Every deliverable is delivered and every
+  acceptance criterion has evidence. The result is **mixed and is reported as
+  mixed**: half the footprint and no vacuum debt, at the cost of a re-serve
+  that is slower overall until the latest-value lookup is narrowed
+  (`acs-latest-refresh-partition-pruning`, filed).
+- **Last updated:** 2026-09-19
+- **Current milestone:** complete. The rebuild ran 2026-09-18 23:08 to
+  2026-09-19 03:37 and succeeded; `acs_ingest` is unpaused.
+- **Next pickup:** none.
 
 ### The blocker, and how it was resolved
 
@@ -145,16 +144,33 @@ shows the expected improvement; record the decision either way.
 
 ## Acceptance criteria
 
-- [ ] `pg_partitioned_table` reports the relation partitioned by range on
-      `observation_date`, and every published ACS year has a partition,
-      asserted in `tests/integration/database/test_acs_gold_refresh.py`.
-- [ ] After two forced chunks over the fixture, `pg_stat_user_tables.n_dead_tup`
-      for the refreshed partition is zero.
-- [ ] Every API integration test over ACS passes unchanged; the served
-      contract fixtures do not change.
-- [ ] The OpenAPI snapshot digest is unchanged (no API shape moves).
-- [ ] §7 records before-and-after heap, index and runtime figures from a real
-      re-serve.
+- [x] `pg_partitioned_table` reports the relation partitioned by range on
+      `observation_date`, and every published ACS year has a partition.
+      `tests/integration/database/test_acs_serving_partitions.py` asserts the
+      kind and the key, and that no served vintage falls into the default
+      partition -- which holds only the repository's 2099 fixture marker.
+      Confirmed on the real warehouse: `relkind=p`, `RANGE
+      (observation_date)`, 37 partitions, 8 parent indexes.
+- [x] After two forced chunks over the fixture,
+      `pg_stat_user_tables.n_dead_tup` for the refreshed partition is zero.
+      Guarded twice: the procedure must report `cleared_partitions=1`, so a
+      chunk that silently deleted fails rather than measuring an untouched
+      partition; and a companion test deletes from the same partition to prove
+      the statistic moves in that database at all. Proven by forcing the
+      delete path and watching it fail with `cleared_partitions=0
+      deleted_rows=400`. On the real warehouse after the full run,
+      `n_dead_tup` summed across all 37 partitions is **0**.
+- [x] Every API integration test over ACS passes unchanged; the served
+      contract fixtures do not change. 83 passed. The full contract chain was
+      also read against the rebuilt warehouse: `gold_census.fact_observation`
+      and `gold.fact_observation` both return 4,157,530 rows for 2014,
+      matching that chunk's reported `report_rows` exactly.
+- [x] The OpenAPI snapshot digest is unchanged.
+      `tests/fixtures/api/openapi_contract.json` is untouched by this branch.
+- [x] §7 records before-and-after heap, index and runtime figures from a real
+      re-serve -- including the steady-state repeat that shows the re-serve is
+      now slower, which is the figure that matters and is not the flattering
+      one.
 
 ## Definition of done
 
@@ -307,7 +323,51 @@ evidence that BLS accumulates vacuum debt the way ACS did -- which is what
 section 7's operator rule was about, and which no measurement has yet shown for
 BLS.
 
-**Next:** after the ACS run completes, `serving_full_reserve` with
-`{"source_code": "BLS"}`, watching `n_dead_tup` on
-`gold_bls.rpt_bls_observations` before and after. Then record the decision here
-with the numbers, whichever way it goes.
+### The decision: **BLS is not partitioned**, and here is what decided it
+
+Run on 2026-09-19: `serving_full_reserve` with `{"source_code": "BLS"}`,
+04:10:29 to 04:24:00.
+
+| | Before | After |
+| --- | --- | --- |
+| Duration | -- | **13m31s**, whole source |
+| `rpt_bls_observations` live | 5,822,125 | 5,129,492 |
+| `rpt_bls_observations` dead | 0 | **0** |
+| heap | 5,202 MB | **2,800 MB** |
+| indexes | 5,226 MB | **5,226 MB** |
+
+Four things, and the first three each say no on their own:
+
+1. **There is almost nothing to win.** A full BLS re-serve costs thirteen and
+   a half minutes. That is less than one ACS chunk. Partitioning is a schema
+   change, a rebuild, and a permanent increase in planning complexity, bought
+   against a ceiling of thirteen minutes.
+
+2. **BLS does not accumulate the debt this shape removes.** `n_dead_tup` is
+   **0** after a full delete-and-reinsert of 5.1 million rows, because
+   DB-048's thresholds (`autovacuum_vacuum_scale_factor = 0.02`) reclaim it as
+   it is created. The vacuum debt section 7 recorded was ACS's, before those
+   thresholds existed. Nothing has ever shown BLS carrying it.
+
+3. **It would inherit a measured regression.** `refresh_mv_acs_latest` on the
+   partitioned ACS table now costs 1,294 seconds a year, because a
+   latest-across-all-history lookup cannot prune and probes every partition --
+   126 buffer hits per key. `gold_bls.mv_bls_latest` is refreshed by the same
+   shape of query. BLS is monthly, so it would take **37 partitions for 5.1
+   million rows**, a ninth of ACS's size with nearly twice the partition
+   count: the worst possible ratio for exactly this cost.
+
+4. **The one real problem it has is a different problem.** BLS's indexes did
+   not shrink with its heap: 5,226 MB of indexes on 2,800 MB of heap, a ratio
+   of **1.87**, worse than ACS's 1.07 before this plan touched it. That is
+   index bloat, and `REINDEX` addresses it in minutes without a schema change.
+   Partitioning would not have fixed it either -- a rebuilt partition gets
+   fresh indexes, but so does a reindexed table.
+
+**Recorded as a decision rather than an omission**, which is what the
+deliverable asks for. If BLS ever reaches a size where a re-serve is measured
+in hours, this is worth reopening -- and by then the latest-value lookup should
+be fixed, because that is what would make it a clear win instead of a trade.
+
+**Filed from point 4:** BLS's index-to-heap ratio is worth a look on its own
+terms, and it is not this plan's business.

@@ -96,7 +96,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-bls-fact-lineage-and-value-status`](in_progress/THE_TWO_LARGEST_SOURCES_CAN_SERVE_A_WITHHELD_VALUE_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
-| [`acs-serving-partitioning`](in_progress/THE_ACS_SERVING_TABLE_IS_PARTITIONED_BY_YEAR_PLAN.md) | high | `postgres` | `serving-table-vacuum-hygiene` |
+| [`acs-latest-refresh-partition-pruning`](to_do/THE_LATEST_VALUE_REFRESH_DOES_NOT_ASK_EVERY_PARTITION_PLAN.md) | medium | `postgres` | `acs-serving-partitioning` |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](to_do/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `postgres` | `self-service-identity` |
