@@ -20,18 +20,24 @@ verify:
 - **Status:** Claimed and surveyed. No implementation yet; the working tree
   carries nothing from this plan.
 - **Last updated:** 2026-09-18
-- **Current milestone:** deliverable 1, schema half **done**; transform half
-  next.
+- **Current milestone:** deliverable 1 **complete**, both halves. Deliverable
+  2 next, and it is blocked until the ACS re-serve that
+  `acs-serving-partitioning` is running finishes -- see below.
 - **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
   Satisfied.
-- **Next pickup:** finish deliverable 1 by populating the three new columns
-  from `observation_revision` in `census_acs/silver_census/transform.py` (the
-  fact aggregation around lines 500-560, which groups the revision's rows and
-  keeps only `estimate_value`/`margin_of_error`) and in the BLS analogue. The
-  aggregation currently drops every row whose `measure_type` is `E` with a
-  null value; it has to carry the revision's `value_status` and `value_source`
-  through the group-by instead, and pick a status for the grouped row. Then
-  deliverable 2.
+- **Next pickup:** deliverable 2, **once the ACS re-serve completes**. It
+  changes `gold_acs.sql`'s fact view (`WHERE s.estimate_value IS NOT NULL`)
+  and relaxes two `NOT NULL` value columns on `rpt_acs_observations`, which
+  are the definition and the relation the re-serve is currently filling.
+  Editing them mid-run would leave the served rows and the file describing
+  them out of step, and would invalidate `acs-serving-partitioning`'s fifth
+  acceptance criterion, which is measured from that run.
+
+  It also needs a *second* re-serve of its own: publishing withheld rows grows
+  ACS serving by roughly 46% (31.5 million rows, measured below), and no
+  existing row carries the new columns. Worth raising with the operator as one
+  window rather than two, if deliverable 2 can be ready before the current run
+  is repeated for any other reason.
 
 ### Done so far
 
