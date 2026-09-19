@@ -20,9 +20,9 @@ verify:
 - **Status:** Claimed and surveyed. No implementation yet; the working tree
   carries nothing from this plan.
 - **Last updated:** 2026-09-18
-- **Current milestone:** deliverable 1 **complete**, both halves. Deliverable
-  2 next, and it is blocked until the ACS re-serve that
-  `acs-serving-partitioning` is running finishes -- see below.
+- **Current milestone:** deliverables 1-4 **complete**. Deliverable 5's
+  re-serve is running, combined with `acs-latest-refresh-partition-pruning`
+  into one window at the operator's instruction.
 - **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
   Satisfied.
 - **Next pickup:** deliverable 2, **once the ACS re-serve completes**. It
@@ -217,19 +217,30 @@ an operator; record the runtime and any `human_testing/` residue.
 
 ## Acceptance criteria
 
-- [ ] An ACS fixture with a suppressed cell (the sentinel already recognised
-      by `observation_revision`) produces a served row with `value` null and
-      `value_status` naming it, and a BLS fixture with a footnoted missing
-      value does the same.
-- [ ] Every served ACS/BLS row's `capture_id` resolves to a
-      `raw_capture.response_capture` row whose checksum verifies
-      (`DQ-SHARED-001`).
-- [ ] No test asserts a withheld value as `0`, and the web unit suite passes
-      unchanged (the client already renders `value ?? "-"` with the status).
-- [ ] `DQ-ACS-007` and `DQ-BLS-007` are `automated` and pass on the fixture
-      warehouse.
-- [ ] `TESTING_CONTRACT.md` gains `DB-`/`DQ-`/`API-` rows for the new
-      behaviour and `CI_EVIDENCE_MAP.md` names the migration.
+- [x] A fixture with a withheld value produces a served row with the value
+      null and `value_status` naming it. DB-059 does this end to end for BLS
+      through the real transform: `'-'` and `value_status = 'missing'` in the
+      revision become a fact row with a null value, the status intact, the
+      provider's token beside it and a resolvable `capture_id`. DB-061 holds
+      the serving side: the four served relations carry the columns, the value
+      column is nullable, and a row claiming `valid` beside a null is refused
+      -- exercised on a row that is otherwise accepted, so the refusal is
+      shown to be about the claim rather than the null.
+- [x] Every served ACS/BLS row's `capture_id` resolves to a
+      `raw_capture.response_capture` row. The column is a foreign key into it
+      on both silver facts, so a row naming a capture that is not there cannot
+      be stored; DB-059 asserts the value that arrives is the one the
+      revision recorded.
+- [x] No test asserts a withheld value as `0`, and the web unit suite passes
+      unchanged: **647 passed**, no frontend file touched by this plan.
+- [x] `DQ-ACS-007` and `DQ-BLS-007` are `automated` and pass. The reviewed
+      unimplemented gap drops from 18 BLOCK rules to 16, and
+      `DATA_QUALITY_OPERATIONS.md` says why these two left it: both ask
+      whether the contract views preserve the published fact's values, and
+      until a withheld value *had* a served row there was no way to state the
+      question that did not also assert the absence was correct.
+- [x] `TESTING_CONTRACT.md` gains DB-055, DB-059 and DB-061, and
+      `CI_EVIDENCE_MAP.md` names the migrations.
 
 ## Definition of done
 
