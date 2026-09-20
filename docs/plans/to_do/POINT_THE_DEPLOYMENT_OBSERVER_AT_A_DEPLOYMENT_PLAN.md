@@ -18,8 +18,17 @@ verify:
   satisfy** — see *Do not start this plan until* below. Filed so the
   configuration work is tracked rather than remembered, and so the daily red
   run has a document to point at.
-- **Last updated:** 2026-09-18
+- **Last updated:** 2026-09-20
 - **Current milestone:** waiting on a deployment origin.
+
+**Re-affirmed 2026-09-20 by Nick:** no deployment is on the near horizon, and
+the daily red stays. It is the reminder, and it costs one repository variable
+on the day an origin exists. Worth recording alongside that: ADR-0005 §1 now
+names Google as the OIDC provider, and its exact-match redirect allowlist
+needs the same stable origin this plan waits on -- so whenever
+`self-service-accounts` is ready to *ship* rather than merely to be built,
+this plan's precondition is already on the critical path. Building it is not
+blocked; `http://localhost` redirect URIs are permitted.
 
 **Re-checked 2026-09-18** against the internal stack, which was up and serving
 throughout an ACS rebuild. It does not satisfy the preconditions, and saying

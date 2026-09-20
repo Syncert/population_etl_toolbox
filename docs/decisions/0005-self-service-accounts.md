@@ -8,6 +8,8 @@
   third-party OIDC provider rather than an emailed sign-in link, and the
   browser holds a short-lived access token in memory beside an `HttpOnly`
   refresh cookie scoped to one path, rather than a token in `sessionStorage`.
+- **Amended:** 2026-09-20 — the provider §1 deliberately left unnamed is
+  Google; see *The provider, named* in §1. The decision above is unchanged.
 - **Decision owners:** API platform maintainers
 - **Related work:** `self-service-accounts` and, behind it,
   `publishing-approval-path` in [`docs/plans/to_do/`](../plans/to_do/);
@@ -174,6 +176,43 @@ site. The front door also inherits the provider's availability — though a
 signed-in reader with a live session is unaffected by an outage, which is what
 §2's session lifetime buys. These are the reasons this was a close call
 against an emailed sign-in link; see *Rejected alternatives*.
+
+#### The provider, named: Google
+
+Recorded 2026-09-20 by Nick, at the gate this ADR was accepted through. The
+body above deliberately left the provider unnamed, because none of its
+argument depends on which company is chosen. This fills that value in; it does
+not reopen anything above it.
+
+**Google.** Chosen on the three properties §1 actually leans on:
+
+- it is OpenID Connect rather than bare OAuth 2.0, so the discovery document,
+  the JWKS, and an ID token carrying the `nonce` all exist, and a library can
+  do what §1 says to use a library for;
+- it marks the email claim verified or not, which is what makes §1's "stored
+  only when the provider marks it verified" an enforceable rule rather than an
+  aspiration; and
+- coverage is close to universal among the readers this platform is for, at no
+  fee.
+
+The costs are the ones §1 recognised and accepted, not new ones: Google learns
+which of its users read this site, and a visitor holding no Google account
+cannot save work here.
+
+**GitHub was considered and does not qualify**, despite fitting the audience
+better than anything else available. Its user sign-in is OAuth 2.0 — it issues
+no ID token and publishes no JWKS for user authentication, its OIDC support
+being workload identity for Actions. Choosing it would mean hand-writing the
+identity mapping §1 exists to avoid.
+
+**An identity broker was considered and deferred.** It would hold `iss`
+constant, so a second provider added later would not hand the same person a
+second account — the sharp edge §1 accepts above. It was not chosen because
+one provider is what launches and the cost is a paid vendor inside the sign-in
+path. The trade is made knowingly: introducing a broker *after* real accounts
+exist means remapping `(issuer, subject)` for every one of them, which is the
+expensive direction and the kind of thing the gate guarding this ADR exists to
+make deliberate.
 
 ### 2. Session versus token: one boundary, a short-lived token in memory, and a refresh cookie scoped to one path
 
