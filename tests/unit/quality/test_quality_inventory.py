@@ -32,6 +32,15 @@ CREATE_RELATION_PATTERN = re.compile(
 )
 
 
+#: A partition is not an object the inventory describes. Its columns, its
+#: constraints and its indexes are its parent's by construction, and every
+#: quality rule that reads it reads it through the parent -- a rule declared
+#: against `gold_census.rpt_acs_observations_2019` would measure one twentieth
+#: of one relation and nothing would say so. The parent is inventoried; the
+#: partitions are how it is stored.
+PARTITION_OF_PATTERN = re.compile(r"\bPARTITION\s+OF\b", re.IGNORECASE)
+
+
 def manifest_created_relations() -> set[str]:
     """Extract every relation the warehouse manifest's SQL assets create."""
     manifest = json.loads(
@@ -43,8 +52,35 @@ def manifest_created_relations() -> set[str]:
     for asset in manifest["assets"]:
         sql = (REPOSITORY_ROOT / asset["path"]).read_text(encoding="utf-8")
         for match in CREATE_RELATION_PATTERN.finditer(sql):
+            # `CREATE TABLE x PARTITION OF y` creates storage for `y`, not a
+            # relation of its own. The tail is bounded so a later statement's
+            # `PARTITION OF` cannot exempt an unrelated table above it.
+            tail = sql[match.end() : match.end() + 120]
+            if PARTITION_OF_PATTERN.search(tail):
+                continue
             relations.add(match.group("name").lower())
     return relations
+
+
+def test_the_partition_exemption_does_not_exempt_a_plain_table() -> None:
+    """Covers: DQ-001 — the exemption above is bounded, not a blanket.
+
+    A sweep that skipped any `CREATE TABLE` with `PARTITION OF` anywhere later
+    in the file would quietly drop every relation declared above a partitioned
+    one, and the inventory would stop describing them with nothing failing.
+    """
+    sql = "\n".join(
+        ["CREATE TABLE gold_x.plain (a INT);"]
+        + ["-- filler"] * 30
+        + ["CREATE TABLE gold_x.part PARTITION OF gold_x.parent DEFAULT;"]
+    )
+    found = set()
+    for match in CREATE_RELATION_PATTERN.finditer(sql):
+        tail = sql[match.end() : match.end() + 120]
+        if PARTITION_OF_PATTERN.search(tail):
+            continue
+        found.add(match.group("name").lower())
+    assert found == {"gold_x.plain"}
 
 
 def test_inventory_matches_the_warehouse_manifest_exactly() -> None:

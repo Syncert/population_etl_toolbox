@@ -47,9 +47,10 @@ from data_ingestion_toolbox.sql.observation_queries import (
 #: pair. They union the three sources that predate the per-source serving
 #: contracts. API-004 did not widen them: every source is reachable through the
 #: registry-dispatched ``/observations`` resource instead
-#: (``neutral_observations_service``). This pair remains served under
-#: ``/api/v1`` as the shape ``apps/web`` consumes; API-008 retired the
-#: unversioned prefix aliases, not these resources.
+#: (``neutral_observations_service``), which is additive beside this pair
+#: rather than a successor to it. The pair is a permanent ``v1`` resource --
+#: the shape ``apps/web`` consumes -- per ADR-0002's 2026-09-16 amendment:
+#: API-008 retired the unversioned prefix aliases, not these resources.
 CROSS_SOURCE_LATEST_RELATION = "gold.v_metric_latest_by_geo"
 CROSS_SOURCE_HISTORY_RELATION = "gold.v_metric_timeseries_by_geo"
 

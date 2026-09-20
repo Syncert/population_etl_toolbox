@@ -35,6 +35,12 @@ services:
       -c max_parallel_maintenance_workers=${ANALYTICS_PG_MAX_PARALLEL_MAINTENANCE:-4}
       -c random_page_cost=${ANALYTICS_PG_RANDOM_PAGE_COST:-1.1}
       -c effective_io_concurrency=${ANALYTICS_PG_EFFECTIVE_IO_CONCURRENCY:-200}
+    # Docker gives a container 64 MB of /dev/shm, and PostgreSQL's parallel
+    # workers pass their tuples through it. That is why the re-serve procedure
+    # records that a parallel VACUUM "fails inside Compose": it is not a
+    # PostgreSQL limit, it is this default. The `max_parallel_*` settings above
+    # are the ones asking for the space (DB-048).
+    shm_size: ${ANALYTICS_PG_SHM_SIZE:-1gb}
     environment:
       POSTGRES_USER: analytics
       POSTGRES_PASSWORD: analytics
@@ -86,6 +92,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://${ANALYTICS_API_DB_USER:-api_reader}:${ANALYTICS_API_DB_PASSWORD:-api_reader}@${ANALYTICS_DB_HOST:-analytics_postgres}:${ANALYTICS_DB_PORT:-5432}/${ANALYTICS_DB_NAME:-population_etl}
       REDIS_URL: redis://redis:6379/0
       API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-300}
+      # Without this the process drops every INFO record it writes,
+      # including the one request completion line (API-143).
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-INFO}
       # Staleness bound after a warehouse publication (API-006): the response
       # cache re-keys on the published harvest state within this window.
       API_CACHE_FRESHNESS_SECONDS: ${API_CACHE_FRESHNESS_SECONDS:-15}
@@ -174,6 +183,8 @@ services:
       args:
         API_ORIGIN: http://api:8000
         TILES_ORIGIN: http://martin:3000
+        # Empty falls back to `development` in `next.config.mjs`.
+        NEXT_PUBLIC_BUILD_ID: ${WEB_BUILD_ID:-}
     depends_on:
       - api
       - martin

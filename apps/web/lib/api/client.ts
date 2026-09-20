@@ -24,6 +24,7 @@ import type {
   SavedAnalysisConfiguration,
   SavedAnalysisListResponse,
   SourceCapability,
+  SourceFreshness,
   SourceSummary,
 } from "./types";
 
@@ -199,6 +200,37 @@ async function decodeErrorDetail(response: Response): Promise<string | null> {
   }
 }
 
+/**
+ * The HTTP cache mode a request is sent with.
+ *
+ * Every request used to be `no-store`, which switched off the one cheap
+ * layer left: the API answers `Cache-Control: public, max-age=<ttl>` on
+ * public analytical reads, and the CSP nonce forces dynamic rendering, so
+ * nothing else is caching these answers.
+ *
+ * `default` means the browser's ordinary HTTP-cache rules -- it revalidates
+ * or reuses according to the headers the API sent, so the TTL stays the
+ * API's to decide and this client never holds a stale answer the API did not
+ * say it could hold.
+ *
+ * `no-store` is kept for everything that is not a public read. A request
+ * carrying a bearer token is somebody's own library, served `private,
+ * no-store`, and must not sit in a shared browser cache; a request carrying
+ * a body is a write, and a write has nothing to reuse.
+ */
+export function requestCacheMode({
+  method = "GET",
+  token,
+  body,
+}: {
+  method?: string;
+  token?: string | null;
+  body?: unknown;
+}): RequestCache {
+  const isPublicRead = method.toUpperCase() === "GET" && !token && body === undefined;
+  return isPublicRead ? "default" : "no-store";
+}
+
 export async function apiFetch<T>(
   resource: string,
   { params = {}, signal, fetchImpl, token, method = "GET", body }: RequestOptions = {},
@@ -213,7 +245,7 @@ export async function apiFetch<T>(
     headers["Content-Type"] = "application/json";
   }
   const response = await doFetch(path, {
-    cache: "no-store",
+    cache: requestCacheMode({ method, token, body }),
     signal,
     method,
     headers,
@@ -331,11 +363,87 @@ export async function fetchAllPages<T>(
   resource: string,
   options: PageOptions = {},
 ): Promise<T[]> {
+  const key = sharedReadKey(resource, options);
+  if (key === null) {
+    return readAllPages<T>(resource, options);
+  }
+  const existing = inFlightReads.get(key);
+  if (existing) {
+    return existing as Promise<T[]>;
+  }
+  // The promise is registered, not the answer: this de-duplicates requests
+  // that overlap in time and caches nothing. Two screens mounting in one
+  // navigation share the read; a screen opened a minute later makes its own,
+  // and the browser's HTTP cache decides whether that costs anything.
+  const pending = readAllPages<T>(resource, options).finally(() => {
+    inFlightReads.delete(key);
+  });
+  inFlightReads.set(key, pending as Promise<unknown[]>);
+  return pending;
+}
+
+async function readAllPages<T>(resource: string, options: PageOptions): Promise<T[]> {
   const { items, total, complete } = await fetchCollectionPages<T>(resource, options);
   if (!complete) {
     throw new IncompleteCollectionError(resource, items.length, total);
   }
   return items;
+}
+
+/** Catalog reads in flight right now, by what makes two of them the same read. */
+const inFlightReads = new Map<string, Promise<unknown[]>>();
+
+// Two callers passing the same transport are sharing one; two callers passing
+// different ones are not, and must never be handed each other's answer. The
+// identity is kept here rather than in the key because a function cannot be
+// written into a string.
+const transportIds = new WeakMap<object, number>();
+let nextTransportId = 0;
+
+function transportKey(fetchImpl?: typeof fetch): string {
+  const impl = fetchImpl || (typeof fetch === "function" ? fetch : undefined);
+  if (!impl) {
+    return "none";
+  }
+  let id = transportIds.get(impl);
+  if (id === undefined) {
+    id = nextTransportId;
+    nextTransportId += 1;
+    transportIds.set(impl, id);
+  }
+  return `transport-${id}`;
+}
+
+/**
+ * What makes two catalog reads the same read, or `null` for one that is not
+ * shareable.
+ *
+ * The catalog is the one resource several screens read whole and identically
+ * -- 3,144 geographies, every metric of a source -- and the explorer, the
+ * workbench, the comparison workspace and the profile each asked for it
+ * independently.
+ *
+ * Three kinds are excluded, and each for a reason rather than caution:
+ *
+ * - Anything outside `/catalog/`, because observations, comparisons and
+ *   saved analyses are not the same answer to two callers.
+ * - A read carrying an `AbortSignal`, because one caller's cancellation
+ *   would reject every other caller's promise. No catalog call site passes
+ *   one today; this keeps it true that adding one is safe.
+ * - A read carrying a token, because a token-bearing read is somebody's own
+ *   and is served `private, no-store`.
+ */
+function sharedReadKey(resource: string, options: PageOptions): string | null {
+  const { params = {}, pageSize = 1000, maxPages = 50, signal, token, fetchImpl } = options;
+  if (!resource.startsWith("/catalog/") || signal || token) {
+    return null;
+  }
+  return [
+    buildApiPath(resource, params),
+    pageSize,
+    maxPages,
+    transportKey(fetchImpl),
+  ].join("|");
 }
 
 // --- Discovery ---
@@ -390,8 +498,19 @@ export function getCapabilities(
   return apiFetch<CollectionResponse<SourceCapability>>("/catalog/capabilities", options);
 }
 
-export function getFreshness(options?: RequestOptions): Promise<unknown> {
-  return apiFetch<unknown>("/catalog/freshness", options);
+/**
+ * Per-source publication state, as `/catalog/freshness` rolls it up.
+ *
+ * This returned an untyped promise while the reviewed snapshot declared
+ * `FreshnessListResponse` for the route, so the one module that reads it
+ * bypassed this function and sent its own literal with its own type
+ * argument. A transport boundary that cannot say what a route answers is not
+ * one.
+ */
+export function getFreshness(
+  options?: RequestOptions,
+): Promise<CollectionResponse<SourceFreshness>> {
+  return apiFetch<CollectionResponse<SourceFreshness>>("/catalog/freshness", options);
 }
 
 // --- Observations ---
@@ -403,51 +522,14 @@ export function getObservations(
   return apiFetch<CollectionResponse<Observation>>("/observations", { ...options, params });
 }
 
-// Legacy MVP shapes (Census ACS, BLS, FRED only); retained consumers should
-// migrate to getObservations.
-export function getLatestObservations(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>("/observations/latest", { ...options, params });
-}
-
-export function getTimeseries(
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>("/observations/timeseries", {
-    ...options,
-    params,
-  });
-}
-
-// Source-scoped exploration routes, e.g. sourceSegment "census" | "bls" |
-// "fred" | "pep". The segment must come from capability discovery, not a
-// client-side enumeration.
-export function getSourceLatestObservations(
-  sourceSegment: string,
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>(`/${sourceSegment}/observations/latest`, {
-    ...options,
-    params,
-  });
-}
-
-export function getSourceTimeseries(
-  sourceSegment: string,
-  params: QueryParams,
-  options: RequestOptions = {},
-): Promise<CollectionResponse<Observation>> {
-  return apiFetch<CollectionResponse<Observation>>(`/${sourceSegment}/observations/timeseries`, {
-    ...options,
-    params,
-  });
-}
-
-// --- Analysis ---
+// The MVP-shaped observation routes are reached through
+// `lib/observationAccess.ts`, which picks the access shape a source's
+// capability entry declares and returns the resource and params for it. Four
+// wrappers for those routes lived here with no caller outside this file:
+// `getLatestObservations`, `getTimeseries`, `getSourceLatestObservations` and
+// `getSourceTimeseries`. Two ways to address one route is one more than the
+// handoff's "single transport boundary" allows, and the unused one is the one
+// that drifts.
 
 export function getDistributionBins(
   params: QueryParams,

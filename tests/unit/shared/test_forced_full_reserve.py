@@ -10,6 +10,8 @@ left hand-driving a year loop with no checkpoint and no progress record.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import re
 
 import pytest
@@ -132,6 +134,12 @@ class _Cursor:
 class _Conn:
     def __init__(self, recorder: list[str]) -> None:
         self.recorder = recorder
+        #: What psycopg2 puts every `RAISE NOTICE` into. The chunk driver reads
+        #: and clears it per chunk so the procedures' own reporting -- row
+        #: counts, and the `cleared_partitions=` marker (DB-056, DB-058) --
+        #: reaches the run's log instead of a list nobody reads. A stub without
+        #: it is a stub that does not stand in for the thing.
+        self.notices: list[str] = []
 
     def __enter__(self) -> "_Conn":
         return self
@@ -198,3 +206,131 @@ def test_a_source_without_a_forced_plan_refuses_rather_than_silently_degrading()
         refresh_serving_layer_in_year_chunks(
             hook=hook, config=_config(all_chunks_sql=""), force_full=True
         )
+
+
+# --- DB-048: statistics stay current across chunks ---------------------------
+
+
+class _PlanningCursor(_Cursor):
+    """A cursor that plans one chunk, so the chunk loop actually runs.
+
+    The `_Cursor` above answers everything with `None` and no rows, which is
+    enough for the plan-selection tests: the driver finds no chunks and
+    returns. Proving what happens *inside* a chunk needs one.
+    """
+
+    def __init__(self, recorder: list[str]) -> None:
+        super().__init__(recorder)
+        self._last = ""
+
+    def execute(self, statement: str, parameters: object = None) -> None:
+        self._last = statement
+        self.recorder.append(statement)
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        if "changed-plan" in self._last or "full-plan" in self._last:
+            return [(date(2023, 1, 1), date(2023, 12, 31), datetime(2026, 3, 1))]
+        return []
+
+    def fetchone(self) -> tuple[object, ...]:
+        if "RETURNING" in self._last:
+            # target, completed, status, completed_at: a chunk that has never
+            # run, so the loop does the work rather than skipping it.
+            return (datetime(2026, 3, 1), None, "PENDING", None)
+        if "COUNT(*)" in self._last:
+            # Two different counts share this shape: the rows the chunk wrote,
+            # and how many planned chunks are durably complete. The second one
+            # guards the watermark, so answering both with the same number
+            # makes the driver refuse.
+            return (1,) if "serving_refresh_chunk_state" in self._last else (7,)
+        return (None,)
+
+
+class _PlanningConn(_Conn):
+    def cursor(self) -> _PlanningCursor:
+        return _PlanningCursor(self.recorder)
+
+
+class _PlanningHook(_Hook):
+    def get_conn(self) -> _PlanningConn:
+        return _PlanningConn(self.statements)
+
+
+def test_each_chunk_analyzes_what_it_rewrote() -> None:
+    """Covers: DB-048 — the next chunk plans against current statistics.
+
+    A chunk is delete-then-reinsert for one year. Nothing in that updates the
+    planner's idea of the table, so by the second chunk of a twenty-year
+    re-serve every plan is built from statistics describing rows that are gone.
+    """
+    hook = _PlanningHook()
+    refresh_serving_layer_in_year_chunks(
+        hook=hook, config=_config(latest_table="gold_fixture.latest")
+    )
+
+    analyzed = [statement for statement in hook.statements if "ANALYZE" in statement]
+    assert "ANALYZE gold_fixture.rpt" in analyzed
+    # The latest relation is rewritten by the same chunk and is what the
+    # explorer reads, so it is analysed too.
+    assert "ANALYZE gold_fixture.latest" in analyzed
+
+
+def test_the_analyze_happens_after_the_chunk_is_checkpointed() -> None:
+    """Covers: DB-048 — the durable checkpoint is never behind an optimisation."""
+    hook = _PlanningHook()
+    refresh_serving_layer_in_year_chunks(
+        hook=hook, config=_config(latest_table="gold_fixture.latest")
+    )
+
+    checkpoint = next(
+        index
+        for index, statement in enumerate(hook.statements)
+        if "status = 'COMPLETE'" in statement
+    )
+    first_analyze = next(
+        index
+        for index, statement in enumerate(hook.statements)
+        if "ANALYZE" in statement
+    )
+    assert checkpoint < first_analyze
+
+
+def test_a_source_with_no_latest_relation_analyzes_only_its_report() -> None:
+    """Covers: DB-048 — PEP serves views, which have no statistics to refresh."""
+    hook = _PlanningHook()
+    refresh_serving_layer_in_year_chunks(hook=hook, config=_config(latest_table=""))
+
+    analyzed = [statement for statement in hook.statements if "ANALYZE" in statement]
+    assert analyzed == ["ANALYZE gold_fixture.rpt"]
+
+
+def test_a_failed_analyze_does_not_undo_a_completed_chunk() -> None:
+    """Covers: DB-048 — stale statistics are a slower plan, not a wrong answer.
+
+    Failing the chunk over them would turn an optimisation into an outage, and
+    the retry would redo work that was already committed.
+    """
+
+    class _RefusingCursor(_PlanningCursor):
+        def execute(self, statement: str, parameters: object = None) -> None:
+            super().execute(statement, parameters)
+            if statement.startswith("ANALYZE"):
+                raise RuntimeError("could not obtain a lock on the relation")
+
+    class _RefusingConn(_Conn):
+        def cursor(self) -> _RefusingCursor:
+            return _RefusingCursor(self.recorder)
+
+    class _RefusingHook(_Hook):
+        def get_conn(self) -> _RefusingConn:
+            return _RefusingConn(self.statements)
+
+    hook = _RefusingHook()
+    outcome = refresh_serving_layer_in_year_chunks(
+        hook=hook, config=_config(latest_table="gold_fixture.latest")
+    )
+
+    assert outcome["completed"] == 1
+    assert any("status = 'COMPLETE'" in statement for statement in hook.statements)
+    # And nothing marked the chunk failed on the way out.
+    assert not any("status = 'FAILED'" in statement for statement in hook.statements)

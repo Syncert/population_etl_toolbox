@@ -16,7 +16,7 @@ import {
   serializeCatalogState,
   sourceFilterOptions,
 } from "../../lib/catalog";
-import { displayMetricName } from "../../lib/format";
+import { displayMetricName, formatNumber } from "../../lib/format";
 import { explorerHref } from "../../lib/urlState";
 import StatusPill from "../../components/StatusPill";
 
@@ -171,13 +171,13 @@ export default function CatalogPage() {
           {/* The count is the API's own published total for these filters; a
               page of results is never presented as the total. */}
           <strong data-testid="catalog-total">
-            {status === "ready" && page.total !== null ? page.total.toLocaleString() : "-"}
+            {status === "ready" && page.total !== null ? formatNumber(page.total) : "-"}
           </strong>{" "}
           matching metrics
           <span data-testid="catalog-range">
             {page.firstRow === null
               ? "none shown"
-              : `showing ${page.firstRow.toLocaleString()}-${page.lastRow.toLocaleString()}`}
+              : `showing ${formatNumber(page.firstRow)}-${formatNumber(page.lastRow)}`}
             {page.pageCount > 0 ? ` · page ${page.pageIndex + 1} of ${page.pageCount}` : ""}
           </span>
         </div>

@@ -21,6 +21,7 @@ from typing import Optional
 from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.registry import grain_refusal, normalize_geo_level
@@ -36,6 +37,7 @@ from apps.api.schemas.evidence_packet import (
     PacketBlock,
     PacketValidation,
 )
+from apps.api.services.neutral_observations_service import resolve_metrics
 from apps.api.services.saved_analysis_service import (
     ConfigurationInvalid,
     validate_document,
@@ -359,6 +361,35 @@ def _contradiction(block: PacketBlock) -> Optional[str]:
     return _recorded_request_contradiction(block)
 
 
+def _metric_codes_in(packet: EvidencePacketDocument) -> list[str]:
+    """Every metric code any block's query names, in the order they appear.
+
+    Read from the dumped documents rather than from a list of field names:
+    the analysis documents carry `metric_code`, `metric_code_a`,
+    `metric_code_b` and a `series` list that carries more, and a field added
+    later would otherwise quietly fall out of the batch and back into a round
+    trip per block.
+    """
+
+    def _walk(value: object, into: list[str]) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str) and key.startswith("metric_code"):
+                    if isinstance(item, str) and item:
+                        into.append(item)
+                else:
+                    _walk(item, into)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item, into)
+
+    codes: list[str] = []
+    for block in packet.blocks:
+        if block.document is not None:
+            _walk(block.document.model_dump(), codes)
+    return list(dict.fromkeys(codes))
+
+
 def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
     """Raise ``PacketInvalid`` for anything the ADR's contradiction table refuses.
 
@@ -385,6 +416,12 @@ def validate_packet(warehouse: Session, packet: EvidencePacketDocument) -> None:
     # API accepts". Codes repeat across a packet -- a needs assessment reuses
     # three or four measures over a dozen blocks -- so each distinct document
     # is checked once and its verdict reused.
+    # Every measure the packet names, resolved in one statement before any
+    # block is validated (API-147). `validate_document` still asks for each
+    # code it needs; the session memo answers from this read. A packet at the
+    # declared cap used to issue a round trip per code per distinct block.
+    resolve_metrics(warehouse, _metric_codes_in(packet))
+
     verdicts: dict[str, Optional[str]] = {}
     sources: dict[str, frozenset[str]] = {}
     for block in packet.blocks:
@@ -629,19 +666,28 @@ def create_packet(
 ) -> EvidencePacket:
     validate_packet(warehouse, document)
     _refuse_taken_name(storage, owner_user_id, name, packet_id=-1)
-    row = (
-        storage.execute(
-            _INSERT,
-            {
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-            },
+    try:
+        row = (
+            storage.execute(
+                _INSERT,
+                {
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                },
+            )
+            .mappings()
+            .one()
         )
-        .mappings()
-        .one()
-    )
-    storage.commit()
+        storage.commit()
+    except IntegrityError as conflict:
+        # `_refuse_taken_name` is the friendly path and cannot be the whole
+        # answer: two creates with the same name both pass it and one insert
+        # meets `UNIQUE (owner_user_id, name)`. Uncaught, the router logs an
+        # ERROR and answers the sanitized 503, telling a client that wrote a
+        # legitimate conflict that the database is down (API-148).
+        storage.rollback()
+        raise PacketNameTaken(name) from conflict
     return _detail(row, document, _validation_state(warehouse, document))
 
 
@@ -693,20 +739,25 @@ def update_packet(
 ) -> EvidencePacket:
     validate_packet(warehouse, document)
     _refuse_taken_name(storage, owner_user_id, name, packet_id=packet_id)
-    row = (
-        storage.execute(
-            _UPDATE,
-            {
-                "packet_id": packet_id,
-                "owner_user_id": owner_user_id,
-                "name": name,
-                "document": document.model_dump_json(),
-                "expected_version": expected_version,
-            },
+    try:
+        row = (
+            storage.execute(
+                _UPDATE,
+                {
+                    "packet_id": packet_id,
+                    "owner_user_id": owner_user_id,
+                    "name": name,
+                    "document": document.model_dump_json(),
+                    "expected_version": expected_version,
+                },
+            )
+            .mappings()
+            .first()
         )
-        .mappings()
-        .first()
-    )
+    except IntegrityError as conflict:
+        # A rename racing a create takes the same name by the same route.
+        storage.rollback()
+        raise PacketNameTaken(name) from conflict
     if row is None:
         storage.rollback()
         current = storage.execute(

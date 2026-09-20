@@ -41,9 +41,11 @@ from data_ingestion_toolbox.quality.inventory import (
 )
 from data_ingestion_toolbox.quality.reconciliation import (
     SHARED_RECONCILIATION_EXECUTORS,
+    verify_manifest_ledger,
 )
 from data_ingestion_toolbox.quality.sources import SOURCE_EXECUTORS
-from data_ingestion_toolbox.utility.gold_schema import GOLD_SCHEMA_COMPONENTS
+from data_ingestion_toolbox.utility.gold_schema import SOURCE_SCHEMA_COMPONENTS
+from data_ingestion_toolbox.utility.warehouse_manifest import manifest_assets
 
 pytestmark = pytest.mark.unit
 
@@ -70,26 +72,22 @@ REGISTERED = (
 #: DQ-017 by being implemented.
 UNIMPLEMENTED_RULES = frozenset(
     {
-        "DQ-SHARED-004",
         "DQ-SHARED-005",
         "DQ-SHARED-006",
-        "DQ-REF-002",
         "DQ-REF-004",
         "DQ-REF-005",
         "DQ-REF-006",
-        "DQ-GLOSSARY-002",
         "DQ-GLOSSARY-003",
         "DQ-GLOSSARY-004",
         "DQ-ACS-003",
         "DQ-ACS-004",
+        "DQ-ACS-007",
         "DQ-ACS-005",
         "DQ-ACS-006",
-        "DQ-ACS-007",
         "DQ-BLS-003",
-        "DQ-BLS-004",
+        "DQ-BLS-007",
         "DQ-BLS-005",
         "DQ-BLS-006",
-        "DQ-BLS-007",
         "DQ-FRED-003",
         "DQ-FRED-004",
         "DQ-FRED-005",
@@ -97,13 +95,11 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-PEP-005",
         "DQ-PEP-006",
         "DQ-PEP-007",
-        "DQ-CDC-005",
         "DQ-CDC-006",
         "DQ-CDC-007",
         "DQ-FBI-005",
         "DQ-FBI-006",
         "DQ-FBI-007",
-        "DQ-NASS-004",
         "DQ-NASS-005",
         "DQ-NASS-006",
     }
@@ -201,14 +197,17 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 24, unbuilt
-    # The other seven BLOCK rules that no executor runs are `enforced`: the
+    assert len(unbuilt) == 18, unbuilt
+    # The other eleven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
-    # declared grains rather than taking the note's word for it.
+    # declared grains rather than taking the note's word for it. Four joined
+    # that set when `enforced` stopped meaning "unique constraint" and started
+    # meaning any constraint that refuses the violation outright -- a foreign
+    # key and a CHECK refuse a row as completely as a unique index does.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 7, enforced
+    assert len(enforced) == 11, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -344,26 +343,41 @@ MIGRATION_STATE_RELATION = "control.schema_migration_state"
 MANIFEST = REPOSITORY_ROOT / "sql/bootstrap/warehouse_manifest.json"
 
 
-def test_only_the_gold_bootstrap_writes_the_schema_migration_state() -> None:
-    """Covers: DQ-014 — the applied set is four gold components and nothing else.
+def test_the_schema_migration_state_has_exactly_two_writers() -> None:
+    """Covers: DQ-014, DB-049 — two writers, each answering its own question.
 
-    `DQ-SHARED-004` wants the manifest's schema components compared against
-    what a warehouse has applied, and its note used to read as though only
-    the comparison was missing. The applied set is missing: this relation
-    records a content hash per source's gold DDL, written by
-    `ensure_gold_schema_from_files`, and no manifest asset is recorded
-    anywhere. Read from the source, so a second writer -- which is exactly
-    what implementing the rule needs -- fails here and sends the next reader
-    to the note.
+    This test used to assert one writer, and said so for a reason: the
+    relation held a content hash per source's gold DDL and nothing recorded a
+    manifest asset, so `DQ-SHARED-004` had nothing to compare the manifest
+    against and its note had to say so. A second writer was the prerequisite,
+    and this test existed to make adding one a deliberate act rather than a
+    quiet one.
+
+    `warehouse-manifest-ledger` is that deliberate act, so the rule is
+    restated rather than removed. Two writers, and exactly two:
+
+    * `gold_schema.ensure_gold_schema_from_files` records the four components
+      `SOURCE_SCHEMA_COMPONENTS` names -- a hash of one source's gold DDL, which
+      decides whether that DDL needs re-applying.
+    * `warehouse_manifest.apply_manifest` records one row per manifest asset,
+      which is what a warehouse answers "which steps do I carry?" with.
+
+    They share a table and mean different things, which is why the reader
+    filters by manifest id rather than reading everything it finds. A third
+    writer would make that filter a guess again, so it still fails here.
     """
     writers = sorted(
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
         if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
     )
-    assert writers == ["src/data_ingestion_toolbox/utility/gold_schema.py"], (
-        f"{MIGRATION_STATE_RELATION} is written from more than one place, so "
-        f"DQ-SHARED-004's note no longer describes what it records: {writers}"
+    assert writers == [
+        "src/data_ingestion_toolbox/utility/gold_schema.py",
+        "src/data_ingestion_toolbox/utility/warehouse_manifest.py",
+    ], (
+        f"{MIGRATION_STATE_RELATION} is written from somewhere new, so the "
+        f"reader that filters it by manifest id no longer knows what it is "
+        f"skipping: {writers}"
     )
 
     sql_writers = sorted(
@@ -372,9 +386,26 @@ def test_only_the_gold_bootstrap_writes_the_schema_migration_state() -> None:
         if f"INSERT INTO {MIGRATION_STATE_RELATION}" in path.read_text(encoding="utf-8")
     )
     assert sql_writers == [], (
-        f"a shipped SQL asset now records itself in {MIGRATION_STATE_RELATION}, "
-        f"which is the prerequisite DQ-SHARED-004 is waiting on -- implement "
-        f"the rule rather than leaving the note: {sql_writers}"
+        f"a shipped SQL asset records itself in {MIGRATION_STATE_RELATION}: an "
+        f"asset that writes its own ledger row records itself as applied even "
+        f"when the applier rolled it back, which is the one thing the "
+        f"transaction-per-asset shape exists to prevent: {sql_writers}"
+    )
+
+
+def test_a_manifest_asset_is_not_a_gold_component() -> None:
+    """Covers: DB-049 — the two writers' names cannot collide.
+
+    `recorded_assets` tells the two apart by manifest id. That is exact only
+    while no manifest asset is named like a gold component, and both sets are
+    checked in rather than derived, so nothing but this stops the day someone
+    adds an asset called `gold_ddl_acs`.
+    """
+    asset_ids = {asset.id for asset in manifest_assets()}
+    collisions = sorted(asset_ids & set(SOURCE_SCHEMA_COMPONENTS.values()))
+    assert not collisions, (
+        f"these manifest assets are named like a gold component, so the "
+        f"ledger cannot say which writer wrote them: {collisions}"
     )
 
 
@@ -395,17 +426,48 @@ def test_the_component_each_source_records_is_declared_once() -> None:
     assert literals == ["src/data_ingestion_toolbox/utility/gold_schema.py"], (
         f"a gold component name is spelled outside the one declaration: {literals}"
     )
-    assert set(GOLD_SCHEMA_COMPONENTS) == {"BLS", "CENSUS_ACS", "CENSUS_PEP", "FRED"}
-    assert len(set(GOLD_SCHEMA_COMPONENTS.values())) == len(GOLD_SCHEMA_COMPONENTS), (
+    assert set(SOURCE_SCHEMA_COMPONENTS) == {
+        "BLS",
+        "CDC",
+        "CENSUS_ACS",
+        "CENSUS_PEP",
+        "FBI_UCR",
+        "FRED",
+        "USDA_NASS",
+    }, (
+        "every source that publishes gold declares the component its DDL is "
+        "recorded under; CDC, FBI and USDA NASS joined the four when their "
+        "relations moved out of migrations and into their own packages"
+    )
+    assert len(set(SOURCE_SCHEMA_COMPONENTS.values())) == len(
+        SOURCE_SCHEMA_COMPONENTS
+    ), (
         "two sources record their gold DDL under one component name, so each "
         "would see the other's hash and re-apply its own DDL every run"
     )
 
 
-def test_the_note_names_the_manifest_it_cannot_yet_be_compared_against() -> None:
-    """Covers: DQ-014 — the count in the note is the manifest's actual count."""
-    assets = json.loads(MANIFEST.read_text(encoding="utf-8"))["assets"]
+def test_the_manifest_rule_reads_the_manifest_it_is_declared_against() -> None:
+    """Covers: DQ-014, DB-049 — the rule is wired to the manifest, not to a copy.
+
+    This test used to assert that `DQ-SHARED-004`'s note quoted the manifest's
+    asset count, because the rule was unimplemented and the note was all there
+    was to keep honest -- a count that drifted from the manifest was the way
+    that note would have gone stale.
+
+    The rule runs now, so the note is no longer the artefact worth guarding:
+    the executor is. It must be the registered one, and it must read the
+    manifest through the module that owns it, so adding an asset changes what
+    the rule checks without anyone editing the rule.
+    """
     rule = _by_id()["DQ-SHARED-004"]
-    assert f"{len(assets)} assets" in rule.automation_note, (
-        f"the manifest carries {len(assets)} assets and the note says otherwise"
+    assert rule.automation == "automated", rule.automation_note
+    assert SHARED_RECONCILIATION_EXECUTORS["DQ-SHARED-004"] is verify_manifest_ledger
+
+    assets = json.loads(MANIFEST.read_text(encoding="utf-8"))["assets"]
+    assert {asset["id"] for asset in assets} == {
+        asset.id for asset in manifest_assets()
+    }, (
+        "the rule's reader and the checked-in manifest disagree about which "
+        "assets exist, so the rule is grading a second copy of the order"
     )

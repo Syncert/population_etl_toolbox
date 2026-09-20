@@ -209,6 +209,26 @@ textarea:focus-visible {
   font-size: 0.78rem;
 }
 
+/* Hidden until it has focus, then the first thing on the page. Not
+   `display: none`, which would take it out of the tab order and leave the
+   keyboard reader it exists for with nothing to find. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 0 0 8px 0;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 0;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 @dataclass(frozen=True)
@@ -105,11 +105,36 @@ OBSERVATION_FILTER_BOUNDS: dict[str, FilterBound] = {
 }
 
 
+#: The four MVP field pairs that carry one value under two names, as
+#: ``{canonical: duplicate}``. The duplicates are projected by the same
+#: ``SELECT`` as their canonical field (``source_code AS source`` and so on),
+#: so they can never disagree -- they are spellings, not data. They are marked
+#: ``deprecated`` below rather than removed: removing a served field is a
+#: breaking change under ADR-0002 and would belong in ``v2``, while a marker
+#: is documentation a generated client can act on. The routes themselves are
+#: permanent (ADR-0002, 2026-09-16 amendment); only the second spelling of
+#: each pair is discouraged.
+DASHBOARD_DUPLICATE_FIELDS: dict[str, str] = {
+    "source_code": "source",
+    "units": "unit",
+    "dataset_code": "dataset",
+    "vintage_year": "vintage",
+}
+
+_READ_INSTEAD = (
+    "Duplicate of `{canonical}`, kept from the MVP shape. Read `{canonical}`."
+)
+
+
 class ObservationDashboard(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     source_code: Optional[str] = None
-    source: Optional[str] = None
+    source: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description=_READ_INSTEAD.format(canonical="source_code"),
+    )
     observation_date: Optional[Any] = None
     period: Optional[str] = None
     duration_start: Optional[Any] = None
@@ -132,12 +157,24 @@ class ObservationDashboard(BaseModel):
     value: Optional[str] = None
     value_type: Optional[str] = None
     units: Optional[str] = None
-    unit: Optional[str] = None
+    unit: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description=_READ_INSTEAD.format(canonical="units"),
+    )
     seasonal_adjustment_status: Optional[str] = None
     dataset_code: Optional[str] = None
-    dataset: Optional[str] = None
+    dataset: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description=_READ_INSTEAD.format(canonical="dataset_code"),
+    )
     vintage_year: Optional[int] = None
-    vintage: Optional[str] = None
+    vintage: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description=_READ_INSTEAD.format(canonical="vintage_year"),
+    )
     margin_of_error: Optional[str] = None
     margin_of_error_pct: Optional[str] = None
 

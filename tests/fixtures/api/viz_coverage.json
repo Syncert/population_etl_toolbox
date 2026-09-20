@@ -176,7 +176,7 @@
         }
       ],
       "publishes_aligned_reduction": true,
-      "publishes_value_status": false,
+      "publishes_value_status": true,
       "route_segment": "bls",
       "served_by_neutral_routes": true,
       "source_code": "BLS"
@@ -408,7 +408,7 @@
         }
       ],
       "publishes_aligned_reduction": true,
-      "publishes_value_status": false,
+      "publishes_value_status": true,
       "route_segment": "census",
       "served_by_neutral_routes": true,
       "source_code": "CENSUS_ACS"

@@ -105,6 +105,82 @@ def bls_chunk_reconciliation(
     ]
 
 
+def bls_geography_accountability(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BLS-004 — every published BLS geography is stored or is accounted for.
+
+    `silver_bls.fact_labor_statistics.geo_sk` is `NOT NULL`, so a series whose
+    area the shared reference does not carry cannot be stored at all. This rule
+    is the other half of that: a geography the provider published must appear
+    either in the fact table or in `silver_ref.geography_resolution`, and one
+    in neither has disappeared with no queryable trace.
+
+    It was declared unimplemented because "the serving refresh joins series,
+    survey and geography, so an unresolved row is dropped rather than
+    reported". The drop is now recorded, so the comparison has both sides.
+
+    The geographies are derived from `observation_revision` -- the provider's
+    own rows, before any join -- rather than from the fact table, because the
+    fact table is the side under test and a rule that reads only it would be
+    comparing a set to itself.
+    """
+    del scope
+    unaccounted, total = _offenders(
+        cursor,
+        """
+        WITH published AS (
+            SELECT DISTINCT series.area_code, revision.program
+              FROM silver_bls.observation_revision AS revision
+              JOIN raw_bls.bls_series AS series
+                ON series.series_id = revision.series_id
+               AND series.program = revision.program
+             WHERE series.area_code IS NOT NULL
+        ), stored AS (
+            SELECT DISTINCT series.area_code, fact.program
+              FROM silver_bls.fact_labor_statistics AS fact
+              JOIN raw_bls.bls_series AS series
+                ON series.series_id = fact.series_id
+               AND series.program = fact.program
+        ), recorded AS (
+            SELECT DISTINCT series.area_code, series.program
+              FROM silver_ref.geography_resolution AS ledger
+              JOIN raw_bls.bls_series AS series
+                ON series.program = ledger.provider_dataset
+             WHERE ledger.provider_source = 'BLS'
+        )
+        SELECT published.program || ':' || published.area_code
+          FROM published
+          LEFT JOIN stored
+            ON stored.area_code = published.area_code
+           AND stored.program = published.program
+          LEFT JOIN recorded
+            ON recorded.area_code = published.area_code
+           AND recorded.program = published.program
+         WHERE stored.area_code IS NULL
+           AND recorded.area_code IS NULL
+        """,
+        order_by="1",
+    )
+    if total == 0:
+        # A warehouse that has ingested no BLS revision has nothing to account
+        # for, and a pass there would be a pass over an empty set.
+        published = _count(
+            cursor, "SELECT COUNT(*) FROM silver_bls.observation_revision"
+        )
+        if published == 0:
+            return [RuleOutcome("silver_bls.fact_labor_statistics", "not_applicable")]
+    return [
+        RuleOutcome(
+            "silver_bls.fact_labor_statistics",
+            "fail" if unaccounted else "pass",
+            observed_count=total,
+            expected_count=0,
+            evidence=unaccounted[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def fred_slice_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -794,6 +870,7 @@ def fred_contract_conformance(
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
     "DQ-BLS-002": bls_chunk_reconciliation,
+    "DQ-BLS-004": bls_geography_accountability,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,

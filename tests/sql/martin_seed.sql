@@ -15,6 +15,10 @@ GRANT CONNECT ON DATABASE population_etl_test TO martin_test;
 GRANT USAGE ON SCHEMA gold, gold_glossary TO martin_test;
 -- Grant access to view and underlying table
 GRANT SELECT ON gold.dim_geo_latest TO martin_test;
+-- The relation Martin actually publishes (DB-053). `dim_geo_latest` stays
+-- granted because the catalog tests read it; this is what the tile layer
+-- selects from, and the stack's healthcheck gates on it for that reason.
+GRANT SELECT ON gold.tile_boundary TO martin_test;
 GRANT SELECT ON gold_glossary.dim_geo_latest TO martin_test;
 
 INSERT INTO gold_glossary.dim_geo_latest (

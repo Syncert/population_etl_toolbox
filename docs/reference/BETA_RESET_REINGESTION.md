@@ -12,7 +12,15 @@ Deploy these paths from the same commit; do not mix revisions:
 - `sql/` on the host from which the warehouse bootstrap is executed.
 
 The root `sql/` directory is required by the bootstrap operator, not by normal
-DAG imports. The runtime DDL used by DAG tasks is packaged below `src/`.
+DAG imports. The runtime DDL used by DAG tasks is packaged below `src/`, for
+all seven sources: each owns its control, silver, gold and publisher
+definitions under its package's `DDL/` directories, the bootstrap manifest
+applies those files, and the source's `ensure_*_schema` task re-applies them at
+the head of every DAG run. A step under `sql/migrations/` carries only what a
+populated warehouse needs and a rerunnable file cannot do -- a data rewrite or
+a constraint swap -- so a warehouse whose migrations are behind is repaired by
+the DAG rather than written to by it.
+
 Restart the scheduler and every worker after replacing Python files. Confirm
 that all of them mount the same staged revision.
 
@@ -22,6 +30,41 @@ Pause `silver_ref`, `acs_ingest`, `census_pep_ingest`, `bls_ingest`,
 `fred_ingest`, `cdc_ingest`, `fbi_ucr_ingest`, and
 `usda_nass_crop_ingest`. Preserve environment configuration and API keys; the
 reset does not recreate Airflow connections, variables, pools, or secrets.
+
+### Export the captures first. This step is not optional.
+
+Per [ADR-0006](../decisions/0006-capture-history-survives-a-reset.md), capture
+history survives a reset. **Providers do not serve their past**: a FRED vintage,
+a CDC release since superseded, a NASS revision or an FBI refresh captured
+before this reset cannot be captured again after it. Section 5 below re-ingests
+*current* provider data, so without this step the reset destroys evidence that
+no later run can reproduce.
+
+Run the export and read what it reports before dropping anything:
+
+```bash
+# CAPTURE_EXPORT_ROOT must already point at a writable path OUTSIDE the
+# database volume. An export sharing a volume with the database it protects
+# does not survive this procedure.
+airflow dags trigger raw_capture_export
+```
+
+Then confirm the export exists, covers the captures you expect, and verifies:
+
+```bash
+ls "${CAPTURE_EXPORT_ROOT}"                       # one directory per run
+cat "${CAPTURE_EXPORT_ROOT}"/capture-export-*/manifest.json
+python -c "from data_ingestion_toolbox.capture_export import verify_export; \
+           print(verify_export('<the directory you just listed>'), 'payloads verified')"
+```
+
+`verify_export` recomputes each payload's sha256 and compares it to the name
+the file is under, and fails if the manifest's count and the directory's
+contents disagree. A failure here is a reason to stop the reset, not a reason
+to proceed carefully: an export that cannot be verified cannot be restored,
+and step 4 below has nothing to put back.
+
+Note the directory's name. Step 4 restores from it.
 
 **The database this section drops is the one your deployment names, not a
 literal.** `public_data` is the id of the Airflow *connection* every DAG
@@ -62,32 +105,54 @@ avoids copying local objects or settings from `template1`.
 
 ## 3. Apply the checked-in bootstrap manifest
 
-Run from the staged repository root. If `psql` is installed on the host:
+Run from the staged repository root, against the project virtualenv:
 
 ```bash
 export WAREHOUSE_URL='postgresql://airflow_admin:REDACTED@HOST:5432/public_data'
 
-jq -r '.assets[].path' sql/bootstrap/warehouse_manifest.json |
-while IFS= read -r asset; do
-    echo "Applying $asset"
-    psql "$WAREHOUSE_URL" -X -v ON_ERROR_STOP=1 -f "$asset" || exit 1
-done
+python -m scripts.apply_warehouse_manifest --dsn "$WAREHOUSE_URL"
 ```
 
-If the host has no `psql`, use the existing PostgreSQL container. Set the actual
-container name, then stream each checked-in file to its client:
+One command rather than the `jq | psql -f` loop this section used to carry, and
+the difference is not brevity. The loop applied the right files in the right
+order and **reported nothing back**: afterwards the warehouse could not say
+which steps it carried, so `DQ-SHARED-004` -- a BLOCK rule that compares the
+manifest against the applied set -- had nothing to compare against. The applier
+records each asset in `control.schema_migration_state` as it applies it
+(DB-049).
+
+It also changes what a failure leaves behind. No file under `sql/` opens a
+transaction of its own, so a step that failed part way through left a
+half-applied step and nothing that said so; the loop's `|| exit 1` stopped at
+the right moment and could not undo it. The applier wraps each asset in its own
+transaction together with the row that claims it, so a failure rolls that asset
+back, leaves no row for it, keeps the rows for the assets before it, and names
+the one that broke:
+
+```text
+migration-013 (sql/migrations/013_data_quality_evidence.sql) failed to apply: ...
+```
+
+Fix the cause and run the same command again. Re-running is safe -- every asset
+is written to be re-runnable and the ledger row is an upsert -- so a resumed
+bootstrap is the same command rather than a different one.
+
+Ask a warehouse what it carries at any time, which is also what the
+certification rule asks:
 
 ```bash
-export POSTGRES_CONTAINER='your-postgres-container'
-
-jq -r '.assets[].path' sql/bootstrap/warehouse_manifest.json |
-while IFS= read -r asset; do
-    echo "Applying $asset"
-    docker exec -i "$POSTGRES_CONTAINER" \
-        psql -X -U airflow_admin -d public_data -v ON_ERROR_STOP=1 \
-        < "$asset" || exit 1
-done
+python -m scripts.apply_warehouse_manifest --dsn "$WAREHOUSE_URL" --check
 ```
+
+It exits 0 when every manifest asset is recorded at the checked-in file's hash,
+and otherwise lists each asset as `missing` -- a step that never ran here -- or
+`drifted`, one that ran against a file that has since changed. The two are
+reported apart because re-applying a drifted step and re-applying a missing one
+are different decisions.
+
+If the host cannot reach the database directly, run the same command from a
+host or container that can. It needs the repository and the project's Python;
+the PostgreSQL image carries neither, which is why this is not a `docker exec`.
 
 If the API uses its restricted database role, apply
 `sql/bootstrap/001_api_readonly.sql` afterward using the documented provisioning
@@ -101,7 +166,48 @@ the migration** whenever a table is added to it (as `app_api.evidence_packet`
 was under ADR-0004). Every statement in it is idempotent; nothing in it is
 warehouse content and no ETL process touches it.
 
-## 4. Validate bootstrap before downloading data
+## 4. Restore the captures, then validate bootstrap before downloading data
+
+### Restore
+
+With the schema in place and before any ingestion, load the export from
+section 2 back:
+
+```bash
+python -c "import psycopg2; \
+from data_ingestion_toolbox.capture_export import restore_captures; \
+connection = psycopg2.connect('<the public_data connection>'); \
+print(restore_captures(connection, '<the export directory>')); \
+connection.commit()"
+```
+
+The restore verifies every payload against its own checksum before it runs a
+single statement, then inserts in foreign-key order: runs, requests, payloads,
+captures. **The append-only triggers stay in place.** Every statement is an
+`INSERT ... ON CONFLICT DO NOTHING`, which those triggers permit; a restore
+that had to disable them would be a restore that could rewrite history, which
+is the property being restored. If a step here tells you to disable a trigger,
+it is not this procedure.
+
+Confirm the triggers survived and the captures are back:
+
+```sql
+SELECT COUNT(*) AS captures FROM raw_capture.response_capture;
+SELECT COUNT(*) AS payloads FROM raw_capture.payload_blob;
+
+-- Both triggers must still be there. This is the invariant the restore is
+-- for; a restored warehouse without them is not the warehouse ADR-0001
+-- describes.
+SELECT tgrelid::regclass AS relation, tgname
+FROM pg_trigger
+WHERE NOT tgisinternal
+  AND tgrelid::regclass::text IN (
+      'raw_capture.payload_blob', 'raw_capture.response_capture'
+  )
+ORDER BY 1, 2;
+```
+
+### Validate bootstrap before downloading data
 
 ```bash
 docker exec -i "$POSTGRES_CONTAINER" \
@@ -119,6 +225,14 @@ supported and should exit successfully.
 
 ## 5. Re-ingest in dependency order
 
+Re-ingestion rebuilds silver and gold, and it **extends** the capture history
+restored in section 4 rather than restarting it: a request whose fingerprint
+and checksum match a restored capture shares that content identity, and one
+whose checksum differs is a distinct source response recorded beside the older
+one. That is the whole point of restoring first. Re-ingestion is not the path
+back to what was captured before the reset -- nothing is, because providers do
+not serve their past. It is the path forward from it.
+
 Restart the Airflow scheduler and workers, verify `airflow dags list-import-errors`
 is empty, then run:
 
@@ -126,8 +240,24 @@ is empty, then run:
 airflow dags trigger silver_ref
 ```
 
-Wait for `silver_ref` to succeed before running observation DAGs. Validate the
-reference snapshot:
+Wait for `silver_ref` to succeed before running observation DAGs. **Every
+source DAG now refuses to start until it has**: the first task of all six
+ingestion DAGs calls
+`data_ingestion_toolbox.silver_ref.geography_guard.require_shared_geography_loaded`,
+which counts active rows in `silver_ref.dim_geo_current` and raises with the
+counts it saw -- naming every grain it asked about, including the ones that
+answered zero. The thresholds are `SHARED_GEOGRAPHY_MINIMUMS` in that module
+and are deliberately not restated here; Census PEP adds a place-level minimum
+of its own at its call site because it serves place estimates.
+
+Three of those DAGs used to ask `to_regclass('silver_ref.dim_geo_entity')`
+instead -- whether the table *exists*. The bootstrap manifest creates it,
+empty, in its `reference` phase, so that guard passed on exactly the warehouse
+this ordering rule protects: CDC, FBI and NASS rows resolved `unmapped`, the
+release was still marked `published`, and the resolved-geography serving views
+excluded all of it (DAG-020).
+
+Validate the reference snapshot:
 
 ```sql
 SELECT geo_type, count(*)
@@ -161,6 +291,20 @@ FROM silver_ref.geography_resolution
 GROUP BY provider_source, provider_dataset, source_geo_type, status, reason_code
 ORDER BY provider_source, provider_dataset, source_geo_type, status;
 ```
+
+Every source that resolves a provider geography writes this ledger, BLS
+included. It used to be the exception: an unresolved BLS row was counted in one
+log line and filtered out, and `silver_bls.fact_labor_statistics.geo_sk` is
+`NOT NULL`, so the observation left no queryable trace and this query could not
+see BLS at all. A miss now arrives here as an `unmapped` row naming the
+geography, the program, and the capture that published it -- which is what
+makes `DQ-BLS-004` answerable.
+
+A BLS row here means one geography the reference does not carry, not a
+reference that was never loaded: the BLS DAG asks
+`silver_ref.geography_guard` before it ingests anything, as every source DAG
+does (DAG-020), so a grossly unsynced reference stops the run rather than
+filling this table.
 
 Do not manually insert guessed geography rows. Correct an exact-code contract or
 add an evidence-backed crosswalk, then replay the affected captured observations.
@@ -255,6 +399,231 @@ source's throughput onto another. The first published estimate for ACS was 2.5
 hours, arrived at by extrapolating the BLS rate, and it was wrong by roughly
 six times. ACS's reporting relation is twelve times larger than BLS's and
 carries eight indexes that every chunk's delete and re-insert must maintain.
+
+### Rebuilding the ACS serving table as a partitioned relation
+
+`gold_census.rpt_acs_observations` is `PARTITION BY RANGE (observation_date)`,
+one partition per vintage year. Every ACS row's `observation_date` is
+`MAKE_DATE(estimate_year, 1, 1)` and the serving driver's chunk is exactly one
+calendar year, so the year chunk and the partition are the same thing:
+`refresh_rpt_acs_observations` truncates the year's partition and refills it,
+instead of deleting from the whole heap and re-inserting. A truncate leaves no
+dead tuples and no index entries to clean up, which is what the figures below
+are about — and what operator rule 2, "vacuum manually; do not wait for
+autovacuum", existed to work around.
+
+**An existing warehouse does not convert itself.** `CREATE TABLE IF NOT
+EXISTS` is a no-op against a table that already exists, so a warehouse built
+before this change still holds a plain heap, and both the DDL and the refresh
+procedure say so out loud:
+
+```text
+WARNING:  [ACS DDL] rpt_acs_observations is not partitioned; the year refresh
+          will delete rather than truncate. Rebuild it per
+          BETA_RESET_REINGESTION.md section 7.
+```
+
+That warehouse is still **correct**; it is only still slow. The refresh falls
+back to the delete path, and the chunk log reports `cleared_partitions=0` so a
+reader watching a re-serve can tell which path a chunk took.
+
+**The rebuild is a drop and a re-serve.** There is no in-place conversion: a
+partitioned table cannot be made from a heap by `ALTER`, and the beta contract
+makes rebuild the cutover. Budget the full re-serve window below — this is the
+same work as a forced full re-serve, plus the drop.
+
+1. **Pause `acs_ingest`.** Re-serving against a live ingest starves both; the
+   measurement above is 1,500 rows/s contended against 7,700 idle.
+
+2. **Record the "before" figures**, so the change has a baseline that is this
+   warehouse's rather than this document's:
+
+   ```sql
+   SELECT c.relname,
+          pg_size_pretty(pg_table_size(c.oid))   AS heap,
+          pg_size_pretty(pg_indexes_size(c.oid)) AS indexes,
+          c.reltuples::BIGINT                    AS rows
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'gold_census'
+     AND c.relname IN ('rpt_acs_observations', 'mv_acs_latest');
+   ```
+
+3. **Drop the relation.** `mv_acs_latest` is declared `LIKE
+   rpt_acs_observations`, so it is rebuilt from the new definition too and has
+   to go with it. Nothing else depends on either: both are serving relations
+   the API reads and the refresh writes.
+
+   ```sql
+   DROP TABLE IF EXISTS gold_census.mv_acs_latest;
+   DROP TABLE IF EXISTS gold_census.rpt_acs_observations;
+   ```
+
+   Neither holds anything a re-serve cannot rebuild. Silver is the source of
+   truth and is untouched; if that is not true of your warehouse, stop here.
+
+4. **Apply the DDL.** Either trigger `acs_ingest` (its `ensure_*` task applies
+   the phase file) or run the bootstrap manifest:
+
+   ```bash
+   python scripts/apply_warehouse_manifest.py --dsn "$WAREHOUSE_DSN"
+   ```
+
+   Then confirm the shape before spending hours filling it:
+
+   ```sql
+   SELECT c.relkind, pg_get_partkeydef(c.oid),
+          (SELECT count(*) FROM pg_inherits WHERE inhparent = c.oid) AS partitions
+   FROM pg_class c WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
+   -- expect: p | RANGE (observation_date) | 37
+   ```
+
+5. **Forced full re-serve.** Trigger `serving_full_reserve` with
+   `{"source_code": "CENSUS_ACS"}`. It commits per calendar year and resumes at
+   the year it stopped on, so an interrupted rebuild is not a restart.
+
+6. **Record the "after" figures** with the same query, and the run's duration
+   from the chunk log. Add both to the table below.
+
+7. **Unpause `acs_ingest`.**
+
+**What to watch during the run.** Each chunk logs `cleared_partitions=1`; a
+`0` means that chunk deleted rather than truncated and the rebuild did not
+take, and `-1` means the whole relation was truncated, which is what a `NULL,
+NULL` range does. The refresh also raises a `WARNING` when the relation is not
+partitioned at all, and the chunk driver logs that at warning level so it does
+not scroll past as another status line in a twenty-chunk run.
+
+That marker reaches the Airflow log only from the change that added
+`_forward_procedure_notices` (DB-058). Before it, every `RAISE NOTICE` these
+procedures emit went into psycopg2's `connection.notices` -- a list nothing
+read -- so this instruction was written, a real re-serve was run, and the log
+contained zero occurrences of the thing it told the operator to look for. On a
+run started from an older revision, read the row counts from the
+`[ACS SERVING REFRESH] chunk=N/20 status=COMPLETE report_rows=` lines the
+driver logs itself, and confirm the shape from `pg_class.relkind` instead.
+
+**One behaviour changes.** Truncating takes `ACCESS EXCLUSIVE` on the
+partition where the delete took `ROW EXCLUSIVE`, so a reader of *that year*
+waits for the chunk rather than seeing the pre-chunk rows. Other years are
+unaffected. A re-serve is a maintenance window in either shape, but a query
+that used to return stale rows now blocks instead.
+
+**The declared range is 2000–2035**, fixed rather than derived from
+`CURRENT_DATE` so the checked-in schema snapshot does not change when the year
+rolls over. `test_the_declared_partition_range_still_has_room` fails while
+there are years left to add, not on the first year there are none. A row
+outside the range lands in `rpt_acs_observations_unranged`, the default
+partition, which the repository's `2099` fixture rows use and nothing the
+pipeline produces reaches.
+
+### What the first rebuild measured
+
+Run on the internal stack, 2026-09-18 23:08 to 2026-09-19 03:37. It succeeded,
+and it reproduced the row count exactly: **68,302,467 rows before, 68,302,467
+after**.
+
+**Size, which is unambiguous:**
+
+| Relation | Before | After |
+| --- | --- | --- |
+| `rpt_acs_observations` | 45 GB heap + 48 GB indexes = **94 GB** | 32 GB + 26 GB = **58 GB** |
+| `mv_acs_latest` | 30 GB + 7,077 MB = **37 GB** | 4,470 MB + 2,555 MB = **7 GB** |
+| **Serving total** | **131 GB** | **65 GB** |
+| Index / heap ratio | 1.07 | 0.81 |
+
+Half the footprint, and the index/heap ratio back under 1. Most of that is
+bloat a rebuild removes and any `VACUUM FULL` would also have removed. What
+the partitioning adds is that it does not come back: `n_dead_tup` across all
+37 partitions is **0** after the run, and a year chunk truncates rather than
+deleting, so it creates none.
+
+**Time, which is not unambiguous, and the honest reading is mixed.**
+
+The whole run took 15,946 seconds of chunk work against the 46,305 this
+section recorded — 2.90x. **Almost none of that is the partitioning.** The
+biggest gains are on 2009-2012, the years the previous run served with 16 GB
+of `shared_buffers`; this run had 48 GB, because the tuning had been silently
+lost (see `RUNNING_THE_INTERNAL_STACK.md`). On the eleven years where both
+runs had 48 GB, this one is **1.18x** — and 2019, 2023 and 2024 were *slower*.
+
+That comparison is not clean either. This run filled empty partitions, so
+early chunks had no delete to do, while later chunks paid a rising index cost
+as the relation grew under them. The previous run had a full table throughout.
+
+**So the run was repeated for one year in steady state**, truncating and
+refilling a partition that already held its 4,445,034 rows -- which is what a
+scheduled re-serve actually does:
+
+| 2024, one year | This section's previous run | Steady state, partitioned |
+| --- | --- | --- |
+| `refresh_rpt_acs_observations` | (not broken out) | **484s**, `cleared_partitions=1` |
+| `refresh_mv_acs_latest` | (not broken out) | **1,294s** |
+| Chunk total | **1,151s** | **~1,778s** |
+
+**The report refresh is fast and the latest-value refresh is the problem.**
+Truncating and refilling a year's partition takes eight minutes. Recomputing
+`mv_acs_latest` for the same year takes twenty-two, and it did not before.
+
+The cause is in the plan: `refresh_mv_acs_latest` asks, per affected key, for
+the newest row *across all history* --
+
+```sql
+SELECT d.* FROM gold_census.rpt_acs_observations d
+WHERE d.geo_id = k.geo_id AND d.variable_code = k.variable_code
+  AND d.metric_code = k.metric_code
+ORDER BY d.observation_date DESC, ... LIMIT 1
+```
+
+-- and that is the one question time-partitioning is worst at. The answer can
+be in any partition, so there is no global index to satisfy it. Measured:
+
+```text
+Limit
+  Buffers: shared hit=126
+  ->  Merge Append
+        ->  Index Scan ... rpt_acs_observations_2000
+        ->  Index Scan ... rpt_acs_observations_2001
+        ... 37 partitions, one index probe each
+```
+
+**126 buffer hits to find one key's latest row**, where an unpartitioned table
+needs a single index scan. Multiplied by 4.4 million affected keys, that is
+the twenty-two minutes.
+
+### And then the lookup was narrowed
+
+That was fixed rather than lived with (DB-060). Two facts make a cheap answer
+exact: one partition is one vintage year, and within a partition the natural
+key is unique -- `observation_date` and `vintage_year` are fixed inside a year,
+and `dataset_code` is carried in `metric_code`. So the newest partition holding
+a key holds *exactly one* row for it, and that row is the latest. Nothing needs
+ranking across partitions; the search only has to stop.
+
+`refresh_mv_acs_latest` now walks partitions newest-first, deleting resolved
+keys as it goes and exiting when none remain, so a full re-serve resolves
+almost every key in the first partition it looks at. The default partition is
+visited at both ends rather than skipped: it takes rows outside the declared
+range, which are therefore either newer than every year or older than all of
+them.
+
+| 2024, one year, steady state | Before partitioning | Partitioned | Partitioned, narrowed |
+| --- | --- | --- | --- |
+| `refresh_rpt_acs_observations` | -- | 484s | 484s |
+| `refresh_mv_acs_latest` | -- | 1,294s | **410s** |
+| Chunk total | 1,151s | ~1,778s | **~894s** |
+
+**So the trade is gone.** A year chunk is now faster than it was before the
+table was partitioned, on half the disk, with no vacuum debt. Verified on the
+real relation rather than a fixture: 4,646,720 latest rows, keys unique,
+vintages spanning 2005-2024 -- so a key whose newest data is 2011 still reads
+2011 -- and **zero** rows for which a newer observation exists.
+
+**What to watch for.** The gain depends on keys being found early. A warehouse
+whose keys are spread thinly across many old vintages walks more partitions
+before the pending set empties. The chunk log reports what it resolved, and
+`test_the_refresh_finds_the_newest_vintage_not_the_newest_partition` is the
+guard that stopping early never means stopping short.
 
 ### ACS throughput is bound by `shared_buffers`, not by CPU
 
@@ -449,21 +818,55 @@ VACUUM (ANALYZE, PARALLEL 0) gold_census.mv_acs_latest;
 VACUUM (ANALYZE, PARALLEL 0) gold_census.rpt_acs_observations;
 ```
 
-`PARALLEL 0` is not optional on this stack: the compose file sets no
-`shm_size`, so the container has Docker's default 64 MB `/dev/shm`, and a
-parallel index vacuum at the configured 8 GB `maintenance_work_mem` fails at
-once with "could not resize shared memory segment ... No space left on
-device". The re-serve itself never hit that error.
+`PARALLEL 0` **was** not optional on this stack, and that is no longer true.
+The compose file set no `shm_size`, so the container had Docker's default
+64 MB `/dev/shm`, and a parallel index vacuum at the configured 8 GB
+`maintenance_work_mem` failed at once with "could not resize shared memory
+segment ... No space left on device". The re-serve itself never hit that
+error. `docker-compose.yml` now sets `shm_size` (`ANALYTICS_PG_SHM_SIZE`,
+1 GB by default, DB-048), so a parallel vacuum has the space the configured
+parallel workers were always asking for. `PARALLEL 0` is still the safe thing
+to type on a stack you have not checked; `SHOW shm_size` is not a thing, so
+confirm it from the host with `docker inspect` or by simply trying one.
+
+### What changed since that run
+
+Two things, and neither removes the rules below -- they lower how often you
+have to reach for them:
+
+- **The serving tables set their own autovacuum thresholds.** Every `rpt_*`
+  and `mv_*` table in the ACS, BLS and FRED gold DDL now carries
+  `autovacuum_vacuum_scale_factor = 0.02`, `autovacuum_analyze_scale_factor =
+  0.01` and `autovacuum_vacuum_cost_limit = 2000`. At PostgreSQL's 20%
+  default, a table this size reaches its threshold only after millions of dead
+  tuples -- which is how 54.7 million accumulated above. `ensure_*` re-applies
+  the DDL, so an existing warehouse picks the settings up on its next run with
+  no migration. The PEP gold relations are views and have no storage
+  parameters to set.
+- **The chunk driver analyses after each chunk commits.** The refresh is
+  delete-then-reinsert per year, which leaves the planner describing rows that
+  are gone; by the second chunk of a twenty-year re-serve every plan was built
+  from stale statistics. `ANALYZE` runs on its own connection after the
+  chunk's checkpoint is durable, and a failure there is logged and ignored:
+  the chunk is complete and correct, and stale statistics are a slower plan
+  rather than a wrong answer.
+
+Manual `VACUUM` remains available and is still the right tool for the case in
+rule 1 below -- a long-open snapshot blocks autovacuum exactly as it blocks a
+manual one, and ending the session is what fixes that. It is no longer the
+first resort for ordinary re-serve churn.
 
 Three operator rules follow:
 
 1. Before a long re-serve, look for old snapshots
    (`SELECT pid, now() - query_start FROM pg_stat_activity WHERE state <> 'idle'`)
    and end anything that will outlive a year. One nine-hour reader cost more
-   than six hours here.
+   than six hours here. **This one is unchanged by the settings above**:
+   nothing can reclaim a row an open snapshot may still need to see.
 2. If per-year time is climbing rather than flat, check `n_dead_tup` on the
-   two serving relations in `pg_stat_user_tables` and vacuum manually; do not
-   wait for autovacuum, which yields to everything else on the box.
+   two serving relations in `pg_stat_user_tables`. With the thresholds above,
+   a climbing `n_dead_tup` now means autovacuum is being held off -- look for
+   rule 1's snapshot before vacuuming by hand.
 3. Confirm the ingest pause actually held. On this run `acs_ingest` was
    unpaused through the UI before the re-serve started; it was harmless only
    because the schedule is monthly.

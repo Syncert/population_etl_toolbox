@@ -22,6 +22,18 @@ between two of them.
 `GET /health` and `GET /health/ready` (no `/api` prefix) are deployment
 probes. They sit outside the version policy: they carry no data contract, and
 versioning them would put a data-contract promise on infrastructure.
+`GET /api/v1/health` answers the same liveness shape inside the versioned
+surface, for a client that reads everything through one prefix; it reads
+nothing and is exempt from the rate limiter.
+
+`GET /health/ready` reports three things and gates on one. `database` decides
+readiness -- an unready answer is a `503` so orchestration stops routing here.
+`cache` and `storage` are reported and never gate: Redis is an optimization
+the API is proven to survive without, and application storage is optional, so
+a deployment that configures none serves every public route. `storage` is
+`ok`, `unavailable` or `unconfigured`, from an actual connection rather than
+from the presence of a setting -- with storage configured but unreachable,
+the private routes answer `503` and this is the field that says why.
 
 ## Is this deployment serving anything?
 
@@ -325,20 +337,31 @@ source-scoped routes serve it; that is what they are for.
 - `value` is **text**, to preserve provider precision. Parse it yourself.
 - `value` is **text**, and `null` whenever the source published no usable
   number — never zero. **Nothing is ever coerced to zero.**
-- **Two sources shapes, and `publishes_value_status` on
+- **Two source shapes, and `publishes_value_status` on
   `/catalog/capabilities` tells you which you are reading.** Where it is
-  `true` (CDC, FBI UCR, USDA NASS), an unpublished figure arrives as a row
-  with `value: null` and a `value_status` saying why in the source's own
-  vocabulary — `suppressed`, `withheld`, `not_reported`, each source's own
-  word. Where it is `false` (BLS, FRED, Census ACS, Census PEP), the serving
-  relations carry only published numbers: `value` is never null,
-  `value_status` is always null, and a period the source published **without**
-  a usable number is *absent from the series* rather than present and marked.
-  If you chart a history from one of those sources, a gap is a gap — do not
-  draw across it as though the period were continuous with its neighbours.
-  The flag is on the metric resource too, so a client that searched the
-  catalog does not have to enumerate sources to learn the shape of its own
-  rows.
+  `true` (CDC, FBI UCR, USDA NASS, **Census ACS, BLS**), an unpublished figure
+  arrives as a row with `value: null` and a `value_status` saying why in the
+  source's own vocabulary — `suppressed`, `withheld`, `not_reported`,
+  `absent`, `missing`, each source's own word. Where it is `false` (FRED,
+  Census PEP), the serving relations carry only published numbers: `value` is
+  never null, `value_status` is always null, and a period the source published
+  **without** a usable number is *absent from the series* rather than present
+  and marked. If you chart a history from one of those sources, a gap is a gap
+  — do not draw across it as though the period were continuous with its
+  neighbours. The flag is on the metric resource too, so a client that
+  searched the catalog does not have to enumerate sources to learn the shape
+  of its own rows.
+
+  > **Census ACS and BLS changed shape.** They used to be on the `false` side,
+  > and a cell Census suppressed was simply not in the response. It is a row
+  > now, with `value: null` and a `value_status`. On the internal warehouse
+  > that is **31,481,530 additional ACS rows** — just under a third of the
+  > fact table — so a client that paged an ACS series and assumed every row
+  > carried a number will now see nulls where it saw nothing. That is the
+  > point: a value the Bureau withheld and a geography that was never
+  > published are different facts, and they used to give the same answer.
+  > Read `publishes_value_status` rather than assuming; it is why the flag
+  > exists.
 - `dimensions` carries the source's declared fields under the source's own
   published names — CDC strata and footnotes, FBI subject/offense/program,
   NASS commodity/domain/practice, Census dataset and vintage. The exact set
@@ -362,6 +385,53 @@ source-scoped routes serve it; that is what they are for.
   its publication. What `release` *identifies* differs by source, because the
   providers differ, and the table below says so per source rather than
   leaving you to infer it.
+
+### Reading an MVP-shaped row
+
+The ten MVP-shaped operations answer `ObservationDashboard`: a flat row of 32
+fields, **all of them optional**. It predates the neutral envelope above and
+is kept as the shape `apps/web` consumes. Two things about it will mislead a
+client that reads it as though it were `NeutralObservation`.
+
+**Four fields are duplicates of four other fields.** They are the same value
+under two names, projected by the same `SELECT`. Read the left column; the
+right column is the MVP spelling, kept so nothing breaks, and marked
+`deprecated: true` in the OpenAPI document so a generated client says so too.
+
+| Read this | Not this | Why |
+| --- | --- | --- |
+| `source_code` | `source` | Same value. `source_code` is the glossary identity every other resource uses |
+| `units` | `unit` | Same value |
+| `dataset_code` | `dataset` | Same value |
+| `vintage_year` | `vintage` | Same value, and `vintage_year` is an **integer** while `vintage` is that integer rendered as text |
+
+`release_date` is a fifth repetition — it is `as_of_date` under another name —
+and is not marked, because unlike the four above neither spelling is the
+odd one out: `as_of` is what the neutral envelope calls it, and `release_date`
+is what the MVP called it.
+
+**A field this source does not publish is a typed `null`, not an absent key.**
+Every row carries every column, so `margin_of_error: null` on a BLS row means
+"BLS publishes no margin of error", never "this observation happens to have
+none". Which fields that applies to is a property of the source, not of the
+row:
+
+| Source | Source-scoped route | Always `null` on that route |
+| --- | --- | --- |
+| Bureau of Labor Statistics | `/bls/observations/{latest,timeseries}` | `dataset`, `dataset_code`, `margin_of_error`, `margin_of_error_pct`, `vintage`, `vintage_year` |
+| Census American Community Survey | `/census/observations/{latest,timeseries}` | `seasonal_adjustment_status` |
+| Federal Reserve Economic Data | `/fred/observations/{latest,timeseries}` | `dataset`, `dataset_code`, `margin_of_error`, `margin_of_error_pct`, `vintage`, `vintage_year` |
+| Census Population Estimates Program | `/pep/observations/{latest,timeseries}` | `seasonal_adjustment_status` |
+
+That table is derived from the serving registry's own capability flags, not
+maintained by hand, so a source whose published surface changes moves this
+table with it.
+
+The cross-source pair `/observations/{latest,timeseries}` reads union views
+rather than the per-source relations, and they differ on one point: there,
+a BLS row's `dataset_code` and `dataset` carry the BLS program code and a
+FRED row's carry the literal `fred`, instead of being `null`. Everything else
+in the table holds on both.
 
 ### What a release identifies, per source
 
@@ -471,16 +541,26 @@ which the publisher views and the serving routes both go through; a grain
 in the catalog is derived from the rows a source actually serves, never
 declared from configuration.
 
-### Legacy observation routes
+### The MVP-shaped observation routes
 
-`GET /api/v1/observations/latest` and `/observations/timeseries` are the
-original MVP shapes and answer for **only** Census ACS, BLS, and FRED (the
-three sources in the cross-source union views). They retire with the
-unversioned aliases. New work should use `/observations`.
+`GET /api/v1/observations/latest` and `GET /api/v1/observations/timeseries`
+are the original MVP shapes and answer for **only** Census ACS, BLS, and FRED (the
+three sources in the cross-source union views).
 
-Source-scoped routes remain for source-specific exploration:
-`/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
-`/api/v1/cdc/observations`, `/api/v1/usda-nass/{observations,series,measures,source-notes}`.
+They are **permanent `v1` resources**, and nothing about them is scheduled
+to be withdrawn. `/observations` is not a successor they are migrating
+toward — it is an additive resource serving the same rows in a typed,
+structured envelope. ADR-0002's 2026-09-16 amendment records that decision.
+Prefer `/observations` for new work because its row is easier to read
+correctly, not because these are going away.
+
+Source-scoped routes are permanent on the same terms, and remain the way to
+explore one source: `/api/v1/{bls,census,fred,pep}/observations/{latest,timeseries}`,
+`/api/v1/cdc/observations`,
+`/api/v1/usda-nass/{observations,series,measures,source-notes}`.
+
+All ten of those operations answer the same row shape, `ObservationDashboard`,
+which is described under [Reading an MVP-shaped row](#reading-an-mvp-shaped-row).
 
 ### Which release you get, and what you get if you do not ask
 
@@ -952,6 +1032,13 @@ status code on the one class of error the API can explain.
   hit or miss to report. So a shared cache in front of this API cannot serve
   one client's refusal to another, and `Retry-After` on a `429` means what it
   says.
+- **The headers do not depend on the deployment having a cache.** A shared
+  response cache is an optimisation this API runs without, and a deployment
+  configured with no Redis answers the same `Cache-Control` on the same paths:
+  `public, max-age=<ttl>` on a `200`, `no-store` on every other status. Its
+  successes are labelled `x-cache: BYPASS` rather than `MISS` — there was no
+  store to look in, so no later request can turn that answer into a `HIT`.
+  Treat `BYPASS` as a `MISS` you should not expect to stop seeing.
 - Rate limits, when enabled, are per client and split by cost class: catalog
   reads and analytical reads spend independent budgets. Cache hits cost no
   budget. "Per client" means the address the request arrived from — or, when
@@ -961,6 +1048,18 @@ status code on the one class of error the API can explain.
   deployment trusts, so it can never be used to claim a second budget.
 - Every response carries `X-Request-ID`. Send your own (`[A-Za-z0-9._-]`, ≤64
   chars) to correlate your logs with the server's; anything else is replaced.
+  The server's side of that correlation is one line per request, written to
+  the process log at `INFO` by `apps.api.request`, so an operator holding your
+  id knows what to grep for:
+
+  ```
+  2026-09-17T12:00:00+0000 INFO apps.api.request api_request method=GET path=/api/v1/catalog/metrics status=200 duration_ms=12.4 cache=MISS request_id=your-id-here
+  ```
+
+  `path` is the route shape, with each path parameter replaced by its name:
+  query-string values are user input and are never logged. A deployment that
+  raises `API_LOG_LEVEL` above `INFO` silences this line; the unhandled-failure
+  record is written at `ERROR` and survives.
 - Pagination is `limit`/`offset` with documented deterministic ordering per
   resource. `offset` is bounded; page with filters rather than deep offsets.
   The observation reads' orders are in [Paging a history, and what orders

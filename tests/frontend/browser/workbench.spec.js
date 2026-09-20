@@ -1059,6 +1059,43 @@ test("a composition saved in the browser reopens as the same chart", async ({
 // never the only carrier of a distinction, and every control with an
 // accessible name. The export names itself a prefix when a read was cut short.
 
+test.describe("in a browser whose locale is not the application's", () => {
+  // The defect this closes is invisible in an en-US browser, which is every
+  // browser the tier ran in: `toLocaleString()` with no locale resolves to
+  // the *viewer's* locale, so a de-DE reader saw `38.900.000` from the chart
+  // and `38,900,000` from the module that named `en-US` -- two renderings of
+  // one number, on one screen. Setting the context locale is what makes the
+  // assertion mean something.
+  test.use({ locale: "de-DE" });
+
+  test("one number is grouped the same way wherever it is shown", async ({ page }) => {
+    // Covers: WEB-105 — the legend, the chart and the table agree.
+    await installAlignedRoutes(page);
+    await installCorrelationRoutes(page);
+    await page.goto("/workbench");
+    await addAlignedPair(page);
+
+    await page.getByTestId("workbench-presentation-bar").click();
+
+    // 38,900,000 is the fixture's smallest ACS value and is well above 1,000,
+    // so every renderer here has a grouping decision to make about it.
+    const table = page.getByTestId("workbench-table");
+    await expect(table).toBeVisible();
+    await expect(table).toContainText("38,900,000");
+    await expect(table).not.toContainText("38.900.000");
+
+    // The chart's own axis and value labels, drawn by `formatValue` in the
+    // chart components, read the same way.
+    const chart = page.getByTestId("workbench-bar-chart");
+    const grouped = await chart.locator("text").allTextContents();
+    const above = grouped.filter((label) => /\d[.,]\d{3}/.test(label));
+    expect(above.length, "no chart label carried a grouped number").toBeGreaterThan(0);
+    for (const label of above) {
+      expect(label, "a chart label used the viewer's locale").not.toMatch(/\d\.\d{3}/);
+    }
+  });
+});
+
 test("every chart carries a complete accessible label and a textual alternative", async ({
   page,
 }) => {

@@ -78,14 +78,31 @@ SELECT
     -- an ACS row's `as_of` every time a chunk was re-served, on a field the
     -- consumer guide says traces a row back to its publication.
     s.ingested_at::DATE AS as_of_date,
-    s.ingested_at AS updated_at
+    s.ingested_at AS updated_at,
+    -- Why a value is absent, the provider's own token, and the response it was
+    -- read from. The fact has carried these since DB-055; serving dropped the
+    -- rows entirely, so a cell Census suppressed and a geography that does not
+    -- exist gave a consumer the same answer.
+    --
+    -- Appended rather than placed beside `estimate_value`, because
+    -- `CREATE OR REPLACE VIEW` may only add columns at the end: inserting them
+    -- mid-list fails on every warehouse that already has the view, which is
+    -- every warehouse that matters.
+    s.value_status,
+    s.source_value,
+    s.capture_id
 FROM silver_census.fact_demographics s
 JOIN gold_census.dim_acs_variable av
     ON av.dataset_code  = s.dataset
    AND av.vintage_year  = s.estimate_year
    AND av.variable_code = s.variable_code
-WHERE s.estimate_value IS NOT NULL
-  AND s.variable_code IS NOT NULL
+-- `estimate_value IS NOT NULL` used to be here. It removed 31,481,530 of
+-- 99,783,997 ACS fact rows from serving -- every cell the provider withheld --
+-- and a consumer could not tell one from a geography that was never
+-- published. They are served now, with a null value and the status that says
+-- why. What is still excluded is a row with no variable to identify it, which
+-- is not a withheld value but an unusable row.
+WHERE s.variable_code IS NOT NULL
   AND s.variable_code <> '';
 
 -- ============================================================
@@ -113,8 +130,14 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     place_name                 TEXT,
     geo_latitude               DOUBLE PRECISION,
     geo_longitude              DOUBLE PRECISION,
-    -- ACS-specific columns (no NULLs for these)
-    value                      NUMERIC NOT NULL,
+    -- ACS-specific columns
+    --
+    -- `value` and `estimate_value` were `NOT NULL`, which is what made a
+    -- withheld cell unservable: there was nowhere to put it. They are
+    -- nullable now, and `value_status` is what says whether the absence is
+    -- the provider's or this pipeline's -- constrained so a row cannot claim
+    -- a published value and carry none.
+    value                      NUMERIC,
     dataset_code               TEXT NOT NULL CHECK (dataset_code IN ('acs1', 'acs5')),
     vintage_year               INTEGER NOT NULL,
     table_id                   TEXT NOT NULL,
@@ -125,7 +148,11 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     universe                   TEXT,
     denominator_hint           TEXT,
     is_publishable_default     BOOLEAN,
-    estimate_value             NUMERIC NOT NULL,
+    estimate_value             NUMERIC,
+    value_status               TEXT NOT NULL DEFAULT 'valid'
+        CHECK (value_status IN ('valid', 'absent', 'blank', 'sentinel', 'invalid')),
+    source_value               TEXT,
+    capture_id                 UUID,
     margin_of_error            NUMERIC,
     margin_of_error_pct        NUMERIC,
     estimate_annotation        TEXT,
@@ -134,8 +161,108 @@ CREATE TABLE IF NOT EXISTS gold_census.rpt_acs_observations (
     units                      TEXT,
     -- Metric catalog association
     metric_code                TEXT,
-    metric_display_name        TEXT
-);
+    metric_display_name        TEXT,
+    CONSTRAINT rpt_acs_observations_published_value_check
+        CHECK (value_status <> 'valid' OR estimate_value IS NOT NULL)
+) PARTITION BY RANGE (observation_date);
+
+-- Why this relation is partitioned, when its six siblings are not.
+--
+-- Every ACS row's `observation_date` is `MAKE_DATE(estimate_year, 1, 1)`, so
+-- the column holds one distinct value per vintage and the serving driver's
+-- chunk is exactly one calendar year (`ACS_CHUNK_CONFIG`). That makes the year
+-- chunk and the partition the same thing: the refresh truncates and refills
+-- one partition instead of deleting from a 45 GB heap and re-inserting into
+-- it, which leaves no dead tuples to vacuum and no index entries to clean up.
+--
+-- `BETA_RESET_REINGESTION.md` §7 measured what the old shape cost: tens of
+-- millions of dead rows per year chunk, a heap that grew as it was re-served,
+-- and an operator rule reading "vacuum manually; do not wait for autovacuum".
+--
+-- The declared range is fixed rather than derived from `CURRENT_DATE`, because
+-- this DDL's output is compared against a checked-in schema snapshot (DB-051)
+-- and a definition that changes when the year rolls over would turn every
+-- January into a failed build nobody changed anything to cause.
+-- `test_the_declared_partition_range_still_has_room` fails while there are
+-- still years left, rather than on the first year there are none.
+
+DO $$
+DECLARE
+    v_year  INTEGER;
+    v_first CONSTANT INTEGER := 2000;  -- `control.acs_ingestion_slices` refuses an earlier year
+    v_last  CONSTANT INTEGER := 2035;
+BEGIN
+    -- A warehouse that has not been rebuilt still holds a plain heap here;
+    -- `CREATE TABLE IF NOT EXISTS` does not convert one. Attaching partitions
+    -- to it is not possible and pretending otherwise would fail every run, so
+    -- this says what is true and leaves the table alone. The rebuild is
+    -- `BETA_RESET_REINGESTION.md` §7.
+    IF (SELECT c.relkind
+          FROM pg_class c
+         WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass) <> 'p' THEN
+        RAISE WARNING '[ACS DDL] rpt_acs_observations is not partitioned; the '
+                      'year refresh will delete rather than truncate. Rebuild '
+                      'it per BETA_RESET_REINGESTION.md section 7.';
+        RETURN;
+    END IF;
+
+    -- A row outside the declared range lands here rather than aborting the
+    -- insert. The repository's fixtures use 2099 as a "this is obviously not
+    -- real data" marker in a dozen files, and making that convention an error
+    -- for this one relation would be a schema decision dressed up as a
+    -- partition boundary. Nothing the pipeline produces reaches it: ACS
+    -- `observation_date` is `MAKE_DATE(estimate_year, 1, 1)` and
+    -- `control.acs_ingestion_slices` refuses a year outside
+    -- 2000..CURRENT_YEAR+1, so a row here is a fixture or a defect, and
+    -- either way it is countable rather than invisible.
+    --
+    -- The year refresh never truncates it, which is correct -- no chunk the
+    -- serving driver plans covers a year outside the declared range, because
+    -- the chunks come from silver's own `estimate_year`. A full re-serve
+    -- truncates the parent, which does include it.
+    IF to_regclass('gold_census.rpt_acs_observations_unranged') IS NULL THEN
+        CREATE TABLE gold_census.rpt_acs_observations_unranged
+            PARTITION OF gold_census.rpt_acs_observations DEFAULT;
+        ALTER TABLE gold_census.rpt_acs_observations_unranged SET (
+            autovacuum_vacuum_scale_factor = 0.02,
+            autovacuum_analyze_scale_factor = 0.01,
+            autovacuum_vacuum_cost_limit = 2000
+        );
+    END IF;
+
+    FOR v_year IN v_first..v_last LOOP
+        IF to_regclass(
+               format('gold_census.rpt_acs_observations_%s', v_year)
+           ) IS NULL THEN
+            EXECUTE format(
+                'CREATE TABLE gold_census.rpt_acs_observations_%1$s '
+                'PARTITION OF gold_census.rpt_acs_observations '
+                'FOR VALUES FROM (DATE %2$L) TO (DATE %3$L)',
+                v_year,
+                format('%s-01-01', v_year),
+                format('%s-01-01', v_year + 1)
+            );
+        END IF;
+
+        -- DB-048's thresholds, on the relation that actually has storage. A
+        -- partitioned parent holds none, so `ALTER TABLE` on it sets nothing
+        -- the autovacuum daemon will ever read.
+        --
+        -- The analyze threshold is the one that earns its place here: a
+        -- truncate and refill leaves the planner describing rows that are
+        -- gone. The vacuum thresholds are kept because they are still true of
+        -- the paths that do not truncate -- a partial range falls back to a
+        -- delete, and the default partition is never truncated by a year
+        -- chunk -- and because one rule across every serving relation is
+        -- worth more than an exemption that has to be remembered.
+        EXECUTE format(
+            'ALTER TABLE gold_census.rpt_acs_observations_%s SET ('
+            'autovacuum_vacuum_scale_factor = 0.02, '
+            'autovacuum_analyze_scale_factor = 0.01, '
+            'autovacuum_vacuum_cost_limit = 2000)', v_year
+        );
+    END LOOP;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_acs_observations_nk
     ON gold_census.rpt_acs_observations (
@@ -194,6 +321,22 @@ CREATE INDEX IF NOT EXISTS ix_rpt_acs_latest_selection
 CREATE TABLE IF NOT EXISTS gold_census.mv_acs_latest
     (LIKE gold_census.rpt_acs_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
 
+-- Autovacuum sized for the churn a year-chunked re-serve creates (DB-048).
+--
+-- The refresh is `DELETE ... WHERE observation_date BETWEEN` followed by a
+-- re-insert, one year at a time. At PostgreSQL's 20% default scale factor a
+-- table this size reaches its autovacuum threshold only after millions of dead
+-- tuples: `BETA_RESET_REINGESTION.md` §7 recorded 54.7 million dead rows against 8.9 million live here, with the heap grown to 31 GB, and its operator
+-- rule 2 was "vacuum manually; do not wait for autovacuum". These thresholds
+-- are what that rule asks for, applied by the database instead of by a person
+-- who has to remember. `ensure_*` re-applies this DDL, so an existing
+-- warehouse picks them up on its next run without a migration.
+ALTER TABLE gold_census.mv_acs_latest SET (
+    autovacuum_vacuum_scale_factor = 0.02,   -- 2% dead, not 20%
+    autovacuum_analyze_scale_factor = 0.01,  -- statistics stay close to the data
+    autovacuum_vacuum_cost_limit = 2000      -- and it is allowed to keep up
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_acs_latest
     ON gold_census.mv_acs_latest (
         geo_id,
@@ -228,6 +371,10 @@ DECLARE
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
     v_affected_keys BIGINT;
+    v_partitioned BOOLEAN;
+    v_year INTEGER;
+    v_partition TEXT;
+    v_cleared_years INTEGER := 0;
 BEGIN
     RAISE NOTICE '[ACS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
@@ -240,18 +387,74 @@ BEGIN
     ) ON COMMIT DROP;
 
     -- Capture old keys as well as new keys so a source-side deletion removes a
-    -- now-stale latest row.
-    INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
-    SELECT DISTINCT d.geo_id, d.variable_code, d.metric_code
-    FROM gold_census.rpt_acs_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+    -- now-stale latest row. The row count comes out of the same scan: the
+    -- clearing step below may be a TRUNCATE, which reports none.
+    WITH scanned AS (
+        SELECT d.geo_id, d.variable_code, d.metric_code
+        FROM gold_census.rpt_acs_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+    ), recorded AS (
+        INSERT INTO gold_acs_affected_keys (geo_id, variable_code, metric_code)
+        SELECT DISTINCT geo_id, variable_code, metric_code FROM scanned
+        ON CONFLICT DO NOTHING
+        RETURNING 1
+    )
+    SELECT count(*) INTO v_deleted_rows FROM scanned;
 
-    DELETE FROM gold_census.rpt_acs_observations
-    WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR observation_date <= p_end_date);
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+    -- Clear the range. On a partitioned table a whole calendar year is a
+    -- partition, and truncating it leaves no dead tuples and no index entries
+    -- to clean up -- which is the entire reason this relation is partitioned.
+    -- A `DELETE` of a year left tens of millions of dead rows per chunk and an
+    -- operator rule reading "vacuum manually; do not wait for autovacuum".
+    --
+    -- Truncating takes ACCESS EXCLUSIVE on the partition, where the delete
+    -- took ROW EXCLUSIVE: a reader of *that year* waits for the chunk instead
+    -- of seeing the pre-chunk rows. Other years are untouched, which the
+    -- delete could not offer either -- it held row locks across the whole
+    -- heap's index pages. A re-serve is a maintenance window in both shapes.
+    SELECT c.relkind = 'p' INTO v_partitioned
+    FROM pg_class c
+    WHERE c.oid = 'gold_census.rpt_acs_observations'::regclass;
+
+    IF v_partitioned AND p_start_date IS NULL AND p_end_date IS NULL THEN
+        -- Every year, including the default partition.
+        TRUNCATE TABLE gold_census.rpt_acs_observations;
+        v_cleared_years := -1;
+    ELSIF v_partitioned THEN
+        FOR v_year IN
+            SELECT generate_series(
+                EXTRACT(YEAR FROM p_start_date)::INT,
+                EXTRACT(YEAR FROM p_end_date)::INT
+            )
+        LOOP
+            v_partition := format('gold_census.rpt_acs_observations_%s', v_year);
+            -- Only a year the range covers end to end may be truncated. The
+            -- serving driver's ACS chunk is always 1 January to 31 December
+            -- (`ACS_CHUNK_CONFIG`), so this is the normal path; a partial
+            -- range falls through to a delete rather than removing rows the
+            -- caller did not ask about.
+            IF to_regclass(v_partition) IS NOT NULL
+               AND p_start_date <= MAKE_DATE(v_year, 1, 1)
+               AND p_end_date >= MAKE_DATE(v_year, 12, 31) THEN
+                EXECUTE format('TRUNCATE TABLE %s', v_partition);
+                v_cleared_years := v_cleared_years + 1;
+            ELSE
+                DELETE FROM gold_census.rpt_acs_observations
+                WHERE observation_date >= GREATEST(p_start_date, MAKE_DATE(v_year, 1, 1))
+                  AND observation_date <= LEAST(p_end_date, MAKE_DATE(v_year, 12, 31));
+            END IF;
+        END LOOP;
+    ELSE
+        -- A warehouse that has not been rebuilt per BETA_RESET_REINGESTION.md
+        -- section 7 still holds a plain heap here. It is still correct; it is
+        -- only still slow.
+        RAISE WARNING '[ACS RPT CHUNK] rpt_acs_observations is not partitioned; '
+                      'deleting the range instead of truncating a partition.';
+        DELETE FROM gold_census.rpt_acs_observations
+        WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR observation_date <= p_end_date);
+    END IF;
 
     INSERT INTO gold_census.rpt_acs_observations (
         source_code,
@@ -284,6 +487,9 @@ BEGIN
         denominator_hint,
         is_publishable_default,
         estimate_value,
+        value_status,
+        source_value,
+        capture_id,
         margin_of_error,
         margin_of_error_pct,
         estimate_annotation,
@@ -326,6 +532,9 @@ BEGIN
         v.denominator_hint,
         v.is_publishable_default,
         ao.estimate_value,
+        ao.value_status,
+        ao.source_value,
+        ao.capture_id,
         ao.margin_of_error,
         ao.margin_of_error_pct,
         ao.estimate_annotation,
@@ -349,9 +558,13 @@ BEGIN
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_acs_affected_keys;
     RAISE NOTICE
-        '[ACS RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[ACS RPT CHUNK] status=COMPLETE start=% end=% cleared_partitions=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
+        -- -1 means the whole relation was truncated, 0 means the range was
+        -- deleted rather than truncated. A reader watching a re-serve can tell
+        -- a chunk that took the partitioned path from one that did not.
+        v_cleared_years,
         v_deleted_rows,
         v_inserted_rows,
         v_affected_keys,
@@ -370,6 +583,8 @@ DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
+    v_resolved_rows BIGINT;
+    v_source RECORD;
 BEGIN
     RAISE NOTICE '[ACS LATEST CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
 
@@ -401,23 +616,96 @@ BEGIN
       AND m.metric_code = k.metric_code;
     GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
 
-    INSERT INTO gold_census.mv_acs_latest
-    SELECT latest.*
-    FROM gold_acs_affected_keys k
-    CROSS JOIN LATERAL (
-        SELECT d.*
-        FROM gold_census.rpt_acs_observations d
-        WHERE d.geo_id = k.geo_id
-          AND d.variable_code = k.variable_code
-          AND d.metric_code = k.metric_code
-        ORDER BY
-            d.observation_date DESC,
-            d.updated_at DESC,
-            CASE d.dataset_code WHEN 'acs1' THEN 1 WHEN 'acs5' THEN 2 ELSE 9 END,
-            d.vintage_year DESC
-        LIMIT 1
-    ) latest;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    -- Resolve each key from the newest partition that holds it, instead of
+    -- asking every partition for its candidate and ranking the answers.
+    --
+    -- The old shape was one `LATERAL ... ORDER BY observation_date DESC LIMIT
+    -- 1` per key over the whole relation. Once the relation was partitioned by
+    -- year that became a `Merge Append` across every partition -- the answer
+    -- can be in any of them, so nothing prunes -- at **126 buffer hits to find
+    -- one key's latest row**, against a single index scan before. Multiplied
+    -- by the 4.4 million keys an ACS year chunk affects, it cost 1,294 seconds
+    -- (DB-060).
+    --
+    -- Two facts make the cheap answer exact:
+    --
+    --   * one partition is one vintage year, because ACS `observation_date` is
+    --     `MAKE_DATE(estimate_year, 1, 1)`;
+    --   * within a partition the natural key is unique --
+    --     `uq_rpt_acs_observations_nk` is `(geo_id, observation_date,
+    --     dataset_code, vintage_year, variable_code, metric_code)`, and
+    --     `observation_date` and `vintage_year` are both fixed inside one
+    --     year, while `dataset_code` is carried in `metric_code`.
+    --
+    -- So the newest partition holding a key holds *exactly one* row for it,
+    -- and that row is the latest. No ranking across partitions is needed; the
+    -- search only has to stop.
+    --
+    -- The default partition is visited at both ends rather than skipped. It
+    -- takes rows outside the declared 2000-2035 range, which are therefore
+    -- either newer than every year partition or older than all of them, and
+    -- correctness must not depend on it being empty -- the repository's
+    -- fixtures put a 2099 row there.
+    CREATE TEMP TABLE gold_acs_pending_keys (
+        geo_id        TEXT NOT NULL,
+        variable_code TEXT NOT NULL,
+        metric_code   TEXT NOT NULL,
+        PRIMARY KEY (geo_id, variable_code, metric_code)
+    ) ON COMMIT DROP;
+    INSERT INTO gold_acs_pending_keys
+    SELECT geo_id, variable_code, metric_code FROM gold_acs_affected_keys;
+    ANALYZE gold_acs_pending_keys;
+
+    v_inserted_rows := 0;
+
+    FOR v_source IN
+        SELECT * FROM (
+            -- Anything past the declared range outranks every year.
+            SELECT 'gold_census.rpt_acs_observations_unranged' AS relation,
+                   'observation_date > DATE ''2035-12-31''' AS predicate,
+                   0 AS visit_order
+            UNION ALL
+            SELECT format('gold_census.rpt_acs_observations_%s', y), 'TRUE',
+                   2036 - y
+            FROM generate_series(2000, 2035) AS y
+            UNION ALL
+            -- Anything before it is outranked by every year.
+            SELECT 'gold_census.rpt_acs_observations_unranged',
+                   'observation_date < DATE ''2000-01-01''', 9999
+        ) ordered
+        ORDER BY visit_order
+    LOOP
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM gold_acs_pending_keys);
+        CONTINUE WHEN to_regclass(v_source.relation) IS NULL;
+
+        EXECUTE format($resolve$
+            WITH resolved AS (
+                INSERT INTO gold_census.mv_acs_latest
+                SELECT DISTINCT ON (d.geo_id, d.variable_code, d.metric_code) d.*
+                FROM %1$s d
+                JOIN gold_acs_pending_keys p
+                  ON p.geo_id = d.geo_id
+                 AND p.variable_code = d.variable_code
+                 AND p.metric_code = d.metric_code
+                WHERE %2$s
+                ORDER BY d.geo_id, d.variable_code, d.metric_code,
+                         d.observation_date DESC,
+                         d.updated_at DESC,
+                         CASE d.dataset_code WHEN 'acs1' THEN 1
+                                             WHEN 'acs5' THEN 2 ELSE 9 END,
+                         d.vintage_year DESC
+                RETURNING geo_id, variable_code, metric_code
+            )
+            DELETE FROM gold_acs_pending_keys p
+            USING resolved r
+            WHERE p.geo_id = r.geo_id
+              AND p.variable_code = r.variable_code
+              AND p.metric_code = r.metric_code
+        $resolve$, v_source.relation, v_source.predicate);
+
+        GET DIAGNOSTICS v_resolved_rows = ROW_COUNT;
+        v_inserted_rows := v_inserted_rows + v_resolved_rows;
+    END LOOP;
 
     RAISE NOTICE
         '[ACS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',

@@ -26,7 +26,7 @@ Identity discipline:
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -45,10 +45,15 @@ from apps.api.schemas import (
     ObservationCoverage,
     ObservationUncertainty,
 )
-from apps.api.services.contracts import ServingContractUnavailable, require_relation
+from apps.api.services.contracts import (
+    ServingContractUnavailable,
+    require_relation,
+    session_memo,
+)
 from data_ingestion_toolbox.sql.catalog_queries import (
     METRIC_RELATION,
     build_metric_detail_query,
+    build_metric_details_query,
 )
 
 #: The two query scopes the resource serves. ``latest`` reads the source's own
@@ -105,11 +110,81 @@ def reduction_refusal(dispatch: ObservationDispatch, reduction: str) -> Optional
     )
 
 
+#: Where one session records the metric rows it has already resolved.
+#:
+#: Safe for the same reason the relation probe's memo is: the warehouse
+#: session is ``REPEATABLE READ``, so a published row cannot change inside one
+#: request, and the memo dies with the session (API-147).
+_RESOLVED_METRICS_KEY = "apps.api.resolved_metrics"
+
+
 def resolve_metric(db: Session, metric_code: str) -> Optional[Mapping[str, Any]]:
-    """The glossary row owning ``metric_code``, or ``None`` when unknown."""
+    """The glossary row owning ``metric_code``, or ``None`` when unknown.
+
+    Resolved at most once per code per session. An evidence packet reuses
+    three or four measures across a dozen blocks, and each block used to cost
+    its own round trip for each of them.
+    """
+    memo = session_memo(db, _RESOLVED_METRICS_KEY)
+    if memo is not None and metric_code in memo:
+        return memo[metric_code]
     require_relation(db, METRIC_RELATION)
     detail_query, params = build_metric_detail_query(metric_code)
-    return db.execute(detail_query, params).mappings().first()
+    row = db.execute(detail_query, params).mappings().first()
+    if memo is not None:
+        memo[metric_code] = row
+    return row
+
+
+def resolve_metrics(
+    db: Session, metric_codes: Sequence[str]
+) -> dict[str, Mapping[str, Any]]:
+    """Every named metric's glossary row, by code, in one statement (API-147).
+
+    A composition names several measures -- two to eight for
+    `/comparison/matrix`, up to fifty blocks in an evidence packet -- and
+    resolving them through `resolve_metric` was one round trip each, behind
+    one relation guard each. The guard is memoised per session now, and this
+    collapses the reads.
+
+    Codes the glossary does not publish are simply absent from the answer,
+    which is the same thing `resolve_metric` says with `None`. Every caller
+    already has the refusal it wants to raise for an unknown code, and this
+    does not choose one for them.
+    """
+    memo = session_memo(db, _RESOLVED_METRICS_KEY)
+    wanted = list(dict.fromkeys(code for code in metric_codes if code))
+    if memo is not None:
+        wanted = [code for code in wanted if code not in memo]
+    if not wanted:
+        return _from_memo(memo, metric_codes)
+
+    require_relation(db, METRIC_RELATION)
+    details_query, params = build_metric_details_query(wanted)
+    rows = db.execute(details_query, params).mappings().all()
+    found = {str(row["metric_code"]): row for row in rows}
+    if memo is not None:
+        # Every code asked about, including the ones the glossary does not
+        # publish: recording only the hits would send a later `resolve_metric`
+        # for an unknown code back to the database for the same `None`.
+        for code in wanted:
+            memo[code] = found.get(code)
+        return _from_memo(memo, metric_codes)
+    return found
+
+
+def _from_memo(
+    memo: Optional[dict], metric_codes: Sequence[str]
+) -> dict[str, Mapping[str, Any]]:
+    """What the memo holds for the codes asked about, absences omitted."""
+    if memo is None:
+        return {}
+    resolved: dict[str, Mapping[str, Any]] = {}
+    for code in metric_codes:
+        row = memo.get(code)
+        if row is not None:
+            resolved[code] = row
+    return resolved
 
 
 def dispatch_for_metric(metric: Mapping[str, Any]) -> ObservationDispatch:

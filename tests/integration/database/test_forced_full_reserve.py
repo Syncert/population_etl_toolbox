@@ -320,3 +320,121 @@ def test_a_forced_reserve_does_not_push_the_source_watermark_forward(
 
     assert after >= before
     assert after <= silver_max
+
+
+# --- DB-048: the serving relations are vacuumed and analysed on purpose ------
+
+
+def test_every_serving_table_carries_its_autovacuum_settings(
+    postgres_connection_factory: Callable[[], connection],
+) -> None:
+    """Covers: DB-048 — the bootstrap applies them, not an operator.
+
+    At PostgreSQL's 20% default scale factor these tables reach their
+    autovacuum threshold only after millions of dead tuples, which is how
+    `BETA_RESET_REINGESTION.md` §7 came to record 54.7 million dead rows
+    against 8.9 million live. The DDL sets the thresholds and `ensure_*`
+    re-applies it, so a warehouse picks them up without a migration.
+
+    Read on whatever actually stores rows. `gold_census.rpt_acs_observations`
+    is partitioned, and a partitioned parent has no storage -- `reloptions`
+    set on it is read by nothing. Checking the parent alone would have passed
+    on a relation whose thirty-seven partitions carried no settings at all.
+    """
+    expected = {
+        "autovacuum_vacuum_scale_factor=0.02",
+        "autovacuum_analyze_scale_factor=0.01",
+        "autovacuum_vacuum_cost_limit=2000",
+    }
+    relations = [
+        "gold_census.rpt_acs_observations",
+        "gold_census.mv_acs_latest",
+        "gold_bls.rpt_bls_observations",
+        "gold_bls.mv_bls_latest",
+        "gold_fred.rpt_fred_observations",
+        "gold_fred.mv_fred_latest",
+    ]
+
+    database = postgres_connection_factory()
+    try:
+        with database.cursor() as cursor:
+            for relation in relations:
+                # A partitioned parent holds no storage, so `reloptions` on it
+                # sets nothing the autovacuum daemon reads. The settings have
+                # to be on the relations that have rows, and on every one of
+                # them -- including the default partition, which a year chunk
+                # never truncates (DB-056).
+                cursor.execute(
+                    """
+                    SELECT c.oid::regclass::TEXT, c.reloptions
+                    FROM pg_class c
+                    WHERE c.oid = %s::regclass AND c.relkind <> 'p'
+                    UNION ALL
+                    SELECT c.oid::regclass::TEXT, c.reloptions
+                    FROM pg_inherits i
+                    JOIN pg_class c ON c.oid = i.inhrelid
+                    WHERE i.inhparent = %s::regclass
+                    ORDER BY 1
+                    """,
+                    (relation, relation),
+                )
+                carriers = cursor.fetchall()
+                assert carriers, f"{relation} does not exist"
+                for name, reloptions in carriers:
+                    options = set(reloptions or [])
+                    assert expected <= options, f"{name} carries {sorted(options)}"
+    finally:
+        database.close()
+
+
+def test_a_chunk_leaves_current_statistics_behind(
+    postgres_connection_factory: Callable[[], connection],
+    reserve_token: str,
+) -> None:
+    """Covers: DB-048 — the next chunk plans against the rows that are there.
+
+    The refresh is delete-then-reinsert per year. Without this, by the second
+    chunk of a twenty-year re-serve every plan was built from statistics
+    describing rows that had been deleted.
+    """
+    _seed(postgres_connection_factory, reserve_token)
+    hook = PostgresHookStub(postgres_connection_factory)
+
+    database = postgres_connection_factory()
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "SELECT last_analyze, last_autoanalyze "
+                "FROM pg_stat_user_tables "
+                "WHERE schemaname = 'gold_fred' AND relname = 'rpt_fred_observations'"
+            )
+            before = cursor.fetchone()
+    finally:
+        database.close()
+
+    refresh_serving_layer_in_year_chunks(
+        hook=hook, config=FRED_CHUNK_CONFIG, force_full=True
+    )
+
+    database = postgres_connection_factory()
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "SELECT last_analyze, last_autoanalyze "
+                "FROM pg_stat_user_tables "
+                "WHERE schemaname = 'gold_fred' AND relname = 'rpt_fred_observations'"
+            )
+            after = cursor.fetchone()
+    finally:
+        database.close()
+
+    assert after is not None
+    latest_after = max(stamp for stamp in after if stamp is not None)
+    latest_before = (
+        max((stamp for stamp in (before or ()) if stamp is not None), default=None)
+        if before
+        else None
+    )
+    assert latest_before is None or latest_after > latest_before, (
+        "the chunk committed and left the planner's statistics where they were"
+    )

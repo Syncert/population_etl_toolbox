@@ -61,7 +61,15 @@ jobs:
           python -m venv .package-smoke
           WHEEL="$(find dist -name '*.whl' -print -quit)"
           .package-smoke/bin/python -m pip install --upgrade pip
-          .package-smoke/bin/python -m pip install "${WHEEL}[api]"
+          # The dependency set comes from the reviewed lock, by hash, and the
+          # wheel is then installed against it without resolving again
+          # (ENV-022). Installing `${WHEEL}[api]` on its own re-resolved every
+          # range in `pyproject.toml`, so this job graded a package built from
+          # one dependency set and installed against whatever PyPI answered
+          # that morning -- which is not the set the image ships.
+          .package-smoke/bin/python -m pip install --require-hashes \
+            -r requirements/api.lock.txt
+          .package-smoke/bin/python -m pip install --no-deps "${WHEEL}"
           .package-smoke/bin/python -m pip check
 
       - name: Import smoke test

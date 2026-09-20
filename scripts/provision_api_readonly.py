@@ -11,6 +11,12 @@ from pathlib import Path
 import psycopg2
 from psycopg2 import sql
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+#: The one reviewed statement of what the serving role may read.
+BOOTSTRAP_SQL = REPOSITORY_ROOT / "sql/bootstrap/001_api_readonly.sql"
+#: The role that holds the grants. A differently named login joins it.
+POLICY_ROLE = "api_reader"
+
 
 def load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -50,82 +56,69 @@ def update_env_file(path: Path, updates: dict[str, str]) -> None:
 
 
 def provision(values: dict[str, str], role_name: str, role_password: str) -> None:
-    database = value(values, "ANALYTICS_DB_NAME", "population_etl")
+    """Apply the reviewed policy, then give one login role a password.
+
+    The grants are not here. `sql/bootstrap/001_api_readonly.sql` is the single
+    statement of what the serving role may read, and this function applies that
+    file rather than repeating it -- the two used to be separate
+    implementations of one policy and had already drifted: the file granted
+    SELECT on sequences and a default privilege for them, and this script
+    granted neither.
+
+    What stays here is the part a checked-in file must not carry: a password.
+
+    `api_reader` is the *policy* role and holds every grant. A deployment that
+    wants a differently named login -- `ANALYTICS_API_DB_USER` -- gets one that
+    is a member of it, rather than a second role someone has to remember to
+    grant the same things to. Membership is what makes one reviewed policy
+    cover both shapes.
+    """
     conn = psycopg2.connect(
         host=value(values, "ANALYTICS_DB_HOST", "localhost"),
         port=int(value(values, "ANALYTICS_DB_PORT", "5432")),
         user=value(values, "ANALYTICS_DB_USER", "postgres"),
         password=value(values, "ANALYTICS_DB_PASSWORD"),
-        dbname=database,
+        dbname=value(values, "ANALYTICS_DB_NAME", "population_etl"),
         connect_timeout=10,
     )
     conn.autocommit = True
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT current_user")
-            owner = str(cursor.fetchone()[0])
-            cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
-            if cursor.fetchone():
-                cursor.execute(
-                    sql.SQL("ALTER ROLE {} LOGIN PASSWORD %s").format(
-                        sql.Identifier(role_name)
-                    ),
-                    (role_password,),
-                )
-            else:
-                cursor.execute(
-                    sql.SQL("CREATE ROLE {} LOGIN PASSWORD %s").format(
-                        sql.Identifier(role_name)
-                    ),
-                    (role_password,),
-                )
+            cursor.execute(BOOTSTRAP_SQL.read_text(encoding="utf-8"))
 
+            cursor.execute(
+                sql.SQL("ALTER ROLE {} LOGIN PASSWORD %s").format(
+                    sql.Identifier(POLICY_ROLE)
+                ),
+                (role_password,),
+            )
+            if role_name == POLICY_ROLE:
+                return
+
+            cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
+            statement = (
+                "ALTER ROLE {} LOGIN PASSWORD %s"
+                if cursor.fetchone()
+                else ("CREATE ROLE {} LOGIN PASSWORD %s")
+            )
+            cursor.execute(
+                sql.SQL(statement).format(sql.Identifier(role_name)), (role_password,)
+            )
+            # Set on the member as well as on the policy role: a role-level
+            # setting is not inherited through membership, so a login that
+            # skipped this would be a writable session holding read-only
+            # grants -- harmless today and exactly the kind of gap that stops
+            # being harmless when a grant is widened.
             cursor.execute(
                 sql.SQL("ALTER ROLE {} SET default_transaction_read_only = on").format(
                     sql.Identifier(role_name)
                 )
             )
             cursor.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(database), sql.Identifier(role_name)
+                sql.SQL("GRANT {} TO {}").format(
+                    sql.Identifier(POLICY_ROLE), sql.Identifier(role_name)
                 )
             )
-            for schema in (
-                "gold",
-                "gold_glossary",
-                "gold_bls",
-                "gold_cdc",
-                "gold_census",
-                "gold_fbi",
-                "gold_fred",
-                "gold_nass",
-                "gold_pep",
-            ):
-                cursor.execute(
-                    "SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema,)
-                )
-                if not cursor.fetchone():
-                    continue
-                cursor.execute(
-                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                        sql.Identifier(schema), sql.Identifier(role_name)
-                    )
-                )
-                cursor.execute(
-                    sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(
-                        sql.Identifier(schema), sql.Identifier(role_name)
-                    )
-                )
-                cursor.execute(
-                    sql.SQL(
-                        "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA {} "
-                        "GRANT SELECT ON TABLES TO {}"
-                    ).format(
-                        sql.Identifier(owner),
-                        sql.Identifier(schema),
-                        sql.Identifier(role_name),
-                    )
-                )
     finally:
         conn.close()
 
@@ -156,8 +149,10 @@ def main() -> int:
             },
         )
     print(
-        f"Provisioned read-only role '{role_name}' for serving schemas "
-        "gold, gold_glossary, gold_bls, gold_census, and gold_fred when present."
+        f"Applied sql/bootstrap/001_api_readonly.sql and provisioned "
+        f"'{role_name}'"
+        + ("" if role_name == "api_reader" else " as a member of api_reader")
+        + "."
     )
     if args.write_env:
         print(f"Updated {env_path} with serving credentials (password not displayed).")

@@ -85,6 +85,7 @@ import {
   correlationReadings,
   crossSectionalPair,
   crossSectionalRefusal,
+  pairedGeographiesText,
   selectablePairs,
   heatmapModel,
   isCrossSectional,
@@ -109,9 +110,10 @@ import {
   workbenchExport,
   workbenchExportFilename,
 } from "../lib/observationExport";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   saveDestination,
@@ -125,6 +127,7 @@ import {
   workbenchLinkCeiling,
 } from "../lib/urlState";
 import type { WorkbenchUrlState } from "../lib/urlState";
+import { formatNumber } from "../lib/format";
 
 const CATALOG_PAGE_SIZE = 1000;
 /** Pages of history per series. Ten pages of 1,000 covers any published run. */
@@ -1354,7 +1357,7 @@ export default function WorkbenchPage() {
       return;
     }
 
-    saveChart({
+    const localSave = saveChart({
       id: `workbench:${series.map((entry) => seriesKey(entry)).join("~")}`,
       version: 1,
       title: saveTitle,
@@ -1390,7 +1393,7 @@ export default function WorkbenchPage() {
       document,
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus(describeSaveSuccess("browser", saveTitle));
+    setSaveStatus(describeLocalSave(localSave, saveTitle, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }, [
     series,
@@ -2093,7 +2096,7 @@ export default function WorkbenchPage() {
                             .map((rule) => rule.reason)
                             .join("; ")
                         : (entry.caveats || []).join(" ") ||
-                          `${(entry.statistic?.n ?? 0).toLocaleString()} paired geographies.`}
+                          pairedGeographiesText(entry.statistic)}
                     </li>
                   );
                 })}
@@ -2196,7 +2199,7 @@ export default function WorkbenchPage() {
                   {referenceLines.map((row) => (
                     <li key={row.entry.key} data-series-key={row.entry.key}>
                       <strong>{row.entry.label}</strong>:{" "}
-                      {row.newest!.value.toLocaleString()} {row.entry.unit} (
+                      {formatNumber(row.newest!.value)} {row.entry.unit} (
                       {row.newest!.period}). {row.offer.reason}
                     </li>
                   ))}
@@ -2324,7 +2327,7 @@ export default function WorkbenchPage() {
                           )}
                         </td>
                         <td>{point.period}</td>
-                        <td>{point.value}</td>
+                        <td>{formatNumber(point.value)}</td>
                         <td>{entry.unit}</td>
                         <td>{String(point.row?.release || "")}</td>
                       </tr>

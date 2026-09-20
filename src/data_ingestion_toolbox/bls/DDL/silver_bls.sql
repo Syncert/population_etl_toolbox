@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS silver_bls.fact_labor_statistics (
     state_fips VARCHAR(2),
     county_fips VARCHAR(3),
     value NUMERIC,
+    -- The provider's own token, and this pipeline's reading of it. The
+    -- revision above already distinguishes valid/missing/invalid; the fact
+    -- used to keep only the number, so an observation BLS footnoted as
+    -- unavailable reached serving as no row at all.
+    source_value TEXT,
+    value_status TEXT NOT NULL DEFAULT 'valid'
+        CHECK (value_status IN ('valid', 'missing', 'invalid')),
     year INTEGER NOT NULL,
     period VARCHAR(10) NOT NULL,
     period_name VARCHAR(100),
@@ -47,9 +54,16 @@ CREATE TABLE IF NOT EXISTS silver_bls.fact_labor_statistics (
     measure_name TEXT,
     seasonal_adjustment VARCHAR(1) DEFAULT 'U',
     source_system VARCHAR(50) DEFAULT 'BLS',
+    -- The response this row was parsed from, so a served value can be traced
+    -- to bytes DQ-SHARED-001 verifies. Nullable for the reason the ACS fact's
+    -- is: a warehouse upgraded by `027_acs_bls_fact_lineage.sql` holds rows
+    -- whose capture was never recorded.
+    capture_id UUID REFERENCES raw_capture.response_capture(capture_id),
     load_batch_id UUID NOT NULL,
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fact_labor_stats_uk UNIQUE (series_id, period_date)
+    CONSTRAINT fact_labor_stats_uk UNIQUE (series_id, period_date),
+    CONSTRAINT fact_labor_statistics_published_value_check
+        CHECK (value_status <> 'valid' OR value IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fact_labor_time_sk ON silver_bls.fact_labor_statistics(time_sk);

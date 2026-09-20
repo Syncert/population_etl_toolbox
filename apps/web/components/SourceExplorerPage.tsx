@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Download, Save } from "lucide-react";
-import * as maplibregl from "maplibre-gl";
+// Types only: MapLibre itself is fetched by `useMapLibre` when a map is
+// drawn, and a value import here would pull it back into this route's
+// static graph, which is the whole point of the split.
 import type {
   ExpressionSpecification,
   FilterSpecification,
+  GeoJSONSource,
   MapLayerMouseEvent,
 } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
@@ -23,6 +26,7 @@ import {
   fetchAllPages,
   fetchCollectionPages,
   getCapabilities,
+  getSources,
   getDistributionBins,
   getHealth,
 } from "../lib/api/client";
@@ -36,6 +40,7 @@ import type {
   MetricRelease,
   MetricSummary,
   Observation,
+  SourceSummary,
 } from "../lib/api/types";
 import {
   CHOROPLETH_PALETTE,
@@ -117,17 +122,18 @@ import {
   supportedViewModes,
   unsupportedViewModes,
 } from "../lib/viewModes";
-import { displayMetricName } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 import {
   GEO_GRAIN_LABELS,
   GEO_GRAIN_ORDER,
   GRAINS_WITHIN_A_STATE,
   geographyPickerState,
 } from "../lib/geographyPicker";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
   describeLibraryLoad,
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   explorerDocument,
@@ -143,6 +149,7 @@ import {
   syncLayerFilter,
   syncLayerPaint,
 } from "../lib/mapWiring";
+import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 import { parseExplorerState, serializeExplorerState } from "../lib/urlState";
 import type { ExplorerState, ValueScale } from "../lib/urlState";
 
@@ -326,6 +333,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     message: "selecting metric",
   });
   const [observations, setObservations] = useState<ObservationRow[]>([]);
+  // The observation table's page. Client-side over rows already loaded: the
+  // read is bounded upstream and says so, this pages what arrived.
+  const [tablePage, setTablePage] = useState(0);
+  // What `/catalog/sources` publishes about each source, keyed by code. The
+  // capability resource carries a display name but no `reference_url`, and a
+  // reference is the source's own to publish -- this panel used to link every
+  // source to the Census Bureau's ACS guidance.
+  const [sourceSystems, setSourceSystems] = useState<Record<string, SourceSummary>>({});
   // What the last observation read was, beyond its rows: the loader computed
   // `complete` and the API's `total` for the status line and then dropped
   // them, so an export of a prefix could not say it was one (WEB-059).
@@ -559,9 +574,10 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     () => new Map(allGeographies.map((item) => [String(item.geo_id), item])),
     [allGeographies],
   );
-  const missingValueLabel = selectedDataset === "acs1"
-    ? "Not published in ACS1"
-    : "No observation";
+  // One label for every source and dataset: what this client knows is that
+  // the answer carried no value for this geography, not which of a
+  // provider's publication rules is the reason.
+  const missingValueLabel = "No observation";
 
   const selectedMetricMeta = metrics.find((metric) => metric.metric_code === selectedMetric);
 
@@ -667,6 +683,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     if (requested.source) {
       setActiveSourceKey(requested.source);
     }
+    if (typeof requested.tablePage === "number") {
+      setTablePage(requested.tablePage);
+    }
 
     async function bootstrap() {
       try {
@@ -678,6 +697,23 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         if (!cancelled) {
           setApiHealth({ state: "bad", message: apiErrorMessage(error) });
         }
+      }
+
+      try {
+        const published = await getSources();
+        if (!cancelled) {
+          setSourceSystems(
+            Object.fromEntries(
+              (Array.isArray(published) ? published : []).map((entry) => [
+                String(entry.source_code),
+                entry,
+              ]),
+            ),
+          );
+        }
+      } catch {
+        // The panel falls back to the code it already has; a missing
+        // reference is a missing link, not a broken screen.
       }
 
       try {
@@ -1319,7 +1355,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // The canvas exists only while the boundary can draw the selection, so the
   // map is removed rather than hidden when that changes. The observation
   // points are this screen's own layer, added once the style has loaded.
-  const { mapRef, ready: mapReady } = useMapLibre(mapContainerRef, mapSupported, (map) => {
+  const { mapRef, ready: mapReady, loadFailed: mapLoadFailed } = useMapLibre(mapContainerRef, mapSupported, (map) => {
     map.addSource("obs", {
       type: "geojson",
       data: {
@@ -1576,7 +1612,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       return;
     }
 
-    const source = map.getSource("obs") as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource("obs") as GeoJSONSource | undefined;
     if (!source) {
       return;
     }
@@ -1615,12 +1651,27 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     if (features.length > 0 && selectedStateFips) {
-      const bounds = new maplibregl.LngLatBounds();
+      // The extent is accumulated as a plain corner pair rather than through
+      // `LngLatBounds`, which would be a value import of the library this
+      // route no longer carries statically. `fitBounds` accepts the pair.
+      let west = Infinity;
+      let south = Infinity;
+      let east = -Infinity;
+      let north = -Infinity;
       for (const feature of features) {
         const [lng, lat] = feature.geometry.coordinates;
-        bounds.extend([lng, lat]);
+        west = Math.min(west, lng);
+        south = Math.min(south, lat);
+        east = Math.max(east, lng);
+        north = Math.max(north, lat);
       }
-      map.fitBounds(bounds, { padding: 30, maxZoom: 7, duration: 800 });
+      map.fitBounds(
+        [
+          [west, south],
+          [east, north],
+        ],
+        { padding: 30, maxZoom: 7, duration: 800 },
+      );
     } else if (!selectedStateFips) {
       map.easeTo({ ...US_OVERVIEW_VIEW, duration: 800 });
     }
@@ -1758,6 +1809,46 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
   // the same reason the reduction above is.
   const viewedStateFips = String(latestRequest?.params.state_fips || "");
 
+  // A new selection starts at the table's first page -- but the *first*
+  // selection does not, because it is the one the link named.
+  //
+  // The measure arrives asynchronously: at mount `selectedMetric` is empty and
+  // the link's page has already been applied, so a reset keyed on "the
+  // selection changed" fires as soon as the catalog answers and throws that
+  // page away. Recording the first settled selection without resetting is
+  // what makes "the page survives a reload" true for exactly the links that
+  // carry a page. The model clamps an out-of-range page anyway, so this is
+  // about where a reader lands, not about safety.
+  const selectionForTable = `${selectedMetric}|${selectedGeoLevel}|${selectedStateFips}|${observationScope}|${dimensionKey}`;
+  const lastTableSelection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedMetric) {
+      return;
+    }
+    if (lastTableSelection.current === null) {
+      lastTableSelection.current = selectionForTable;
+      return;
+    }
+    if (lastTableSelection.current === selectionForTable) {
+      return;
+    }
+    lastTableSelection.current = selectionForTable;
+    setTablePage(0);
+  }, [selectionForTable, selectedMetric]);
+
+  // The observation table's page, and what the table says about itself.
+  //
+  // `/observations` and the source-scoped routes each page a total order the
+  // API declares (the guide's "Paging a history, and what orders it"), so the
+  // caption names it rather than leaving a reader to guess which fifty rows
+  // these are.
+  const observationTableModel = tablePageModel(observations.length, tablePage);
+  const observationTableRows = tablePageRows(observations, tablePage);
+  const observationTableCaption = tableCaption(observationTableModel, {
+    noun: { one: "loaded row", many: "loaded rows" },
+    order: "in the order this resource declares",
+  });
+
   // Keep the URL a shareable reproduction of the current exploration state.
   useEffect(() => {
     if (!selectedMetric || !activeSource) {
@@ -1778,6 +1869,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         // Under the source's own declared filter names, which is what the
         // saved document records too, so the two records of one view agree.
         dimensions: dimensionSelections,
+        tablePage,
       },
       {
         source: sourceKey,
@@ -1808,6 +1900,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     // change when the narrowing does, or it reproduces a different view.
     dimensionKey,
     dimensionSelections,
+    tablePage,
   ]);
 
   function handleSourceChange(key: string) {
@@ -1905,8 +1998,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       apiQuery,
       savedAt: new Date().toISOString(),
     };
-    saveChart(chart);
-    setSaveStatus(describeSaveSuccess("browser", title));
+    setSaveStatus(describeLocalSave(saveChart(chart), title, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }
 
@@ -2141,7 +2233,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             ) : null}
 
             <div className="control-group span-controls">
-              <label htmlFor="metric-select">Metric ({options.length.toLocaleString()} available)</label>
+              <label htmlFor="metric-select">Metric ({formatNumber(options.length)} available)</label>
               <select
                 id="metric-select"
                 className="select"
@@ -2197,7 +2289,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                           {`As released: ${release.release}`}
                           {release.as_of ? ` (as of ${release.as_of})` : ""}
                           {typeof release.observation_count === "number"
-                            ? ` — ${release.observation_count.toLocaleString()} observations`
+                            ? ` — ${formatNumber(release.observation_count)} observations`
                             : ""}
                         </option>
                       ))
@@ -2370,16 +2462,16 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             <p className="metric-meta">
               Source: {selectedMetricMeta.source_code}
               {selectedDataset ? ` | Dataset: ${selectedDataset.toUpperCase()}` : ""}
-              {` | Loaded catalog: ${metrics.length.toLocaleString()} metrics`}
+              {` | Loaded catalog: ${formatNumber(metrics.length)} metrics`}
             </p>
           ) : null}
-          {selectedDataset === "acs1" || selectedDataset === "acs5" ? (
-            <p className={`coverage-note ${selectedDataset === "acs1" ? "partial" : "complete"}`}>
-              {selectedDataset === "acs1"
-                ? "ACS 1-year county coverage is partial: Census publishes counties with populations of 65,000 or more. Uncolored counties are not published in ACS1."
-                : "ACS 5-year estimates provide complete county coverage and are the default for nationwide county maps."}
-            </p>
-          ) : null}
+          {/* Two sentences about Census ACS coverage stood here, naming
+              a population threshold. That is a Census publication rule
+              this client cannot know is still true -- the API publishes no
+              field for it -- and it was stated to a reader as a fact. The
+              uncoloured-geography reason below (WEB-079) already says why a
+              county carries no colour, from the answer rather than from a
+              rule someone typed. */}
 
           <section className="county-panel" aria-live="polite">
             <div className="county-panel-header">
@@ -2490,6 +2582,15 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               ? ` The publication spans ${countObservationPeriods(observations)} periods; each geography is coloured by its newest one.`
               : ""}
           </p>
+          {/* A chunk that never arrives would otherwise be an empty grey
+              rectangle labelled as a map. The table tab holds every value
+              the map colours, so the sentence points at it. */}
+          {mapLoadFailed ? (
+            <p className="status-line" role="status" data-testid="map-load-failed">
+              The map could not be loaded. Every value it would colour is in the
+              observation table.
+            </p>
+          ) : null}
           <div className="map-shell">
             <div
               className="map-canvas"
@@ -2535,11 +2636,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 ) : (
                   <>
                     <span>{missingValueLabel}</span>
-                    <small>
-                      {selectedDataset === "acs1"
-                        ? "ACS1 publishes county estimates only for areas meeting its population threshold."
-                        : "No value was returned for the selected metric and vintage."}
-                    </small>
+                    <small>No value was returned for the selected metric and vintage.</small>
                   </>
                 )}
               </div>
@@ -2561,9 +2658,17 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         ) : null}
 
         <article className="card workspace-panel" data-active={effectiveTab === "table"}>
-          <h2>Observation Sample</h2>
+          <h2>Observation table</h2>
           <div className="table-wrap">
             <table>
+              {/* The map's accessible alternative says how many rows there
+                  are, which of them this page is, and what decides the order
+                  -- without the last, "rows 51 to 100" names no particular
+                  rows (WEB-110). */}
+              <caption data-testid="observation-table-caption">
+                {observationTableCaption}{" "}
+                <span className="subtle">The CSV export carries every loaded row.</span>
+              </caption>
               <thead>
                 <tr>
                   <th>Geo</th>
@@ -2586,7 +2691,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                 </tr>
               </thead>
               <tbody>
-                {observations.slice(0, 12).map((item, index) => (
+                {observationTableRows.map((item, index) => (
                   <tr
                     key={`${item.geo_id}-${observationPeriodLabel(item)}-${item.metric_code}-${String(item.release ?? "")}-${index}`}
                   >
@@ -2645,9 +2750,34 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
               </tbody>
             </table>
           </div>
+          {observationTableModel.pageCount > 1 ? (
+            <nav className="catalog-pagination" aria-label="Observation table pages">
+              <button
+                className="button secondary"
+                type="button"
+                data-testid="observation-table-previous"
+                disabled={!observationTableModel.hasPrevious}
+                onClick={() => setTablePage((current) => Math.max(0, current - 1))}
+              >
+                Previous
+              </button>
+              <span aria-live="polite" data-testid="observation-table-page">
+                {`Page ${observationTableModel.pageIndex + 1} of ${observationTableModel.pageCount}`}
+              </span>
+              <button
+                className="button secondary"
+                type="button"
+                data-testid="observation-table-next"
+                disabled={!observationTableModel.hasNext}
+                onClick={() => setTablePage((current) => current + 1)}
+              >
+                Next
+              </button>
+            </nav>
+          ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats={selectedDataset === "acs1" ? "ACS 1-year county estimates are available only for counties meeting the Census population threshold." : "Validate geographies and coverage before drawing conclusions from sparse source-series values."} />
+          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
         </article>
         {viewModes.quality.supported ? (
           <article className="card workspace-panel" data-active={effectiveTab === "quality"}>

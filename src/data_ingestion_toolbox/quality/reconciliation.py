@@ -19,6 +19,11 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from ..utility.warehouse_manifest import (
+    compare_recorded,
+    manifest_assets,
+    read_recorded_assets,
+)
 from .runner import (
     QualityRunError,
     QualityRunRecord,
@@ -29,6 +34,10 @@ from .runner import (
 
 #: How many offending identifiers a single outcome may carry as evidence.
 EVIDENCE_LIMIT = 20
+
+#: The relation DQ-SHARED-004 reports against. It is the ledger the applier
+#: writes, and it is named once here rather than spelled at each outcome.
+MANIFEST_LEDGER_RELATION = "control.schema_migration_state"
 
 #: Default number of recent captures a bounded checksum pass verifies.
 DEFAULT_CAPTURE_LIMIT = 1000
@@ -473,11 +482,83 @@ def reconcile_requests(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcom
     ]
 
 
+def verify_manifest_ledger(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-SHARED-004 — the warehouse carries the manifest's steps, at its hashes.
+
+    The rule compares the reviewed bootstrap manifest against what this
+    warehouse recorded applying. Until `warehouse-manifest-ledger` the applied
+    side did not exist, which is why this rule was declared and unimplemented:
+    an executor written then would have reported every asset missing on every
+    warehouse, which is a rule that fails for a reason that is not the
+    warehouse's.
+
+    **An empty ledger is `not_applicable`, never a pass.** A warehouse
+    bootstrapped before the applier existed carries the DDL and no rows to
+    prove it, and there is no way to tell that from a warehouse that was never
+    built. Calling that a pass would certify a publication against a rule that
+    read nothing; calling it a failure would fail every warehouse that predates
+    the ledger. The honest answer is that the rule does not yet apply here, and
+    the note says what makes it apply.
+
+    Missing and drifted are separate outcomes for the same reason they are
+    separate in `compare_recorded`: one is a step that never ran, the other is
+    a step that ran against a file that has since changed, and an operator does
+    something different about each.
+    """
+    recorded = read_recorded_assets(cursor)
+    assets = manifest_assets()
+
+    if not recorded:
+        return [
+            RuleOutcome(
+                MANIFEST_LEDGER_RELATION,
+                "not_applicable",
+                partition_detail={
+                    "reason": (
+                        "this warehouse records no bootstrap-manifest asset, so "
+                        "there is nothing to compare the manifest against. A "
+                        "warehouse built before `warehouse-manifest-ledger` "
+                        "carries the DDL and no ledger, and that is "
+                        "indistinguishable here from one that was never built. "
+                        "Re-apply the manifest through "
+                        "`scripts/apply_warehouse_manifest.py`, which records "
+                        "each asset as it applies it, and this rule begins to "
+                        "answer."
+                    ),
+                    "manifest_assets": len(assets),
+                },
+                observed_count=0,
+                expected_count=len(assets),
+            )
+        ]
+
+    missing, drifted = compare_recorded(recorded)
+    return [
+        RuleOutcome(
+            MANIFEST_LEDGER_RELATION,
+            "fail" if missing else "pass",
+            partition_key="missing",
+            observed_count=len(missing),
+            expected_count=0,
+            evidence=list(missing[:EVIDENCE_LIMIT]),
+        ),
+        RuleOutcome(
+            MANIFEST_LEDGER_RELATION,
+            "fail" if drifted else "pass",
+            partition_key="drifted",
+            observed_count=len(drifted),
+            expected_count=0,
+            evidence=list(drifted[:EVIDENCE_LIMIT]),
+        ),
+    ]
+
+
 #: The shared lineage executors every gate evaluation includes.
 SHARED_RECONCILIATION_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-SHARED-001": verify_capture_checksums,
     "DQ-SHARED-002": verify_capture_lineage,
     "DQ-SHARED-003": reconcile_requests,
+    "DQ-SHARED-004": verify_manifest_ledger,
 }
 
 

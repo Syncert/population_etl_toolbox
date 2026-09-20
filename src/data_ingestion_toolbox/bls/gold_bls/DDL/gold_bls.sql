@@ -121,12 +121,20 @@ SELECT
     s.ingested_at      AS updated_at,
     -- Appended, not inserted: CREATE OR REPLACE VIEW only permits new columns
     -- at the end of the select list.
-    s.measure_code
+    s.measure_code,
+    -- Appended for the reason the ACS view's are: `CREATE OR REPLACE VIEW`
+    -- only adds columns at the end.
+    s.value_status,
+    s.source_value,
+    s.capture_id
 FROM silver_bls.fact_labor_statistics s
 JOIN gold_bls.dim_bls_series sr ON sr.series_id = s.series_id
 JOIN gold_bls.dim_bls_survey sv ON sv.bls_survey_sk = sr.bls_survey_sk
-WHERE s.value IS NOT NULL
-  AND s.series_id IS NOT NULL
+-- `s.value IS NOT NULL` used to be here, and removed every observation the
+-- provider withheld. They are served now, with a null value and the status
+-- that says why. What is still excluded is a row with no series to identify
+-- it, which is not a withheld value but an unusable row.
+WHERE s.series_id IS NOT NULL
   AND s.series_id <> '';
 
 -- ============================================================
@@ -163,7 +171,15 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_bls_observations (
     measure_category           TEXT,
     observation_basis          TEXT,
     units                      TEXT,
-    value                      NUMERIC NOT NULL,
+    -- `value` was `NOT NULL`, which is what made a withheld observation
+    -- unservable: there was nowhere to put it. `value_status` says whether the
+    -- absence is the provider's, constrained so a row cannot claim a published
+    -- value and carry none.
+    value                      NUMERIC,
+    value_status               TEXT NOT NULL DEFAULT 'valid'
+        CHECK (value_status IN ('valid', 'missing', 'invalid')),
+    source_value               TEXT,
+    capture_id                 UUID,
     value_type                 TEXT,
     seasonal_adjustment_status TEXT,
     gold_metric_name           TEXT,
@@ -171,6 +187,22 @@ CREATE TABLE IF NOT EXISTS gold_bls.rpt_bls_observations (
     -- Metric catalog association
     metric_code                TEXT,
     metric_display_name        TEXT
+);
+
+-- Autovacuum sized for the churn a year-chunked re-serve creates (DB-048).
+--
+-- The refresh is `DELETE ... WHERE observation_date BETWEEN` followed by a
+-- re-insert, one year at a time. At PostgreSQL's 20% default scale factor a
+-- table this size reaches its autovacuum threshold only after millions of dead
+-- tuples: `BETA_RESET_REINGESTION.md` §7 recorded the ACS equivalent at 37 GB of heap and 25 GB of indexes, and its operator
+-- rule 2 was "vacuum manually; do not wait for autovacuum". These thresholds
+-- are what that rule asks for, applied by the database instead of by a person
+-- who has to remember. `ensure_*` re-applies this DDL, so an existing
+-- warehouse picks them up on its next run without a migration.
+ALTER TABLE gold_bls.rpt_bls_observations SET (
+    autovacuum_vacuum_scale_factor = 0.02,   -- 2% dead, not 20%
+    autovacuum_analyze_scale_factor = 0.01,  -- statistics stay close to the data
+    autovacuum_vacuum_cost_limit = 2000      -- and it is allowed to keep up
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_bls_observations_nk
@@ -211,6 +243,22 @@ CREATE INDEX IF NOT EXISTS ix_rpt_bls_latest_selection
 
 CREATE TABLE IF NOT EXISTS gold_bls.mv_bls_latest
     (LIKE gold_bls.rpt_bls_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+
+-- Autovacuum sized for the churn a year-chunked re-serve creates (DB-048).
+--
+-- The refresh is `DELETE ... WHERE observation_date BETWEEN` followed by a
+-- re-insert, one year at a time. At PostgreSQL's 20% default scale factor a
+-- table this size reaches its autovacuum threshold only after millions of dead
+-- tuples: `BETA_RESET_REINGESTION.md` §7 recorded the ACS equivalent holding 54.7 million dead rows against 8.9 million live, and its operator
+-- rule 2 was "vacuum manually; do not wait for autovacuum". These thresholds
+-- are what that rule asks for, applied by the database instead of by a person
+-- who has to remember. `ensure_*` re-applies this DDL, so an existing
+-- warehouse picks them up on its next run without a migration.
+ALTER TABLE gold_bls.mv_bls_latest SET (
+    autovacuum_vacuum_scale_factor = 0.02,   -- 2% dead, not 20%
+    autovacuum_analyze_scale_factor = 0.01,  -- statistics stay close to the data
+    autovacuum_vacuum_cost_limit = 2000      -- and it is allowed to keep up
+);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_bls_latest
     ON gold_bls.mv_bls_latest (
@@ -293,6 +341,9 @@ BEGIN
         observation_basis,
         units,
         value,
+        value_status,
+        source_value,
+        capture_id,
         value_type,
         seasonal_adjustment_status,
         gold_metric_name,
@@ -326,6 +377,9 @@ BEGIN
         COALESCE(b.observation_basis, s.observation_basis),
         COALESCE(bm.unit_of_measure, bs.unit_of_measure),
         b.value,
+        b.value_status,
+        b.source_value,
+        b.capture_id,
         COALESCE(bm.value_type, b.value_type),
         COALESCE(b.seasonal_adjustment_status, bs.seasonal_adjustment_status),
         bs.gold_metric_name,
@@ -477,8 +531,9 @@ BEGIN
     SELECT MAX(s.ingested_at), MIN(s.period_date), MAX(s.period_date)
       INTO v_high_watermark, v_effective_start, v_effective_end
       FROM silver_bls.fact_labor_statistics s
-     WHERE s.value IS NOT NULL
-       AND (p_start_date IS NULL OR s.period_date >= p_start_date)
+     -- Without the rows the provider withheld, a period whose observations are
+     -- all withheld reported no work to do and was never served.
+     WHERE (p_start_date IS NULL OR s.period_date >= p_start_date)
        AND (p_end_date IS NULL OR s.period_date <= p_end_date)
        AND (p_force_full OR s.ingested_at > v_watermark);
 

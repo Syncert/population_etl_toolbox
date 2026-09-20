@@ -16,7 +16,10 @@ import {
 // the resource for the place's newest published value rather than
 // reducing a page here.
 const neutralRoutes = [
-  { path: "/api/v1/observations", parameters: servedParameters("/api/v1/observations") },
+  {
+    path: "/api/v1/observations",
+    parameters: servedParameters("/api/v1/observations"),
+  },
   {
     path: "/api/v1/observations/releases",
     parameters: servedParameters("/api/v1/observations/releases"),
@@ -86,8 +89,8 @@ const publishedMetrics = {
     freshness_state: "fresh",
     valid_geo_grains: ["COUNTY"],
   },
-  "CENSUS_PEP:pep_cty_alldata:POPESTIMATE": {
-    metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+  "CENSUS_PEP:POPESTIMATE": {
+    metric_code: "CENSUS_PEP:POPESTIMATE",
     metric_display_name: "Resident population estimate",
     source_code: "CENSUS_PEP",
     units: "people",
@@ -132,9 +135,9 @@ const observationsByMetric = {
       uncertainty: { margin_of_error: "1200" },
     },
   ],
-  "CENSUS_PEP:pep_cty_alldata:POPESTIMATE": [
+  "CENSUS_PEP:POPESTIMATE": [
     {
-      metric_code: "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+      metric_code: "CENSUS_PEP:POPESTIMATE",
       source_code: "CENSUS_PEP",
       geo_id: GEO_ID,
       geo_level: "COUNTY",
@@ -187,13 +190,23 @@ async function installRoutes(
     // The API's stable answer for an identity it does not publish.
     return metric
       ? route.fulfill({ json: metric })
-      : route.fulfill({ status: 404, json: { detail: "metric_code not found" } });
+      : route.fulfill({
+          status: 404,
+          json: { detail: "metric_code not found" },
+        });
   });
   await page.route("**/api/v1/catalog/geographies?*", (route) => {
     const level = new URL(route.request().url()).searchParams.get("geo_level");
     const items =
       level === "STATE"
-        ? [{ geo_id: "state:55", geo_level: "STATE", state_fips: "55", state_name: "Wisconsin" }]
+        ? [
+            {
+              geo_id: "state:55",
+              geo_level: "STATE",
+              state_fips: "55",
+              state_name: "Wisconsin",
+            },
+          ]
         : [
             {
               geo_id: GEO_ID,
@@ -204,7 +217,9 @@ async function installRoutes(
               county_name: "Dane County",
             },
           ];
-    return route.fulfill({ json: { total: items.length, limit: 1000, offset: 0, items } });
+    return route.fulfill({
+      json: { total: items.length, limit: 1000, offset: 0, items },
+    });
   });
   await page.route("**/api/v1/observations?*", (route) => {
     const params = new URL(route.request().url()).searchParams;
@@ -228,7 +243,9 @@ async function installRoutes(
   });
 }
 
-test("a card whose read was bounded says so beside the number", async ({ page }) => {
+test("a card whose read was bounded says so beside the number", async ({
+  page,
+}) => {
   // Covers: WEB-070 — the answer's message says "read N of M published
   // rows; the page bound cut the answer short, so this may not be the
   // newest". The card rendered it only `when there is no row`, which is the
@@ -263,17 +280,24 @@ test("a card whose read was bounded says so beside the number", async ({ page })
   expect(csv).toContain("the page bound cut the answer short");
 });
 
-test("the community profile reads a place through published identities", async ({ page }) => {
+test("the community profile reads a place through published identities", async ({
+  page,
+}) => {
   const observationRequests = [];
   await installRoutes(page, { observationRequests });
   await page.goto("/profiles");
 
   const product = page.getByTestId("profile-product");
-  await expect(product).toHaveAttribute("data-template", "community-conditions");
+  await expect(product).toHaveAttribute(
+    "data-template",
+    "community-conditions",
+  );
   // Four of the product's candidate identities are published; the rest are
   // not, and the count is stated rather than the slots being dropped.
   await expect(product).toHaveAttribute("data-available-measures", "4");
-  await expect(page.getByTestId("profile-coverage-note")).toContainText("not published");
+  await expect(page.getByTestId("profile-coverage-note")).toContainText(
+    "not published",
+  );
   await expect(page.getByTestId("template-limits")).toContainText(
     "Nothing here is combined into a score",
   );
@@ -283,33 +307,47 @@ test("the community profile reads a place through published identities", async (
 
   // A filled slot shows the value with its own unit, and names the identity
   // that answered rather than only the slot's label.
-  await expect(page.getByTestId("measure-value-total-population")).toContainText("561,504");
+  await expect(
+    page.getByTestId("measure-value-total-population"),
+  ).toContainText("561,504");
   await expect(page.getByTestId("measure-total-population")).toContainText(
     "CENSUS_ACS:acs5:B01003_001",
   );
-  await expect(page.getByTestId("measure-total-population")).toContainText("Source: CENSUS_ACS");
-  await expect(page.getByTestId("measure-total-population")).toContainText("2023-01-01");
-  await expect(page.getByTestId("measure-total-population")).toContainText("1,200");
+  await expect(page.getByTestId("measure-total-population")).toContainText(
+    "Source: CENSUS_ACS",
+  );
+  await expect(page.getByTestId("measure-total-population")).toContainText(
+    "2023-01-01",
+  );
+  await expect(page.getByTestId("measure-total-population")).toContainText(
+    "1,200",
+  );
 
   // Two population measures from different programs sit side by side, each
   // with its own period and freshness — never merged into one number.
-  await expect(page.getByTestId("measure-value-population-estimate")).toContainText("568,203");
-  await expect(page.getByTestId("measure-freshness-population-estimate")).toContainText("stale");
-  await expect(page.getByTestId("measure-freshness-total-population")).toContainText("fresh");
+  await expect(
+    page.getByTestId("measure-value-population-estimate"),
+  ).toContainText("568,203");
+  await expect(
+    page.getByTestId("measure-freshness-population-estimate"),
+  ).toContainText("stale");
+  await expect(
+    page.getByTestId("measure-freshness-total-population"),
+  ).toContainText("fresh");
 
   // A suppressed value is stated, never rendered as a number or a zero.
-  await expect(page.getByTestId("measure-value-median-household-income")).toContainText(
-    "Not published for this place",
-  );
-  await expect(page.getByTestId("measure-status-median-household-income")).toContainText(
-    "suppressed",
-  );
+  await expect(
+    page.getByTestId("measure-value-median-household-income"),
+  ).toContainText("Not published for this place");
+  await expect(
+    page.getByTestId("measure-status-median-household-income"),
+  ).toContainText("suppressed");
 
   // A measure that published nothing for this place is a different fact,
   // and says so.
-  await expect(page.getByTestId("measure-answer-unemployment-rate")).toContainText(
-    "not published for this place",
-  );
+  await expect(
+    page.getByTestId("measure-answer-unemployment-rate"),
+  ).toContainText("not published for this place");
 
   // A slot no published identity satisfies states what it looked for.
   await expect(page.getByTestId("measure-cdc-indicator")).toHaveAttribute(
@@ -317,7 +355,7 @@ test("the community profile reads a place through published identities", async (
     "false",
   );
   await expect(page.getByTestId("measure-reason-cdc-indicator")).toContainText(
-    "CDC:cdi:ALC1_1:crude",
+    "CDC:cdi:ALC06:AGEADJPREV",
   );
   // Its section is still rendered: an absent measure is not a place with
   // nothing to report.
@@ -325,8 +363,12 @@ test("the community profile reads a place through published identities", async (
   await expect(page.getByTestId("section-safety")).toBeVisible();
 
   // Every request carried the place through the source's declared filter.
-  expect(observationRequests.every((request) => request.geo_id === GEO_ID)).toBe(true);
-  expect(observationRequests.every((request) => request.scope === "latest")).toBe(true);
+  expect(
+    observationRequests.every((request) => request.geo_id === GEO_ID),
+  ).toBe(true);
+  expect(
+    observationRequests.every((request) => request.scope === "latest"),
+  ).toBe(true);
 
   // Covers: WEB-036 — a card wants the place's newest published value, and
   // asks the resource for exactly that. It used to read a 50-row page of the
@@ -335,9 +377,13 @@ test("the community profile reads a place through published identities", async (
   // every estimated year of the current vintage, so it did not.
   expect(observationRequests.length).toBeGreaterThan(0);
   expect(
-    observationRequests.every((request) => request.newest_per_geography === "true"),
+    observationRequests.every(
+      (request) => request.newest_per_geography === "true",
+    ),
   ).toBe(true);
-  expect(observationRequests.every((request) => request.limit === "1")).toBe(true);
+  expect(observationRequests.every((request) => request.limit === "1")).toBe(
+    true,
+  );
 
   // Each measure keeps a direct path into the explorer, and that path names
   // the source publishing the measure as well as the measure itself
@@ -355,7 +401,9 @@ test("the community profile reads a place through published identities", async (
   await expect(page).toHaveURL(/place=state%3A55%7Ccounty%3A025/);
 });
 
-test("the products are configuration: switching rebuilds the same screen", async ({ page }) => {
+test("the products are configuration: switching rebuilds the same screen", async ({
+  page,
+}) => {
   await installRoutes(page);
   await page.goto("/profiles");
   const product = page.getByTestId("profile-product");
@@ -363,7 +411,9 @@ test("the products are configuration: switching rebuilds the same screen", async
   await page.getByTestId("template-select").selectOption("workforce");
   await expect(product).toHaveAttribute("data-template", "workforce");
   await expect(page).toHaveURL(/template=workforce/);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Workforce");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Workforce",
+  );
   // The same slot machinery answers a different product: the labor section
   // resolves, the population base partly resolves, and the unresolved slots
   // state their candidates.
@@ -372,13 +422,19 @@ test("the products are configuration: switching rebuilds the same screen", async
     "data-available",
     "false",
   );
-  await expect(page.getByTestId("measure-reason-participation")).toContainText("FRED:CIVPART");
+  await expect(page.getByTestId("measure-reason-participation")).toContainText(
+    "FRED:CIVPART",
+  );
 
   // A shared product link reopens the same product for the same place.
-  await page.goto("/profiles?template=population-growth&place=state%3A55%7Ccounty%3A025");
+  await page.goto(
+    "/profiles?template=population-growth&place=state%3A55%7Ccounty%3A025",
+  );
   await expect(product).toHaveAttribute("data-template", "population-growth");
   await expect(product).toHaveAttribute("data-geo-id", GEO_ID);
-  await expect(page.getByTestId("measure-value-population-estimate")).toContainText("568,203");
+  await expect(
+    page.getByTestId("measure-value-population-estimate"),
+  ).toContainText("568,203");
 });
 
 // Covers: WEB-060 — the profile shows every field that qualifies a value.
@@ -391,7 +447,7 @@ test("the products are configuration: switching rebuilds the same screen", async
 // filled one.
 test("a filled CDC slot shows the interval CDC published", async ({ page }) => {
   const cdcMetric = {
-    metric_code: "CDC:cdi:ALC1_1:crude",
+    metric_code: "CDC:cdi:ALC06:AGEADJPREV",
     metric_display_name: "Binge drinking among adults",
     source_code: "CDC",
     units: "percent",
@@ -466,14 +522,105 @@ test("a filled CDC slot shows the interval CDC published", async ({ page }) => {
     "data-available",
     "true",
   );
-  await expect(page.getByTestId("measure-value-cdc-indicator")).toContainText("18.2");
+  await expect(page.getByTestId("measure-value-cdc-indicator")).toContainText(
+    "18.2",
+  );
   // The interval is shown, not suppressed behind an absent margin.
-  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
-    "confidence lower 16.9",
-  );
-  await expect(page.getByTestId("measure-uncertainty-cdc-indicator")).toContainText(
-    "confidence upper 19.5",
-  );
+  await expect(
+    page.getByTestId("measure-uncertainty-cdc-indicator"),
+  ).toContainText("confidence lower 16.9");
+  await expect(
+    page.getByTestId("measure-uncertainty-cdc-indicator"),
+  ).toContainText("confidence upper 19.5");
   // A measure that published no interval grows no such line.
-  await expect(page.getByTestId("measure-uncertainty-population-estimate")).toHaveCount(0);
+  await expect(
+    page.getByTestId("measure-uncertainty-population-estimate"),
+  ).toHaveCount(0);
+});
+
+// Covers: WEB-021 — a second-wave product is the same machinery, and its
+// gaps are stated rather than hidden.
+//
+// The second wave adds no component and no fetch path: it is five more
+// entries in `PRODUCT_TEMPLATES`. That is the claim worth testing in a
+// browser, because it is the claim that would fail quietly — a product that
+// needed its own rendering would still render here, and only a reader would
+// find out that a slot it could not fill had silently disappeared.
+test("a second-wave product renders, states its gaps, and reaches the explorer", async ({
+  page,
+}) => {
+  await installRoutes(page);
+  await page.goto(
+    "/profiles?template=disease-illness-burden&place=state%3A55%7Ccounty%3A025",
+  );
+
+  const product = page.getByTestId("profile-product");
+  await expect(product).toHaveAttribute(
+    "data-template",
+    "disease-illness-burden",
+  );
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Community disease and illness burden",
+  );
+
+  // The slot the served catalog can fill shows the identity that answered.
+  await expect(page.getByTestId("measure-total-population")).toHaveAttribute(
+    "data-available",
+    "true",
+  );
+
+  // The slot it cannot fill states what it looked for. A CDC indicator is
+  // the point of this product, so a deployment without CDC must say the
+  // measure is absent rather than render a product that looks complete.
+  await expect(
+    page.getByTestId("measure-cdc-chronic-indicator"),
+  ).toHaveAttribute("data-available", "false");
+  await expect(
+    page.getByTestId("measure-reason-cdc-chronic-indicator"),
+  ).toContainText("CDC:cdi:ALC06:AGEADJPREV");
+
+  // And the filled slot keeps its path into the explorer, naming the
+  // identity that answered rather than the slot's label.
+  const explore = page.getByTestId("measure-explore-total-population");
+  await expect(explore).toHaveAttribute(
+    "href",
+    /metric=CENSUS_ACS%3Aacs5%3AB01003_001/,
+  );
+  await expect(explore).toHaveAttribute("href", /source=CENSUS_ACS/);
+});
+
+test("every product the array holds is offered, with no per-product screen", async ({
+  page,
+}) => {
+  await installRoutes(page);
+  await page.goto("/profiles");
+
+  // `/profiles` maps whatever `PRODUCT_TEMPLATES` holds, so the second wave
+  // is listed by existing. If this ever needs a per-product branch, the
+  // product has stopped being configuration.
+  const select = page.getByTestId("template-select");
+  const offered = await select
+    .locator("option")
+    .evaluateAll((nodes) => nodes.map((node) => node.value));
+  expect(offered).toEqual([
+    "community-conditions",
+    "population-growth",
+    "workforce",
+    "housing-affordability",
+    "aging-population",
+    "disease-illness-burden",
+    "public-safety-trend",
+    "rural-agricultural-economy",
+  ]);
+
+  // Switching to one rebuilds the same screen, as it does for the first wave.
+  await select.selectOption("housing-affordability");
+  await expect(page.getByTestId("profile-product")).toHaveAttribute(
+    "data-template",
+    "housing-affordability",
+  );
+  await expect(page).toHaveURL(/template=housing-affordability/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Housing affordability",
+  );
 });

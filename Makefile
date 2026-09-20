@@ -43,6 +43,14 @@ bootstrap: bootstrap-python bootstrap-web
 # network, and pip's default single retry does not separate those.
 BOOTSTRAP_VENV = .venv
 PIP_BOOTSTRAP = -m pip install --timeout 60 --retries 5
+# The reviewed dependency set the API image installs (ENV-022). Installed
+# first, by hash, so a contributor's .venv holds the versions the image holds;
+# `.[local]` then adds the development tools, which are exact-pinned in
+# pyproject.toml and are not part of the image. It is applied as a first
+# install rather than as a constraints file because a constraints file
+# carrying hashes puts pip into hash-requiring mode for the whole run, and
+# `-e .` has no hash to offer.
+API_LOCK = requirements/api.lock.txt
 
 bootstrap-python:
 	@set -e; \
@@ -59,12 +67,27 @@ bootstrap-python:
 	    bootstrap_python='$(BOOTSTRAP_VENV)/bin/python'; \
 	  fi; \
 	  $$bootstrap_python $(PIP_BOOTSTRAP) --upgrade pip; \
+	  if [ -f '$(API_LOCK)' ]; then \
+	    echo "bootstrap: installing the API dependency set from $(API_LOCK)."; \
+	    $$bootstrap_python $(PIP_BOOTSTRAP) --require-hashes -r '$(API_LOCK)'; \
+	  fi; \
 	  $$bootstrap_python $(PIP_BOOTSTRAP) -e ".[local]"; \
 	  if [ "$$bootstrap_python" != python ]; then \
 	    echo ""; \
 	    echo "bootstrap: activate it before running the checks:"; \
 	    echo "    source $(BOOTSTRAP_VENV)/bin/activate"; \
 	  fi
+
+# Re-resolve the API dependency set. Review the diff: this is the file that
+# decides what the deployed image contains.
+lock-api:
+	@set -e; \
+	  command -v uv >/dev/null 2>&1 || { \
+	    echo "lock-api needs uv (https://docs.astral.sh/uv/); install it first."; \
+	    exit 1; \
+	  }; \
+	  python tools/lock/refresh_api_lock.py
+
 
 bootstrap-web:
 	@set -e; \

@@ -81,6 +81,14 @@ def test_an_empty_warehouse_is_valid_emptiness_not_failure(
             # an earlier suite in the session committed.
             "DELETE FROM raw_fred.fred_datasets",
             "DELETE FROM raw_fred.fred_series",
+            # The tile tier's seed puts one ACS row in the serving layer with
+            # no silver behind it -- it is a fixture for Martin, not pipeline
+            # output. `DQ-ACS-007` reads the served relation and is right to
+            # call that row unbacked, so this test's premise has to empty it
+            # the way it empties the others. The transaction is rolled back,
+            # so the seed survives for the tiers that need it.
+            "DELETE FROM gold_census.mv_acs_latest",
+            "DELETE FROM gold_census.rpt_acs_observations",
         ):
             cursor.execute(statement)
         _assert_warehouse_is_empty(cursor)

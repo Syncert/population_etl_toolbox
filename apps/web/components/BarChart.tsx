@@ -20,6 +20,7 @@
 // saying nothing about it is the misleading part.
 
 import type { AxisAssignment } from "../lib/workbench";
+import { formatNumber } from "../lib/format";
 
 const WIDTH = 680;
 const HEIGHT = 320;
@@ -45,7 +46,7 @@ export interface BarDatum {
 }
 
 function formatValue(value: number): string {
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return formatNumber(value, { maximumFractionDigits: 3 });
 }
 
 /** What the category axis counts, singular or plural. */

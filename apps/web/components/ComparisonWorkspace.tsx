@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Download, Save } from "lucide-react";
-import ChoroplethMap from "./ChoroplethMap";
 import ScatterChart from "./ScatterChart";
 import StatusPill from "./StatusPill";
 import {
@@ -16,6 +16,22 @@ import {
   getComparisonPreflight,
 } from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
+
+// The map arrives in its own chunk, requested when the map panel is rendered.
+//
+// `ssr: false` because MapLibre needs a DOM and a WebGL context, and this
+// panel renders only where `viewModes.map.supported` already holds. The
+// loading element states what is happening and says where the values are,
+// so the wait is never an unexplained gap: the aligned table below carries
+// every value the map would colour.
+const ChoroplethMap = dynamic(() => import("./ChoroplethMap"), {
+  ssr: false,
+  loading: () => (
+    <p className="status-line" role="status" data-testid="comparison-map-loading">
+      Loading the map. Every value it colours is in the aligned table below.
+    </p>
+  ),
+});
 import type {
   ComparisonPreflight,
   ComparisonResponse,
@@ -54,10 +70,11 @@ import type {
   ComparisonSelection,
   ComparisonSide,
 } from "../lib/comparison";
-import { saveChart } from "../lib/savedCharts";
+import { SAVED_CHART_LIMIT, saveChart } from "../lib/savedCharts";
 import { useStoredToken } from "../lib/apiToken";
 import {
   comparisonDocument,
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   saveDestination,
@@ -76,6 +93,8 @@ import {
   serializeComparisonState,
 } from "../lib/urlState";
 import type { GeoLevel } from "../lib/urlState";
+import { formatNumber } from "../lib/format";
+import { tableCaption, tablePageModel, tablePageRows } from "../lib/tablePage";
 
 const DEFAULT_GEO_LEVEL = "COUNTY";
 const CATALOG_PAGE_SIZE = 1000;
@@ -96,10 +115,16 @@ const SIDE_LABEL: Record<SideKey, string> = { a: "Measure A", b: "Measure B" };
 
 export default function ComparisonWorkspace() {
   const capabilitiesTracker = useRef(createRequestTracker()).current;
-  const metricsTrackers = {
-    a: useRef(createRequestTracker()).current,
-    b: useRef(createRequestTracker()).current,
-  };
+  const metricsTrackerA = useRef(createRequestTracker()).current;
+  const metricsTrackerB = useRef(createRequestTracker()).current;
+  // Each tracker is stable; the object holding them was not, so an effect
+  // depending on it re-ran every render and the dependency had to be
+  // suppressed. Memoised, it can be a real dependency.
+  const metricsTrackers: Record<SideKey, ReturnType<typeof createRequestTracker>> =
+    useMemo(
+      () => ({ a: metricsTrackerA, b: metricsTrackerB }),
+      [metricsTrackerA, metricsTrackerB],
+    );
   const preflightTracker = useRef(createRequestTracker()).current;
   const comparisonTracker = useRef(createRequestTracker()).current;
   const geographyTracker = useRef(createRequestTracker()).current;
@@ -107,6 +132,13 @@ export default function ComparisonWorkspace() {
   // The requested link state, applied once each side's catalog arrives so a
   // shared link reopens the same pair rather than a default one.
   const requestedRef = useRef<ReturnType<typeof parseComparisonState> | null>(null);
+  // The discovered sources, mirrored for the one place that needs the current
+  // list without wanting to re-run when it changes: the catalog effect below
+  // names a source in a notice, and re-fetching both catalogs because a source
+  // title arrived would be a request nothing asked for. Naming it a ref says
+  // that out loud, where suppressing the dependency rule said nothing.
+  const sourcesRef = useRef<ExplorerSource[]>([]);
+  const [tablePage, setTablePage] = useState(0);
 
   const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [sourcesError, setSourcesError] = useState("");
@@ -157,6 +189,9 @@ export default function ComparisonWorkspace() {
   useEffect(() => {
     const request = capabilitiesTracker.begin();
     requestedRef.current = parseComparisonState(window.location.search);
+    if (typeof requestedRef.current.tablePage === "number") {
+      setTablePage(requestedRef.current.tablePage);
+    }
 
     async function loadCapabilities() {
       try {
@@ -166,6 +201,7 @@ export default function ComparisonWorkspace() {
           return;
         }
         setSources(discovered);
+        sourcesRef.current = discovered;
         const requested = requestedRef.current;
         const first = discovered[0]?.key || "";
         const second = discovered[1]?.key || first;
@@ -228,7 +264,7 @@ export default function ComparisonWorkspace() {
           const resolved = requestedMetricState({
             requested: wanted,
             items,
-            sourceTitle: findExplorerSource(sources, sourceCode)?.title,
+            sourceTitle: findExplorerSource(sourcesRef.current, sourceCode)?.title,
           });
           setRequestedMetricNotice((current) => ({
             ...current,
@@ -262,8 +298,7 @@ export default function ComparisonWorkspace() {
         }
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceCodes.a, sourceCodes.b]);
+  }, [metricsTrackers, sourceCodes]);
 
   useEffect(() => {
     const request = geographyTracker.begin();
@@ -311,8 +346,13 @@ export default function ComparisonWorkspace() {
   }, [tileTracker]);
 
   const complete = selectionIsComplete(selection);
+  // The four fields a comparison request is built from, named individually so
+  // the effects below depend on the values they actually send rather than on
+  // the whole selection object.
   const metricCodeA = selection.a.metricCode;
   const metricCodeB = selection.b.metricCode;
+  const selectionGeoLevel = selection.geoLevel;
+  const selectionStateFips = selection.stateFips;
 
   // Preflight first, always. The verdict decides whether any comparison data
   // may be requested at all, so it is asked before the pair is queried and
@@ -332,9 +372,8 @@ export default function ComparisonWorkspace() {
       try {
         const payload = await getComparisonPreflight(
           preflightRequestParams({
-            ...selection,
-            a: { ...selection.a, metricCode: metricCodeA },
-            b: { ...selection.b, metricCode: metricCodeB },
+            a: { metricCode: metricCodeA },
+            b: { metricCode: metricCodeB },
           }),
         );
         if (!request.isCurrent()) {
@@ -353,13 +392,21 @@ export default function ComparisonWorkspace() {
     return () => {
       preflightTracker.invalidate();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preflightTracker, metricCodeA, metricCodeB]);
 
   const comparable = mayRequestComparison(preflight);
 
   useEffect(() => {
     setComparison(null);
+    // The pair this effect would send, not the pair the verdict was given
+    // for. Both measures are now dependencies -- the request is built from
+    // them -- so the effect runs on the intermediate state where one side has
+    // been cleared and the previous pair's `comparable` verdict is still
+    // held. Requesting there sends a comparison naming one measure.
+    if (!metricCodeA || !metricCodeB) {
+      setComparisonStatus({ state: "idle", message: "select two measures" });
+      return;
+    }
     if (!preflight) {
       setComparisonStatus({
         state: "idle",
@@ -387,7 +434,15 @@ export default function ComparisonWorkspace() {
         // scatter, the map, and the export from the first thousand rows by
         // geo_id (WEB-039).
         const pages = await fetchComparisonPages(
-          comparisonRequestParams(selection, COMPARISON_PAGE_SIZE),
+          comparisonRequestParams(
+            {
+              a: { metricCode: metricCodeA },
+              b: { metricCode: metricCodeB },
+              geoLevel: selectionGeoLevel,
+              stateFips: selectionStateFips,
+            },
+            COMPARISON_PAGE_SIZE,
+          ),
           { pageSize: COMPARISON_PAGE_SIZE, maxPages: COMPARISON_PAGE_LIMIT },
         );
         if (!request.isCurrent()) {
@@ -420,8 +475,15 @@ export default function ComparisonWorkspace() {
     return () => {
       comparisonTracker.invalidate();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comparisonTracker, preflight, comparable, selection.geoLevel, selection.stateFips]);
+  }, [
+    comparisonTracker,
+    preflight,
+    comparable,
+    metricCodeA,
+    metricCodeB,
+    selectionGeoLevel,
+    selectionStateFips,
+  ]);
 
   // The link reproduces the selection, never the verdict.
   useEffect(() => {
@@ -436,6 +498,7 @@ export default function ComparisonWorkspace() {
         sourceB: selection.b.sourceCode,
         geoLevel: selection.geoLevel as GeoLevel,
         stateFips: selection.stateFips,
+        tablePage,
       },
       { geoLevel: DEFAULT_GEO_LEVEL as GeoLevel },
     );
@@ -443,7 +506,7 @@ export default function ComparisonWorkspace() {
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
       window.history.replaceState(null, "", nextUrl);
     }
-  }, [complete, selection]);
+  }, [complete, selection, tablePage]);
 
   const model = useMemo(() => describePreflight(preflight), [preflight]);
   const alternatives = useMemo(() => incompatibleAlternatives(preflight), [preflight]);
@@ -452,6 +515,15 @@ export default function ComparisonWorkspace() {
     () => (Array.isArray(comparison?.items) ? comparison.items : []),
     [comparison],
   );
+  // The aligned table's page. Client-side over rows already fetched: the read
+  // is paged upstream and says when it was cut short, this pages what arrived.
+  const tableModel = tablePageModel(rows.length, tablePage);
+  const tableRows = tablePageRows(rows, tablePage);
+  const tableCaptionText = tableCaption(tableModel, {
+    noun: { one: "aligned geography", many: "aligned geographies" },
+    order: "in the order `/comparison` declares",
+  });
+
   const scatter = useMemo(() => comparisonScatterModel(comparison), [comparison]);
   const derivedField = useMemo(() => defaultDerivedField(comparison), [comparison]);
   const mapRows = useMemo(
@@ -597,7 +669,7 @@ export default function ComparisonWorkspace() {
       return;
     }
 
-    saveChart({
+    const localSave = saveChart({
       id: `comparison:${selection.a.metricCode}:${selection.b.metricCode}:${selection.geoLevel}:${selection.stateFips || "US"}`,
       version: 1,
       title,
@@ -614,7 +686,7 @@ export default function ComparisonWorkspace() {
       apiQuery,
       savedAt: new Date().toISOString(),
     });
-    setSaveStatus(describeSaveSuccess("browser", title));
+    setSaveStatus(describeLocalSave(localSave, title, SAVED_CHART_LIMIT));
     window.setTimeout(() => setSaveStatus(null), 4000);
   }
 
@@ -735,7 +807,7 @@ export default function ComparisonWorkspace() {
                   ))}
                 </select>
                 <label htmlFor={`metric-${side}`}>
-                  {SIDE_LABEL[side]} ({options[side].length.toLocaleString()} available)
+                  {SIDE_LABEL[side]} ({formatNumber(options[side].length)} available)
                 </label>
                 <select
                   id={`metric-${side}`}
@@ -987,8 +1059,12 @@ export default function ComparisonWorkspace() {
                     <th>Period basis</th>
                   </tr>
                 </thead>
+                <caption data-testid="comparison-table-caption">
+                  {tableCaptionText}{" "}
+                  <span className="subtle">The CSV export carries every loaded row.</span>
+                </caption>
                 <tbody>
-                  {rows.slice(0, 25).map((row, index) => {
+                  {tableRows.map((row, index) => {
                     const cells = comparisonCells(comparison, row);
                     return (
                       <tr key={`${row.geo_id}-${index}`}>
@@ -1011,6 +1087,31 @@ export default function ComparisonWorkspace() {
                 </tbody>
               </table>
             </div>
+            {tableModel.pageCount > 1 ? (
+              <nav className="catalog-pagination" aria-label="Aligned comparison pages">
+                <button
+                  className="button secondary"
+                  type="button"
+                  data-testid="comparison-table-previous"
+                  disabled={!tableModel.hasPrevious}
+                  onClick={() => setTablePage((current) => Math.max(0, current - 1))}
+                >
+                  Previous
+                </button>
+                <span aria-live="polite" data-testid="comparison-table-page">
+                  {`Page ${tableModel.pageIndex + 1} of ${tableModel.pageCount}`}
+                </span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  data-testid="comparison-table-next"
+                  disabled={!tableModel.hasNext}
+                  onClick={() => setTablePage((current) => current + 1)}
+                >
+                  Next
+                </button>
+              </nav>
+            ) : null}
           </article>
         ) : null}
 

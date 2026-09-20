@@ -65,9 +65,28 @@ def test_dag_callables_carry_a_provider_sample_from_capture_to_gold(
     dag_module: Any,
     nass_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: DAG-016 — the DAG callables reach gold through the real hook."""
-    dag_module._require_shared_geography()
+    """Covers: DAG-016 — the DAG callables reach gold through the real hook.
 
+    The DAG's geography guard is deliberately not called here. It requires a
+    production-scale dimension -- one nation, fifty states, three thousand
+    counties -- and this module's fixture seeds the bounded set of reviewed
+    geographies the NASS sample resolves against, which is what makes the
+    sample reviewable. Building 3,143 counties and 19,000 places into the
+    shared `silver_ref` to satisfy one preamble line would make this module the
+    heaviest writer of shared state in the tier, for a check that is already
+    graded three times: `tests/unit/shared/test_shared_geography_guard.py`,
+    `tests/dags/test_shared_geography_guard.py`, and
+    `tests/integration/database/test_shared_geography_guard.py`, which asserts
+    the refusal on a bootstrapped-but-unloaded warehouse (DAG-020).
+
+    This line used to call it, and could not pass: the guard was widened from
+    "the table exists" to "the table carries rows" by DAG-020 and this module
+    was not revisited. Nothing reported it, because the module skips itself
+    wherever `import airflow.decorators` fails -- which is every environment
+    that does not install the `airflow-dev` extra, including CI's
+    `postgres-integration` job. A test that skips everywhere is a test that
+    reports nothing, and this one had been reporting nothing since.
+    """
     published_total = 0
     run_ids: list[str] = []
     for product in enabled_products():

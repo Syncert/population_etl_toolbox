@@ -25,6 +25,7 @@ import {
 } from "../lib/explorerViewModel";
 import type { LegendItem } from "../lib/explorerViewModel";
 import type { HeatmapModel } from "../lib/workbench";
+import { formatNumber } from "../lib/format";
 
 const CELL = 16;
 const GAP = 1;
@@ -32,7 +33,7 @@ const ROW_LABEL = 128;
 const TOP_LABEL = 78;
 
 function formatValue(value: number): string {
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return formatNumber(value, { maximumFractionDigits: 3 });
 }
 
 /**

@@ -713,12 +713,19 @@ test("source tabs derive from capability discovery and switch the explored sourc
   await expect(dashboard).toHaveAttribute("data-selected-metric", pepMetric.metric_code);
 });
 
-test("ACS1 partial/no-data and API fallback states remain explicit", async ({ page }) => {
+test("a dataset with no published rows says so, without explaining the provider's rule", async ({
+  page,
+}) => {
   await installRoutes(page);
   await page.goto("/explore");
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-metric-count", "3");
   await page.getByTestId("dataset-select").selectOption("acs1");
-  await expect(page.getByText(/ACS 1-year county coverage is partial/)).toBeVisible();
+
+  // This asserted a sentence naming a Census population threshold. The API
+  // publishes no field for that rule, so the client could not know it was
+  // still true and said it anyway (WEB-112). What stays is what the answer
+  // itself supports: no rows, said plainly.
+  await expect(page.getByText(/county coverage is partial/)).toHaveCount(0);
   await expect(page.getByTestId("observations-status")).toContainText("0 county records published");
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "0");
   await expect(page.getByText("No observations available for selected metric.")).toHaveCount(1);

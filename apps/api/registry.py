@@ -495,6 +495,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             source_code="BLS",
             latest_relation="gold_bls.mv_bls_latest",
             released_relation="gold_bls.rpt_bls_observations",
+            # Declared, so `publishes_value_status` is true for this
+            # source and a client is told to expect `value: null` with a
+            # reason. Both served relations carry the column since
+            # `028_serving_publishes_a_withheld_value.sql`; before it,
+            # the gold view dropped every withheld row and a suppressed
+            # figure was indistinguishable from one never published.
+            value_status_column="value_status",
             lineage_schema="gold_bls",
             lineage_relation="fact_bls_observation",
             metric_code_column="metric_code",
@@ -524,6 +531,13 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             source_code="CENSUS_ACS",
             latest_relation="gold_census.mv_acs_latest",
             released_relation="gold_census.rpt_acs_observations",
+            # Declared, so `publishes_value_status` is true for this
+            # source and a client is told to expect `value: null` with a
+            # reason. Both served relations carry the column since
+            # `028_serving_publishes_a_withheld_value.sql`; before it,
+            # the gold view dropped every withheld row and a suppressed
+            # figure was indistinguishable from one never published.
+            value_status_column="value_status",
             lineage_schema="gold_census",
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",
@@ -988,9 +1002,11 @@ DISPATCH_ANALYSIS_PATHS: tuple[str, ...] = (
     DISPATCH_NEUTRAL_PATHS + ANALYSIS_NEUTRAL_PATHS
 )
 
-#: Paths answered for the three sources also published into the legacy
-#: cross-source ``gold.*`` union views, which still back the legacy
-#: latest/timeseries pair until API-008 retires it.
+#: Paths answered for the three sources also published into the cross-source
+#: ``gold.*`` union views, which back the MVP-shaped latest/timeseries pair.
+#: That pair is a permanent ``v1`` resource (ADR-0002, 2026-09-16 amendment):
+#: API-008 retired the unversioned prefix aliases, not these routes, and
+#: nothing here is waiting to be retired.
 UNION_NEUTRAL_PATHS: tuple[str, ...] = DISPATCH_ANALYSIS_PATHS + (
     "/observations/latest",
     "/observations/timeseries",
@@ -1122,6 +1138,28 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         ),
     )
 }
+
+
+def platform_description() -> str:
+    """What this API serves, named from the registry rather than typed.
+
+    The served ``info.description`` said "Census ACS, BLS, and FRED" long
+    after four more sources were registered, and no test could catch it: the
+    reviewed OpenAPI digest drops descriptions on purpose, so the one string
+    every consumer reads first was the one string nothing checked. Deriving it
+    from ``SOURCE_DISCOVERY`` means a source cannot be added to the API
+    without being added to its front door.
+    """
+    names = [entry.display_name for entry in SOURCE_DISCOVERY.values()]
+    if not names:
+        return "REST API for federal statistical data."
+    listed = (
+        names[0] if len(names) == 1 else f"{', '.join(names[:-1])}, and {names[-1]}"
+    )
+    return (
+        f"REST API serving {len(names)} federal statistical "
+        f"{'source' if len(names) == 1 else 'sources'}: {listed}."
+    )
 
 
 # ---------------------------------------------------------------------------

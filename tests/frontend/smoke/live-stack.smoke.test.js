@@ -120,6 +120,31 @@ describe.skipIf(!BASE_URL)("live stack smoke", () => {
     );
   }, 30_000);
 
+  // Covers: API-140 — the cache-control contract on a stack with no Redis.
+  //
+  // This stack leaves REDIS_URL unset on purpose (docker-compose.smoke.yml),
+  // so it is the one tier that reads these headers off a deployment shaped
+  // the way the middleware's storeless branch describes. The unit tier
+  // asserts the same two answers against the middleware directly; what this
+  // adds is that they survive the real application and the proxy in front of
+  // it, which is where a `Cache-Control` a shared cache acts on is actually
+  // read.
+  test("a Redis-less deployment still answers the documented cache headers", async () => {
+    const success = await fetch(`${BASE_URL}/api/v1/catalog/metrics?limit=1`);
+    expect(success.status).toBe(200);
+    expect(success.headers.get("cache-control")).toMatch(/^public, max-age=\d+$/);
+    // No store was consulted, so the label must not promise a later HIT.
+    expect(success.headers.get("x-cache")).toBe("BYPASS");
+
+    // A metric code no catalog publishes: a 404 on a path the cache covers,
+    // which is the status RFC 9111 lets a shared cache keep on its own
+    // initiative when nothing says otherwise.
+    const failure = await fetch(`${BASE_URL}/api/v1/catalog/metrics/NO_SUCH:SOURCE:CODE`);
+    expect(failure.status).toBe(404);
+    expect(failure.headers.get("cache-control")).toBe("no-store");
+    expect(failure.headers.get("x-cache")).toBeNull();
+  });
+
   test("capability discovery yields at least one explorable source", () => {
     expect(sources.length).toBeGreaterThan(0);
     for (const source of sources) {

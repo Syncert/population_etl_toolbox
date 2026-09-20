@@ -44,6 +44,13 @@ class ServingRefreshChunkConfig:
     #: Statement timeout for a forced chunk, which rewrites every row in the
     #: year rather than the changed subset.
     full_statement_timeout: str = ""
+    #: The relation ``latest_procedure`` writes. Named here only so the chunk
+    #: driver can ``ANALYZE`` it beside the report table: the refresh is a
+    #: delete-and-reinsert per year, which leaves the planner's statistics
+    #: describing the rows that used to be there (DB-048). Empty means "do not
+    #: analyse a latest relation", which is what a source serving a view
+    #: rather than a table wants.
+    latest_table: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -83,20 +90,29 @@ def build_month_shards(window_start: date, window_end: date) -> list[DateShard]:
     return shards
 
 
-#: The component name each source's gold DDL is recorded under in
-#: `control.schema_migration_state`, in one place rather than four.
+#: The component name each source's relation DDL is recorded under in
+#: `control.schema_migration_state`, in one place rather than seven.
 #:
-#: The relation records exactly these: a content hash of one source's gold
-#: DDL files, written by `ensure_gold_schema_from_files` when it applies them.
-#: It records no bootstrap-manifest asset and nothing else writes to it, which
-#: is what DQ-SHARED-004's note has to say -- the rule wants the manifest's
-#: components compared against what was applied, and the applied set is not
-#: recorded anywhere to compare (DQ-014).
-GOLD_SCHEMA_COMPONENTS: dict[str, str] = {
+#: The relation records exactly these: a content hash of one source's DDL
+#: files, written by `ensure_gold_schema_from_files` when it applies them. It
+#: records no bootstrap-manifest asset, and exactly one other writer --
+#: `warehouse_manifest.apply_manifest`, which records one row per manifest
+#: asset and is told apart by that id (DB-049, DQ-014).
+#:
+#: The values keep the `gold_ddl_` prefix they shipped with, and it is a
+#: persisted key rather than a description: it names rows that already exist
+#: in `control.schema_migration_state` on every running warehouse, so
+#: renaming one orphans its row and re-applies that source's DDL once for
+#: nothing. CDC, FBI and USDA NASS apply their silver DDL through the same
+#: task, which is why the mapping itself is no longer named for gold.
+SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "BLS": "gold_ddl_bls",
+    "CDC": "gold_ddl_cdc",
     "CENSUS_ACS": "gold_ddl_acs",
     "CENSUS_PEP": "gold_ddl_pep",
+    "FBI_UCR": "gold_ddl_fbi",
     "FRED": "gold_ddl_fred",
+    "USDA_NASS": "gold_ddl_nass",
 }
 
 
@@ -246,6 +262,82 @@ def _full_reserve_is_finished(
         (source_code, run_started_at),
     )
     return int(cursor.fetchone()[0]) == 0
+
+
+def _forward_procedure_notices(conn: Any, log: Any) -> None:
+    """Put what the refresh procedures said into the run's log.
+
+    They say a lot, and none of it was reaching anyone. `RAISE NOTICE` lands in
+    psycopg2's `connection.notices`, which is a list nobody read, so the
+    per-chunk row counts the procedures report and the
+    `cleared_partitions=` marker that says whether a chunk truncated its
+    partition or fell back to deleting (DB-056) were visible only to someone
+    running the `CALL` by hand.
+
+    That was found by writing an operator instruction to watch for the marker
+    during a re-serve and then running one: the Airflow log contained zero
+    occurrences of it.
+
+    Warnings are logged as warnings. The procedures raise exactly one --
+    "this relation is not partitioned; the year refresh will delete rather
+    than truncate" -- and it is the one line in a twenty-chunk run that most
+    needs to not look like progress.
+    """
+    for notice in conn.notices:
+        text = notice.strip()
+        if not text:
+            continue
+        if text.startswith("WARNING:"):
+            log.warning("%s", text)
+        else:
+            log.info("%s", text)
+    del conn.notices[:]
+
+
+def _analyze_after_chunk(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    statement_timeout: str,
+    log: logging.Logger,
+) -> None:
+    """Refresh the planner's statistics for the relations the chunk rewrote.
+
+    A chunk is `DELETE ... WHERE observation_date BETWEEN` followed by a
+    re-insert. Nothing in that moves the planner's idea of the table, so by the
+    second chunk of a twenty-year re-serve every plan is built from statistics
+    describing rows that no longer exist -- on relations the procedure then
+    joins and filters. `VACUUM` is the operator's (and now autovacuum's);
+    `ANALYZE` is cheap, is safe inside a transaction, and is what the next
+    chunk needs.
+
+    It runs **after** the chunk commits and on its own connection, so the
+    chunk's checkpoint is durable before this starts. A failure here is logged
+    and swallowed on purpose: the chunk is complete, the data is correct, and
+    stale statistics are a slower plan rather than a wrong answer. Failing the
+    chunk over them would turn an optimisation into an outage, and the retry
+    would redo work that was already done.
+    """
+    relations = [config.report_table]
+    if config.latest_table:
+        relations.append(config.latest_table)
+    try:
+        with hook.get_conn() as conn, conn.cursor() as cur:
+            cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
+            for relation in relations:
+                cur.execute(f"ANALYZE {relation}")
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        log.warning(
+            "[%s SERVING REFRESH] ANALYZE after chunk failed, continuing: %s",
+            config.log_label,
+            str(exc)[:500],
+        )
+    else:
+        log.info(
+            "[%s SERVING REFRESH] analyzed %s",
+            config.log_label,
+            ", ".join(relations),
+        )
 
 
 def refresh_serving_layer_in_year_chunks(
@@ -511,6 +603,7 @@ def refresh_serving_layer_in_year_chunks(
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
                 cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
+                del conn.notices[:]
                 cur.execute(
                     f"CALL {config.report_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),
@@ -519,6 +612,7 @@ def refresh_serving_layer_in_year_chunks(
                     f"CALL {config.latest_procedure}(%s, %s)",
                     (chunk["start"], chunk["end"]),
                 )
+                _forward_procedure_notices(conn, log)
                 cur.execute(
                     f"""
                     SELECT COUNT(*)
@@ -549,6 +643,7 @@ def refresh_serving_layer_in_year_chunks(
                     ),
                 )
                 conn.commit()
+            _analyze_after_chunk(hook, config, statement_timeout, log)
         except Exception as exc:
             error_text = str(exc)[:4000]
             with hook.get_conn() as conn, conn.cursor() as cur:

@@ -68,6 +68,12 @@ def test_silver_upsert_serializes_uuid_for_psycopg2(
             "variable_label": ["Estimate label"],
             "variable_concept": ["Fixture concept"],
             "universe": [None],
+            # The revision's lineage and reading of the provider's token, which
+            # the fact has carried since DB-055. A frame without them is not
+            # what the transform produces.
+            "capture_id": ["11111111-1111-4111-8111-111111111111"],
+            "source_value": ["1234"],
+            "value_status": ["valid"],
         }
     )
     connection = _Connection()
@@ -119,6 +125,12 @@ def test_silver_upsert_commits_bounded_sub_batches(
             "variable_label": ["Estimate label", "Estimate label"],
             "variable_concept": ["Fixture concept", "Fixture concept"],
             "universe": [None, None],
+            "capture_id": [
+                "11111111-1111-4111-8111-111111111111",
+                "22222222-2222-4222-8222-222222222222",
+            ],
+            "source_value": ["1234", None],
+            "value_status": ["valid", "absent"],
         }
     )
     connection = _Connection()

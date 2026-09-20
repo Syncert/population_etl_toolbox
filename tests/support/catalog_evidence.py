@@ -11,16 +11,16 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATTERN = re.compile(r"[A-Z][A-Z0-9]*-\d{3}")
 AUDITED_COUNTS = {
-    "ENV": 21,
+    "ENV": 23,
     "ARC": 7,
-    "PLAN": 7,
+    "PLAN": 8,
     "DQ": 17,
-    "DAG": 18,
+    "DAG": 21,
     "ETL": 51,
-    "DB": 45,
-    "API": 139,
-    "WEB": 104,
-    "DEPLOY": 8,
+    "DB": 61,
+    "API": 148,
+    "WEB": 114,
+    "DEPLOY": 12,
     "MARTIN": 10,
     "EXT": 14,
     "E2E": 14,

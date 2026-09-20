@@ -47,6 +47,8 @@ Until ARCH-002 and ARCH-003 complete, the three existing source gold DDL files a
 
 This repository is currently a beta prototype with no external end users. A full warehouse reset and source re-ingestion is an acceptable and preferred cutover when it is simpler than preserving legacy staging data or compatibility objects. Append-only means capture rows are not mutated during normal operation; it does not prohibit intentionally destroying and rebuilding a beta environment.
 
+**Amended by [ADR-0006](0006-capture-history-survives-a-reset.md) (2026-09-16):** "destroying and rebuilding a beta environment" means destroying silver, gold and the serving projections, which are reproducible. It does not include `raw_capture.*` or the `control` rows identifying those captures. Providers do not serve their past, so a reset cannot re-capture what was captured before it; the captures are exported before a reset and restored before re-ingestion, and the restore inserts only, so the triggers above stay in place throughout.
+
 ## Exception process
 
 An exception is permitted only when the payload cannot be persisted safely without deterministic decoding, such as transport decompression. The change must:

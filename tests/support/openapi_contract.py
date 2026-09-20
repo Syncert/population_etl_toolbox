@@ -121,14 +121,32 @@ def _response_digest(responses: dict[str, Any]) -> dict[str, str]:
 
 
 def _schema_digest(schema: dict[str, Any]) -> dict[str, Any]:
+    """Reduce one schema to what a consumer may depend on.
+
+    ``deprecated`` is carried because it is a promise in the other direction:
+    it tells a generated client which of two fields to read, and it is the
+    announcement that has to precede a removal that ADR-0002 calls breaking.
+    A marker added or withdrawn is a change to the published contract and
+    belongs in the reviewed diff like any other. The key is present only when
+    the schema has such a field, so schemas that deprecate nothing carry no
+    empty list and the snapshot stays the size it was.
+    """
     required = sorted(schema.get("required") or [])
     properties = schema.get("properties") or {}
-    return {
+    deprecated = sorted(
+        name
+        for name, definition in properties.items()
+        if isinstance(definition, dict) and definition.get("deprecated") is True
+    )
+    digest: dict[str, Any] = {
         "required": required,
         "properties": {
             name: type_expression(properties[name]) for name in sorted(properties)
         },
     }
+    if deprecated:
+        digest["deprecated"] = deprecated
+    return digest
 
 
 def contract_digest(document: dict[str, Any]) -> dict[str, Any]:

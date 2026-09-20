@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-// Covers: WEB-009 — versioned API client URL construction, pagination,
+// Covers: WEB-009 — versioned API client URL construction, cache mode by
+// request kind, pagination, in-flight de-duplication of catalog reads,
 // error decoding/classification, cancellation passthrough, and
 // stale-response protection.
 
@@ -13,7 +14,7 @@ import {
   fetchCollectionPages,
   fetchComparisonPages,
   getDistributionBins,
-  getSourceLatestObservations,
+  requestCacheMode,
   searchMetrics,
 } from "../../../apps/web/lib/api/client";
 import {
@@ -56,14 +57,123 @@ describe("versioned API client", () => {
     expect(buildApiPath("/catalog/sources")).toBe("/api/v1/catalog/sources");
   });
 
-  test("requests with no-store and returns decoded payloads", async () => {
+  test("a public read is sent with the browser's own cache rules", async () => {
     const { calls, fetchImpl } = recordingFetch([
       jsonResponse({ items: [{ metric_code: "X" }], total: 1 }),
     ]);
     const payload = await searchMetrics({ q: "population" }, { fetchImpl });
     expect(payload.items).toHaveLength(1);
     expect(calls[0].path).toBe("/api/v1/catalog/metrics?q=population");
+    // `default`, not `no-store`: the API answers public analytical reads with
+    // `Cache-Control: public, max-age=<ttl>`, and `no-store` here threw that
+    // away. The TTL stays the API's to decide; this client only stops
+    // refusing it.
+    expect(calls[0].init.cache).toBe("default");
+  });
+
+  test("the cache mode follows the kind of request, not the caller", () => {
+    expect(requestCacheMode({})).toBe("default");
+    expect(requestCacheMode({ method: "GET" })).toBe("default");
+    expect(requestCacheMode({ method: "get" })).toBe("default");
+    // Somebody's own library, served `private, no-store`: never in a cache
+    // the next reader of this browser can reach.
+    expect(requestCacheMode({ method: "GET", token: "secret" })).toBe("no-store");
+    // A write has nothing to reuse, with or without a token.
+    expect(requestCacheMode({ method: "POST", body: { name: "x" } })).toBe("no-store");
+    expect(requestCacheMode({ method: "DELETE" })).toBe("no-store");
+    expect(requestCacheMode({ method: "GET", body: { q: "x" } })).toBe("no-store");
+  });
+
+  test("a token-bearing read is still sent with no-store", async () => {
+    const { calls, fetchImpl } = recordingFetch([jsonResponse({ items: [], total: 0 })]);
+    await apiFetch("/analysis-configurations", { token: "secret", fetchImpl });
     expect(calls[0].init.cache).toBe("no-store");
+    expect(calls[0].path).not.toContain("secret");
+  });
+
+  test("two catalog reads in flight at once are one request", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ geo_id: "01" }], total: 1 }),
+    ]);
+    // Both start before either settles -- the explorer and the workbench
+    // mounting in one navigation. One request answers both.
+    const [left, right] = await Promise.all([
+      fetchAllPages("/catalog/geographies", { params: { geo_level: "STATE" }, fetchImpl }),
+      fetchAllPages("/catalog/geographies", { params: { geo_level: "STATE" }, fetchImpl }),
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(left).toEqual([{ geo_id: "01" }]);
+    expect(right).toBe(left);
+  });
+
+  test("the sharing is in flight only, and never across different reads", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [{ geo_id: "01" }], total: 1 }),
+      jsonResponse({ items: [{ geo_id: "01" }], total: 1 }),
+      jsonResponse({ items: [{ geo_id: "06001" }], total: 1 }),
+    ]);
+    // Settled, then asked again: a second request, because this holds
+    // promises rather than answers.
+    await fetchAllPages("/catalog/geographies", { params: { geo_level: "STATE" }, fetchImpl });
+    await fetchAllPages("/catalog/geographies", { params: { geo_level: "STATE" }, fetchImpl });
+    expect(calls).toHaveLength(2);
+
+    // A different query is a different read even while the first is open.
+    await Promise.all([
+      fetchAllPages("/catalog/geographies", { params: { geo_level: "COUNTY" }, fetchImpl }),
+    ]);
+    expect(calls).toHaveLength(3);
+    expect(calls[2].path).toContain("geo_level=COUNTY");
+  });
+
+  test("a cancellable or token-bearing read is never shared", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [], total: 0 }),
+      jsonResponse({ items: [], total: 0 }),
+      jsonResponse({ items: [], total: 0 }),
+      jsonResponse({ items: [], total: 0 }),
+    ]);
+    // One caller's abort must not reject another caller's promise, and a
+    // token-bearing read is somebody's own.
+    const controller = new AbortController();
+    await Promise.all([
+      fetchAllPages("/catalog/metrics", { fetchImpl, signal: controller.signal }),
+      fetchAllPages("/catalog/metrics", { fetchImpl, signal: controller.signal }),
+    ]);
+    expect(calls).toHaveLength(2);
+
+    await Promise.all([
+      fetchAllPages("/catalog/metrics", { fetchImpl, token: "t" }),
+      fetchAllPages("/catalog/metrics", { fetchImpl, token: "t" }),
+    ]);
+    expect(calls).toHaveLength(4);
+  });
+
+  test("only the catalog is shared", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      jsonResponse({ items: [], total: 0 }),
+      jsonResponse({ items: [], total: 0 }),
+    ]);
+    // Two screens asking for observations are not asking the same question,
+    // and the answer is not a catalog every screen holds the whole of.
+    await Promise.all([
+      fetchAllPages("/observations", { params: { metric_code: "M" }, fetchImpl }),
+      fetchAllPages("/observations", { params: { metric_code: "M" }, fetchImpl }),
+    ]);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("two transports are never handed each other's answer", async () => {
+    const first = recordingFetch([jsonResponse({ items: [{ geo_id: "01" }], total: 1 })]);
+    const second = recordingFetch([jsonResponse({ items: [{ geo_id: "02" }], total: 1 })]);
+    const [left, right] = await Promise.all([
+      fetchAllPages("/catalog/geographies", { fetchImpl: first.fetchImpl }),
+      fetchAllPages("/catalog/geographies", { fetchImpl: second.fetchImpl }),
+    ]);
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+    expect(left).toEqual([{ geo_id: "01" }]);
+    expect(right).toEqual([{ geo_id: "02" }]);
   });
 
   test("decodes the stable error envelope and classifies statuses", async () => {
@@ -258,11 +368,17 @@ describe("versioned API client", () => {
   });
 
   test("constructs source-scoped and analysis routes from the contract", async () => {
+    // The source-scoped routes are addressed through `observationAccess.ts`,
+    // which picks the access shape a source declares and hands back the
+    // resource and params; `apiFetch` is what sends it. The four wrappers
+    // that addressed those routes a second way had no caller and are gone.
     const latest = recordingFetch([jsonResponse({ items: [] })]);
-    await getSourceLatestObservations(
-      "census",
-      { metric_code: "CENSUS_ACS:acs5:B01003_001", geo_level: "COUNTY" },
-      { fetchImpl: latest.fetchImpl },
+    await apiFetch(
+      "/census/observations/latest",
+      {
+        params: { metric_code: "CENSUS_ACS:acs5:B01003_001", geo_level: "COUNTY" },
+        fetchImpl: latest.fetchImpl,
+      },
     );
     expect(latest.calls[0].path).toBe(
       "/api/v1/census/observations/latest?metric_code=CENSUS_ACS%3Aacs5%3AB01003_001&geo_level=COUNTY",

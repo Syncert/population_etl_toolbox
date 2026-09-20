@@ -184,20 +184,41 @@ returns a promotability verdict with rule totals by severity and result.
 ### What a certification actually runs, and what it does not
 
 "The deterministic suite" is every registered executor, and the registered
-executors are **21 of the 64 rules the inventory declares**. Each of the other
-43 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
+executors are **23 of the 64 rules the inventory declares**. Each of the other
+41 carries a note in `data_ingestion_toolbox.quality.inventory` saying what
 covers it instead, under one of two states:
 
-- **7 are `enforced`.** The warehouse itself refuses the violation — each one
-  is a uniqueness rule whose grain is a unique constraint or unique index, and
-  the rule declares which relation and which columns. A duplicate is rejected
+- **11 are `enforced`.** The warehouse itself refuses the violation, and the
+  rule declares which constraint does it. That used to mean a unique
+  constraint or unique index and nothing else, which left four rules counted
+  as gaps although shipped DDL refuses them outright: a foreign key refuses an
+  unresolvable row, and a CHECK refuses a malformed one, as completely as a
+  unique index refuses a duplicate. `DQ-REF-002`, `DQ-CDC-005`, `DQ-NASS-004`
+  and `DQ-GLOSSARY-002` moved here when the grain model learned to say which
+  kind. A duplicate is rejected
   at write time, which is stronger than measuring it afterwards, with one
   consequence to be clear about: a constraint produces no evidence row, so a
   certification cannot cite it. `tests/integration/database/test_enforced_grains.py`
-  holds each declared grain against the bootstrapped warehouse, so a migration
-  that drops or widens one fails there.
-- **36 are `unimplemented`** — no executor runs them, and 24 of those are
-  BLOCK severity. The note says what running each one would have to read,
+  holds each declared grain against the bootstrapped warehouse -- a unique key
+  by its resolved columns, a foreign key by its columns *and* its target, and a
+  CHECK by name and then against its own definition -- so a migration that
+  drops, renames or repoints one fails there.
+- **30 are `unimplemented`** — no executor runs them, and 18 of those are
+  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` were briefly automated and
+  then withdrawn, and their notes record why: the executors passed on the
+  fixture warehouse and timed out against the real one, at 50 minutes for ACS
+  and 901 seconds for BLS, because they matched on a composed metric code no
+  index can serve. A rule that cannot finish is worse than one that says it
+  is missing — it turns this DAG red for a reason that is not about the data.
+  `DQ-SHARED-004` left this set when
+  `warehouse-manifest-ledger` gave it something to read: the rule compares the
+  bootstrap manifest against what a warehouse recorded applying, and until the
+  applier wrote those rows the applied side did not exist. A warehouse that
+  predates the ledger answers `not_applicable` rather than passing, because a
+  rule that read nothing must not certify a publication. `DQ-BLS-004` left it
+  the same way: it compares the geographies BLS published against the union of
+  the fact table and the resolution ledger, which was only possible once an
+  unresolved BLS row was recorded rather than dropped. The note says what running each one would have to read,
   and where part of a rule *is* refused by the warehouse it says which part
   and names the constraint: `DQ-SHARED-006`'s terminal-finish CHECK and its
   result-uniqueness key are both checked against the warehouse, and only its

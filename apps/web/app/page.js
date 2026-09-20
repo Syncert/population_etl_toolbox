@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
 import { getSources, searchMetrics } from "../lib/api/client";
-import { displayMetricName } from "../lib/format";
+import { displayMetricName, formatNumber } from "../lib/format";
 import { connectedSourcesBand } from "../lib/catalog";
 import { explorerHref } from "../lib/urlState";
 
@@ -30,10 +30,12 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
-  const featuredMetric = useMemo(
-    () => metrics.items.find((item) => item.metric_code === "CENSUS_ACS:acs5:B01003_001") || metrics.items[0],
-    [metrics],
-  );
+  // The first metric the catalog answers for this search. It used to prefer
+  // one hard-coded Census variable, which made the home page's feature a
+  // client-authored choice of provider dressed as the catalog's answer -- and
+  // pointed the explorer at that code even when the catalog had never
+  // published it.
+  const featuredMetric = useMemo(() => metrics.items[0], [metrics]);
   const sourceBand = useMemo(() => connectedSourcesBand(status, sources), [status, sources]);
 
   return (
@@ -53,9 +55,13 @@ export default function HomePage() {
 
       <section className="signal-strip" aria-label="Platform signals">
         <div><strong>{status === "ready" ? sources.length : "-"}</strong><span>connected sources</span></div>
-        <div><strong>{status === "ready" ? metrics.total.toLocaleString() : "-"}</strong><span>population matches</span></div>
-        <div><strong>County</strong><span>national map coverage</span></div>
-        <div><strong>Live</strong><span>API-backed observations</span></div>
+        <div><strong>{status === "ready" ? formatNumber(metrics.total) : "-"}</strong><span>population matches</span></div>
+        {/* Two further cells stood here: "County / national map coverage" and
+            "Live / API-backed observations". Neither came from anything the
+            API answers -- the first is a claim about which grains the
+            warehouse publishes, which varies by source, and the second is a
+            claim about the deployment's own health that this page does not
+            check. The two that remain are counts the catalog just gave us. */}
       </section>
 
       {/* Always present so the first render is the baseline; a failure that
@@ -79,10 +85,25 @@ export default function HomePage() {
             <div className="section-kicker">National snapshot</div>
             <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
             <p>Latest source-backed metric metadata and observation coverage.</p>
-            <Link className="text-link" href={explorerHref({
-              metric: featuredMetric?.metric_code || "CENSUS_ACS:acs5:B01003_001",
-              source: featuredMetric?.source_code || "CENSUS_ACS",
-            })}>Open map <ArrowRight size={15} /></Link>
+            {/* Only where the catalog answered one. A link built from a
+                metric code this client invented opens the explorer on a
+                measure the API may never have published. */}
+            {featuredMetric ? (
+              <Link
+                className="text-link"
+                data-testid="home-featured-link"
+                href={explorerHref({
+                  metric: featuredMetric.metric_code,
+                  source: featuredMetric.source_code || undefined,
+                })}
+              >
+                Open map <ArrowRight size={15} />
+              </Link>
+            ) : (
+              <Link className="text-link" data-testid="home-featured-link" href="/catalog">
+                Browse the catalog <ArrowRight size={15} />
+              </Link>
+            )}
           </div>
         </article>
       </section>

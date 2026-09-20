@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.census_acs.config import CONFIG
 from data_ingestion_toolbox.utility.gold_schema import (
-    GOLD_SCHEMA_COMPONENTS,
+    SOURCE_SCHEMA_COMPONENTS,
     ensure_gold_schema_from_files,
 )
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "gold_acs.sql"
 _PUBLISHER_DDL_PATH = pathlib.Path(__file__).parent / "DDL" / "publisher.sql"
-_SCHEMA_COMPONENT = GOLD_SCHEMA_COMPONENTS["CENSUS_ACS"]
+_SCHEMA_COMPONENT = SOURCE_SCHEMA_COMPONENTS["CENSUS_ACS"]
 _REQUIRED_RELATIONS = (
     "control.serving_refresh_state",
     "control.serving_refresh_chunk_state",

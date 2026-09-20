@@ -436,6 +436,10 @@ apps/web/coverage/
 apps/web/.eslintcache
 apps/web/playwright-report/
 apps/web/test-results/
+# Scratch state the local verification script leaves behind. Two of these were
+# tracked, so a developer's process id and a snapshot of their pre-run state
+# travelled in the repository.
+apps/web/.verify-*
 
 # Python generated files and virtual environments (ENV-006)
 .venv*/

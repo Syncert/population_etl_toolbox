@@ -40,6 +40,7 @@ EXPECTED_DAG_IDS = {
     "glossary_reconciliation",
     "warehouse_data_quality",
     "serving_full_reserve",
+    "raw_capture_export",
 }
 
 # Declared schedule contracts (cron expressions)
@@ -59,6 +60,9 @@ EXPECTED_SCHEDULES = {
     "glossary_harvest": "*/10 * * * *",
     "glossary_reconciliation": "0 3 * * *",
     "warehouse_data_quality": "0 11 * * *",
+    # Nightly, and early: the export must be finishable before a working day
+    # starts, and it is the largest thing this repository writes (ADR-0006).
+    "raw_capture_export": "0 3 * * *",
     # Operator-triggered only: a full re-serve must never happen on a schedule.
     "serving_full_reserve": None,
 }
@@ -76,7 +80,12 @@ EXPECTED_DEFAULT_RETRIES = {
     "glossary_harvest": 2,
     "glossary_reconciliation": 1,
     "warehouse_data_quality": 1,
-    "serving_full_reserve": 1,
+    "raw_capture_export": 1,
+    # Three, not one, because this task runs for hours and resumes: a
+    # restart picks up at the year it stopped on. One retry was
+    # consumed by the same scheduler sweep that killed the task, and a
+    # five-hour ACS re-serve ended at chunk 13 of 20 (DAG-008).
+    "serving_full_reserve": 3,
 }
 
 # Expected Airflow pool assignments for ingest_batch tasks

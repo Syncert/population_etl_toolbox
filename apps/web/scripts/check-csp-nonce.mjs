@@ -56,9 +56,25 @@ function main() {
     process.exit(2);
   }
 
-  // 1. Nothing is prerendered. A prerendered route would ship script tags
-  //    with no nonce against a policy that demands one.
-  const prerendered = Object.keys(prerender.routes || {});
+  // 1. No *document* is prerendered. A prerendered page is HTML written at
+  //    build time, so its script tags carry no nonce against a policy that
+  //    demands one.
+  //
+  //    A prerendered route that serves something other than HTML has no
+  //    script tag to stamp: `robots.txt` is `text/plain` and `sitemap.xml` is
+  //    `application/xml`, and both are supposed to be static files. Forcing
+  //    them to render per request to satisfy a check about script nonces
+  //    would be answering the letter of the rule against its reason. The
+  //    content type is read from the route's own recorded headers, and a
+  //    route recording none is treated as HTML, so the exemption cannot widen
+  //    by omission -- and the static-HTML assertion below is an independent
+  //    second line on exactly the same failure.
+  const prerendered = Object.entries(prerender.routes || {})
+    .filter(([, info]) => {
+      const contentType = (info.initialHeaders || {})["content-type"] || "text/html";
+      return contentType.includes("text/html");
+    })
+    .map(([route]) => route);
   if (prerendered.length > 0) {
     failures.push(
       `${prerendered.length} route(s) are prerendered and would ship without a nonce: ${prerendered.join(", ")}. ` +
@@ -115,7 +131,7 @@ function main() {
     process.exit(1);
   }
   console.log(
-    `CSP check passed: 0 prerendered routes, middleware registered at '/' with ${
+    `CSP check passed: 0 prerendered documents, middleware registered at '/' with ${
       (entry.matchers || []).length
     } matcher(s), and a shipped style-src-elem that admits no inline style element.`,
   );

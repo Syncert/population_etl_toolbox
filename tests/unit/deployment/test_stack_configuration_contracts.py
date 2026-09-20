@@ -180,3 +180,136 @@ def test_both_deployment_stacks_pass_the_same_environment_to_airflow() -> None:
         f"the two stacks read different Airflow env files, so a default in "
         f"one is absent from the other: {files}"
     )
+
+
+def test_the_database_container_has_shared_memory_for_parallel_work() -> None:
+    """Covers: DEPLOY-010 — the parallel workers have somewhere to exchange.
+
+    `BETA_RESET_REINGESTION.md` §7 recorded that a parallel `VACUUM` "fails
+    inside Compose". That is not a PostgreSQL limit: Docker gives a container
+    64 MB of `/dev/shm`, and parallel workers pass their tuples through it.
+    The stack asks for up to four parallel maintenance workers and eight
+    parallel workers in the same service definition, so the two settings have
+    to agree or the ones asking for parallelism are a request the container
+    cannot honour (DB-048).
+    """
+    compose = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.yml").read_text(encoding="utf-8")
+    )
+    database = compose["services"]["analytics_postgres"]
+
+    assert "shm_size" in database, (
+        "the composed warehouse sets no shm_size, so it keeps Docker's 64 MB "
+        "default and a parallel VACUUM fails the way §7 records"
+    )
+    # A documented override with a working default, like the tuning knobs
+    # beside it: an operator raises it on a warehouse host without editing the
+    # compose file.
+    assert str(database["shm_size"]).startswith("${ANALYTICS_PG_SHM_SIZE:-")
+
+    # And the setting is only meaningful beside the ones asking for parallel
+    # work, so this fails if those are ever removed and this is left behind.
+    command = " ".join(str(database["command"]).split())
+    assert "max_parallel_maintenance_workers" in command
+    assert "max_parallel_workers" in command
+
+
+def test_the_external_stack_composes_no_database_to_size() -> None:
+    """Covers: DEPLOY-010 — the external stack points at someone else's.
+
+    The plan that added `shm_size` asked for it in both compose files "where
+    the database is local". It is not local in the external stack: that stack
+    has no Postgres service at all, and sizing a container it does not run
+    would be a setting with nothing to apply to.
+    """
+    compose = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.external.yml").read_text(encoding="utf-8")
+    )
+    services = compose.get("services", {})
+    assert "analytics_postgres" not in services
+    for name, service in services.items():
+        image = str(service.get("image", ""))
+        assert "postgis" not in image and "postgres:" not in image, name
+
+
+def test_the_smoke_stack_runs_the_web_container_and_reads_its_reports() -> None:
+    """Covers: DEPLOY-011 — the reporting path is proved where it is deployed.
+
+    The client-report sink is a Next route handler: a report is a POST to
+    `/client-report` in the web process and a line on that container's stdout.
+    Until this stack composed `web`, no CI job ran that container, so the only
+    tier that drove a real browser drove it against `next dev` on the runner --
+    which has no container and therefore no log to read.
+
+    Three things have to hold together, and each is useless alone: the stack
+    composes the container, the job starts it, and the job greps its log. The
+    navigation between them is `report-a-vital.mjs`, which fails on its own if
+    the browser sent nothing, so a green grep cannot come from a silent
+    browser.
+    """
+    smoke = yaml.safe_load(
+        (COMPOSE_DIRECTORY / "docker-compose.smoke.yml").read_text(encoding="utf-8")
+    )
+    web = smoke["services"].get("web")
+    assert web is not None, (
+        "the smoke stack composes no web service, so nothing in CI runs the "
+        "container the client-report sink lives in"
+    )
+    # Built here rather than pulled: the sink is this repository's code.
+    assert web["build"]["dockerfile"] == "infra/docker/Dockerfile.web"
+
+    workflow = (ROOT / ".github/workflows/frontend-smoke.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "up --detach --wait postgres martin api proxy web" in workflow, (
+        "the job does not start the web container, so its log is empty"
+    )
+    assert "npm run report:vital" in workflow, (
+        "nothing drives a browser at the container, and curl produces no vital"
+    )
+    assert 'grep -F "client_report kind=vital"' in workflow, (
+        "the job never reads the line, so the container could log nothing and "
+        "the job would still be green"
+    )
+    assert (ROOT / "apps/web/scripts/report-a-vital.mjs").exists()
+
+
+def test_the_external_stack_refuses_to_run_the_api_as_the_warehouse_owner() -> None:
+    """Covers: DEPLOY-012 — the serving role is required, not defaulted.
+
+    `docker-compose.external.yml` used to resolve the API's and Martin's
+    credentials as `${ANALYTICS_API_DB_USER:-${ANALYTICS_DB_USER}}`. A
+    deployment that set every other variable and forgot that one ran its
+    public API and tile server as the ETL owner, with write access to every
+    schema -- and came up cleanly, which is what makes it worth refusing
+    rather than documenting.
+
+    The `:?` form is what refuses it. Compose fails the render and names the
+    variable, so the failure arrives before anything is listening.
+    """
+    source = _read("docker-compose.external.yml")
+
+    assert "${ANALYTICS_API_DB_USER:-" not in source, (
+        "the API credentials fall back to another variable, so an unset "
+        "serving role silently becomes the warehouse owner"
+    )
+    assert "${ANALYTICS_API_DB_PASSWORD:-" not in source
+
+    # Required for both services that read the warehouse, not just one: they
+    # are configured in different places in this file and only one of them
+    # used to carry any guard at all.
+    required = source.count("${ANALYTICS_API_DB_USER:?")
+    assert required >= 3, (
+        "the serving role is not required everywhere the external stack "
+        f"connects with it; found {required} guarded references"
+    )
+    assert "${ANALYTICS_API_DB_PASSWORD:?" in source
+
+    compose = yaml.safe_load(source)
+    api = compose["services"]["api"]["environment"]
+    martin = compose["services"]["martin"]["environment"]
+    assert "ANALYTICS_API_DB_USER:?" in str(api)
+    assert "ANALYTICS_API_DB_USER:?" in str(martin), (
+        "Martin reads the warehouse too, and an unguarded tile server is the "
+        "same exposure as an unguarded API"
+    )

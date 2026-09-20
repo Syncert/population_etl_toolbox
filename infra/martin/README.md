@@ -12,4 +12,4 @@ Expected source database:
 - Host: `analytics_postgres`
 - Port: `5432`
 - Database: `population_etl`
-- Source table/layer seed: `gold.dim_geo_latest` (published as `counties`)
+- Source table/layer seed: `gold.tile_boundary` (published as `counties`)

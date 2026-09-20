@@ -134,6 +134,50 @@ def test_an_env_file_is_passed_before_the_compose_file(tmp_path: Path) -> None:
     ]
 
 
+def test_the_base_env_file_is_passed_under_the_mode_file(tmp_path: Path) -> None:
+    """Covers: DEPLOY-008 -- `.env` is a layer, not something `--env-file` erases.
+
+    Passing `--env-file` stops Compose reading `.env` at all, and that cost
+    this warehouse its tuning silently: `infra/docker/.env` asked for
+    `ANALYTICS_PG_SHARED_BUFFERS=48GB`, `stack.env` carries credentials and no
+    tuning, and the stack ran on the compose default of 4 GB on a 101 GB host
+    until someone ran `SHOW shared_buffers`. Nothing failed, because nothing
+    was wrong -- the file was simply never read.
+
+    Compose merges repeated `--env-file` flags left to right, so the base is
+    named first and the mode's file wins any key both set.
+    """
+    _write_env(tmp_path, "infra/docker/.env", "ANALYTICS_PG_SHARED_BUFFERS=48GB\n")
+    _write_env(tmp_path, "infra/docker/stack.env", "ANALYTICS_DB_NAME=population_etl\n")
+
+    context = resolve_compose_context("internal", root=tmp_path)
+
+    assert context.compose_arguments("up") == [
+        "--env-file",
+        "infra/docker/.env",
+        "--env-file",
+        "infra/docker/stack.env",
+        "-f",
+        "infra/docker/docker-compose.yml",
+        "up",
+    ]
+
+
+def test_a_deployment_without_a_base_env_file_passes_only_its_own(
+    tmp_path: Path,
+) -> None:
+    """Covers: DEPLOY-008 -- a missing `.env` is normal, not a refusal.
+
+    It is gitignored, and a deployment may set everything in its mode file.
+    Naming a file that is not there would make `docker compose` refuse to run
+    at all, which is a worse failure than the one this fixes.
+    """
+    _write_env(tmp_path, "infra/docker/stack.env", "ANALYTICS_DB_NAME=population_etl\n")
+    context = resolve_compose_context("internal", root=tmp_path)
+    assert context.base_env_file == ""
+    assert context.compose_arguments("up").count("--env-file") == 1
+
+
 def test_a_compose_file_override_replaces_only_the_file(tmp_path: Path) -> None:
     """Covers: DEPLOY-008 -- the override changes the file and nothing else.
 

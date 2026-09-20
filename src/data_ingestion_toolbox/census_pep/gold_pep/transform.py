@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from data_ingestion_toolbox.census_pep.config import CONFIG
 from data_ingestion_toolbox.utility.gold_schema import (
-    GOLD_SCHEMA_COMPONENTS,
+    SOURCE_SCHEMA_COMPONENTS,
     ensure_gold_schema_from_files,
 )
 
@@ -29,7 +29,7 @@ def ensure_pep_gold_schema(hook: PostgresHook | None = None) -> None:
     """Apply idempotent source-owned publication views."""
     ensure_gold_schema_from_files(
         ddl_files=[_DDL_PATH],
-        component_name=GOLD_SCHEMA_COMPONENTS["CENSUS_PEP"],
+        component_name=SOURCE_SCHEMA_COMPONENTS["CENSUS_PEP"],
         required_relations=(
             "gold_pep.population_estimate_revision",
             "gold_pep.population_estimate_latest",

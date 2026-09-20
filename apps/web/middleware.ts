@@ -26,6 +26,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+/**
+ * Where a violation report goes.
+ *
+ * Outside `/api` and `/tiles`, which `next.config.mjs` rewrites away to the
+ * API and Martin, so this reaches the web process itself. Same-origin, so
+ * `connect-src 'self'` admits it and the policy is not widened to gain a log
+ * line.
+ */
+const REPORT_ENDPOINT = "/client-report";
+
 const isDevelopment = process.env.NODE_ENV === "development";
 
 function freshNonce(): string {
@@ -85,6 +95,14 @@ export function contentSecurityPolicy(nonce: string): string {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'self'",
+    // Where a violation goes. Both spellings, because two generations of the
+    // standard are in the field: `report-uri` is deprecated and is what most
+    // shipping browsers still implement, `report-to` names an endpoint group
+    // declared by the `Reporting-Endpoints` header below. Neither widens the
+    // policy -- the sink is same-origin, which `connect-src 'self'` already
+    // admits -- and a browser that implements neither is unaffected.
+    `report-uri ${REPORT_ENDPOINT}`,
+    "report-to csp-endpoint",
   ].join("; ");
 }
 
@@ -101,6 +119,9 @@ export function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("content-security-policy", policy);
+  // The endpoint group `report-to` names. Same origin, so this adds no
+  // destination the policy did not already allow.
+  response.headers.set("reporting-endpoints", `csp-endpoint="${REPORT_ENDPOINT}"`);
   return response;
 }
 

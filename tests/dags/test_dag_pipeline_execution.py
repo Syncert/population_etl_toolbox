@@ -12,6 +12,7 @@ PostgresHook, the capture-control plane, and every warehouse write are real.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -42,6 +43,10 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "census_pep_ingest",
     "glossary_reconciliation",
     "warehouse_data_quality",
+    # Last, and a read: the export copies the captures every DAG above just
+    # wrote, so running it here proves the export against a warehouse that
+    # has something in it rather than an empty one (ADR-0006, DB-046).
+    "raw_capture_export",
 )
 
 #: DAGs this suite deliberately does not execute, and why. An operator-
@@ -66,6 +71,28 @@ def orchestrated_warehouse(
 
 
 @pytest.fixture(scope="module")
+def capture_export_root(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Path]:
+    """Somewhere for `raw_capture_export` to write.
+
+    There is deliberately no default in the application: an export path that
+    defaults to somewhere inside the container is an export a reset destroys.
+    So the suite has to supply one, exactly as a deployment does.
+    """
+    root = tmp_path_factory.mktemp("capture-exports")
+    previous = os.environ.get("CAPTURE_EXPORT_ROOT")
+    os.environ["CAPTURE_EXPORT_ROOT"] = str(root)
+    try:
+        yield root
+    finally:
+        if previous is None:
+            os.environ.pop("CAPTURE_EXPORT_ROOT", None)
+        else:
+            os.environ["CAPTURE_EXPORT_ROOT"] = previous
+
+
+@pytest.fixture(scope="module")
 def stubbed_providers(
     orchestrated_warehouse: PostgresTestConfig,
     dagbag: Any,
@@ -82,6 +109,7 @@ def orchestrated_execution(
     dagbag: Any,
     orchestrated_warehouse: PostgresTestConfig,
     stubbed_providers: None,
+    capture_export_root: Path,
 ) -> dict[str, dict[str, str]]:
     """Execute every production DAG exactly once, in warehouse order.
 

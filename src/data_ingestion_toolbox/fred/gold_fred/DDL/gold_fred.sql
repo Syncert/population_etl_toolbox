@@ -127,6 +127,22 @@ CREATE TABLE IF NOT EXISTS gold_fred.rpt_fred_observations (
     metric_display_name        TEXT
 );
 
+-- Autovacuum sized for the churn a year-chunked re-serve creates (DB-048).
+--
+-- The refresh is `DELETE ... WHERE observation_date BETWEEN` followed by a
+-- re-insert, one year at a time. At PostgreSQL's 20% default scale factor a
+-- table this size reaches its autovacuum threshold only after millions of dead
+-- tuples: `BETA_RESET_REINGESTION.md` §7 recorded the ACS equivalent at 37 GB of heap and 25 GB of indexes, and its operator
+-- rule 2 was "vacuum manually; do not wait for autovacuum". These thresholds
+-- are what that rule asks for, applied by the database instead of by a person
+-- who has to remember. `ensure_*` re-applies this DDL, so an existing
+-- warehouse picks them up on its next run without a migration.
+ALTER TABLE gold_fred.rpt_fred_observations SET (
+    autovacuum_vacuum_scale_factor = 0.02,   -- 2% dead, not 20%
+    autovacuum_analyze_scale_factor = 0.01,  -- statistics stay close to the data
+    autovacuum_vacuum_cost_limit = 2000      -- and it is allowed to keep up
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rpt_fred_observations_nk
     ON gold_fred.rpt_fred_observations (
         observation_date,
@@ -164,6 +180,22 @@ CREATE INDEX IF NOT EXISTS ix_rpt_fred_latest_selection
 
 CREATE TABLE IF NOT EXISTS gold_fred.mv_fred_latest
     (LIKE gold_fred.rpt_fred_observations INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMMENTS);
+
+-- Autovacuum sized for the churn a year-chunked re-serve creates (DB-048).
+--
+-- The refresh is `DELETE ... WHERE observation_date BETWEEN` followed by a
+-- re-insert, one year at a time. At PostgreSQL's 20% default scale factor a
+-- table this size reaches its autovacuum threshold only after millions of dead
+-- tuples: `BETA_RESET_REINGESTION.md` §7 recorded the ACS equivalent holding 54.7 million dead rows against 8.9 million live, and its operator
+-- rule 2 was "vacuum manually; do not wait for autovacuum". These thresholds
+-- are what that rule asks for, applied by the database instead of by a person
+-- who has to remember. `ensure_*` re-applies this DDL, so an existing
+-- warehouse picks them up on its next run without a migration.
+ALTER TABLE gold_fred.mv_fred_latest SET (
+    autovacuum_vacuum_scale_factor = 0.02,   -- 2% dead, not 20%
+    autovacuum_analyze_scale_factor = 0.01,  -- statistics stay close to the data
+    autovacuum_vacuum_cost_limit = 2000      -- and it is allowed to keep up
+);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_fred_latest
     ON gold_fred.mv_fred_latest (

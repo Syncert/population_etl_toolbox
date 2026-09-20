@@ -10,16 +10,33 @@ import os
 from functools import lru_cache
 
 
+#: The levels ``API_LOG_LEVEL`` accepts. ``NOTSET`` is deliberately absent: on
+#: a logger it means "inherit", which for ``apps.api`` would mean the root's
+#: ``WARNING`` -- the exact silence this setting exists to end.
+LOG_LEVEL_NAMES = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+
+
+def _validated_log_level(value: str) -> str:
+    level = value.strip().upper()
+    if level not in LOG_LEVEL_NAMES:
+        raise ValueError(
+            f"API_LOG_LEVEL must be one of {', '.join(LOG_LEVEL_NAMES)}; got {value!r}"
+        )
+    return level
+
+
 class Settings:
     """Minimal application settings read from environment variables."""
 
     def __init__(self) -> None:
         self.api_title: str = os.environ.get("API_TITLE", "Population ETL Toolbox API")
         self.api_version: str = os.environ.get("API_VERSION", "0.1.0")
-        self.api_description: str = os.environ.get(
-            "API_DESCRIPTION",
-            "REST API for Census ACS, BLS, and FRED population data.",
-        )
+        #: An operator's override for the served ``info.description``. Empty
+        #: by default, and empty is the normal case: the application builds
+        #: the description from its own source registry, so the front door
+        #: cannot fall behind the platform the way a typed default did
+        #: (API-144). Set this only to say something the registry cannot.
+        self.api_description: str = os.environ.get("API_DESCRIPTION", "")
         self.redis_url: str = os.environ.get("REDIS_URL", "")
         self.api_cache_ttl_seconds: int = int(
             os.environ.get("API_CACHE_TTL_SECONDS", "300")
@@ -80,6 +97,16 @@ class Settings:
             entry.strip()
             for entry in os.environ.get("API_TRUSTED_PROXY_IPS", "").split(",")
             if entry.strip()
+        )
+        #: How much of the API's own logging reaches the process log
+        #: (API-143). ``INFO`` is the default because the request completion
+        #: line -- the whole of this API's request observability -- is written
+        #: at ``INFO``; ``WARNING`` silences it and keeps the unhandled-failure
+        #: traceback. Validated here rather than at the first log call, so a
+        #: typo fails the process at startup instead of quietly logging
+        #: nothing.
+        self.api_log_level: str = _validated_log_level(
+            os.environ.get("API_LOG_LEVEL", "INFO")
         )
         # The largest request body any route accepts (ADR-0004). Bounds the
         # authenticated write resources' JSONB documents; public reads carry

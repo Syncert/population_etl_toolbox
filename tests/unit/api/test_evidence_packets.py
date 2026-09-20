@@ -17,11 +17,13 @@ Covers: API-068 (the shared request-body bound refuses an oversize body on
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
@@ -1333,3 +1335,50 @@ def test_a_request_a_stored_block_cannot_reproduce_is_reported_on_read(
     assert "does not ask for stratum_id" in (state["reason"] or "")
     assert state["missing"] == [], "contradictory, not incomplete"
     assert "stratum_id" in read.json()["document"]["blocks"][0]["envelope"]["api_query"]
+
+
+def test_a_packet_name_taken_in_a_race_is_a_conflict_not_an_outage(
+    accounts, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Covers: API-148 — packets answer a raced name the way configurations do.
+
+    The two services mirror each other's check-then-insert, so they had the
+    same gap: an `IntegrityError` from `UNIQUE (owner_user_id, name)` reached
+    the router as a `SQLAlchemyError` and became a logged `503`. A client that
+    wrote a legitimate conflict was told the database was down.
+    """
+    storage = _StorageSession(accounts)
+    inserts: list[str] = []
+    original = storage.execute
+
+    def racing_execute(query, params=None):
+        sql = " ".join(str(query).split())
+        if "INSERT INTO app_api.evidence_packet" in sql:
+            inserts.append(sql)
+            raise IntegrityError(
+                "INSERT",
+                params,
+                Exception(
+                    "duplicate key value violates unique constraint "
+                    "evidence_packet_owner_user_id_name_key"
+                ),
+            )
+        return original(query, params)
+
+    monkeypatch.setattr(storage, "execute", racing_execute)
+    client = _client(storage, monkeypatch=monkeypatch)
+
+    with caplog.at_level(logging.ERROR):
+        response = client.post(
+            "/api/v1/evidence-packets",
+            headers=_auth(),
+            json={"name": "raced", "document": _packet()},
+        )
+
+    assert inserts, "the insert never ran, so no race was simulated"
+    assert response.status_code == 409, response.text
+    assert "raced" in response.json()["detail"]
+    assert "temporarily unavailable" not in response.json()["detail"]
+    assert not [
+        record for record in caplog.records if record.levelno >= logging.ERROR
+    ], "a handled name conflict was logged as an error"

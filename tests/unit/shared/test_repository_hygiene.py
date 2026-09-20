@@ -25,6 +25,10 @@ GENERATED_PROBES = (
     "generated.egg-info/PKG-INFO",
 )
 OPERATIONAL_SCRIPTS = {
+    # Builds a warehouse from the reviewed manifest and records each asset it
+    # applied, so the warehouse can answer which steps it carries (DB-049).
+    # It replaces the `jq | psql -f` loop the reset procedure used to carry.
+    "apply_warehouse_manifest.py",
     "deploy_stack.ps1",
     # The POSIX half of the same entrypoint. Both are thin callers over
     # tools/deployment.py, so the deployment path runs on the host a

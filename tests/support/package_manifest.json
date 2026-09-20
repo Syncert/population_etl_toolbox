@@ -11,16 +11,25 @@
     "data_ingestion_toolbox/bls/DDL/silver_bls.sql",
     "data_ingestion_toolbox/bls/gold_bls/DDL/gold_bls.sql",
     "data_ingestion_toolbox/bls/gold_bls/DDL/publisher.sql",
+    "data_ingestion_toolbox/cdc/DDL/silver_cdc.sql",
+    "data_ingestion_toolbox/cdc/gold_cdc/DDL/gold_cdc.sql",
+    "data_ingestion_toolbox/cdc/gold_cdc/DDL/publisher.sql",
     "data_ingestion_toolbox/census_acs/DDL/raw_census.sql",
     "data_ingestion_toolbox/census_acs/DDL/silver_census.sql",
     "data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql",
     "data_ingestion_toolbox/census_acs/gold_census/DDL/publisher.sql",
     "data_ingestion_toolbox/census_pep/DDL/silver_pep.sql",
     "data_ingestion_toolbox/census_pep/gold_pep/DDL/gold_pep.sql",
+    "data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql",
+    "data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql",
+    "data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql",
     "data_ingestion_toolbox/fred/DDL/raw_fred.sql",
     "data_ingestion_toolbox/fred/DDL/silver_fred.sql",
     "data_ingestion_toolbox/fred/gold_fred/DDL/gold_fred.sql",
     "data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql",
-    "data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql"
+    "data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql",
+    "data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql",
+    "data_ingestion_toolbox/usda_nass/gold_nass/DDL/gold_nass.sql",
+    "data_ingestion_toolbox/usda_nass/gold_nass/DDL/publisher.sql"
   ]
 }

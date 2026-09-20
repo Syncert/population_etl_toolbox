@@ -148,6 +148,12 @@ AUTOMATION_STATES: tuple[str, ...] = (
 )
 
 
+#: The constraint kinds a rule may cite as enforcement. Each is something the
+#: warehouse refuses at write time; a rule whose violation is only *measured*
+#: afterwards is not enforced and says so with an executor instead.
+ENFORCED_GRAIN_KINDS: tuple[str, ...] = ("unique", "foreign_key", "check")
+
+
 @dataclass(frozen=True, slots=True)
 class EnforcedGrain:
     """One relation whose grain the warehouse itself refuses to violate.
@@ -164,6 +170,23 @@ class EnforcedGrain:
 
     relation: str
     columns: tuple[str, ...]
+    #: Which kind of constraint refuses the violation. `unique` is the default
+    #: so every declaration written before this existed still reads the same.
+    #:
+    #: The three are not interchangeable and the proof reads each differently:
+    #: a unique key is matched by its resolved columns, a foreign key by its
+    #: columns *and* its target, and a check by name -- because a check's
+    #: expression is prose to this model and only the database knows whether
+    #: it holds.
+    kind: str = "unique"
+    #: Required for a `check`, whose only stable handle is its name. Optional
+    #: elsewhere, where it narrows the match to one named constraint.
+    constraint_name: str = ""
+    #: The relation a `foreign_key` points at. A foreign key that refuses an
+    #: unresolvable row only refuses it *into something*, and a grain that did
+    #: not say what would be satisfied by a key pointing anywhere.
+    references: str = ""
+    referenced_columns: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not OBJECT_NAME_PATTERN.match(self.relation):
@@ -177,6 +200,31 @@ class EnforcedGrain:
         if len(set(self.columns)) != len(self.columns):
             raise QualityInventoryError(
                 f"{self.relation}: a column appears twice in the declared grain."
+            )
+        if self.kind not in ENFORCED_GRAIN_KINDS:
+            raise QualityInventoryError(
+                f"{self.relation}: unknown enforced grain kind '{self.kind}'; "
+                f"expected one of {', '.join(ENFORCED_GRAIN_KINDS)}."
+            )
+        if self.kind == "check" and not self.constraint_name:
+            raise QualityInventoryError(
+                f"{self.relation}: a check grain must name its constraint, "
+                "because a check is matched by name rather than by columns."
+            )
+        if self.kind == "foreign_key" and not self.references:
+            raise QualityInventoryError(
+                f"{self.relation}: a foreign key grain must name the relation "
+                "it references, or it claims only that some key exists."
+            )
+        if self.kind != "foreign_key" and (self.references or self.referenced_columns):
+            raise QualityInventoryError(
+                f"{self.relation}: only a foreign key grain references another "
+                "relation."
+            )
+        if self.references and not OBJECT_NAME_PATTERN.match(self.references):
+            raise QualityInventoryError(
+                f"{self.relation}: referenced relation '{self.references}' "
+                "must be schema-qualified."
             )
 
 
@@ -628,6 +676,15 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
         ),
         ("dim_metric", "metric_code (projection)", "gold_glossary.dim_metric"),
         ("dim_geo_latest", "geo_id (projection)", "gold_glossary.dim_geo_latest"),
+        # Not a projection of the catalog: the tile layer's own relation,
+        # filtered to the grains the boundary can draw (DB-053). It is here
+        # because every relation the manifest creates must be an inventoried
+        # object, and its lineage says which part of the catalog it carries.
+        (
+            "tile_boundary",
+            "geo_id (STATE and COUNTY, current, with geometry)",
+            "gold_glossary.dim_geo_latest",
+        ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (
             "fact_observation",
@@ -1849,20 +1906,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "The manifest's schema components are all recorded as applied before "
         "any publication is certified.",
         ("control.schema_migration_state",),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented, and not implementable as written until the applied "
-            "set is recorded. `control.schema_migration_state` holds one row "
-            "per source's gold DDL -- the four components "
-            "`utility.gold_schema.GOLD_SCHEMA_COMPONENTS` names, each a content "
-            "hash written when that source's DDL is applied -- and nothing else "
-            "writes to it. No bootstrap-manifest asset is recorded anywhere, so "
-            "there is no applied set to compare the manifest's 43 assets "
-            "against, and an executor written to compare them today would "
-            "report every one of them missing. Recording them is the "
-            "prerequisite, and it is a deployment decision: the manifest is "
-            "applied by numbered initdb mounts and by the documented reset, "
-            "neither of which reports back."
+            "`quality.reconciliation.verify_manifest_ledger` compares the "
+            "bootstrap manifest's assets against the rows "
+            "`utility.warehouse_manifest.apply_manifest` writes as it applies "
+            "them, reporting missing and drifted assets as separate outcomes -- "
+            "a step that never ran here and a step that ran against a file that "
+            "has since changed are different faults with different answers. A "
+            "warehouse recording no manifest asset answers `not_applicable` "
+            "rather than passing: it predates the ledger, which is "
+            "indistinguishable here from never having been built, and a rule "
+            "that read nothing must not certify a publication."
         ),
     ),
     _rule(
@@ -2007,11 +2062,58 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_ref.bridge_geo_relationship_version",
             "silver_ref.dim_geo_type",
         ),
-        automation="unimplemented",
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_ref.dim_geo_entity_version",
+                ("geo_sk",),
+                kind="foreign_key",
+                constraint_name="dim_geo_entity_version_geo_sk_fkey",
+                references="silver_ref.dim_geo_entity",
+                referenced_columns=("geo_sk",),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_geo_geometry_version",
+                ("geo_sk",),
+                kind="foreign_key",
+                constraint_name="dim_geo_geometry_version_geo_sk_fkey",
+                references="silver_ref.dim_geo_entity",
+                referenced_columns=("geo_sk",),
+            ),
+            EnforcedGrain(
+                "silver_ref.bridge_geo_relationship_version",
+                ("parent_geo_sk",),
+                kind="foreign_key",
+                constraint_name="bridge_geo_relationship_version_parent_geo_sk_fkey",
+                references="silver_ref.dim_geo_entity",
+                referenced_columns=("geo_sk",),
+            ),
+            EnforcedGrain(
+                "silver_ref.bridge_geo_relationship_version",
+                ("related_geo_sk",),
+                kind="foreign_key",
+                constraint_name="bridge_geo_relationship_version_related_geo_sk_fkey",
+                references="silver_ref.dim_geo_entity",
+                referenced_columns=("geo_sk",),
+            ),
+            EnforcedGrain(
+                "silver_ref.dim_geo_entity",
+                ("geo_type",),
+                kind="foreign_key",
+                constraint_name="dim_geo_entity_geo_type_fkey",
+                references="silver_ref.dim_geo_type",
+                referenced_columns=("geo_type",),
+            ),
+        ),
+        automation="enforced",
         automation_note=(
-            "Unimplemented: foreign keys refuse an unresolvable version or "
-            "relationship at write time, and nothing reports on a geography "
-            "type the reference no longer knows."
+            "Foreign keys in "
+            "`src/data_ingestion_toolbox/silver_ref/DDL/silver_ref.sql` refuse "
+            "every part of this rule at write time. An entity version, a "
+            "geometry version, and both ends of a relationship must each "
+            "resolve to a live `dim_geo_entity`, and that entity's `geo_type` "
+            "must be one `dim_geo_type` declares -- which is the 'of a known "
+            "type' clause. There is nothing left to measure afterwards: an "
+            "unresolvable row cannot be stored."
         ),
     ),
     _rule(
@@ -2095,11 +2197,28 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "Metric catalog identity is unique per metric_code and per source "
         "object key; no harvest may fork a metric identity.",
         ("gold_glossary.dim_metric_catalog", "gold_glossary.dim_source_system"),
-        automation="unimplemented",
+        enforced_grains=(
+            EnforcedGrain(
+                "gold_glossary.dim_metric_catalog",
+                ("metric_code",),
+                constraint_name="dim_metric_catalog_metric_code_key",
+            ),
+            EnforcedGrain(
+                "gold_glossary.dim_metric_catalog",
+                ("source_code", "source_object_type", "source_object_key"),
+                constraint_name=(
+                    "dim_metric_catalog_source_code_source_object_type_source_ob_key"
+                ),
+            ),
+        ),
+        automation="enforced",
         automation_note=(
-            "Unimplemented: `dim_metric_catalog`'s unique constraints refuse a "
-            "forked identity at write time; no executor reads the catalog back "
-            "to report one that pre-dates them."
+            "Both halves of this rule are unique constraints in "
+            "`sql/gold_contract/002_gold_glossary_schema.sql`: a second row "
+            "for one `metric_code`, or a second identity for one "
+            "`(source_code, source_object_type, source_object_key)`, is "
+            "refused at write time. A harvest cannot fork a metric identity "
+            "because the database will not store the fork."
         ),
     ),
     _rule(
@@ -2268,9 +2387,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: DB-025 and DB-036 cross the catalog and the served "
-            "relation for metric identity, and no executor confirms the ACS "
-            "contract views preserve the published fact's values."
+            "Unimplemented, and an executor was written and withdrawn rather than never attempted -- which is worth knowing, because the obvious implementation does not work. Modelled on `quality.sources.fred_contract_conformance`, it asks per served row whether a published fact exists with the same value, matching on the composed metric code (`'CENSUS_ACS:' || dataset || ':' || variable_code`) and a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions on the silver side, so no index serves them and every probe scans the fact table. It passed on the fixture warehouse and **timed out after 50 minutes** against 99,783,997 real rows. The BLS analogue timed out at **901 seconds against 5.8 million**, so the shape is wrong rather than merely unsuited to ACS's scale -- FRED's is cheap only because FRED's silver is about fifty thousand rows. A working version has to join on the natural-key columns rather than a composed string, and probably has to be scoped -- a full row-for-row comparison between two hundred-million-row relations is not proportionate as a per-run gate."
         ),
     ),
     _rule(
@@ -2352,13 +2469,33 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.dim_bls_series",
             "gold_bls.dim_bls_survey",
             "gold_bls.dim_bls_measure",
+            # The two the geography half actually reads. A rule may only
+            # report against a relation it declares, and this half compares
+            # the conformed facts with the resolution ledger rather than the
+            # served projection: gold cannot hold a geography silver dropped,
+            # so silver is where the drop is visible.
+            "silver_bls.fact_labor_statistics",
+            "silver_ref.geography_resolution",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the serving refresh joins series, survey and "
-            "geography, so an unresolved row is dropped rather than reported, "
-            "and measure identity resolution is proved by DB-036's test rather "
-            "than by a rule."
+            "`quality.sources.bls_geography_accountability` compares the "
+            "geographies the provider published, taken from "
+            "`silver_bls.observation_revision` before any join, against the "
+            "union of `silver_bls.fact_labor_statistics` and "
+            "`silver_ref.geography_resolution`, and reports any that are in "
+            "neither. It was unimplementable while an unresolved row was "
+            "dropped rather than recorded: the comparison had only one side. "
+            "Measure identity resolution stays proved by DB-036's test rather "
+            "than by this rule. "
+            "BLS does not block on a partly loaded reference the way Census "
+            "ACS does, and the difference is deliberate: its DAG already "
+            "refuses to run at all until the shared thresholds in "
+            "`silver_ref.geography_guard` are met (DAG-020), and past that "
+            "point a single missing county should be recorded and served "
+            "around rather than used to withhold the other three thousand. "
+            "ACS blocks because its transform rebuilds full history, where a "
+            "missing geography means the reference backfill has not run."
         ),
     ),
     _rule(
@@ -2405,10 +2542,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="unimplemented",
         automation_note=(
-            "Unimplemented: DB-036 crosses served codes with the catalog, and "
-            "no executor confirms the BLS contract views preserve the published "
-            "fact's values or that the measure export publishes the grains the "
-            "fact rows carry."
+            "Unimplemented, and an executor was written and withdrawn rather than never attempted -- which is worth knowing, because the obvious implementation does not work. Modelled on `quality.sources.fred_contract_conformance`, it asks per served row whether a published fact exists with the same value, matching on the composed metric code (`'BLS:' || series_id`) and a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions on the silver side, so no index serves them and every probe scans the fact table. It passed on the fixture warehouse and **timed out after 50 minutes** against 99,783,997 real rows. The BLS analogue timed out at **901 seconds against 5.8 million**, so the shape is wrong rather than merely unsuited to ACS's scale -- FRED's is cheap only because FRED's silver is about fifty thousand rows. A working version has to join on the natural-key columns rather than a composed string, and probably has to be scoped -- a full row-for-row comparison between two hundred-million-row relations is not proportionate as a per-run gate."
         ),
     ),
     _rule(
@@ -2705,12 +2839,57 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_cdc.dim_measure",
             "silver_cdc.dim_stratum",
         ),
-        automation="unimplemented",
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("asset_id", "release_watermark"),
+                kind="foreign_key",
+                constraint_name=(
+                    "fact_health_observation_asset_id_release_watermark_fkey"
+                ),
+                references="silver_cdc.dim_dataset_release",
+                referenced_columns=("asset_id", "release_watermark"),
+            ),
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("asset_id", "measure_id", "value_type_id"),
+                kind="foreign_key",
+                constraint_name=(
+                    "fact_health_observation_asset_id_measure_id_value_type_id_fkey"
+                ),
+                references="silver_cdc.dim_measure",
+            ),
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("stratum_id",),
+                kind="foreign_key",
+                constraint_name="fact_health_observation_stratum_id_fkey",
+                references="silver_cdc.dim_stratum",
+                referenced_columns=("stratum_id",),
+            ),
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("geography_status",),
+                kind="check",
+                constraint_name="fact_health_observation_geography_status_check",
+            ),
+            EnforcedGrain(
+                "silver_cdc.fact_health_observation",
+                ("confidence_lower", "confidence_upper"),
+                kind="check",
+                constraint_name="fact_health_observation_check2",
+            ),
+        ),
+        automation="enforced",
         automation_note=(
-            "Unimplemented: the serving views exclude unresolved geography "
-            "(DB-035) and nothing confirms every observation resolves its "
-            "release, measure and stratum, or that confidence intervals stay "
-            "ordered."
+            "Every clause is refused by "
+            "`src/data_ingestion_toolbox/cdc/DDL/silver_cdc.sql` "
+            "at write time. Foreign keys resolve the release, the measure "
+            "identity and the stratum; a CHECK holds `geography_status` to "
+            "the three values it may take; and a CHECK refuses an inverted "
+            "confidence interval. An observation that violates any of them "
+            "cannot be stored, so there is no population to measure after the "
+            "fact."
         ),
     ),
     _rule(
@@ -2930,11 +3109,57 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_nass.dim_domain",
             "silver_nass.observation_revision",
         ),
-        automation="unimplemented",
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("product_id", "release_watermark"),
+                kind="foreign_key",
+                constraint_name=(
+                    "fact_crop_observation_product_id_release_watermark_fkey"
+                ),
+                references="silver_nass.dim_dataset_release",
+                referenced_columns=("product_id", "release_watermark"),
+            ),
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("commodity_sk",),
+                kind="foreign_key",
+                constraint_name="fact_crop_observation_commodity_sk_fkey",
+                references="silver_nass.dim_commodity",
+                referenced_columns=("commodity_sk",),
+            ),
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("statistic_sk",),
+                kind="foreign_key",
+                constraint_name="fact_crop_observation_statistic_sk_fkey",
+                references="silver_nass.dim_statistic",
+                referenced_columns=("statistic_sk",),
+            ),
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("domain_sk",),
+                kind="foreign_key",
+                constraint_name="fact_crop_observation_domain_sk_fkey",
+                references="silver_nass.dim_domain",
+                referenced_columns=("domain_sk",),
+            ),
+            EnforcedGrain(
+                "silver_nass.fact_crop_observation",
+                ("geo_type", "geo_id"),
+                kind="check",
+                constraint_name="fact_crop_observation_check4",
+            ),
+        ),
+        automation="enforced",
         automation_note=(
-            "Unimplemented: the serving views exclude unsupported geography "
-            "(DB-035), and no executor confirms every observation resolves its "
-            "release, commodity, statistic and domain dimensions."
+            "`src/data_ingestion_toolbox/usda_nass/DDL/silver_nass.sql` refuses every "
+            "clause at write time. NOT NULL foreign keys resolve the release, "
+            "commodity, statistic and domain dimensions, and the CHECK "
+            "`(geo_type = 'unsupported') = (geo_id IS NULL)` is the 'explicit "
+            "unsupported geography' clause stated exactly: a row may not claim "
+            "an unsupported geography while carrying an id, nor carry no id "
+            "while claiming a supported one."
         ),
     ),
     _rule(

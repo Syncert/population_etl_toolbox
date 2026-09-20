@@ -49,7 +49,7 @@ export default function ChoroplethMap({
   testId?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const { mapRef, ready } = useMapLibre(containerRef, true);
+  const { mapRef, ready, loadFailed } = useMapLibre(containerRef, true);
 
   const model = useMemo(
     () => buildChoroplethModel(rows, tileMetadata?.joinKey || "geo_id", null, missingLabel),
@@ -91,6 +91,18 @@ export default function ChoroplethMap({
       tileFilterForGeoLevel(geoLevel) as unknown as FilterSpecification,
     );
   }, [mapRef, ready, tileMetadata, model, geoLevel]);
+
+  if (loadFailed) {
+    // The library's chunk did not arrive. An empty rectangle labelled as a
+    // map would be worse than a sentence, and the caller always renders a
+    // table beside this component.
+    return (
+      <p className="status-line" role="status" data-testid={`${testId}-load-failed`}>
+        The map could not be loaded. Every value it would colour is in the table
+        below.
+      </p>
+    );
+  }
 
   return (
     <div className="map-shell">

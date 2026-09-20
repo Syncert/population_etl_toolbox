@@ -68,7 +68,7 @@ from apps.api.services.compatibility import (
 )
 from apps.api.services.neutral_observations_service import (
     NeutralQueryError,
-    resolve_metric,
+    resolve_metrics,
 )
 
 #: The measure count this resource serves between. Two because one measure is
@@ -307,9 +307,14 @@ def metric_matrix(
     """The aligned matrix for two to eight measures."""
     codes = parse_metric_codes(metric_codes)
 
+    # One statement for the whole composition (API-147). The refusal is
+    # unchanged, including which code it names: `codes` keeps the caller's
+    # order, so the first unknown one a reader wrote is still the one they are
+    # told about.
+    resolved = resolve_metrics(db, codes)
     metrics: list[Mapping[str, Any]] = []
     for code in codes:
-        metric = resolve_metric(db, code)
+        metric = resolved.get(code)
         if metric is None:
             raise UnknownAnalysisMetric(code)
         metrics.append(metric)

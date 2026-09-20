@@ -141,9 +141,25 @@ def test_acs_latest_refresh_uses_bounded_indexed_key_lookups() -> None:
     )[0]
 
     assert "ANALYZE gold_acs_affected_keys;" in procedure
-    assert "CROSS JOIN LATERAL" in procedure
-    assert "LIMIT 1" in procedure
-    assert "SELECT DISTINCT ON" not in procedure
+
+    # The lookup is bounded two ways: by the affected keys, and by one
+    # partition at a time. It used to be bounded only the first way, with a
+    # `CROSS JOIN LATERAL ... LIMIT 1` per key -- which was a bounded lookup
+    # right up until the relation was partitioned, at which point every key's
+    # `LIMIT 1` became a `Merge Append` over all 37 partitions (DB-060). The
+    # construct was never the property; it was a proxy for it that stopped
+    # being one when the table shape changed underneath it.
+    assert "gold_acs_pending_keys" in procedure
+    assert "EXIT WHEN NOT EXISTS (SELECT 1 FROM gold_acs_pending_keys);" in procedure
+
+    # And the resolve step reads *a* partition, passed in, rather than the
+    # parent -- which is what "no global historical-row sort" means now.
+    resolve = procedure.split("WITH resolved AS (", 1)[1].split("$resolve$", 1)[0]
+    assert "FROM %1$s d" in resolve
+    assert "gold_census.rpt_acs_observations" not in resolve, (
+        "the resolve step reads the partitioned parent, so it ranks candidates "
+        "from every partition again"
+    )
 
 
 def test_silver_upserts_preserve_watermarks_for_unchanged_rows() -> None:

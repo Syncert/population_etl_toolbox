@@ -567,6 +567,46 @@ export function describeSaveFailure(error: unknown): SaveOutcome {
   };
 }
 
+/**
+ * Report what the *browser* store did with a save.
+ *
+ * The account destination has had this for as long as it has existed:
+ * `describeSaveFailure` names what the API said, and the caller shows it on
+ * the control. The browser destination had only the success half, because the
+ * write could not report anything -- it threw. Both halves now go through one
+ * vocabulary, so a reader is told which store answered and what it said
+ * whichever one they are using.
+ *
+ * An eviction is a success that cost something, and is reported as one: the
+ * view was saved, and the oldest one is gone.
+ */
+export function describeLocalSave(
+  result: { outcome: "saved" | "refused"; evicted: number; reason: string },
+  name: string,
+  limit: number,
+): SaveOutcome {
+  if (result.outcome === "refused") {
+    return {
+      state: "bad",
+      // What is still true matters as much as what failed: the analysis is on
+      // screen, and nothing about it changed.
+      message: `Not saved — ${result.reason}. The analysis on screen is unchanged.`,
+      destination: null,
+    };
+  }
+  if (result.evicted > 0) {
+    const views = result.evicted === 1 ? "view" : "views";
+    return {
+      state: "warn",
+      message:
+        `Saved in this browser only — this browser keeps ${limit} saved views, ` +
+        `so the ${result.evicted} oldest ${views} made way for it`,
+      destination: "browser",
+    };
+  }
+  return describeSaveSuccess("browser", name);
+}
+
 /** Report a successful save, naming where it went and what that means. */
 export function describeSaveSuccess(destination: SaveDestination, name: string): SaveOutcome {
   if (destination === "account") {

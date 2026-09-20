@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from apps.api.appdb import app_storage_configured, get_app_engine
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.registry import OBSERVATION_DISPATCH
 from apps.api.schemas import ContentHealthResponse, HealthResponse, ReadinessResponse
@@ -87,7 +88,31 @@ def readiness_probe(
         status="ready" if ready else "unready",
         database=database_state,
         cache=cache_state,
+        storage=app_storage_state(),
     )
+
+
+def app_storage_state() -> str:
+    """Whether the API-owned application storage can be reached.
+
+    Probed, not read from the settings. A configured URL pointing at a closed
+    port is exactly the state this reports on, and it is the state that made
+    ``/health/ready`` say ``ready`` while every private route answered 503
+    (API-145).
+
+    It never gates readiness. Application storage is optional by ADR-0003:
+    without it the public API is complete and the saved-analysis routes answer
+    an explicit 503, so failing readiness here would take a whole deployment
+    out of rotation over a feature it was never configured to offer.
+    """
+    if not app_storage_configured():
+        return "unconfigured"
+    try:
+        with get_app_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return "unavailable"
+    return "ok"
 
 
 @content_router.get("/health/content", response_model=ContentHealthResponse)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -163,4 +164,198 @@ def test_migrations_readme_describes_every_migration_the_manifest_applies() -> N
     missing = sorted(described - on_disk)
     assert not missing, (
         f"sql/migrations/README.md describes {', '.join(missing)}, which does not exist"
+    )
+
+
+def test_the_migrations_readme_does_not_claim_a_numeric_apply_order() -> None:
+    """Covers: DB-029 — the order the README states is an order that works.
+
+    It said "Apply these checked-in SQL files in numeric order", and numeric
+    order fails outright: `004` alters a relation `silver_fred.sql` creates and
+    `024` alters one created by `gold_acs.sql`, so both run after DDL that is
+    not a migration at all. The manifest interleaves them, and it is the only
+    order anything applies.
+
+    The claim is checked rather than the correction, because there are many
+    ways to say "manifest order" and one way to say the wrong thing.
+    """
+    readme = MIGRATIONS_README.read_text(encoding="utf-8")
+    # The instruction, not the phrase. The README has to be able to *say*
+    # "numeric order does not work" in order to explain why, so a bare
+    # substring search would forbid the correction along with the error.
+    instruction = re.compile(r"apply[^.]*?\bin numeric order\b", re.IGNORECASE | re.S)
+    found = instruction.search(readme)
+    assert not found, (
+        "sql/migrations/README.md tells a reader to apply the steps in numeric "
+        f"order, which fails -- the manifest interleaves migrations with the "
+        f"source DDL they alter: {found.group(0)!r}"
+    )
+    assert "warehouse_manifest.json" in readme, (
+        "the README no longer points at the manifest that decides the order"
+    )
+
+
+def test_every_migration_paragraph_names_the_phase_it_runs_in() -> None:
+    """Covers: DB-029 — a reader can place a step without reading the manifest.
+
+    The README is where a reader learns why a step exists. Now that the order
+    is the manifest's rather than the list's, *when* it runs is part of that,
+    and a numbered list read top to bottom says nothing true about it --
+    `003` is item three and runs second to last.
+
+    The phase is matched anywhere in the entry rather than in a fixed form, so
+    an entry that already explains its phase in prose (`023` does) is not made
+    to repeat itself in a template.
+    """
+    readme = MIGRATIONS_README.read_text(encoding="utf-8")
+    phases = {
+        Path(asset["path"]).name: asset["phase"]
+        for asset in _assets()
+        if asset["path"].startswith("sql/migrations/")
+    }
+    assert phases, "the manifest applies no migration; this guard proved nothing"
+
+    unplaced = []
+    for filename, phase in sorted(phases.items()):
+        entry = next(
+            (line for line in readme.splitlines() if f"`{filename}`" in line), ""
+        )
+        if not entry:
+            unplaced.append(f"{filename} (no entry)")
+        elif not any(
+            marker in entry
+            for marker in (f"Manifest phase: `{phase}`", f"`{phase}` phase")
+        ):
+            # The phase has to be named as a phase. A bare substring search
+            # passed `001_raw_capture_control_foundation.sql` on the strength
+            # of its own filename containing "foundation", which is the entry
+            # saying nothing about when it runs.
+            unplaced.append(f"{filename} (runs in {phase}, entry does not say so)")
+    assert not unplaced, (
+        "these steps do not say which manifest phase they run in, so a reader "
+        f"cannot tell when they are applied: {unplaced}"
+    )
+
+
+#: A source package owns a `gold_<subject>` publication subpackage. That is the
+#: discoverable definition rather than a hand-kept list: a source added without
+#: one publishes nothing, and a source added with one is covered here the day
+#: its package appears.
+def _source_packages() -> list[Path]:
+    toolbox = REPOSITORY_ROOT / "src/data_ingestion_toolbox"
+    return sorted(
+        {
+            gold_package.parent
+            for gold_package in toolbox.glob("*/gold_*")
+            if gold_package.is_dir()
+        }
+    )
+
+
+def test_every_source_owns_its_relation_ddl_under_src() -> None:
+    """Covers: DB-054 — a source's relations are files under its own package.
+
+    `BETA_RESET_REINGESTION.md` §1 says "the runtime DDL used by DAG tasks is
+    packaged below `src/`". For CDC, FBI UCR and USDA NASS it was not: their
+    relations existed only in `sql/migrations/010`, `011` and `012` and the
+    later steps that replaced their views. A migration is applied once by the
+    bootstrap and never again, so those three DAGs had no `ensure_*` task to
+    re-apply their own schema and would write an older vocabulary, or fail at
+    insert time, against a warehouse a step behind them.
+
+    Both halves are required. A source that owns only silver has gold defined
+    somewhere else, which is the same defect one layer up.
+    """
+    manifest_paths = [asset["path"] for asset in _assets()]
+    missing: list[str] = []
+
+    for package in _source_packages():
+        owned = package.relative_to(REPOSITORY_ROOT).as_posix()
+        silver = [path for path in manifest_paths if path.startswith(f"{owned}/DDL/")]
+        gold = [
+            path
+            for path in manifest_paths
+            if path.startswith(f"{owned}/gold_") and "/DDL/" in path
+        ]
+        if not silver:
+            missing.append(f"{owned} has no manifest asset under {owned}/DDL/")
+        if not gold:
+            missing.append(f"{owned} has no manifest asset under {owned}/gold_*/DDL/")
+
+    assert not missing, (
+        "these sources define their relations outside their own package, so "
+        "nothing under `src/` can re-apply them: " + "; ".join(missing)
+    )
+
+
+def _initdb_ordinals(compose: str) -> list[tuple[str, str]]:
+    """Every (mounted filename, repository path) an initdb mount declares."""
+    return [
+        (mounted, source.replace("../../", ""))
+        for source, mounted in re.findall(
+            r"- (\.\./\.\./[^:]+):/docker-entrypoint-initdb\.d/([^:]+):ro", compose
+        )
+    ]
+
+
+def test_the_smoke_seed_runs_after_the_warehouse_it_seeds() -> None:
+    """Covers: DB-045 — a tier seed sorts after every DDL mount, not into them.
+
+    `initdb` runs its directory in filename order, so a mount's numeric prefix
+    is the only thing sequencing it. The base file's prefixes are generated
+    from the manifest and move when the manifest does; the smoke overlay's is
+    hand-written in a different file. It was `051_`, chosen to follow a
+    `050_martin_seed.sql` that a later manifest change renumbered -- which
+    would have dropped the seed into the middle of the silver phase, against
+    relations that did not exist yet, in a tier whose failure reads as a
+    frontend bug.
+    """
+    base = _initdb_ordinals(COMPOSE_PATH.read_text(encoding="utf-8"))
+    overlay = _initdb_ordinals(SMOKE_COMPOSE_PATH.read_text(encoding="utf-8"))
+    assert overlay, "the smoke overlay mounts no seed; this guard proved nothing"
+
+    warehouse = max(name for name, path in base if not path.startswith("tests/"))
+    for name, path in overlay:
+        assert name > warehouse, (
+            f"{path} is mounted as {name}, which initdb runs at or before "
+            f"{warehouse} -- the warehouse DDL it seeds has not been applied"
+        )
+
+
+ACS_GOLD_DDL = (
+    REPOSITORY_ROOT
+    / "src/data_ingestion_toolbox/census_acs/gold_census/DDL/gold_acs.sql"
+)
+
+
+def test_the_declared_partition_range_still_has_room() -> None:
+    """Covers: DB-056 — the fixed partition range is extended before it bites.
+
+    `rpt_acs_observations` declares its year partitions over a fixed range
+    rather than deriving one from `CURRENT_DATE`, because the schema snapshot
+    (DB-051) is compared as a diff and a definition that changes when the year
+    rolls over would turn every January into a failed build nobody changed
+    anything to cause.
+
+    The cost of a fixed range is that it runs out. This fails with five years
+    still in hand, so the fix is a one-line edit made calmly rather than an
+    ACS vintage landing in the default partition, where the year refresh
+    cannot clear it.
+    """
+    ddl = ACS_GOLD_DDL.read_text(encoding="utf-8")
+    declared = re.search(r"v_last\s+CONSTANT INTEGER := (\d{4})", ddl)
+    assert declared, (
+        "the ACS partition DDL no longer declares `v_last`, so nothing here "
+        "knows which years it covers"
+    )
+
+    last_year = int(declared.group(1))
+    # The pipeline can ingest next year's vintage: `control.acs_ingestion_slices`
+    # allows `year <= EXTRACT(year FROM CURRENT_DATE) + 1`.
+    needed = date.today().year + 1
+    assert last_year >= needed + 5, (
+        f"the declared partition range ends at {last_year} and the pipeline "
+        f"can already ingest {needed}. Extend `v_last` in gold_acs.sql; a "
+        f"vintage past the range lands in the default partition, which the "
+        f"year refresh never truncates"
     )

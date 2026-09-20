@@ -23,6 +23,7 @@ import type {
 import { metricSupportedGeoLevels, normalizeGeoLevel } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS, GEO_GRAIN_ORDER } from "./geographyPicker";
+import { formatNumber } from "./format";
 
 export const RULE_PASS = "pass";
 export const RULE_FAIL = "fail";
@@ -200,11 +201,26 @@ export function incompatibleAlternatives(
   return alternatives;
 }
 
+/**
+ * The measures a request names, and nothing else.
+ *
+ * Both builders below took a whole `ComparisonSelection` while reading two or
+ * four of its fields. A `ComparisonSelection` still satisfies these, so every
+ * caller is unchanged -- but the over-declaration had a cost: the effects that
+ * call them had to spread the whole object, which made `selection` a
+ * dependency of an effect that must not re-run when an unrelated part of it
+ * changes, and all three suppressed the rule instead.
+ */
+export interface ComparisonPair {
+  a: Pick<ComparisonSide, "metricCode">;
+  b: Pick<ComparisonSide, "metricCode">;
+}
+
 /** Parameters `/comparison/preflight` declares. */
-export function preflightRequestParams(selection: ComparisonSelection): Record<string, string> {
+export function preflightRequestParams(pair: ComparisonPair): Record<string, string> {
   return {
-    metric_code_a: selection.a.metricCode,
-    metric_code_b: selection.b.metricCode,
+    metric_code_a: pair.a.metricCode,
+    metric_code_b: pair.b.metricCode,
   };
 }
 
@@ -214,7 +230,7 @@ export function preflightRequestParams(selection: ComparisonSelection): Record<s
  * than narrow it.
  */
 export function comparisonRequestParams(
-  selection: ComparisonSelection,
+  selection: ComparisonPair & Pick<ComparisonSelection, "geoLevel" | "stateFips">,
   limit: number | string = 1000,
 ): Record<string, string> {
   const params: Record<string, string> = {
@@ -250,7 +266,7 @@ export function comparisonValueText(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return "Not published";
   }
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return formatNumber(value, { maximumFractionDigits: 4 });
 }
 
 /** True when the API named this field as one it derived. */
@@ -635,9 +651,9 @@ export function describeComparisonCoverage(
   const codeA = response?.metric_code_a || "measure A";
   const codeB = response?.metric_code_b || "measure B";
   return (
-    `${total.toLocaleString()} geographies are paired here. ` +
-    `${codeA} publishes ${countA.toLocaleString()} and ${codeB} publishes ` +
-    `${countB.toLocaleString()} under these filters; a geography only one of ` +
+    `${formatNumber(total)} geographies are paired here. ` +
+    `${codeA} publishes ${formatNumber(countA)} and ${codeB} publishes ` +
+    `${formatNumber(countB)} under these filters; a geography only one of ` +
     "the two publishes is not in this comparison."
   );
 }

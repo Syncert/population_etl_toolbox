@@ -24,19 +24,28 @@
 -- Existing rows are rewritten to the new method and class, because the rows
 -- themselves never were reviewed.
 
+-- Drop, rewrite, then constrain -- in that order, and the order is the whole
+-- point.
+--
+-- This step shipped with the two `ADD CONSTRAINT`s before the `UPDATE` that
+-- makes the rows satisfy them. `ADD CONSTRAINT` validates every existing row
+-- immediately, so on any warehouse actually holding what this step exists to
+-- correct it failed outright:
+--
+--     ERROR: check constraint
+--     "agency_geography_relationship_resolution_method_check" of relation
+--     "agency_geography_relationship" is violated by some row
+--
+-- On a fresh bootstrap the table is empty when this runs, so the order could
+-- not matter and nothing reported it. The one shape it had to work on is the
+-- one it could not. Rewriting first is not enough on its own either: the
+-- *old* constraint does not admit `county_label_match`, so both have to be
+-- dropped before the rewrite and added after it.
+
 ALTER TABLE silver_fbi.agency_geography_relationship
     DROP CONSTRAINT IF EXISTS agency_geography_relationship_resolution_method_check;
 ALTER TABLE silver_fbi.agency_geography_relationship
-    ADD CONSTRAINT agency_geography_relationship_resolution_method_check
-    CHECK (resolution_method IS NULL OR resolution_method IN (
-        'exact_state_code', 'county_label_match', 'reviewed_place_crosswalk'
-    ));
-
-ALTER TABLE silver_fbi.agency_geography_relationship
     DROP CONSTRAINT IF EXISTS agency_geography_relationship_confidence_class_check;
-ALTER TABLE silver_fbi.agency_geography_relationship
-    ADD CONSTRAINT agency_geography_relationship_confidence_class_check
-    CHECK (confidence_class IN ('exact', 'reviewed', 'derived', 'unresolved'));
 
 -- Rewrite what the old code wrote. The relationship is unchanged; only the
 -- claim about how it was established is corrected.
@@ -52,6 +61,16 @@ UPDATE silver_fbi.agency_geography_relationship
        updated_at = NOW()
  WHERE relationship_type = 'county'
    AND reason_code = 'canonical_county_absent';
+
+ALTER TABLE silver_fbi.agency_geography_relationship
+    ADD CONSTRAINT agency_geography_relationship_resolution_method_check
+    CHECK (resolution_method IS NULL OR resolution_method IN (
+        'exact_state_code', 'county_label_match', 'reviewed_place_crosswalk'
+    ));
+
+ALTER TABLE silver_fbi.agency_geography_relationship
+    ADD CONSTRAINT agency_geography_relationship_confidence_class_check
+    CHECK (confidence_class IN ('exact', 'reviewed', 'derived', 'unresolved'));
 
 ALTER TABLE silver_fbi.fact_reporting_participation
     DROP CONSTRAINT IF EXISTS fact_reporting_participation_geography_status_check;

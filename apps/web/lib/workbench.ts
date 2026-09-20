@@ -32,6 +32,7 @@ import { publishedNumber } from "./explorerViewModel";
 import { GEO_GRAIN_LABELS } from "./geographyPicker";
 import { observationPeriodLabel } from "./observationAccess";
 import type { ObservationScope } from "./observationAccess";
+import { formatNumber } from "./format";
 
 /**
  * The most series one composition carries.
@@ -1226,6 +1227,49 @@ export function formatCoefficient(value: number | null | undefined): string {
 }
 
 /**
+ * What the panel says where the API published no pair count.
+ *
+ * `n` is optional in the contract (`CorrelationStatistic.n?: number`), and
+ * the client used to read it as `Number(statistic.n ?? 0)`. That rendered an
+ * unpublished count as "0 paired geographies" -- a statement the API never
+ * made, and one a reader cannot tell from a genuine zero. The handoff's rule
+ * is that a value the source did not publish is never a zero; every other
+ * `?? 0` under `apps/web` is a counter or an index, and this one was a
+ * published statistic.
+ */
+export const PAIRED_GEOGRAPHIES_NOT_PUBLISHED = "Not published";
+
+/**
+ * The pair count, or `null` where the API published none.
+ *
+ * Absence and a zero are different answers and are kept apart here, so every
+ * reading that depends on the count can refuse together rather than each
+ * inventing its own fallback.
+ */
+export function pairedGeographies(
+  statistic: CorrelationLike | null | undefined,
+): number | null {
+  const value = statistic?.n;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The caveat line's fallback: how many geographies a coefficient was measured
+ * over, or that the API did not say.
+ *
+ * Shared by the pair list and the matrix tooltip so one absent count cannot
+ * read two ways on one screen.
+ */
+export function pairedGeographiesText(
+  statistic: CorrelationLike | null | undefined,
+): string {
+  const n = pairedGeographies(statistic);
+  return n === null
+    ? "Paired geographies not published."
+    : `${formatNumber(n)} paired geographies.`;
+}
+
+/**
  * The panel's readings, in the order they are read.
  *
  * `n` first, because a coefficient's meaning depends on how many pairs it was
@@ -1252,11 +1296,11 @@ export function correlationReadings(
   if (!statistic) {
     return [];
   }
-  const n = Number(statistic.n ?? 0);
+  const n = pairedGeographies(statistic);
   const readings: CorrelationReading[] = [
     {
       label: "Paired geographies",
-      value: n.toLocaleString(),
+      value: n === null ? PAIRED_GEOGRAPHIES_NOT_PUBLISHED : formatNumber(n),
       derived: false,
     },
   ];
@@ -1280,16 +1324,24 @@ export function correlationReadings(
     readings.push({
       label: "Coverage",
       value:
-        `${n.toLocaleString()} paired of ` +
-        `${coverage.map((count) => count.toLocaleString()).join(" and ")} published`,
+        (n === null
+          ? `${PAIRED_GEOGRAPHIES_NOT_PUBLISHED}, of `
+          : `${formatNumber(n)} paired of `) +
+        `${coverage.map((count) => formatNumber(count)).join(" and ")} published`,
       derived: false,
     });
   }
 
-  const contemporaneous = Number(statistic.contemporaneous_pairs ?? 0);
+  const contemporaneous =
+    typeof statistic.contemporaneous_pairs === "number"
+      ? statistic.contemporaneous_pairs
+      : null;
   readings.push({
     label: "Contemporaneous pairs",
-    value: `${contemporaneous.toLocaleString()} of ${n.toLocaleString()}`,
+    value:
+      contemporaneous === null || n === null
+        ? PAIRED_GEOGRAPHIES_NOT_PUBLISHED
+        : `${formatNumber(contemporaneous)} of ${formatNumber(n)}`,
     derived: false,
   });
 
@@ -1321,7 +1373,8 @@ export interface CorrelationMatrixCell {
   declined: boolean;
   /** True on the diagonal, where a measure meets itself. */
   identity: boolean;
-  n: number;
+  /** The pair count, or `null` where the API published none for this cell. */
+  n: number | null;
 }
 
 export interface CorrelationMatrixModel {
@@ -1394,7 +1447,7 @@ export function correlationMatrixModel({
             "measurement, so no coefficient is drawn here.",
           declined: false,
           identity: true,
-          n: 0,
+          n: null,
         });
         continue;
       }
@@ -1407,7 +1460,7 @@ export function correlationMatrixModel({
           reason: "The matrix carried no answer for this pair.",
           declined: false,
           identity: false,
-          n: 0,
+          n: null,
         });
         continue;
       }
@@ -1423,7 +1476,7 @@ export function correlationMatrixModel({
             .join("; "),
           declined: true,
           identity: false,
-          n: 0,
+          n: null,
         });
         continue;
       }
@@ -1445,7 +1498,7 @@ export function correlationMatrixModel({
             : "",
         declined: false,
         identity: false,
-        n: Number(statistic?.n ?? 0),
+        n: pairedGeographies(statistic),
       });
     }
   }

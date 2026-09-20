@@ -195,11 +195,18 @@ async function installRoutes(page, { failObservations = false } = {}) {
   );
 }
 
+// `/workbench` is here because `analytics-workbench` added the route and not
+// the entry, and nothing noticed: `workbench.spec.js` checks none of the
+// landmark, heading or status-row rules. The auditor spec beside this one
+// derives its own list from the app directory for exactly that reason; this
+// list stays hand-written because these assertions are this repository's own
+// rules rather than WCAG's, and each is worth stating deliberately.
 const CORE_ROUTES = [
   "/",
   "/catalog",
   "/explore",
   "/compare",
+  "/workbench",
   "/profiles",
   "/quality",
   "/articles",
@@ -238,25 +245,58 @@ test("every core route has one main landmark and a single top-level heading", as
   }
 });
 
-test("every form control on the core workflows carries an accessible name", async ({ page }) => {
+test("every control on the core workflows carries an accessible name", async ({ page }) => {
   await installRoutes(page);
-  for (const route of ["/explore", "/compare", "/profiles", "/quality"]) {
+  // Every core route, not four of them, and buttons and links as well as the
+  // form controls: a button with no name is as unusable as an unlabelled
+  // select, and this check could not see one.
+  for (const route of CORE_ROUTES) {
     await page.goto(route);
     const unnamed = await page.evaluate(() => {
-      const controls = [...document.querySelectorAll("select, input, textarea")];
+      const controls = [
+        ...document.querySelectorAll("select, input, textarea, button, a[href]"),
+      ];
       return controls
         .filter((control) => {
+          if (control.getAttribute("aria-hidden") === "true") return false;
           const labelled =
             control.getAttribute("aria-label") ||
             control.getAttribute("aria-labelledby") ||
             (control.id && document.querySelector(`label[for="${CSS.escape(control.id)}"]`)) ||
-            control.closest("label");
+            control.closest("label") ||
+            // A button or a link is named by its own text content, which a
+            // select never is.
+            (control.textContent || "").trim() ||
+            control.getAttribute("title");
           return !labelled;
         })
         .map((control) => `${control.tagName.toLowerCase()}#${control.id || "(no id)"}`);
     });
     expect(unnamed, `unnamed controls on ${route}`).toEqual([]);
   }
+});
+
+test("the active navigation link says so, and the skip link reaches main", async ({ page }) => {
+  // Covers: WEB-111 — the active link was marked by a class alone, which says
+  // nothing to a reader who is not looking at the colour; and ten navigation
+  // links stood between the top of every page and the analysis on it.
+  await installRoutes(page);
+  await page.goto("/explore");
+
+  const active = page.getByRole("link", { name: "Explore", exact: true });
+  await expect(active).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Compare", exact: true })).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+
+  // The skip link is the first thing a keyboard reaches, and it lands on the
+  // content rather than scrolling to it and leaving focus behind.
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to main content" });
+  await expect(skip).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
 });
 
 test("the map and the trend both have a table alternative to the same values", async ({ page }) => {
@@ -269,6 +309,13 @@ test("the map and the trend both have a table alternative to the same values", a
   await expect(map).toHaveAttribute("aria-label", /arrow keys/i);
   await page.getByRole("tab", { name: "table" }).click();
   await expect(page.getByRole("cell", { name: "561504" })).toBeVisible();
+
+  // An alternative that shows an unstated subset is not one: the caption says
+  // how many rows there are and which of them this is, so a reader who cannot
+  // use the map knows whether they have seen everything (WEB-110).
+  await expect(page.getByTestId("observation-table-caption")).toContainText(
+    "Showing all 1 loaded row,",
+  );
 
   // The legend states its bins in text, so colour is not the only carrier.
   await page.getByRole("tab", { name: "map" }).click();
@@ -302,9 +349,13 @@ test("analytical context survives a small viewport", async ({ page }) => {
   await expect(page.getByTestId("dashboard")).toHaveAttribute("data-observation-count", "1");
 
   // Source and caveat context is not hidden on a phone: the whole point of
-  // the context is that it travels with the value.
+  // the context is that it travels with the value. The context asserted here
+  // is the source panel, which carries what the API published about the
+  // source -- it used to be a sentence about Census ACS coverage that this
+  // client authored and the API publishes no field for (WEB-112).
   await expect(page.getByTestId("observations-status")).toBeVisible();
-  await expect(page.getByText(/ACS 5-year estimates provide complete county coverage/)).toBeVisible();
+  await page.getByRole("tab", { name: "metadata" }).click();
+  await expect(page.getByRole("region", { name: "Source and methodology" })).toBeVisible();
 
   // Nothing overflows the viewport horizontally.
   const overflow = await page.evaluate(

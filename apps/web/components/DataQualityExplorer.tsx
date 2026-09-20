@@ -15,7 +15,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import StatusPill from "./StatusPill";
-import { apiErrorMessage, apiFetch, fetchAllPages } from "../lib/api/client";
+import {
+  apiErrorMessage,
+  apiFetch,
+  fetchAllPages,
+  getFreshness,
+} from "../lib/api/client";
 import { createRequestTracker } from "../lib/api/requestState";
 import type { CollectionResponse, MetricSummary } from "../lib/api/types";
 import {
@@ -57,7 +62,7 @@ export default function DataQualityExplorer() {
     const request = freshnessTracker.begin();
     setFreshnessStatus({ state: "loading", message: "loading published freshness" });
     try {
-      const payload = await apiFetch<CollectionResponse<SourceFreshness>>("/catalog/freshness");
+      const payload = await getFreshness();
       if (!request.isCurrent()) {
         return;
       }
@@ -321,7 +326,17 @@ export default function DataQualityExplorer() {
             </p>
           </div>
         </div>
-        <div className="table-wrap">
+        {/* A region that scrolls must be reachable by the keyboard that has
+            to scroll it: this table is wider than its column, and a reader
+            with no pointer could not move it. `tabIndex={0}` gives it a tab
+            stop, and the label says what they have landed on rather than
+            announcing an unnamed group. */}
+        <div
+          className="table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label="Where quality evidence is published"
+        >
           <table>
             <thead>
               <tr>

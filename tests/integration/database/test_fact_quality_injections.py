@@ -517,6 +517,7 @@ FRED_SERVED_METRIC = f"FRED:{FRED_SERVED_SERIES}"
 @pytest.fixture
 def fred_served(
     postgres_connection_factory: Callable[[], connection],
+    harvest_state_cleanup: None,
 ):
     """One published FRED fact, carried all the way to the served views.
 

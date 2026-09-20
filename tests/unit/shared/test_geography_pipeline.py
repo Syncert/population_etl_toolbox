@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 import zipfile
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ import httpx
 import pytest
 
 from data_ingestion_toolbox.silver_ref.geography_contract import (
+    persist_exact_resolution_outcomes,
     canonical_geo_id,
     resolve_provider_geography,
 )
@@ -831,3 +833,130 @@ def test_relationship_reconciliation_restricts_pairs_before_intersecting() -> No
     # Each place's own area is computed once per place, not once per pair.
     assert statement.count("ST_Area(boundary.geom::geography)") == 1
     assert "ON CONFLICT DO NOTHING" in statement
+
+
+def test_an_unparseable_geography_writes_no_ledger_row() -> None:
+    """Covers: DB-009 — a false ledger row is worse than a missing one.
+
+    `parse_bls_geography` returns a canonical id or `None`: only state and
+    county LAUS area patterns are supported, so a metro-area series yields
+    `geo_id=None`. The ledger writer used to call `str(row["geo_id"])` on it,
+    which is `'None'` -- a row claiming a geography called "None" failed to
+    resolve, counted as a real miss by the `GROUP BY provider_source` query
+    `BETA_RESET_REINGESTION.md` §5 tells an operator to trust.
+
+    No such series is ingested today, which is why nothing had caught it.
+    """
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self.executed: list[tuple] = []
+
+        def __enter__(self) -> "_Cursor":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def execute(self, statement: str, parameters: tuple = ()) -> None:
+            self.executed.append((statement, parameters))
+
+    class _Connection:
+        def __init__(self, cursor: _Cursor) -> None:
+            self._cursor = cursor
+            self.commits = 0
+
+        def cursor(self) -> _Cursor:
+            return self._cursor
+
+        def commit(self) -> None:
+            self.commits += 1
+
+        def close(self) -> None:
+            return None
+
+    class _Hook:
+        def __init__(self, connection: _Connection) -> None:
+            self._connection = connection
+
+        def get_conn(self) -> _Connection:
+            return self._connection
+
+    cursor = _Cursor()
+    hook = _Hook(_Connection(cursor))
+
+    persist_exact_resolution_outcomes(
+        hook,
+        provider_source="BLS",
+        provider_dataset="la",
+        rows=[
+            {"geo_level": None, "geo_id": None, "source_vintage": 2024},
+            {"geo_level": "state", "geo_id": "   ", "source_vintage": 2024},
+            {"geo_level": "state", "geo_id": "state:55", "source_vintage": 2024},
+        ],
+    )
+
+    assert len(cursor.executed) == 1, (
+        "a geography with no canonical id reached the ledger; "
+        f"{len(cursor.executed)} rows were written"
+    )
+    parameters = cursor.executed[0][1]
+    assert "state:55" in parameters
+    assert "None" not in parameters
+
+
+def test_a_resolution_row_carries_the_capture_that_published_it() -> None:
+    """Covers: DB-009 — the miss is recorded with its evidence.
+
+    The four sources that write this ledger with their own SQL all record
+    `evidence_capture_id`; the two that came through this helper recorded it
+    for no row. Measured on the internal warehouse before this change: BLS
+    121,165 rows and CENSUS_ACS 88,514, none carrying a capture.
+    """
+
+    captured: list[tuple] = []
+
+    class _Cursor:
+        def __enter__(self) -> "_Cursor":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def execute(self, statement: str, parameters: tuple = ()) -> None:
+            captured.append((statement, parameters))
+
+    class _Connection:
+        def cursor(self) -> _Cursor:
+            return _Cursor()
+
+        def commit(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class _Hook:
+        def get_conn(self) -> _Connection:
+            return _Connection()
+
+    capture_id = uuid.UUID(int=7)
+    persist_exact_resolution_outcomes(
+        _Hook(),
+        provider_source="BLS",
+        provider_dataset="la",
+        rows=[
+            {
+                "geo_level": "state",
+                "geo_id": "state:55",
+                "source_vintage": 2024,
+                "evidence_capture_id": capture_id,
+            }
+        ],
+    )
+
+    statement, parameters = captured[0]
+    assert "evidence_capture_id" in statement
+    assert capture_id in parameters
+    # A replay that carries no capture must not erase one already recorded.
+    assert "COALESCE(" in statement

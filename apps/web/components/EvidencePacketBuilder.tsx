@@ -22,7 +22,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, FileText, FolderOpen, Plus, Printer, Save, Trash2 } from "lucide-react";
 import StatusPill from "./StatusPill";
 import EvidenceEnvelope from "./EvidenceEnvelope";
-import { BUILDER_DRAFT_KEY, readSavedCharts } from "../lib/savedCharts";
+import {
+  BUILDER_DRAFT_KEY,
+  SAVED_CHART_LIMIT,
+  readSavedCharts,
+  saveBuilderDraft,
+} from "../lib/savedCharts";
 import {
   ApiError,
   createEvidencePacket,
@@ -36,6 +41,7 @@ import {
   LIBRARY_PAGE_LIMIT,
   LIBRARY_PAGE_SIZE,
   describeLibraryLoad,
+  describeLocalSave,
   describeSaveFailure,
   describeSaveSuccess,
   saveDestination,
@@ -54,6 +60,7 @@ import {
   packetToDocument,
 } from "../lib/evidencePackets";
 import type { EvidencePacket, PacketBlock } from "../lib/evidencePackets";
+import { formatTime } from "../lib/format";
 
 function newId(prefix: string): string {
   return `${prefix}:${Math.random().toString(36).slice(2, 10)}`;
@@ -228,15 +235,26 @@ export default function EvidencePacketBuilder() {
     }));
   }
 
+  /** Write the draft, and report what this browser did with it. */
   function persistLocally() {
-    window.localStorage.setItem(BUILDER_DRAFT_KEY, JSON.stringify(packet));
-    setSaveState(`Saved ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+    const result = saveBuilderDraft(packet);
+    setSaveState(
+      result.outcome === "saved"
+        ? `Saved ${formatTime(new Date(), { hour: "numeric", minute: "2-digit" })}`
+        : "Not saved",
+    );
+    return result;
   }
 
   async function persist() {
     if (destination !== "account") {
-      persistLocally();
-      setSaveOutcome(describeSaveSuccess("browser", packet.title || "packet"));
+      const result = persistLocally();
+      // The draft is one document, not a capped list, so no eviction can
+      // happen here -- but a refusal can, and it is reported in the same
+      // words as the saved-view surfaces use.
+      setSaveOutcome(
+        describeLocalSave(result, packet.title || "packet", SAVED_CHART_LIMIT),
+      );
       window.setTimeout(() => setSaveOutcome(null), 4000);
       return;
     }

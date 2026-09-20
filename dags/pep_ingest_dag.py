@@ -10,6 +10,9 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
+from data_ingestion_toolbox.silver_ref.geography_guard import (
+    require_shared_geography_loaded,
+)
 from data_ingestion_toolbox import census_pep as pep_package
 from data_ingestion_toolbox.census_pep.config import CONFIG
 from data_ingestion_toolbox.census_pep.gold_pep.transform import (
@@ -61,32 +64,18 @@ def pep_ingest():
 
     @task()
     def validate_geography_prerequisites() -> dict[str, int]:
-        """Require production-scale canonical geography before observations."""
-        minimums = {"nation": 1, "state": 50, "county": 3000, "place": 18000}
-        with (
-            _get_postgres_hook().get_conn() as connection,
-            connection.cursor() as cursor,
-        ):
-            cursor.execute(
-                """
-                SELECT geo_type, COUNT(*)
-                FROM silver_ref.dim_geo_current
-                WHERE is_active AND geo_type = ANY(%s)
-                GROUP BY geo_type
-                """,
-                (list(minimums),),
+        """Require production-scale canonical geography before observations.
+
+        The shared minimum -- one nation, fifty states, three thousand
+        counties -- is the one every source waits on, and it lives in
+        `data_ingestion_toolbox.silver_ref.geography_guard` (DAG-020). PEP
+        serves place-level estimates, so it adds the grain only it needs
+        rather than restating the three it shares.
+        """
+        with _get_postgres_hook().get_conn() as connection:
+            return require_shared_geography_loaded(
+                connection, additional_minimums={"place": 18000}
             )
-            counts = dict(cursor.fetchall())
-        missing = {
-            kind: minimum
-            for kind, minimum in minimums.items()
-            if counts.get(kind, 0) < minimum
-        }
-        if missing:
-            raise RuntimeError(
-                f"Census geography prerequisites are incomplete: {missing}"
-            )
-        return counts
 
     @task(pool=CONFIG.airflow_pool)
     def discover_registered_releases() -> list[dict[str, object]]:

@@ -17,6 +17,15 @@ ARG TILES_ORIGIN=http://martin:3000
 ENV API_ORIGIN=${API_ORIGIN}
 ENV TILES_ORIGIN=${TILES_ORIGIN}
 
+# Which build the browser's reports name (WEB-114). `next.config.mjs` inlines
+# it, because a client bundle cannot read the server's environment -- so it has
+# to be present at `npm run build`, not at `docker run`. Without it every image
+# this file produces reports `build=development`, which is what a deployed
+# container did until this was added: the field exists precisely so a report
+# says which source to read, and "development" sends the reader nowhere.
+ARG NEXT_PUBLIC_BUILD_ID=
+ENV NEXT_PUBLIC_BUILD_ID=${NEXT_PUBLIC_BUILD_ID}
+
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY apps/web/ ./
 

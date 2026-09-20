@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from apps.api.auth import get_app_session_dep, hash_token
 from apps.api.dependencies import get_db_session_dep
@@ -1858,3 +1859,87 @@ def test_a_series_asking_a_source_for_a_reduction_it_declines_is_refused() -> No
         )
     assert "series 2" in refused.value.detail
     assert "newest_per_geography" in refused.value.detail
+
+
+def test_a_name_taken_in_a_race_is_a_conflict_not_an_outage(
+    accounts, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Covers: API-148 — the unique constraint's answer is the API's answer.
+
+    The service checks the name before inserting, and two concurrent creates
+    both pass that check: one insert then meets
+    `UNIQUE (owner_user_id, name)`. Before this, the resulting `IntegrityError`
+    reached the router as a `SQLAlchemyError`, which logs at ERROR and answers
+    the sanitized `503 "Database service is temporarily unavailable."`
+
+    That is wrong in kind, not only in code. The database is not down, the
+    schema did exactly its job, and the client is told to retry something that
+    will never succeed -- while the operator's error log fills with a handled
+    condition.
+    """
+    storage = _StorageSession(accounts)
+
+    inserts: list[str] = []
+    original = storage.execute
+
+    def racing_execute(query, params=None):
+        sql = " ".join(str(query).split())
+        if "INSERT INTO app_api.saved_analysis_configuration" in sql:
+            inserts.append(sql)
+            raise IntegrityError(
+                "INSERT",
+                params,
+                Exception(
+                    "duplicate key value violates unique constraint "
+                    "saved_analysis_configuration_owner_user_id_name_key"
+                ),
+            )
+        return original(query, params)
+
+    monkeypatch.setattr(storage, "execute", racing_execute)
+    client = _client(storage, monkeypatch=monkeypatch)
+
+    with caplog.at_level(logging.ERROR):
+        response = client.post(
+            "/api/v1/analysis-configurations",
+            headers=_auth(),
+            json={"name": "raced", "document": _document()},
+        )
+
+    assert inserts, "the insert never ran, so no race was simulated"
+    assert response.status_code == 409, response.json()
+    assert "raced" in response.json()["detail"], response.json()
+    assert "temporarily unavailable" not in response.json()["detail"]
+    assert not [
+        record for record in caplog.records if record.levelno >= logging.ERROR
+    ], "a handled name conflict was logged as an error"
+
+
+def test_a_storage_failure_that_is_not_a_conflict_still_answers_503(
+    accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-148 — narrowing the catch did not swallow real outages.
+
+    `IntegrityError` is a subclass of `SQLAlchemyError`, so catching it is a
+    narrowing and the risk is the opposite one: that everything now reads as a
+    conflict. A driver error must still be the sanitized 503 it was.
+    """
+    storage = _StorageSession(accounts)
+    original = storage.execute
+
+    def failing_execute(query, params=None):
+        sql = " ".join(str(query).split())
+        if "INSERT INTO app_api.saved_analysis_configuration" in sql:
+            raise OperationalError("INSERT", params, Exception("server closed"))
+        return original(query, params)
+
+    monkeypatch.setattr(storage, "execute", failing_execute)
+    client = _client(storage, monkeypatch=monkeypatch)
+
+    response = client.post(
+        "/api/v1/analysis-configurations",
+        headers=_auth(),
+        json={"name": "outage", "document": _document()},
+    )
+    assert response.status_code == 503, response.json()
+    assert "temporarily unavailable" in response.json()["detail"]

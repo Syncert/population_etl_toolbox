@@ -2,6 +2,7 @@
 
 from tests.integration.database.conftest import (
     bootstrapped_postgres,
+    harvest_state_cleanup,
     postgres_connection,
     postgres_connection_factory,
     postgres_test_config,
@@ -9,6 +10,7 @@ from tests.integration.database.conftest import (
 
 __all__ = [
     "bootstrapped_postgres",
+    "harvest_state_cleanup",
     "postgres_connection",
     "postgres_connection_factory",
     "postgres_test_config",

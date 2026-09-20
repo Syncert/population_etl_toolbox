@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -9,6 +11,9 @@ from uuid import UUID
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+from data_ingestion_toolbox.silver_ref.geography_guard import (
+    require_shared_geography_loaded,
+)
 from data_ingestion_toolbox.fbi_ucr.capture import (
     capture_product_release,
     persist_release_state,
@@ -22,6 +27,8 @@ from data_ingestion_toolbox.fbi_ucr.silver_fbi.replay import (
     replay_captured_run,
 )
 from data_ingestion_toolbox.fbi_ucr.silver_fbi.transform import transform_release
+
+from data_ingestion_toolbox.fbi_ucr.schema import ensure_fbi_schema
 
 DEFAULT_ARGS = {
     "owner": "data-eng",
@@ -42,11 +49,22 @@ def _get_postgres_hook():  # noqa: ANN202
 
 
 def _require_shared_geography() -> None:
+    """Refuse until the reference carries rows, not merely a table.
+
+    This asked `to_regclass('silver_ref.dim_geo_entity')` -- whether the table
+    exists. The bootstrap manifest creates it, empty, in its `reference`
+    phase, so the guard passed on exactly the warehouse the ordering rule
+    exists to protect: every row resolved `unmapped`, the release was still
+    published, and the resolved-geography serving views excluded all of it
+    (DAG-020).
+    """
     hook = _get_postgres_hook()
-    with hook.get_conn() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('silver_ref.dim_geo_entity')")
-        if cursor.fetchone()[0] is None:
-            raise RuntimeError("shared geography reference is not bootstrapped")
+    with hook.get_conn() as connection:
+        counts = require_shared_geography_loaded(connection)
+    logging.getLogger("airflow.task").info(
+        "shared geography reference is loaded: %s",
+        ", ".join(f"{grain}={count}" for grain, count in sorted(counts.items())),
+    )
 
 
 def _capture_registered_product(product_id: str) -> dict[str, Any]:
@@ -126,6 +144,11 @@ with DAG(
     max_active_runs=1,
     tags=["fbi", "crime", "capture-first"],
 ) as dag:
+    ensure_schema = PythonOperator(
+        task_id="ensure_fbi_schema",
+        python_callable=ensure_fbi_schema,
+    )
+
     require_shared_geography = PythonOperator(
         task_id="require_shared_geography",
         python_callable=_require_shared_geography,
@@ -148,4 +171,4 @@ with DAG(
             python_callable=_publish_registered_product,
             op_kwargs={"replay": replay.output},
         )
-        require_shared_geography >> capture >> replay >> publish
+        ensure_schema >> require_shared_geography >> capture >> replay >> publish
