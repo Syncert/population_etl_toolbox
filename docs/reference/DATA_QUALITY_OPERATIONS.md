@@ -203,14 +203,15 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **30 are `unimplemented`** — no executor runs them, and 18 of those are
-  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` were briefly automated and
-  then withdrawn, and their notes record why: the executors passed on the
-  fixture warehouse and timed out against the real one, at 50 minutes for ACS
-  and 901 seconds for BLS, because they matched on a composed metric code no
-  index can serve. A rule that cannot finish is worse than one that says it
-  is missing — it turns this DAG red for a reason that is not about the data.
-  `DQ-SHARED-004` left this set when
+- **28 are `unimplemented`** — no executor runs them, and 16 of those are
+  BLOCK severity. `DQ-ACS-007` and `DQ-BLS-007` left this set on the second
+  attempt. The first compared served rows to published facts one row at a
+  time and timed out — 50 minutes for ACS, 901 seconds for BLS — because it
+  matched on a composed metric code no index can serve; it was withdrawn
+  rather than shipped, because a rule that cannot finish turns this DAG red
+  for a reason that is not about the data. The second compares grouped counts
+  and value digests, runs in 815 seconds and 60, and caught a real defect on
+  its first run against the warehouse. `DQ-SHARED-004` left this set when
   `warehouse-manifest-ledger` gave it something to read: the rule compares the
   bootstrap manifest against what a warehouse recorded applying, and until the
   applier wrote those rows the applied side did not exist. A warehouse that

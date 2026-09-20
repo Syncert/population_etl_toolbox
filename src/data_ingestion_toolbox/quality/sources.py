@@ -867,10 +867,291 @@ def fred_contract_conformance(
     ]
 
 
+#: A served group and a published group are compared by row count and by a
+#: sum of value hashes. That detects an invented row, a dropped row, and an
+#: altered value -- including a value altered to or from NULL, because the
+#: hash is taken over a rendering that distinguishes NULL from every number.
+#: It does not name the offending row, only its (metric, vintage) group, and
+#: that is the trade being made: the row-level form of this question is a join
+#: between two hundred-million-row relations, which is what the first attempt
+#: at these rules was and why it timed out (DQ-014 note).
+_GROUP_DIGEST = "SUM(hashtext(COALESCE({column}::TEXT, '<null>'))::BIGINT)"
+
+
+def _conformance_offenders(
+    cursor: Any,
+    *,
+    served_sql: str,
+    published_sql: str,
+) -> tuple[list[str], int]:
+    """Groups the serving layer holds that the warehouse does not back.
+
+    Only the served side is required to be backed. A published group with no
+    served group is the *completeness* direction, which these rules
+    deliberately do not measure: the serving layer is rebuilt a year at a time
+    with a commit per chunk, so a fact published since the last refresh is
+    legitimately absent and the source's reconciliation rule measures that
+    ledger.
+    """
+    cursor.execute(
+        f"""
+        WITH served AS ({served_sql}),
+             published AS ({published_sql})
+        SELECT served.metric_code, served.vintage
+          FROM served
+          LEFT JOIN published USING (metric_code, vintage)
+         WHERE published.metric_code IS NULL
+            OR published.rows <> served.rows
+            OR published.digest IS DISTINCT FROM served.digest
+         ORDER BY 1, 2
+        """
+    )
+    rows = cursor.fetchall()
+    return [f"{code}|{vintage}" for code, vintage in rows], len(rows)
+
+
+def acs_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ACS-007 -- the served views carry the published fact, unaltered.
+
+    Grouped by `(metric_code, vintage)` rather than compared row by row. The
+    first implementation of this rule asked, per served row, whether a
+    published fact existed with the same value, matching on a composed metric
+    code and a computed date. Those are expressions on the silver side, so no
+    index served them and every probe scanned the fact table: it passed on the
+    fixture warehouse and timed out after fifty minutes against 99,783,997
+    real rows.
+
+    Two grouped scans answer the same question. A row the warehouse does not
+    hold changes its group's count; a value the serving layer altered changes
+    its group's digest; a metric code derived wrongly produces a served group
+    with no published counterpart. What is given up is the identity of the
+    offending row -- evidence names the group -- and for a BLOCK rule whose
+    job is to refuse certification, the group is enough to act on.
+
+    A group whose silver rows moved after the last refresh is exempt, for the
+    reason the FRED rule states: ETL-037 advances `ingested_at` only when a
+    row's content changed, so a revision inside that window is a served value
+    the next refresh will replace rather than one the serving layer invented.
+    A source with no `control.serving_refresh_state` row is read strictly.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_census.rpt_acs_observations")
+    if total == 0:
+        return [
+            RuleOutcome("gold_census.fact_observation", "not_applicable"),
+            RuleOutcome("gold_census.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_census.metric_publisher", "not_applicable"),
+        ]
+
+    served_sql = f"""
+        SELECT metric_code,
+               vintage_year AS vintage,
+               COUNT(*) AS rows,
+               {_GROUP_DIGEST.format(column="estimate_value")} AS digest
+          FROM gold_census.rpt_acs_observations
+         GROUP BY 1, 2
+    """
+    published_sql = f"""
+        SELECT 'CENSUS_ACS:' || s.dataset || ':' || s.variable_code AS metric_code,
+               s.estimate_year AS vintage,
+               COUNT(*) AS rows,
+               {_GROUP_DIGEST.format(column="s.estimate_value")} AS digest
+          FROM silver_census.fact_demographics s
+          JOIN gold_census.dim_acs_variable av
+            ON av.dataset_code = s.dataset
+           AND av.vintage_year = s.estimate_year
+           AND av.variable_code = s.variable_code
+          LEFT JOIN control.serving_refresh_state r ON r.source_code = 'CENSUS_ACS'
+         WHERE s.variable_code IS NOT NULL
+           AND s.variable_code <> ''
+         GROUP BY 1, 2
+        HAVING MAX(s.ingested_at) <= COALESCE(
+                   MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
+               )
+    """
+    unbacked, unbacked_total = _conformance_offenders(
+        cursor, served_sql=served_sql, published_sql=published_sql
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.vintage_year
+          FROM gold_census.mv_acs_latest AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_census.rpt_acs_observations AS released
+                    WHERE released.geo_id = latest.geo_id
+                      AND released.metric_code = latest.metric_code
+                      AND released.observation_date = latest.observation_date
+                      AND released.estimate_value
+                          IS NOT DISTINCT FROM latest.estimate_value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code
+          FROM (
+                SELECT DISTINCT metric_code
+                  FROM gold_census.rpt_acs_observations
+               ) AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_census.metric_publisher AS exported
+                    WHERE 'CENSUS_ACS:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_census.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def bls_contract_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-BLS-007 -- the served views carry the published fact, unaltered.
+
+    The ACS rule's shape against BLS's identity. A BLS metric code is the
+    series except where a measure-identified programme publishes one metric
+    across every geography it covers, so the published side reads
+    `gold_bls.dim_bls_measure` -- the mapping the refresh itself uses rather
+    than a restatement of its rule -- and groups by the code that mapping
+    produces.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM gold_bls.rpt_bls_observations")
+    if total == 0:
+        return [
+            RuleOutcome("gold_bls.fact_observation", "not_applicable"),
+            RuleOutcome("gold_bls.v_metric_latest_by_geo", "not_applicable"),
+            RuleOutcome("gold_bls.metric_publisher", "not_applicable"),
+        ]
+
+    served_sql = f"""
+        SELECT metric_code,
+               EXTRACT(YEAR FROM observation_date)::INT AS vintage,
+               COUNT(*) AS rows,
+               {_GROUP_DIGEST.format(column="value")} AS digest
+          FROM gold_bls.rpt_bls_observations
+         GROUP BY 1, 2
+    """
+    published_sql = f"""
+        SELECT COALESCE('BLS:' || m.metric_key, 'BLS:' || s.series_id) AS metric_code,
+               s.year AS vintage,
+               COUNT(*) AS rows,
+               {_GROUP_DIGEST.format(column="s.value")} AS digest
+          FROM silver_bls.fact_labor_statistics s
+          LEFT JOIN gold_bls.dim_bls_measure m
+                 ON m.program_code = UPPER(s.program)
+                AND m.measure_code = s.measure_code
+          LEFT JOIN control.serving_refresh_state r ON r.source_code = 'BLS'
+         WHERE s.series_id IS NOT NULL
+           AND s.series_id <> ''
+         GROUP BY 1, 2
+        HAVING MAX(s.ingested_at) <= COALESCE(
+                   MIN(r.last_silver_ingested_at), 'infinity'::TIMESTAMPTZ
+               )
+    """
+    unbacked, unbacked_total = _conformance_offenders(
+        cursor, served_sql=served_sql, published_sql=published_sql
+    )
+
+    superseded, superseded_total = _offenders(
+        cursor,
+        """
+        SELECT latest.metric_code, latest.observation_date
+          FROM gold_bls.mv_bls_latest AS latest
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_bls.rpt_bls_observations AS released
+                    WHERE released.geo_id = latest.geo_id
+                      AND released.metric_code = latest.metric_code
+                      AND released.observation_date = latest.observation_date
+                      AND released.value IS NOT DISTINCT FROM latest.value
+               )
+        """,
+        order_by="1, 2",
+    )
+
+    unpublished, unpublished_total = _offenders(
+        cursor,
+        """
+        SELECT served.metric_code
+          FROM (
+                SELECT DISTINCT metric_code
+                  FROM gold_bls.rpt_bls_observations
+               ) AS served
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM gold_bls.metric_publisher AS exported
+                    WHERE 'BLS:' || exported.source_object_key
+                          = served.metric_code
+               )
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_bls.fact_observation",
+            "fail" if unbacked else "pass",
+            observed_count=unbacked_total,
+            expected_count=0,
+            evidence=unbacked[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_bls.v_metric_latest_by_geo",
+            "fail" if superseded else "pass",
+            observed_count=superseded_total,
+            expected_count=0,
+            evidence=superseded[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_bls.metric_publisher",
+            "fail" if unpublished else "pass",
+            observed_count=unpublished_total,
+            expected_count=0,
+            evidence=unpublished[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
+    "DQ-ACS-007": acs_contract_conformance,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,
+    "DQ-BLS-007": bls_contract_conformance,
     "DQ-FRED-002": fred_slice_reconciliation,
     "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,

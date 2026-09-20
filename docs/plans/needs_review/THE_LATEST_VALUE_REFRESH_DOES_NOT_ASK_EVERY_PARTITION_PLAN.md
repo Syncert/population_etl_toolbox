@@ -15,13 +15,32 @@ verify:
 
 ## Plan status
 
-- **Status:** Implemented and verified. Held in `in_progress/` only because
-  its serving change lands in the same window as
-  `acs-bls-fact-lineage-and-value-status` deliverable 2 -- the operator asked
-  for one re-serve covering both, so neither moves to review until that run
-  has happened.
+- **Status:** Ready for review. Every deliverable and acceptance criterion is
+  met, and the shared re-serve it was waiting on has run.
 - **Last updated:** 2026-09-19
-- **Current milestone:** done, awaiting the shared re-serve.
+- **Current milestone:** complete.
+- **Next pickup:** none.
+
+### The re-serve it was held for
+
+The combined run happened on 2026-09-19 and this change was in it, so the
+narrowed lookup is what served the whole relation rather than only the single
+year it was measured on. Two things that run confirmed:
+
+* **It is exercised at scale.** Twenty chunks, 99,783,997 rows, every one of
+  them resolved through the newest-partition-first walk rather than the
+  `Merge Append` it replaced.
+* **It stayed correct with more keys than it was measured with.** Publishing
+  withheld values grew `mv_acs_latest` from 4,565,821 rows to **8,667,074** --
+  nearly double, because a withheld cell creates a key that previously had no
+  served row at all. Keys are unique, vintages span 2005-2024, and no served
+  latest row has a newer observation behind it.
+
+The run was interrupted at chunk 13 of 20 and resumed at 2018, logging
+`chunk=13/20 2017 status=SKIPPED`. That is worth recording here because the
+early-exit walk is the part of this change a restart could have broken: a
+resumed chunk resolves its keys from whatever partitions hold them, and it
+found the same answers the uninterrupted chunks did.
 
 ## Why
 

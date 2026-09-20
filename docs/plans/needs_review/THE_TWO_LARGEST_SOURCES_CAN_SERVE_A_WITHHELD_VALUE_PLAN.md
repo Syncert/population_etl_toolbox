@@ -17,79 +17,13 @@ verify:
 
 ## Plan status
 
-- **Status:** Claimed and surveyed. No implementation yet; the working tree
-  carries nothing from this plan.
+- **Status:** Ready for review.
 - **Last updated:** 2026-09-18
-- **Current milestone:** deliverables 1, 2, 3 and 5 complete. **Deliverable
-  4 is not**: the two rules were automated, failed against the real warehouse,
-  and were withdrawn -- see the fourth acceptance criterion. This plan is
-  **not ready for review** while that criterion is unmet.
+- **Current milestone:** complete. All five deliverables are delivered and
+  every acceptance criterion has evidence from the real warehouse.
 - **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
   Satisfied.
-- **Next pickup:** deliverable 4, which needs a conformance executor that
-  finishes. Everything else is delivered and the re-serve has run.
-
-  (Superseded pickup, kept for the record:) deliverable 2, once the ACS
-  re-serve completes. It
-  changes `gold_acs.sql`'s fact view (`WHERE s.estimate_value IS NOT NULL`)
-  and relaxes two `NOT NULL` value columns on `rpt_acs_observations`, which
-  are the definition and the relation the re-serve is currently filling.
-  Editing them mid-run would leave the served rows and the file describing
-  them out of step, and would invalidate `acs-serving-partitioning`'s fifth
-  acceptance criterion, which is measured from that run.
-
-  It also needs a *second* re-serve of its own: publishing withheld rows grows
-  ACS serving by roughly 46% (31.5 million rows, measured below), and no
-  existing row carries the new columns. Worth raising with the operator as one
-  window rather than two, if deliverable 2 can be ready before the current run
-  is repeated for any other reason.
-
-### Done so far
-
-**The gap is a test.** `tests/unit/shared/test_fact_capture_lineage.py`
-(DB-055) grades all seven facts against their own vocabulary. Before the
-change it failed nine ways: ACS and BLS on every check, and FRED on the
-published-value check -- which is the extra finding below. 26 pass now.
-
-**The two facts carry lineage and status.** `capture_id` (nullable,
-referencing `raw_capture.response_capture`), `source_value`, and a
-`value_status` in the vocabulary each source's own `observation_revision`
-uses, with a named `*_published_value_check` tying the published token to a
-non-null number. Named rather than left to PostgreSQL, because a table-level
-unnamed CHECK is auto-named `<table>_check` and a fresh bootstrap would then
-carry the same predicate under a different name from an upgraded warehouse.
-
-**`sql/migrations/027_acs_bls_fact_lineage.sql`** is the populated-warehouse
-half: `ADD COLUMN IF NOT EXISTS`, a rewrite of the rows the column default
-would otherwise mislabel (`absent` for ACS, `missing` for BLS), then the
-constraints. It runs in the `source-fix` phase, after every silver phase file
-and before gold.
-
-**A third source had the same defect.** The guard found that
-`silver_fred.fact_economic_indicators` carried `value_status` with no
-constraint tying it to the number -- and the column DEFAULTs to `valid`, so a
-writer that set no status at all produced a row asserting a published value it
-did not have. Its revision relation has had the check since ARC-007. This is
-in scope: it is the same defect one source over, and adding a CHECK is not a
-change to FRED's row shape, which is what "this plan does not change the row
-shape for the other five sources" forbids.
-
-**Schema snapshot regenerated and reviewed.** Thirteen added lines, nothing
-removed or renamed:
-
-```text
-+ column source_value text
-+ column value_status text NOT NULL DEFAULT 'valid'::text
-+ column capture_id uuid
-+ constraint fact_{labor_statistics,demographics}_capture_id_fkey ...
-+ constraint fact_{labor_statistics,demographics,economic_indicators}_published_value_check ...
-+ constraint fact_{labor_statistics,demographics}_value_status_check ...
-```
-
-Verified: `python -m pytest tests/unit -q` 1906 passed;
-`RUN_INTEGRATION_TESTS=1 ... tests/integration/database -q` 214 passed, 1
-skipped; `ruff` clean. The database tier passing is itself evidence that no
-existing fixture writes a `valid` row with no value.
+- **Next pickup:** none.
 
 ### Survey findings, and one correction to this plan's premise
 
@@ -238,29 +172,40 @@ an operator; record the runtime and any `human_testing/` residue.
       revision recorded.
 - [x] No test asserts a withheld value as `0`, and the web unit suite passes
       unchanged: **647 passed**, no frontend file touched by this plan.
-- [ ] **NOT MET.** `DQ-ACS-007` and `DQ-BLS-007` were automated, run
-      against the real warehouse, and **withdrawn**. They passed on the
-      fixture warehouse and did not finish on the real one: ACS timed out
-      after **50 minutes** against 99,783,997 rows, BLS after **901 seconds**
-      against 5.8 million.
+- [x] `DQ-ACS-007` and `DQ-BLS-007` are `automated` and pass on the real
+      warehouse -- which is where the first attempt failed and the fixture
+      warehouse said nothing.
 
-      The cause was in the executors, not the data. Both were modelled on
-      `fred_contract_conformance`, which matches a served row to a published
-      fact through the composed metric code (`'FRED:' || series_id`) and, for
-      ACS, a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions
-      on the silver side, so no index serves them and every probe scans the
-      fact table. FRED's is cheap only because FRED's silver is about fifty
-      thousand rows; BLS's failure at 5.8 million shows the shape is wrong
-      rather than merely unsuited to ACS's scale.
+      **The first attempt was withdrawn.** It asked, per served row, whether a
+      published fact existed with the same value, matching on a composed
+      metric code and a computed date. Those are expressions on the silver
+      side, so no index served them: it passed on fixtures and timed out after
+      **50 minutes** (ACS, 99,783,997 rows) and **901 seconds** (BLS, 5.8
+      million). BLS failing at a ninth the size is what showed the shape was
+      wrong rather than the scale.
 
-      A BLOCK rule that cannot finish is worse than one that says it is
-      missing: it turns the quality DAG red for a reason that is not about the
-      data, and sends an operator looking for a warehouse defect that is not
-      there. Both are `unimplemented` again, with the measurement in their
-      notes so the next attempt starts from it: join on the natural-key
-      columns rather than a composed string, and expect that a full row-for-row
-      comparison between two hundred-million-row relations may not be
-      proportionate as a per-run gate at all.
+      **The second compares groups, not rows.** Per `(metric_code, vintage)`,
+      a row count and a digest over value renderings that distinguishes NULL
+      from every number -- so a withheld value is compared as a withheld
+      value. An invented or dropped row moves the count, an altered value
+      moves the digest, a wrongly derived code produces a served group with no
+      published counterpart. Two grouped scans: **815 seconds for ACS, 60 for
+      BLS**, against a daily DAG. What is given up is the identity of the
+      offending row; evidence names the group, which is enough for a rule
+      whose job is to refuse certification.
+
+      **It found a real defect on its first run.** DQ-BLS-007 failed with 46
+      groups, and the cause was this plan's own: BLS's serving contract had
+      been widened to publish withheld observations and BLS had not been
+      re-served since, so `/catalog/capabilities` advertised
+      `publishes_value_status: true` while its served rows still excluded
+      every withheld value -- 11 served against 12 published for
+      `CUUR0000SA0` in 2025. No other guard could see it: the schema tests
+      check the columns exist and the capability test checks the flag matches
+      the columns, and only this rule compares served data against published
+      data. BLS was re-served (5,833,132 rows, 13,868 withheld, matching
+      silver exactly) and the rule now passes in 8 seconds.
+
 - [x] `TESTING_CONTRACT.md` gains DB-055, DB-059 and DB-061, and
       `CI_EVIDENCE_MAP.md` names the migrations.
 
