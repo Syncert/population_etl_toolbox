@@ -1,12 +1,30 @@
 # Action: record the identity gate decision where the dispatcher can see it
 
+> **Done — 2026-09-20.** Run on the dispatcher's own machine:
+>
+> ```bash
+> python -m tools.plan_dispatcher approve --gate self-service-identity >     --by "Nick" --note "Identity contract accepted 2026-09-16: ..."
+> ```
+>
+> `python -m tools.plan_dispatcher gates` now reports `self-service-identity`
+> as `"status": "approved"`, `"decided_by": "Nick"`, decided at
+> `2026-09-20T14:47:43+00:00`. Both checkboxes below are satisfied.
+>
+> The note also carries the value ADR-0005 left open — the provider is Google —
+> but that record is the ADR's, not this file's, for the reason *One thing
+> worth deciding later* gives below: the dispatcher's state file is gitignored
+> and machine-local, so nothing that has to survive a fresh clone may live only
+> there. ADR-0005 §1, *The provider, named*, is the durable copy.
+>
+> The gate itself is **not** retired; see the last section.
+
 **This is an action, not a test.** You already made the decision; this writes
 it somewhere the dispatcher reads.
 
 ## What this is
 
 You accepted the self-service identity contract on 2026-09-16.
-[`docs/decisions/0005-self-service-accounts.md`](../../decisions/0005-self-service-accounts.md)
+[`docs/decisions/0005-self-service-accounts.md`](../../../decisions/0005-self-service-accounts.md)
 is `Accepted` on `main`, which is the durable record and the one that
 survives a fresh clone.
 
@@ -102,7 +120,7 @@ file" instruction, so it needs your decision rather than a patch.
 
 ## Retiring the gate — not yet
 
-Do not retire this gate now. [`docs/plans/README.md`](../README.md) retires a
+Do not retire this gate now. [`docs/plans/README.md`](../../README.md) retires a
 gate only once the work it guards is accepted, and retiring means stripping
 the `kind: gate` frontmatter **and** removing its id from every dependent in
 the same change. An archived gate that keeps its frontmatter holds its

@@ -17,12 +17,33 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed and **gated**. Authored 2026-09-15 from the repository
-  assessment. Do not claim this plan until `self-service-identity` is
-  approved; the ADR it waits on decides most of what is written below, and a
-  worker that implements first has taken that decision away from the reviewer.
-- **Last updated:** 2026-09-15
+- **Status:** Unclaimed and **no longer gated.** `self-service-identity` was
+  recorded `approved` by Nick on 2026-09-20, against
+  [ADR-0005](../../decisions/0005-self-service-accounts.md), which has been
+  `Accepted` since 2026-09-16.
+- **Last updated:** 2026-09-20
 - **Current milestone:** not started.
+
+### The value the ADR left open is now filled in
+
+ADR-0005 §1 committed to "a single third-party OIDC provider" and deliberately
+named none. It is **Google**, recorded 2026-09-20 in §1, *The provider, named*,
+with GitHub ruled out on protocol grounds and an identity broker deferred.
+
+### What an agent claiming this still cannot finish alone
+
+Implementation needs an **OIDC client registration and secret** from the Google
+Cloud console. That is a credential no agent container holds, and it is the
+same shape of blocker `docs/plans/README.md` describes: build the work, but a
+criterion that needs the real client is not satisfied by an unavailable
+environment.
+
+Google permits `http://localhost` redirect URIs, so the authorization-code
+flow, the `state`/`nonce`/JWKS refusals, and every denial-path test can be
+built and run before any deployment exists. What cannot be done here is
+shipping it: the exact-match redirect allowlist ADR-0005 §1 requires needs a
+stable origin, and `deployment-smoke-target` records that there is not one yet
+and that this is deliberate.
 
 ## Why
 

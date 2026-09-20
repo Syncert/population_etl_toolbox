@@ -28,8 +28,9 @@ the same dependency graph: it opens for review once everything it guards is
 integrated, and the dispatcher will not cross it without a recorded human
 decision. The directory holds
 [`SELF_SERVICE_IDENTITY_GATE.md`](gates/SELF_SERVICE_IDENTITY_GATE.md), which
-holds the self-service account and publishing plans until a person accepts the
-identity contract. The earlier four-source review gate was approved and retired
+held the self-service account and publishing plans until a person accepted the
+identity contract. It was **approved on 2026-09-20** and is not yet retired,
+because a gate retires only once the work it guards is accepted. The earlier four-source review gate was approved and retired
 on 2026-08-28, and its decision record is archived at
 [`completed/FOUR_SOURCE_REVIEW_GATE.md`](completed/FOUR_SOURCE_REVIEW_GATE.md).
 
