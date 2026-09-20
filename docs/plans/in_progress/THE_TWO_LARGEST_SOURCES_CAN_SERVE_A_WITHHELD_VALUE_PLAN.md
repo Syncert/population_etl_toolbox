@@ -20,12 +20,17 @@ verify:
 - **Status:** Claimed and surveyed. No implementation yet; the working tree
   carries nothing from this plan.
 - **Last updated:** 2026-09-18
-- **Current milestone:** deliverables 1-4 **complete**. Deliverable 5's
-  re-serve is running, combined with `acs-latest-refresh-partition-pruning`
-  into one window at the operator's instruction.
+- **Current milestone:** deliverables 1, 2, 3 and 5 complete. **Deliverable
+  4 is not**: the two rules were automated, failed against the real warehouse,
+  and were withdrawn -- see the fourth acceptance criterion. This plan is
+  **not ready for review** while that criterion is unmet.
 - **Dependencies:** `serving-table-vacuum-hygiene` is in `completed/`.
   Satisfied.
-- **Next pickup:** deliverable 2, **once the ACS re-serve completes**. It
+- **Next pickup:** deliverable 4, which needs a conformance executor that
+  finishes. Everything else is delivered and the re-serve has run.
+
+  (Superseded pickup, kept for the record:) deliverable 2, once the ACS
+  re-serve completes. It
   changes `gold_acs.sql`'s fact view (`WHERE s.estimate_value IS NOT NULL`)
   and relaxes two `NOT NULL` value columns on `rpt_acs_observations`, which
   are the definition and the relation the re-serve is currently filling.
@@ -233,12 +238,29 @@ an operator; record the runtime and any `human_testing/` residue.
       revision recorded.
 - [x] No test asserts a withheld value as `0`, and the web unit suite passes
       unchanged: **647 passed**, no frontend file touched by this plan.
-- [x] `DQ-ACS-007` and `DQ-BLS-007` are `automated` and pass. The reviewed
-      unimplemented gap drops from 18 BLOCK rules to 16, and
-      `DATA_QUALITY_OPERATIONS.md` says why these two left it: both ask
-      whether the contract views preserve the published fact's values, and
-      until a withheld value *had* a served row there was no way to state the
-      question that did not also assert the absence was correct.
+- [ ] **NOT MET.** `DQ-ACS-007` and `DQ-BLS-007` were automated, run
+      against the real warehouse, and **withdrawn**. They passed on the
+      fixture warehouse and did not finish on the real one: ACS timed out
+      after **50 minutes** against 99,783,997 rows, BLS after **901 seconds**
+      against 5.8 million.
+
+      The cause was in the executors, not the data. Both were modelled on
+      `fred_contract_conformance`, which matches a served row to a published
+      fact through the composed metric code (`'FRED:' || series_id`) and, for
+      ACS, a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions
+      on the silver side, so no index serves them and every probe scans the
+      fact table. FRED's is cheap only because FRED's silver is about fifty
+      thousand rows; BLS's failure at 5.8 million shows the shape is wrong
+      rather than merely unsuited to ACS's scale.
+
+      A BLOCK rule that cannot finish is worse than one that says it is
+      missing: it turns the quality DAG red for a reason that is not about the
+      data, and sends an operator looking for a warehouse defect that is not
+      there. Both are `unimplemented` again, with the measurement in their
+      notes so the next attempt starts from it: join on the natural-key
+      columns rather than a composed string, and expect that a full row-for-row
+      comparison between two hundred-million-row relations may not be
+      proportionate as a per-run gate at all.
 - [x] `TESTING_CONTRACT.md` gains DB-055, DB-059 and DB-061, and
       `CI_EVIDENCE_MAP.md` names the migrations.
 

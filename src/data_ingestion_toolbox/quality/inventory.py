@@ -2385,21 +2385,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.metric_publisher",
             "gold_census.dim_acs_table",
         ),
-        automation="automated",
+        automation="unimplemented",
         automation_note=(
-            "`quality.sources.acs_contract_conformance` reads the conformance "
-            "direction, which is the one that cannot lag: every row a contract "
-            "view serves must trace to a fact the warehouse published, with "
-            "the metric code derived from that fact's own dataset and "
-            "variable, the same value, and the same value state. The state is "
-            "part of it since ACS began serving a withheld value as a row "
-            "(DB-061): a served row claiming a number the fact does not have "
-            "is exactly as wrong as a served number that differs, and `IS NOT "
-            "DISTINCT FROM` is what compares two absences. Completeness is "
-            "deliberately not measured here -- the serving layer is rebuilt a "
-            "year at a time with a commit per chunk, so a fact published since "
-            "the last refresh is legitimately absent, and DQ-ACS-002 measures "
-            "that ledger."
+            "Unimplemented, and an executor was written and withdrawn rather than never attempted -- which is worth knowing, because the obvious implementation does not work. Modelled on `quality.sources.fred_contract_conformance`, it asks per served row whether a published fact exists with the same value, matching on the composed metric code (`'CENSUS_ACS:' || dataset || ':' || variable_code`) and a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions on the silver side, so no index serves them and every probe scans the fact table. It passed on the fixture warehouse and **timed out after 50 minutes** against 99,783,997 real rows. The BLS analogue timed out at **901 seconds against 5.8 million**, so the shape is wrong rather than merely unsuited to ACS's scale -- FRED's is cheap only because FRED's silver is about fifty thousand rows. A working version has to join on the natural-key columns rather than a composed string, and probably has to be scoped -- a full row-for-row comparison between two hundred-million-row relations is not proportionate as a per-run gate."
         ),
     ),
     _rule(
@@ -2552,20 +2540,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.measure_export",
             "gold_bls.metric_publisher",
         ),
-        automation="automated",
+        automation="unimplemented",
         automation_note=(
-            "`quality.sources.bls_contract_conformance` reads the conformance "
-            "direction: every row a contract view serves must trace to a "
-            "published fact, with the same value and the same value state. A "
-            "BLS metric code is the series except where a measure-identified "
-            "programme publishes one metric across every geography it covers, "
-            "so the match goes through `gold_bls.dim_bls_measure` -- reading "
-            "the mapping the refresh itself uses rather than restating its "
-            "rule. The value state joined the comparison when BLS began "
-            "serving a withheld observation as a row (DB-061). Completeness is "
-            "not measured here, for the reason DQ-ACS-007 gives; DQ-BLS-002 "
-            "measures that ledger. The grains half of this rule's summary is "
-            "DQ-BLS-004's, which is automated separately."
+            "Unimplemented, and an executor was written and withdrawn rather than never attempted -- which is worth knowing, because the obvious implementation does not work. Modelled on `quality.sources.fred_contract_conformance`, it asks per served row whether a published fact exists with the same value, matching on the composed metric code (`'BLS:' || series_id`) and a computed `MAKE_DATE(estimate_year, 1, 1)`. Those are expressions on the silver side, so no index serves them and every probe scans the fact table. It passed on the fixture warehouse and **timed out after 50 minutes** against 99,783,997 real rows. The BLS analogue timed out at **901 seconds against 5.8 million**, so the shape is wrong rather than merely unsuited to ACS's scale -- FRED's is cheap only because FRED's silver is about fifty thousand rows. A working version has to join on the natural-key columns rather than a composed string, and probably has to be scoped -- a full row-for-row comparison between two hundred-million-row relations is not proportionate as a per-run gate."
         ),
     ),
     _rule(
