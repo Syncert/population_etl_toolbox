@@ -390,3 +390,76 @@ def test_a_public_display_name_cannot_be_taken_twice_in_different_case(
                 )
     finally:
         database.close()
+
+
+def test_one_application_of_the_bootstrap_grants_the_role_every_relation(
+    postgres_connection_factory: Callable[[], connection],
+    scratch_schema,
+) -> None:
+    """Covers: API-149 — the grants are positional, and that is a trap.
+
+    `GRANT ... ON ALL TABLES IN SCHEMA` covers the tables that exist when it
+    runs, so a table added *below* those statements is created and never
+    granted. ADR-0005 added three, and every other test of them connects as the
+    test superuser rather than as `api_app_writer` -- the role the API actually
+    runs as -- so a missing grant would have surfaced first on a deployment, as
+    every authenticated request failing.
+
+    **Applied once, into a scratch schema**, and that is the whole design of
+    this test. Written first against the live schema, it could not fail: the
+    fixture there applies the bootstrap once per test, so the second
+    application granted what the first had missed and the assertion always saw
+    a healed database. A deployment gets exactly one application, and this is
+    what that looks like.
+
+    Sequences are checked beside the tables. A `BIGSERIAL` whose sequence was
+    not granted refuses the insert and not the read, so it fails at precisely
+    the moment somebody first signs in.
+    """
+    schema = scratch_schema("app_api_grants_test")
+    database = postgres_connection_factory()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            _apply_into_scratch(cursor, schema)
+
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables"
+                " WHERE table_schema = %s AND table_type = 'BASE TABLE'"
+                " ORDER BY table_name",
+                (schema,),
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+            assert len(tables) >= 5, f"the bootstrap created only {tables}"
+
+            ungranted = []
+            for table in tables:
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    cursor.execute(
+                        "SELECT has_table_privilege(%s, %s, %s)",
+                        ("api_app_writer", f"{schema}.{table}", privilege),
+                    )
+                    if not cursor.fetchone()[0]:
+                        ungranted.append(f"{table}:{privilege}")
+
+            cursor.execute(
+                "SELECT sequence_name FROM information_schema.sequences"
+                " WHERE sequence_schema = %s",
+                (schema,),
+            )
+            for (sequence,) in cursor.fetchall():
+                cursor.execute(
+                    "SELECT has_sequence_privilege(%s, %s, %s)",
+                    ("api_app_writer", f"{schema}.{sequence}", "USAGE"),
+                )
+                if not cursor.fetchone()[0]:
+                    ungranted.append(f"{sequence}:USAGE")
+
+        assert not ungranted, (
+            "api_app_writer cannot use these after one application of "
+            "sql/bootstrap/002_app_api.sql, so the API could not either. A "
+            "relation created below the GRANT statements is the usual cause: "
+            f"{ungranted}"
+        )
+    finally:
+        database.close()
