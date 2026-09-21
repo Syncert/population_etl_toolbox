@@ -1,9 +1,20 @@
-"""Bearer-token authentication for API-owned resources (ADR-0003, API-007).
+"""Bearer-token authentication for API-owned resources (ADR-0003, ADR-0005).
 
-Operator-provisioned personal access tokens: a privileged script creates an
-account and prints a 256-bit random token once; the database stores only its
-SHA-256 digest. A request presents ``Authorization: Bearer <token>``; the API
-hashes what was presented and compares digests in constant time.
+Two kinds of credential reach this module through the same header, and that is
+the point. An operator-provisioned personal access token (API-007) and the
+short-lived access token a visitor receives from the OIDC sign-in flow
+(ADR-0005 §2) are both rows in ``app_api.account_credential``, both stored as
+a SHA-256 digest and nothing else, and both resolve to the same ``Account``.
+Every owner-scoped route therefore keeps the authorization code and the denial
+paths it already had.
+
+    "ADR-0003's ``Authorization: Bearer`` boundary is preserved for every
+    resource route. No route accepts a cookie as proof of identity."
+
+A refresh token is deliberately not accepted here. It is an ambient cookie
+credential scoped to one path, and honouring it as a bearer token would undo
+the containment that makes a cookie acceptable at all -- so the lookup filters
+on ``kind`` rather than trusting that a refresh digest will never be presented.
 
 Why opaque hashed tokens rather than signed stateless ones: revocation of a
 signed token needs a denylist table anyway, so the table is unavoidable --
@@ -13,7 +24,8 @@ off. Revocation here is stamping ``revoked_at``.
 Nothing in this module lets a token reach a log, a cache key, a response, or
 an error message. The failure text never distinguishes "no such token" from
 "revoked token" -- either would let a holder of a cancelled credential probe
-account state.
+account state. Expiry, a blocked identity, and a revoked account join that
+list: all four answer the same undifferentiated 401.
 """
 
 from __future__ import annotations
@@ -32,21 +44,49 @@ from apps.api.appdb import get_app_session
 
 UNAUTHENTICATED_DETAIL = "a valid bearer token is required"
 
+#: The credential kinds a bearer header may present. A ``refresh`` digest is
+#: excluded by the query rather than by a later branch, so the row never
+#: reaches code that could forget to check.
+BEARER_KINDS = ("operator", "access")
+
 _ACCOUNT_QUERY = text(
     """
-    SELECT user_account_id, display_label, token_sha256
-    FROM app_api.user_account
-    WHERE token_sha256 = :token_sha256 AND revoked_at IS NULL
+    SELECT
+        credential.credential_id,
+        credential.user_account_id,
+        credential.token_sha256,
+        credential.session_family,
+        account.display_label,
+        account.public_display_name
+    FROM app_api.account_credential AS credential
+    JOIN app_api.user_account AS account
+      ON account.user_account_id = credential.user_account_id
+    WHERE credential.token_sha256 = :token_sha256
+      AND credential.kind IN ('operator', 'access')
+      AND credential.revoked_at IS NULL
+      AND (credential.expires_at IS NULL OR credential.expires_at > NOW())
+      AND account.revoked_at IS NULL
+      AND account.blocked_at IS NULL
     """
 )
 
 
 @dataclass(frozen=True)
 class Account:
-    """The authenticated caller. Never carries the token or its digest."""
+    """The authenticated caller. Never carries the token or its digest.
+
+    ``credential_id`` and ``session_family`` identify *which* credential was
+    presented, which sign-out needs: revoking "this session" and revoking "every
+    session" are different acts, and neither can be expressed by the account id
+    alone. They are row identifiers, not secrets -- nothing here can be
+    presented to authenticate.
+    """
 
     user_account_id: int
     display_label: str
+    credential_id: int | None = None
+    session_family: str | None = None
+    public_display_name: str | None = None
 
 
 def hash_token(token: str) -> str:
@@ -115,7 +155,12 @@ def require_account(
     if not secrets.compare_digest(str(row["token_sha256"]), digest):
         raise _unauthenticated()
 
+    family = row["session_family"]
+    public_name = row["public_display_name"]
     return Account(
         user_account_id=int(row["user_account_id"]),
         display_label=str(row["display_label"]),
+        credential_id=int(row["credential_id"]),
+        session_family=None if family is None else str(family),
+        public_display_name=None if public_name is None else str(public_name),
     )

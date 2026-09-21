@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Provision API-owned application storage and issue access tokens (ADR-0003).
+"""Provision app storage and act on accounts (ADR-0003, ADR-0005).
 
-Two privileged operations, both deliberately manual:
+Privileged operations, all deliberately manual. ADR-0005 added self-service
+registration through an OIDC provider, and it did **not** replace this script:
+an operator action stays a deliberate act at a reviewed command line rather
+than a button in an admin UI nobody designed.
 
 ``--issue-token LABEL``
     Creates an account and prints a fresh 256-bit token **once**. Only the
@@ -9,12 +12,31 @@ Two privileged operations, both deliberately manual:
     later -- if it is lost, revoke the account and issue a new one.
 
 ``--revoke-token-label LABEL``
-    Stamps ``revoked_at``. The credential stops working immediately; the
-    account's configurations are left intact until the account is deleted.
+    Stamps ``revoked_at`` on the account's operator credentials. They stop
+    working immediately; the account's configurations are left intact until
+    the account is deleted.
 
-There is no self-service signup by design: the consumers are this project's
-own web application and its operators, and an operator-gated credential is
-the smallest identity surface that supports user-owned storage honestly.
+``--revoke-sessions-label LABEL``
+    Signs the account out everywhere: stamps ``revoked_at`` on every live
+    access and refresh credential it holds, in one statement. Its operator
+    token, if it has one, is untouched -- the two are different credentials
+    with different lifetimes and cutting one is not a way to cut the other.
+
+``--block-account-label LABEL``
+    Stamps ``blocked_at``, which stops the identity signing in again, and
+    revokes its live sessions in the same transaction. Blocking without
+    revoking would leave the blocked person authenticated for up to the access
+    token's lifetime, which is not what "blocked" means to whoever ran this.
+
+``--unblock-account-label LABEL``
+    Clears ``blocked_at``. It does not restore the revoked sessions: the
+    person signs in again, which is the only path that re-establishes consent
+    from the provider.
+
+What ADR-0005 s6 guarantees and this script inherits: **existing operator
+tokens keep working unchanged**, with no expiry and no forced migration. The
+bootstrap copies each account's digest into ``app_api.account_credential`` as
+a ``kind = 'operator'`` row, so the tokens in circulation are the same tokens.
 """
 
 from __future__ import annotations
@@ -73,30 +95,102 @@ def apply_schema(connection, role_password: str) -> None:
         )
 
 
+#: The credential kinds a sign-in mints, as opposed to the operator token.
+#: Named once so "sign out everywhere" and "block" cut exactly the same set.
+SESSION_KINDS = ("access", "refresh")
+
+
 def issue_token(connection, label: str) -> str:
-    """Create an account and return its one-time token."""
+    """Create an account and return its one-time token.
+
+    The account row and its credential are two inserts now that a credential
+    is its own row (ADR-0005 s2). They are one transaction: an account with no
+    credential is unreachable by anyone, including the operator who just made
+    it, and there would be nothing to point a second attempt at but a label.
+    """
     token = secrets.token_urlsafe(32)
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO app_api.user_account (display_label, token_sha256)
-            VALUES (%s, %s)
+            INSERT INTO app_api.user_account (display_label)
+            VALUES (%s)
             RETURNING user_account_id
             """,
-            (label, digest),
+            (label,),
         )
-        cursor.fetchone()
+        (user_account_id,) = cursor.fetchone()
+        cursor.execute(
+            """
+            INSERT INTO app_api.account_credential (
+                user_account_id, kind, token_sha256
+            )
+            VALUES (%s, 'operator', %s)
+            """,
+            (user_account_id, digest),
+        )
     return token
 
 
 def revoke_token(connection, label: str) -> int:
+    """Stamp ``revoked_at`` on the label's live operator credentials."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE app_api.account_credential AS credential
+            SET revoked_at = NOW()
+            FROM app_api.user_account AS account
+            WHERE account.user_account_id = credential.user_account_id
+              AND account.display_label = %s
+              AND credential.kind = 'operator'
+              AND credential.revoked_at IS NULL
+            """,
+            (label,),
+        )
+        return cursor.rowcount
+
+
+def revoke_sessions(connection, label: str) -> int:
+    """Sign the label's account out everywhere, in one statement (ADR-0005 s4)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE app_api.account_credential AS credential
+            SET revoked_at = NOW()
+            FROM app_api.user_account AS account
+            WHERE account.user_account_id = credential.user_account_id
+              AND account.display_label = %s
+              AND credential.kind = ANY(%s)
+              AND credential.revoked_at IS NULL
+            """,
+            (label, list(SESSION_KINDS)),
+        )
+        return cursor.rowcount
+
+
+def block_account(connection, label: str) -> tuple[int, int]:
+    """Stop the identity signing in, and cut what it already holds."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
             UPDATE app_api.user_account
-            SET revoked_at = NOW()
-            WHERE display_label = %s AND revoked_at IS NULL
+            SET blocked_at = NOW()
+            WHERE display_label = %s AND blocked_at IS NULL
+            """,
+            (label,),
+        )
+        blocked = cursor.rowcount
+    return blocked, revoke_sessions(connection, label)
+
+
+def unblock_account(connection, label: str) -> int:
+    """Clear ``blocked_at``; revoked sessions stay revoked."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE app_api.user_account
+            SET blocked_at = NULL
+            WHERE display_label = %s AND blocked_at IS NOT NULL
             """,
             (label,),
         )
@@ -113,6 +207,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--issue-token", default="", metavar="LABEL")
     parser.add_argument("--revoke-token-label", default="", metavar="LABEL")
+    parser.add_argument("--revoke-sessions-label", default="", metavar="LABEL")
+    parser.add_argument("--block-account-label", default="", metavar="LABEL")
+    parser.add_argument("--unblock-account-label", default="", metavar="LABEL")
     return parser.parse_args()
 
 
@@ -137,9 +234,39 @@ def main() -> int:
         if args.revoke_token_label:
             revoked = revoke_token(connection, args.revoke_token_label)
             print(f"Revoked {revoked} active token(s) for '{args.revoke_token_label}'.")
-        if not (args.apply_schema or args.issue_token or args.revoke_token_label):
-            print("Nothing to do: pass --apply-schema, --issue-token, or")
-            print("--revoke-token-label.")
+        if args.revoke_sessions_label:
+            revoked = revoke_sessions(connection, args.revoke_sessions_label)
+            print(
+                f"Revoked {revoked} live session credential(s) for "
+                f"'{args.revoke_sessions_label}'. Its operator token, if any, "
+                "still works."
+            )
+        if args.block_account_label:
+            blocked, revoked = block_account(connection, args.block_account_label)
+            print(
+                f"Blocked {blocked} account(s) for '{args.block_account_label}' "
+                f"and revoked {revoked} live session credential(s)."
+            )
+        if args.unblock_account_label:
+            unblocked = unblock_account(connection, args.unblock_account_label)
+            print(
+                f"Unblocked {unblocked} account(s) for "
+                f"'{args.unblock_account_label}'. Sessions are not restored; "
+                "the account signs in again."
+            )
+        if not any(
+            (
+                args.apply_schema,
+                args.issue_token,
+                args.revoke_token_label,
+                args.revoke_sessions_label,
+                args.block_account_label,
+                args.unblock_account_label,
+            )
+        ):
+            print("Nothing to do: pass --apply-schema, --issue-token,")
+            print("--revoke-token-label, --revoke-sessions-label,")
+            print("--block-account-label, or --unblock-account-label.")
     finally:
         connection.close()
     return 0

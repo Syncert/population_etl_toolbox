@@ -19,10 +19,11 @@ from psycopg2.extensions import connection
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from apps.api.auth import get_app_session_dep, hash_token
+from apps.api.auth import get_app_session_dep
 from apps.api.dependencies import get_db_session_dep
 from apps.api.main import app
 from tests.support.postgres import PostgresTestConfig
+from tests.support.app_accounts import create_account, revoke_credential
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -59,16 +60,8 @@ def saved_analysis_api(
                 """,
                 (metric_code, metric_code.split(":", 1)[1]),
             )
-            cursor.executemany(
-                """
-                INSERT INTO app_api.user_account (display_label, token_sha256)
-                VALUES (%s, %s)
-                """,
-                [
-                    (label, hash_token(token)),
-                    (other_label, hash_token(other_token)),
-                ],
-            )
+            create_account(cursor, label, token)
+            create_account(cursor, other_label, other_token)
         writer.commit()
     finally:
         writer.close()
@@ -242,11 +235,10 @@ def test_unknown_and_revoked_tokens_are_refused_by_the_real_store(
     revoker = postgres_connection_factory()
     try:
         with revoker.cursor() as cursor:
-            cursor.execute(
-                "UPDATE app_api.user_account SET revoked_at = NOW() "
-                "WHERE token_sha256 = %s",
-                (hash_token(token),),
-            )
+            # Revocation stamps the credential, not the account: ADR-0005
+            # gives an account several credentials, and "this token is
+            # cancelled" is a statement about one of them.
+            revoke_credential(cursor, token)
         revoker.commit()
     finally:
         revoker.close()
