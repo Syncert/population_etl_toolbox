@@ -122,11 +122,18 @@ class OidcSettings:
 
     @property
     def configured(self) -> bool:
-        """Every part must be present. A client id with no registered redirect
-        URI is not a half-configured deployment: it is one where the exact-match
-        allowlist would be empty, and an empty allowlist refuses every sign-in
-        anyway. Saying so at the 503 is more useful than a 400 per attempt."""
-        return bool(self.issuer and self.client_id and self.client_secret)
+        """Every part must be present, **including at least one redirect URI**.
+
+        A client id with no registered redirect URI is not a half-configured
+        deployment: it is one where the exact-match allowlist is empty, so
+        every sign-in is refused no matter what a caller sends. Answering that
+        as "this deployment does not offer accounts" is both true and useful;
+        answering it as a refused request per attempt tells an operator their
+        callers are doing something wrong, which they are not.
+        """
+        return bool(
+            self.issuer and self.client_id and self.client_secret and self.redirect_uris
+        )
 
     @property
     def accepted_issuers(self) -> tuple[str, ...]:

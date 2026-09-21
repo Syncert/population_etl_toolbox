@@ -564,7 +564,7 @@ def test_a_token_response_without_an_id_token_is_refused() -> None:
 
 @pytest.mark.parametrize(
     "missing",
-    ["client_id", "client_secret", "issuer"],
+    ["client_id", "client_secret", "issuer", "redirect_uris"],
 )
 def test_a_deployment_with_no_registered_client_refuses_before_any_network_call(
     missing: str,
@@ -574,8 +574,14 @@ def test_a_deployment_with_no_registered_client_refuses_before_any_network_call(
     It also must not reach the provider: a deployment with no client id has
     nothing to ask, and a discovery fetch on every attempt would be an
     outbound request an operator never configured.
+
+    `redirect_uris` is in this list because an empty exact-match allowlist
+    refuses every sign-in whatever the caller sends. Answering that per
+    attempt would tell an operator their callers are doing something wrong,
+    which they are not -- the deployment simply does not offer accounts yet.
     """
-    provider = _provider(_settings(**{missing: ""}))
+    empty: object = () if missing == "redirect_uris" else ""
+    provider = _provider(_settings(**{missing: empty}))
     with pytest.raises(IdentityUnconfigured):
         provider.start(REDIRECT)
     assert provider.fake_client.get_calls == []
