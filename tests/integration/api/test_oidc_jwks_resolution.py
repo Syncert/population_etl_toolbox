@@ -1,4 +1,4 @@
-"""The key path a deployment actually takes (ADR-0005 §1, API-150).
+"""The provider-facing HTTP a deployment actually performs (ADR-0005 §1, API-150).
 
 Every other test of this flow injects a `key_resolver`, which is right for
 them: they are about what happens once the key is known, and a test of a
@@ -7,11 +7,17 @@ that `OidcProvider.resolve_key`'s *other* branch — the one that runs in
 production, builds a `PyJWKClient`, fetches the provider's JWKS and picks a key
 by `kid` — was exercised by nothing at all.
 
-That is the branch a first real sign-in runs. So this module serves a real JWKS
-over a real socket and lets the real client find the real key, end to end,
-including the `kid` selection that decides which of a provider's several keys
-signed a token. Providers publish more than one and rotate them; picking the
-wrong one is a refused sign-in that looks exactly like a bad signature.
+That is the branch a first real sign-in runs, and `exchange_code`'s outbound
+`POST` is in the same position: every other test replaces the client, so the
+form encoding, the content type and the response handling that a real provider
+meets are exercised nowhere.
+
+So this module serves a real discovery document, a real JWKS and a real token
+endpoint over a real socket, and lets the real client talk to them, end to end.
+That includes the `kid` selection that decides which of a provider's several
+keys signed a token -- providers publish more than one and rotate them, and
+picking the wrong one is a refused sign-in that looks exactly like a bad
+signature.
 
 It binds loopback on an ephemeral port and reaches nothing beyond it. A test
 of key resolution that needed `accounts.google.com` would fail on Google's
@@ -31,6 +37,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs
 
 import jwt
 import pytest
@@ -68,11 +75,42 @@ class _ProviderServer:
 
     def __init__(self) -> None:
         self.jwks_requests = 0
+        self.exchanges: list[dict] = []
+        self.exchange_content_types: list[str] = []
+        self.token_response_status = 200
+        self.token_response_body: dict = {"id_token": "replaced-per-test"}
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):  # noqa: D102 - quiet in test output
                 return
+
+            def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler's contract
+                if self.path != "/token":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                length = int(self.headers.get("content-length") or 0)
+                raw = self.rfile.read(length).decode("utf-8")
+                outer.exchanges.append(
+                    {
+                        key: values[0]
+                        for key, values in parse_qs(raw, keep_blank_values=True).items()
+                    }
+                )
+                outer.exchange_content_types.append(
+                    self.headers.get("content-type", "")
+                )
+                if outer.token_response_status != 200:
+                    body = {"error": "invalid_grant", "error_description": raw}
+                else:
+                    body = dict(outer.token_response_body)
+                payload = json.dumps(body).encode("utf-8")
+                self.send_response(outer.token_response_status)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
 
             def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's contract
                 if self.path == "/.well-known/openid-configuration":
@@ -237,3 +275,108 @@ def test_a_provider_that_is_down_at_discovery_is_a_refusal_not_a_crash() -> None
         provider.start(REDIRECT)
     assert refusal.value.reason == "provider_discovery_unavailable"
     assert issuer.startswith("http://127.0.0.1:")
+
+
+# ---------------------------------------------------------------------------
+# The code exchange, over the same real socket
+# ---------------------------------------------------------------------------
+
+
+def test_the_exchange_posts_a_form_the_way_a_provider_expects_it(
+    provider_server: _ProviderServer,
+) -> None:
+    """Covers: API-150 — the outbound `POST`, unfaked.
+
+    Google's discovery document lists `client_secret_post` among its
+    `token_endpoint_auth_methods_supported`, which is the method this sends:
+    credentials in the form body rather than in a `Basic` header. That is a
+    claim about a wire format, and every other test of `exchange_code`
+    substitutes the client, so nothing checked that what goes out is a
+    URL-encoded form at all.
+    """
+    provider_server.token_response_body = {
+        "id_token": _token(issuer=provider_server.issuer),
+        "access_token": "the-provider's-own-token",
+        "token_type": "Bearer",
+    }
+    provider = _provider(provider_server)
+
+    returned = provider.exchange_code(
+        code="4/a-real-code", redirect_uri=REDIRECT, code_verifier="the-verifier"
+    )
+
+    assert returned == provider_server.token_response_body["id_token"]
+    assert provider_server.exchange_content_types[0].startswith(
+        "application/x-www-form-urlencoded"
+    )
+    sent = provider_server.exchanges[0]
+    assert sent == {
+        "grant_type": "authorization_code",
+        "code": "4/a-real-code",
+        "redirect_uri": REDIRECT,
+        "client_id": CLIENT_ID,
+        "client_secret": "a-secret",
+        "code_verifier": "the-verifier",
+    }
+
+
+def test_the_exchanged_token_verifies_against_the_published_keys(
+    provider_server: _ProviderServer,
+) -> None:
+    """Covers: API-150 — exchange and verification, one continuous path.
+
+    The two halves are tested separately everywhere else. This is the only
+    place the token that comes back over the wire is the token that gets
+    verified, which is what a sign-in actually does.
+    """
+    provider_server.token_response_body = {
+        "id_token": _token(issuer=provider_server.issuer)
+    }
+    provider = _provider(provider_server)
+
+    id_token = provider.exchange_code(
+        code="c", redirect_uri=REDIRECT, code_verifier="v"
+    )
+    identity = provider.verify_id_token(id_token, nonce=NONCE)
+
+    assert identity.subject == SUBJECT
+    assert identity.email == "reader@example.test"
+
+
+def test_a_provider_refusing_the_exchange_leaks_none_of_its_reply(
+    provider_server: _ProviderServer,
+) -> None:
+    """Covers: API-150 — over the wire, not against a stand-in.
+
+    The stub echoes the whole form back inside `error_description`, which is
+    the worst case a real provider could produce: the authorization code and
+    the client secret, in a body this code must not propagate.
+    """
+    provider_server.token_response_status = 400
+    provider = _provider(provider_server)
+
+    with pytest.raises(IdentityRefused) as refusal:
+        provider.exchange_code(
+            code="4/the-code", redirect_uri=REDIRECT, code_verifier="v"
+        )
+
+    assert refusal.value.reason == "token_exchange_refused"
+    rendered = repr(refusal.value) + str(refusal.value)
+    assert "4/the-code" not in rendered
+    assert "a-secret" not in rendered
+
+
+def test_a_token_endpoint_that_answers_no_id_token_is_refused(
+    provider_server: _ProviderServer,
+) -> None:
+    """Covers: API-150 — a bare OAuth 2.0 answer, over the wire.
+
+    ADR-0005 rules GitHub out for exactly this shape: an access token and no
+    ID token, so there would be nothing to verify.
+    """
+    provider_server.token_response_body = {"access_token": "only-this"}
+    provider = _provider(provider_server)
+
+    with pytest.raises(IdentityRefused) as refusal:
+        provider.exchange_code(code="c", redirect_uri=REDIRECT, code_verifier="v")
+    assert refusal.value.reason == "token_response_carried_no_id_token"
