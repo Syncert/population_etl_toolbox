@@ -28,6 +28,8 @@ from data_ingestion_toolbox.quality.sources import (
     current_geography_projection,
     bls_chunk_reconciliation,
     cdc_watermark_monotonicity,
+    fred_missing_marker_and_series_ownership,
+    fred_observation_dates_within_the_published_range,
     fred_slice_reconciliation,
     nass_slice_ledger,
     pep_sentinel_conformance,
@@ -890,5 +892,264 @@ def test_an_empty_acs_silver_fact_is_not_applicable(
         assert [outcome.result for outcome in outcomes] == [
             "not_applicable",
             "not_applicable",
+        ]
+    postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-FRED-003 / DQ-FRED-004 — a missing value is not a zero, and a date the
+# provider actually published
+# ---------------------------------------------------------------------------
+
+
+def _fred_series(cursor, series_id: str, **columns) -> None:
+    cursor.execute(
+        """
+        INSERT INTO raw_fred.fred_series (
+            series_id, frequency, observation_start, observation_end,
+            first_seen_at, last_checked_at
+        ) VALUES (%s, %s, %s, %s, NOW(), NOW())
+        """,
+        (
+            series_id,
+            columns.get("frequency"),
+            columns.get("observation_start"),
+            columns.get("observation_end"),
+        ),
+    )
+
+
+def _gold_fred_series(cursor, series_id: str, frequency: str) -> None:
+    cursor.execute(
+        "INSERT INTO gold_fred.dim_fred_series (series_id, frequency) VALUES (%s, %s)",
+        (series_id, frequency),
+    )
+
+
+def _fred_observation(cursor, series_id: str, day: str, capture_id: str, **columns):
+    time_sk = _time_row(cursor, day)
+    cursor.execute(
+        """
+        INSERT INTO silver_fred.fact_economic_indicators (
+            time_sk, duration_start, duration_end, observation_date,
+            series_id, domain, value, is_missing, source_value, value_status,
+            capture_id, load_batch_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, gen_random_uuid())
+        """,
+        (
+            time_sk,
+            day,
+            day,
+            day,
+            series_id,
+            columns.get("domain", "labor"),
+            columns.get("value"),
+            columns.get("is_missing", False),
+            columns.get("source_value", "1.0"),
+            columns.get("value_status", "valid"),
+            capture_id,
+        ),
+    )
+
+
+def test_a_fred_missing_observation_carrying_a_number_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — DQ-FRED-003, an `AGENTS.md` invariant made measurable.
+
+    "Never silently convert suppressed, missing, invalid, or non-numeric
+    values to zero." FRED publishes its missing marker as `"."` in a numeric
+    field, which is exactly the shape a careless parser turns into `0` -- and
+    a zero is a claim, not an absence.
+
+    The schema already refuses the opposite direction: a `valid` row must
+    carry a value. It does not refuse a `missing` row that carries one, which
+    is what zero-filling produces, so nothing caught it.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor,
+            series_id,
+            "2991-01-01",
+            capture_id,
+            value=0,
+            is_missing=True,
+            source_value=".",
+            value_status="missing",
+        )
+
+        values, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert values.result == "fail"
+        assert values.observed_count == 1
+        assert series_id in " ".join(values.evidence)
+        assert ownership.result == "pass"
+    postgres_connection.rollback()
+
+
+def test_a_fred_missing_observation_with_no_value_passes(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — the invariant honoured, so the rule is not always red."""
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor,
+            series_id,
+            "2991-02-01",
+            capture_id,
+            value=None,
+            is_missing=True,
+            source_value=".",
+            value_status="missing",
+        )
+
+        values, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert values.result == "pass", values.evidence
+        assert ownership.result == "pass"
+    postgres_connection.rollback()
+
+
+def test_a_fred_series_under_two_domains_has_no_owner(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — DQ-FRED-003's ownership half.
+
+    A series appearing under two domains has no single owner, so which
+    domain's dashboard is entitled to it is a question with two answers.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id)
+        _fred_observation(
+            cursor, series_id, "2991-03-01", capture_id, domain="labor", value=1
+        )
+        _fred_observation(
+            cursor, series_id, "2991-04-01", capture_id, domain="prices", value=1
+        )
+
+        _, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert ownership.result == "fail"
+        assert ownership.evidence == [series_id + "|domains=2"]
+    postgres_connection.rollback()
+
+
+def test_a_fred_observation_with_no_series_metadata_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-020 — an observation whose units and frequency nobody can state."""
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_observation(cursor, series_id, "2991-05-01", capture_id, value=1)
+
+        _, ownership = fred_missing_marker_and_series_ownership(cursor, {})
+        assert ownership.result == "fail"
+        assert ownership.evidence == [series_id + "|no-metadata"]
+    postgres_connection.rollback()
+
+
+def test_a_fred_date_outside_the_published_range_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — DQ-FRED-004's range half.
+
+    `raw_fred.fred_series` carries FRED's own statement of the window a series
+    covers, and nothing compared the facts against it, so a date outside it
+    was served exactly like a date inside it.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(
+            cursor,
+            series_id,
+            frequency="Monthly",
+            observation_start="2991-06-01",
+            observation_end="2991-08-01",
+        )
+        _gold_fred_series(cursor, series_id, "Monthly")
+        _fred_observation(cursor, series_id, "2991-07-01", capture_id, value=1)
+
+        ranged, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert ranged.result == "pass", ranged.evidence
+        assert aligned.result == "pass", aligned.evidence
+
+        # A month before the series begins.
+        _fred_observation(cursor, series_id, "2991-05-01", capture_id, value=1)
+        ranged, _ = fred_observation_dates_within_the_published_range(cursor, {})
+        assert ranged.result == "fail"
+        assert ranged.evidence == [series_id + "|2991-05-01|2991-06-01|2991-08-01"]
+    postgres_connection.rollback()
+
+
+def test_a_monthly_fred_observation_off_the_period_start_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — DQ-FRED-004's frequency half.
+
+    FRED dates a monthly observation on the 1st. A date mid-month means the
+    series and the fact disagree about what a period is, and a chart drawn
+    from it spaces its points wrongly.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    series_id = "PROBE" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        _fred_series(cursor, series_id, frequency="Monthly")
+        _gold_fred_series(cursor, series_id, "Monthly")
+        _fred_observation(cursor, series_id, "2991-09-15", capture_id, value=1)
+
+        _, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert aligned.result == "fail"
+        assert aligned.evidence == [
+            "Monthly|" + series_id + "|2991-09-15|off-period-start"
+        ]
+    postgres_connection.rollback()
+
+
+def test_a_weekly_fred_series_is_left_alone_and_an_unknown_one_is_reported(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-021 — the arm says what it does not cover.
+
+    A weekly series is dated by its own week-ending day, so constraining it
+    would refuse dates FRED legitimately publishes. A frequency string in
+    neither list is reported instead of skipped -- the difference between a
+    check that covers what it claims and one that quietly comes to cover
+    nothing when a label changes.
+    """
+    source = "FREDPROBE" + uuid4().hex[:8].upper()
+    _, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    weekly = "PROBEW" + uuid4().hex[:8].upper()
+    odd = "PROBEX" + uuid4().hex[:8].upper()
+    with postgres_connection.cursor() as cursor:
+        for series_id, frequency in ((weekly, "Weekly"), (odd, "Fortnightly")):
+            _fred_series(cursor, series_id, frequency=frequency)
+            _gold_fred_series(cursor, series_id, frequency)
+        _fred_observation(cursor, weekly, "2991-10-17", capture_id, value=1)
+        _fred_observation(cursor, odd, "2991-10-18", capture_id, value=1)
+
+        _, aligned = fred_observation_dates_within_the_published_range(cursor, {})
+        assert aligned.result == "fail"
+        assert aligned.evidence == [
+            "Fortnightly|" + odd + "|2991-10-18|unrecognised-frequency"
         ]
     postgres_connection.rollback()

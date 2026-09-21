@@ -714,6 +714,244 @@ def reference_resolution_accounting(
     ]
 
 
+def fred_missing_marker_and_series_ownership(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-003 — a missing FRED value is not a zero, and a series has one owner.
+
+    The first half is an engineering invariant this repository states in
+    ``AGENTS.md``: "Never silently convert suppressed, missing, invalid, or
+    non-numeric values to zero." FRED publishes its missing marker as ``"."``
+    in a numeric field, which is exactly the shape that becomes ``0`` when a
+    parser is careless, and a zero is a *claim* -- unemployment was zero that
+    month -- rather than an absence.
+
+    The schema refuses one direction of that already:
+    ``fact_economic_indicators_published_value_check`` says a row whose
+    ``value_status`` is ``valid`` carries a value. It does not refuse the
+    other: a row marked ``missing`` that carries a number anyway, which is
+    what a zero-filling parser produces. That is what the first arm counts,
+    together with the disagreement between ``is_missing`` and
+    ``value_status`` -- two columns recording one fact, which can only drift
+    apart.
+
+    The second half is about identity. A series appearing under two domains
+    has no single owner, so which domain's dashboard is entitled to it is a
+    question with two answers; and a series in the fact with no
+    ``raw_fred.fred_series`` row is an observation whose units, frequency and
+    title nobody can state.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_fred.fact_economic_indicators")
+    if total == 0:
+        return [
+            RuleOutcome("silver_fred.fact_economic_indicators", "not_applicable"),
+            RuleOutcome("raw_fred.fred_series", "not_applicable"),
+        ]
+
+    zeroed, zeroed_total = _offenders(
+        cursor,
+        """
+        SELECT series_id, observation_date::text,
+               COALESCE(value::text, '<null>') AS value,
+               COALESCE(value_status, '<null>') AS value_status,
+               COALESCE(is_missing::text, '<null>') AS is_missing
+          FROM silver_fred.fact_economic_indicators
+         WHERE (value_status = 'missing' AND value IS NOT NULL)
+            OR (is_missing AND value IS NOT NULL)
+            OR (is_missing AND value_status = 'valid')
+            OR (NOT is_missing AND value_status = 'missing')
+        """,
+        order_by="1, 2",
+    )
+
+    unowned, unowned_total = _offenders(
+        cursor,
+        """
+        SELECT fact.series_id,
+               CASE WHEN series.series_id IS NULL
+                    THEN 'no-metadata'
+                    ELSE 'domains=' || COUNT(DISTINCT fact.domain)::text
+               END AS problem
+          FROM silver_fred.fact_economic_indicators AS fact
+          LEFT JOIN raw_fred.fred_series AS series
+            ON series.series_id = fact.series_id
+         GROUP BY fact.series_id, series.series_id
+        HAVING series.series_id IS NULL
+            OR COUNT(DISTINCT fact.domain) > 1
+        """,
+        order_by="1",
+    )
+
+    return [
+        RuleOutcome(
+            "silver_fred.fact_economic_indicators",
+            "fail" if zeroed else "pass",
+            observed_count=zeroed_total,
+            expected_count=0,
+            evidence=zeroed[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "raw_fred.fred_series",
+            "fail" if unowned else "pass",
+            observed_count=unowned_total,
+            expected_count=0,
+            evidence=unowned[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+#: FRED frequency strings whose observation dates land on a period start, and
+#: the month-of-year step that period takes. FRED dates a monthly observation
+#: on the 1st, a quarterly one on the 1st of January, April, July or October,
+#: and so on -- so alignment is checkable for these without inventing a
+#: convention.
+#:
+#: `Daily`, `Weekly` and `Biweekly` are deliberately absent: a weekly series is
+#: dated by its own week-ending day, which varies per series, and a daily one
+#: by whichever days the provider published. Asserting a rule there would
+#: refuse dates FRED legitimately publishes.
+_FRED_PERIOD_START_MONTHS: Mapping[str, int] = {
+    "Monthly": 1,
+    "Quarterly": 3,
+    "Semiannual": 6,
+    "Annual": 12,
+}
+
+#: Frequencies the alignment arm knowingly does not constrain. Listed rather
+#: than defaulted, so a frequency string that is in neither map is reported as
+#: unrecognised instead of quietly skipped -- a check that silently covered
+#: nothing would pass forever.
+_FRED_UNCONSTRAINED_FREQUENCIES: frozenset[str] = frozenset(
+    {
+        "Daily",
+        "Weekly",
+        "Biweekly",
+        "Weekly, Ending Friday",
+        "Weekly, Ending Saturday",
+        "Weekly, Ending Sunday",
+        "Weekly, Ending Monday",
+        "Weekly, Ending Tuesday",
+        "Weekly, Ending Wednesday",
+        "Weekly, Ending Thursday",
+    }
+)
+
+
+def fred_observation_dates_within_the_published_range(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-FRED-004 — dates the provider never published, and dates off their grid.
+
+    Two halves, because the rule's summary has two: "observation dates
+    validate against each series' frequency and source observation range".
+
+    **The range.** ``raw_fred.fred_series`` carries ``observation_start`` and
+    ``observation_end`` -- FRED's own statement of the window a series covers.
+    Nothing compared the facts against it, so a date outside that window was
+    served exactly like a date inside it, and a reader charting the series
+    sees a point the provider does not have. Both bounds are nullable, because
+    FRED does not always state them, and a null bound narrows nothing: an
+    unstated start cannot make a date too early. Each side is therefore tested
+    only where the provider said something.
+
+    **The frequency.** A monthly series is dated on the 1st, a quarterly one
+    on the 1st of January, April, July or October, and so on, so alignment is
+    checkable for those without inventing a convention.
+    ``_FRED_UNCONSTRAINED_FREQUENCIES`` says which it deliberately leaves
+    alone and why -- a weekly series is dated by its own week-ending day,
+    which varies per series.
+
+    A frequency in neither map is **reported**, not skipped. That is the
+    difference between a check that covers what it says and one that quietly
+    covers nothing: if FRED renames ``Monthly`` tomorrow, this says so instead
+    of passing forever.
+    """
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM silver_fred.fact_economic_indicators")
+    if total == 0:
+        return [
+            RuleOutcome("silver_fred.fact_economic_indicators", "not_applicable"),
+            RuleOutcome("gold_fred.dim_fred_series", "not_applicable"),
+        ]
+
+    outside, outside_total = _offenders(
+        cursor,
+        """
+        SELECT fact.series_id, fact.observation_date::text,
+               COALESCE(series.observation_start::text, '<unstated>') AS starts,
+               COALESCE(series.observation_end::text, '<unstated>') AS ends
+          FROM silver_fred.fact_economic_indicators AS fact
+          JOIN raw_fred.fred_series AS series
+            ON series.series_id = fact.series_id
+         WHERE (series.observation_start IS NOT NULL
+                AND fact.observation_date < series.observation_start)
+            OR (series.observation_end IS NOT NULL
+                AND fact.observation_date > series.observation_end)
+        """,
+        order_by="1, 2",
+    )
+
+    aligned_frequencies = sorted(_FRED_PERIOD_START_MONTHS)
+    misaligned, misaligned_total = _offenders(
+        cursor,
+        """
+        SELECT series.frequency, fact.series_id, fact.observation_date::text,
+               CASE
+                   WHEN series.frequency = ANY(%s) THEN 'off-period-start'
+                   ELSE 'unrecognised-frequency'
+               END AS problem
+          FROM silver_fred.fact_economic_indicators AS fact
+          JOIN gold_fred.dim_fred_series AS series
+            ON series.series_id = fact.series_id
+         WHERE (
+                 series.frequency = ANY(%s)
+                 AND (
+                   EXTRACT(DAY FROM fact.observation_date) <> 1
+                   OR MOD(
+                        (EXTRACT(MONTH FROM fact.observation_date)::int - 1),
+                        CASE series.frequency
+                            WHEN 'Monthly' THEN 1
+                            WHEN 'Quarterly' THEN 3
+                            WHEN 'Semiannual' THEN 6
+                            ELSE 12
+                        END
+                      ) <> 0
+                 )
+               )
+            OR (
+                 series.frequency IS NOT NULL
+                 AND NOT (series.frequency = ANY(%s))
+                 AND NOT (series.frequency = ANY(%s))
+               )
+        """,
+        order_by="1, 2, 3",
+        params=(
+            aligned_frequencies,
+            aligned_frequencies,
+            aligned_frequencies,
+            sorted(_FRED_UNCONSTRAINED_FREQUENCIES),
+        ),
+    )
+
+    return [
+        RuleOutcome(
+            "silver_fred.fact_economic_indicators",
+            "fail" if outside else "pass",
+            observed_count=outside_total,
+            expected_count=0,
+            evidence=outside[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_fred.dim_fred_series",
+            "fail" if misaligned else "pass",
+            observed_count=misaligned_total,
+            expected_count=0,
+            evidence=misaligned[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 def acs_published_row_resolution(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1346,6 +1584,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-BLS-004": bls_geography_accountability,
     "DQ-BLS-007": bls_contract_conformance,
     "DQ-FRED-002": fred_slice_reconciliation,
+    "DQ-FRED-003": fred_missing_marker_and_series_ownership,
+    "DQ-FRED-004": fred_observation_dates_within_the_published_range,
     "DQ-FRED-007": fred_contract_conformance,
     "DQ-PEP-002": pep_release_completeness,
     "DQ-PEP-003": pep_registry_reconciliation,

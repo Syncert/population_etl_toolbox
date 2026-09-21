@@ -2640,11 +2640,22 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fred.observation_revision",
             "silver_fred.fact_economic_indicators",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the missing marker stays distinct from zero through "
-            "`is_missing`, and no executor confirms every configured series has "
-            "metadata and exactly one domain owner."
+            "Measured by `fred_missing_marker_and_series_ownership`. The zero "
+            "half is an `AGENTS.md` invariant -- never silently convert a "
+            "missing value to zero -- and FRED publishes its missing marker as "
+            '`"."` in a numeric field, the shape that becomes `0` when a '
+            "parser is careless. "
+            "`fact_economic_indicators_published_value_check` already refuses "
+            "one direction (a `valid` row carries a value) and not the other: "
+            "a row marked `missing` carrying a number anyway, which is what a "
+            "zero-filling parser produces. That, and any disagreement between "
+            "`is_missing` and `value_status` -- two columns recording one fact "
+            "-- are counted. The ownership half counts a series appearing "
+            "under more than one domain, and a series in the fact with no "
+            "`raw_fred.fred_series` row, whose units and frequency nobody can "
+            "state."
         ),
     ),
     _rule(
@@ -2653,12 +2664,29 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "temporal_integrity",
         "Observation dates validate against each series' frequency and "
         "source observation range.",
-        ("silver_fred.fact_economic_indicators", "gold_fred.dim_fred_series"),
-        automation="unimplemented",
+        (
+            "silver_fred.fact_economic_indicators",
+            "gold_fred.dim_fred_series",
+            "raw_fred.fred_series",
+        ),
+        automation="automated",
         automation_note=(
-            "Unimplemented: observation dates are not validated against each "
-            "series' frequency and source range, so a date outside the "
-            "provider's range is served as published."
+            "Measured by `fred_observation_dates_within_the_published_range`, "
+            "in the two halves the summary names. The range comes from "
+            "`raw_fred.fred_series`, which is where FRED's own "
+            "`observation_start`/`observation_end` live -- added to this "
+            "rule's objects because it is what the summary's \"source "
+            'observation range" refers to. Both bounds are nullable and a '
+            "null narrows nothing, so each side is tested only where the "
+            "provider stated it. "
+            "The frequency half checks period-start alignment for `Monthly`, "
+            "`Quarterly`, `Semiannual` and `Annual`, and deliberately "
+            "constrains neither daily nor weekly series: a weekly series is "
+            "dated by its own week-ending day, which varies per series, so a "
+            "rule there would refuse dates FRED legitimately publishes. A "
+            "frequency string in neither list is reported as unrecognised "
+            "rather than skipped, so the arm cannot quietly come to cover "
+            "nothing if a label changes."
         ),
     ),
     _rule(

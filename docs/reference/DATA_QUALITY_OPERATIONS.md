@@ -203,8 +203,13 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **26 are `unimplemented`** — no executor runs them, and 14 of those are
-  BLOCK severity. `DQ-ACS-004` left this set by measuring the thing its own
+- **24 are `unimplemented`** — no executor runs them, and 12 of those are
+  BLOCK severity. `DQ-FRED-003` and `DQ-FRED-004` left it most recently:
+  the first makes an `AGENTS.md` invariant measurable (a missing value is
+  not a zero, and the one constraint that touches it refuses only the
+  direction a zero-filling parser does not produce), the second compares
+  observation dates against the window FRED itself published and against
+  the period grid its frequency implies. `DQ-ACS-004` left this set by measuring the thing its own
   note described and no other rule could see: the serving view is an inner
   join to `dim_acs_variable`, so a silver row whose variable the dimension
   does not carry is captured, parsed, stored and silently declined, and
