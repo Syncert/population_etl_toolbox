@@ -448,3 +448,98 @@ def test_every_account_route_refuses_an_anonymous_caller(
         ).status_code
         == 401
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-account storage quotas
+# ---------------------------------------------------------------------------
+
+
+def test_an_account_may_hold_only_so_many_saved_analyses(
+    sign_in: SignInHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-154 -- ADR-0005 s4's bound on *how many*, beside ADR-0004's
+    bound on how large one may be.
+
+    Self-service registration turns "a handful of operator-issued accounts"
+    into "every visitor", which is what makes an unbounded row count per
+    account worth bounding at all.
+    """
+    from data_ingestion_toolbox.config import get_settings
+
+    monkeypatch.setenv("API_SAVED_ANALYSIS_QUOTA", "2")
+    get_settings.cache_clear()
+
+    token = sign_in.sign_in(subject="quota-reader").json()["access_token"]
+    assert _save_something(sign_in, token, "one").status_code == 201
+    assert _save_something(sign_in, token, "two").status_code == 201
+
+    refused = _save_something(sign_in, token, "three")
+    # 409, not 429: this is not a rate a caller can wait out. The condition is
+    # about what the account holds and the remedy is deleting something, so a
+    # `Retry-After` would be a false promise that waiting helps.
+    assert refused.status_code == 409
+    assert "delete one" in refused.json()["detail"]
+    assert "retry-after" not in {key.lower() for key in refused.headers}
+
+
+def test_the_quota_is_per_account_and_not_per_deployment(
+    sign_in: SignInHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-154 -- one reader filling their own allowance must not stop
+    anybody else saving anything. A count that forgot its `WHERE` clause would
+    pass the test above and fail this one."""
+    from data_ingestion_toolbox.config import get_settings
+
+    monkeypatch.setenv("API_SAVED_ANALYSIS_QUOTA", "1")
+    get_settings.cache_clear()
+
+    first = sign_in.sign_in(subject="quota-first").json()["access_token"]
+    assert _save_something(sign_in, first, "mine").status_code == 201
+    assert _save_something(sign_in, first, "mine-again").status_code == 409
+
+    second = sign_in.sign_in(subject="quota-second").json()["access_token"]
+    assert _save_something(sign_in, second, "theirs").status_code == 201
+
+
+def test_deleting_one_makes_room_for_another(
+    sign_in: SignInHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-154 -- the remedy the refusal names has to actually work.
+
+    Refused at the create rather than trimmed on the way in: deciding which of
+    a reader's own saved analyses to destroy is not a decision this code gets
+    to make.
+    """
+    from data_ingestion_toolbox.config import get_settings
+
+    monkeypatch.setenv("API_SAVED_ANALYSIS_QUOTA", "1")
+    get_settings.cache_clear()
+
+    token = sign_in.sign_in(subject="quota-recycler").json()["access_token"]
+    created = _save_something(sign_in, token, "only")
+    assert created.status_code == 201
+    assert _save_something(sign_in, token, "second").status_code == 409
+
+    deleted = sign_in.client.request(
+        "DELETE",
+        f"/api/v1/analysis-configurations/{created.json()['configuration_id']}",
+        headers=_auth(token),
+    )
+    assert deleted.status_code == 204
+    assert _save_something(sign_in, token, "second").status_code == 201
+
+
+def test_an_unset_quota_bounds_nothing(
+    sign_in: SignInHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: API-154 -- 0 disables it, like every other bound in this API, so
+    the deterministic suites and local iteration are unbounded."""
+    from data_ingestion_toolbox.config import get_settings
+
+    monkeypatch.setenv("API_SAVED_ANALYSIS_QUOTA", "0")
+    get_settings.cache_clear()
+
+    token = sign_in.sign_in(subject="unbounded-reader").json()["access_token"]
+    for index in range(4):
+        assert _save_something(sign_in, token, f"view-{index}").status_code == 201

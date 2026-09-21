@@ -946,6 +946,10 @@ Authenticated, user-owned storage — see ADR-0003.
 - `Authorization: Bearer <token>` — either the access token from a
   self-service sign-in above, or an operator-provisioned token. The
   boundary, the scoping, and every refusal below are identical for both.
+- **An account holds a bounded number of these.** Past the bound, a create
+  answers `409` and says so; the remedy is deleting one, so there is no
+  `Retry-After` and waiting does not help. The bound is a deployment
+  setting and is separate from the size bound on any single document.
 - `GET|POST /api/v1/analysis-configurations`,
   `GET|PUT|DELETE /api/v1/analysis-configurations/{configuration_id}`.
 - Documents are validated on write against the same capability and
