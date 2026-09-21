@@ -220,6 +220,16 @@ export function requestComplaint(rawUrl) {
   }
   const operation = servedOperationFor(url.pathname);
   if (operation === null) {
+    // `servedOperationFor` resolves against the `GET` operations, because the
+    // question below -- "did the client send a query parameter this route does
+    // not declare" -- is a `GET` question: a write carries a body, and there is
+    // no parameter list to grade it against. A path the contract serves only
+    // under another method is therefore not undeclared; it is out of scope for
+    // this check, and saying so is different from saying it does not exist.
+    // The sign-in routes are the first `POST`-only ones this client calls.
+    if (addressesServedPath(url.pathname)) {
+      return null;
+    }
     return `${url.pathname} is not a path the reviewed contract serves`;
   }
   const declared = new Set(servedParameters(operation));
