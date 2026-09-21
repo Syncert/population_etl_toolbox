@@ -790,3 +790,96 @@ def test_two_callbacks_racing_one_identity_produce_one_account(
         )[0][0]
         == 1
     )
+
+
+def test_a_refresh_racing_a_sign_out_does_not_sign_the_reader_back_in(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — the grace window must not resurrect an ended session.
+
+    A recent `revoked_at` is not on its own evidence of a rotation. Sign-out
+    revokes the whole family in one statement, so the token a second tab holds
+    gets exactly the stamp a just-rotated token gets, at exactly the same
+    moment. Treating that as the two-tab race mints a new pair and signs the
+    reader straight back in.
+
+    It is not a contrived race either: `maintainSession`'s timer, or any second
+    tab, makes a refresh arriving a second after sign-out an ordinary event.
+    """
+    token = sign_in.sign_in(subject="signing-out-mid-refresh").json()["access_token"]
+    held = sign_in.client.cookies[REFRESH_COOKIE]
+
+    assert (
+        sign_in.client.post(
+            "/api/v1/auth/sign-out", headers={"Authorization": f"Bearer {token}"}
+        ).status_code
+        == 204
+    )
+
+    # The other tab's refresh, arriving immediately -- well inside the grace
+    # window, with a `revoked_at` from a moment ago.
+    sign_in.client.cookies.set(REFRESH_COOKIE, held)
+    racing = sign_in.client.post("/api/v1/auth/refresh")
+    assert racing.status_code == 401, "a sign-out was undone by a racing refresh"
+
+    # And nothing new was minted for the family.
+    live = sign_in.query(
+        "SELECT COUNT(*) FROM app_api.account_credential AS c"
+        " JOIN app_api.user_account AS a ON a.user_account_id = c.user_account_id"
+        " WHERE a.subject = %s AND c.revoked_at IS NULL",
+        ("signing-out-mid-refresh",),
+    )
+    assert live[0][0] == 0
+
+
+def test_a_refresh_after_reuse_detection_cannot_spend_the_grace_window(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — the same check, against the attacker it matters most for.
+
+    Reuse detection revokes a family in one statement, exactly as sign-out
+    does. Without this, whoever triggered the revocation could immediately
+    present any token from that family and be inside the grace window they had
+    just created.
+    """
+    import apps.api.routers.identity as identity_router
+    from apps.api.services.identity_service import SessionPolicy
+
+    sign_in.sign_in(subject="reuse-then-grace")
+    captured = sign_in.client.cookies[REFRESH_COOKIE]
+    rotated = sign_in.client.post("/api/v1/auth/refresh")
+    assert rotated.status_code == 200
+    successor = sign_in.client.cookies[REFRESH_COOKIE]
+
+    original = identity_router.session_policy
+    identity_router.session_policy = lambda: SessionPolicy(grace_seconds=0)
+    try:
+        sign_in.client.cookies.set(REFRESH_COOKIE, captured)
+        assert sign_in.client.post("/api/v1/auth/refresh").status_code == 401
+    finally:
+        identity_router.session_policy = original
+
+    # The family is revoked. The successor is now inside a generous grace
+    # window by `revoked_at`, and must still be refused.
+    sign_in.client.cookies.set(REFRESH_COOKIE, successor)
+    assert sign_in.client.post("/api/v1/auth/refresh").status_code == 401
+
+
+def test_the_two_tab_race_still_works_after_the_tightening(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — the check must not break what the grace window is for.
+
+    This is the assertion that keeps the fix honest: a genuine rotation leaves
+    a live successor, so a second tab presenting the spent token still gets a
+    working session.
+    """
+    sign_in.sign_in(subject="two-tabs-after-fix")
+    shared = sign_in.client.cookies[REFRESH_COOKIE]
+
+    first = sign_in.client.post("/api/v1/auth/refresh")
+    assert first.status_code == 200
+
+    sign_in.client.cookies.set(REFRESH_COOKIE, shared)
+    second = sign_in.client.post("/api/v1/auth/refresh")
+    assert second.status_code == 200, "the fix broke the race it must tolerate"

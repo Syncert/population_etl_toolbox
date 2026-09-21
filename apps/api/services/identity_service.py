@@ -394,6 +394,21 @@ _REVOKE_FAMILY = text(
     """
 )
 
+#: Whether a session family still holds anything live.
+#:
+#: This is what tells a *rotation* apart from a *sign-out*, and the two look
+#: identical at the credential the caller presented: both leave it with a
+#: `revoked_at` a moment ago. After a rotation the successor pair is live, so
+#: the family is; after a sign-out or a reuse revocation nothing in it is.
+_FAMILY_HAS_A_LIVE_CREDENTIAL = text(
+    """
+    SELECT 1 FROM app_api.account_credential
+    WHERE session_family = CAST(:session_family AS UUID)
+      AND revoked_at IS NULL
+    LIMIT 1
+    """
+)
+
 _REVOKE_EVERY_SESSION = text(
     """
     UPDATE app_api.account_credential
@@ -520,9 +535,28 @@ def refresh_session(
                 db.execute(_REVOKE_FAMILY, {"session_family": family, "now": moment})
                 db.commit()
             raise SessionRefused("refresh_token_reused")
-        # Inside the grace window. Fall through to issue a new pair without
-        # revoking anything further: the successor this token was rotated into
-        # is still live and the other tab is still holding it.
+
+        # Inside the grace window -- but a recent `revoked_at` is not on its
+        # own evidence of a rotation. A sign-out revokes the whole family in
+        # one statement, so the token a second tab is holding gets exactly the
+        # same stamp at exactly the same moment. Without this check, a refresh
+        # arriving a second after the reader pressed sign out would mint a new
+        # pair and sign them straight back in -- and `maintainSession`'s timer,
+        # or any second tab, makes that a normal thing to happen rather than a
+        # contrived one. Reuse detection revokes a family the same way, so the
+        # same check stops an attacker spending the grace window they just
+        # triggered.
+        #
+        # What tells the two apart is whether anything in the family is still
+        # live: after a rotation the successor pair is, and that successor is
+        # precisely what the other tab is holding.
+        if family is None or (
+            db.execute(
+                _FAMILY_HAS_A_LIVE_CREDENTIAL, {"session_family": family}
+            ).first()
+            is None
+        ):
+            raise SessionRefused("session_already_ended")
     else:
         expires_at = _as_aware(row["expires_at"]) if row["expires_at"] else None
         if expires_at is not None and expires_at <= moment:
