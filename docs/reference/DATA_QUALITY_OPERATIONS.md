@@ -203,8 +203,12 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **24 are `unimplemented`** — no executor runs them, and 12 of those are
-  BLOCK severity. `DQ-FRED-003` and `DQ-FRED-004` left it most recently:
+- **23 are `unimplemented`** — no executor runs them, and 11 of those are
+  BLOCK severity. `DQ-CDC-007` left it by measuring what the publisher
+  cannot tell you about itself: its `valid_time_grains` is a literal
+  `ARRAY['ANNUAL']`, so the rule asks the facts whether that is true and
+  asks the export whether its composed `source_object_key` means one
+  thing. `DQ-FRED-003` and `DQ-FRED-004` left it before that:
   the first makes an `AGENTS.md` invariant measurable (a missing value is
   not a zero, and the one constraint that touches it refuses only the
   direction a zero-filling parser does not produce), the second compares

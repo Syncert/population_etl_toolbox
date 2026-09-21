@@ -27,6 +27,7 @@ from data_ingestion_toolbox.quality.sources import (
     acs_slice_reconciliation,
     current_geography_projection,
     bls_chunk_reconciliation,
+    cdc_publisher_export_conformance,
     cdc_watermark_monotonicity,
     fred_missing_marker_and_series_ownership,
     fred_observation_dates_within_the_published_range,
@@ -1151,5 +1152,198 @@ def test_a_weekly_fred_series_is_left_alone_and_an_unknown_one_is_reported(
         assert aligned.result == "fail"
         assert aligned.evidence == [
             "Fortnightly|" + odd + "|2991-10-18|unrecognised-frequency"
+        ]
+    postgres_connection.rollback()
+
+
+# -------------------------------------------------------------------------
+# DQ-CDC-007 — the CDC publisher's measure identity and its annual claim
+# -------------------------------------------------------------------------
+
+
+def _seed_cdc_release(
+    cursor, capture_id: str, run_id: str, asset_id: str, watermark: str
+) -> None:
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_dataset_release (
+            asset_id, release_watermark, socrata_id, title, methodology_url,
+            geography_basis, parser_contract_version, estimate_method,
+            population_basis, metadata_capture_id, source_run_id,
+            source_record_count, quarantine_count, status,
+            reconciled_at, published_at
+        ) VALUES (%s, %s, 'probe-socrata', 'Probe dataset',
+                  'https://example.test/methodology', 'state',
+                  '1.0', 'probe-method', 'probe-basis', %s,
+                  %s, 1, 0, 'published', NOW(), NOW())
+        ON CONFLICT DO NOTHING
+        """,
+        (asset_id, watermark, capture_id, run_id),
+    )
+
+
+def _seed_cdc_measure(
+    cursor,
+    capture_id: str,
+    run_id: str,
+    *,
+    asset_id: str = "cdi",
+    measure_id: str = "probe_measure",
+    value_type_id: str = "crude",
+    watermark: str = "20200101",
+) -> None:
+    """One published CDC measure, with the release its export reads."""
+    _seed_cdc_release(cursor, capture_id, run_id, asset_id, watermark)
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_measure (
+            asset_id, measure_id, value_type_id, measure_label, topic,
+            value_type_label, adjustment_status, estimate_method,
+            population_basis
+        ) VALUES (%s, %s, %s, 'Probe measure', 'probe topic',
+                  'Crude', 'unadjusted', 'probe-method', 'probe-basis')
+        ON CONFLICT DO NOTHING
+        """,
+        (asset_id, measure_id, value_type_id),
+    )
+
+
+def _seed_cdc_observation(
+    cursor,
+    capture_id: str,
+    run_id: str,
+    geo_sk: int,
+    *,
+    asset_id: str = "cdi",
+    measure_id: str = "probe_measure",
+    value_type_id: str = "crude",
+    watermark: str = "20200101",
+    period_start: int = 2020,
+    period_end: int = 2020,
+) -> None:
+    # `stratum_id` is constrained to a 64-character hex digest, so it is
+    # derived from the strata it identifies rather than named -- which is what
+    # the real writer does, and why an empty stratum has one stable id.
+    stratum_id = hashlib.sha256(b"[]").hexdigest()
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.dim_stratum (stratum_id, strata)
+        VALUES (%s, '[]'::jsonb)
+        ON CONFLICT DO NOTHING
+        """,
+        (stratum_id,),
+    )
+    cursor.execute(
+        """
+        INSERT INTO silver_cdc.fact_health_observation (
+            asset_id, release_watermark, source_record_id, source_run_id,
+            capture_id, source_row_index, measure_id, value_type_id,
+            stratum_id, period_start, period_end, geo_sk, geo_type,
+            geography_status, value, value_status, adjustment_status,
+            estimate_method, population_basis, transformation_version
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, 'state',
+                  'resolved', 1.0, 'valid', 'unadjusted',
+                  'probe-method', 'probe-basis', '1.0')
+        """,
+        (
+            asset_id,
+            watermark,
+            # A 64-character hex digest, like every other record id in
+            # this schema: the source row's identity, not a label.
+            hashlib.sha256(
+                f"{period_start}:{period_end}:{uuid4().hex}".encode()
+            ).hexdigest(),
+            run_id,
+            capture_id,
+            abs(hash((period_start, period_end, uuid4().hex))) % 1_000_000,
+            measure_id,
+            value_type_id,
+            stratum_id,
+            period_start,
+            period_end,
+            geo_sk,
+        ),
+    )
+
+
+def test_a_cdc_measure_id_containing_the_key_delimiter_is_ambiguous(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — a composed key that cannot be taken apart again.
+
+    `gold_cdc.metric_publisher` builds `source_object_key` as
+    `asset_id || ':' || measure_id || ':' || value_type_id`. A component
+    carrying that delimiter makes the result ambiguous: `a:b` + `c` and `a` +
+    `b:c` compose to the same string, so two measures can collide into one
+    identity and nothing downstream can decompose it.
+
+    Nothing refused it. The publisher view puts no constraint on its inputs,
+    and every other guard checks that the key *exists* rather than that it
+    means one thing.
+    """
+    source = "CDCPROBE" + uuid4().hex[:8].upper()
+    run_id, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    with postgres_connection.cursor() as cursor:
+        _seed_cdc_measure(cursor, capture_id, run_id, measure_id="ordinary_measure")
+
+        export, _ = cdc_publisher_export_conformance(cursor, {})
+        assert export.result == "pass", export.evidence
+
+        _seed_cdc_measure(cursor, capture_id, run_id, measure_id="colon:inside")
+        export, _ = cdc_publisher_export_conformance(cursor, {})
+        assert export.result == "fail"
+        assert any(entry.startswith("delimiter|") for entry in export.evidence)
+    postgres_connection.rollback()
+
+
+def test_a_cdc_observation_spanning_more_than_a_year_contradicts_the_contract(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — the data has to support the claim the contract makes.
+
+    `gold_cdc.metric_publisher` writes `valid_time_grains` as a literal
+    `ARRAY['ANNUAL']`, so reading it back would be a rule agreeing with a
+    constant. `gold_cdc.health_observation` carries `period_start` and
+    `period_end` as integer years, so an annual observation is one where they
+    are equal -- and a row spanning more is a multi-year figure served to a
+    reader who asked for an annual series, with nothing saying so.
+    """
+    source = "CDCPROBE" + uuid4().hex[:8].upper()
+    run_id, capture_id = _seed_probe_capture(postgres_connection_factory, source)
+    with postgres_connection.cursor() as cursor:
+        geo_sk, _ = _agency_entity(cursor, "cdc-" + uuid4().hex[:8])
+        _entity_version(cursor, geo_sk, capture_id)
+        _seed_cdc_measure(cursor, capture_id, run_id)
+        _seed_cdc_observation(
+            cursor, capture_id, run_id, geo_sk, period_start=2020, period_end=2020
+        )
+
+        _, grain = cdc_publisher_export_conformance(cursor, {})
+        assert grain.result == "pass", grain.evidence
+
+        _seed_cdc_observation(
+            cursor, capture_id, run_id, geo_sk, period_start=2021, period_end=2023
+        )
+        _, grain = cdc_publisher_export_conformance(cursor, {})
+        assert grain.result == "fail"
+        assert any("2021|2023" in entry for entry in grain.evidence)
+    postgres_connection.rollback()
+
+
+def test_an_empty_cdc_publisher_is_not_applicable(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-022 — a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM gold_cdc.metric_publisher")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse publishes CDC measures")
+        outcomes = cdc_publisher_export_conformance(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
         ]
     postgres_connection.rollback()

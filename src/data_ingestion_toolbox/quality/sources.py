@@ -714,6 +714,106 @@ def reference_resolution_accounting(
     ]
 
 
+#: The character `gold_cdc.metric_publisher` joins a measure's three ids with
+#: to make `source_object_key`. A component containing it makes the key
+#: ambiguous: `a:b` + `c` and `a` + `b:c` compose to the same string, and
+#: nothing downstream can take it apart again.
+_CDC_KEY_DELIMITER = ":"
+
+
+def cdc_publisher_export_conformance(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-CDC-007 — the CDC publisher's measure identity and its annual claim.
+
+    Two arms, and neither asks the publisher view to confirm its own literal.
+    ``valid_time_grains`` is written ``ARRAY['ANNUAL']`` directly in that view,
+    so reading it back would be a rule agreeing with a constant. What is worth
+    measuring is whether the **data** supports the claim the contract makes to
+    every consumer, and whether the identity that contract publishes is one
+    identity.
+
+    **Identity.** ``source_object_key`` is
+    ``asset_id || ':' || measure_id || ':' || value_type_id``. A component
+    containing that delimiter makes the key ambiguous -- ``a:b`` + ``c`` and
+    ``a`` + ``b:c`` compose to the same string -- so nothing downstream can
+    take it apart again, and two measures can collide into one. The composed
+    key is also held unique in its own right, because a collision arriving any
+    other way has the same consequence: a product template naming that key
+    gets whichever row the planner reaches first.
+
+    **The annual claim.** ``gold_cdc.health_observation`` carries
+    ``period_start`` and ``period_end`` as integer years, so an annual
+    observation is one where they are equal. A row spanning more than a year
+    contradicts the ``ANNUAL`` the publisher promises, and a reader asking for
+    an annual series gets a multi-year figure with nothing saying so.
+    """
+    del scope
+    # Gated on the export rather than the publisher. `metric_publisher`
+    # additionally requires a measure to have observations, so a warehouse
+    # that has published measure metadata and not yet loaded facts would read
+    # as "nothing to check" while the identity arm has plenty to say.
+    exported = _count(cursor, "SELECT COUNT(*) FROM gold_cdc.measure_export")
+    if exported == 0:
+        return [
+            RuleOutcome("gold_cdc.metric_publisher", "not_applicable"),
+            RuleOutcome("gold_cdc.measure_export", "not_applicable"),
+        ]
+
+    ambiguous, ambiguous_total = _offenders(
+        cursor,
+        """
+        SELECT 'delimiter' AS problem, source_object_key,
+               COUNT(*)::text AS occurrences
+          FROM gold_cdc.measure_export AS export
+          CROSS JOIN LATERAL (
+              SELECT (((export.source_dataset || %s) || export.source_measure_code)
+                       || %s) || export.source_value_type_code
+          ) AS composed(source_object_key)
+         WHERE export.source_dataset LIKE ('%%' || %s || '%%')
+            OR export.source_measure_code LIKE ('%%' || %s || '%%')
+            OR export.source_value_type_code LIKE ('%%' || %s || '%%')
+         GROUP BY 1, 2
+        UNION ALL
+        SELECT 'collision' AS problem, source_object_key,
+               COUNT(*)::text AS occurrences
+          FROM gold_cdc.metric_publisher
+         GROUP BY 1, 2
+        HAVING COUNT(*) > 1
+        """,
+        order_by="1, 2",
+        params=(_CDC_KEY_DELIMITER,) * 5,
+    )
+
+    spanning, spanning_total = _offenders(
+        cursor,
+        """
+        SELECT asset_id, measure_id, value_type_id,
+               period_start::text, period_end::text
+          FROM gold_cdc.health_observation
+         WHERE period_start IS DISTINCT FROM period_end
+        """,
+        order_by="1, 2, 3, 4",
+    )
+
+    return [
+        RuleOutcome(
+            "gold_cdc.measure_export",
+            "fail" if ambiguous else "pass",
+            observed_count=ambiguous_total,
+            expected_count=0,
+            evidence=ambiguous[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_cdc.metric_publisher",
+            "fail" if spanning else "pass",
+            observed_count=spanning_total,
+            expected_count=0,
+            evidence=spanning[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 def fred_missing_marker_and_series_ownership(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1592,6 +1692,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-PEP-004": pep_sentinel_conformance,
     "DQ-CDC-002": cdc_watermark_monotonicity,
     "DQ-CDC-004": cdc_suppression_conformance,
+    "DQ-CDC-007": cdc_publisher_export_conformance,
     "DQ-FBI-002": fbi_participation_coverage,
     "DQ-FBI-003": fbi_reported_vs_absent,
     "DQ-FBI-004": fbi_aggregation_boundary,

@@ -2968,12 +2968,30 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "conformance",
         "CDC publisher exports preserve measure identity and the annual time grain.",
-        ("gold_cdc.measure_export", "gold_cdc.metric_publisher"),
-        automation="unimplemented",
+        (
+            "gold_cdc.measure_export",
+            "gold_cdc.metric_publisher",
+            "gold_cdc.health_observation",
+        ),
+        automation="automated",
         automation_note=(
-            "Unimplemented: no executor confirms the CDC publisher exports "
-            "preserve measure identity and the annual time grain; migration 014 "
-            "fixed the shape and nothing measures it."
+            "Measured by `cdc_publisher_export_conformance`, and deliberately "
+            "not by reading the publisher's own literal back: "
+            "`valid_time_grains` is written `ARRAY['ANNUAL']` directly in "
+            "`gold_cdc.metric_publisher`, so a rule reading it would be "
+            "agreeing with a constant. "
+            "The identity arm reads the export instead. `source_object_key` "
+            "is `asset_id || ':' || measure_id || ':' || value_type_id`, so a "
+            "component containing that delimiter makes the key ambiguous -- "
+            "`a:b` + `c` and `a` + `b:c` compose to the same string -- and "
+            "nothing downstream can take it apart; the composed key is held "
+            "unique as well, because a collision arriving any other way has "
+            "the same consequence. "
+            "The grain arm asks whether the data supports the claim: "
+            "`gold_cdc.health_observation` carries `period_start` and "
+            "`period_end` as integer years, so an annual observation is one "
+            "where they are equal, and a row spanning more contradicts the "
+            "`ANNUAL` every consumer is promised."
         ),
     ),
     # -- FBI UCR -----------------------------------------------------------
