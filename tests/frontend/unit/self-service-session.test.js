@@ -27,6 +27,7 @@ import {
 import {
   callbackUrl,
   completeSignIn,
+  maintainSession,
   refreshSession,
   signOut,
   startSignIn,
@@ -378,5 +379,95 @@ describe("signing out", () => {
     await signOut({ fetchImpl });
 
     expect(calls).toHaveLength(0);
+  });
+});
+
+
+describe("keeping a session alive", () => {
+  test("a rotation is scheduled before the token expires, not after", async () => {
+    vi.useFakeTimers();
+    try {
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      setSessionCredential("first", expiresAt);
+      const { fetchImpl, calls } = transport([
+        {
+          status: 200,
+          body: {
+            access_token: "rotated",
+            token_type: "Bearer",
+            expires_at: new Date(expiresAt + 15 * 60 * 1000).toISOString(),
+            expires_in: 900,
+          },
+        },
+      ]);
+
+      const cancel = maintainSession(() => {}, { fetchImpl });
+
+      // A minute before expiry, not a moment after: waiting for the 401 works
+      // but spends the reader's click.
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000 - 1);
+      expect(calls).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(calls).toHaveLength(1);
+      expect(readSessionCredential()).toBe("rotated");
+      cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("cancelling stops the next rotation", async () => {
+    vi.useFakeTimers();
+    try {
+      setSessionCredential("held", Date.now() + 15 * 60 * 1000);
+      const { fetchImpl, calls } = transport([]);
+      const cancel = maintainSession(() => {}, { fetchImpl });
+      cancel();
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a session that stops moving forward stops being rotated", async () => {
+    // A deployment whose access-token lifetime is shorter than the rotation
+    // window would compute a zero delay every time. Without a guard that is a
+    // tight loop against the most rate-limited endpoint on the API.
+    vi.useFakeTimers();
+    try {
+      const frozen = Date.now() + 10_000;
+      setSessionCredential("short", frozen);
+      const { fetchImpl, calls } = transport(
+        Array.from({ length: 50 }, () => ({
+          status: 200,
+          body: {
+            access_token: "short",
+            token_type: "Bearer",
+            expires_at: new Date(frozen).toISOString(),
+            expires_in: 10,
+          },
+        })),
+      );
+
+      const cancel = maintainSession(() => {}, { fetchImpl });
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      expect(calls.length).toBeLessThanOrEqual(1);
+      cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("nothing is scheduled when no session is held", () => {
+    vi.useFakeTimers();
+    try {
+      const { fetchImpl, calls } = transport([]);
+      maintainSession(() => {}, { fetchImpl });
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import { heldCredentialKind, useStoredToken } from "../lib/apiToken";
 import {
   getAccount,
+  maintainSession,
   refreshSession,
   signOut,
   startSignIn,
@@ -66,6 +67,17 @@ export default function SignInControl(): JSX.Element {
       cancelled = true;
     };
   }, []);
+
+  // Once signed in, keep it that way. The access token lasts fifteen minutes
+  // and a reader's session lasts thirty days; without this, every screen that
+  // saves would fail on the reader's click a quarter of an hour after they
+  // signed in.
+  useEffect(() => {
+    if (phase !== "signed-in") {
+      return undefined;
+    }
+    return maintainSession();
+  }, [phase]);
 
   const begin = useCallback(async () => {
     setFailure("");

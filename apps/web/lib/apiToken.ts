@@ -124,6 +124,17 @@ export function hasSessionCredential(): boolean {
   return sessionCredential !== null;
 }
 
+/**
+ * When the held session token expires, or `null` when none is held.
+ *
+ * Exposed so a rotation can be scheduled for the one moment worth waking up
+ * for. The token itself stays behind `readSessionCredential`, which refuses to
+ * hand back an expired one.
+ */
+export function sessionExpiresAt(): number | null {
+  return sessionCredential ? sessionCredential.expiresAt : null;
+}
+
 /** The remembered operator token, or `""` when there is none or storage is unavailable. */
 export function readOperatorToken(): string {
   try {

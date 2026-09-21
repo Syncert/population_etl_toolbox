@@ -20,6 +20,7 @@ import { ApiError, apiFetch, type RequestOptions } from "./api/client";
 import {
   clearSessionCredential,
   readSessionCredential,
+  sessionExpiresAt,
   setSessionCredential,
 } from "./apiToken";
 
@@ -153,10 +154,76 @@ export async function signOutEverywhere(options: Transport = {}): Promise<void> 
 }
 
 export function getAccount(options: Transport = {}): Promise<AccountResponse> {
-  return apiFetch<AccountResponse>("/account", {
-    ...options,
-    token: readSessionCredential(),
-  });
+  return withFreshSession(
+    (token) => apiFetch<AccountResponse>("/account", { ...options, token }),
+    options,
+  );
+}
+
+/**
+ * When to rotate a session, as milliseconds before the access token expires.
+ *
+ * Rotating *before* it expires is what keeps a reader's next action from
+ * failing. Waiting for the 401 works too and is the fallback below, but it
+ * spends the reader's click: they press save, it fails, and whether they get
+ * their work back depends on the screen.
+ *
+ * A minute is enough for a rotation to complete on a slow connection and
+ * short enough that a session is not being refreshed constantly.
+ */
+export const ROTATE_BEFORE_EXPIRY_MS = 60_000;
+
+/**
+ * Keep the held session live, rotating shortly before it expires.
+ *
+ * Returns a cancel function. Scheduled rather than polled: there is exactly
+ * one moment worth waking up for and it is known in advance.
+ *
+ * A background tab defeats this on its own, because browsers throttle timers
+ * there — which is why it is a complement to `withFreshSession` rather than a
+ * replacement for it. Between them: the common case costs the reader nothing,
+ * and the throttled case costs one extra round trip.
+ */
+export function maintainSession(
+  onChange: () => void = () => {},
+  options: Transport = {},
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let cancelled = false;
+  let previousExpiry = 0;
+
+  const schedule = () => {
+    if (cancelled) return;
+    const expiresAt = sessionExpiresAt();
+    if (expiresAt === null) return;
+    // Stop unless the session actually moved forward. A deployment configured
+    // with an access-token lifetime shorter than the window above would
+    // otherwise compute a zero delay every time and rotate in a tight loop —
+    // against the endpoint that is deliberately the most rate-limited on the
+    // API. One rotation that does not extend anything is enough to know that
+    // rotating again will not either.
+    if (expiresAt <= previousExpiry) return;
+    previousExpiry = expiresAt;
+    const delay = Math.max(0, expiresAt - Date.now() - ROTATE_BEFORE_EXPIRY_MS);
+    timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        await refreshSession(options);
+      } catch {
+        // A failed rotation is not this function's to report: the next
+        // authenticated call will find out, and `withFreshSession` will try
+        // once more. Throwing from a timer would be an unhandled rejection.
+      }
+      onChange();
+      schedule();
+    }, delay);
+  };
+
+  schedule();
+  return () => {
+    cancelled = true;
+    if (timer !== null) clearTimeout(timer);
+  };
 }
 
 /**

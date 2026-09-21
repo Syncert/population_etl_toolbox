@@ -192,6 +192,16 @@ Out of scope here, and deliberately not stubbed:
 
 Named so they are picked up deliberately rather than rediscovered:
 
+- **The five screens that save do not yet rotate on a 401.** `lib/session`
+  provides `withFreshSession`, which rotates once and retries once, and the
+  sign-in control keeps the held token fresh ahead of its expiry
+  (`maintainSession`). Between them the common case costs a reader nothing.
+  What is not covered is a tab left in the background long enough for the
+  browser to throttle the timer: the token expires, and the reader's next save
+  answers `401` rather than rotating. Wrapping each authenticated write in
+  `withFreshSession` closes it, and is deliberately left as its own change
+  because it touches every saving screen.
+
 - Evidence packets persist to the account through `/api/v1/evidence-packets`
   (ADR-0004) whenever a token is held; `builder-draft:v1` remains the
   signed-out destination and `saved-charts:v1` remains the composer's input

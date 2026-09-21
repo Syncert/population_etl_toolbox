@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.oidc import IdentityClaims, OidcProvider
@@ -311,18 +312,46 @@ def _resolve_account(
         if int(recent or 0) >= ceiling_per_hour:
             raise AccountCeilingReached()
 
-    created = db.execute(
-        _INSERT_ACCOUNT,
-        {
-            # Opaque, and deliberately marked as machine-written. ADR-0005 §3
-            # keeps `display_label` an operator label; this is what that field
-            # honestly contains for an account no operator ever labelled.
-            "display_label": f"{_SELF_SERVICE_LABEL_PREFIX}{uuid.uuid4()}",
-            "issuer": claims.issuer,
-            "subject": claims.subject,
-            "email": claims.email,
-        },
-    )
+    try:
+        created = db.execute(
+            _INSERT_ACCOUNT,
+            {
+                # Opaque, and deliberately marked as machine-written. ADR-0005
+                # §3 keeps `display_label` an operator label; this is what that
+                # field honestly contains for an account no operator labelled.
+                "display_label": f"{_SELF_SERVICE_LABEL_PREFIX}{uuid.uuid4()}",
+                "issuer": claims.issuer,
+                "subject": claims.subject,
+                "email": claims.email,
+            },
+        )
+    except IntegrityError:
+        # Two callbacks for the same identity, close enough together that both
+        # looked and neither found. The partial unique index on
+        # `(issuer, subject)` is what decides, and it decided; the loser reads
+        # the winner's row rather than failing.
+        #
+        # Without this the race answers the sanitized 503 -- telling somebody
+        # signing in for the first time that the database is unavailable, when
+        # what actually happened is that their account was created. This is the
+        # same defect API-148 fixed for saved analyses, one level up: a
+        # pre-check that cannot be the whole answer, and a constraint that is.
+        db.rollback()
+        existing = (
+            db.execute(
+                _FIND_ACCOUNT_BY_IDENTITY,
+                {"issuer": claims.issuer, "subject": claims.subject},
+            )
+            .mappings()
+            .first()
+        )
+        if existing is None:
+            # The insert was refused by something other than the identity
+            # index. Not this function's to interpret.
+            raise
+        if existing["blocked_at"] is not None:
+            raise SessionRefused("account_blocked") from None
+        return int(existing["user_account_id"])
     return int(created.scalar_one())
 
 
@@ -551,28 +580,31 @@ def sign_out(
     db: Session,
     *,
     session_family: Optional[str],
-    credential_id: Optional[int],
+    credential_id: Optional[int] = None,
     now: Optional[datetime] = None,
 ) -> int:
     """End this session: every credential in its family.
 
     Revoking only the presented access token would leave the refresh cookie
-    live, and the next refresh would mint a new access token -- a sign-out
-    that signs nobody out. An operator token has no family, so it falls back
-    to revoking exactly the credential presented, which is the only sensible
-    reading of "sign out" for a credential that is not a session.
+    live, and the next refresh would mint a new access token -- a sign-out that
+    signs nobody out. So the unit is the family.
+
+    **An operator token has no family and is deliberately left alone**, rather
+    than falling back to revoking whatever was presented. It is not a session:
+    nobody signed in to create it, it has no expiry, and ADR-0005 §6 promises
+    operator tokens "continue to work unchanged". Revoking one here would make
+    a public route able to destroy a credential only a privileged script can
+    reissue -- unrecoverably, on one click, for a caller who asked to end a
+    session they did not have. An account with no session to end is answered
+    the same way as one whose session was just ended, because from the
+    caller's side those are the same outcome.
     """
     moment = now or _utcnow()
-    if session_family:
-        result = db.execute(
-            _REVOKE_FAMILY, {"session_family": session_family, "now": moment}
-        )
-    elif credential_id is not None:
-        result = db.execute(
-            _REVOKE_CREDENTIAL, {"credential_id": credential_id, "now": moment}
-        )
-    else:  # pragma: no cover - require_account always supplies one
+    if not session_family:
         return 0
+    result = db.execute(
+        _REVOKE_FAMILY, {"session_family": session_family, "now": moment}
+    )
     db.commit()
     return int(result.rowcount or 0)
 

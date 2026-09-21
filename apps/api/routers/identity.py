@@ -218,17 +218,26 @@ def _session_body(response: Response, tokens: SessionTokens) -> SessionResponse:
 
 
 def _same_origin(request: Request) -> bool:
-    """Whether this request was initiated from this site.
+    """Whether this request was initiated from this exact origin.
 
-    Three headers, read in the order of how much they prove:
+    ADR-0005 §2 asks for "an ``Origin`` / ``Sec-Fetch-Site`` check on that one
+    endpoint, refusing anything not same-origin", and the word is load-bearing.
 
     ``Sec-Fetch-Site`` is set by the browser itself and cannot be forged by
-    page script, so when it is present it is the answer.
+    page script, so when it is present it is the answer -- and the only value
+    accepted is ``same-origin``. **``same-site`` is not good enough here.**
+    ``SameSite=Strict`` keeps the cookie away from other *sites*, not from
+    other origins on the same site: a deployment at ``app.example.com`` shares
+    a site with ``anything-else.example.com``, and the browser attaches the
+    refresh cookie to a request from there. Accepting ``same-site`` would make
+    every subdomain a deployment has, or ever loses control of, able to spend
+    it. ``none`` is refused for the same reason it is rare: it means a
+    user-initiated navigation, which is not how this endpoint is ever reached.
 
-    ``Origin`` is next: present on every cross-site POST, and compared against
-    the origins of the deployment's own registered redirect URIs -- the same
-    allowlist the sign-in flow uses, so there is one list of "this site" rather
-    than two that can disagree.
+    ``Origin`` is the fallback for a browser too old to send the first, and is
+    compared against the origins of the deployment's own registered redirect
+    URIs -- the same allowlist the sign-in flow uses, so there is one list of
+    "this site" rather than two that can disagree.
 
     Neither present is **allowed**, and that is deliberate rather than an
     oversight. A request with no ``Sec-Fetch-Site`` and no ``Origin`` did not
@@ -238,7 +247,7 @@ def _same_origin(request: Request) -> bool:
     """
     fetch_site = request.headers.get("sec-fetch-site")
     if fetch_site is not None:
-        return fetch_site in {"same-origin", "same-site", "none"}
+        return fetch_site == "same-origin"
     origin = request.headers.get("origin")
     if origin is None:
         return True
@@ -406,11 +415,7 @@ def end_session(
     storage: Session = Depends(get_app_session_dep),
 ) -> Response:
     try:
-        sign_out(
-            storage,
-            session_family=account.session_family,
-            credential_id=account.credential_id,
-        )
+        sign_out(storage, session_family=account.session_family)
     except SQLAlchemyError as exc:
         storage.rollback()
         raise db_service_unavailable(exc) from exc

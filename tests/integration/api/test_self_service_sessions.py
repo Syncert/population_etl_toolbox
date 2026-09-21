@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from apps.api.routers.identity import REFRESH_COOKIE, REFRESH_PATH, TRANSACTION_COOKIE
-from tests.support.sign_in_harness import SignInHarness, id_token
+from tests.support.sign_in_harness import ISSUER, SignInHarness, id_token
 
 pytestmark = [pytest.mark.integration, pytest.mark.api, pytest.mark.database]
 
@@ -582,3 +582,211 @@ def test_no_credential_value_is_ever_stored_in_readable_form(
     assert access not in values
     assert refresh not in values
     assert all(len(value) == 64 for value in values)
+
+
+# ---------------------------------------------------------------------------
+# What a review found, and what now holds it
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "fetch_site",
+    ["same-site", "cross-site", "none"],
+    ids=["a-sibling-subdomain", "another-site", "a-typed-url"],
+)
+def test_only_a_same_origin_request_may_spend_the_refresh_cookie(
+    sign_in: SignInHarness, fetch_site: str
+) -> None:
+    """Covers: API-151 — ADR-0005 §2 asks for a check "refusing anything not
+    same-origin", and the word is load-bearing.
+
+    `same-site` is the one worth a test of its own. `SameSite=Strict` keeps the
+    cookie away from other *sites*, not from other origins on the same site: a
+    deployment at `app.example.com` shares a site with anything else under
+    `example.com`, and the browser attaches the refresh cookie to a request
+    from there. Accepting it would make every subdomain a deployment has -- or
+    ever loses control of -- able to rotate somebody's session.
+    """
+    sign_in.sign_in()
+    assert sign_in.client.post("/api/v1/auth/refresh").status_code == 200
+
+    refused = sign_in.client.post(
+        "/api/v1/auth/refresh", headers={"Sec-Fetch-Site": fetch_site}
+    )
+    assert refused.status_code == 401
+
+
+def test_a_same_origin_request_is_still_allowed_with_the_header_present(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — the tightening must not refuse the real browser.
+
+    A page's own `fetch` to its own origin sends exactly this, so a rule that
+    refused it would break every sign-in rather than any attack.
+    """
+    sign_in.sign_in()
+    allowed = sign_in.client.post(
+        "/api/v1/auth/refresh", headers={"Sec-Fetch-Site": "same-origin"}
+    )
+    assert allowed.status_code == 200
+
+
+def test_a_cross_site_refusal_does_not_clear_the_readers_cookie(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — otherwise refusing the attack becomes the attack.
+
+    A cross-site request is somebody else's page speaking. Answering it with an
+    instruction that expires the reader's live session would turn the CSRF
+    defence into a way to sign people out from anywhere.
+    """
+    sign_in.sign_in()
+    refused = sign_in.client.post(
+        "/api/v1/auth/refresh", headers={"Sec-Fetch-Site": "cross-site"}
+    )
+    assert refused.status_code == 401
+    assert "set-cookie" not in {key.lower() for key in refused.headers}
+
+    # And the session is untouched.
+    assert sign_in.client.post("/api/v1/auth/refresh").status_code == 200
+
+
+def test_signing_out_does_not_destroy_an_operator_token(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — ADR-0005 §6 promises operator tokens "continue to work
+    unchanged", and a public route that revokes one on a single click would be
+    a widening the ADR did not authorise.
+
+    It is unrecoverable, too: only a privileged script can reissue one.
+    """
+    from tests.support.app_accounts import create_account
+
+    operator_token = "an-operator-token-that-must-survive-sign-out"
+    database = sign_in._connect()
+    database.autocommit = True
+    try:
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM app_api.user_account WHERE display_label = %s",
+                ("sign-out-operator",),
+            )
+            create_account(cursor, "sign-out-operator", operator_token)
+    finally:
+        database.close()
+
+    headers = {"Authorization": f"Bearer {operator_token}"}
+    try:
+        # Answered the same way a real sign-out is: from the caller's side,
+        # "your session ended" and "you had no session" are one outcome.
+        assert (
+            sign_in.client.post("/api/v1/auth/sign-out", headers=headers).status_code
+            == 204
+        )
+        assert (
+            sign_in.client.get(
+                "/api/v1/analysis-configurations", headers=headers
+            ).status_code
+            == 200
+        ), "the operator token was revoked by a sign-out"
+    finally:
+        cleanup = sign_in._connect()
+        cleanup.autocommit = True
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM app_api.user_account WHERE display_label = %s",
+                    ("sign-out-operator",),
+                )
+        finally:
+            cleanup.close()
+
+
+def test_two_callbacks_racing_one_identity_produce_one_account(
+    sign_in: SignInHarness,
+) -> None:
+    """Covers: API-151 — the same defect API-148 fixed for saved analyses, one
+    level up.
+
+    Two callbacks for an identity that does not exist yet both look, neither
+    finds, and both insert; the partial unique index on `(issuer, subject)`
+    decides. Before this, the loser's `IntegrityError` reached the router as a
+    `SQLAlchemyError` and answered the sanitized 503 -- telling somebody
+    signing in for the very first time that the database was unavailable, when
+    what actually happened is that their account was created.
+
+    Two threads at a barrier, the way `test_name_collision_race.py` drives the
+    same shape of race. Both are held until each has opened a transaction, so
+    neither can win by arriving first: they are both inside the window the
+    check-then-insert leaves open. Sequencing them instead would prove nothing
+    -- the second would simply find the first's committed row, which is the
+    ordinary path this test is not about.
+    """
+    import threading
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session as SqlSession
+
+    from apps.api.oidc import IdentityClaims
+    from apps.api.services.identity_service import _resolve_account
+    from tests.support.postgres import PostgresTestConfig
+
+    settings = PostgresTestConfig.from_environment()
+    assert settings is not None
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        connect_args={
+            "host": settings.host,
+            "port": settings.port,
+            "user": settings.user,
+            "password": settings.password,
+            "dbname": settings.database,
+        },
+        pool_size=4,
+    )
+    claims = IdentityClaims(
+        issuer=ISSUER, subject="raced-identity", email="raced@example.test"
+    )
+
+    ready = threading.Barrier(2, timeout=20)
+    outcomes: list[object] = []
+    lock = threading.Lock()
+
+    def resolver() -> None:
+        try:
+            with SqlSession(engine) as session:
+                # Inside a transaction before the barrier, so both are.
+                session.execute(text("SELECT 1"))
+                ready.wait()
+                resolved = _resolve_account(
+                    session, claims, ceiling_per_hour=0, now=None
+                )
+                session.commit()
+            with lock:
+                outcomes.append(resolved)
+        except Exception as failure:  # noqa: BLE001 - recorded, then asserted on
+            with lock:
+                outcomes.append(failure)
+
+    threads = [threading.Thread(target=resolver) for _ in range(2)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+            assert not thread.is_alive(), "a racing resolver did not finish"
+    finally:
+        engine.dispose()
+
+    failures = [item for item in outcomes if isinstance(item, Exception)]
+    assert not failures, (
+        f"a racing sign-in failed rather than finding the account: {failures}"
+    )
+    assert len(set(outcomes)) == 1, f"the race produced two accounts: {outcomes}"
+    assert (
+        sign_in.query(
+            "SELECT COUNT(*) FROM app_api.user_account WHERE subject = %s",
+            ("raced-identity",),
+        )[0][0]
+        == 1
+    )
