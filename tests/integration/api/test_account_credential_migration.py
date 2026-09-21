@@ -112,7 +112,7 @@ def test_a_fresh_bootstrap_creates_the_credential_table_and_no_digest_column(
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """A database built today holds a digest in exactly one place."""
+    """Covers: API-149 -- A database built today holds a digest in exactly one place."""
     schema = scratch_schema("app_api_fresh_test")
     database = postgres_connection_factory()
     database.autocommit = True
@@ -150,7 +150,7 @@ def test_a_bootstrap_over_the_previous_shape_copies_every_digest_and_drops_the_c
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """The ADR-0005 §6 promise, against a database that predates ADR-0005.
+    """Covers: API-149 -- The ADR-0005 §6 promise, against a database that predates ADR-0005.
 
     Both a live and a revoked account are present, because the migration
     copies ``revoked_at`` too: a revoked token that came back to life as a
@@ -232,7 +232,7 @@ def test_re_running_the_bootstrap_is_the_migration_and_is_idempotent(
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """Applying the file twice changes nothing the second time.
+    """Covers: API-149 -- Applying the file twice changes nothing the second time.
 
     ``docs/reference/BETA_RESET_REINGESTION.md`` names re-running this file as
     the migration mechanic, which is only true while every statement in it is
@@ -276,7 +276,7 @@ def test_the_bootstrap_refuses_a_credential_kind_it_does_not_define(
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """`kind` is a closed set in the schema, not a convention in the code.
+    """Covers: API-149 -- `kind` is a closed set in the schema, not a convention in the code.
 
     ``require_account`` filters on `kind IN ('operator', 'access')`. That
     filter is only a boundary while the column cannot hold a fourth value
@@ -312,7 +312,7 @@ def test_one_identity_cannot_hold_two_accounts_but_operators_need_none(
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """`(issuer, subject)` is unique; a NULL identity is not a collision.
+    """Covers: API-149 -- `(issuer, subject)` is unique; a NULL identity is not a collision.
 
     Both halves matter. Without uniqueness a provider callback racing itself
     creates two accounts for one person and the second sign-in finds a
@@ -359,7 +359,7 @@ def test_a_public_display_name_cannot_be_taken_twice_in_different_case(
     postgres_connection_factory: Callable[[], connection],
     scratch_schema,
 ) -> None:
-    """ADR-0005 §3: unique case-insensitively, "so one account cannot dress as
+    """Covers: API-149 -- ADR-0005 §3: unique case-insensitively, "so one account cannot dress as
     another". Uniqueness that respects case is not uniqueness for a name a
     reader reads."""
     import psycopg2

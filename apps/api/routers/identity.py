@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.auth import Account, get_app_session_dep, require_account
 from apps.api.dependencies import db_service_unavailable
+from apps.api.failures import BODY_LIMIT
 from apps.api.oidc import (
     IDENTITY_UNCONFIGURED_DETAIL,
     SIGN_IN_REFUSED_DETAIL,
@@ -258,6 +259,7 @@ def _same_origin(request: Request) -> bool:
     "/sign-in",
     response_model=SignInStartResponse,
     status_code=status.HTTP_200_OK,
+    responses=BODY_LIMIT,
     summary="Start a sign-in",
 )
 def start_sign_in(
@@ -294,6 +296,7 @@ def start_sign_in(
     "/callback",
     response_model=SessionResponse,
     status_code=status.HTTP_200_OK,
+    responses=BODY_LIMIT,
     summary="Complete a sign-in",
 )
 def complete_callback(
@@ -353,6 +356,7 @@ def complete_callback(
     "/refresh",
     response_model=SessionResponse,
     status_code=status.HTTP_200_OK,
+    responses=BODY_LIMIT,
     summary="Rotate a session",
 )
 def rotate_session(
@@ -393,6 +397,7 @@ def rotate_session(
 @router.post(
     "/sign-out",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=BODY_LIMIT,
     summary="End this session",
 )
 def end_session(
@@ -419,6 +424,7 @@ def end_session(
 @router.post(
     "/sign-out-everywhere",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=BODY_LIMIT,
     summary="End every session this account holds",
 )
 def end_every_session(

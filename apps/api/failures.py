@@ -30,6 +30,11 @@ _DESCRIPTIONS: dict[int, str] = {
         "Missing, malformed, unknown, or revoked bearer token. Identical for "
         "every case by design."
     ),
+    403: (
+        "Authenticated, and not authorized for this act. Account deletion is "
+        "the only route that answers it: it requires a recent sign-in, and a "
+        "long-lived session is not that."
+    ),
     404: (
         "Unknown identifier, or a resource you do not own -- indistinguishable "
         "on purpose."
@@ -74,6 +79,11 @@ WAREHOUSE_READ_FAILURES: ResponseDeclarations = failures(422, 429, 503)
 #: The API-owned private stores. Authenticated, so a 401; rate limited; and
 #: 503 when storage is unavailable or unconfigured.
 PRIVATE_STORE_FAILURES: ResponseDeclarations = failures(401, 422, 429, 503)
+
+#: A route whose caller is authenticated but not sufficiently recently
+#: (ADR-0005 s5). Distinct from a 401, and the distinction is the useful part:
+#: the caller's credential is good, and signing in again is the remedy.
+FRESH_SIGN_IN: ResponseDeclarations = failures(403)
 
 #: A route that resolves an identifier.
 NOT_FOUND: ResponseDeclarations = failures(404)

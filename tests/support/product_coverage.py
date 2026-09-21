@@ -38,6 +38,10 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     "/api/v1/comparison",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
+    # Identity (ADR-0005). Owned by the API platform and by no data product:
+    # a sign-in reaches no source, no gold schema, and no warehouse row.
+    "/api/v1/auth",
+    "/api/v1/account",
 )
 
 

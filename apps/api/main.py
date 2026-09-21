@@ -27,6 +27,7 @@ from apps.api.ratelimit import RateLimitMiddleware
 from apps.api.registry import platform_description
 from apps.api.appdb import dispose_app_engine
 from apps.api.routers import (
+    account,
     catalog,
     cdc,
     comparison,
@@ -84,6 +85,7 @@ PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     # carries a credential. A cached one would be a credential served to
     # whoever asked next.
     identity.router,
+    account.router,
 )
 
 #: The content report (API-137). A warehouse read, so it is deliberately not
@@ -214,6 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RateLimitMiddleware,
         catalog_per_minute=configured.api_rate_limit_catalog_per_minute,
         analysis_per_minute=configured.api_rate_limit_analysis_per_minute,
+        identity_per_minute=configured.api_rate_limit_identity_per_minute,
         trusted_proxies=configured.api_trusted_proxy_ips,
     )
     application.add_middleware(

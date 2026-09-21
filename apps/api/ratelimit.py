@@ -1,10 +1,23 @@
-"""Per-client rate limiting with declared cost classes (API-006).
+"""Per-client rate limiting with declared cost classes (API-006, ADR-0005 §4).
 
-Two token buckets per client: ``catalog`` for the inexpensive discovery reads
-and ``analysis`` for everything that reaches observation or analysis SQL. The
-split is the plan's requirement stated directly — a client browsing the
-catalog must not spend the budget that protects the expensive queries, and
-vice versa.
+Three token buckets per client: ``catalog`` for the inexpensive discovery
+reads, ``analysis`` for everything that reaches observation or analysis SQL,
+and ``identity`` for the sign-in routes. The split is the plan's requirement
+stated directly — a client browsing the catalog must not spend the budget that
+protects the expensive queries, and vice versa.
+
+``identity`` is the third and arrives with ADR-0005, on the same argument: "a
+reader signing in must not be throttled by their own chart browsing, and a
+callback flood must not be payable out of the analysis budget. It is set far
+tighter than either, because a human signs in rarely and a script does not."
+
+One property of this limiter matters more for ``identity`` than for the other
+two, and ADR-0005 §4 says so: the client is the TCP peer unless a declared
+proxy forwarded another address, so a deployment that leaves
+``API_TRUSTED_PROXY_IPS`` unset gives the whole internet one identity budget.
+For catalog reads that is a tuning error. For the sign-in routes it is the
+difference between a bound and no bound, and the deployment should be treated
+as having none.
 
 Behavioural contract:
 
@@ -50,6 +63,10 @@ RATE_LIMITED_DETAIL = "rate limit exceeded; retry after the indicated interval"
 
 #: Version-relative path fragments that classify a request as catalog-cost.
 _CATALOG_FRAGMENT = "/catalog/"
+
+#: And as identity-cost. A fragment rather than a full prefix, for the same
+#: reason the catalog one is: the version root is not this module's business.
+_IDENTITY_FRAGMENT = "/auth/"
 
 #: Never limited: the documentation, which reaches no warehouse.
 _EXEMPT_DOCUMENTATION = ("/docs", "/openapi.json", "/redoc")
@@ -142,17 +159,26 @@ class RateLimitMiddleware:
         app,
         catalog_per_minute: int = 0,
         analysis_per_minute: int = 0,
+        identity_per_minute: int = 0,
         clock: Callable[[], float] = time.monotonic,
         trusted_proxies: Sequence[str] = (),
     ) -> None:
         self.app = app
         self.catalog_per_minute = max(0, catalog_per_minute)
         self.analysis_per_minute = max(0, analysis_per_minute)
+        self.identity_per_minute = max(0, identity_per_minute)
         self._clock = clock
         self._trusted = _parse_trusted(trusted_proxies)
         self._buckets: dict[tuple[str, str], _TokenBucket] = {}
 
     def _classify(self, path: str) -> tuple[str, int]:
+        # Identity first. A sign-in route reaches no warehouse and would
+        # otherwise fall through to `analysis`, spending the budget that
+        # protects the expensive queries -- and, worse, being protected by it:
+        # a bucket sized for chart browsing is not a bound on a callback
+        # flood.
+        if _IDENTITY_FRAGMENT in path:
+            return "identity", self.identity_per_minute
         if _CATALOG_FRAGMENT in path:
             return "catalog", self.catalog_per_minute
         return "analysis", self.analysis_per_minute

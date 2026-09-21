@@ -219,7 +219,7 @@ def test_guide_errors_table_is_the_declared_contract() -> None:
         int(match)
         for match in re.findall(r"^\| `(\d{3})` \|", table, flags=re.MULTILINE)
     }
-    assert promised == {401, 404, 409, 413, 422, 429, 503}, (
+    assert promised == {401, 403, 404, 409, 413, 422, 429, 503}, (
         "the guide's Errors table changed; the contract check below is written "
         "against the table, not a copy of it"
     )

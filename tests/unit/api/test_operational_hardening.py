@@ -239,7 +239,9 @@ def test_oversized_response_streams_through_uncached() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _limited_app(catalog: int, analysis: int, clock=None) -> TestClient:
+def _limited_app(
+    catalog: int, analysis: int, identity: int = 0, clock=None
+) -> TestClient:
     async def endpoint(_request: Request) -> Response:
         return Response(b"ok")
 
@@ -247,11 +249,17 @@ def _limited_app(catalog: int, analysis: int, clock=None) -> TestClient:
         routes=[
             Route("/api/v1/catalog/metrics", endpoint),
             Route("/api/v1/observations", endpoint),
+            Route("/api/v1/auth/sign-in", endpoint, methods=["POST"]),
+            Route("/api/v1/auth/callback", endpoint, methods=["POST"]),
             Route("/api/v1/health", endpoint),
             Route("/health", endpoint),
         ]
     )
-    kwargs = {"catalog_per_minute": catalog, "analysis_per_minute": analysis}
+    kwargs = {
+        "catalog_per_minute": catalog,
+        "analysis_per_minute": analysis,
+        "identity_per_minute": identity,
+    }
     if clock is not None:
         kwargs["clock"] = clock
     return TestClient(RateLimitMiddleware(application, **kwargs))
@@ -278,6 +286,45 @@ def test_rate_limits_are_off_by_default_and_split_by_cost_class() -> None:
     # Probes are never limited.
     for _ in range(10):
         assert client.get("/health").status_code == 200
+
+
+def test_the_identity_bucket_is_its_own_budget() -> None:
+    """Covers: API-153 (ADR-0005 §4) — a third bucket, tighter than either.
+
+    Both directions matter and each is a real failure. A reader signing in
+    must not be throttled by their own chart browsing; and a callback flood
+    must not be payable out of the analysis budget, which is sized for chart
+    browsing and is therefore no bound on it at all.
+    """
+    client = _limited_app(catalog=5, analysis=5, identity=2)
+
+    assert client.post("/api/v1/auth/sign-in").status_code == 200
+    assert client.post("/api/v1/auth/sign-in").status_code == 200
+    limited = client.post("/api/v1/auth/callback")
+    assert limited.status_code == 429, "the two sign-in routes share one budget"
+    assert limited.json() == {"detail": RATE_LIMITED_DETAIL}
+    assert int(limited.headers["retry-after"]) >= 1
+
+    # The exhausted identity budget has not touched either of the others.
+    assert client.get("/api/v1/observations").status_code == 200
+    assert client.get("/api/v1/catalog/metrics").status_code == 200
+
+
+def test_chart_browsing_does_not_spend_the_sign_in_budget() -> None:
+    """Covers: API-153 -- The other direction, which is the one a reader notices."""
+    client = _limited_app(catalog=1, analysis=1, identity=3)
+
+    assert client.get("/api/v1/observations").status_code == 200
+    assert client.get("/api/v1/observations").status_code == 429
+
+    assert client.post("/api/v1/auth/sign-in").status_code == 200
+
+
+def test_the_identity_bucket_is_off_by_default_like_the_others() -> None:
+    """Covers: API-153 -- Deterministic suites stay unthrottled; the deployment turns it on."""
+    client = _limited_app(catalog=0, analysis=0)
+    for _ in range(20):
+        assert client.post("/api/v1/auth/sign-in").status_code == 200
 
 
 def _identity_app(peer: str, trusted: tuple[str, ...]) -> TestClient:

@@ -1,6 +1,20 @@
 {
   "openapi": "3.1.0",
   "operations": {
+    "DELETE /api/v1/account": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:AccountDeletionResponse",
+        "401": "application/json:ErrorDetail",
+        "403": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "account"
+      ]
+    },
     "DELETE /api/v1/analysis-configurations/{configuration_id}": {
       "parameters": [
         {
@@ -47,6 +61,33 @@
       },
       "tags": [
         "evidence-packets"
+      ]
+    },
+    "GET /api/v1/account": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:AccountResponse",
+        "401": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "account"
+      ]
+    },
+    "GET /api/v1/account/export": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:AccountExportResponse",
+        "401": "application/json:ErrorDetail",
+        "404": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "account"
       ]
     },
     "GET /api/v1/analysis-configurations": {
@@ -2064,6 +2105,76 @@
         "analysis-configurations"
       ]
     },
+    "POST /api/v1/auth/callback": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:SessionResponse",
+        "401": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "auth"
+      ]
+    },
+    "POST /api/v1/auth/refresh": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:SessionResponse",
+        "401": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "auth"
+      ]
+    },
+    "POST /api/v1/auth/sign-in": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:SignInStartResponse",
+        "401": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "auth"
+      ]
+    },
+    "POST /api/v1/auth/sign-out": {
+      "parameters": [],
+      "responses": {
+        "204": "no-content",
+        "401": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "auth"
+      ]
+    },
+    "POST /api/v1/auth/sign-out-everywhere": {
+      "parameters": [],
+      "responses": {
+        "204": "no-content",
+        "401": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "auth"
+      ]
+    },
     "POST /api/v1/evidence-packets": {
       "parameters": [],
       "responses": {
@@ -2077,6 +2188,21 @@
       },
       "tags": [
         "evidence-packets"
+      ]
+    },
+    "PUT /api/v1/account/public-display-name": {
+      "parameters": [],
+      "responses": {
+        "200": "application/json:AccountResponse",
+        "401": "application/json:ErrorDetail",
+        "409": "application/json:ErrorDetail",
+        "413": "application/json:ErrorDetail",
+        "422": "application/json:ErrorDetail | HTTPValidationError",
+        "429": "application/json:ErrorDetail",
+        "503": "application/json:ErrorDetail"
+      },
+      "tags": [
+        "account"
       ]
     },
     "PUT /api/v1/analysis-configurations/{configuration_id}": {
@@ -2133,6 +2259,46 @@
     }
   },
   "schemas": {
+    "AccountDeletionResponse": {
+      "properties": {
+        "backup_retention_days": "integer | null",
+        "deleted": "boolean",
+        "notice": "string"
+      },
+      "required": [
+        "deleted",
+        "notice"
+      ]
+    },
+    "AccountExportResponse": {
+      "properties": {
+        "backup_retention_days": "integer | null",
+        "created_at": "string(date-time)",
+        "credentials": "array<object>",
+        "email": "string | null",
+        "evidence_packets": "array<object>",
+        "issuer": "string | null",
+        "public_display_name": "string | null",
+        "saved_analyses": "array<object>",
+        "subject": "string | null"
+      },
+      "required": [
+        "created_at",
+        "credentials",
+        "evidence_packets",
+        "saved_analyses"
+      ]
+    },
+    "AccountResponse": {
+      "properties": {
+        "created_at": "string(date-time)",
+        "email": "string | null",
+        "public_display_name": "string | null"
+      },
+      "required": [
+        "created_at"
+      ]
+    },
     "AlignmentDocument": {
       "properties": {
         "geo_level": "string",
@@ -3173,6 +3339,14 @@
         "type"
       ]
     },
+    "PublicDisplayNameRequest": {
+      "properties": {
+        "public_display_name": "string"
+      },
+      "required": [
+        "public_display_name"
+      ]
+    },
     "ReadinessResponse": {
       "properties": {
         "cache": "string",
@@ -3288,6 +3462,45 @@
       },
       "required": [
         "metric_code"
+      ]
+    },
+    "SessionResponse": {
+      "properties": {
+        "access_token": "string",
+        "expires_at": "string(date-time)",
+        "expires_in": "integer",
+        "token_type": "string"
+      },
+      "required": [
+        "access_token",
+        "expires_at",
+        "expires_in"
+      ]
+    },
+    "SignInCallbackRequest": {
+      "properties": {
+        "code": "string",
+        "state": "string"
+      },
+      "required": [
+        "code",
+        "state"
+      ]
+    },
+    "SignInStartRequest": {
+      "properties": {
+        "redirect_uri": "string"
+      },
+      "required": [
+        "redirect_uri"
+      ]
+    },
+    "SignInStartResponse": {
+      "properties": {
+        "authorization_url": "string"
+      },
+      "required": [
+        "authorization_url"
       ]
     },
     "SourceCapability": {

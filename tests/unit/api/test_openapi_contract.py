@@ -228,7 +228,16 @@ def test_shared_failures_are_declared_where_they_apply() -> None:
     so the contract neither hides a failure nor invents one.
     """
     document = app.openapi()
-    private_prefixes = ("/api/v1/analysis-configurations", "/api/v1/evidence-packets")
+    # "Private" here means "can answer 401", which is what the assertion below
+    # actually checks. The identity routes qualify on both readings: the
+    # account routes require a credential, and the sign-in pair refuses with
+    # the same 401 rather than explaining which check a caller tripped.
+    private_prefixes = (
+        "/api/v1/analysis-configurations",
+        "/api/v1/evidence-packets",
+        "/api/v1/auth",
+        "/api/v1/account",
+    )
     for path, item in document["paths"].items():
         for method, operation in item.items():
             declared = _declared_statuses(operation)

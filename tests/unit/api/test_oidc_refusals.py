@@ -164,7 +164,7 @@ def _token(private_key=_PRIVATE_KEY, algorithm="RS256", **overrides) -> str:
 
 
 def test_a_well_formed_id_token_yields_exactly_three_claims() -> None:
-    """The happy path, stated so the refusals below mean something.
+    """Covers: API-150 -- The happy path, stated so the refusals below mean something.
 
     It also holds the ADR's "nothing else" rule: the token carries a name and
     a picture, as a real Google token does, and neither survives into the
@@ -186,6 +186,7 @@ def test_a_well_formed_id_token_yields_exactly_three_claims() -> None:
 
 
 def test_a_token_signed_by_another_key_is_refused() -> None:
+    """Covers: API-150."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
         provider.verify_id_token(_token(private_key=_OTHER_PRIVATE_KEY), nonce=NONCE)
@@ -193,7 +194,7 @@ def test_a_token_signed_by_another_key_is_refused() -> None:
 
 
 def test_a_tampered_payload_is_refused() -> None:
-    """The signature covers the payload; editing one claim breaks it."""
+    """Covers: API-150 -- The signature covers the payload; editing one claim breaks it."""
     header, payload, signature = _token().split(".")
     decoded = json.loads(base64.urlsafe_b64decode(payload + "=="))
     decoded["sub"] = "somebody-else"
@@ -205,7 +206,7 @@ def test_a_tampered_payload_is_refused() -> None:
 
 
 def test_an_unsigned_token_is_refused() -> None:
-    """``alg: none`` is the oldest JWT attack and is still worth a test."""
+    """Covers: API-150 -- ``alg: none`` is the oldest JWT attack and is still worth a test."""
     header = _b64(json.dumps({"alg": "none", "typ": "JWT"}).encode())
     payload = _b64(json.dumps(_claims()).encode())
     provider = _provider()
@@ -215,7 +216,7 @@ def test_an_unsigned_token_is_refused() -> None:
 
 
 def test_a_token_signed_with_the_public_key_as_an_hmac_secret_is_refused() -> None:
-    """Algorithm confusion: the attacker has the public key, because it is
+    """Covers: API-150 -- Algorithm confusion: the attacker has the public key, because it is
     public. If the verifier honours the token's own ``alg``, an ``HS256``
     token signed with that key verifies."""
     import hmac
@@ -241,7 +242,7 @@ def test_a_token_signed_with_the_public_key_as_an_hmac_secret_is_refused() -> No
 
 
 def test_the_declared_algorithms_are_all_asymmetric() -> None:
-    """A future edit adding ``HS256`` here would silently undo the test above."""
+    """Covers: API-150 -- A future edit adding ``HS256`` here would silently undo the test above."""
     assert all(name.startswith(("RS", "ES", "PS")) for name in ID_TOKEN_ALGORITHMS), (
         ID_TOKEN_ALGORITHMS
     )
@@ -251,7 +252,7 @@ def test_the_declared_algorithms_are_all_asymmetric() -> None:
 
 
 def test_a_token_minted_for_another_client_is_refused() -> None:
-    """A token for a different `aud` is a real token -- for somebody else's
+    """Covers: API-150 -- A token for a different `aud` is a real token -- for somebody else's
     application. Accepting it lets any site the reader signs into hand us a
     token that authenticates them here."""
     provider = _provider()
@@ -261,6 +262,7 @@ def test_a_token_minted_for_another_client_is_refused() -> None:
 
 
 def test_a_token_from_another_issuer_is_refused() -> None:
+    """Covers: API-150."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
         provider.verify_id_token(_token(iss="https://evil.test"), nonce=NONCE)
@@ -268,6 +270,7 @@ def test_a_token_from_another_issuer_is_refused() -> None:
 
 
 def test_an_expired_token_is_refused() -> None:
+    """Covers: API-150."""
     now = int(time.time())
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
@@ -276,7 +279,7 @@ def test_an_expired_token_is_refused() -> None:
 
 
 def test_the_clock_skew_window_is_bounded_and_is_honoured() -> None:
-    """Both halves. A token that expired ten seconds ago is accepted under a
+    """Covers: API-150 -- Both halves. A token that expired ten seconds ago is accepted under a
     sixty-second skew, because clocks differ; one that expired ten minutes ago
     is not, because that is not a clock difference."""
     now = int(time.time())
@@ -292,6 +295,7 @@ def test_the_clock_skew_window_is_bounded_and_is_honoured() -> None:
 
 
 def test_a_token_missing_a_required_claim_is_refused() -> None:
+    """Covers: API-150."""
     provider = _provider()
     for missing in ("sub", "exp", "iat"):
         with pytest.raises(IdentityRefused) as refusal:
@@ -303,7 +307,7 @@ def test_a_token_missing_a_required_claim_is_refused() -> None:
 
 
 def test_an_empty_subject_is_refused_rather_than_becoming_an_account() -> None:
-    """`(issuer, subject)` is the account's identity. An empty subject would
+    """Covers: API-150 -- `(issuer, subject)` is the account's identity. An empty subject would
     make one account for everyone the provider failed to identify."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
@@ -315,7 +319,7 @@ def test_an_empty_subject_is_refused_rather_than_becoming_an_account() -> None:
 
 
 def test_a_token_carrying_another_sign_ins_nonce_is_refused() -> None:
-    """Replay. The token is valid in every JWT sense -- right issuer, right
+    """Covers: API-150 -- Replay. The token is valid in every JWT sense -- right issuer, right
     audience, unexpired, correctly signed -- and belongs to a different
     sign-in."""
     provider = _provider()
@@ -327,6 +331,7 @@ def test_a_token_carrying_another_sign_ins_nonce_is_refused() -> None:
 
 
 def test_a_token_carrying_no_nonce_at_all_is_refused() -> None:
+    """Covers: API-150."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
         provider.verify_id_token(_token(nonce=_ABSENT), nonce=NONCE)
@@ -352,7 +357,7 @@ def test_a_token_carrying_no_nonce_at_all_is_refused() -> None:
 def test_an_unverified_address_is_discarded_and_the_sign_in_still_completes(
     verified,
 ) -> None:
-    """ADR-0005 §1. Discarded, not refused: a visitor whose provider gives no
+    """Covers: API-150 -- ADR-0005 §1. Discarded, not refused: a visitor whose provider gives no
     verified address still gets an account, with no contact address on file.
 
     ``"false"`` is in this list because it is truthy in Python and some
@@ -365,6 +370,7 @@ def test_an_unverified_address_is_discarded_and_the_sign_in_still_completes(
 
 
 def test_a_verified_address_is_stored() -> None:
+    """Covers: API-150."""
     assert storable_email({"email": "a@b.test", "email_verified": True}) == "a@b.test"
     assert storable_email({"email": "a@b.test", "email_verified": "true"}) == "a@b.test"
     assert storable_email({"email_verified": True}) is None
@@ -374,6 +380,7 @@ def test_a_verified_address_is_stored() -> None:
 
 
 def test_an_unregistered_redirect_uri_cannot_start_a_sign_in() -> None:
+    """Covers: API-150."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
         provider.start("https://attacker.test/callback")
@@ -400,7 +407,7 @@ def test_an_unregistered_redirect_uri_cannot_start_a_sign_in() -> None:
     ],
 )
 def test_the_allowlist_is_exact_and_not_nearly_exact(candidate: str) -> None:
-    """Each of these is a near-match that a prefix, origin, or normalising
+    """Covers: API-150 -- Each of these is a near-match that a prefix, origin, or normalising
     comparison would accept, and each is a way to have the provider deliver
     somebody else's authorization code somewhere else."""
     provider = _provider()
@@ -409,7 +416,7 @@ def test_the_allowlist_is_exact_and_not_nearly_exact(candidate: str) -> None:
 
 
 def test_the_code_exchange_re_checks_the_redirect_uri() -> None:
-    """The check at `start` is not sufficient on its own: the exchange is a
+    """Covers: API-150 -- The check at `start` is not sufficient on its own: the exchange is a
     separate request and the value it sends is the one the provider matched."""
     provider = _provider()
     with pytest.raises(IdentityRefused) as refusal:
@@ -423,6 +430,7 @@ def test_the_code_exchange_re_checks_the_redirect_uri() -> None:
 
 
 def test_start_uses_s256_pkce_and_asks_for_no_profile() -> None:
+    """Covers: API-150."""
     from urllib.parse import parse_qs, urlparse
 
     provider = _provider()
@@ -441,6 +449,7 @@ def test_start_uses_s256_pkce_and_asks_for_no_profile() -> None:
 
 
 def test_state_nonce_and_verifier_are_independent_and_unguessable() -> None:
+    """Covers: API-150."""
     provider = _provider()
     first = provider.start(REDIRECT)
     second = provider.start(REDIRECT)
@@ -462,6 +471,7 @@ def test_state_nonce_and_verifier_are_independent_and_unguessable() -> None:
 
 
 def test_a_discovery_document_naming_another_issuer_is_refused() -> None:
+    """Covers: API-150."""
     client = _FakeClient(discovery={**_DISCOVERY, "issuer": "https://evil.test"})
     provider = _provider(client=client)
     with pytest.raises(IdentityRefused) as refusal:
@@ -470,6 +480,7 @@ def test_a_discovery_document_naming_another_issuer_is_refused() -> None:
 
 
 def test_an_incomplete_discovery_document_is_refused() -> None:
+    """Covers: API-150."""
     incomplete = {key: value for key, value in _DISCOVERY.items() if key != "jwks_uri"}
     provider = _provider(client=_FakeClient(discovery=incomplete))
     with pytest.raises(IdentityRefused) as refusal:
@@ -478,7 +489,7 @@ def test_an_incomplete_discovery_document_is_refused() -> None:
 
 
 def test_discovery_is_fetched_once_and_reused() -> None:
-    """A provider outage must not be a dependency of every single sign-in."""
+    """Covers: API-150 -- A provider outage must not be a dependency of every single sign-in."""
     provider = _provider()
     provider.start(REDIRECT)
     provider.start(REDIRECT)
@@ -490,6 +501,7 @@ def test_discovery_is_fetched_once_and_reused() -> None:
 
 
 def test_the_exchange_sends_the_verifier_and_keeps_no_provider_access_token() -> None:
+    """Covers: API-150."""
     client = _FakeClient(
         token_response=_Response(
             200,
@@ -516,7 +528,7 @@ def test_the_exchange_sends_the_verifier_and_keeps_no_provider_access_token() ->
 
 
 def test_a_refused_exchange_does_not_propagate_the_providers_error_body() -> None:
-    """The provider's error body can carry the code and the client id."""
+    """Covers: API-150 -- The provider's error body can carry the code and the client id."""
     client = _FakeClient(
         token_response=_Response(
             400,
@@ -535,7 +547,7 @@ def test_a_refused_exchange_does_not_propagate_the_providers_error_body() -> Non
 
 
 def test_a_token_response_without_an_id_token_is_refused() -> None:
-    """A bare OAuth 2.0 response. ADR-0005 rules GitHub out for exactly this:
+    """Covers: API-150 -- A bare OAuth 2.0 response. ADR-0005 rules GitHub out for exactly this:
     it issues no ID token, so there would be nothing to verify."""
     provider = _provider(
         client=_FakeClient(
@@ -557,7 +569,7 @@ def test_a_token_response_without_an_id_token_is_refused() -> None:
 def test_a_deployment_with_no_registered_client_refuses_before_any_network_call(
     missing: str,
 ) -> None:
-    """Unconfigured is not the same as refused, and answers differently.
+    """Covers: API-150 -- Unconfigured is not the same as refused, and answers differently.
 
     It also must not reach the provider: a deployment with no client id has
     nothing to ask, and a discovery fetch on every attempt would be an
