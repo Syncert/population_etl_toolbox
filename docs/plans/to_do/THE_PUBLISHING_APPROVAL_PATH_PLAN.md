@@ -17,11 +17,45 @@ verify:
 
 ## Plan status
 
-- **Status:** Unclaimed and blocked on `self-service-accounts`. Authored
-  2026-09-15 from the repository assessment. There is nothing to publish
-  until there is someone to publish it.
-- **Last updated:** 2026-09-15
+- **Status:** Unclaimed and still blocked on `self-service-accounts`, which is
+  **built but not accepted** -- it sits in `in_progress/` awaiting one real
+  sign-in against Google, which needs a credential no agent holds. Authored
+  2026-09-15 from the repository assessment. There is nothing to publish until
+  there is someone to publish it.
+- **Last updated:** 2026-09-20
 - **Current milestone:** not started.
+
+### What is already there to inherit, as of 2026-09-20
+
+ADR-0005 §3 names three things this plan inherits rather than builds. All three
+exist now, so claiming this plan is a question of whether its dependency has
+been *accepted*, not of whether the foundation is there:
+
+- **`app_api.user_account.public_display_name`** -- nullable, absent until an
+  account publishes, unique case-insensitively, and with whitespace normalised
+  so a doubled space cannot impersonate a single one. Nothing from the provider
+  is used as a default, and `display_label` is still an operator label that
+  must never be rendered to a stranger. `PUT /api/v1/account/public-display-name`
+  claims one; `apps/api/services/account_service.py` owns the bounds (API-152).
+- **The snapshot-at-publish rule** is this plan's to implement, and the reason
+  for it is already load-bearing: account deletion is a hard `DELETE` that
+  cascades, so a published row joining live to the account would be a dangling
+  reference the moment somebody leaves. Snapshot the name onto the published
+  row and the row is simply destroyed with them.
+- **Delete-on-account-deletion** -- the cascade is in the schema and exercised
+  (API-152), and deletion now also survives a database restore through
+  `app_api.account_deletion_log` and `scripts/apply_deletion_log.py` (API-155).
+  A published-artifact table added by this plan gets that behaviour by
+  declaring `ON DELETE CASCADE` on its owner column, and gets the
+  backup-purge half for free.
+
+One thing to read before starting, because it is the boundary this plan is
+most likely to cross by accident: every identity route is deliberately outside
+`CACHEABLE_ROUTERS` and answers `private, no-store`, swept rather than
+spot-checked. A *published* artifact is the first thing on this platform that
+must be the opposite -- public, cacheable, credential-free -- so it belongs in
+`CACHEABLE_ROUTERS` beside the analytical reads rather than beside the account
+routes it grew out of.
 
 ## Why
 
