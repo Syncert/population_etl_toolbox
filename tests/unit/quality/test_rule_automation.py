@@ -79,7 +79,6 @@ UNIMPLEMENTED_RULES = frozenset(
         "DQ-GLOSSARY-003",
         "DQ-GLOSSARY-004",
         "DQ-ACS-003",
-        "DQ-ACS-004",
         "DQ-ACS-005",
         "DQ-ACS-006",
         "DQ-BLS-003",
@@ -194,7 +193,7 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     unbuilt = sorted(
         rule.rule_id for rule in blocking if rule.automation == "unimplemented"
     )
-    assert len(unbuilt) == 15, unbuilt
+    assert len(unbuilt) == 14, unbuilt
     # The other eleven BLOCK rules that no executor runs are `enforced`: the
     # warehouse refuses the violation, which DQ-013 checks against the
     # declared grains rather than taking the note's word for it. Four joined

@@ -714,6 +714,105 @@ def reference_resolution_accounting(
     ]
 
 
+def acs_published_row_resolution(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-ACS-004 — every published ACS observation resolves what it names.
+
+    ``gold_census.fact_acs_observation`` is a view:
+    ``silver_census.fact_demographics`` **inner joined** to
+    ``gold_census.dim_acs_variable`` on ``(dataset, estimate_year,
+    variable_code)``. Two consequences follow, and they pull in opposite
+    directions.
+
+    **A published row always resolves its variable, and that is the problem.**
+    The join *is* the resolution, so ``acs_variable_sk`` can never be
+    orphaned -- and a silver row whose variable the dimension does not carry
+    is not published at all. It was captured, parsed, stored, and then
+    silently declined. Nothing counts it.
+
+    ``DQ-ACS-007`` cannot see it either, which is the reason this rule is
+    separate rather than folded into that one. Its *published* side applies
+    the same inner join, so such a row is absent from both sides of its
+    comparison and its groups agree perfectly while the observation is gone.
+
+    **The geography is published unresolved.** ``fact_demographics.geo_sk`` is
+    ``NOT NULL`` with a foreign key into ``silver_ref.dim_geo_entity``, so the
+    database guarantees the row resolved *at silver*. The view then publishes
+    ``s.geo_id`` -- a different, nullable column with no constraint tying it
+    to ``geo_sk``. A published observation can therefore carry no geography,
+    or one that disagrees with the entity it actually resolved to, and reach a
+    reader as a number nobody can place.
+
+    Both arms are bounded work against small dimensions: the first
+    anti-joins silver to the variable dimension, the second reads only rows
+    whose ``geo_id`` fails to match an entity.
+    """
+    del scope
+    silver_rows = _count(cursor, "SELECT COUNT(*) FROM silver_census.fact_demographics")
+    if silver_rows == 0:
+        return [
+            RuleOutcome("silver_census.fact_demographics", "not_applicable"),
+            RuleOutcome("gold_census.fact_acs_observation", "not_applicable"),
+        ]
+
+    # A row the serving view drops: usable variable code, no dimension row.
+    dropped, dropped_total = _offenders(
+        cursor,
+        """
+        SELECT s.dataset, s.estimate_year, s.variable_code, COUNT(*) AS rows
+          FROM silver_census.fact_demographics AS s
+          LEFT JOIN gold_census.dim_acs_variable AS av
+            ON av.dataset_code = s.dataset
+           AND av.vintage_year = s.estimate_year
+           AND av.variable_code = s.variable_code
+         WHERE s.variable_code IS NOT NULL
+           AND s.variable_code <> ''
+           AND av.acs_variable_sk IS NULL
+         GROUP BY 1, 2, 3
+        """,
+        order_by="1, 2, 3",
+    )
+
+    # A row the serving view publishes without a geography anybody can place.
+    unplaceable, unplaceable_total = _offenders(
+        cursor,
+        """
+        SELECT s.dataset, s.estimate_year,
+               COALESCE(s.geo_id, '<null>') AS geo_id, COUNT(*) AS rows
+          FROM silver_census.fact_demographics AS s
+          JOIN gold_census.dim_acs_variable AS av
+            ON av.dataset_code = s.dataset
+           AND av.vintage_year = s.estimate_year
+           AND av.variable_code = s.variable_code
+          LEFT JOIN silver_ref.dim_geo_entity AS entity
+            ON entity.geo_id = s.geo_id
+         WHERE s.variable_code IS NOT NULL
+           AND s.variable_code <> ''
+           AND entity.geo_id IS NULL
+         GROUP BY 1, 2, 3
+        """,
+        order_by="1, 2, 3",
+    )
+
+    return [
+        RuleOutcome(
+            "silver_census.fact_demographics",
+            "fail" if dropped else "pass",
+            observed_count=dropped_total,
+            expected_count=0,
+            evidence=dropped[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "gold_census.fact_acs_observation",
+            "fail" if unplaceable else "pass",
+            observed_count=unplaceable_total,
+            expected_count=0,
+            evidence=unplaceable[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
 def current_geography_projection(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -1241,6 +1340,7 @@ def bls_contract_conformance(
 
 SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-ACS-002": acs_slice_reconciliation,
+    "DQ-ACS-004": acs_published_row_resolution,
     "DQ-ACS-007": acs_contract_conformance,
     "DQ-BLS-002": bls_chunk_reconciliation,
     "DQ-BLS-004": bls_geography_accountability,

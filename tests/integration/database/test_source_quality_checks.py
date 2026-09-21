@@ -23,6 +23,7 @@ from data_ingestion_toolbox.quality.reconciliation import (
 )
 from data_ingestion_toolbox.quality.sources import (
     SOURCE_EXECUTORS,
+    acs_published_row_resolution,
     acs_slice_reconciliation,
     current_geography_projection,
     bls_chunk_reconciliation,
@@ -691,6 +692,201 @@ def test_an_empty_geography_reference_is_not_applicable_rather_than_passing(
         if cursor.fetchone()[0]:
             pytest.skip("the session's warehouse carries geography rows")
         outcomes = current_geography_projection(cursor, {})
+        assert [outcome.result for outcome in outcomes] == [
+            "not_applicable",
+            "not_applicable",
+        ]
+    postgres_connection.rollback()
+
+
+# ---------------------------------------------------------------------------
+# DQ-ACS-004 — a published ACS observation resolves what it names
+# ---------------------------------------------------------------------------
+
+
+def _time_row(cursor, day: str) -> int:
+    """One `silver_ref.dim_time` row for `day`, returning its surrogate.
+
+    Every column below is NOT NULL and every one is derivable from the date,
+    so the row is computed rather than typed out: a fixture that hand-wrote
+    `day_name` would be asserting nothing and could disagree with the date
+    beside it.
+    """
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_time (
+            time_sk, date_key, year, quarter, month, day, day_of_week,
+            day_name, month_name, week_of_year, is_weekend,
+            is_month_start, is_month_end, is_quarter_start, is_quarter_end,
+            is_year_start, is_year_end, ingested_at
+        )
+        SELECT
+            (TO_CHAR(d, 'YYYYMMDD'))::int, d::date, EXTRACT(YEAR FROM d)::int,
+            EXTRACT(QUARTER FROM d)::int, EXTRACT(MONTH FROM d)::int,
+            EXTRACT(DAY FROM d)::int, EXTRACT(ISODOW FROM d)::int,
+            TRIM(TO_CHAR(d, 'Day')), TRIM(TO_CHAR(d, 'Month')),
+            EXTRACT(WEEK FROM d)::int, EXTRACT(ISODOW FROM d) > 5,
+            d = DATE_TRUNC('month', d), d = (DATE_TRUNC('month', d)
+                + INTERVAL '1 month - 1 day')::date,
+            d = DATE_TRUNC('quarter', d), d = (DATE_TRUNC('quarter', d)
+                + INTERVAL '3 months - 1 day')::date,
+            d = DATE_TRUNC('year', d), d = (DATE_TRUNC('year', d)
+                + INTERVAL '1 year - 1 day')::date, NOW()
+        FROM (SELECT %s::date AS d) AS s
+        ON CONFLICT (time_sk) DO NOTHING
+        """,
+        (day,),
+    )
+    return int(day.replace("-", ""))
+
+
+def _agency_entity(cursor, code: str) -> tuple[int, str]:
+    """A geography entity with an id of our choosing.
+
+    State and county ids are derived from their fips by
+    `dim_geo_entity_check1`, and a two-digit fips leaves a hundred possible
+    state rows for every test in the suite to collide over. The `agency`
+    branch of that CHECK takes any id, so a probe can be unique.
+    """
+    geo_id = f"agency:{code}"
+    cursor.execute(
+        """
+        INSERT INTO silver_ref.dim_geo_entity (
+            geo_id, geo_type, provider_agency_code,
+            first_seen_version, last_seen_version
+        ) VALUES (%s, 'agency', %s, 2020, 2020)
+        RETURNING geo_sk
+        """,
+        (geo_id, code),
+    )
+    return int(cursor.fetchone()[0]), geo_id
+
+
+def test_a_silver_acs_row_whose_variable_is_unknown_is_counted_not_dropped(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — DQ-ACS-004, the half nothing could see.
+
+    `gold_census.fact_acs_observation` is `silver_census.fact_demographics`
+    inner joined to `dim_acs_variable`. A silver row whose variable the
+    dimension does not carry is therefore not published: captured, parsed,
+    stored, and silently declined.
+
+    `DQ-ACS-007` cannot report it, and that is why this rule is separate
+    rather than folded in. Its *published* side applies the same inner join,
+    so the row is absent from both sides of its comparison and its groups
+    agree perfectly while the observation is gone. Asserted here, not argued:
+    the conformance rule is run over the same warehouse and stays green.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"ACSPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        geo_sk, geo_id = _agency_entity(cursor, f"acs-drop-{uuid4().hex[:8]}")
+        _entity_version(cursor, geo_sk, capture_id)
+        time_sk = _time_row(cursor, "2993-01-01")
+        cursor.execute(
+            """
+            INSERT INTO silver_census.fact_demographics (
+                geo_sk, geo_id, time_sk, dataset, estimate_year,
+                duration_start, duration_end, table_id, load_batch_id,
+                variable_code, estimate_value, capture_id, ingested_at
+            ) VALUES (%s, %s, %s, 'acs5', 2993,
+                      DATE '2989-01-01', DATE '2993-12-31', 'B00000',
+                      gen_random_uuid(),
+                      'B00000_000E', 1, %s, NOW())
+            """,
+            (geo_sk, geo_id, time_sk, capture_id),
+        )
+
+        [dropped, unplaceable] = acs_published_row_resolution(cursor, {})
+        assert dropped.result == "fail"
+        assert dropped.observed_count == 1
+        assert dropped.evidence == ["acs5|2993|B00000_000E|1"]
+        # It never reached gold, so the geography arm has nothing to say.
+        assert unplaceable.result == "pass"
+
+        # The row is invisible to the conformance rule, by construction.
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM gold_census.fact_acs_observation
+             WHERE vintage_year = 2993
+            """
+        )
+        assert cursor.fetchone()[0] == 0
+    postgres_connection.rollback()
+
+
+def test_a_published_acs_row_with_an_unplaceable_geography_fails(
+    postgres_connection_factory: Callable[[], connection],
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — DQ-ACS-004, the other direction.
+
+    `fact_demographics.geo_sk` is NOT NULL with a foreign key, so the database
+    guarantees the row resolved at silver. The serving view then publishes
+    `geo_id` -- a different, nullable column with nothing tying it to
+    `geo_sk` -- so a published observation can carry a geography nobody can
+    place while its silver row was perfectly well resolved.
+    """
+    _, capture_id = _seed_probe_capture(
+        postgres_connection_factory, f"ACSPROBE{uuid4().hex[:8].upper()}"
+    )
+    with postgres_connection.cursor() as cursor:
+        geo_sk, _ = _agency_entity(cursor, f"acs-geo-{uuid4().hex[:8]}")
+        _entity_version(cursor, geo_sk, capture_id)
+        time_sk = _time_row(cursor, "2992-01-01")
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_table (
+                dataset_code, vintage_year, table_id, survey_span_years
+            ) VALUES ('acs5', 2992, 'B00000', 5)
+            RETURNING acs_table_sk
+            """
+        )
+        acs_table_sk = cursor.fetchone()[0]
+        cursor.execute(
+            """
+            INSERT INTO gold_census.dim_acs_variable (
+                acs_table_sk, dataset_code, vintage_year, variable_code,
+                variable_label, value_role
+            ) VALUES (%s, 'acs5', 2992, 'B00000_001E', 'probe variable',
+                      'ESTIMATE')
+            """,
+            (acs_table_sk,),
+        )
+        cursor.execute(
+            """
+            INSERT INTO silver_census.fact_demographics (
+                geo_sk, geo_id, time_sk, dataset, estimate_year,
+                duration_start, duration_end, table_id, load_batch_id,
+                variable_code, estimate_value, capture_id, ingested_at
+            ) VALUES (%s, 'state:92|county:999', %s, 'acs5', 2992,
+                      DATE '2988-01-01', DATE '2992-12-31', 'B00000',
+                      gen_random_uuid(),
+                      'B00000_001E', 1, %s, NOW())
+            """,
+            (geo_sk, time_sk, capture_id),
+        )
+
+        [dropped, unplaceable] = acs_published_row_resolution(cursor, {})
+        assert dropped.result == "pass", dropped.evidence
+        assert unplaceable.result == "fail"
+        assert unplaceable.observed_count == 1
+        assert unplaceable.evidence == ["acs5|2992|state:92|county:999|1"]
+    postgres_connection.rollback()
+
+
+def test_an_empty_acs_silver_fact_is_not_applicable(
+    postgres_connection: connection,
+) -> None:
+    """Covers: DQ-019 — a rule that read nothing must not certify."""
+    with postgres_connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM silver_census.fact_demographics")
+        if cursor.fetchone()[0]:
+            pytest.skip("the session's warehouse carries ACS rows")
+        outcomes = acs_published_row_resolution(cursor, {})
         assert [outcome.result for outcome in outcomes] == [
             "not_applicable",
             "not_applicable",

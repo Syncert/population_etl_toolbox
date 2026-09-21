@@ -203,8 +203,13 @@ covers it instead, under one of two states:
   by its resolved columns, a foreign key by its columns *and* its target, and a
   CHECK by name and then against its own definition -- so a migration that
   drops, renames or repoints one fails there.
-- **27 are `unimplemented`** — no executor runs them, and 15 of those are
-  BLOCK severity. `DQ-REF-005` left this set most recently, and how is worth
+- **26 are `unimplemented`** — no executor runs them, and 14 of those are
+  BLOCK severity. `DQ-ACS-004` left this set by measuring the thing its own
+  note described and no other rule could see: the serving view is an inner
+  join to `dim_acs_variable`, so a silver row whose variable the dimension
+  does not carry is captured, parsed, stored and silently declined, and
+  `DQ-ACS-007` cannot report it because its published side applies the same
+  join. `DQ-REF-005` left it before that, and how is worth
   a sentence: its note said the current-geography projections select one
   version "by construction (DISTINCT ON)", which covers two of the three
   joins in `silver_ref.dim_geo_current` and not the state lookup. Writing the

@@ -2345,15 +2345,31 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "referential_integrity",
         "Every published ACS observation resolves its variable metadata and geography.",
         (
+            "silver_census.fact_demographics",
             "gold_census.fact_acs_observation",
             "gold_census.dim_acs_variable",
             "silver_ref.geography_resolution",
         ),
-        automation="unimplemented",
+        automation="automated",
         automation_note=(
-            "Unimplemented: the serving refresh joins variable metadata and "
-            "geography, so an unresolved row is dropped rather than reported; "
-            "nothing counts what was dropped."
+            "Measured by `acs_published_row_resolution`, in the two "
+            "directions the serving view actually admits. "
+            "`gold_census.fact_acs_observation` is "
+            "`silver_census.fact_demographics` inner joined to "
+            "`dim_acs_variable`, so a published row always resolves its "
+            "variable -- the join is the resolution -- and a silver row whose "
+            "variable the dimension does not carry is not published at all. "
+            "It was captured, parsed, stored, and silently declined, and "
+            "nothing counted it. `DQ-ACS-007` cannot: its published side "
+            "applies the same inner join, so such a row is absent from both "
+            "sides of its comparison and its groups agree while the "
+            "observation is gone. "
+            "The geography half is the opposite shape. "
+            "`fact_demographics.geo_sk` is NOT NULL with a foreign key, so "
+            "the database guarantees the row resolved at silver; the view "
+            "then publishes `geo_id`, a different, nullable, unconstrained "
+            "column, so a published observation can carry no geography or one "
+            "disagreeing with the entity it resolved to."
         ),
     ),
     _rule(
