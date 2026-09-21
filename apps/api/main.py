@@ -33,6 +33,7 @@ from apps.api.routers import (
     distribution,
     evidence_packets,
     health,
+    identity,
     observations,
     saved_analysis,
     usda_nass,
@@ -78,6 +79,11 @@ CACHEABLE_ROUTERS: tuple[APIRouter, ...] = (
 PRIVATE_ROUTERS: tuple[APIRouter, ...] = (
     saved_analysis.router,
     evidence_packets.router,
+    # Identity (ADR-0005). It belongs in this group for the reason the group
+    # exists: every route answers `private, no-store`, and a sign-in response
+    # carries a credential. A cached one would be a credential served to
+    # whoever asked next.
+    identity.router,
 )
 
 #: The content report (API-137). A warehouse read, so it is deliberately not

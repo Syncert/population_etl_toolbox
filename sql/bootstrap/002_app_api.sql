@@ -155,6 +155,41 @@ BEGIN
 END
 $$;
 
+-- One row per sign-in that has started and not yet come back (ADR-0005 s1).
+--
+-- This table is what "a `state` parameter bound to the caller's session"
+-- means when the caller has no session yet, which is every sign-in. The
+-- browser holds one value -- an opaque handle, in a short-lived `HttpOnly`
+-- cookie -- and this row holds everything that handle unlocks. Without it,
+-- `state` would be a value the caller both supplies and is checked against,
+-- which checks nothing.
+--
+-- The handle is stored as a digest, like every other credential in this
+-- schema. `state` is too: it is only ever compared, never re-sent, so there
+-- is no reason to keep a readable copy.
+--
+-- `nonce` and `code_verifier` are readable, because both have to leave here
+-- intact -- the verifier goes to the token endpoint and the nonce is compared
+-- against a claim the provider echoed. They are single-use values that expire
+-- in minutes and grant nothing to a holder who does not also have the
+-- authorization code, and the row is deleted the moment it is spent.
+CREATE TABLE IF NOT EXISTS app_api.sign_in_transaction (
+    transaction_id  BIGSERIAL PRIMARY KEY,
+    handle_sha256   TEXT NOT NULL UNIQUE,
+    state_sha256    TEXT NOT NULL,
+    nonce           TEXT NOT NULL,
+    code_verifier   TEXT NOT NULL,
+    redirect_uri    TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL
+);
+
+-- Abandoned sign-ins are the common case: somebody clicks sign in and closes
+-- the tab. They are swept on the next start rather than by a scheduled job,
+-- so a deployment with no scheduler does not accumulate them.
+CREATE INDEX IF NOT EXISTS sign_in_transaction_expiry_idx
+    ON app_api.sign_in_transaction (expires_at);
+
 -- One row per saved configuration. `document` is the user's own analysis
 -- intent (query, filters, visualization), stored verbatim; the API validates
 -- it against the live capability and compatibility contracts on write but

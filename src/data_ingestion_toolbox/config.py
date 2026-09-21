@@ -130,6 +130,16 @@ class Settings:
         self.oidc_issuer: str = os.environ.get(
             "API_OIDC_ISSUER", "https://accounts.google.com"
         )
+        #: Whether the session cookies carry ``Secure``. True everywhere a
+        #: deployment serves over TLS, which is everywhere it should be served.
+        #: It is configurable only because a browser will not store a
+        #: ``Secure`` cookie sent over plain ``http://localhost``, and
+        #: ADR-0005's flow is meant to be runnable against localhost before a
+        #: deployment exists. Turning it off outside local development
+        #: publishes the refresh token to anything watching the network.
+        self.api_cookie_secure: bool = os.environ.get(
+            "API_COOKIE_SECURE", "1"
+        ).strip().lower() not in {"0", "false", "no", ""}
         self.oidc_client_id: str = os.environ.get("API_OIDC_CLIENT_ID", "")
         self.oidc_client_secret: str = os.environ.get("API_OIDC_CLIENT_SECRET", "")
         #: The exact-match redirect allowlist (ADR-0005 s1). Exact match, not

@@ -122,9 +122,13 @@ def test_a_fresh_bootstrap_creates_the_credential_table_and_no_digest_column(
 
             account_columns = _columns(cursor, schema, "user_account")
             assert "token_sha256" not in account_columns
-            assert {"issuer", "subject", "email", "public_display_name", "blocked_at"} <= (
-                account_columns
-            )
+            assert {
+                "issuer",
+                "subject",
+                "email",
+                "public_display_name",
+                "blocked_at",
+            } <= (account_columns)
 
             credential_columns = _columns(cursor, schema, "account_credential")
             assert {
@@ -374,8 +378,7 @@ def test_a_public_display_name_cannot_be_taken_twice_in_different_case(
             # Absence is not a collision: an account is unnamed until it
             # publishes, and most accounts never will.
             cursor.execute(
-                f"INSERT INTO {schema}.user_account (display_label)"
-                " VALUES ('b'), ('c')"
+                f"INSERT INTO {schema}.user_account (display_label) VALUES ('b'), ('c')"
             )
 
         with database.cursor() as cursor:
